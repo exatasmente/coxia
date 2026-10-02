@@ -18,6 +18,7 @@ export interface Settings {
     retroDay: number;
     retroTime: string;
   };
+  voice: { autoStop: boolean; silenceMs: number };
   notifications: boolean;
   closeToTray: boolean;
 }
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   tools: { files: true, skills: true, gitlabMcp: true, glab: true, subagents: true },
   schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
+  voice: { autoStop: true, silenceMs: 1200 },
   notifications: true,
   closeToTray: true,
 };
@@ -43,6 +45,7 @@ export function withDefaults(partial: Partial<Settings> | null | undefined): Set
     models: { ...DEFAULT_SETTINGS.models, ...p.models },
     tools: { ...DEFAULT_SETTINGS.tools, ...p.tools },
     schedule: { ...DEFAULT_SETTINGS.schedule, ...p.schedule },
+    voice: { ...DEFAULT_SETTINGS.voice, ...p.voice },
     notifications: p.notifications ?? DEFAULT_SETTINGS.notifications,
     closeToTray: p.closeToTray ?? DEFAULT_SETTINGS.closeToTray,
   };

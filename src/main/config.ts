@@ -27,6 +27,7 @@ function validate(s: Settings): Settings {
     if (!TIME.test(t)) throw new Error(`horário inválido: ${t}`);
   }
   if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error('intervalo deve ficar entre 5 e 240 minutos');
+  if (!(s.voice.silenceMs >= 500 && s.voice.silenceMs <= 5000)) throw new Error('silêncio deve ficar entre 500 e 5000 ms');
   return s;
 }
 

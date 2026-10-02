@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DEFAULT_SETTINGS } from '../../shared/settings';
 import type { Voice } from '../../shared/types';
 import { api } from './api';
+import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
 
 const CACHE_SIZE = 40;
 
@@ -57,10 +59,57 @@ export function usePlayer() {
   return { speaking, say, stop };
 }
 
-export function useRecorder() {
+const SAMPLE_MS = 50;
+
+// onSilence fires once per recording, when the speaker stopped talking (or hit the time limit); the screen then sends as if space was pressed.
+export function useRecorder(onSilence?: () => void) {
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const meter = useRef<{ timer: number; ctx: AudioContext } | null>(null);
+  const silenceRef = useRef(onSilence);
+  silenceRef.current = onSilence;
   const [recording, setRecording] = useState(false);
+  const [level, setLevel] = useState(0);
+
+  const stopMeter = useCallback(() => {
+    if (!meter.current) return;
+    window.clearInterval(meter.current.timer);
+    void meter.current.ctx.close().catch(() => undefined);
+    meter.current = null;
+    setLevel(0);
+  }, []);
+
+  const startMeter = useCallback(
+    (stream: MediaStream, autoStop: boolean, silenceMs: number) => {
+      try {
+        const ctx = new AudioContext();
+        void ctx.resume();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const samples = new Float32Array(analyser.fftSize);
+        const cfg = { ...VAD_DEFAULTS, silenceMs };
+        let vad = vadInit(performance.now());
+        let fired = false;
+        const timer = window.setInterval(() => {
+          analyser.getFloatTimeDomainData(samples);
+          const rms = rmsOf(samples);
+          setLevel(levelOf(rms));
+          if (!autoStop || fired) return;
+          const step = vadStep(vad, rms, performance.now(), cfg);
+          vad = step.state;
+          if (step.stop) {
+            fired = true;
+            silenceRef.current?.();
+          }
+        }, SAMPLE_MS);
+        meter.current = { timer, ctx };
+      } catch {
+        // No meter means push-to-talk only, as before.
+      }
+    },
+    [],
+  );
 
   const start = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -70,11 +119,14 @@ export function useRecorder() {
     rec.start();
     recorder.current = rec;
     setRecording(true);
-  }, []);
+    const voice = await api.getSettings().then((s) => s.voice, () => DEFAULT_SETTINGS.voice);
+    if (recorder.current === rec) startMeter(stream, voice.autoStop, voice.silenceMs);
+  }, [startMeter]);
 
   const stop = useCallback(async (): Promise<ArrayBuffer | null> => {
     const rec = recorder.current;
     if (!rec) return null;
+    stopMeter();
     const stopped = new Promise<void>((done) => (rec.onstop = () => done()));
     rec.stop();
     await stopped;
@@ -82,14 +134,16 @@ export function useRecorder() {
     recorder.current = null;
     setRecording(false);
     return new Blob(chunks.current, { type: 'audio/webm' }).arrayBuffer();
-  }, []);
+  }, [stopMeter]);
 
-  return { recording, start, stop };
+  useEffect(() => stopMeter, [stopMeter]);
+
+  return { recording, level: recording ? level : undefined, start, stop };
 }
 
-// Push-to-talk shared by the conversation screens: space or the button starts, the same again sends.
+// Shared by the conversation screens: space or the button starts, space again (or silence) sends.
 export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: string) => Promise<void>, onError: (msg: string) => void) {
-  const rec = useRecorder();
+  const rec = useRecorder(() => void ref.current());
   const [transcribing, setTranscribing] = useState(false);
 
   const talk = useCallback(async () => {
@@ -127,5 +181,5 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return { recording: rec.recording, transcribing, talk };
+  return { recording: rec.recording, level: rec.level, transcribing, talk };
 }

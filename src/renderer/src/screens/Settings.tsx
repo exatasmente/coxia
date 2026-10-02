@@ -133,6 +133,27 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Voz</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>O espaço continua enviando a fala antes da hora. Vale a partir da próxima gravação.</p>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={s.voice.autoStop} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, autoStop: !p.voice.autoStop } }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Enviar sozinho quando eu parar de falar</span>
+              <span className="small muted">Depois que você começa a falar, uma pausa longa envia a fala. Cada fala tem no máximo 30 segundos.</span>
+            </span>
+          </label>
+          <div className="settings-row">
+            <label htmlFor="silence" style={{ fontWeight: 600 }}>Pausa que encerra a fala</label>
+            <div className="row" style={{ gap: 8 }}>
+              <input id="silence" type="number" min={500} max={5000} step={100} className="text-input" style={{ maxWidth: 110 }} disabled={!s.voice.autoStop} value={s.voice.silenceMs} onChange={(e) => set((p) => ({ ...p, voice: { ...p.voice, silenceMs: Number(e.target.value) } }))} />
+              <span className="small muted">ms (de 500 a 5000)</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Agenda e notificações</h2>
             <p className="small muted" style={{ marginTop: 4 }}>Conferir o status usa só o daily-report: não chama nenhum modelo.</p>
           </div>
