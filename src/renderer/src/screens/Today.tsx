@@ -43,6 +43,7 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
             <span className="pill" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)', color: 'var(--amber-ink)', fontWeight: 500 }}>
               Só leitura · efeitos vão para a ata
             </span>
+            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
           </div>
         </header>
 

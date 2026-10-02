@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { teamsKey } from '../../../shared/minutes';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
@@ -20,21 +21,25 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
   const [saveError, setSaveError] = useState<string | null>(null);
   const asked = useRef(false);
 
+  const key = teamsKey(c.snapshot);
+  const current = !!teams && c.teamsKey === key;
+
   const loadTeams = useCallback(async () => {
     setTeamsError(null);
-    setTeams(null);
+    setTeams(null, null);
     try {
-      setTeams(await api.teamsText(m, c.cards?.cards ?? []));
+      setTeams(await api.teamsText(m, c.cards?.cards ?? []), key);
     } catch (e) {
       setTeamsError(errorText(e));
     }
-  }, [m, c.cards]);
+  }, [m, c.cards, key]);
 
+  // The text is written again only when decisions, effects or cards changed since it was written.
   useEffect(() => {
-    if (asked.current || teams) return;
+    if (asked.current || current) return;
     asked.current = true;
     void loadTeams();
-  }, [loadTeams, teams]);
+  }, [loadTeams, current]);
 
   const copy = async (what: 'teams' | 'effects', text: string) => {
     await api.copy(text);
@@ -156,9 +161,14 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
             <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
               <div className="row spread">
                 <h2 style={{ fontSize: 18, fontWeight: 600 }}>Para a daily do time</h2>
-                <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!teams} onClick={() => teams && void copy('teams', teams)}>
-                  {copied === 'teams' ? 'Copiado' : 'Copiar'}
-                </button>
+                <div className="row" style={{ gap: 8 }}>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!teams} onClick={() => void loadTeams()}>
+                    Reescrever
+                  </button>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!teams} onClick={() => teams && void copy('teams', teams)}>
+                    {copied === 'teams' ? 'Copiado' : 'Copiar'}
+                  </button>
+                </div>
               </div>
               {teams && <pre className="teams">{teams}</pre>}
               {!teams && !teamsError && <div className="row small" style={{ color: '#9CA3AF' }}><span className="spinner" /> O agente está escrevendo no seu estilo…</div>}

@@ -12,6 +12,7 @@ import type {
   SavedCeremony,
   Voice,
 } from '../../shared/types';
+import { buildMinutes } from '../../shared/minutes';
 import { AGENT_COLORS, api, clock, errorText } from './api';
 
 export type { LogLine };
@@ -20,10 +21,17 @@ const LIMIT = 8;
 const PARALLEL = 3;
 const SAVE_DELAY_MS = 400;
 
+function newId(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.toLocaleDateString('sv-SE')}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
 export const EMPTY_DEEP: DeepState = { sessionId: null, msgs: [], sources: [], options: null, pick: null, saved: false };
 
 export function useCeremony() {
   const [restored, setRestored] = useState(false);
+  const [id, setId] = useState(newId);
   const [cards, setCards] = useState<CardsResult | null>(null);
   const [cardsError, setCardsError] = useState<string | null>(null);
   const [loadingCards, setLoadingCards] = useState(false);
@@ -41,6 +49,7 @@ export function useCeremony() {
   const [spoken, setSpoken] = useState<Record<string, boolean>>({});
   const [deep, setDeep] = useState<Record<string, DeepState>>({});
   const [teams, setTeams] = useState<string | null>(null);
+  const [teamsKey, setTeamsKey] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [resumed, setResumed] = useState(false);
   const pending = useRef(new Map<string, Promise<AgentTurn>>());
@@ -58,6 +67,7 @@ export function useCeremony() {
   }, []);
 
   const hydrate = useCallback((s: SavedCeremony) => {
+    setId(s.id);
     setCards(s.cards);
     setTurns(s.turns);
     for (const [ref, turn] of Object.entries(s.turns)) pending.current.set(ref, Promise.resolve(turn));
@@ -72,6 +82,7 @@ export function useCeremony() {
     setSpoken(s.spoken);
     setDeep(s.deep);
     setTeams(s.teams);
+    setTeamsKey(s.teamsKey);
     setSaveResult(s.saveResult);
   }, []);
 
@@ -90,6 +101,8 @@ export function useCeremony() {
   const snapshot = useMemo(
     (): SavedCeremony => ({
       version: 1,
+      id,
+      kind: 'pre-daily',
       date: '',
       cards,
       turns,
@@ -104,9 +117,10 @@ export function useCeremony() {
       spoken,
       deep,
       teams,
+      teamsKey,
       saveResult,
     }),
-    [cards, turns, decisions, effects, answered, log, startedAt, endedAt, callIdx, callEnded, spoken, deep, teams, saveResult],
+    [id, cards, turns, decisions, effects, answered, log, startedAt, endedAt, callIdx, callEnded, spoken, deep, teams, teamsKey, saveResult],
   );
 
   useEffect(() => {
@@ -117,7 +131,7 @@ export function useCeremony() {
 
   const reset = useCallback(async () => {
     pending.current.clear();
-    hydrate({ ...snapshot, cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, saveResult: null });
+    hydrate({ ...snapshot, id: newId(), cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
     setTurnErrors({});
     setResumed(false);
     await loadCards();
@@ -175,19 +189,10 @@ export function useCeremony() {
     setDeep((all) => ({ ...all, [ref]: change(all[ref] ?? EMPTY_DEEP) }));
   }, []);
 
-  const minutes = useMemo((): Minutes => {
-    const unanswered = (cards?.cards ?? [])
-      .map((c) => ({ ref: c.ref, question: turns[c.ref]?.question ?? null }))
-      .filter((u): u is { ref: string; question: string } => !!u.question && !answered[u.ref]);
-    return {
-      startedAt: new Date(startedAt ?? Date.now()).toISOString(),
-      endedAt: new Date(endedAt ?? Date.now()).toISOString(),
-      decisions,
-      effects,
-      unanswered,
-      transcript: log.map((l) => ({ who: l.who, text: l.text, at: l.at })),
-    };
-  }, [cards, turns, answered, decisions, effects, log, startedAt, endedAt]);
+  const minutes = useMemo(
+    (): Minutes => buildMinutes({ cards, turns, answered, decisions, effects, log, startedAt, endedAt }),
+    [cards, turns, answered, decisions, effects, log, startedAt, endedAt],
+  );
 
   return {
     restored,
@@ -223,7 +228,12 @@ export function useCeremony() {
     deep,
     updateDeep,
     teams,
-    setTeams,
+    teamsKey,
+    setTeams: (text: string | null, key: string | null) => {
+      setTeams(text);
+      setTeamsKey(key);
+    },
+    snapshot,
     saveResult,
     setSaveResult,
     voices,

@@ -110,6 +110,8 @@ export interface DeepState {
 
 export interface SavedCeremony {
   version: 1;
+  id: string;
+  kind: 'pre-daily';
   date: string;
   cards: CardsResult | null;
   turns: Record<string, AgentTurn>;
@@ -124,12 +126,29 @@ export interface SavedCeremony {
   spoken: Record<string, boolean>;
   deep: Record<string, DeepState>;
   teams: string | null;
+  teamsKey: string | null;
   saveResult: SaveResult | null;
+}
+
+export interface HistoryEntry {
+  id: string;
+  kind: 'pre-daily';
+  date: string;
+  startedAt: number | null;
+  endedAt: number | null;
+  activities: number;
+  decisions: number;
+  effects: number;
+  unanswered: number;
+  deepDives: number;
+  ataSaved: boolean;
 }
 
 export interface Api {
   loadState(): Promise<SavedCeremony | null>;
   saveState(state: SavedCeremony): Promise<void>;
+  listHistory(): Promise<HistoryEntry[]>;
+  getHistory(id: string): Promise<SavedCeremony | null>;
   loadCards(limit: number): Promise<CardsResult>;
   prepareTurn(card: Card): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;

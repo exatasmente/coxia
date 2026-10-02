@@ -4,9 +4,10 @@ import { useCeremony } from './ceremony';
 import { Ata } from './screens/Ata';
 import { Call } from './screens/Call';
 import { Deep } from './screens/Deep';
+import { History } from './screens/History';
 import { Today } from './screens/Today';
 
-export type Screen = { name: 'today' } | { name: 'call' } | { name: 'deep'; ref: string; back: 'today' | 'call' } | { name: 'ata' };
+export type Screen = { name: 'today' } | { name: 'call' } | { name: 'deep'; ref: string; back: 'today' | 'call' } | { name: 'ata' } | { name: 'history' };
 
 export function App() {
   const ceremony = useCeremony();
@@ -27,5 +28,7 @@ export function App() {
       return <Deep ceremony={ceremony} player={player} go={go} refName={screen.ref} back={screen.back} />;
     case 'ata':
       return <Ata ceremony={ceremony} go={go} />;
+    case 'history':
+      return <History go={go} />;
   }
 }

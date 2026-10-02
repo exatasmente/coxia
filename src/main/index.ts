@@ -4,7 +4,7 @@ import { BrowserWindow, app, clipboard, ipcMain, session, shell } from 'electron
 import type { AgentTurn, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
-import { loadState, saveState } from './state';
+import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
 
@@ -29,6 +29,8 @@ function createWindow(): void {
 function handlers(): void {
   ipcMain.handle('state:load', () => loadState());
   ipcMain.handle('state:save', (_e, state: SavedCeremony) => saveState(state));
+  ipcMain.handle('history:list', () => listHistory());
+  ipcMain.handle('history:get', (_e, id: string) => getHistory(id));
   ipcMain.handle('cards:load', (_e, limit: number) => loadCards(limit));
   ipcMain.handle('agent:prepare', (_e, card: Card) => prepareTurn(card));
   ipcMain.handle('agent:reply', (_e, card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
