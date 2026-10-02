@@ -78,19 +78,35 @@ export function resolveStatic(root: string, rel: string): { path: string; type: 
 
 const normalizeAddress = (a: string | undefined): string => (a ?? '').replace(/^::ffff:/, '');
 const isLoopback = (a: string): boolean => a === '::1' || a.startsWith('127.');
-// The Docker bridge the proxy container lives on.
-const isDockerBridge = (a: string): boolean => {
-  const m = /^172\.(\d+)\./.exec(a);
-  return !!m && Number(m[1]) >= 16 && Number(m[1]) <= 31;
+
+function ipv4(a: string): number | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  if (!m || m.slice(1).some((o) => Number(o) > 255)) return null;
+  return ((Number(m[1]) << 24) | (Number(m[2]) << 16) | (Number(m[3]) << 8) | Number(m[4])) >>> 0;
+}
+
+export function inCidr(addr: string, cidr: string): boolean {
+  const [base, bitsText] = cidr.split('/');
+  const bits = bitsText === undefined ? 32 : Number(bitsText);
+  const a = ipv4(addr);
+  const b = ipv4(base);
+  if (a === null || b === null || !(bits >= 0 && bits <= 32)) return false;
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return ((a & mask) >>> 0) === ((b & mask) >>> 0);
+}
+
+// Only the reverse proxy (and loopback, for local tests) is believed about forwarded headers.
+export const trustedPeer = (peerRaw: string | undefined, cidr: string): boolean => {
+  const peer = normalizeAddress(peerRaw);
+  return isLoopback(peer) || inCidr(peer, cidr);
 };
 
-export function clientIp(peerRaw: string | undefined, forwarded: string | string[] | undefined): string {
+/** The client address: X-Real-IP (set by nginx from Cloudflare's CF-Connecting-IP) when the peer is the trusted proxy, else the peer. */
+export function clientIp(peerRaw: string | undefined, realIp: string | string[] | undefined, cidr: string): string {
   const peer = normalizeAddress(peerRaw);
-  if (!(isLoopback(peer) || isDockerBridge(peer))) return peer;
-  const list = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',').map((s) => s.trim()).filter(Boolean);
-  // The proxy puts the address it saw last; whatever the client sent before is not trusted.
-  const last = list[list.length - 1];
-  return last && isIP(last) ? last : peer;
+  if (!trustedPeer(peer, cidr)) return peer;
+  const given = (Array.isArray(realIp) ? realIp[0] : realIp)?.trim();
+  return given && isIP(given) ? given : peer;
 }
 
 export function originAllowed(origin: string | undefined, publicUrl: string): boolean {
@@ -178,7 +194,7 @@ export function createWebApp(deps: WebDeps): WebApp {
   function cookieHeader(token: string, req: IncomingMessage, maxAgeSec: number): string {
     const s = deps.settings();
     const peer = normalizeAddress(req.socket.remoteAddress);
-    const proxied = isLoopback(peer) || isDockerBridge(peer);
+    const proxied = trustedPeer(peer, s.trustedProxy);
     const proto = proxied ? String(req.headers['x-forwarded-proto'] ?? '').split(',').pop()?.trim() : undefined;
     const local = isLoopback(peer) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test((req.headers.host ?? '').replace(/:\d+$/, ''));
     const secure = proto === 'https' || !local;
@@ -207,7 +223,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       } catch {
         throw new HttpError(400, 'JSON inválido.');
       }
-      const ip = clientIp(req.socket.remoteAddress, req.headers['x-forwarded-for']);
+      const ip = clientIp(req.socket.remoteAddress, req.headers['x-real-ip'], deps.settings().trustedProxy);
       const { token, device } = deps.auth.login(body?.code, body?.name, ip);
       json(res, 200, { device }, { 'Set-Cookie': cookieHeader(token, req, SESSION_TTL_MS / 1000) });
       return;

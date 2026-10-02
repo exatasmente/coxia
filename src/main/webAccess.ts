@@ -54,12 +54,17 @@ export function registerWebAccess(dir: string): void {
   rendererDir = dir;
   handle('web:view', () => view());
   handle('web:configure', async (patch: Partial<WebSettings>) => {
-    const { enabled, host, port, basePath, publicUrl, allowExternalEffects } = { ...getSettings().web, ...patch };
-    saveWebSettings({ enabled, host, port, basePath, publicUrl, allowExternalEffects });
+    const { enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects } = { ...getSettings().web, ...patch };
+    saveWebSettings({ enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects });
     await syncWebAccess();
     return view();
   });
   handle('web:pair', (): PairingCode => theAuth().newPairingCode());
+  handle('web:unpair', () => theAuth().cancelPairing());
+  handle('web:rename', (id: string, name: string) => {
+    theAuth().rename(id, name);
+    return view();
+  });
   handle('web:revoke', (id: string) => {
     theAuth().revoke(id);
     current?.app.dropDevice(id);

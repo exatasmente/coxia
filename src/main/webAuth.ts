@@ -52,6 +52,8 @@ export function cleanDeviceName(name: unknown): string {
 export interface Auth {
   newPairingCode(): { code: string; expiresAt: number };
   pairingPending(): { expiresAt: number } | null;
+  cancelPairing(): void;
+  rename(id: string, name: unknown): boolean;
   login(code: unknown, name: unknown, ip: string): { token: string; device: Device };
   verify(token: string | undefined): Device | null;
   list(): Device[];
@@ -113,6 +115,18 @@ export function createAuth(file: string, now: () => number = Date.now): Auth {
 
     pairingPending() {
       return pairing && pairing.expiresAt > now() ? { expiresAt: pairing.expiresAt } : null;
+    },
+
+    cancelPairing() {
+      pairing = null;
+    },
+
+    rename(id, name) {
+      const found = sessions.find((s) => s.id === id);
+      if (!found) return false;
+      found.name = cleanDeviceName(name);
+      flush();
+      return true;
     },
 
     login(code, name, ip) {

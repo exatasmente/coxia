@@ -130,6 +130,25 @@ describe('sessions', () => {
   });
 });
 
+describe('pairing and device upkeep', () => {
+  it('cancelPairing invalidates the code on display', () => {
+    const auth = createAuth(file, now);
+    const { code } = auth.newPairingCode();
+    expect(auth.pairingPending()).not.toBeNull();
+    auth.cancelPairing();
+    expect(auth.pairingPending()).toBeNull();
+    expect(status(() => auth.login(code, 'x', '1.1.1.1'))).toBe(401);
+  });
+
+  it('renames a device with a cleaned name and keeps it across restarts', () => {
+    const auth = createAuth(file, now);
+    const { device } = auth.login(auth.newPairingCode().code, 'Chrome em Android', '1.1.1.1');
+    expect(auth.rename(device.id, '  Celular do Luiz\u0007 ')).toBe(true);
+    expect(auth.rename('nope', 'x')).toBe(false);
+    expect(createAuth(file, now).list()[0].name).toBe('Celular do Luiz');
+  });
+});
+
 describe('rate limit', () => {
   it('blocks an IP after 5 failures in 15 minutes, and releases it after', () => {
     const auth = createAuth(file, now);

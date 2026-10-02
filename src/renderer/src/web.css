@@ -7,6 +7,9 @@
 
 .web-access .web-code-box { padding: 14px 16px; border-radius: 12px; border: 1px solid var(--teal-line); background: var(--teal-soft); color: var(--teal-ink); display: flex; flex-direction: column; gap: 4px; }
 .web-access .web-code-value { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: 0.1em; overflow-wrap: anywhere; }
+.web-access .web-pair { display: flex; gap: 18px; align-items: flex-start; }
+.web-access .web-pair-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.web-qr { flex: 0 0 auto; width: 236px; height: 236px; display: block; border-radius: 12px; }
 .web-access .web-url { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .web-access .web-url code { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
 .web-access .web-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line-2); }
@@ -16,9 +19,15 @@
 .web-access .web-advanced .wide { grid-column: 1 / -1; }
 .web-access summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
 
+@media (max-width: 560px) {
+  .web-access .web-pair { flex-direction: column; align-items: stretch; }
+  .web-qr { width: min(100%, 280px); height: auto; margin: 0 auto; }
+}
+
 @media (max-width: 480px) {
   .web-card { padding: 18px; }
   .web-access .web-advanced { grid-template-columns: 1fr; }
   .web-access .web-device { align-items: stretch; flex-direction: column; }
+  .web-access .web-device .row { flex-direction: column; align-items: stretch; }
   .web-access .web-device .btn { width: 100%; }
 }

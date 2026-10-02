@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type WebSettings } from '../src/shared/settings';
 import { decodeWire, encodeWire } from '../src/shared/wire';
-import { clientIp, createWebApp, originAllowed, resolveStatic, type WebApp } from '../src/main/web';
+import { clientIp, createWebApp, inCidr, originAllowed, resolveStatic, type WebApp } from '../src/main/web';
 import { createAuth, type Auth } from '../src/main/webAuth';
 import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/main/webPolicy';
 
@@ -214,7 +214,7 @@ describe('login and session', () => {
 
   it('wrong codes get 401 with a generic message, then 429 from the same IP', async () => {
     let last: Res | null = null;
-    for (let i = 0; i < 6; i++) last = await http('POST', `${BASE}api/login`, { headers: { ...JSON_POST, 'X-Forwarded-For': '203.0.113.50' }, body: JSON.stringify({ code: 'AAAAAAAAAAAA', name: 'x' }) });
+    for (let i = 0; i < 6; i++) last = await http('POST', `${BASE}api/login`, { headers: { ...JSON_POST, 'X-Real-IP': '203.0.113.50' }, body: JSON.stringify({ code: 'AAAAAAAAAAAA', name: 'x' }) });
     expect(last?.status).toBe(429);
     expect(last?.headers['retry-after']).toBeTruthy();
   });
@@ -257,7 +257,7 @@ describe('request guards', () => {
   });
 
   it('caps the login body at 4 KB before anyone is authenticated', async () => {
-    const res = await http('POST', `${BASE}api/login`, { headers: { ...JSON_POST, 'X-Forwarded-For': '203.0.113.77' }, body: JSON.stringify({ code: 'x'.repeat(5000), name: 'x' }) }).catch(() => ({ status: 413 }));
+    const res = await http('POST', `${BASE}api/login`, { headers: { ...JSON_POST, 'X-Real-IP': '203.0.113.77' }, body: JSON.stringify({ code: 'x'.repeat(5000), name: 'x' }) }).catch(() => ({ status: 413 }));
     expect(res.status).toBe(413);
   });
 
@@ -267,12 +267,19 @@ describe('request guards', () => {
     expect(originAllowed('http://koala.fortics.dev', PUBLIC)).toBe(false);
     expect(originAllowed('https://koala.fortics.dev.evil.com', PUBLIC)).toBe(false);
     expect(originAllowed('not a url', PUBLIC)).toBe(false);
-    // forwarded header counts only from the proxy (loopback or Docker bridge)
-    expect(clientIp('172.18.0.5', '9.9.9.9, 1.2.3.4')).toBe('1.2.3.4');
-    expect(clientIp('::ffff:127.0.0.1', '1.2.3.4')).toBe('1.2.3.4');
-    expect(clientIp('203.0.113.9', '1.2.3.4')).toBe('203.0.113.9');
-    expect(clientIp('172.18.0.5', 'garbage')).toBe('172.18.0.5');
-    expect(clientIp('172.18.0.5', undefined)).toBe('172.18.0.5');
+    // X-Real-IP counts only from the proxy (trusted CIDR or loopback)
+    const cidr = '172.18.0.0/16';
+    expect(clientIp('172.18.0.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
+    expect(clientIp('::ffff:172.18.0.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
+    expect(clientIp('127.0.0.1', '1.2.3.4', cidr)).toBe('1.2.3.4');
+    expect(clientIp('192.168.1.50', '1.2.3.4', cidr)).toBe('192.168.1.50');
+    expect(clientIp('172.19.0.2', '1.2.3.4', cidr)).toBe('172.19.0.2');
+    expect(clientIp('172.18.0.28', 'garbage', cidr)).toBe('172.18.0.28');
+    expect(clientIp('172.18.0.28', undefined, cidr)).toBe('172.18.0.28');
+    expect(inCidr('172.18.255.1', '172.18.0.0/16')).toBe(true);
+    expect(inCidr('172.19.0.1', '172.18.0.0/16')).toBe(false);
+    expect(inCidr('10.0.0.1', '0.0.0.0/0')).toBe(true);
+    expect(inCidr('10.0.0.1', 'bad')).toBe(false);
   });
 });
 

@@ -35,3 +35,16 @@ export interface WebSession {
   device: Device;
   allowExternalEffects: boolean;
 }
+
+// The QR code and the shared link carry the pairing code in the URL fragment, which browsers never send to a server,
+// so it stays out of nginx and Cloudflare logs.
+export function pairingLink(publicUrl: string, code: string): string {
+  const url = new URL(publicUrl);
+  url.search = '';
+  url.hash = '';
+  return `${url.href}#pair=${code}`;
+}
+
+export function readPairFragment(hash: string): string | null {
+  return /^#pair=([A-Za-z0-9-]{8,32})$/.exec(hash)?.[1] ?? null;
+}

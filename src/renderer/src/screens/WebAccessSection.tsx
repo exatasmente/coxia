@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { WebSettings } from '../../../shared/settings';
-import type { PairingCode, WebView } from '../../../shared/webAccess';
+import { type PairingCode, type WebView, pairingLink } from '../../../shared/webAccess';
 import { api, errorText, plural } from '../api';
 import { isWeb } from '../platform';
 import { webAccessApi } from '../webAccessApi';
 import '../web.css';
+import { QrCode } from './QrCode';
 
 const stamp = (iso: string): string => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -18,20 +19,70 @@ function Countdown({ until }: { until: number }) {
   return <>{left > 0 ? `vale por mais ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'expirou'}</>;
 }
 
+function DeviceRow({ id, name, createdAt, lastSeenAt, onRename, onRevoke }: { id: string; name: string; createdAt: string; lastSeenAt: string; onRename: (id: string, name: string) => void; onRevoke: (id: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <div className="web-device">
+      <div>
+        {draft === null ? (
+          <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{name}</div>
+        ) : (
+          <input className="text-input" aria-label="Nome do aparelho" value={draft} maxLength={60} autoFocus onChange={(e) => setDraft(e.target.value)} />
+        )}
+        <div className="small muted">Pareado em {stamp(createdAt)} · visto por último em {stamp(lastSeenAt)}</div>
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        {draft === null ? (
+          <button type="button" className="btn" onClick={() => setDraft(name)}>Renomear</button>
+        ) : (
+          <>
+            <button type="button" className="btn" disabled={!draft.trim()} onClick={() => { onRename(id, draft); setDraft(null); }}>Salvar nome</button>
+            <button type="button" className="btn" onClick={() => setDraft(null)}>Cancelar</button>
+          </>
+        )}
+        <button type="button" className="btn" onClick={() => onRevoke(id)}>Revogar</button>
+      </div>
+    </div>
+  );
+}
+
 // Desktop window only: pairing, the device list and the web server settings. Applied on the spot, no Salvar needed.
 export function WebAccessSection() {
   const [view, setView] = useState<WebView | null>(null);
   const [pair, setPair] = useState<PairingCode | null>(null);
+  const [paired, setPaired] = useState(false);
   const [draft, setDraft] = useState<WebSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'link' | null>(null);
 
   useEffect(() => {
     if (isWeb()) return;
-    const load = () => void webAccessApi.view().then(setView, (e) => setError(errorText(e)));
+    const load = () =>
+      void webAccessApi.view().then((v) => {
+        setView(v);
+        // The code was used (or expired) on the server: the QR goes away.
+        if (v.pairingExpiresAt === null) {
+          setPair((p) => {
+            if (p && p.expiresAt > Date.now()) setPaired(true);
+            return null;
+          });
+        }
+      }, (e) => setError(errorText(e)));
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, pair ? 2000 : 5000);
     return () => clearInterval(t);
+  }, [pair]);
+
+  useEffect(() => {
+    if (!pair) return;
+    const t = setTimeout(() => setPair(null), Math.max(0, pair.expiresAt - Date.now()));
+    return () => clearTimeout(t);
+  }, [pair]);
+
+  // Leaving the screen invalidates the code that was on display.
+  useEffect(() => {
+    if (isWeb()) return;
+    return () => void webAccessApi.cancelPair().catch(() => undefined);
   }, []);
 
   if (isWeb()) return null;
@@ -48,6 +99,7 @@ export function WebAccessSection() {
 
   const generate = async () => {
     setError(null);
+    setPaired(false);
     try {
       setPair(await webAccessApi.pair());
     } catch (e) {
@@ -55,10 +107,10 @@ export function WebAccessSection() {
     }
   };
 
-  const copyUrl = async (url: string) => {
-    await api.copy(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+  const copyLink = async (link: string) => {
+    await api.copy(link);
+    setCopied('link');
+    setTimeout(() => setCopied(null), 1800);
   };
 
   if (!view) return <section className="panel web-access" style={{ padding: 20 }}>{error ? <div className="error">{error}</div> : <span className="spinner" />}</section>;
@@ -66,7 +118,7 @@ export function WebAccessSection() {
   const { settings, status, devices } = view;
   const form = draft ?? settings;
   const patch = (change: Partial<WebSettings>) => setDraft({ ...form, ...change });
-  const pairingLive = pair && pair.expiresAt > Date.now();
+  const link = pair ? pairingLink(settings.publicUrl, pair.code) : '';
 
   return (
     <section className="panel web-access" style={{ padding: 20, gap: 14 }}>
@@ -92,33 +144,35 @@ export function WebAccessSection() {
             {status.message}
             {status.listening && ` ${plural(status.clients, 'aparelho conectado agora', 'aparelhos conectados agora')}.`}
           </div>
-          <div className="web-url">
-            <code>{settings.publicUrl}</code>
-            <button type="button" className="btn" onClick={() => void copyUrl(settings.publicUrl)}>{copied ? 'Copiado' : 'Copiar endereço'}</button>
-          </div>
 
           <div className="row">
             <button type="button" className="btn btn-dark" disabled={!status.listening} onClick={() => void generate()}>Gerar código de pareamento</button>
             <span className="small muted">Vale 10 minutos e serve uma vez.</span>
           </div>
-          {pairingLive && (
+          {pair && (
             <div className="web-code-box" role="status">
-              <span className="web-code-value">{pair.code}</span>
-              <span className="small">Digite no aparelho novo; <Countdown until={pair.expiresAt} />.</span>
+              <div className="web-pair">
+                <QrCode text={link} label="QR code de pareamento: abre o site já pareando este aparelho" />
+                <div className="web-pair-side">
+                  <span style={{ fontWeight: 600 }}>Escaneie com a câmera do celular</span>
+                  <span className="small">O link abre o site e pareia na hora; <Countdown until={pair.expiresAt} />.</span>
+                  <div className="web-url">
+                    <code>{link}</code>
+                    <button type="button" className="btn" onClick={() => void copyLink(link)}>{copied === 'link' ? 'Copiado' : 'Copiar link'}</button>
+                  </div>
+                  <span className="small">Ou abra {settings.publicUrl} e digite o código:</span>
+                  <span className="web-code-value">{pair.code}</span>
+                </div>
+              </div>
             </div>
           )}
+          {paired && !pair && <div className="small" style={{ color: 'var(--teal-ink)' }} role="status">Aparelho pareado.</div>}
 
           <div>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Aparelhos pareados</div>
             {devices.length === 0 && <p className="small muted">Nenhum aparelho pareado.</p>}
             {devices.map((d) => (
-              <div key={d.id} className="web-device">
-                <div>
-                  <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{d.name}</div>
-                  <div className="small muted">Pareado em {stamp(d.createdAt)} · visto por último em {stamp(d.lastSeenAt)}</div>
-                </div>
-                <button type="button" className="btn" onClick={() => void run(webAccessApi.revoke(d.id))}>Revogar</button>
-              </div>
+              <DeviceRow key={`${d.id}:${d.name}`} {...d} onRename={(id, name) => void run(webAccessApi.rename(id, name))} onRevoke={(id) => void run(webAccessApi.revoke(id))} />
             ))}
           </div>
 
@@ -144,6 +198,10 @@ export function WebAccessSection() {
               <label>
                 Caminho
                 <input className="text-input mono" value={form.basePath} onChange={(e) => patch({ basePath: e.target.value.trim() })} />
+              </label>
+              <label>
+                Proxy confiável (CIDR)
+                <input className="text-input mono" value={form.trustedProxy} onChange={(e) => patch({ trustedProxy: e.target.value.trim() })} />
               </label>
               <label className="wide">
                 Endereço público

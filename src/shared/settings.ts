@@ -36,6 +36,8 @@ export interface WebSettings {
   port: number;
   basePath: string;
   publicUrl: string;
+  // IPv4 CIDR of the reverse proxy: only a peer inside it (or loopback) is believed about X-Real-IP and X-Forwarded-Proto.
+  trustedProxy: string;
   allowExternalEffects: boolean;
 }
 
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
     port: 4330,
     basePath: '/cerimonias/',
     publicUrl: 'https://koala.fortics.dev/cerimonias/',
+    trustedProxy: '172.18.0.0/16',
     allowExternalEffects: false,
   },
 };
