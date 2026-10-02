@@ -1,4 +1,5 @@
 import { BARGE_DEFAULTS, bargeInit, bargeStep } from './barge';
+import { isIos } from './audioSession';
 import { rmsOf } from './vad';
 
 // Listens to the microphone only while an agent's voice plays and a screen can take a recording; the moment the person
@@ -83,7 +84,8 @@ function fire(m: Monitor): void {
 
 /** `playRms` is the level of what is being played right now; it is what the microphone has to clearly exceed. */
 export async function startMonitor(playRms: () => number): Promise<void> {
-  if (!enabled || listeners.size === 0 || monitor) return;
+  // iOS can only listen in 'play-and-record', which moves the agent's voice to the earpiece: no barge-in there.
+  if (!enabled || listeners.size === 0 || monitor || isIos()) return;
   const mine = ++generation;
   let mic: MediaStream;
   try {

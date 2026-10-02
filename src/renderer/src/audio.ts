@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SETTINGS } from '../../shared/settings';
 import type { SpeechSegment, Voice } from '../../shared/types';
 import { api } from './api';
+import { hasAudioSession, isIos, setAudioSession } from './audioSession';
 import { type Handoff, startMonitor, stopMonitor, subscribeBarge, takeHandoff } from './bargeMonitor';
 import { type Placed, placeSegment, speechProgressAt, trimRange } from './speech';
 import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
@@ -87,14 +88,9 @@ function silentWav(): string {
   return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 }
 
-function isIos(): boolean {
-  return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
-}
-
 function preferPlaybackSession(): boolean {
-  const nav = navigator as Navigator & { audioSession?: { type: string } };
-  if (!nav.audioSession) return false;
-  nav.audioSession.type = 'playback';
+  if (!hasAudioSession()) return false;
+  setAudioSession('playback');
   return true;
 }
 
@@ -474,9 +470,11 @@ export function useRecorder(onSilence?: () => void) {
     autoStopped.current = false;
     let stream: MediaStream;
     try {
+      if (!handoff) setAudioSession('play-and-record');
       stream = handoff?.stream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
     } catch (e) {
       handoff?.release();
+      setAudioSession('playback');
       throw e;
     }
     const mimeType = recordingType();
@@ -504,6 +502,7 @@ export function useRecorder(onSilence?: () => void) {
     rec.stop();
     await stopped;
     for (const track of rec.stream.getTracks()) track.stop();
+    setAudioSession('playback');
     handoff?.release();
     setRecording(false);
     return new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' }).arrayBuffer();
