@@ -74,6 +74,8 @@ export interface VoiceCheck {
   canInstall: boolean;
   /** The microphone is checked by the screen (getUserMedia), not here. */
   microphone: 'renderer';
+  /** A sentence for the screens that only show text (the wizard), in the app language. */
+  message?: string;
 }
 
 export interface VoiceInstallOptions {
@@ -85,10 +87,14 @@ export interface VoiceInstallOptions {
   enable?: boolean;
 }
 
+/**
+ * `message` is a sentence in the app language for the screens that only show text (the wizard). The screens that map the codes themselves
+ * ignore it. On a failure `detail` has what the tool printed, untranslated, for the error log pane.
+ */
 export type VoiceInstallResult =
-  | { ok: true; enabled: boolean; sttModel: SttModel; engine: VoiceEngine }
-  | { ok: false; cancelled: true }
-  | { ok: false; cancelled: false; phase: VoicePhase; code: 'edge-not-acknowledged' | 'kokoro-missing' | 'busy' | 'no-uv' | 'failed'; message: string };
+  | { ok: true; enabled: boolean; sttModel: SttModel; engine: VoiceEngine; message?: string }
+  | { ok: false; cancelled: true; message?: string }
+  | { ok: false; cancelled: false; phase: VoicePhase; code: 'edge-not-acknowledged' | 'kokoro-missing' | 'busy' | 'no-uv' | 'failed'; message: string; detail?: string };
 
 export interface VoiceStatus {
   enabled: boolean;
@@ -112,6 +118,8 @@ export interface VoiceTestResult {
   speakMs: number;
   listenMs: number;
   error?: string;
+  /** A sentence in the app language, for the screens that only show text. */
+  message?: string;
 }
 
 export interface VoiceUninstallResult {

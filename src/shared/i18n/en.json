@@ -163,5 +163,11 @@
   "by.voice": "by voice",
   "by.voice.novoice": "by text",
   "gate.assisted.ask": "ask by voice or by text",
-  "gate.assisted.ask.novoice": "ask by text"
+  "gate.assisted.ask.novoice": "ask by text",
+  "voice.check.ready": "This machine works: {python}, uv {uv}, {free} free. Kokoro (local): {kokoro}.",
+  "voice.check.installed": "Voice is already installed ({deps}). Kokoro (local): {kokoro}.",
+  "voice.check.kokoro.yes": "available",
+  "voice.check.kokoro.no": "unavailable (the model files are missing)",
+  "voice.check.free.unknown": "free space unknown",
+  "voice.install.ok": "Voice installed and ready."
 }

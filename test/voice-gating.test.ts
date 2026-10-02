@@ -180,6 +180,17 @@ describe('the voice:* channels', () => {
     expect(call<{ running: boolean }>('voice:status').running).toBe(false);
   });
 
+  it('answers the wizard step: check takes its options object, every result carries a sentence in the app language', async () => {
+    const check = await call<{ message: string; installed: { models: Record<string, boolean> } }>('voice:check', { engine: 'edge', sttModel: 'tiny' });
+    expect(check.message.length).toBeGreaterThan(10);
+    expect(check.installed.models).toHaveProperty('tiny');
+    const refused = call<Promise<{ ok: boolean; code: string; message: string; detail: string }>>('voice:install', { engine: 'edge', sttModel: 'tiny' });
+    await expect(refused).resolves.toMatchObject({ ok: false, code: 'edge-not-acknowledged', message: expect.stringContaining('Microsoft') });
+    const unknown = await call<Promise<{ ok: boolean; code: string }>>('voice:install', { engine: 'edge', sttModel: 'medium', acknowledgeEdge: true });
+    expect(unknown).toMatchObject({ ok: false, code: 'failed' });
+    expect(call<boolean>('voice:install-cancel')).toBe(false);
+  });
+
   it('the setup channels stay out of reach of a paired browser, the status does not', async () => {
     const { webAccess } = await import('../src/main/webPolicy');
     for (const channel of ['voice:check', 'voice:install', 'voice:install-cancel', 'voice:test', 'voice:uninstall', 'voice:enable']) expect(webAccess(channel), channel).toBe('deny');

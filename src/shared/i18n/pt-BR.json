@@ -163,5 +163,11 @@
   "by.voice": "por voz",
   "by.voice.novoice": "por texto",
   "gate.assisted.ask": "pergunte por voz ou por texto",
-  "gate.assisted.ask.novoice": "pergunte por texto"
+  "gate.assisted.ask.novoice": "pergunte por texto",
+  "voice.check.ready": "A máquina serve: {python}, uv {uv}, {free} livres. Kokoro (local): {kokoro}.",
+  "voice.check.installed": "A voz já está instalada ({deps}). Kokoro (local): {kokoro}.",
+  "voice.check.kokoro.yes": "disponível",
+  "voice.check.kokoro.no": "indisponível (faltam os arquivos do modelo)",
+  "voice.check.free.unknown": "espaço desconhecido",
+  "voice.install.ok": "Voz instalada e pronta."
 }
