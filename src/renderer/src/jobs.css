@@ -1,5 +1,5 @@
 /* Jobs dock: floating button, panel and completion toasts (src/renderer/src/JobsDock.tsx). Tokens only. */
-.jobs-layer { position: fixed; right: max(12px, env(safe-area-inset-right)); z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100vw - 24px); pointer-events: none; transition: bottom 120ms ease; }
+.jobs-layer { position: fixed; right: max(12px, env(safe-area-inset-right)); z-index: 55; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100vw - 24px); pointer-events: none; transition: bottom 120ms ease; }
 .jobs-layer > * { pointer-events: auto; }
 .jobs-layer > .sr-only { pointer-events: none; }
 .jobs-toasts { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
@@ -21,6 +21,7 @@
 .jobs-panel { width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 14px 36px -14px color-mix(in srgb, var(--night) 60%, transparent); }
 .jobs-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line-2); }
 .jobs-panel-head h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.jobs-empty { margin: 0; padding: 14px; font-size: 14px; color: var(--muted); }
 .jobs-panel ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
 .jobs-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--line-2); }
 .jobs-item:last-child { border-bottom: 0; }

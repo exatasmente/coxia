@@ -12,6 +12,7 @@ const TOAST_MS = 10_000;
 const FAB = 52;
 const GAP = 12;
 const AVOID = '.composer, .composer-panel, .outbox-item';
+export const JOBS_OPEN = 'cerimonias:jobs-open';
 
 interface Toast {
   id: number;
@@ -89,6 +90,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   const [announce, setAnnounce] = useState('');
   const fab = useRef<HTMLButtonElement>(null);
   const layer = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const toastId = useRef(0);
   const here = useRef(screen);
   here.current = screen;
@@ -128,10 +130,12 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       setOpen(false);
-      fab.current?.focus();
+      const back = opener.current?.isConnected ? opener.current : fab.current;
+      back?.focus();
     };
     const onPointer = (e: PointerEvent) => {
-      if (!layer.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as HTMLElement;
+      if (!layer.current?.contains(target) && !target.closest('[aria-label="Execuções"]')) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointer);
@@ -141,9 +145,15 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     };
   }, [open]);
 
+  // The bell in the top bar of Hoje opens the same panel, even when there is nothing to show yet.
   useEffect(() => {
-    if (!shown.length) setOpen(false);
-  }, [shown.length]);
+    const onOpen = () => {
+      opener.current = document.activeElement as HTMLElement | null;
+      setOpen(true);
+    };
+    window.addEventListener(JOBS_OPEN, onOpen);
+    return () => window.removeEventListener(JOBS_OPEN, onOpen);
+  }, []);
 
   // Completion: a toast when the person is somewhere else in the app, a system notification when the window is out of sight.
   useEffect(
@@ -176,7 +186,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     : '';
 
   return (
-    <div className="jobs-layer" ref={layer} style={{ bottom: `calc(max(16px, env(safe-area-inset-bottom)) + ${lift}px)` }}>
+    <div className="jobs-layer" ref={layer} style={{ bottom: `calc(var(--bottom-nav-h, env(safe-area-inset-bottom, 0px)) + 16px + ${lift}px)` }}>
       <div className="sr-only" role="status" aria-live="polite">{announce}</div>
       <div className="jobs-toasts">
         {toasts.map((t) => (
@@ -186,14 +196,15 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
           </div>
         ))}
       </div>
-      {open && shown.length > 0 && (
-        <section id="jobs-panel" className="jobs-panel" aria-label="Tarefas do agente" style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 64) }}>
+      {open && (
+        <section id="jobs-panel" className="jobs-panel" aria-label="Tarefas do agente" style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 96) }}>
           <header className="jobs-panel-head">
             <h2>Tarefas do agente</h2>
             {shown.some((j) => j.status !== 'running') && (
               <button type="button" className="jobs-link" onClick={() => jobs.clearFinished()}>Limpar concluídas</button>
             )}
           </header>
+          {!shown.length && <p className="jobs-empty">Nenhuma execução em andamento nem para ver.</p>}
           <ul>
             {shown.map((j) => (
               <li key={j.key} className={`jobs-item jobs-${j.status}`}>
@@ -221,7 +232,10 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
           aria-label={label}
           aria-expanded={open}
           aria-controls="jobs-panel"
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => {
+            opener.current = fab.current;
+            setOpen((o) => !o);
+          }}
         >
           {running ? <span className="spinner" aria-hidden="true" /> : <Icon kind={failed ? 'alert' : 'check'} />}
           <span className="jobs-badge" aria-hidden="true">{shown.length}</span>
