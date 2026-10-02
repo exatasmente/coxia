@@ -1,0 +1,31 @@
+/* Custo: scope toggle, per-workspace breakdown and the day/ceremony lines. Phone first (360 to 430 px), 44 px targets. */
+.custo-scope { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.custo-scope-note { margin: 0; }
+.custo-seg { display: flex; gap: 8px; flex-wrap: wrap; }
+.custo-seg .filter { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; }
+
+.custo-line { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+.custo-line > .custo-bar { flex: 1 1 120px; min-width: 80px; }
+.custo-label { flex: 0 0 92px; }
+.custo-label-wide { flex: 0 0 150px; }
+.custo-cost { flex: 0 0 76px; text-align: right; font-weight: 600; }
+.custo-meta { flex: 0 0 100px; text-align: right; }
+
+.custo-ws-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.custo-ws { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line-3); min-width: 0; }
+.custo-ws:first-child { border-top: 0; }
+.custo-ws-name { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.custo-ws-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; overflow-wrap: anywhere; }
+.custo-figs { display: flex; gap: 16px; flex: 0 1 auto; }
+.custo-fig { display: flex; flex-direction: column; align-items: flex-end; min-width: 72px; }
+.custo-fig > span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 480px) {
+  .custo-label, .custo-label-wide { flex: 1 1 100%; }
+  .custo-line > .custo-bar { flex: 1 1 0; }
+  .custo-cost { flex: 0 0 auto; }
+  .custo-meta { flex: 1 1 100%; text-align: left; }
+  .custo-seg .filter { flex: 1 1 100%; justify-content: center; }
+  .custo-figs { flex: 1 1 100%; justify-content: space-between; gap: 8px; }
+  .custo-fig { align-items: flex-start; min-width: 0; flex: 1 1 0; }
+}
