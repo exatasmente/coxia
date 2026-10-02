@@ -2,10 +2,11 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from 're
 import type { Voice } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, clock, errorText, plural, shortRef } from '../api';
-import { type usePlayer, useRecorder } from '../audio';
+import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
+import { FixHeard } from './FixHeard';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
 
@@ -125,7 +126,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     setPhase('transcribing');
     let text = '';
     try {
-      text = (await api.transcribe(audio)).trim();
+      text = await transcribeAudio(audio);
     } catch (e) {
       setError(`Falha na transcrição: ${errorText(e)}`);
       setPhase('idle');
@@ -337,7 +338,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <div key={`${l.at}-${i}`} className="log-line">
                     <span className="at">{l.at}</span>
                     <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
-                    <span className="text">{l.text}</span>
+                    <span className="text">{l.text}{l.who === 'Você' && <FixHeard text={l.text} />}</span>
                     {spoken?.voice && (
                       <ReplayButton
                         playing={player.speaking === spoken.who && player.current === l}

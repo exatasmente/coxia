@@ -1,32 +1,36 @@
 // Glossary of terms for both directions of the voice: how the synthesized voice says a term,
 // and how the transcription usually mishears it (fixed back to the term).
 
+import type { VoiceEngine } from './types';
+
 export interface Term {
   term: string;
   // empty: the voice reads the term as written
   say: string;
+  // Kokoro reads English words worse than Edge: when set it replaces `say` for that engine
+  sayKokoro?: string;
   // variants the transcription produces, replaced by the term
   heard: string[];
 }
 
 export const DEFAULT_GLOSSARY: Term[] = [
-  { term: 'sz4', say: 'ésse zê quatro', heard: ['SZ 4', 'esse zê quatro', 'esse z quatro'] },
-  { term: 'sz-playbook', say: 'ésse zê plêibuk', heard: ['SZ playbook', 'esse zê playbook'] },
-  { term: 'hub-whatsapp', say: 'hub uótsap', heard: ['hub WhatsApp', 'hub whats app', 'rub WhatsApp'] },
-  { term: 'new-agent', say: 'niú êidjent', heard: ['new agent', 'niu agent'] },
+  { term: 'sz4', say: 'ésse zê quatro', sayKokoro: 'esse zeta quatro', heard: ['SZ 4', 'esse zê quatro', 'esse z quatro', 'SC-4', 'SC4', 'SC-Z4'] },
+  { term: 'sz-playbook', say: '', heard: ['SZ playbook', 'esse zê playbook', 'szplaybook'] },
+  { term: 'hub-whatsapp', say: 'hub uótsap', heard: ['hub WhatsApp', 'hub whats app', 'rub WhatsApp', 'Rubio WhatsApp', 'Rubio-whatsapp', 'Ruby WhatsApp'] },
+  { term: 'new-agent', say: 'niú agent', sayKokoro: 'niú êidjent', heard: ['new agent', 'niu agent', 'New Age', 'Neu Agente'] },
   { term: 'QA', say: 'quiu ei', heard: ['Q&A', 'Q.A.', 'kiu ei', 'quiu ei'] },
   { term: 'MR', say: '', heard: ['M.R.', 'emerre', 'eme erre'] },
   { term: 'merge', say: '', heard: ['merdi', 'mérgi', 'mergi', 'merdj'] },
   { term: 'deploy', say: '', heard: ['deploi', 'diploy', 'diplói'] },
-  { term: 'pipeline', say: '', heard: ['pipe line', 'paipline', 'paipelaine'] },
-  { term: 'hotfix', say: '', heard: ['hot fix', 'rótfix'] },
+  { term: 'pipeline', say: '', sayKokoro: 'páipilaine', heard: ['pipe line', 'paipline', 'paipelaine', 'Pipelini'] },
+  { term: 'hotfix', say: '', heard: ['hot fix', 'rótfix', 'Otifix', 'WatchFix'] },
   { term: 'rebase', say: '', heard: ['ribeis', 'rebeis'] },
-  { term: 'Gate', say: '', heard: ['gueite', 'guêit'] },
-  { term: 'pré-daily', say: '', heard: ['pre daily', 'pré deili', 'pré-deili'] },
-  { term: 'daily', say: '', heard: ['deili'] },
-  { term: 'GitLab', say: '', heard: ['git lab', 'guitlab'] },
-  { term: 'Teams', say: '', heard: ['tíms'] },
-  { term: 'Claude Code', say: '', heard: ['cloud code', 'clod code'] },
+  { term: 'Gate', say: '', sayKokoro: 'gueite', heard: ['gueite', 'guêit', 'GAT'] },
+  { term: 'pré-daily', say: '', heard: ['pre daily', 'pré deili', 'pré-deili', 'predale'] },
+  { term: 'daily', say: '', heard: ['deili', 'Daili'] },
+  { term: 'GitLab', say: '', heard: ['git lab', 'guitlab', 'JitLab', 'githlab'] },
+  { term: 'Teams', say: '', heard: ['tíms', 'TAMS', 'Tiamz'] },
+  { term: 'Claude Code', say: '', heard: ['cloud code', 'clod code', 'clode code', 'cloud codi'] },
 ];
 
 const MAX_TERMS = 300;
@@ -61,7 +65,11 @@ function replaceAll(text: string, pairs: { from: string; to: string }[]): string
   return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => done[Number(i)]);
 }
 
-export function spoken(text: string, terms: Term[]): string {
+export function pronunciation(t: Term, engine: VoiceEngine): string {
+  return ((engine === 'kokoro' ? t.sayKokoro?.trim() : '') || t.say).trim();
+}
+
+export function spoken(text: string, terms: Term[], engine: VoiceEngine): string {
   const refs = text
     // "sz4!9302" reads as "sz4, MR 9302"; "#15499" as "15499"
     .replace(/(\S)!(\d+)/g, '$1, MR $2')
@@ -69,7 +77,7 @@ export function spoken(text: string, terms: Term[]): string {
     .replace(/#(\d+)/g, '$1');
   return replaceAll(
     refs,
-    terms.filter((t) => t.say.trim()).map((t) => ({ from: t.term, to: t.say.trim() })),
+    terms.filter((t) => pronunciation(t, engine)).map((t) => ({ from: t.term, to: pronunciation(t, engine) })),
   );
 }
 
@@ -108,7 +116,8 @@ export function sanitizeGlossary(input: unknown): Term[] {
       .map(clean)
       .filter((h) => h && h.toLowerCase() !== term.toLowerCase())
       .slice(0, MAX_HEARD);
-    out.push({ term, say: clean(r.say), heard });
+    const sayKokoro = clean(r.sayKokoro);
+    out.push(sayKokoro ? { term, say: clean(r.say), sayKokoro, heard } : { term, say: clean(r.say), heard });
   }
   return out;
 }

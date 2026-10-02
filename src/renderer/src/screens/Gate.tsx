@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Card, GateOption, GateView } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
-import { type usePlayer, useRecorder } from '../audio';
+import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { Bubble } from './Bubble';
+import { FixHeard } from './FixHeard';
 import { ContinueInClaude } from './ContinueInClaude';
 import { Diagram } from './Diagram';
 import { BackIcon, MicIcon } from './icons';
@@ -87,7 +88,7 @@ export function Gate({
     if (!audio || !gate) return;
     setBusy('Transcrevendo…');
     try {
-      const text = (await api.transcribe(audio)).trim();
+      const text = await transcribeAudio(audio);
       setBusy(null);
       if (!text) return;
       if (!roundDone) answer({ text });
@@ -198,7 +199,7 @@ export function Gate({
                       );
                     })}
                   </div>
-                  {q.answer?.other && <div className="item"><span className="small">Sua resposta: “{q.answer.other}”</span>{q.answer.comment && <span className="small muted">{q.answer.comment}</span>}</div>}
+                  {q.answer?.other && <div className="item"><span className="small">Sua resposta: “{q.answer.other}”</span><FixHeard text={q.answer.other} />{q.answer.comment && <span className="small muted">{q.answer.comment}</span>}</div>}
                   {roundDone && q.explanation && (
                     <div className="item" style={{ background: q.answer?.correct ? 'var(--teal-soft)' : 'var(--amber-soft)', borderColor: q.answer?.correct ? 'var(--teal-line)' : 'var(--amber-line)' }}>
                       <span className="small">{q.explanation}</span>

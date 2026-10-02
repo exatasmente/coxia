@@ -335,6 +335,30 @@ export function usePlayer() {
   return { speaking, current: item, say, stop };
 }
 
+// Safari (iOS) records only MP4/AAC; the recognizer reads any of these.
+const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+
+function recordingType(): string | undefined {
+  return RECORDING_TYPES.find((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t));
+}
+
+// What the recognizer returned in this session, so a chat message that came from the voice can offer to teach the glossary.
+const transcripts = new Set<string>();
+
+export async function transcribeAudio(audio: ArrayBuffer): Promise<string> {
+  const text = await api.transcribe(audio);
+  if (text) {
+    transcripts.delete(text);
+    transcripts.add(text);
+    if (transcripts.size > 100) transcripts.delete(transcripts.values().next().value as string);
+  }
+  return text;
+}
+
+export function wasTranscribed(text: string): boolean {
+  return transcripts.has(text.trim());
+}
+
 const SAMPLE_MS = 50;
 
 // onSilence fires once per recording, when the speaker stopped talking (or hit the time limit); the screen then sends as if space was pressed.
@@ -402,7 +426,8 @@ export function useRecorder(onSilence?: () => void) {
       handoff?.release();
       throw e;
     }
-    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    const mimeType = recordingType();
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     chunks.current = [];
     rec.ondataavailable = (e) => chunks.current.push(e.data);
     rec.start();
@@ -428,7 +453,7 @@ export function useRecorder(onSilence?: () => void) {
     for (const track of rec.stream.getTracks()) track.stop();
     handoff?.release();
     setRecording(false);
-    return new Blob(chunks.current, { type: 'audio/webm' }).arrayBuffer();
+    return new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' }).arrayBuffer();
   }, [stopMeter]);
 
   useEffect(() => subscribeBarge(() => !recorder.current && silenceRef.current?.()), []);
@@ -462,7 +487,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
     if (!audio) return;
     setTranscribing(true);
     try {
-      const text = (await api.transcribe(audio)).trim();
+      const text = (await transcribeAudio(audio)).trim();
       setTranscribing(false);
       if (text) await onText(text);
     } catch (e) {

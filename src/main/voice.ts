@@ -138,7 +138,7 @@ export function stopVoice(): void {
 export function planSpeech(text: string, wanted: Voice, engine: VoiceEngine, opts: { prosody: boolean; glossary: Term[] }): SpeechSegment[] {
   const voice = resolveVoice(wanted, engine);
   // the tone is read from the written terms, the voice gets their pronunciation
-  const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary) }));
+  const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary, engine) }));
   if (needsJoin(plan)) {
     return plan.map((s) => ({
       text: s.text,
@@ -150,7 +150,7 @@ export function planSpeech(text: string, wanted: Voice, engine: VoiceEngine, opt
       pauseMs: s.pauseMs,
     }));
   }
-  const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary);
+  const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary, engine);
   return said.trim() ? [{ text: said, engine, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, pauseMs: 0 }] : [];
 }
 
@@ -182,8 +182,16 @@ export function cancelSpeech(token: string): void {
   for (const id of live.get(token) ?? []) proc?.stdin.write(`${JSON.stringify({ id: nextId++, cmd: 'cancel', target: id })}\n`);
 }
 
+// The browser picks the container (WebM in Chromium, MP4 in Safari); the extension only helps the decoder guess.
+export function recordingExtension(audio: ArrayBuffer): 'webm' | 'mp4' | 'ogg' {
+  const head = new TextDecoder('latin1').decode(new Uint8Array(audio, 0, Math.min(12, audio.byteLength)));
+  if (head.slice(4, 8) === 'ftyp') return 'mp4';
+  if (head.startsWith('OggS')) return 'ogg';
+  return 'webm';
+}
+
 export async function transcribe(audio: ArrayBuffer, glossary: Term[]): Promise<string> {
-  const path = join(AUDIO, `stt-${Date.now()}.webm`);
+  const path = join(AUDIO, `stt-${Date.now()}.${recordingExtension(audio)}`);
   writeFileSync(path, Buffer.from(audio));
   try {
     const r = await call({ cmd: 'stt', path, prompt: whisperHint(glossary) });
