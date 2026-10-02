@@ -342,7 +342,7 @@ describe('shell allowlist with git and secret files', () => {
 describe('agentHooks', () => {
   it('wires the path check before Read, Grep and Glob and the result check after Grep and Glob', () => {
     const hooks = agentHooks();
-    expect(hooks.PreToolUse?.map((h) => h.matcher)).toEqual(['Bash', 'Read|Grep|Glob']);
+    expect(hooks.PreToolUse?.map((h) => h.matcher)).toEqual(['Bash', 'Read|Grep|Glob', 'Grep|Glob']);
     expect(hooks.PreToolUse?.[1].hooks).toEqual([noSecrets]);
     expect(hooks.PostToolUse?.map((h) => h.matcher)).toEqual(['Grep|Glob']);
     expect(hooks.PostToolUse?.[0].hooks).toEqual([redactSecretResults]);
