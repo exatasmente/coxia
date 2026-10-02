@@ -176,7 +176,7 @@ export async function probeWithRuntime(rt: VcsRuntime, o: { issueProject: string
 export async function probeIntegration(request: VcsProbeRequest, deps: RuntimeDeps, cliDefault: (kind: VcsKind) => string | null = (k) => (k === 'gitlab' ? 'glab' : k === 'github' ? 'gh' : null)): Promise<VcsProbeResult> {
   const settings = settingsOfRequest(request, cliDefault(request.integration.kind));
   const typed = request.token?.trim();
-  const rt = buildRuntime(settings, typed ? { ...deps, token: () => typed } : deps);
+  const rt = buildRuntime(settings, typed ? { ...deps, token: () => typed, hasToken: () => true } : deps);
   const result = await probeWithRuntime(rt, { issueProject: request.issueProject ?? null, now: deps.now });
   // The typed token is never part of an answer; if a message echoed it, it is scrubbed.
   return typed ? JSON.parse(JSON.stringify(result).split(typed).join('[removed]')) : result;

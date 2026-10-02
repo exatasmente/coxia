@@ -249,9 +249,16 @@ describe('reads over the glab transport (the migrated user)', () => {
     const deps = { token: () => 't', env: () => ({}), run: (async () => '{}') as CliRun };
     expect(buildRuntime(settings({ preference: 'cli' }), deps).provider.transport).toBe('cli');
     expect(buildRuntime(settings({ preference: 'api' }), deps).provider.transport).toBe('api');
-    expect(buildRuntime(settings({ preference: 'auto' }), { ...deps, cliInstalled: () => true }).provider.transport).toBe('cli');
-    expect(buildRuntime(settings({ preference: 'auto' }), { ...deps, cliInstalled: () => false }).provider.transport).toBe('api');
+    expect(buildRuntime(settings({ preference: 'auto', secretRef: null }), { ...deps, cliInstalled: () => true }).provider.transport).toBe('cli');
+    expect(buildRuntime(settings({ preference: 'auto', secretRef: null }), { ...deps, cliInstalled: () => false }).provider.transport).toBe('api');
     expect(buildRuntime(settings({ preference: 'auto', cli: null }), deps).provider.transport).toBe('api');
+  });
+
+  it('auto follows the token: with one the API is used even when the CLI is installed', () => {
+    const deps = { token: () => 't', env: () => ({}), run: (async () => '{}') as CliRun, cliInstalled: () => true };
+    expect(buildRuntime(settings({ preference: 'auto' }), deps).provider.transport).toBe('api');
+    expect(buildRuntime(settings({ preference: 'auto' }), { ...deps, hasToken: () => false }).provider.transport).toBe('cli');
+    expect(buildRuntime(settings({ preference: 'cli' }), deps).provider.transport).toBe('cli');
   });
 });
 

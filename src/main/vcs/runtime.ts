@@ -32,6 +32,8 @@ export interface RuntimeDeps extends HttpDeps {
   env: () => NodeJS.ProcessEnv;
   run?: CliRun;
   cliInstalled?: (command: string) => boolean;
+  /** The integration has a credential for the API (a secret source, or a token typed for a probe). Default: it names a secretRef. */
+  hasToken?: (s: VcsSettings) => boolean;
   timeoutMs?: number;
 }
 
@@ -55,9 +57,15 @@ export function checkHost(host: string): string {
   return host;
 }
 
-export function useCli(s: VcsSettings, installed: (command: string) => boolean): boolean {
+/**
+ * Whether an integration talks to its host through the CLI. `cli` always does, `api` never. `auto` follows what the user set up: a token
+ * means the API (the user typed one for a reason, possibly for another host than the CLI is logged in to); without one, the CLI when it is
+ * installed. Bitbucket has no CLI.
+ */
+export function useCli(s: VcsSettings, installed: (command: string) => boolean, hasToken: boolean): boolean {
   if (s.kind === 'bitbucket' || !s.cli || s.preference === 'api') return false;
-  return s.preference === 'cli' || installed(s.cli);
+  if (s.preference === 'cli') return true;
+  return !hasToken && installed(s.cli);
 }
 
 function headersFor(s: VcsSettings, token: () => string): () => Record<string, string> {
@@ -74,7 +82,7 @@ function headersFor(s: VcsSettings, token: () => string): () => Record<string, s
 export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
   checkHost(s.host);
   const installed = deps.cliInstalled ?? (() => true);
-  const cli = useCli(s, installed);
+  const cli = useCli(s, installed, (deps.hasToken ?? ((x: VcsSettings) => !!x.secretRef))(s));
   const apiUrl = s.apiUrl || defaultApiUrl(s.kind, s.host);
   const http = (baseUrl: string) =>
     new HttpClient({ host: s.host, baseUrl, headers: headersFor(s, () => deps.token(s)), timeoutMs: deps.timeoutMs, deps: { fetch: deps.fetch, sleep: deps.sleep, now: deps.now } });

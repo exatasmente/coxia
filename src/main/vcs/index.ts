@@ -30,6 +30,11 @@ function cliInstalled(command: string): boolean {
   return known;
 }
 
+/** The integration has a secret source on this machine (a ref that names nothing is no token). */
+function hasToken(s: VcsSettings): boolean {
+  return !!s.secretRef && secrets().has(s.secretRef);
+}
+
 function token(s: VcsSettings): string {
   if (!s.secretRef) throw new VcsError('no_token', { id: s.id, ref: '-' });
   try {
@@ -69,7 +74,7 @@ function settingsOf(id: string | null): VcsSettings | null {
 
 /** The dependencies a runtime is built with: the secrets store, the process environment, and whatever the tests replaced. */
 export function vcsRuntimeDeps(): RuntimeDeps {
-  return { token, env: () => ({ ...process.env }), cliInstalled, ...override };
+  return { token, env: () => ({ ...process.env }), cliInstalled, hasToken, ...override };
 }
 
 /** The runtime of an integration (the primary one without an id), or null when the workspace has none. */
@@ -100,14 +105,13 @@ export function vcsReady(): boolean {
   if (fixed) return true;
   const s = settingsOf(null);
   if (!s) return false;
-  if (useCli(s, cliInstalled)) return true;
-  return !!s.secretRef && secrets().has(s.secretRef);
+  return useCli(s, cliInstalled, hasToken(s)) || hasToken(s);
 }
 
 /** The CLI the agents' read-only shell may use for the primary integration, or null (API only, Bitbucket, no integration). */
 export function vcsCliFor(): { kind: 'gitlab' | 'github'; command: string; host: string } | null {
   const s = settingsOf(null);
-  if (!s || s.kind === 'bitbucket' || !s.cli || !useCli(s, cliInstalled)) return null;
+  if (!s || s.kind === 'bitbucket' || !s.cli || !useCli(s, cliInstalled, hasToken(s))) return null;
   return { kind: s.kind, command: s.cli, host: s.host };
 }
 
