@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
@@ -65,27 +65,47 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
 }
 
 // Agents run on a third-party model: secret files never enter the context.
-export const SECRET_PATH = /(^|\/)\.env(rc)?($|[./*?])|\.env$|secret|credential|token|(^|[\/_.-])key$|\.pem$|(^|\/)\.(ssh|config|aws|docker)($|\/)|(^|\/)\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+// A name with secret/credential/token only counts when the file is not source code: TokenService.php and secret.service.ts
+// are code, token.json and config/secrets.yml are data. Anything else with such a name (no extension, .bak, .md) is held back.
+const CODE_EXT = [
+  'php', 'phtml', 'ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte', 'py', 'go', 'java', 'kt', 'kts', 'dart', 'rb', 'cs', 'rs', 'swift',
+  'c', 'h', 'cc', 'cpp', 'hpp', 'scala', 'ex', 'exs', 'lua', 'pl', 'sh', 'html', 'css', 'scss', 'less',
+];
+const SECRET_NAME = '(?=[\\s\\S]*(?:secret|credential|token))(?![\\s\\S]*\\.(?:' + CODE_EXT.join('|') + ')$)';
+const SECRET_KEYS = '(?:^|\\/)(?:\\.env(?:rc)?(?:$|[./*?])|\\.(?:ssh|config|aws|docker)(?:$|\\/)|\\.(?:netrc|npmrc|pypirc)$|id_(?:rsa|dsa|ecdsa|ed25519)[^/]*$)|\\.env$|(?:^|[\\/_.-])key$|\\.(?:pem|p12|pfx)$|\\.mcp\\.json$|\\.claude\\.json$';
+const NAME_RULE = new RegExp(`^${SECRET_NAME}`, 'i');
+const KEY_RULE = new RegExp(SECRET_KEYS, 'i');
+export const SECRET_PATH = new RegExp(`${NAME_RULE.source}|${KEY_RULE.source}`, 'i');
 
 // SECRET_PATH in gitignore syntax. Read deny rules are the layer that also reaches a Grep or Glob with no path
 // (the SDK turns them into case-insensitive ripgrep ignores placed after any glob the model passes); a hook never
-// sees what a path-less search will walk. The ~/ rules cover the home, outside the cwd.
+// sees what a path-less search will walk. A glob cannot say "unless it is code", so the name rules list the data
+// extensions; the hook and the result filter apply the full rule. The ~/ rules cover the home, outside the cwd.
+const SECRET_WORDS = ['secret', 'credential', 'token'];
+const DATA_EXT = ['json', 'yml', 'yaml', 'txt', 'ini', 'cfg', 'conf', 'toml', 'properties', 'xml'];
 export const SECRET_GLOBS = [
   '**/.env*',
   '**/*.env',
-  '**/*secret*',
-  '**/*credential*',
-  '**/*token*',
+  ...SECRET_WORDS.flatMap((w) => DATA_EXT.map((e) => `**/*${w}*.${e}`)),
+  '**/.git-credentials',
   '**/key',
   '**/*_key',
   '**/*-key',
   '**/*.key',
   '**/*.pem',
+  '**/*.p12',
+  '**/*.pfx',
+  '**/id_rsa*',
+  '**/id_dsa*',
+  '**/id_ecdsa*',
+  '**/id_ed25519*',
   '**/.ssh/**',
   '**/.config/**',
   '**/.aws/**',
   '**/.docker/**',
   '**/.netrc',
+  '**/.npmrc',
+  '**/.pypirc',
   '**/.mcp.json',
   '**/.claude.json',
   '~/.ssh/**',
@@ -93,6 +113,8 @@ export const SECRET_GLOBS = [
   '~/.aws/**',
   '~/.docker/**',
   '~/.netrc',
+  '~/.npmrc',
+  '~/.pypirc',
   '~/.claude.json',
   '~/.claude/*.json',
   '~/.claude/projects/**',
@@ -118,7 +140,17 @@ export function secretPath(p: string, cwd = process.cwd()): boolean {
   } catch {
     // does not exist: the written forms are all there is
   }
-  return forms.some((f) => SECRET_PATH.test(f) || inClaudeState(f));
+  const dir = isDirectory(abs);
+  return forms.some((f) => inClaudeState(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
+}
+
+// A directory named tokens/ has no extension to tell code from data: it can be searched, and the results are judged file by file.
+function isDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export const noSecrets: HookCallback = async (input) => {

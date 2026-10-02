@@ -201,6 +201,13 @@ describe('secret paths', () => {
     '/home/luiz/token.txt',
     '/home/luiz/KEY',
     '/home/luiz/.local/key',
+    '/home/luiz/projects/sz4/config/secrets.yml',
+    '/home/luiz/projects/sz4/storage/token.json',
+    '/home/luiz/projects/sz4/.npmrc',
+    '/home/luiz/projects/sz4/.pypirc',
+    '/home/luiz/certs/client.p12',
+    '/home/luiz/certs/client.pfx',
+    '/home/luiz/projects/sz4/id_rsa',
   ];
   it.each(blocked)('blocks Read of %s', async (file_path) => {
     expect(await decide(noSecrets, { tool_name: 'Read', tool_input: { file_path } })).toBe('deny');
@@ -222,6 +229,9 @@ describe('secret paths', () => {
     '/home/luiz/projects/sz4/config/database.php',
     '/home/luiz/projects/sz4-frontend/src/environments/index.ts',
     '/home/luiz/projects/sz4/.gitignore',
+    '/home/luiz/projects/sz4/app/Services/Auth/TokenService.php',
+    '/home/luiz/projects/sz4-backend/src/auth/secret.service.ts',
+    '/home/luiz/projects/sz4-frontend/src/stores/credentials.store.ts',
   ];
   it.each(allowed)('allows Read of %s', async (file_path) => {
     expect(await decide(noSecrets, { tool_name: 'Read', tool_input: { file_path } })).toBe('allow');
