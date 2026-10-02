@@ -1,13 +1,13 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
+import { type ChildProcess, type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Voice, VoiceEngine } from '../shared/types';
+import { PACKAGED, SIDECAR_DIR, VENV_DIR } from './paths';
+import { ensureVenv, venvPython } from './venv';
 
-const ROOT = join(import.meta.dirname, '../..');
-const PYTHON = join(ROOT, 'sidecar/.venv/bin/python');
-const SCRIPT = join(ROOT, 'sidecar/voice_sidecar.py');
+const SCRIPT = join(SIDECAR_DIR, 'voice_sidecar.py');
 const AUDIO = process.env.CERIMONIAS_AUDIO_DIR ?? join(tmpdir(), 'cerimonias-audio');
 
 export const MODERATOR: Voice = { voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+0%', pitch: '+0Hz', label: 'Thalita' };
@@ -55,34 +55,57 @@ type Reply = { id: number; text?: string; path?: string; error?: string; ready?:
 
 let proc: ChildProcessWithoutNullStreams | null = null;
 let ready = false;
+let starting: Promise<ChildProcessWithoutNullStreams> | null = null;
+let installer: ChildProcess | null = null;
 let nextId = 1;
 const waiting = new Map<number, (r: Reply) => void>();
 
-function sidecar(): ChildProcessWithoutNullStreams {
-  if (proc) return proc;
+function launch(python: string): ChildProcessWithoutNullStreams {
   mkdirSync(AUDIO, { recursive: true });
-  proc = spawn(PYTHON, [SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
-  createInterface({ input: proc.stdout }).on('line', (line) => {
+  const child = spawn(python, [SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
+  createInterface({ input: child.stdout }).on('line', (line) => {
     const r = JSON.parse(line) as Reply;
     if (r.ready) ready = true;
     waiting.get(r.id)?.(r);
     waiting.delete(r.id);
   });
-  proc.stderr.on('data', (d) => process.stderr.write(`[voice] ${d}`));
-  proc.on('exit', () => {
+  child.stderr.on('data', (d) => process.stderr.write(`[voice] ${d}`));
+  child.on('exit', () => {
     proc = null;
     ready = false;
     for (const [, resolve] of waiting) resolve({ id: -1, error: 'voice sidecar exited' });
     waiting.clear();
   });
-  return proc;
+  return child;
+}
+
+// Installed app: the venv is built on first use (uv, from requirements.txt). Dev: sidecar/.venv as before.
+async function sidecar(): Promise<ChildProcessWithoutNullStreams> {
+  if (proc) return proc;
+  starting ??= (async () => {
+    const python = PACKAGED
+      ? await ensureVenv(VENV_DIR, join(SIDECAR_DIR, 'requirements.txt'), (c) => (installer = c))
+      : venvPython(VENV_DIR);
+    proc = launch(python);
+    return proc;
+  })().finally(() => {
+    starting = null;
+    installer = null;
+  });
+  return starting;
 }
 
 function call(req: Record<string, unknown>): Promise<Reply> {
   const id = nextId++;
   return new Promise((resolve, reject) => {
     waiting.set(id, (r) => (r.error ? reject(new Error(r.error)) : resolve(r)));
-    sidecar().stdin.write(`${JSON.stringify({ id, ...req })}\n`);
+    sidecar().then(
+      (p) => p.stdin.write(`${JSON.stringify({ id, ...req })}\n`),
+      (e) => {
+        waiting.delete(id);
+        reject(e);
+      },
+    );
   });
 }
 
@@ -99,10 +122,11 @@ export async function voiceStatus(): Promise<{ alive: boolean; ready: boolean; p
 
 export function startVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
-  sidecar();
+  sidecar().catch((e) => console.error('[voice]', (e as Error).message));
 }
 
 export function stopVoice(): void {
+  installer?.kill();
   proc?.kill();
   rmSync(AUDIO, { recursive: true, force: true });
 }

@@ -8,7 +8,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dist": "electron-vite build && electron-builder --linux AppImage deb"
   },
   "type": "module",
   "dependencies": {
@@ -24,6 +25,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
@@ -34,5 +36,8 @@
     "esbuild@0.28.2": true,
     "electron@44.5.1": true
   },
-  "private": true
+  "private": true,
+  "author": "Luiz Neto",
+  "homepage": "https://dark.smartzap.com.br",
+  "desktopName": "cerimonias.desktop"
 }

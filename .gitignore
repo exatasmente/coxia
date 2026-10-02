@@ -8,3 +8,4 @@ scratch/
 .electron-dl.log
 sidecar/.venv-test/
 sidecar/models/
+dist/

@@ -3,6 +3,7 @@ import { MODEL_OPTIONS, type ModelRole, type Settings, type Theme } from '../../
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setSpeechEnabled } from '../audio';
+import { autostartApi } from '../autostartApi';
 import { applyTheme } from '../theme';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
@@ -37,10 +38,21 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [autostart, setAutostart] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.getSettings().then(setS, (e) => setError(errorText(e)));
+    autostartApi.get().then(setAutostart, () => setAutostart(false));
   }, []);
+
+  const toggleAutostart = async () => {
+    setError(null);
+    try {
+      setAutostart(await autostartApi.set(!autostart));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
 
   if (!s) return <div className="page"><div className="wrap">{error ? <div className="error">{error}</div> : <span className="spinner" />}</div></div>;
 
@@ -279,6 +291,19 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             ))}
           </div>
           <p className="small muted">{THEME_LABELS.find(([value]) => value === s.appearance.theme)?.[2]}</p>
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Início</h2>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={autostart === true} disabled={autostart === null} onChange={() => void toggleAutostart()} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Abrir ao entrar no sistema</span>
+              <span className="small muted">Começa só na bandeja, sem janela. Vale na hora, sem precisar salvar.</span>
+            </span>
+          </label>
         </section>
       </div>
     </div>

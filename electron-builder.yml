@@ -1,0 +1,31 @@
+appId: br.com.fortics.cerimonias
+productName: Cerimônias
+executableName: cerimonias
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  # The SDK's native Claude Code binary must be a real file to be executed.
+  - node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**
+extraResources:
+  - from: resources
+    to: resources
+  - from: sidecar
+    to: sidecar
+    filter:
+      - voice_sidecar.py
+      - requirements.txt
+linux:
+  icon: resources/icon.png
+  category: Office
+  maintainer: Luiz Neto <luiz.neto@fortics.com.br>
+  synopsis: Cerimônias por voz com agentes por atividade
+  syncDesktopName: true
+  target:
+    - AppImage
+    - deb
+deb:
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0]
