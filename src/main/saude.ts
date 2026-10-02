@@ -19,6 +19,8 @@ const LABELS: Record<string, string> = {
   status: 'Conferir status das atividades',
   release: 'Conferir release',
   watchers: 'Vigias',
+  efeitos: 'Conferir efeitos da ata',
+  retention: 'Limpeza de dados antigos',
   feedback: 'Feedback dos MRs',
   radar: 'Radar de trabalho paralelo',
   'gitlab-quick': 'Ações rápidas do GitLab',
