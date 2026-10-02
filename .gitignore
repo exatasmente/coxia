@@ -9,3 +9,4 @@ scratch/
 sidecar/.venv-test/
 sidecar/models/
 dist/
+release-notes.md

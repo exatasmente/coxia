@@ -1,0 +1,63 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please do not paste API keys, tokens or the content of your meetings. The error log (Health screen) can show what went wrong; check it before sharing.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Coxia version
+      description: Settings > Updates shows it.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - AppImage from a release
+        - .deb package
+        - Built from source (npm run dist)
+        - Development (npm run dev / npx electron .)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Distribution and version, desktop environment.
+      placeholder: Ubuntu 24.04, GNOME on Wayland
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Model provider in use
+      options:
+        - Claude Agent SDK
+        - OpenAI-compatible server (Ollama, LM Studio, ...)
+        - Not related to the model
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact anything private.
+      render: shell

@@ -1,0 +1,288 @@
+name: Release
+
+# A tag v<major>.<minor>.<patch>[-suffix] builds the PUBLIC packages (no Claude Agent SDK inside, see electron-builder.public.yml) and
+# uploads them to a DRAFT GitHub release. Nothing is visible to the apps until a person publishes the draft (RELEASING.md).
+# A suffix (-beta.1) makes it a pre-release on that update channel: the feed is beta-linux.yml instead of latest-linux.yml, which is what
+# the app reads when "Beta" is chosen in Settings.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: build and check the packages, upload them as workflow artifacts, create no release'
+        type: boolean
+        default: true
+      experimental_platforms:
+        description: 'Also build Windows (NSIS) and macOS (dmg, zip). UNSIGNED and untested: automatic updates there need code signing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Never let electron-builder go looking for signing identities or publish from a pull request.
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  prepare:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      channel: ${{ steps.meta.outputs.channel }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Match the tag with package.json
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ "$EVENT" = push ]; then
+            tag="$REF_NAME"
+            dry_run=false
+          else
+            tag="v$version"
+            dry_run="$DRY_RUN_INPUT"
+            if [ "$dry_run" != true ] && [ "$REF" != refs/heads/main ]; then
+              echo "::error::a real release started by hand must run from main, not from $REF"
+              exit 1
+            fi
+          fi
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::the tag is $tag but package.json says $version: run scripts/release.sh, or fix the version and re-tag"
+            exit 1
+          fi
+          prerelease=false
+          channel=latest
+          case "$version" in
+            *-*) prerelease=true; pre="${version#*-}"; channel="${pre%%.*}" ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "prerelease=$prerelease"
+            echo "channel=$channel"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag (version $version, channel $channel, prerelease: $prerelease, dry run: $dry_run)"
+
+  linux:
+    name: Linux (AppImage and deb)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # creates the draft release and uploads the files
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release notes from CHANGELOG.md
+        env:
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if scripts/release-notes.sh "$VERSION" > release-notes.md; then
+            echo "Using the CHANGELOG.md entry for $VERSION"
+          elif [ "$PRERELEASE" = true ]; then
+            echo "::warning::CHANGELOG.md has no entry for $VERSION; using a one-line note"
+            printf 'Pre-release %s. See CHANGELOG.md for what changed.\n' "$TAG" > release-notes.md
+          else
+            echo "::error::CHANGELOG.md has no entry for $VERSION: a final release needs one (scripts/release.sh writes it)"
+            exit 1
+          fi
+
+      - name: Build the public packages (dry run, nothing is published)
+        if: needs.prepare.outputs.dry_run == 'true'
+        run: >
+          npm run dist:public --
+          --publish never
+          -c.publish.channel="$CHANNEL"
+          -c.releaseInfo.releaseNotesFile=release-notes.md
+
+      - name: Build the public packages and upload them to the draft release
+        if: needs.prepare.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: >
+          npm run dist:public --
+          --publish always
+          -c.publish.channel="$CHANNEL"
+          -c.publish.owner="$OWNER"
+          -c.publish.repo="$REPO"
+          -c.releaseInfo.releaseName="$TAG"
+          -c.releaseInfo.releaseNotesFile=release-notes.md
+
+      - name: Check the files
+        run: scripts/verify-release-files.sh "$VERSION" dist
+
+      - name: Keep the draft a pre-release when the version has a suffix
+        if: needs.prepare.outputs.dry_run != 'true' && needs.prepare.outputs.prerelease == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # electron-builder creates either a draft or a published pre-release; GitHub allows both flags, so set the second one here.
+          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -n1)"
+          [ -n "$id" ] || { echo "::error::no draft release for $TAG"; exit 1; }
+          gh api --method PATCH "repos/$REPOSITORY/releases/$id" -F prerelease=true --jq '"draft=\(.draft) prerelease=\(.prerelease)"'
+
+      - name: Check what the draft release holds
+        if: needs.prepare.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          feed="$CHANNEL-linux.yml"
+          assets="$(gh api "repos/$REPOSITORY/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .assets[].name")"
+          echo "$assets"
+          for want in "cerimonias-$VERSION.AppImage" "cerimonias_${VERSION}_amd64.deb" "$feed"; do
+            echo "$assets" | grep -qxF "$want" || { echo "::error::the draft release is missing $want"; exit 1; }
+          done
+
+      - name: Keep the packages as a workflow artifact (dry run)
+        if: needs.prepare.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-packages-${{ needs.prepare.outputs.version }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.yml
+            !dist/builder-debug.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---- optional, off by default --------------------------------------------------------------------------------------------------------
+  # Windows and macOS builds are UNSIGNED and untested. electron-updater on macOS refuses unsigned builds, and Windows warns about them:
+  # automatic updates there only work once code signing is configured (docs/updates.md). They are attached to the same draft release.
+  windows:
+    name: Windows NSIS (experimental, unsigned)
+    if: inputs.experimental_platforms == true
+    needs: [prepare, linux]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH: ${{ needs.prepare.outputs.dry_run == 'true' && 'never' || 'always' }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          npx electron-vite build
+          npx electron-builder --config electron-builder.public.yml --win nsis --publish "$PUBLISH" -c.publish.owner="$OWNER" -c.publish.repo="$REPO"
+
+      - name: Keep the files as a workflow artifact (dry run)
+        if: needs.prepare.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-packages-${{ needs.prepare.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.yml
+            !dist/builder-debug.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: macOS dmg and zip (experimental, unsigned)
+    if: inputs.experimental_platforms == true
+    needs: [prepare, linux]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH: ${{ needs.prepare.outputs.dry_run == 'true' && 'never' || 'always' }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          npx electron-vite build
+          npx electron-builder --config electron-builder.public.yml --mac dmg zip --publish "$PUBLISH" -c.publish.owner="$OWNER" -c.publish.repo="$REPO"
+
+      - name: Keep the files as a workflow artifact (dry run)
+        if: needs.prepare.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-packages-${{ needs.prepare.outputs.version }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+            dist/*.yml
+            !dist/builder-debug.yml
+          if-no-files-found: error
+          retention-days: 7
