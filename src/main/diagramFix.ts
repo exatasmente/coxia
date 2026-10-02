@@ -13,7 +13,7 @@ function fence(code: string): string {
 
 async function ask(code: string, error: string): Promise<string> {
   const r = await askAgent<{ code: string }>(
-    'reply',
+    'fix',
     [
       'O diagrama mermaid abaixo não renderiza (mermaid 12). Corrija somente a sintaxe, mantendo o significado, os rótulos e a estrutura.',
       'Dicas: rótulos com símbolos ou parênteses vão entre aspas; sem estilos, cores nem diretivas; flowchart e sequenceDiagram.',
