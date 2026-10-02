@@ -7,7 +7,7 @@ export interface MrRef {
 
 const PROJECT = /^[\w.-]+(\/[\w.-]+)*$/;
 
-// Accepts "group/sub/project!797" and "project!797" (the card's short form); a bare "!797" is refused.
+// Accepts "group/sub/project!42" and "project!42" (the card's short form); a bare "!42" is refused.
 export function parseMrRef(ref: string): MrRef {
   const m = /^\s*(.+?)!(\d+)\s*$/.exec(ref);
   if (!m || !PROJECT.test(m[1]) || m[1].split('/').some((s) => /^\.+$/.test(s))) throw new Error(`referência de MR inválida: ${ref}`);
@@ -45,5 +45,5 @@ export function assertResolvable(ref: string, mr: MrRead, c: MrChecks): void {
   if (mr.state !== 'open') throw new Error(`${ref} não está aberto (${mr.state}).`);
   if (mr.targetBranch !== c.defaultBranch) throw new Error(`${ref} aponta para ${mr.targetBranch}, não para a ${c.defaultBranch}: só resolvo conflito com a branch principal.`);
   if (mr.author !== c.me) throw new Error(`${ref} é de @${mr.author}: só resolvo conflito de MR seu.`);
-  // The conflict flag is computed lazily by the host and is often stale (post-release-sync skill): the local merge in Preparar decides.
+  // The conflict flag is computed lazily by the host and is often stale (the release tool's docs): the local merge in Preparar decides.
 }

@@ -9,7 +9,7 @@ export const TEMPO_LABEL: Record<TempoKind, string> = {
   daily: 'daily',
 };
 
-// Same shape as a block of `clockify-log activity`, plus the fields the app knows for sure.
+// Same shape as a block of a time-tracking activity, plus the fields the app knows for sure.
 export interface TempoBlock {
   start: string;
   end: string;
@@ -24,7 +24,7 @@ export interface TempoBlock {
   description: string;
 }
 
-// One item of the list that `clockify-log add --entries` takes; never overlaps another one.
+// One entry of a time export; never overlaps another one.
 export interface TempoEntry {
   start: string;
   end: string;

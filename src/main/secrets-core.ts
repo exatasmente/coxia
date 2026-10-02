@@ -5,7 +5,7 @@ import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInfo, type SecretIn
 
 // The secrets store: values keyed by a secretRef, in DATA_ROOT/secrets.json (mode 0600), shared by every workspace and never exported.
 //   stored   encrypted with the OS keychain (Electron safeStorage). Without a keychain it is refused, unless the user accepted the insecure file.
-//   command  the value is the stdout of an executable the user already has (the author's openrouter-key script, a password manager CLI...)
+//   command  the value is the stdout of an executable the user already has (a key script, a password manager CLI...)
 //   env      the value is an environment variable of the app
 // Nothing here logs or returns a value except resolve(), and its callers hand it straight to a child process or an HTTP header.
 
@@ -78,7 +78,7 @@ function assertRef(ref: string): void {
 
 export function createSecretsStore(deps: SecretsDeps): SecretsStore {
   const file = join(deps.root, SECRETS_FILE);
-  // Command results stay in memory for the life of the process: the author's script is slow and the value does not change under us.
+  // Command results stay in memory for the life of the process: a key script is slow and the value does not change under us.
   const cache = new Map<string, string>();
 
   function read(): FileShape {

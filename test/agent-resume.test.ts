@@ -141,6 +141,6 @@ describe('callers that return text or proposals to the screens', () => {
 
 describe('cost panel', () => {
   it('classifies conflict proposal batches, so their resumed calls are counted too', () => {
-    expect(classify('Conflito de sincronização com a main depois de uma release: issue sz4#1')).toBe('release');
+    expect(classify('Conflito de sincronização com a main depois de uma release: issue web#1')).toBe('release');
   });
 });

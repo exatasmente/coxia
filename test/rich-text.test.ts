@@ -90,7 +90,7 @@ describe('parseBlocks', () => {
   });
 
   it('does not treat a hashtag as a heading', () => {
-    expect(parseBlocks('#15499 chegou')).toEqual([{ kind: 'p', lines: ['#15499 chegou'] }]);
+    expect(parseBlocks('#101 chegou')).toEqual([{ kind: 'p', lines: ['#101 chegou'] }]);
   });
 
   it('keeps fenced code lines verbatim, blank lines and indentation included', () => {

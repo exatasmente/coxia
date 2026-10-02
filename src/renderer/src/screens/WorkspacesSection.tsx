@@ -77,7 +77,7 @@ function Item({ w, running, current, onError, onRestart, onlyOne }: { w: Workspa
           <input type="checkbox" checked={w.test} disabled={busy} onChange={() => void run(() => workspaceApi.setTest(w.id, !w.test))} />
           <span>
             <span style={{ fontWeight: 600 }}>Workspace de testes</span>
-            <span className="small muted" style={{ display: 'block' }}>Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.</span>
+            <span className="small muted" style={{ display: 'block' }}>Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem nas notas de cartão.</span>
           </span>
         </label>
       )}

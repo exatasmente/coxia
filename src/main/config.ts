@@ -63,7 +63,7 @@ export function validateWeb(w: WebSettings): WebSettings {
   }
   if (url.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) throw new Error('acesso pelo navegador: a URL pública deve ser https');
   const cidr = /^((\d{1,3}\.){3}\d{1,3})\/(\d{1,2})$/.exec(w.trustedProxy);
-  if (!cidr || cidr[1].split('.').some((o) => Number(o) > 255) || Number(cidr[3]) > 32) throw new Error('acesso pelo navegador: o proxy confiável deve ser um CIDR IPv4, como 172.18.0.0/16');
+  if (!cidr || cidr[1].split('.').some((o) => Number(o) > 255) || Number(cidr[3]) > 32) throw new Error('acesso pelo navegador: o proxy confiável deve ser um CIDR IPv4, como 127.0.0.1/32');
   return { ...w, enabled: w.enabled === true, allowExternalEffects: w.allowExternalEffects === true };
 }
 

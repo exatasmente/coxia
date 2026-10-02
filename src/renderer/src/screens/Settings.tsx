@@ -22,7 +22,7 @@ const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
   ['reply', 'Resposta ao que você diz', 'Entende a sua resposta e tira dela a decisão e a ação.'],
   ['deep', 'Desbloqueio', 'Investiga a fundo, lendo spec, GitLab e playbook. Vale um modelo mais forte.'],
-  ['teams', 'Texto do Teams', 'Escreve o resumo para a daily do time.'],
+  ['teams', 'Texto do resumo', 'Escreve o resumo para a daily do time.'],
   ['fix', 'Correções rápidas', 'Conserta diagramas e confere respostas curtas. Um modelo barato basta.'],
 ];
 
@@ -205,7 +205,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             <span style={{ fontWeight: 600 }}>Dicionário de termos</span>
             <div>
               <button type="button" className="btn" onClick={() => go({ name: 'glossario' })}>Editar dicionário</button>
-              <p className="small muted" style={{ marginTop: 6 }}>Como a voz pronuncia termos como sz4, QA e hub-whatsapp, e como corrigir o que a transcrição ouve errado.</p>
+              <p className="small muted" style={{ marginTop: 6 }}>Como a voz pronuncia termos como QA, merge e deploy, e como corrigir o que a transcrição ouve errado.</p>
             </div>
           </div>
           <label className="check-row">
@@ -243,7 +243,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.schedule.title')}</h2>
-            <p className="small muted" style={{ marginTop: 4 }}>Conferir o status usa só o daily-report: não chama nenhum modelo.</p>
+            <p className="small muted" style={{ marginTop: 4 }}>Conferir o status usa só a fonte de cartões: não chama nenhum modelo.</p>
           </div>
           <div className="settings-row">
             <div style={{ fontWeight: 600 }}>Dias</div>

@@ -19,7 +19,7 @@ import {
 const quiet = { log: () => undefined };
 const at = (iso: string) => ({ ...quiet, now: () => new Date(iso) });
 
-const WEB = { enabled: true, host: '172.18.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'https://koala.fortics.dev/cerimonias/', trustedProxy: '172.18.0.0/16', allowExternalEffects: false };
+const WEB = { enabled: true, host: '198.51.100.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'https://coxia.acme.test/cerimonias/', trustedProxy: '198.51.100.0/24', allowExternalEffects: false };
 const CONFIG = { notifications: false, models: { turn: 'deepseek/deepseek-v4.1-flash' }, web: WEB };
 
 let root: string;

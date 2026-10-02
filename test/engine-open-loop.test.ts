@@ -201,8 +201,8 @@ describe('tool failures are fed back, not thrown', () => {
   it('runs an allowed glab command without a shell and refuses one outside the Bash rules', async () => {
     fake = await fakeOpenAI([
       toolStep([
-        { id: 'g1', name: 'Bash', args: { command: 'glab api projects/sz%2Fsz4/issues/1/notes; echo pwned' } },
-        { id: 'g2', name: 'Bash', args: { command: 'glab mr view 3 -R sz/sz4' } },
+        { id: 'g1', name: 'Bash', args: { command: 'glab api projects/acme%2Fweb/issues/1/notes; echo pwned' } },
+        { id: 'g2', name: 'Bash', args: { command: 'glab mr view 3 -R acme/web' } },
       ]),
       finalCall(),
     ]);

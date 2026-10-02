@@ -66,7 +66,7 @@ export async function installFakeEngine(): Promise<void> {
   }) as never);
 }
 
-const note = { id: 11, author: 'qa.interno', body: 'Reprovado: o filtro por grupo continua listando todos os agentes.', createdAt: '2026-09-30T10:00:00Z', system: false, webUrl: null };
+const note = { id: 11, author: 'qa.acme', body: 'Reprovado: o filtro por grupo continua listando todos os agentes.', createdAt: '2026-09-30T10:00:00Z', system: false, webUrl: null };
 
 /** The slice of the code host the feedback module reads: one QA note on the issue, one open thread on a merge request. */
 export const fakeVcs = {
@@ -85,7 +85,7 @@ export const fakeVcs = {
 } as never;
 
 export function specFiles(specsDir: string, registro = 'Registro de decisões'): { folder: string; plan: string } {
-  const folder = join(specsDir, '#15499-corrigir-filtro');
+  const folder = join(specsDir, '#101-corrigir-filtro');
   mkdirSync(join(folder, 'bug'), { recursive: true });
   writeFileSync(join(folder, 'bug', '0_BUG_REPORT.md'), '# Bug\n');
   writeFileSync(join(folder, 'bug', '1_INVESTIGATION.md'), '# Investigation\n\n## Causa\n\ntexto\n');
@@ -98,18 +98,18 @@ export function specFiles(specsDir: string, registro = 'Registro de decisões'):
 
 export function cardFixture(folder: string, plan: string, over: Partial<Card> = {}): Card {
   return {
-    ref: 'sz4#15499',
-    iid: '15499',
+    ref: 'web#101',
+    iid: '101',
     title: 'Corrigir filtro do relatório',
     stage: 'Code Review OK',
     spec: { folder, phase: 'Plan escrito', planFile: plan },
-    mrs: ['sz4!797'],
-    mrPaths: [{ ref: 'sz4!797', project: 'sz4/sz4', iid: 797 }],
-    blockers: ['sz4!797: MR com conflitos'],
+    mrs: ['web!303'],
+    mrPaths: [{ ref: 'web!303', project: 'acme/web', iid: 303 }],
+    blockers: ['web!303: MR com conflitos'],
     pending: ['pipeline vermelha'],
     changes: ['stage: Doing → Code Review'],
     note: null,
-    url: 'https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499',
+    url: 'https://git.acme.test/acme/web/-/work_items/101',
     ...over,
   };
 }
@@ -130,7 +130,7 @@ export async function runScenario(specsDir: string, opts: { registro?: string } 
 
   const { folder, plan } = specFiles(specsDir, opts.registro);
   const card = cardFixture(folder, plan);
-  const bare = cardFixture(folder, plan, { ref: 'sz4#15500', iid: '15500', spec: null, blockers: [], pending: [], changes: [] });
+  const bare = cardFixture(folder, plan, { ref: 'web#102', iid: '102', spec: null, blockers: [], pending: [], changes: [] });
   const prompts: Record<string, Captured> = {};
   const files: Record<string, string> = {};
   const grab = async (name: string, fn: () => Promise<unknown>) => {
@@ -153,16 +153,16 @@ export async function runScenario(specsDir: string, opts: { registro?: string } 
     startedAt: '2026-10-02T09:40:00Z',
     endedAt: '2026-10-02T09:55:00Z',
     decisions: [{ ref: card.ref, text: 'Seguir com o merge hoje', target: 'spec', dest: `${plan} › Registro` }],
-    effects: [{ ref: card.ref, text: 'Abrir MR', repo: 'sz4' }],
+    effects: [{ ref: card.ref, text: 'Abrir MR', repo: 'web' }],
     unanswered: [{ ref: card.ref, question: 'Pode subir?' }],
-    transcript: [{ who: 'Luiz', text: 'bom dia', at: '09:40' }],
+    transcript: [{ who: 'Bruno', text: 'bom dia', at: '09:40' }],
   };
   await grab('teams', () => agents.teamsText(minutes, [card, bare]));
-  await grab('release-comment', () => agents.rewriteQaComment(15499, 'comentário atual', 'saída do sync', { issue: 15499 }));
+  await grab('release-comment', () => agents.rewriteQaComment(101, 'comentário atual', 'saída do sync', { issue: 101 }));
   await grab('conflict-ask', () => agents.conflictAsk('contexto do conflito', 'qual lado fica?', null));
   await grab('conflict-ask-resumed', () => agents.conflictAsk('contexto do conflito', 'e o outro?', 'sess-c'));
   await grab('conflict-propose', () =>
-    agents.conflictPropose({ issue: 15499, title: card.title, mr: 'sz4!797', branch: 'release/bugfix/15499', worktree: '/tmp/wt', hunks: [{ id: 'h1', file: 'a.ts', ours: 'x', base: null, theirs: 'y' }] }),
+    agents.conflictPropose({ issue: 101, title: card.title, mr: 'web!303', branch: 'release/bugfix/101', worktree: '/tmp/wt', hunks: [{ id: 'h1', file: 'a.ts', ours: 'x', base: null, theirs: 'y' }] }),
   );
 
   let started: { id: string } | null = null;
@@ -200,7 +200,7 @@ export async function runScenario(specsDir: string, opts: { registro?: string } 
 }
 
 /** The prompts of the ceremonies every template has (the daily preparation, the unblock conversation, the summary and the retro). */
-export async function runBasics(ref = 'sz4#15499'): Promise<Record<string, Captured>> {
+export async function runBasics(ref = 'web#101'): Promise<Record<string, Captured>> {
   const agents = await import('../../src/main/agents');
   const retro = await import('../../src/main/retro');
   const card = cardFixture('/nowhere', '/nowhere/plan.md', { ref, iid: ref.split('#').pop() as string, spec: null, blockers: [], pending: [] });

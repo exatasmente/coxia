@@ -82,7 +82,7 @@ export function parseStat(stat: string): { pid: number; ppid: number } | null {
   return m ? { pid: Number(m[1]), ppid: Number(m[2]) } : null;
 }
 
-// What the app itself started (git fetch, glab, daily-report, the voice sidecar, the agent binary and whatever they
+// What the app itself started (git fetch, the provider CLI, the card source command, the voice sidecar, the agent binary and whatever they
 // spawn), not Chromium's own helpers (zygote, GPU, renderers, utilities: `--type=`). Each of them holds files of the
 // AppImage mount open, so one still running keeps the AppImage from unmounting and exiting after the app is gone.
 export function ownedDescendants(procs: readonly Proc[], root: number): number[] {

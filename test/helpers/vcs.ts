@@ -5,7 +5,7 @@ import { type RestTransport, pagesOver } from '../../src/main/vcs/transport';
 export const GITLAB_SETTINGS: VcsSettings = {
   id: 'gitlab',
   kind: 'gitlab',
-  host: 'dark.smartzap.com.br',
+  host: 'git.acme.test',
   apiUrl: '',
   user: '',
   secretRef: null,

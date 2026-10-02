@@ -67,7 +67,7 @@ Com o login do CLI (`cliPreference: cli`) valem as permissões da sessão do CLI
 
 Os validadores aceitam só estas formas (qualquer outra é recusada antes de gravar e antes de executar): GitLab, `projects/<id|grupo%2Fnome>/...` e uma mutação GraphQL de status; GitHub, comentários, labels, revisores, resposta de thread, estado da issue e três mutações GraphQL (resolver thread, pronto para revisão, voltar a rascunho); Bitbucket, comentários, resolver, estado da issue e `PUT` do PR com `title`, `reviewers` e `draft`.
 
-Limites por provedor: status de issue do GitLab depende dos ids de status da instância (a tabela do template `sz-sdd`, em `gitlabQuick.ts`); no GitHub o "status" é abrir ou fechar; no Bitbucket não há labels nem jobs manuais.
+Limites por provedor: status de issue do GitLab depende dos ids de status da instância (a lista `devCycle.quickTransitions` de cada workspace; `gitlabQuick.ts` só a lê); no GitHub o "status" é abrir ou fechar; no Bitbucket não há labels nem jobs manuais.
 
 ### Cartões e estágios
 
@@ -163,7 +163,7 @@ With the CLI login (`cliPreference: cli`) the CLI session's permissions apply. T
 
 The validators accept only these shapes (anything else is refused before it is stored and before it runs): GitLab, `projects/<id|group%2Fname>/...` and one GraphQL status mutation; GitHub, comments, labels, reviewers, thread replies, issue state and three GraphQL mutations (resolve a thread, ready for review, back to draft); Bitbucket, comments, resolve, issue state and a PR `PUT` with `title`, `reviewers` and `draft`.
 
-Limits per provider: GitLab issue status depends on the instance's status ids (the `sz-sdd` template table in `gitlabQuick.ts`); on GitHub "status" is open or closed; Bitbucket has no labels or manual jobs.
+Limits per provider: GitLab issue status depends on the instance's status ids (each workspace's `devCycle.quickTransitions` list, which `gitlabQuick.ts` only reads); on GitHub "status" is open or closed; Bitbucket has no labels or manual jobs.
 
 ### Cards and stages
 

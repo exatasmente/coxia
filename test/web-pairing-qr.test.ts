@@ -5,7 +5,7 @@ import { consumePairFragment } from '../src/renderer/src/pairFragment';
 import { MAX_QR_BYTES, encodeQr, formatBits, qrPath, reedSolomon } from '../src/shared/qr';
 import { pairingLink, readPairFragment } from '../src/shared/webAccess';
 
-const PUBLIC = 'https://koala.fortics.dev/cerimonias/';
+const PUBLIC = 'https://coxia.acme.test/cerimonias/';
 
 describe('qr encoder', () => {
   it('matches the ISO 18004 example: "01234567", version 1-M, error correction codewords', () => {
@@ -57,7 +57,7 @@ describe('pairing link', () => {
   it('carries the code in the fragment, never in the query string', () => {
     const link = pairingLink(PUBLIC, 'ZEPC-QDFJ-B3B4');
     const url = new URL(link);
-    expect(link).toBe('https://koala.fortics.dev/cerimonias/#pair=ZEPC-QDFJ-B3B4');
+    expect(link).toBe('https://coxia.acme.test/cerimonias/#pair=ZEPC-QDFJ-B3B4');
     expect(url.search).toBe('');
     expect(url.pathname).toBe('/cerimonias/');
     expect(url.hash).toBe('#pair=ZEPC-QDFJ-B3B4');
@@ -66,7 +66,7 @@ describe('pairing link', () => {
   });
 
   it('drops any query or fragment of the configured public url', () => {
-    expect(pairingLink('https://koala.fortics.dev/cerimonias/?x=1#old', 'AAAA-BBBB-CCCC')).toBe('https://koala.fortics.dev/cerimonias/#pair=AAAA-BBBB-CCCC');
+    expect(pairingLink('https://coxia.acme.test/cerimonias/?x=1#old', 'AAAA-BBBB-CCCC')).toBe('https://coxia.acme.test/cerimonias/#pair=AAAA-BBBB-CCCC');
   });
 
   it('reads only a well formed pair fragment', () => {

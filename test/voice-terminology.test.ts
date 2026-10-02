@@ -150,18 +150,18 @@ describe('the agent prompts', () => {
     for (const voice of [true, false]) {
       setVoiceEnabled(voice);
       const prompts: [string, string, string][] = [
-        [`Desbloqueio ${modeText()} da atividade sz4#1. Investigue`, 'deep', 'desbloqueio'],
+        [`Desbloqueio ${modeText()} da atividade web#1. Investigue`, 'deep', 'desbloqueio'],
         [`${callWord()} sobre um conflito de sincronização com a main depois de uma release.`, 'release', 'sincronização com a release'],
-        [`${callWord()} de reentrada da issue sz4#1 (t), ${modeText()}: o QA`, 'reentry', 'reentrada'],
-        [`Retro semanal do Luiz, ${modeText()}, de 1 a 2.`, 'retro', 'retro'],
-        [`O Luiz respondeu ${answeredText()}: «ok»`, 'reply', 'fala do agente'],
+        [`${callWord()} de reentrada da issue web#1 (t), ${modeText()}: o QA`, 'reentry', 'reentrada'],
+        [`Retro semanal do Bruno, ${modeText()}, de 1 a 2.`, 'retro', 'retro'],
+        [`O Bruno respondeu ${answeredText()}: «ok»`, 'reply', 'fala do agente'],
       ];
       for (const [prompt, cost, kind] of prompts) {
         if (cost !== 'reentry' && cost !== 'reply') expect(classify(prompt), `${voice} ${prompt}`).not.toBeNull();
         expect(appPromptKind(prompt), `${voice} ${prompt}`).toBe(kind);
       }
-      expect(entryOf('s', 'deep', `${callWord()} de reentrada da issue sz4#7 (t), ${modeText()}: o QA`).ref).toBe('sz4#7');
-      expect(entryOf('s', 'deep', `Desbloqueio ${modeText()} da atividade sz4#8. Investigue`).ref).toBe('sz4#8');
+      expect(entryOf('s', 'deep', `${callWord()} de reentrada da issue web#7 (t), ${modeText()}: o QA`).ref).toBe('web#7');
+      expect(entryOf('s', 'deep', `Desbloqueio ${modeText()} da atividade web#8. Investigue`).ref).toBe('web#8');
     }
   });
 });

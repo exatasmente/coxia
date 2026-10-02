@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { LEGACY_STAGES } from '../src/shared/config/legacy';
+import { TEST_STAGES } from './helpers/config';
 import { matchStage } from '../src/shared/config/stages';
 import { setLanguage } from '../src/shared/i18n';
 import { buildCardReport } from '../src/main/vcs/cards';
@@ -66,7 +66,7 @@ describe('the default stage vocabulary', () => {
   });
 
   it('the workspace mapping wins over the defaults, and the defaults only fill an empty one', () => {
-    expect(stagesFor('github', LEGACY_STAGES)).toBe(LEGACY_STAGES);
+    expect(stagesFor('github', TEST_STAGES)).toBe(TEST_STAGES);
     expect(stagesFor('github', [])).toBe(DEFAULT_STAGES.github);
   });
 
@@ -88,8 +88,8 @@ describe('the default stage vocabulary', () => {
   });
 
   it('uses the configured stage of that kind, and none when the config has no such kind', () => {
-    expect(stageOf(issue(), [mr({ draft: true })], LEGACY_STAGES)?.label).toBe('Doing');
-    expect(stageOf(issue(), [], LEGACY_STAGES)).toBeNull();
+    expect(stageOf(issue(), [mr({ draft: true })], TEST_STAGES)?.label).toBe('Doing');
+    expect(stageOf(issue(), [], TEST_STAGES)).toBeNull();
   });
 });
 
@@ -110,7 +110,7 @@ describe('the card report from a provider', () => {
       async () => GL.workitem_status,
     );
 
-  const opts = { issueProject: 'acme/app', refPrefix: 'app#', stages: LEGACY_STAGES, kind: 'gitlab' as const, state: null, now: () => NOW };
+  const opts = { issueProject: 'acme/app', refPrefix: 'app#', stages: TEST_STAGES, kind: 'gitlab' as const, state: null, now: () => NOW };
 
   it('builds issue and MR items the cards screens read, linking the MR to its issue by the number in its text', async () => {
     const { report } = await buildCardReport(glRuntime().provider, opts);

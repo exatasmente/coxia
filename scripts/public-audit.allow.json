@@ -1,0 +1,6 @@
+{
+  "entries": [
+    { "rule": "secret", "file": "test/**", "reason": "the redaction tests feed the app made-up tokens of the shapes it must scrub" },
+    { "rule": "email", "file": "package-lock.json", "match": "izs.me", "reason": "the maintainer address of a third-party package, quoted from its own deprecation notice" }
+  ]
+}

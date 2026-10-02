@@ -28,5 +28,4 @@ Start with the [project README](../README.md). These documents go deeper. Severa
 
 | Document | What it covers |
 |---|---|
-| [Decoupling inventory](decoupling-inventory.md) | What was personal and hardcoded before the configuration existed, and what replaced it |
 | [Screenshots](images/README.md) | The planned screenshots and the rules for taking them |

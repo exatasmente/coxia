@@ -9,6 +9,7 @@
 - [ ] `npx tsc --noEmit`
 - [ ] `npx vitest run` (new behavior has tests)
 - [ ] `node scripts/theme-audit.mjs`
+- [ ] `node scripts/public-audit.mjs`
 - [ ] `npm run i18n:lint` (new texts exist in both `pt-BR` and `en`)
 - [ ] Tried it in the app (`npm run dev` or a packaged build), when the change is visible
 

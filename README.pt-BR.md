@@ -72,7 +72,7 @@ Os agentes só leem. Tudo o que tem efeito fora do app (comentário, label, push
 2. `chmod +x` no AppImage e execute, ou `sudo apt install ./<arquivo>.deb`.
 3. Siga o assistente da primeira execução: idioma e nome, modelos, Claude Agent SDK (só se usar modelos Claude), projetos, hospedagem de código, a documentação que os agentes leem, ciclo de desenvolvimento e voz (opcional).
 
-> Os arquivos do AppImage ainda levam o codinome do projeto (`cerimonias-<versão>.AppImage`). Os AppImages se atualizam sozinhos pelo GitHub Releases ([`docs/updates.md`](docs/updates.md)); o `.deb` é atualizado pelo gerenciador de pacotes. Há builds para Windows e macOS preparados, mas sem assinatura e sem testes: trate como experimentais.
+> Os arquivos de release se chamam `coxia-<versão>.AppImage` e `coxia_<versão>_amd64.deb`. O executável instalado, as pastas de dados (`~/.local/share/cerimonias`) e a entrada do menu mantêm o nome original `cerimonias`, então uma instalação de uma versão anterior é substituída no lugar e mantém os dados. Os AppImages se atualizam sozinhos pelo GitHub Releases ([`docs/updates.md`](docs/updates.md)); o `.deb` é atualizado pelo gerenciador de pacotes. Há builds para Windows e macOS preparados, mas sem assinatura e sem testes: trate como experimentais.
 
 ### A partir do código-fonte
 

@@ -9,6 +9,8 @@
 #   ~/.local/share/applications/cerimonias.desktop              launcher entry
 #   ~/.config/autostart/cerimonias.desktop                      only with --autostart
 #   ~/.local/state/cerimonias/install-source.json               which source tree this install came from
+# The file names keep the project's original name (cerimonias) on purpose, although the build is called coxia-<version>.AppImage: an install made by
+# an earlier version is replaced in place, its launcher and autostart entry keep pointing at the same file, and the data folders do not move.
 # Safe to run again: unchanged files are left alone, a new build replaces the AppImage atomically.
 set -euo pipefail
 
@@ -29,7 +31,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --autostart) AUTOSTART=1 ;;
     --artifact) ARTIFACT="${2:?--artifact needs a file}"; shift ;;
-    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
   shift

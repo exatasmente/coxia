@@ -99,7 +99,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
             Conversa a fundo sobre uma atividade travada. O agente lê spec, GitLab e playbook, e quando há contexto você pede de 2 a 3 saídas, cada uma com a sua consequência.
           </Item>
           <Item term="Passagem para o QA">
-            O agente explica ao QA o que mudou e o que testar. Saem o checklist e o texto do aviso para o Teams.
+            O agente explica ao QA o que mudou e o que testar. Saem o checklist e o texto do aviso para o time.
           </Item>
           <Item term="Retro">
             Semanal. Junta os últimos 7 dias (reprovações, bloqueios, conflitos, quizzes errados e retrabalho) e conversa com o moderador sobre o que melhorar.
@@ -119,7 +119,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
           <Item term="Escrever no GitLab">
             Nunca por conta própria. Tudo que escreve (comentário, label, reviewer, merge da main numa branch e push) vira uma ação na tela Ações e só roda depois do seu “Seguir” e de uma confirmação. O push é sem force-push.
           </Item>
-          <Item term="Publicar no Teams">
+          <Item term="Publicar no chat do time">
             Nunca. O texto é gerado e você copia e cola.
           </Item>
           <Item term={tv('help.effects.term')}>
@@ -129,7 +129,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
             Só leem (arquivos, skills do playbook, GitLab). Editar arquivos, acessar a web, ler arquivos de segredo e escrever no GitLab ficam sempre bloqueados, seja qual for a configuração.
           </Item>
           <Item term="Escritas locais, com o seu clique">
-            “Gravar ata e decisões” grava a ata do dia e leva só as decisões marcadas para o Registro do Plan ou para a nota do daily-report. “Gravar no .specs” cria o QA_CHECKLIST.md e “Inserir no artefato” põe o diagrama no documento do gate; os dois pedem confirmação.
+            “Gravar ata e decisões” grava a ata do dia e leva só as decisões marcadas para o Registro do Plan ou para a nota do cartão. “Gravar no .specs” cria o QA_CHECKLIST.md e “Inserir no artefato” põe o diagrama no documento do gate; os dois pedem confirmação.
           </Item>
         </Block>
 
@@ -138,9 +138,9 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
             Cada workspace guarda a sua cópia de: ata do dia (<span className="mono">AAAA-MM-DD-pre-daily.md</span>), <span className="mono">historico/</span> (cada cerimônia), <span className="mono">gates/</span>, <span className="mono">qa/</span>, <span className="mono">retros/</span>, <span className="mono">atividade/</span>, <span className="mono">config.json</span> (Configurações), <span className="mono">acoes.json</span> (Ações), <span className="mono">custo.json</span>, <span className="mono">radar.json</span> e <span className="mono">status.json</span>.
           </Item>
           <Item term={<span className="mono">~/.local/share/cerimonias/</span>}>
-            O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados, glossário e comandos de verificação de conflito. Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (GitLab, Plan das specs, daily-report).
+            O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados, glossário e comandos de verificação de conflito. Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (host de código, Plan das specs, notas de cartão).
           </Item>
-          <Item term={<span className="mono">~/projects/sz-playbook/.specs/</span>}>
+          <Item term={<span className="mono">&lt;docs.specsDir&gt;</span>}>
             Specs que o app lê e, nas escritas acima, onde grava o Registro do Plan, o QA_CHECKLIST.md e o diagrama do gate.
           </Item>
           <Item term="Tema">{tv('help.theme')}</Item>

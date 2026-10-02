@@ -1,11 +1,9 @@
 import type { Language } from '../config/types';
 import { cycleText } from './text';
 
-// "sz-sdd" is how the install that predates the templates names the SDD template.
 const NAMES: Record<string, string> = {
   none: 'cycle.none.name',
   sdd: 'cycle.sdd.name',
-  'sz-sdd': 'cycle.sdd.name',
   scrum: 'cycle.scrum.name',
   kanban: 'cycle.kanban.name',
   'github-flow': 'cycle.githubFlow.name',

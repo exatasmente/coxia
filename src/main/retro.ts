@@ -39,7 +39,7 @@ export function latestRetro(): Retro | null {
   return last ? read(last.replace(/\.json$/, '')) : null;
 }
 
-// What happened in the last days, from the files the app and daily-report already keep. No model involved.
+// What happened in the last days, from the files the app and the card source already keep. No model involved.
 function weekDigest(since: Date): Record<string, unknown> {
   const inWeek = (iso: string | number | null | undefined) => !!iso && new Date(iso) >= since;
 

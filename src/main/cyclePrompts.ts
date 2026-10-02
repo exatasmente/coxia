@@ -31,7 +31,7 @@ export function vcsName(): string {
 /** What the team calls the daily preparation ("pré-daily", "daily scrum", "standup"). */
 export const ceremonyLabel = (): string => text(cycle().ceremonyParams.preDaily.label);
 
-/** Where the cards come from, as the card context names it: " (GitLab via daily-report)", " (GitHub)", or nothing. */
+/** Where the cards come from, as the card context names it: " (GitLab via the card source command)", " (GitHub)", or nothing. */
 function origin(): string {
   const tool = rc().cardSource?.command;
   const host = rc().primaryVcs ? vcsName() : '';

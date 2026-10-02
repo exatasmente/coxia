@@ -42,15 +42,10 @@ function allowedFor(role: ModelRole): string[] {
   ];
 }
 
-// Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
-export const GIT_MIRROR_READ = [
-  // Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
-  /^git -C \/home\/[\w-][\w.-]*\/\.cache\/post-release-sync\/(?!\S*\.\.)[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( (--|[\w./:^~][\w./:^~-]*))+$/,
-];
-
 const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
-// The same plumbing-only allow-list, for the folder where the release-sync tool keeps its mirrors (releaseSync.mirrorsDir).
+// Conflict calls may also read the folder where the release-sync tool keeps its mirrors (releaseSync.mirrorsDir); plumbing reads only, no options that write.
+// Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
 export function gitMirrorRead(mirrorsDir: string): RegExp[] {
   const dir = escapeRe(mirrorsDir.replace(/\/+$/, ''));
   return [new RegExp(`^git -C ${dir}\\/(?!\\S*\\.\\.)[\\w./-]+\\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\\d+)?|merge-base)( (--|[\\w./:^~][\\w./:^~-]*))+$`)];
@@ -289,7 +284,7 @@ function vcsHint(): string {
   return vcsReadPolicy().hint;
 }
 
-/** "sz4#15499" for a workspace whose cards carry a prefix, "15499" for one that does not. */
+/** "app#101" for a workspace whose cards carry a prefix, "101" for one that does not. */
 export function issueRef(iid: string | number): string {
   return `${rc().issues.refPrefix}${iid}`;
 }
@@ -582,7 +577,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
   );
   const schema = obj({
     ack: str,
-    decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'daily-report', 'ata'] } })] },
+    decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'note', 'ata'] } })] },
     efeito: { anyOf: [{ type: 'null' }, obj({ texto: str, repo: str })] },
     desbloqueio: { type: 'boolean' },
     opcoes: OPTIONS,

@@ -18,7 +18,7 @@ First public version.
 - The Claude Agent SDK is not bundled in published packages: the wizard installs it into a folder of the user's, after showing Anthropic's terms.
 - Workspaces with a "test" mark that keeps every effect (push, merge request, comment, notes) on the machine.
 - Write-only-on-request flow: minutes, notes and the Plan log are written only when the user confirms; side effects are queued and copied to Claude Code instead of running in the app.
-- Time per issue measured from the ceremonies, ready to log in Clockify, and a cost screen for OpenRouter usage.
+- Time per issue measured from the ceremonies, ready to export to a time tracker, and a cost screen for OpenRouter usage.
 - Desktop app for Linux (AppImage and `.deb`), with a tray, optional autostart, and a paired-browser access (PWA) for the phone.
 - Automatic updates for published AppImages through GitHub Releases (stable and beta channels, differential download, checksum verified), and an update flow for installs made from source.
 - Interface in Portuguese (Brazil) and English, with light and dark themes.

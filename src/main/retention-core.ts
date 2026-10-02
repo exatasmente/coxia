@@ -20,7 +20,7 @@ const APP_PROMPTS: [string, string][] = [
   ['qa.ask', 'passagem para o QA'],
   ['retro.main', 'retro'],
   ['retro.ask', 'retro'],
-  ['teams.main', 'texto do Teams'],
+  ['teams.main', 'texto do resumo'],
   ['conflict.comment', 'sincronização com a release'],
   ['conflict.ask.intro', 'sincronização com a release'],
   ['reentry.main', 'reentrada'],

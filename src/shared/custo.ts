@@ -9,7 +9,7 @@ export const CUSTO_LABEL: Record<CustoKind, string> = {
   gate: 'Gate',
   qa: 'Passagem para o QA',
   retro: 'Retro',
-  teams: 'Texto do Teams',
+  teams: 'Texto do resumo',
   release: 'Release e conflitos',
 };
 

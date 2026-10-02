@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Minutes } from '../src/shared/types';
+import { EXAMPLE_PROFILE_FILE } from './helpers/config';
 
 // Own data root, with the flat layout of the app before workspaces: it migrates to a test workspace on import.
 const ROOT = mkdtempSync(join(tmpdir(), 'cerimonias-guard-'));
 writeFileSync(join(ROOT, 'config.json'), JSON.stringify({ notifications: false, web: { enabled: true, port: 4999 } }));
 process.env.CERIMONIAS_DATA_DIR = ROOT;
+// The install that predates workspaces migrates with the example legacy profile (it names the decision log heading the last test writes under).
+process.env.COXIA_LEGACY_PROFILE = EXAMPLE_PROFILE_FILE;
 
 const { approveAction, listActions, proposeGitlabAction } = await import('../src/main/actions');
 const { getSettings, saveSettings, saveWebSettings } = await import('../src/main/config');
@@ -25,9 +28,9 @@ function minutes(dest: string): Minutes {
     startedAt: '2026-10-02T09:40:00Z',
     endedAt: '2026-10-02T09:50:00Z',
     decisions: [
-      { ref: 'sz4#1', text: 'decidido', target: 'spec', dest },
-      { ref: 'sz4#2', text: 'avisar', target: 'daily-report', dest: 'daily-report' },
-      { ref: 'sz4#3', text: 'so na ata', target: 'ata', dest: 'ata' },
+      { ref: 'web#1', text: 'decidido', target: 'spec', dest },
+      { ref: 'web#2', text: 'avisar', target: 'note', dest: 'nota do cartão' },
+      { ref: 'web#3', text: 'so na ata', target: 'ata', dest: 'ata' },
     ],
     effects: [],
     unanswered: [],
@@ -69,12 +72,12 @@ describe('external writes in a test workspace', () => {
     expect(listActions().find((a) => a.id === action!.id)?.state).toBe('pending');
   });
 
-  it('the spec Plan and the daily-report note are not written; the ata still is', async () => {
+  it('the spec Plan and the cardtool note are not written; the ata still is', async () => {
     const plan = join(ROOT, 'plan.md');
     writeFileSync(plan, '# Plan\n\n## Registro\n\n- antes\n');
     const result = await saveMinutes(minutes(`${plan} › Registro`), 'texto', [0, 1, 2]);
     expect(readFileSync(plan, 'utf8')).toBe('# Plan\n\n## Registro\n\n- antes\n');
-    expect(result.written.map((w) => [w.ref, w.ok])).toEqual([['sz4#1', false], ['sz4#2', false], ['sz4#3', true]]);
+    expect(result.written.map((w) => [w.ref, w.ok])).toEqual([['web#1', false], ['web#2', false], ['web#3', true]]);
     expect(result.written[0].detail).toMatch(/workspace de testes/);
     expect(existsSync(result.ataPath)).toBe(true);
     expect(result.ataPath.startsWith(ATAS)).toBe(true);

@@ -99,7 +99,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
           <section className="panel" style={{ padding: 20, gap: 12 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Preparar a passagem</h2>
             <p className="small muted" style={{ lineHeight: 1.5 }}>
-              O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica {tv('by.voice')} o que mudou e o que testar. Sai daqui o checklist e o texto do Teams. Criar a branch de release, o comentário e o status continuam na skill qa-release-branch, no Claude Code, com “sim”.
+              O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica {tv('by.voice')} o que mudou e o que testar. Sai daqui o checklist e o texto do aviso. Criar a branch de release, o comentário e o status continuam na ferramenta de release da sua equipe, com “sim”.
             </p>
             <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
@@ -151,11 +151,11 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <aside style={{ flex: '2 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
                 <div className="row spread">
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aviso no Teams</h2>
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aviso para o time</h2>
                   <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!qa.teams} onClick={() => void copy('teams', qa.teams)}>{copied === 'teams' ? 'Copiado' : 'Copiar'}</button>
                 </div>
-                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: 'var(--on-night-muted)' }}>Sem a nota do QA na issue ainda: o texto sai depois que a qa-release-branch criar a branch e o comentário.</p>}
-                <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>
+                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: 'var(--on-night-muted)' }}>Sem a nota do QA na issue ainda: o texto sai depois que a branch de release e o comentário forem criados.</p>}
+                <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no chat do time; nada é publicado daqui.</p>
               </section>
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas do QA</h2>
@@ -171,7 +171,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
               </section>
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Levar ao QA</h2>
-                <p className="small" style={{ lineHeight: 1.5 }}>Branch de release, pipelines, comentário @qa.interno e status Ready for testing: skill qa-release-branch, no Claude Code, com “sim” por ação.</p>
+                <p className="small" style={{ lineHeight: 1.5 }}>Branch de release, pipelines, comentário para o QA e status de teste: a ferramenta de release da sua equipe, com “sim” por ação.</p>
                 <ContinueInClaude sessionId={qa.sessionId} />
                 <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está relendo a atividade…', () => api.prepareQa(card))}>Preparar de novo</button>
               </section>

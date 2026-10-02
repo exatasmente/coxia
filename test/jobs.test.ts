@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RESULT_TTL_MS, createJobStore, formatElapsed, notificationText, sameScreen, screenPayload } from '../src/renderer/src/jobs';
 
 type S = { name: string; ref?: string };
-const meta = (label = 'Gate 1 da 15499'): { label: string; screen: S } => ({ label, screen: { name: 'gate', ref: 'sz4#15499' } });
+const meta = (label = 'Gate 1 da 101'): { label: string; screen: S } => ({ label, screen: { name: 'gate', ref: 'web#101' } });
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -26,8 +26,8 @@ describe('job registry', () => {
     const { jobs } = store();
     const d = deferred<string>();
     const fn = vi.fn(() => d.promise);
-    const a = jobs.run('gate:start:sz4#15499', meta(), fn);
-    const b = jobs.run('gate:start:sz4#15499', meta(), fn);
+    const a = jobs.run('gate:start:web#101', meta(), fn);
+    const b = jobs.run('gate:start:web#101', meta(), fn);
     expect(b).toBe(a);
     expect(fn).toHaveBeenCalledTimes(1);
     d.resolve('ok');
@@ -39,7 +39,7 @@ describe('job registry', () => {
     const d = deferred<{ id: number }>();
     void jobs.run('k', meta(), () => d.promise);
     const running = jobs.get('k');
-    expect(running).toMatchObject({ status: 'running', startedAt: clock.t, finishedAt: null, error: null, label: 'Gate 1 da 15499' });
+    expect(running).toMatchObject({ status: 'running', startedAt: clock.t, finishedAt: null, error: null, label: 'Gate 1 da 101' });
     clock.t += 5_000;
     d.resolve({ id: 7 });
     await flush();
@@ -181,17 +181,17 @@ describe('job registry', () => {
 
   it('filters by key prefix', async () => {
     const { jobs, clock } = store();
-    await jobs.run('gate:sz4#1:start', meta('a'), () => Promise.resolve(1));
+    await jobs.run('gate:web#1:start', meta('a'), () => Promise.resolve(1));
     await flush();
     clock.t += 10;
-    await jobs.run('gate:sz4#1:answer', meta('b'), () => Promise.resolve(2));
+    await jobs.run('gate:web#1:answer', meta('b'), () => Promise.resolve(2));
     await flush();
-    await jobs.run('deep:sz4#1:ask', meta('c'), () => Promise.resolve(3));
+    await jobs.run('deep:web#1:ask', meta('c'), () => Promise.resolve(3));
     await flush();
-    jobs.launch('gate:sz4#2:start', meta('d'), () => new Promise(() => undefined));
-    expect(jobs.finished('gate:sz4#1:').map((j) => j.key)).toEqual(['gate:sz4#1:start', 'gate:sz4#1:answer']);
-    expect(jobs.running('gate:sz4#2:').map((j) => j.key)).toEqual(['gate:sz4#2:start']);
-    expect(jobs.running('gate:sz4#1:')).toEqual([]);
+    jobs.launch('gate:web#2:start', meta('d'), () => new Promise(() => undefined));
+    expect(jobs.finished('gate:web#1:').map((j) => j.key)).toEqual(['gate:web#1:start', 'gate:web#1:answer']);
+    expect(jobs.running('gate:web#2:').map((j) => j.key)).toEqual(['gate:web#2:start']);
+    expect(jobs.running('gate:web#1:')).toEqual([]);
   });
 
   it('dismisses and clears only finished jobs', async () => {
@@ -232,7 +232,7 @@ describe('job helpers', () => {
   });
 
   it('words the notification by outcome', () => {
-    expect(notificationText({ label: 'Gate 1 da 15499', status: 'done', error: null }).title).toBe('Gate 1 da 15499 pronto');
-    expect(notificationText({ label: 'Gate 1 da 15499', status: 'failed', error: 'sem rede' })).toEqual({ title: 'Gate 1 da 15499 falhou', body: 'sem rede' });
+    expect(notificationText({ label: 'Gate 1 da 101', status: 'done', error: null }).title).toBe('Gate 1 da 101 pronto');
+    expect(notificationText({ label: 'Gate 1 da 101', status: 'failed', error: 'sem rede' })).toEqual({ title: 'Gate 1 da 101 falhou', body: 'sem rede' });
   });
 });

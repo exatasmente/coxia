@@ -102,6 +102,18 @@ const stage = object(
 
 const phaseFile = object('A document whose presence says where an issue is.', { file: string('Base name of the document.', { minLength: 1 }), label: string('Phase text shown on the card.') }, ['file']);
 
+const quickTransition = object(
+  'One status change the quick actions offer.',
+  {
+    to: string('Name of the status the issue moves to.', { minLength: 1 }),
+    id: { type: 'integer', description: 'Id of that status on the GitLab instance.', minimum: 0 },
+    label: string('The stage label the issue gets.', { minLength: 1 }),
+    from: strings('Statuses the issue may leave.'),
+    removable: strings('Stage labels removed on the way.'),
+  },
+  ['to', 'id', 'label', 'from', 'removable'],
+);
+
 const gateFiles = object(
   'Where the artifact of a gate lives.',
   {
@@ -198,7 +210,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       setupComplete: boolean('The setup wizard finished (or the config came from an existing install).'),
       language: enumOf('Interface and agent language.', LANGUAGES),
       userName: string('How the agents address the user; empty: no name.', { maxLength: 80 }),
-      userArticle: enumOf('Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone.', USER_ARTICLES),
+      userArticle: enumOf('Portuguese article that goes with the name ("o Bruno", "a Ana"); empty: the name alone.', USER_ARTICLES),
       appearance: object('Look.', { theme: enumOf('Color theme.', THEMES) }),
       notifications: boolean('Desktop and push notifications.'),
       closeToTray: boolean('Closing the window keeps the app in the tray.'),
@@ -224,7 +236,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           vcsId: nullableString('A vcs integration id.'),
           project: nullableString('"group/name" of the issue project.'),
           projectId: { type: ['integer', 'null'], description: 'Numeric id of the issue project.' },
-          refPrefix: string('Prefix of a card ref, e.g. "sz4#".', { maxLength: 40 }),
+          refPrefix: string('Prefix of a card ref, e.g. "app#".', { maxLength: 40 }),
         }),
       }),
       vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),
@@ -262,6 +274,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           decisionLog: object('Where the decisions of the ceremonies are recorded in the plan.', { heading: text('Heading text (catalog key or literal); empty: decisions stay in the minutes.') }),
           documents: object('Names of the documents the app writes.', { gateQuiz: string('Gate quiz record.', { minLength: 1 }), completion: string('Issue completion record.', { minLength: 1 }), qaChecklist: string('QA checklist.', { minLength: 1 }) }),
         }),
+        quickTransitions: list('Status changes the quick actions of a card offer on GitLab.', quickTransition, { maxItems: 20 }),
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
       }),
       agents: object('How the agents behave.', {
@@ -304,7 +317,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           timeoutMs: integer('Timeout of one run.', 1000, 900_000),
         }),
         releaseSync: object('Command that syncs branches with main after a release.', { ...command, cwd: nullableString('Working directory; null: the projects root.'), mirrorsDir: nullableString('Folder of the bare mirrors the tool keeps.') }),
-        timeExport: object('Time tracking export.', { ...command, format: enumOf('Entry format.', ['none', 'clockify-log']) }),
+        timeExport: object('Time tracking export.', { ...command, format: string('Layout the export command reads: "none" or the name of a layout.', { pattern: '^[a-z0-9][a-z0-9-]{0,31}$' }) }),
         terminal: object('Terminal used by "continue in Claude Code".', { command: nullableString('Emulator; null: gnome-terminal, then x-terminal-emulator.'), args: strings('Arguments before the shell command.') }),
         claudeCli: object('Claude CLI that resumes sessions.', { command: string('Executable.', { minLength: 1 }), cwd: nullableString('Starting directory; null: the projects root.') }),
       }),

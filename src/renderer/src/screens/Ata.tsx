@@ -35,7 +35,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
   const loadTeams = useCallback(() => {
     setTeamsError(null);
     setTeams(null, null);
-    jobs.launch('ata:teams', { label: 'Texto do Teams da ata', busy: 'O agente está escrevendo no seu estilo…', screen: { name: 'ata' } }, async () => {
+    jobs.launch('ata:teams', { label: 'Resumo da ata', busy: 'O agente está escrevendo no seu estilo…', screen: { name: 'ata' } }, async () => {
       const text = await api.teamsText(m, c.cards?.cards ?? []);
       setTeams(text, key);
       return text;
@@ -108,7 +108,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               <div className="row spread">
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 600 }}>Decisões</h2>
-                  <p className="small muted" style={{ marginTop: 4 }}>Cada uma vai para a sua casa: Registro do Plan, nota do daily-report ou só a ata.</p>
+                  <p className="small muted" style={{ marginTop: 4 }}>Cada uma vai para a sua casa: Registro do Plan, nota do cartão ou só a ata.</p>
                 </div>
                 <button type="button" className="btn btn-dark" disabled={saving || !!result} onClick={() => save()}>
                   {saving ? <span className="spinner" /> : null} {result ? 'Gravado' : 'Gravar ata e decisões'}
@@ -195,7 +195,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <button type="button" className="btn" onClick={() => loadTeams()}>Tentar de novo</button>
                 </div>
               )}
-              <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>
+              <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no chat do time; nada é publicado daqui.</p>
             </section>
 
             <section className="panel" style={{ padding: 20 }}>

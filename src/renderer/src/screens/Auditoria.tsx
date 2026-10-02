@@ -60,7 +60,7 @@ export function Auditoria({ go }: { go: (s: Screen) => void }) {
           <input
             value={issue}
             onChange={(e) => setIssue(e.target.value)}
-            placeholder="Filtrar por issue (ex.: 15499)"
+            placeholder="Filtrar por issue (ex.: 101)"
             aria-label="Filtrar por issue"
             style={{ marginLeft: 'auto', minHeight: 36, padding: '0 12px', borderRadius: 10, border: '1px solid var(--field-line)', minWidth: 220 }}
           />

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LEGACY_STAGES, legacyProfile, mergeDeep, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { mergeDeep, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
 import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
+import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { CATALOGS } from '../src/shared/i18n';
 
 const apply = (id: string) => applyTemplate(neutralConfig(), builtInTemplate(id)!);
@@ -85,8 +86,7 @@ describe('the shipped templates', () => {
   it('carry nothing of a company: no QA account, no host, no tool, no prefix, no playbook', () => {
     for (const t of BUILT_IN_TEMPLATES) {
       const text = JSON.stringify(t) + JSON.stringify(Object.fromEntries(Object.entries(CATALOGS['pt-BR']).filter(([k]) => k.startsWith('cycle.') || k.startsWith('prompt.'))));
-      // "daily-report" in quotes is the stored value of a decision target (a note on the card), not the tool.
-      expect(text.replace(/\\?"daily-report\\?"/g, ''), t.id).not.toMatch(/qa\.interno|smartzap|fortics|sz4|daily-report|playbook|hub-whatsapp|openrouter|glab api projects\/sz4/i);
+      expect(text, t.id).not.toMatch(/qa\.acme|acme|cardtool|playbook|gateway|openrouter|glab api projects\/acme/i);
     }
     const sddCycle = cycleOf(sdd);
     expect(sddCycle.qa.user).toBeNull();
@@ -114,19 +114,19 @@ describe('applying a template', () => {
   });
 
   it('forgets the previous template: nothing of the old stages, mapping or overrides survives', () => {
-    const legacy = mergeDeep(neutralConfig(), legacyProfile());
+    const legacy = mergeDeep(neutralConfig(), exampleProfile().config);
     const next = applyTemplate(legacy, builtInTemplate('kanban')!);
     expect(next.devCycle.stages.map((s) => s.id)).not.toContain('test-ok');
     expect(next.devCycle.promptOverrides).toEqual({});
     expect(next.devCycle.pipelineSkill).toBe('');
-    expect(next.devCycle.releaseLabelPattern).not.toContain('sz4');
+    expect(next.devCycle.releaseLabelPattern).not.toContain('web');
   });
 
   it('keeps the QA account the team already has, unless told not to', () => {
-    const legacy = mergeDeep(neutralConfig(), legacyProfile());
-    expect(applyTemplate(legacy, sdd).devCycle.qa.user).toBe('qa.interno');
+    const legacy = mergeDeep(neutralConfig(), exampleProfile().config);
+    expect(applyTemplate(legacy, sdd).devCycle.qa.user).toBe('qa.acme');
     expect(applyTemplate(legacy, sdd, { keepQaUser: false }).devCycle.qa.user).toBeNull();
-    expect(applyTemplate(legacy, sdd, { keepReleaseLabelPattern: true }).devCycle.releaseLabelPattern).toBe('^sz4-(\\d+\\.\\d+\\.\\d+)$');
+    expect(applyTemplate(legacy, sdd, { keepReleaseLabelPattern: true }).devCycle.releaseLabelPattern).toBe('^web-(\\d+\\.\\d+\\.\\d+)$');
   });
 
   it('is idempotent', () => {
@@ -142,13 +142,13 @@ describe('applying a template', () => {
   });
 });
 
-describe('the migrated profile is the SDD template with the author specifics', () => {
-  const legacy = mergeDeep(neutralConfig(), legacyProfile()).devCycle;
+describe('the example profile is the SDD template with the team specifics', () => {
+  const legacy = mergeDeep(neutralConfig(), exampleProfile().config).devCycle;
   const generic = cycleOf(sdd);
 
-  it('names itself sz-sdd, which the registry reads as the SDD template', () => {
-    expect(legacy.templateId).toBe('sz-sdd');
-    expect(builtInTemplate('sz-sdd')).toBe(sdd);
+  it('names itself sdd, which the registry reads as the SDD template', () => {
+    expect(legacy.templateId).toBe('sdd');
+    expect(builtInTemplate('sdd')).toBe(sdd);
   });
 
   it('switches on the same ceremonies and files as the SDD template', () => {
@@ -161,35 +161,36 @@ describe('the migrated profile is the SDD template with the author specifics', (
   });
 
   it('keeps the original stage list, and only the specifics are its own', () => {
-    expect(legacy.stages).toEqual(LEGACY_STAGES);
-    expect(legacy.qa.user).toBe('qa.interno');
-    expect(legacy.pipelineSkill).toBe('agent-pipeline');
-    expect(legacy.ceremonyParams.preDaily.summaryTarget).toBe('Teams');
+    expect(legacy.stages).toEqual(TEST_STAGES);
+    expect(legacy.qa.user).toBe('qa.acme');
+    expect(legacy.pipelineSkill).toBe('team-pipeline');
+    expect(legacy.ceremonyParams.preDaily.summaryTarget).toBe('team chat');
     expect(Object.keys(legacy.promptOverrides).length).toBeGreaterThan(5);
   });
 
-  it('is what a v2 file written before the templates is completed with, so an existing install keeps its behavior', () => {
+  it('is not what a v2 file written before the templates is completed with: the blanks of that file are the neutral ones', () => {
     // The file of an install that ran phase 0: it has the old cycle fields and none of the newer ones.
     const old = {
       schemaVersion: 2,
       devCycle: {
-        templateId: 'sz-sdd',
+        templateId: 'sdd',
         ceremonies: { preDaily: true, unblock: true, gate: true, qaHandoff: true, retro: true, releaseConflicts: true },
-        stages: LEGACY_STAGES,
-        releaseLabelPattern: '^sz4-(\\d+\\.\\d+\\.\\d+)$',
+        stages: TEST_STAGES,
+        releaseLabelPattern: '^web-(\\d+\\.\\d+\\.\\d+)$',
         specLayout: { folderPrefix: '#{iid}-', phaseFiles: [], planFiles: ['2_PLAN.md'], gateFiles: [], documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' } },
-        qa: { user: 'qa.interno' },
+        qa: { user: 'qa.acme' },
       },
     };
     const r = validateConfig(old);
     expect(r.errors).toEqual([]);
     const c = r.config!;
-    expect([c.userName, c.userArticle]).toEqual(['Luiz', 'o']);
-    expect(c.devCycle.specLayout.decisionLog.heading).toBe('Registro');
-    expect(c.devCycle.ceremonyParams.preDaily.summaryTarget).toBe('Teams');
-    expect(c.devCycle.promptOverrides['rules.speechExamples']).toBeDefined();
+    expect([c.userName, c.userArticle]).toEqual(['', '']);
+    expect(c.devCycle.specLayout.decisionLog.heading).toBe('');
+    expect(c.devCycle.ceremonyParams.preDaily.summaryTarget).toBe('');
+    expect(c.devCycle.promptOverrides).toEqual({});
     // What the file did say wins over the completion.
     expect(c.devCycle.specLayout.planFiles).toEqual(['2_PLAN.md']);
+    expect(c.devCycle.qa.user).toBe('qa.acme');
   });
 
   it('a config of another template is completed with the neutral cycle instead', () => {
@@ -215,9 +216,9 @@ describe('template files', () => {
   });
 
   it('leave the QA account out of the file', () => {
-    const source = mergeDeep(neutralConfig(), legacyProfile());
+    const source = mergeDeep(neutralConfig(), exampleProfile().config);
     const text = exportTemplateText(templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' }), now);
-    expect(text).not.toContain('qa.interno');
+    expect(text).not.toContain('qa.acme');
     expect(JSON.parse(text).format).toBe('coxia-cycle-template');
   });
 
