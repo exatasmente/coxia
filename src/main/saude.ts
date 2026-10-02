@@ -219,7 +219,7 @@ async function runChecks(withModel: boolean): Promise<SaudeSnapshot> {
       changed();
     }),
   );
-  return snapshot();
+  return { ...snapshot(), checking: false };
 }
 
 // Concurrent calls (the 30-minute job and the button) share one round of checks.
