@@ -37,12 +37,13 @@ export function vadInit(startedAt: number): VadState {
   return { startedAt, calibration: [], threshold: null, voiceSince: null, heard: false, lastVoiceAt: startedAt };
 }
 
-function median(values: number[]): number {
+// 20th percentile, not mean or median: people often start talking right after pressing the key, so most of the
+// calibration window can be speech; a few quiet samples are enough to read the noise floor.
+function noiseFloor(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  return sorted.length ? sorted[Math.floor(sorted.length * 0.2)] : 0;
 }
 
-// Median, not mean: if the person starts talking inside the calibration window, the few loud samples do not inflate the noise floor.
 export function thresholdFor(noise: number, cfg: VadConfig): number {
   return Math.min(cfg.maxThreshold, Math.max(cfg.minThreshold, noise * cfg.noiseFactor + cfg.noiseMargin));
 }
@@ -53,7 +54,7 @@ export function vadStep(state: VadState, rms: number, t: number, cfg: VadConfig)
   if (state.threshold === null) {
     const calibration = [...state.calibration, rms];
     if (t - state.startedAt < cfg.calibrationMs) return { state: { ...state, calibration }, stop: null };
-    return { state: { ...state, calibration, threshold: thresholdFor(median(calibration), cfg) }, stop: null };
+    return { state: { ...state, calibration, threshold: thresholdFor(noiseFloor(calibration), cfg) }, stop: null };
   }
 
   // Lower bar once speech started, so a trailing syllable or a breath does not reset the silence timer.
