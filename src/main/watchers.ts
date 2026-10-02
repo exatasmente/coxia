@@ -190,8 +190,10 @@ interface Severity {
 export function severityOf(bugReport: string | null, labels: string[]): Severity | null {
   const line = bugReport?.split('\n').find((l) => /severidade/i.test(l));
   if (line) {
-    const checked = /\[[xX]\]\s*([^[\]]*)/.exec(line)?.[1] ?? line.replace(/^.*?severidade:?\**/i, '');
-    const levels = [...(/\(([^)]*)\)/.exec(checked)?.[1] ?? '').matchAll(/P([0-3])/g)].map((m) => Number(m[1]));
+    const boxes = /\[[ xX]?\]/.test(line);
+    // An untouched template line (no box checked) says nothing.
+    const checked = boxes ? /\[[xX]\]\s*([^[\]]*)/.exec(line)?.[1] : line.replace(/^.*?severidade:?\**/i, '');
+    const levels = [...(/\(([^)]*)\)/.exec(checked ?? '')?.[1] ?? '').matchAll(/P([0-3])/g)].map((m) => Number(m[1]));
     // "(P1/P2)" is read as the milder one.
     if (levels.length) return { level: Math.max(...levels) as Severity['level'], source: 'bug report' };
   }
@@ -215,19 +217,24 @@ interface GlIssue {
 }
 interface GlMr {
   iid: number;
+  project_id: number;
   state: string;
   target_branch: string;
   merged_at: string | null;
 }
 
-async function inProduction(projectId: number, iid: number): Promise<{ at: string | null; reason: string; labels: string[] } | null> {
+// A closed issue alone is not enough (superseded or duplicate issues close without shipping): it needs a version label such as "sz4-51.22.0".
+async function inProduction(projectId: number, iid: number): Promise<{ at: string | null; reason: string } | null> {
   const issue = await glabGet<GlIssue>(`projects/${projectId}/issues/${iid}`);
-  if (issue.state === 'closed') return { at: issue.closed_at, reason: 'issue fechada', labels: issue.labels };
-  const mrs = await glabGet<GlMr[]>(`projects/${projectId}/issues/${iid}/related_merge_requests`);
+  // related_merge_requests also lists other repositories' MRs that merely mention the issue (the playbook's, for one).
+  const mrs = (await glabGet<GlMr[]>(`projects/${projectId}/issues/${iid}/related_merge_requests`)).filter((m) => m.project_id === projectId);
   const shipped = mrs
     .filter((m) => m.state === 'merged' && /^(main|release\/\d[\w.]*)$/.test(m.target_branch))
     .sort((a, b) => (b.merged_at ?? '').localeCompare(a.merged_at ?? ''))[0];
-  return shipped ? { at: shipped.merged_at, reason: `!${shipped.iid} mergeada em ${shipped.target_branch}`, labels: issue.labels } : null;
+  if (shipped) return { at: shipped.merged_at, reason: `!${shipped.iid} mergeada em ${shipped.target_branch}` };
+  const version = issue.labels.find((l) => /^sz4-\d+\.\d+\.\d+$/.test(l));
+  if (issue.state === 'closed' && version) return { at: issue.closed_at, reason: `issue fechada na versão ${version.slice(4)}` };
+  return null;
 }
 
 function reportIssues(): ReportIssue[] {
