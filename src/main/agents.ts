@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
@@ -65,27 +65,47 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
 }
 
 // Agents run on a third-party model: secret files never enter the context.
-export const SECRET_PATH = /(^|\/)\.env(rc)?($|[./*?])|\.env$|secret|credential|token|(^|[\/_.-])key$|\.pem$|(^|\/)\.(ssh|config|aws|docker)($|\/)|(^|\/)\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+// A name with secret/credential/token only counts when the file is not source code: TokenService.php and secret.service.ts
+// are code, token.json and config/secrets.yml are data. Anything else with such a name (no extension, .bak, .md) is held back.
+const CODE_EXT = [
+  'php', 'phtml', 'ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte', 'py', 'go', 'java', 'kt', 'kts', 'dart', 'rb', 'cs', 'rs', 'swift',
+  'c', 'h', 'cc', 'cpp', 'hpp', 'scala', 'ex', 'exs', 'lua', 'pl', 'sh', 'html', 'css', 'scss', 'less',
+];
+const SECRET_NAME = '(?=[\\s\\S]*(?:secret|credential|token))(?![\\s\\S]*\\.(?:' + CODE_EXT.join('|') + ')$)';
+const SECRET_KEYS = '(?:^|\\/)(?:\\.env(?:rc)?(?:$|[./*?])|\\.(?:ssh|config|aws|docker)(?:$|\\/)|\\.(?:netrc|npmrc|pypirc)$|id_(?:rsa|dsa|ecdsa|ed25519)[^/]*$)|\\.env$|(?:^|[\\/_.-])key$|\\.(?:pem|p12|pfx)$|\\.mcp\\.json$|\\.claude\\.json$';
+const NAME_RULE = new RegExp(`^${SECRET_NAME}`, 'i');
+const KEY_RULE = new RegExp(SECRET_KEYS, 'i');
+export const SECRET_PATH = new RegExp(`${NAME_RULE.source}|${KEY_RULE.source}`, 'i');
 
 // SECRET_PATH in gitignore syntax. Read deny rules are the layer that also reaches a Grep or Glob with no path
 // (the SDK turns them into case-insensitive ripgrep ignores placed after any glob the model passes); a hook never
-// sees what a path-less search will walk. The ~/ rules cover the home, outside the cwd.
+// sees what a path-less search will walk. A glob cannot say "unless it is code", so the name rules list the data
+// extensions; the hook and the result filter apply the full rule. The ~/ rules cover the home, outside the cwd.
+const SECRET_WORDS = ['secret', 'credential', 'token'];
+const DATA_EXT = ['json', 'yml', 'yaml', 'txt', 'ini', 'cfg', 'conf', 'toml', 'properties', 'xml'];
 export const SECRET_GLOBS = [
   '**/.env*',
   '**/*.env',
-  '**/*secret*',
-  '**/*credential*',
-  '**/*token*',
+  ...SECRET_WORDS.flatMap((w) => DATA_EXT.map((e) => `**/*${w}*.${e}`)),
+  '**/.git-credentials',
   '**/key',
   '**/*_key',
   '**/*-key',
   '**/*.key',
   '**/*.pem',
+  '**/*.p12',
+  '**/*.pfx',
+  '**/id_rsa*',
+  '**/id_dsa*',
+  '**/id_ecdsa*',
+  '**/id_ed25519*',
   '**/.ssh/**',
   '**/.config/**',
   '**/.aws/**',
   '**/.docker/**',
   '**/.netrc',
+  '**/.npmrc',
+  '**/.pypirc',
   '**/.mcp.json',
   '**/.claude.json',
   '~/.ssh/**',
@@ -93,6 +113,8 @@ export const SECRET_GLOBS = [
   '~/.aws/**',
   '~/.docker/**',
   '~/.netrc',
+  '~/.npmrc',
+  '~/.pypirc',
   '~/.claude.json',
   '~/.claude/*.json',
   '~/.claude/projects/**',
@@ -118,7 +140,17 @@ export function secretPath(p: string, cwd = process.cwd()): boolean {
   } catch {
     // does not exist: the written forms are all there is
   }
-  return forms.some((f) => SECRET_PATH.test(f) || inClaudeState(f));
+  const dir = isDirectory(abs);
+  return forms.some((f) => inClaudeState(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
+}
+
+// A directory named tokens/ has no extension to tell code from data: it can be searched, and the results are judged file by file.
+function isDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export const noSecrets: HookCallback = async (input) => {
@@ -208,7 +240,22 @@ interface Run<T> {
   data: T;
   sessionId: string;
   sources: string[];
+  // The agent ran out of turns and answered from what it had already read.
+  partial?: true;
 }
+
+class MaxTurnsError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly sources: string[],
+  ) {
+    super('agent ended with error_max_turns');
+  }
+}
+
+const WRAP_UP =
+  'Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, ' +
+  'com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.';
 
 type Schema = Record<string, unknown>;
 
@@ -234,7 +281,7 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-async function run<T>(
+async function runOnce<T>(
   role: ModelRole,
   prompt: string,
   schema: Schema,
@@ -285,11 +332,38 @@ async function run<T>(
     }
     if (m.type === 'result') {
       sessionId = m.session_id;
+      if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
   throw new Error('agent ended without a result');
+}
+
+// An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
+// The resume stays in the same session transcript, which is what the cost panel reads, so its generations are counted.
+async function run<T>(
+  role: ModelRole,
+  prompt: string,
+  schema: Schema,
+  extra: Partial<Options> = {},
+  shell: { rules: string[]; patterns: RegExp[] } = { rules: [], patterns: [] },
+): Promise<Run<T>> {
+  try {
+    return await runOnce<T>(role, prompt, schema, extra, shell);
+  } catch (e) {
+    if (!(e instanceof MaxTurnsError)) throw e;
+    const stopped = `O agente parou antes de terminar (limite de passos) e não deu uma resposta final${e.sessionId ? '' : ' nem deixou sessão para retomar'}.`;
+    if (!e.sessionId) throw new Error(stopped);
+    console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
+    try {
+      const r = await runOnce<T>(role, WRAP_UP, schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns });
+      return { ...r, sources: [...e.sources, ...r.sources], partial: true };
+    } catch (again) {
+      console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
+      throw new Error(`${stopped} A tentativa de resposta parcial também falhou (${again instanceof Error ? again.message : String(again)}).`);
+    }
+  }
 }
 
 // The model sometimes answers the literal string "null" (or "nenhum") instead of JSON null.
@@ -389,7 +463,7 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
   });
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {
@@ -465,7 +539,7 @@ export async function conflictAsk(context: string, question: string, sessionId: 
     { maxTurns: 40, ...(sessionId ? { resume: sessionId } : {}) },
     { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
   );
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
 }
 
 export interface ProposeHunk {
@@ -479,6 +553,8 @@ export interface ProposeHunk {
 export interface Proposal {
   summary: string;
   items: { id: string; resolution: string; explanation: string; confidence: 'alta' | 'media' | 'baixa'; test: string }[];
+  // The agent ran out of turns on this batch and proposed from what it had read.
+  partial?: boolean;
 }
 
 const SIDE_MAX = 12_000;
@@ -519,8 +595,8 @@ export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
 
 // Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
 // each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
-export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[] }> {
-  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [] };
+export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[]; partialIds: string[] }> {
+  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [], partialIds: [] };
   const batches = proposeBatches(p.hunks);
   const results: (Proposal | null)[] = new Array(batches.length).fill(null);
   let next = 0;
@@ -542,6 +618,7 @@ export async function conflictPropose(p: ProposeInput): Promise<Proposal & { fai
     summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? `${failed.length} trecho(s) ficaram sem proposta: peça de novo.` : ''].filter(Boolean).join(' '),
     items: results.flatMap((r) => r?.items ?? []),
     failed,
+    partialIds: batches.flatMap((b, i) => (results[i]?.partial ? b.map((h) => h.id) : [])),
   };
 }
 
@@ -570,6 +647,7 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
   );
   return {
     summary: r.data.resumo,
+    ...(r.partial ? { partial: true } : {}),
     items: r.data.trechos.map((t) => ({ id: t.id, resolution: t.resolucao, explanation: t.explicacao, confidence: t.confianca, test: t.testar })),
   };
 }

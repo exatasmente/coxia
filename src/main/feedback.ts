@@ -400,7 +400,7 @@ export async function askReentry(iid: string, question: string): Promise<Reentry
     { maxTurns: 12, ...(re.sessionId ? { resume: re.sessionId } : {}) },
   );
   re.sessionId = r.sessionId || re.sessionId;
-  re.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
+  re.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   writeJson(reentryFile(iid), re);
   return re;
 }
@@ -442,7 +442,7 @@ function viewOf(d: GlDiscussion, stored: StoredDiscussion | undefined): Discussi
     path: pos?.new_path ?? pos?.old_path ?? null,
     line: pos?.new_line ?? pos?.old_line ?? null,
     notes: notes.map((n): DiscussionNote => ({ author: n.author.username, at: n.created_at, body: n.body })),
-    explanation: explanation ? { speech: explanation.speech, text: explanation.text, point: explanation.point, needsCode: explanation.needsCode, draft: explanation.draft, sessionId: explanation.sessionId, at: explanation.at } : null,
+    explanation: explanation ? { speech: explanation.speech, text: explanation.text, point: explanation.point, needsCode: explanation.needsCode, draft: explanation.draft, sessionId: explanation.sessionId, at: explanation.at, ...(explanation.partial ? { partial: true } : {}) } : null,
     stale: !!explanation && explanation.notes !== notes.length,
     proposals,
   };
@@ -484,7 +484,7 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     { maxTurns: 20 },
   );
   const store = readStore(mr);
-  const explanation = { speech: r.data.fala, text: r.data.texto || r.data.fala, point: r.data.ponto, needsCode: r.data.precisa_codigo, draft: r.data.rascunho, sessionId: r.sessionId || null, at: new Date().toISOString(), notes: notes.length };
+  const explanation = { speech: r.data.fala, text: r.data.texto || r.data.fala, point: r.data.ponto, needsCode: r.data.precisa_codigo, draft: r.data.rascunho, sessionId: r.sessionId || null, at: new Date().toISOString(), notes: notes.length, ...(r.partial ? { partial: true } : {}) };
   store[id] = { proposals: store[id]?.proposals ?? [], explanation };
   writeJson(discussionFile(mr), store);
   return viewOf(d, store[id]);

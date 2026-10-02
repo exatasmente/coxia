@@ -442,7 +442,7 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
   return update(id, (x) => ({
     ...x,
     sessionId: r.sessionId,
-    msgs: [...x.msgs, ...(x.msgs.length || x.sessionId ? [{ me: true, text: question, at: now() }] : []), { me: false, text: r.text, speech: r.speech, at: now() }],
+    msgs: [...x.msgs, ...(x.msgs.length || x.sessionId ? [{ me: true, text: question, at: now() }] : []), { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) }],
   }));
 }
 
@@ -631,8 +631,8 @@ export async function conflictPropose(id: string): Promise<ReleaseAction> {
         hunks: f.hunks.map((h) => {
           const item = byId.get(h.id);
           if (!item && !h.sensitive && !hunks.some((x) => x.id === h.id)) return h;
-          if (!item || h.sensitive) return { ...h, proposal: null, explanation: null, confidence: null, test: null, choice: h.choice === 'proposal' ? null : h.choice };
-          return { ...h, proposal: unfenced(item.resolution), explanation: item.explanation, confidence: item.confidence, test: item.test };
+          if (!item || h.sensitive) return { ...h, proposal: null, explanation: null, confidence: null, test: null, partial: false, choice: h.choice === 'proposal' ? null : h.choice };
+          return { ...h, proposal: unfenced(item.resolution), explanation: item.explanation, confidence: item.confidence, test: item.test, partial: !!p.partialIds?.includes(h.id) };
         }),
       })),
     }));

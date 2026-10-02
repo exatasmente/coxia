@@ -240,7 +240,7 @@ export async function explainGate(id: string, question: string): Promise<GateVie
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
   g.sessionId = r.sessionId || g.sessionId;
-  g.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
+  g.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   return view(write(g));
 }
 

@@ -92,6 +92,7 @@ export interface DeepAnswer {
   speech: string;
   text: string;
   sources: string[];
+  partial?: boolean;
 }
 
 export interface DeepOption {
@@ -213,6 +214,8 @@ export interface Talk {
   at: string;
   // spoken version of an agent message; absent on old messages and on the user's own
   speech?: string;
+  // The agent ran out of turns and answered from what it had read: the bubble says so.
+  partial?: boolean;
 }
 
 export interface QaHandoff {

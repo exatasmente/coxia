@@ -28,10 +28,15 @@ async function decide(hook: unknown, input: Record<string, unknown>): Promise<'a
 const dir = mkdtempSync(join(tmpdir(), 'cerimonias-fixture-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 mkdirSync(join(dir, 'src'));
+mkdirSync(join(dir, 'app', 'Token'), { recursive: true });
+mkdirSync(join(dir, 'app', 'secrets'), { recursive: true });
 writeFileSync(join(dir, '.env'), 'X=1\n');
 writeFileSync(join(dir, 'src', 'app.php'), '<?php\n');
+writeFileSync(join(dir, 'app', 'Token', 'TokenService.php'), '<?php\n');
 symlinkSync(join(dir, '.env'), join(dir, 'src', 'notes.txt'));
+symlinkSync(join(dir, '.env'), join(dir, 'src', 'TokenService.php'));
 symlinkSync(join(dir, 'src', 'app.php'), join(dir, 'src', 'alias.php'));
+symlinkSync(join(dir, 'src', 'app.php'), join(dir, 'src', 'token.json'));
 
 // The subset of gitignore syntax the deny globs use, case-insensitive like the --iglob the SDK builds from them.
 function globRegex(glob: string): RegExp {
@@ -53,7 +58,8 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
   it('turns every glob into a Read rule', () => {
     expect(SECRET_READ_DENY).toEqual(SECRET_GLOBS.map((g) => `Read(${g})`));
     expect(SECRET_READ_DENY).toContain('Read(**/.env*)');
-    expect(SECRET_READ_DENY).toContain('Read(**/*credential*)');
+    expect(SECRET_READ_DENY).toContain('Read(**/*credential*.json)');
+    expect(SECRET_READ_DENY).toContain('Read(**/*token*.txt)');
     expect(SECRET_READ_DENY).toContain('Read(~/.ssh/**)');
   });
 
@@ -67,11 +73,24 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
     'sz4/.envrc',
     'app/prod.env',
     'config/credentials.json',
+    'config/credentials.prod.json',
     'config/Secrets.yml',
+    'config/secrets.yaml',
+    'config/secrets.ini',
+    'config/secret.cfg',
+    'config/secrets.conf',
+    'config/secrets.txt',
+    'token.json',
     'deploy/api_token.txt',
-    'tokens/a.txt',
     'certs/server.pem',
     'certs/server.key',
+    'certs/client.p12',
+    'certs/client.pfx',
+    'repo/.npmrc',
+    'repo/.pypirc',
+    'repo/id_rsa',
+    'repo/id_ed25519.pub',
+    'repo/.git-credentials',
     'certs/id_key',
     'keys/key',
     'home/.ssh/id_rsa',
@@ -87,7 +106,34 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
     expect(deniedByGlobs(path)).toBe(true);
   });
 
-  it.each(['sz4/app/Services/Agent/AgentService.php', 'sz4/README.md', 'sz4/config/database.php', 'sz4/.gitignore', 'sz-playbook/.claude/rules/session.md'])(
+  // Only the hook and the result filter see the directory, and they judge the file in it.
+  it.each(['tokens/a.txt', 'secrets/prod.yml', 'config/credentials', 'app/token', 'docs/token.md', 'app/Http/secret.php.bak'])('holds back %s through SECRET_PATH, not through the globs', (path) => {
+    expect(SECRET_PATH.test(path)).toBe(true);
+    expect(deniedByGlobs(path)).toBe(false);
+  });
+
+  it.each([
+    'sz4/app/Services/Agent/AgentService.php',
+    'sz4/README.md',
+    'sz4/config/database.php',
+    'sz4/.gitignore',
+    'sz-playbook/.claude/rules/session.md',
+    'sz4/app/Services/Auth/TokenService.php',
+    'sz4/app/Http/Controllers/SecretsController.php',
+    'front/src/auth/secret.service.ts',
+    'front/src/auth/token.service.spec.ts',
+    'front/src/components/TokenInput.tsx',
+    'front/src/components/TokenInput.vue',
+    'api/credentials.go',
+    'tools/token_refresh.py',
+    'app/Token/Token.java',
+    'lib/credentials_helper.dart',
+    'lib/secret_box.rb',
+    'src/Credentials.cs',
+    'sz4/app/Token/Handler.php',
+    'sz4/app/tokens/Handler.php',
+    'sz4/app/secrets/Vault.ts',
+  ])(
     'leaves %s readable',
     (path) => {
       expect(SECRET_PATH.test(path)).toBe(false);
@@ -100,6 +146,35 @@ describe('secretPath', () => {
   it('sees a symlink to a secret file as the secret file', () => {
     expect(secretPath(join(dir, 'src', 'notes.txt'))).toBe(true);
     expect(secretPath(join(dir, 'src', 'alias.php'))).toBe(false);
+  });
+
+  it('sees through a symlink that wears a source-code name', () => {
+    expect(secretPath(join(dir, 'src', 'TokenService.php'))).toBe(true);
+    expect(secretPath('src/TokenService.php', dir)).toBe(true);
+  });
+
+  it('judges a link by its own name too', () => {
+    expect(secretPath(join(dir, 'src', 'token.json'))).toBe(true);
+  });
+
+  it('lets source files with a secret word in the name through', () => {
+    expect(secretPath('app/Services/TokenService.php', dir)).toBe(false);
+    expect(secretPath('app/Token/TokenService.php', dir)).toBe(false);
+    expect(secretPath('auth/secret.service.ts', dir)).toBe(false);
+    expect(secretPath('/home/luiz/projects/sz4/app/Services/Auth/TokenService.php')).toBe(false);
+  });
+
+  it('holds back the config and data files with a secret word in the name', () => {
+    for (const f of ['.env', 'prod.env', 'workstation.env', 'config/secrets.yml', 'token.json', 'credentials.json', '.npmrc', '.pypirc', '.netrc', '.mcp.json', 'id_rsa', 'certs/a.pem', 'certs/a.p12']) {
+      expect(secretPath(f, dir), f).toBe(true);
+    }
+  });
+
+  it('searches a directory with a secret word in its name and leaves the verdict to each file', () => {
+    expect(secretPath('app/Token', dir)).toBe(false);
+    expect(secretPath(join(dir, 'app', 'secrets'), dir)).toBe(false);
+    expect(secretPath('app/Token/TokenService.php', dir)).toBe(false);
+    expect(secretPath('app/Token/token.json', dir)).toBe(true);
   });
 
   it('resolves relative paths against the given cwd', () => {
@@ -138,6 +213,23 @@ describe('noSecrets with a symlink or a relative path', () => {
   it('allows the same call on a regular file', async () => {
     expect(await decide(noSecrets, { tool_name: 'Grep', cwd: dir, tool_input: { pattern: 'x', path: 'src/app.php' } })).toBe('allow');
   });
+
+  it('allows Read, Grep and Glob on source files named after a secret, and on the directory that holds them', async () => {
+    expect(await decide(noSecrets, { tool_name: 'Read', cwd: dir, tool_input: { file_path: 'app/Token/TokenService.php' } })).toBe('allow');
+    expect(await decide(noSecrets, { tool_name: 'Read', cwd: dir, tool_input: { file_path: '/p/auth/secret.service.ts' } })).toBe('allow');
+    expect(await decide(noSecrets, { tool_name: 'Grep', cwd: dir, tool_input: { pattern: 'x', path: 'app/Token' } })).toBe('allow');
+    expect(await decide(noSecrets, { tool_name: 'Grep', cwd: dir, tool_input: { pattern: 'x', glob: '**/*Token*.php' } })).toBe('allow');
+    expect(await decide(noSecrets, { tool_name: 'Glob', cwd: dir, tool_input: { pattern: '**/*Token*.php' } })).toBe('allow');
+  });
+
+  it.each(['.env', 'prod.env', 'config/secrets.yml', 'token.json', 'credentials.json', '.npmrc', 'src/TokenService.php'])('denies Read of %s', async (file_path) => {
+    expect(await decide(noSecrets, { tool_name: 'Read', cwd: dir, tool_input: { file_path } })).toBe('deny');
+  });
+
+  it('denies a Glob or Grep glob aimed at data files named after a secret', async () => {
+    expect(await decide(noSecrets, { tool_name: 'Glob', cwd: dir, tool_input: { pattern: '**/*token*.json' } })).toBe('deny');
+    expect(await decide(noSecrets, { tool_name: 'Grep', cwd: dir, tool_input: { pattern: 'x', glob: '**/*secret*.yml' } })).toBe('deny');
+  });
 });
 
 describe('withoutSecretFiles', () => {
@@ -159,6 +251,16 @@ describe('withoutSecretFiles', () => {
   it('reads a path that holds dashes and digits', () => {
     const out = withoutSecretFiles({ mode: 'content', filenames: [], content: 'config/prod-1.env:5:K=canary\nsrc/a-1-b.php:2:ok' }) as { content: string };
     expect(out.content).toBe('src/a-1-b.php:2:ok');
+  });
+
+  it('keeps matches from source files named after a secret and drops the data files', () => {
+    const out = withoutSecretFiles({
+      mode: 'content',
+      filenames: [],
+      content: ['app/Services/TokenService.php:3:$t = 1;', 'src/auth/secret.service.ts-7-ctx', 'config/token.json:1:{}', 'config/secrets.yml:2:a: b', '.npmrc:1:x', 'src/b.php:7:ok'].join('\n'),
+    }) as { content: string };
+    expect(out.content).toBe(['app/Services/TokenService.php:3:$t = 1;', 'src/auth/secret.service.ts-7-ctx', 'src/b.php:7:ok'].join('\n'));
+    expect(withoutSecretFiles({ mode: 'content', filenames: [], content: 'app/Services/TokenService.php:3:x' })).toBeNull();
   });
 
   it('keeps a line whose text mentions a secret word', () => {
@@ -218,13 +320,21 @@ describe('shell allowlist with git and secret files', () => {
     `git -C ${MIRROR} show a1b2c3d:config/.env.local`,
     `git -C ${MIRROR} show a1b2c3d:config/credentials.json`,
     `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- .env`,
-    `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- app/secrets.php`,
+    `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- config/secrets.yml`,
+    `git -C ${MIRROR} show a1b2c3d:token.json`,
+    `git -C ${MIRROR} show a1b2c3d:.npmrc`,
     `git -C ${MIRROR} show a1b2c3d:certs/server.pem`,
   ])('refuses %s', async (command) => {
     expect(await decide(hook, bash(command))).toBe('deny');
   });
 
-  it.each([`git -C ${MIRROR} show a1b2c3d:app/Services/Foo.php`, `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- app/Foo.php`])('still allows %s', async (command) => {
+  it.each([
+    `git -C ${MIRROR} show a1b2c3d:app/Services/Foo.php`,
+    `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- app/Foo.php`,
+    `git -C ${MIRROR} show a1b2c3d:app/Services/TokenService.php`,
+    `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- app/secrets.php`,
+    `git -C ${MIRROR} diff a1b2c3d e4f5a6b -- src/auth/secret.service.ts`,
+  ])('still allows %s', async (command) => {
     expect(await decide(hook, bash(command))).toBe('allow');
   });
 });
