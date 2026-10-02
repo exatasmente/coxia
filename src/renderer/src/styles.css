@@ -386,4 +386,5 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 .bubble-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .bubble-replay { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -4px -6px -4px 0; border-radius: 8px; border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; opacity: 0.7; }
 .bubble-replay:hover, .bubble-replay:focus-visible { opacity: 1; border-color: var(--line-3); }
+.log-line .bubble-replay { flex: 0 0 26px; margin: -3px 0; }
 .bubble-replay[aria-pressed="true"] { opacity: 1; color: var(--teal); border-color: var(--teal-line); }

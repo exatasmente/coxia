@@ -43,6 +43,8 @@ export interface DiscussionNote {
 
 export interface Explanation {
   speech: string;
+  // chat version; absent on explanations stored before it existed
+  text?: string;
   point: string;
   needsCode: boolean;
   draft: string;

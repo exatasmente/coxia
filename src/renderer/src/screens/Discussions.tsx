@@ -6,7 +6,9 @@ import { errorText } from '../api';
 import type { usePlayer } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { feedbackApi } from '../feedbackApi';
+import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
+import { RichText } from './Diagram';
 import { BackIcon } from './icons';
 import { Presence } from './Avatar';
 
@@ -96,7 +98,7 @@ export function Discussions({
     const e = current?.explanation;
     if (!current || !e || !voice || spoken.current.has(`${current.id}|${e.at}`)) return;
     spoken.current.add(`${current.id}|${e.at}`);
-    void player.say(e.speech, voice, 'discussão').catch(() => undefined);
+    void player.say(e.speech, voice, 'discussão', { item: e }).catch(() => undefined);
   }, [current, voice, player]);
 
   const propose = async (label: string, d: DiscussionView, fn: () => Promise<ProposalView>) => {
@@ -170,17 +172,26 @@ export function Discussions({
               <div className="row spread">
                 <h2 className="section-title">O ponto, segundo o agente</h2>
                 {current.explanation && (
-                  <span className={`badge ${current.explanation.needsCode ? 'badge-block' : 'badge-quiet'}`}>{current.explanation.needsCode ? 'Pede mudança de código' : 'Só resposta'}</span>
+                  <span className="row" style={{ gap: 10 }}>
+                    <span className={`badge ${current.explanation.needsCode ? 'badge-block' : 'badge-quiet'}`}>{current.explanation.needsCode ? 'Pede mudança de código' : 'Só resposta'}</span>
+                    {voice && (
+                      <ReplayButton
+                        playing={player.speaking === 'discussão' && player.current === current.explanation}
+                        label="Ouvir esta explicação"
+                        onPlay={() => void player.say(current.explanation?.speech ?? '', voice, 'discussão', { force: true, item: current.explanation }).catch(() => undefined)}
+                        onStop={() => player.stop()}
+                      />
+                    )}
+                  </span>
                 )}
               </div>
               {explaining === current.id && <div className="row faint"><span className="spinner" /> O agente está lendo o trecho e a discussão…</div>}
               {current.explanation && (
                 <>
                   <p style={{ fontWeight: 600, lineHeight: 1.5 }}>{current.explanation.point}</p>
-                  <p className="small" style={{ lineHeight: 1.55 }}>{current.explanation.speech}</p>
+                  <div className="small" style={{ lineHeight: 1.55 }}><RichText text={current.explanation.text || current.explanation.speech} /></div>
                   {current.stale && <p className="small" style={{ color: 'var(--amber-ink)' }}>A discussão teve respostas novas depois desta explicação.</p>}
                   <div className="row" style={{ gap: 8 }}>
-                    {voice && <button type="button" className="btn" onClick={() => void player.say(current.explanation?.speech ?? '', voice, 'discussão').catch(() => undefined)}>Ouvir de novo</button>}
                     <button type="button" className="btn" disabled={!!explaining} onClick={() => void explain(current)}>Explicar de novo</button>
                     <ContinueInClaude sessionId={current.explanation.sessionId} />
                   </div>

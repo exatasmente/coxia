@@ -442,7 +442,7 @@ function viewOf(d: GlDiscussion, stored: StoredDiscussion | undefined): Discussi
     path: pos?.new_path ?? pos?.old_path ?? null,
     line: pos?.new_line ?? pos?.old_line ?? null,
     notes: notes.map((n): DiscussionNote => ({ author: n.author.username, at: n.created_at, body: n.body })),
-    explanation: explanation ? { speech: explanation.speech, point: explanation.point, needsCode: explanation.needsCode, draft: explanation.draft, sessionId: explanation.sessionId, at: explanation.at } : null,
+    explanation: explanation ? { speech: explanation.speech, text: explanation.text, point: explanation.point, needsCode: explanation.needsCode, draft: explanation.draft, sessionId: explanation.sessionId, at: explanation.at } : null,
     stale: !!explanation && explanation.notes !== notes.length,
     proposals,
   };
@@ -471,18 +471,20 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     '"ponto": o que o revisor está pedindo ou questionando, em uma frase. "precisa_codigo": true se atender exige mudar o código.',
     '"fala": até 90 palavras, para ser ouvida: o ponto, se o revisor tem razão pelo que você leu e o que o Luiz precisa decidir.',
     '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa e com a acentuação correta. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
+    '"texto" explica o ponto; o rascunho da resposta vai só em "rascunho", sem repeti-lo no texto.',
+    CHAT_RULES,
     SPEECH_RULES,
   ]
     .filter(Boolean)
     .join('\n');
-  const r = await askAgent<{ fala: string; ponto: string; precisa_codigo: boolean; rascunho: string }>(
+  const r = await askAgent<{ fala: string; texto: string; ponto: string; precisa_codigo: boolean; rascunho: string }>(
     'deep',
     prompt,
-    obj({ fala: str, ponto: str, precisa_codigo: { type: 'boolean' }, rascunho: str }),
-    { maxTurns: 14 },
+    obj({ fala: str, texto: str, ponto: str, precisa_codigo: { type: 'boolean' }, rascunho: str }),
+    { maxTurns: 20 },
   );
   const store = readStore(mr);
-  const explanation = { speech: r.data.fala, point: r.data.ponto, needsCode: r.data.precisa_codigo, draft: r.data.rascunho, sessionId: r.sessionId || null, at: new Date().toISOString(), notes: notes.length };
+  const explanation = { speech: r.data.fala, text: r.data.texto || r.data.fala, point: r.data.ponto, needsCode: r.data.precisa_codigo, draft: r.data.rascunho, sessionId: r.sessionId || null, at: new Date().toISOString(), notes: notes.length };
   store[id] = { proposals: store[id]?.proposals ?? [], explanation };
   writeJson(discussionFile(mr), store);
   return viewOf(d, store[id]);
