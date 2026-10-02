@@ -2,7 +2,9 @@
 // Imported first in main.tsx so api.ts finds window.api.
 import { buildApi } from '../../shared/apiChannels';
 import type { AppEvent } from '../../shared/types';
+import { isQueueable, IDEMPOTENCY_HEADER } from '../../shared/outbox';
 import { decodeWire, encodeWire } from '../../shared/wire';
+import { enqueue, isTransientFailure, randomId, startOutbox, waitFor } from './outbox';
 
 export const UNAUTHORIZED = 'cerimonias:unauthorized';
 
@@ -17,11 +19,11 @@ export class HttpStatusError extends Error {
   }
 }
 
-export async function post(path: string, body: unknown): Promise<unknown> {
+export async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<unknown> {
   const res = await fetch(url(path), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-Cerimonias': '1' },
+    headers: { 'Content-Type': 'application/json', 'X-Cerimonias': '1', ...headers },
     body: JSON.stringify(body),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; result?: unknown };
@@ -80,13 +82,28 @@ async function copy(text: string): Promise<void> {
 }
 
 async function rpc(channel: string, ...args: unknown[]): Promise<unknown> {
-  const data = (await post(`api/rpc/${encodeURIComponent(channel)}`, encodeWire(args))) as { result?: unknown };
-  return decodeWire(data.result);
+  const path = `api/rpc/${encodeURIComponent(channel)}`;
+  if (!isQueueable(channel)) return decodeWire(((await post(path, encodeWire(args))) as { result?: unknown }).result);
+  // A send that fails for lack of network waits in the outbox and is replayed with the same id (the server runs it once).
+  const id = randomId();
+  const wire = encodeWire(args);
+  try {
+    return decodeWire(((await post(path, wire, { [IDEMPOTENCY_HEADER]: id })) as { result?: unknown }).result);
+  } catch (e) {
+    if (!isTransientFailure(e)) throw e;
+  }
+  try {
+    await enqueue({ id, channel, body: JSON.stringify(wire) });
+  } catch {
+    throw new Error('Sem conexão e não consegui guardar o envio para depois.');
+  }
+  return waitFor(id);
 }
 
 if (!('api' in window)) {
   document.documentElement.dataset.platform = 'web';
   (window as unknown as { api: unknown }).api = buildApi(rpc, onEvent, { copy });
+  startOutbox();
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => void navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => undefined));
   }

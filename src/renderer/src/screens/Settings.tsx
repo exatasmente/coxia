@@ -8,6 +8,7 @@ import { applyTheme } from '../theme';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 import { RetentionSection } from './RetentionSection';
+import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -329,6 +330,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
           </label>
         </section>
 
+        <PushSection />
         <WebAccessSection />
       </div>
     </div>
