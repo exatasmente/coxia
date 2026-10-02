@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { BranchHealth, WorktreeHealth } from '../shared/radar';
 import { WORKSPACE } from './env';
+import { logError } from './errorlog';
 
 const exec = promisify(execFile);
 
@@ -172,7 +173,10 @@ export async function fetchRepos(): Promise<void> {
   await Promise.all(
     REPOS.map((r) => join(WORKSPACE, r))
       .filter((repo) => existsSync(join(repo, '.git')))
-      .map((repo) => exec('git', ['-C', repo, 'fetch', '--quiet', 'origin'], { timeout: 120_000 }).catch((e) => console.error('[fetch]', repo, String(e).slice(0, 200)))),
+      .map((repo) => exec('git', ['-C', repo, 'fetch', '--quiet', 'origin'], { timeout: 120_000 }).catch((e) => {
+        console.error('[fetch]', repo, String(e).slice(0, 200));
+        logError('job:radar', e, { job: 'radar', phase: 'fetch' });
+      })),
   );
 }
 

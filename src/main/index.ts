@@ -8,6 +8,7 @@ import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude } from './claude';
 import { getSettings, saveSettings } from './config';
+import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
@@ -21,12 +22,19 @@ import { glossary } from './glossary';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
 
+installProcessHandlers();
+
 // Autostart launches with --hidden: the app starts in the tray only.
 const HIDDEN = process.argv.includes('--hidden');
 
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+
+function fail(tag: string, source: string, e: unknown): void {
+  console.error(tag, e);
+  logError(source, e);
+}
 
 function show(): void {
   if (!win) return;
@@ -81,6 +89,10 @@ function createWindow(): void {
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  win.webContents.on('render-process-gone', (_e, d) => {
+    console.error('[renderer] process gone', d.reason);
+    logError('renderer:gone', new Error(`renderer process gone: ${d.reason}`), { exitCode: d.exitCode });
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
@@ -107,9 +119,9 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: 'Abrir', click: show },
       { label: 'Pré-daily agora', click: go('call') },
-      { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => console.error('[status]', e)) },
+      { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => fail('[status]', 'tray:status', e)) },
       { label: 'Ações de release', click: go('actions') },
-      { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => console.error('[release]', e)) },
+      { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => fail('[release]', 'tray:release', e)) },
       { label: 'Retro da semana', click: go('retro') },
       { label: 'Histórico', click: go('history') },
       { label: 'Configurações', click: go('settings') },
@@ -210,7 +222,7 @@ if (!app.requestSingleInstanceLock()) {
       register({ handle, notify, emit, job: registerJob });
     }
     startScheduler({ notify, emit });
-    void syncWebAccess().catch((e) => console.error('[web]', e));
+    void syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
   });
   app.on('before-quit', () => {
     quitting = true;

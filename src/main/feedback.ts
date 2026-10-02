@@ -21,6 +21,7 @@ import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agent
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS, GITLAB, PLAYBOOK } from './env';
+import { logError } from './errorlog';
 import type { Module } from './module';
 import type { Notice } from './scheduler';
 
@@ -135,6 +136,7 @@ async function issueStatuses(cards: Card[]): Promise<Map<string, string>> {
     }
   } catch (e) {
     console.error('[feedback] status query failed', (e as Error).message);
+    logError('job:feedback', e, { job: 'feedback', phase: 'status' });
   }
   return out;
 }
@@ -195,6 +197,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
           return { discussions: next.mrs[mr.ref].discussions, qaNotes: next.mrs[mr.ref].qaNotes, fresh: before ? fresh : [], freshQa: before ? freshQa : [] };
         } catch (e) {
           console.error(`[feedback] ${mr.ref}`, (e as Error).message);
+          logError('job:feedback', e, { job: 'feedback', mr: mr.ref });
           if (prev.mrs[mr.ref]) next.mrs[mr.ref] = prev.mrs[mr.ref];
           return null;
         }
@@ -219,6 +222,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
         if (before) freshNotes = notes.filter((n) => !before.qaNotes.includes(n.id));
       } catch (e) {
         console.error(`[feedback] #${card.iid} notes`, (e as Error).message);
+        logError('job:feedback', e, { job: 'feedback', iid: card.iid });
       }
     }
     next.issues[card.iid] = { stage: card.stage, status, returned, qaNotes };
@@ -325,6 +329,7 @@ async function qaNotesOf(card: Card): Promise<(QaNoteView & { body: string })[]>
       }
     } catch (e) {
       console.error(`[feedback] ${mr.ref}`, (e as Error).message);
+      logError('job:feedback', e, { job: 'feedback', mr: mr.ref });
     }
   }
   return found.sort((a, b) => b.at.localeCompare(a.at));
