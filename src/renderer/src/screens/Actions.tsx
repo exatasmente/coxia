@@ -78,7 +78,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       {a.files.length > 0 && (
         <details>
           <summary className="small muted" style={{ cursor: 'pointer' }}>
-            {a.kind === 'conflict' ? `${a.files.length} arquivo(s) em conflito` : `${a.files.length} arquivo(s) do MR que a release também mudou`}
+            {a.kind === 'conflict' ? `${a.files.length} arquivo(s) em conflito` : a.kind === 'conflict-push' ? `${a.files.length} arquivo(s) resolvido(s)` : `${a.files.length} arquivo(s) do MR que a release também mudou`}
           </summary>
           <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0' }}>{a.files.join('\n')}</pre>
         </details>
@@ -123,7 +123,11 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           {confirming ? (
             <button type="button" className="btn" disabled={!!busy} onClick={() => setConfirming(false)}>Cancelar</button>
           ) : (
-            <button type="button" className="btn" disabled={!!busy} onClick={() => void run('', () => api.skipAction(a.id))}>{a.kind === 'conflict' ? 'Já tratei fora' : 'Agora não'}</button>
+            a.kind === 'conflict-push' ? (
+              <button type="button" className="btn" onClick={() => go({ name: 'conflict', id: String((a.unit ?? {}).conflictId ?? '') })}>Abrir o conflito</button>
+            ) : (
+              <button type="button" className="btn" disabled={!!busy} onClick={() => void run('', () => api.skipAction(a.id))}>{a.kind === 'conflict' ? 'Já tratei fora' : 'Agora não'}</button>
+            )
           )}
         </div>
       )}

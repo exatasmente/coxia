@@ -398,6 +398,15 @@ describe('discard', () => {
     expect((await conflictPrepare(id)).resolve?.files).toHaveLength(2);
   });
 
+  it('the push action cannot be skipped on its own: discarding the conflict is the way out', async () => {
+    const id = seed(f);
+    await toProposed(id);
+    decideAll(id);
+    const done = await conflictApply(id, { skipTests: true });
+    await expect(skipAction(done.resolve?.pushId as string)).rejects.toThrow(/Descartar/);
+    expect(listActions().find((x) => x.id === done.resolve?.pushId)?.state).toBe('pending');
+  });
+
   it('"already handled outside" also cleans up the worktree', async () => {
     const id = seed(f);
     const wt = (await conflictPrepare(id)).resolve?.worktree as string;

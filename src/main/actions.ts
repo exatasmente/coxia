@@ -406,6 +406,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
 
 export async function skipAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
+  if (a?.kind === 'conflict-push') throw new Error('o envio some ao descartar o conflito: use Descartar na tela dele');
   // Treated outside: the worktree this app made for it goes away too.
   if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
   return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString() }));
