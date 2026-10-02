@@ -1,0 +1,25 @@
+/* Minutes versions: the switcher, the "what changed" summary, the delete confirmation and the trash. Phone first, 44 px targets. */
+.mv-switch { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.mv-switch .filter { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; }
+.mv-switch .filter .mv-live { font-size: 11px; font-weight: 700; color: var(--amber-ink); background: var(--amber-soft); border-radius: 999px; padding: 1px 8px; }
+
+.mv-diff { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mv-diff h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.mv-diff ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mv-diff li { display: flex; gap: 8px 10px; align-items: baseline; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.mv-diff .mv-before { color: var(--faint); text-decoration: line-through; }
+.mv-tag { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--chip-quiet-bg); color: var(--muted); white-space: nowrap; }
+
+.mv-kept { border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mv-kept ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.mv-kept li { overflow-wrap: anywhere; }
+.mv-kept .mv-dest { font-family: var(--mono); font-size: 12px; opacity: 0.85; }
+.mv-confirm { display: flex; gap: 10px; flex-wrap: wrap; }
+.mv-confirm .btn { flex: 1 1 160px; }
+
+.mv-trash summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.mv-trash-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line-2); min-width: 0; }
+
+@media (max-width: 480px) {
+  .mv-switch .filter { flex: 1 1 auto; justify-content: center; }
+}

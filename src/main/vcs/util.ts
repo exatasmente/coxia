@@ -1,0 +1,79 @@
+import { VcsError } from './errors';
+import type { VcsCiStatus } from './types';
+
+export const enc = encodeURIComponent;
+
+/** Runs `fn` over the items with at most `size` in flight, keeping the order of the results. */
+export async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]);
+      }
+    }),
+  );
+  return out;
+}
+
+const PROJECT = /^[\w.-]+(\/[\w.-]+)+$/;
+
+/** "group/sub/name" (at least owner and name) or a numeric id; throws a translated error for anything else. */
+export function checkProject(project: string, allowId = true): string {
+  if (!(PROJECT.test(project) && !project.split('/').some((s) => /^\.+$/.test(s))) && !(allowId && /^\d+$/.test(project))) throw new VcsError('invalid', { detail: project });
+  return project;
+}
+
+export function checkIid(iid: number): number {
+  if (!Number.isSafeInteger(iid) || iid <= 0) throw new VcsError('invalid', { detail: String(iid) });
+  return iid;
+}
+
+const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|see|related to)\s*:?\s+(?:[\w./-]*#)?(\d+)\b/gi;
+const HASH = /(?:^|[\s(\[])#(\d{1,9})\b/g;
+const BRANCH = /(?:^|[/_-])(\d{2,9})(?:$|[/_-])/;
+
+/** Issue numbers an MR mentions: "Closes #12", "(#12)", "#12" in the title, or a number in the branch name. Best effort. */
+export function issueRefsOf(text: string, branch = ''): number[] {
+  const found = new Set<number>();
+  for (const m of text.matchAll(CLOSING)) found.add(Number(m[1]));
+  for (const m of text.matchAll(HASH)) found.add(Number(m[1]));
+  const b = BRANCH.exec(branch);
+  if (b) found.add(Number(b[1]));
+  return [...found].filter((n) => Number.isSafeInteger(n) && n > 0);
+}
+
+export function iso(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+export function str(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+export function num(value: unknown): number {
+  return typeof value === 'number' ? value : Number(value) || 0;
+}
+
+/** Worst-first merge of several CI states into the one the card shows. */
+export function worstCi(states: VcsCiStatus[]): VcsCiStatus | null {
+  const order: VcsCiStatus[] = ['failed', 'running', 'pending', 'manual', 'canceled', 'success', 'skipped'];
+  for (const s of order) if (states.includes(s)) return s;
+  return null;
+}
+
+/** Splits a raw unified diff (several files) into one entry per file. */
+export function splitUnifiedDiff(raw: string): { path: string; diff: string }[] {
+  const out: { path: string; diff: string }[] = [];
+  const parts = raw.split(/^(?=diff --git )/m).filter((p) => p.startsWith('diff --git '));
+  for (const part of parts) {
+    const head = /^diff --git a\/(.+?) b\/(.+)$/m.exec(part);
+    const path = head?.[2] ?? head?.[1];
+    if (!path) continue;
+    const at = part.search(/^@@/m);
+    out.push({ path, diff: at >= 0 ? part.slice(at) : '' });
+  }
+  return out;
+}

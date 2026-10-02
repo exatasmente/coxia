@@ -1,0 +1,56 @@
+{
+ "turn-changed": {
+  "role": "turn",
+  "prompt": "Você é o agente da atividade web#101 na pré-daily em texto.\nEsta atividade já foi tratada hoje, na conversa das 09:40. Esta é outra conversa no mesmo dia: não recomece do zero.\nCartão da atividade (GitLab via cardtool): {\"ref\":\"web#101\",\"iid\":\"101\",\"title\":\"Fix the report filter\",\"stage\":\"Code Review\",\"mrs\":[\"web!303\"],\"mrPaths\":[{\"ref\":\"web!303\",\"project\":\"acme/web\",\"iid\":303}],\"blockers\":[],\"pending\":[\"pipeline vermelha\",\"falta aprovação\"],\"changes\":[\"stage: Doing → Code Review\"],\"note\":null,\"url\":\"https://git.acme.test/acme/web/-/work_items/101\"}\nSpec em <SPECS> (Plan escrito).\nSe precisar, leia o spec (no máximo 3 leituras).\nO que ficou da conversa das 09:40:\n- O agente disse: The pipeline is red and the MR has conflicts.\n- Bloqueio apontado: web!303: MR com conflitos\n- O que o Bruno respondeu: Rebase it, Bruno owns the MR\n- Decisões tomadas: Rebase on main before merging\n- Efeitos na fila para o Claude Code: Rebase the branch\n- Pergunta que ficou sem resposta: Can Bruno rebase today?\nO que mudou na atividade desde as 09:40:\n- etapa: Doing → Code Review\n- bloqueio resolvido: web!303: MR com conflitos\n- nova pendência: falta aprovação\n- movimento: stage: Doing → Code Review\nMonte a sua vez: \"fala\" com até 60 palavras, só sobre o que mudou desde as 09:40. Não repita o que já foi dito. Confira se as decisões e respostas de antes ainda valem diante do que mudou; se alguma não vale mais, diga qual e por quê.\nSe houver uma decisão que só o Bruno pode tomar, termine a fala com UMA pergunta objetiva e repita-a em \"pergunta\"; senão, \"pergunta\" é null.\n\"opcoes\": de 0 a 3 respostas prontas, curtas (até 12 palavras), escritas como o Bruno responderia, cada uma uma saída concreta (ex.: \"Pode seguir com o merge\", \"Pede ajuda ao QA hoje\", \"Deixa para amanhã\"). Lista vazia quando não há nada a decidir. Ofereça opções quando houver pergunta ou bloqueio.\nA voz está desligada: ninguém vai ouvir a resposta, só ler na tela. \"fala\" é a mensagem curta que aparece na conversa: Português do Brasil direto, frases curtas, sem markdown, sem listas, sem emoji. Issue pelo número curto (\"a 101\"), MR pelo repositório e número (\"o 303 do gateway\"). Escreva só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.",
+  "system": "Você participa de uma cerimônia do Bruno, conduzida por texto (a voz está desligada), como agente de uma atividade. A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. Toda ação com efeito externo vira item da ata para o Bruno executar depois, com confirmação.\nPara ler o GitLab: `glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), `glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou `glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.",
+  "maxTurns": null,
+  "resume": null,
+  "allowedTools": [
+   "Read",
+   "Grep",
+   "Glob",
+   "Skill",
+   "mcp__tracker-issues__get_issue_details_and_comments",
+   "mcp__tracker-issues__get_merge_request_details_and_changes",
+   "Bash(glab api:*)",
+   "Bash(glab mr view:*)",
+   "Bash(glab issue view:*)"
+  ],
+  "extraDirs": [],
+  "schemaKeys": [
+   "fala",
+   "andou",
+   "proximo",
+   "bloqueio",
+   "pergunta",
+   "opcoes"
+  ]
+ },
+ "turn-deepened": {
+  "role": "turn",
+  "prompt": "Você é o agente da atividade web#101 na pré-daily em texto.\nEsta atividade já foi tratada hoje, na conversa das 09:40. Esta é outra conversa no mesmo dia: não recomece do zero.\nCartão da atividade (GitLab via cardtool): {\"ref\":\"web#101\",\"iid\":\"101\",\"title\":\"Fix the report filter\",\"stage\":\"Doing\",\"mrs\":[\"web!303\"],\"mrPaths\":[{\"ref\":\"web!303\",\"project\":\"acme/web\",\"iid\":303}],\"blockers\":[\"web!303: MR com conflitos\"],\"pending\":[\"pipeline vermelha\"],\"changes\":[],\"note\":null,\"url\":\"https://git.acme.test/acme/web/-/work_items/101\"}\nSpec em <SPECS> (Plan escrito).\nSe precisar, leia o spec (no máximo 3 leituras).\nO que ficou da conversa das 09:40:\n- O agente disse: The pipeline is red and the MR has conflicts.\n- Bloqueio apontado: web!303: MR com conflitos\n- O que o Bruno respondeu: Rebase it, Bruno owns the MR\n- Decisões tomadas: Rebase on main before merging\n- Efeitos na fila para o Claude Code: Rebase the branch\n- Pergunta que ficou sem resposta: Can Bruno rebase today?\nO que mudou na atividade desde as 09:40:\nNada mudou no cartão desde então; o Bruno pediu para aprofundar mesmo assim. Aprofunde, sem repetir o que já foi dito.\nMonte a sua vez: \"fala\" com até 60 palavras, só sobre o que mudou desde as 09:40. Não repita o que já foi dito. Confira se as decisões e respostas de antes ainda valem diante do que mudou; se alguma não vale mais, diga qual e por quê.\nSe houver uma decisão que só o Bruno pode tomar, termine a fala com UMA pergunta objetiva e repita-a em \"pergunta\"; senão, \"pergunta\" é null.\n\"opcoes\": de 0 a 3 respostas prontas, curtas (até 12 palavras), escritas como o Bruno responderia, cada uma uma saída concreta (ex.: \"Pode seguir com o merge\", \"Pede ajuda ao QA hoje\", \"Deixa para amanhã\"). Lista vazia quando não há nada a decidir. Ofereça opções quando houver pergunta ou bloqueio.\nA voz está desligada: ninguém vai ouvir a resposta, só ler na tela. \"fala\" é a mensagem curta que aparece na conversa: Português do Brasil direto, frases curtas, sem markdown, sem listas, sem emoji. Issue pelo número curto (\"a 101\"), MR pelo repositório e número (\"o 303 do gateway\"). Escreva só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.",
+  "system": "Você participa de uma cerimônia do Bruno, conduzida por texto (a voz está desligada), como agente de uma atividade. A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. Toda ação com efeito externo vira item da ata para o Bruno executar depois, com confirmação.\nPara ler o GitLab: `glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), `glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou `glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.",
+  "maxTurns": null,
+  "resume": null,
+  "allowedTools": [
+   "Read",
+   "Grep",
+   "Glob",
+   "Skill",
+   "mcp__tracker-issues__get_issue_details_and_comments",
+   "mcp__tracker-issues__get_merge_request_details_and_changes",
+   "Bash(glab api:*)",
+   "Bash(glab mr view:*)",
+   "Bash(glab issue view:*)"
+  ],
+  "extraDirs": [],
+  "schemaKeys": [
+   "fala",
+   "andou",
+   "proximo",
+   "bloqueio",
+   "pergunta",
+   "opcoes"
+  ]
+ }
+}

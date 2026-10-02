@@ -1,0 +1,113 @@
+{
+  "user": { "id": 42, "username": "ana.dev", "name": "Ana Dev", "state": "active", "web_url": "https://gitlab.test/ana.dev" },
+  "pat_self": { "id": 9, "name": "coxia", "scopes": ["read_api"], "active": true, "expires_at": "2027-01-31" },
+  "issues_assigned": [
+    {
+      "id": 5001, "iid": 101, "project_id": 7, "title": "Export fails with accents", "state": "opened",
+      "labels": ["STAGE:: Doing", "bug"], "milestone": { "title": "v1.2" }, "assignees": [{ "username": "ana.dev" }],
+      "author": { "username": "bob.qa" }, "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null,
+      "web_url": "https://gitlab.test/acme/app/-/issues/101", "references": { "short": "#101", "relative": "#101", "full": "acme/app#101" }
+    },
+    {
+      "id": 5002, "iid": 102, "project_id": 7, "title": "Report totals are off", "state": "opened",
+      "labels": ["STAGE:: Code Review OK"], "milestone": null, "assignees": [{ "username": "ana.dev" }],
+      "author": { "username": "bob.qa" }, "created_at": "2026-09-05T10:00:00Z", "updated_at": "2026-10-01T09:00:00Z", "closed_at": null,
+      "web_url": "https://gitlab.test/acme/app/-/issues/102", "references": { "short": "#102", "relative": "#102", "full": "acme/app#102" }
+    }
+  ],
+  "issue_101": {
+    "id": 5001, "iid": 101, "project_id": 7, "title": "Export fails with accents", "state": "opened",
+    "labels": ["STAGE:: Doing", "bug"], "milestone": { "title": "v1.2" }, "assignees": [{ "username": "ana.dev" }],
+    "author": { "username": "bob.qa" }, "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null,
+    "web_url": "https://gitlab.test/acme/app/-/issues/101", "references": { "full": "acme/app#101" }
+  },
+  "issue_notes": [
+    { "id": 903, "body": "Retest on release/bugfix/101 please", "system": false, "created_at": "2026-10-01T08:00:00Z", "author": { "username": "bob.qa" } },
+    { "id": 902, "body": "changed the description", "system": true, "created_at": "2026-09-30T08:00:00Z", "author": { "username": "ana.dev" } },
+    { "id": 901, "body": "Looking into it", "system": false, "created_at": "2026-09-29T08:00:00Z", "author": { "username": "ana.dev" } }
+  ],
+  "workitem_status": {
+    "data": { "project": { "workItems": { "nodes": [
+      { "id": "gid://gitlab/WorkItem/5001", "iid": "101", "widgets": [{ "type": "ASSIGNEES" }, { "type": "STATUS", "status": { "name": "In development" } }] }
+    ] } } }
+  },
+  "mr_list_author": [
+    {
+      "iid": 7, "project_id": 7, "title": "Draft: fix accents in export", "state": "opened", "draft": true, "has_conflicts": false,
+      "source_branch": "release/bugfix/101", "target_branch": "main", "sha": "aaaa1111bbbb2222cccc3333dddd4444eeee5555",
+      "web_url": "https://gitlab.test/acme/app/-/merge_requests/7", "author": { "id": 42, "username": "ana.dev" },
+      "reviewers": [], "description": "Closes #101", "created_at": "2026-09-30T10:00:00Z", "updated_at": "2026-10-01T10:00:00Z", "merged_at": null,
+      "references": { "full": "acme/app!7" }
+    }
+  ],
+  "mr_list_reviewer": [
+    {
+      "iid": 9, "project_id": 8, "title": "Add retry to the uploader", "state": "opened", "draft": false, "has_conflicts": false,
+      "source_branch": "feature/uploader-retry", "target_branch": "main", "sha": "ffff6666",
+      "web_url": "https://gitlab.test/acme/uploader/-/merge_requests/9", "author": { "id": 77, "username": "carol.dev" },
+      "reviewers": [{ "id": 42, "username": "ana.dev", "name": "Ana Dev" }], "description": "", "references": { "full": "acme/uploader!9" }
+    }
+  ],
+  "mr_7": {
+    "iid": 7, "project_id": 7, "title": "Draft: fix accents in export", "state": "opened", "draft": true, "has_conflicts": false,
+    "source_branch": "release/bugfix/101", "target_branch": "main", "sha": "aaaa1111bbbb2222cccc3333dddd4444eeee5555",
+    "web_url": "https://gitlab.test/acme/app/-/merge_requests/7", "author": { "id": 42, "username": "ana.dev" },
+    "reviewers": [{ "id": 77, "username": "carol.dev", "name": "Carol Dev" }],
+    "head_pipeline": { "id": 900, "status": "manual", "web_url": "https://gitlab.test/acme/app/-/pipelines/900" },
+    "diverged_commits_count": 3, "description": "Closes #101", "references": { "full": "acme/app!7" }
+  },
+  "mr_approvals": { "approved": true, "approved_by": [{ "user": { "username": "carol.dev" } }] },
+  "pipeline_jobs": [
+    { "id": 1, "name": "test", "stage": "test", "status": "success", "pipeline": { "id": 900 } },
+    { "id": 2, "name": "deploy_beta", "stage": "deploy", "status": "manual", "pipeline": { "id": 900 } },
+    { "id": 3, "name": "e2e", "stage": "test", "status": "manual", "pipeline": { "id": 900 }, "created_at": "2026-10-01T10:00:00Z", "started_at": null }
+  ],
+  "mr_pipelines": [
+    { "id": 900, "status": "manual", "created_at": "2026-10-01T10:00:00Z", "web_url": "https://gitlab.test/acme/app/-/pipelines/900" },
+    { "id": 880, "status": "success", "created_at": "2026-09-30T10:00:00Z", "web_url": "https://gitlab.test/acme/app/-/pipelines/880" }
+  ],
+  "mr_commits": [
+    { "id": "cccc3333dddd4444", "committed_date": "2026-10-01T09:30:00Z" },
+    { "id": "aaaa1111bbbb2222", "committed_date": "2026-09-30T09:30:00Z" }
+  ],
+  "mr_changes": {
+    "changes": [
+      { "new_path": "src/export.ts", "diff": "@@ -10,3 +10,4 @@\n a\n+b\n c\n" },
+      { "new_path": "src/big.ts", "diff": "" }
+    ]
+  },
+  "mr_discussions": [
+    {
+      "id": "3f1c9a0e5b7d2a4c8e6f1b3d5a7c9e0f2b4d6a8c",
+      "notes": [
+        { "id": 11, "body": "Why not use the existing helper?", "system": false, "resolvable": true, "resolved": false, "created_at": "2026-10-01T09:00:00Z", "author": { "username": "carol.dev" }, "position": { "new_path": "src/export.ts", "old_path": "src/export.ts", "new_line": 12, "old_line": null } },
+        { "id": 12, "body": "Good point, will check", "system": false, "resolvable": true, "resolved": false, "created_at": "2026-10-01T09:10:00Z", "author": { "username": "ana.dev" } }
+      ]
+    },
+    {
+      "id": "aa11bb22cc33dd44ee55ff6677889900aabbccdd",
+      "notes": [{ "id": 13, "body": "typo", "system": false, "resolvable": true, "resolved": true, "created_at": "2026-09-30T09:00:00Z", "author": { "username": "carol.dev" } }]
+    },
+    {
+      "id": "0011223344556677889900aabbccddeeff001122",
+      "notes": [{ "id": 14, "body": "added 1 commit", "system": true, "resolvable": false, "created_at": "2026-09-30T08:00:00Z", "author": { "username": "ana.dev" } }]
+    }
+  ],
+  "mr_notes": [
+    { "id": 21, "body": "ping", "system": false, "created_at": "2026-10-01T11:00:00Z", "author": { "username": "ana.dev" } }
+  ],
+  "project": { "id": 7, "path_with_namespace": "acme/app", "default_branch": "main", "web_url": "https://gitlab.test/acme/app" },
+  "branch_main": { "name": "main", "commit": { "id": "9999aaaa8888bbbb7777cccc6666dddd5555eeee" } },
+  "members": [
+    { "id": 42, "username": "ana.dev", "name": "Ana Dev", "access_level": 40, "state": "active" },
+    { "id": 77, "username": "carol.dev", "name": "Carol Dev", "access_level": 30, "state": "active" },
+    { "id": 78, "username": "dave.ops", "name": "Dave Ops", "access_level": 30, "state": "active" },
+    { "id": 79, "username": "k8s-deploy", "name": "Deploy", "access_level": 30, "state": "active" },
+    { "id": 80, "username": "erin.guest", "name": "Erin Guest", "access_level": 10, "state": "active" }
+  ],
+  "recent_mrs": [{ "reviewers": [{ "id": 77, "username": "carol.dev", "name": "Carol Dev" }] }, { "reviewers": [{ "id": 77, "username": "carol.dev", "name": "Carol Dev" }] }],
+  "related_mrs": [
+    { "iid": 7, "project_id": 7, "title": "Draft: fix accents in export", "state": "merged", "source_branch": "release/bugfix/101", "target_branch": "main", "web_url": "https://gitlab.test/acme/app/-/merge_requests/7", "merged_at": "2026-10-01T12:00:00Z", "references": { "full": "acme/app!7" } },
+    { "iid": 3, "project_id": 99, "title": "playbook note", "state": "merged", "source_branch": "docs/x", "target_branch": "main", "web_url": "https://gitlab.test/acme/playbook/-/merge_requests/3", "merged_at": "2026-10-02T12:00:00Z", "references": { "full": "acme/playbook!3" } }
+  ]
+}

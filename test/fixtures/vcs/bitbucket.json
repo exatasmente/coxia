@@ -1,0 +1,81 @@
+{
+  "user": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev", "display_name": "Ana Dev", "account_id": "5b70f8a1", "links": { "html": { "href": "https://bitbucket.org/%7B11111111-2222-3333-4444-555555555555%7D/" } } },
+  "issues": {
+    "pagelen": 100,
+    "values": [
+      {
+        "id": 12, "title": "Export fails with accents", "state": "open", "kind": "bug", "priority": "major", "milestone": { "name": "v1.2" },
+        "assignee": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" }, "reporter": { "uuid": "{aaaaaaaa-2222-3333-4444-555555555555}", "nickname": "bob-qa" },
+        "created_on": "2026-09-01T10:00:00Z", "updated_on": "2026-09-30T09:00:00Z", "links": { "html": { "href": "https://bitbucket.org/acme/app/issues/12" } }
+      }
+    ]
+  },
+  "issue_12": {
+    "id": 12, "title": "Export fails with accents", "state": "on hold", "kind": "bug", "priority": "major",
+    "assignee": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" }, "reporter": { "nickname": "bob-qa" },
+    "created_on": "2026-09-01T10:00:00Z", "updated_on": "2026-09-30T09:00:00Z", "links": { "html": { "href": "https://bitbucket.org/acme/app/issues/12" } }
+  },
+  "issue_comments": {
+    "values": [
+      { "id": 31, "content": { "raw": "Looking" }, "user": { "nickname": "ana-dev" }, "created_on": "2026-09-29T08:00:00Z" },
+      { "id": 32, "content": { "raw": "Retest please" }, "user": { "nickname": "bob-qa" }, "created_on": "2026-10-01T08:00:00Z" },
+      { "id": 33, "content": { "raw": "" }, "deleted": true, "user": { "nickname": "bob-qa" }, "created_on": "2026-10-01T09:00:00Z" }
+    ]
+  },
+  "prs_author": {
+    "values": [
+      {
+        "id": 7, "title": "Fix accents in export", "state": "OPEN", "draft": true, "description": "Fixes #12",
+        "source": { "branch": { "name": "release/bugfix/12" }, "commit": { "hash": "aaaa1111bbbb" } },
+        "destination": { "branch": { "name": "main" }, "repository": { "full_name": "acme/app" } },
+        "links": { "html": { "href": "https://bitbucket.org/acme/app/pull-requests/7" } },
+        "author": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" },
+        "reviewers": [{ "uuid": "{22222222-2222-3333-4444-555555555555}", "nickname": "carol-dev", "display_name": "Carol Dev" }],
+        "participants": [
+          { "user": { "uuid": "{22222222-2222-3333-4444-555555555555}", "nickname": "carol-dev" }, "role": "REVIEWER", "approved": true, "state": "approved" },
+          { "user": { "uuid": "{33333333-2222-3333-4444-555555555555}", "nickname": "dave-ops" }, "role": "REVIEWER", "approved": false, "state": "changes_requested" }
+        ],
+        "created_on": "2026-09-30T10:00:00Z", "updated_on": "2026-10-01T10:00:00Z"
+      }
+    ]
+  },
+  "prs_reviewer": {
+    "values": [
+      {
+        "id": 9, "title": "Add retry to the uploader", "state": "OPEN", "description": "",
+        "source": { "branch": { "name": "feature/retry" }, "commit": { "hash": "ffff6666" } },
+        "destination": { "branch": { "name": "main" }, "repository": { "full_name": "acme/uploader" } },
+        "links": { "html": { "href": "https://bitbucket.org/acme/uploader/pull-requests/9" } },
+        "author": { "uuid": "{22222222-2222-3333-4444-555555555555}", "nickname": "carol-dev" },
+        "reviewers": [{ "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" }]
+      }
+    ]
+  },
+  "pr_7": {
+    "id": 7, "title": "Fix accents in export", "state": "OPEN", "draft": true, "description": "Fixes #12",
+    "source": { "branch": { "name": "release/bugfix/12" }, "commit": { "hash": "aaaa1111bbbb" } },
+    "destination": { "branch": { "name": "main" }, "repository": { "full_name": "acme/app" } },
+    "links": { "html": { "href": "https://bitbucket.org/acme/app/pull-requests/7" } },
+    "author": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" },
+    "reviewers": [{ "uuid": "{22222222-2222-3333-4444-555555555555}", "nickname": "carol-dev", "display_name": "Carol Dev" }]
+  },
+  "pr_statuses": { "values": [{ "uuid": "{s1}", "state": "SUCCESSFUL", "created_on": "2026-10-01T10:00:00Z", "url": "https://bitbucket.org/acme/app/addon/pipelines/home#!/results/55" }, { "uuid": "{s2}", "state": "FAILED", "created_on": "2026-10-01T10:05:00Z", "url": "https://x" }] },
+  "pr_comments": {
+    "values": [
+      { "id": 101, "content": { "raw": "Why not reuse the helper?" }, "user": { "nickname": "carol-dev" }, "created_on": "2026-10-01T09:00:00Z", "inline": { "path": "src/export.ts", "to": 12, "from": null } },
+      { "id": 102, "content": { "raw": "Will check" }, "user": { "nickname": "ana-dev" }, "created_on": "2026-10-01T09:10:00Z", "parent": { "id": 101 } },
+      { "id": 103, "content": { "raw": "Resolved one" }, "user": { "nickname": "carol-dev" }, "created_on": "2026-09-30T09:00:00Z", "resolution": { "type": "comment_resolution" } },
+      { "id": 104, "content": { "raw": "gone" }, "user": { "nickname": "carol-dev" }, "created_on": "2026-09-30T09:30:00Z", "deleted": true }
+    ]
+  },
+  "pr_commits": { "values": [{ "hash": "cccc3333dddd4444", "date": "2026-10-01T09:30:00Z" }] },
+  "pr_diff": "diff --git a/src/export.ts b/src/export.ts\nindex 1..2 100644\n--- a/src/export.ts\n+++ b/src/export.ts\n@@ -10,3 +10,4 @@\n a\n+b\n c\ndiff --git a/assets/logo.png b/assets/logo.png\nBinary files differ\n",
+  "repo": { "full_name": "acme/app", "mainbranch": { "name": "main" }, "links": { "html": { "href": "https://bitbucket.org/acme/app" } } },
+  "branch": { "name": "main", "target": { "hash": "9999aaaa8888bbbb" } },
+  "members": {
+    "values": [
+      { "user": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev", "display_name": "Ana Dev" } },
+      { "user": { "uuid": "{22222222-2222-3333-4444-555555555555}", "nickname": "carol-dev", "display_name": "Carol Dev" } }
+    ]
+  }
+}

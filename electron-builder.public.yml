@@ -1,0 +1,11 @@
+# The build published on GitHub Releases (npm run dist:public, .github/workflows/release.yml). It extends electron-builder.yml and differs in one
+# thing: the Claude Agent SDK (proprietary, Anthropic's terms) is left out of the package, because the setup wizard installs it on the
+# first run (src/main/claudeSdk.ts notices the missing binary and reports the SDK as not installed).
+# `npm run dist` (your own build from source) keeps using electron-builder.yml and bundles the SDK.
+extends: ./electron-builder.yml
+files:
+  - out/**
+  - package.json
+  - "!node_modules/@anthropic-ai/**"
+# The base config unpacks the SDK's native binary; there is nothing to unpack here.
+asarUnpack: []

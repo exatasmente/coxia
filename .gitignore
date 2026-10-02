@@ -1,0 +1,14 @@
+node_modules/
+out/
+sidecar/.venv/
+scratch/
+.runlogs*
+.npm-*.log
+.uv-*.log
+.electron-dl.log
+sidecar/.venv-test/
+sidecar/models/
+dist/
+release-notes.md
+.sdk-probe.log
+.claude/worktrees/

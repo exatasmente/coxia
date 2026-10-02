@@ -1,0 +1,58 @@
+{
+  "name": "cerimonias",
+  "version": "0.1.0",
+  "description": "Coxia: cerimônias por voz com agentes por atividade",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "i18n:lint": "node scripts/i18n-lint.mjs --keys --scope renderer --max 0",
+    "dist": "electron-vite build && electron-builder --linux AppImage deb",
+    "dist:public": "electron-vite build && electron-builder --config electron-builder.public.yml --linux AppImage deb"
+  },
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.287",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "electron-updater": "^6.8.9",
+    "mermaid": "^12.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "electron@44.5.1": true
+  },
+  "private": true,
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Luiz Neto",
+    "email": "22161417+exatasmente@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/exatasmente/coxia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/exatasmente/coxia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/exatasmente/coxia/issues"
+  },
+  "desktopName": "cerimonias.desktop"
+}
