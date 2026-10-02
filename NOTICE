@@ -1,0 +1,27 @@
+Coxia
+Copyright 2026 Luiz Neto
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Coxia is an independent project. It is not affiliated with, endorsed by or
+sponsored by Anthropic, PBC. "Claude" is a trademark of Anthropic.
+
+Third-party software
+--------------------
+
+Coxia's packages bundle open-source components (the Electron runtime, React,
+Mermaid, electron-updater, the IBM Plex fonts and their dependencies), each
+under its own license. THIRD_PARTY_NOTICES.md lists the production
+dependencies with their versions and licenses, and flags the ones that are not
+under a permissive license. Regenerate it with:
+
+    node scripts/third-party-notices.mjs
+
+The Claude Agent SDK is proprietary software of Anthropic, PBC, governed by
+Anthropic's terms. It is NOT part of the public Coxia packages and is not
+redistributed by this project; the setup wizard installs it on the user's
+machine after showing the terms. See THIRD_PARTY_NOTICES.md.
+
+The optional voice feature installs Python packages and speech models on the
+user's machine at the user's request (sidecar/requirements.txt). They are not
+distributed with Coxia; their licenses are listed in THIRD_PARTY_NOTICES.md.
