@@ -29,6 +29,9 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   const [now, setNow] = useState(Date.now());
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  // follow-up replies the agent offered after the last answer, per card
+  const [followUps, setFollowUps] = useState<Record<string, string[]>>({});
   const rec = useRecorder(() => void talkRef.current());
   const runId = useRef(0);
   const latest = useRef(c);
@@ -133,10 +136,18 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       return;
     }
     if (!text) {
-      setHint('Não entendi. Aperte espaço e fale de novo.');
+      setHint('Não entendi. Aperte espaço e fale de novo, ou digite a resposta.');
       setPhase('idle');
       return;
     }
+    await sendRef.current(text);
+  }, [rec, player]);
+
+  // Spoken, typed or tapped: every answer takes the same way.
+  const send = useCallback(async (text: string) => {
+    setHint(null);
+    setError(null);
+    if (player.speaking) player.stop();
     const cc = latest.current;
     cc.addLog('Você', text, ME_COLOR);
     const cmd = normalize(text);
@@ -154,6 +165,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       if (r.decision) cc.addDecision(r.decision);
       if (r.effect) cc.addEffect(r.effect);
       cc.markAnswered(card.ref);
+      setFollowUps((f) => ({ ...f, [card.ref]: r.options ?? [] }));
       if (r.needsDeepDive) setHint('O agente sugere aprofundar esta atividade. Diga "aprofunda" ou use o botão.');
       setPhase('speaking');
       const voice = cc.voiceOf(card.ref);
@@ -162,7 +174,17 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       setError(`O agente não conseguiu responder: ${errorText(e)}`);
     }
     setPhase('idle');
-  }, [card, turn, rec, player, next, finish, go]);
+  }, [card, turn, player, next, finish, go]);
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  const offers = card ? (followUps[card.ref] ?? turn?.options ?? []) : [];
+  const submitDraft = () => {
+    const text = draft.trim();
+    if (!text || phase === 'transcribing' || phase === 'thinking' || rec.recording) return;
+    setDraft('');
+    void send(text);
+  };
 
   const talkRef = useRef(talk);
   talkRef.current = talk;
@@ -339,6 +361,33 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
 
             {phase !== 'ended' && (
               <div className="row composer" style={{ flexWrap: 'wrap' }} role="group" aria-label="Controles da call">
+                {card && offers.length > 0 && (
+                  <div className="call-offers" role="group" aria-label="Respostas sugeridas pelo agente">
+                    <span className="small muted">Responder com um toque:</span>
+                    {offers.map((o) => (
+                      <button key={o} type="button" className="btn call-offer" disabled={busy || rec.recording || phase === 'intro'} onClick={() => void send(o)}>
+                        {o}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <form
+                  className="call-text"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitDraft();
+                  }}
+                >
+                  <input
+                    className="text-input"
+                    placeholder={card ? 'Ou digite a resposta (ou "próximo", "aprofunda")' : 'Digite "próximo" para começar'}
+                    aria-label="Resposta por texto"
+                    value={draft}
+                    disabled={phase === 'intro'}
+                    onChange={(e) => setDraft(e.target.value)}
+                  />
+                  <button type="submit" className="btn btn-dark" disabled={!draft.trim() || busy || rec.recording || phase === 'intro'}>Enviar</button>
+                </form>
                 <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
                   <MicIcon />
                   {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}

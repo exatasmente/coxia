@@ -457,3 +457,7 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 .fix-panel .text-input { min-width: 0; width: 100%; }
 .fix-offer { white-space: normal; text-align: left; height: auto; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; }
 .bubble-replay[aria-pressed="true"] { opacity: 1; color: var(--teal); border-color: var(--teal-line); }
+.call-text { display: flex; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.call-text > .text-input { flex: 1 1 auto; min-width: 0; }
+.call-offers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.call-offer { height: auto; min-height: 40px; white-space: normal; text-align: left; border-color: var(--teal-line); }
