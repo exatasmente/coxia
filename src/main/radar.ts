@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { RadarFinding, RadarKind, RadarRegion, RadarResult, RadarSide } from '../shared/radar';
 import { stageRank } from '../shared/config/stages';
@@ -59,7 +59,12 @@ const GENERIC_DIR = new Set([
   'Exceptions', 'API', 'V1', 'V2', 'V4', 'admin', 'agent', 'Agent', 'Client', 'master', 'presentation', 'application',
 ]);
 
-const isNoise = (file: string) => NOISE.some((r) => r.test(file));
+// The folder of issue specs is in the repo it lives in (".specs/" at the root, for the SDD layout): a collision there is mechanical too.
+const specsNoise = (): RegExp | null => {
+  const dir = rc().specsDir;
+  return dir ? new RegExp(`^${basename(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`) : null;
+};
+const isNoise = (file: string) => NOISE.some((r) => r.test(file)) || !!specsNoise()?.test(file);
 
 // "Same module": the first two meaningful directory names ("Reports/V2" is dropped to "Reports" by GENERIC_DIR).
 function scopeOf(file: string): string | null {

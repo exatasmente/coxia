@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { conflictProgress } from '../../../shared/conflict';
+import { stageText } from '../../../shared/cycles/stages';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
@@ -79,7 +80,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             {a.kind === 'conflict' && open && a.resolve && <span className="badge badge-ask">{conflictProgress(a)}</span>}
             {a.kind === 'conflict' && a.state === 'done' && a.resolve?.publishedAt && <span className="badge badge-quiet">publicado</span>}
           </div>
-          <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {a.stage.replace('STAGE:: ', '')}</div>
+          <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {stageText(a.stage)}</div>
         </div>
       </div>
 
