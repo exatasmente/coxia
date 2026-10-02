@@ -10,3 +10,4 @@ sidecar/.venv-test/
 sidecar/models/
 dist/
 release-notes.md
+.sdk-probe.log
