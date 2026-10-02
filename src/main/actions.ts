@@ -1,14 +1,29 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
+import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import type { AppEvent, GitlabCommand, ReleaseAction } from '../shared/types';
-import { conflictAsk, rewriteQaComment } from './agents';
+import { conflictAsk, conflictPropose as askProposal, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { getSettings } from './config';
-import { ATAS, GITLAB, PLAYBOOK } from './env';
+import {
+  applyResolutions,
+  assertPublishable,
+  commitMerge,
+  conflictsDir,
+  findClone,
+  prepareWorktree,
+  pushBranch,
+  removeWorktree,
+  reopenResolutions,
+  runVerify,
+} from './conflictGit';
+import { hasMarkers } from './conflictHunks';
+import { verifyCommandFor } from './conflictVerify';
+import { ATAS, GITLAB, PLAYBOOK, WORKSPACE } from './env';
 import type { Notice } from './scheduler';
 
 const exec = promisify(execFile);
@@ -42,6 +57,9 @@ interface Unit {
   overlap?: { arquivos?: string[] };
   repo: string;
   src_sha: string;
+  project_path?: string;
+  mr_iid?: number;
+  target_branch?: string;
 }
 
 let deps: { notify(n: Notice): void; emit(ev: AppEvent): void } | null = null;
@@ -106,6 +124,7 @@ function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'ki
     unit: null,
     summary: null,
     command: null,
+    resolve: null,
     ...partial,
   };
 }
@@ -285,6 +304,7 @@ export async function previewAction(id: string): Promise<string> {
   if (a.kind === 'gitlab' && a.command) return describe(a.command);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
+  if (a.kind === 'conflict-push') return a.output ?? '';
   return a.files.join('\n');
 }
 
@@ -343,11 +363,15 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
-  if (a.kind === 'conflict') throw new Error('conflito não se executa daqui: abra a call');
+  if (a.kind === 'conflict') throw new Error('o conflito se resolve na tela dele: abra a call');
+  // A refusal here leaves the action as it was: nothing ran.
+  if (a.kind === 'conflict-push') await checkPublishable(a);
   update(id, (x) => ({ ...x, state: 'running' }));
   try {
     let output: string;
-    if (a.kind === 'gitlab' && a.command) {
+    if (a.kind === 'conflict-push') {
+      output = await publishConflict(a);
+    } else if (a.kind === 'gitlab' && a.command) {
       const c = a.command;
       output = await audited(a, { kind: c.endpoint === 'graphql' ? 'graphql' : 'gitlab', target: `${c.method} ${c.endpoint}`, via: c.via, fields: c.fields }, (meta) => runGitlab(c, meta));
     } else if (a.kind === 'sync') {
@@ -373,13 +397,17 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
     if (done.kind === 'sync') setTimeout(() => void proposeQaComment(done).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
+    if (done.kind === 'conflict-push') return await afterPublish(done);
     return done;
   } catch (e) {
     return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));
   }
 }
 
-export function skipAction(id: string): ReleaseAction {
+export async function skipAction(id: string): Promise<ReleaseAction> {
+  const a = read().actions.find((x) => x.id === id);
+  // Treated outside: the worktree this app made for it goes away too.
+  if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
   return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString() }));
 }
 
@@ -402,8 +430,9 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
   const context = [
     `Issue sz4#${a.issue} (${a.issueTitle}), release ${a.release}. Arquivos em conflito: ${a.files.join(', ') || 'nenhum listado'}.`,
     `Comandos para ler os dois lados (um por vez):\n${commands}`,
+    a.resolve && !a.resolve.publishedAt ? `Worktree de resolução já preparada (com os marcadores nos arquivos): ${a.resolve.worktree}. Passo atual: ${conflictStep(a)}.` : '',
     `Unidade da ferramenta: ${JSON.stringify(a.unit).slice(0, 3000)}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   const r = await conflictAsk(context, question, a.sessionId);
   return update(id, (x) => ({
     ...x,
@@ -412,6 +441,312 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
   }));
 }
 
+// ---- Resolving a release conflict in the app -------------------------------------------------------------------
+// Local steps (prepare, propose, choose, apply, commit, reopen, discard) only touch a throwaway worktree under the data
+// dir. The one external step is the push, a separate `conflict-push` action that waits for its own "sim".
+
+const stepLocks = new Set<string>();
+const CONFLICTS = join(ATAS, 'conflicts');
+const FENCE = /^```[\w-]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
+
+// Tests replace these: the clone search roots and what runs after a publish.
+export const conflictHooks: {
+  cloneRoots: string[];
+  scheduleQaComment: (sync: ReleaseAction) => void;
+} = {
+  cloneRoots: [WORKSPACE],
+  scheduleQaComment: (sync) => {
+    // The push pipeline takes a moment to appear; the comment draft waits for it.
+    setTimeout(() => void proposeQaComment(sync).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
+  },
+};
+
+function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'conflict') throw new Error(`conflito ${id} não existe`);
+  return { a, r: a.resolve ?? null };
+}
+
+function resolved(id: string): { a: ReleaseAction; r: ConflictResolve } {
+  const { a, r } = conflictOf(id);
+  if (!r) throw new Error('o conflito ainda não foi preparado');
+  if (r.publishedAt) throw new Error('este conflito já foi publicado');
+  return { a, r };
+}
+
+function setResolve(id: string, change: (r: ConflictResolve) => ConflictResolve): ReleaseAction {
+  return update(id, (x) => (x.resolve ? { ...x, resolve: change(x.resolve) } : x));
+}
+
+async function withStep<T>(id: string, label: string, fn: () => Promise<T>): Promise<T> {
+  if (stepLocks.has(id)) throw new Error('este conflito já tem um passo em andamento');
+  stepLocks.add(id);
+  if (conflictOf(id).r) setResolve(id, (r) => ({ ...r, busy: label }));
+  try {
+    return await fn();
+  } finally {
+    stepLocks.delete(id);
+    try {
+      setResolve(id, (r) => ({ ...r, busy: null }));
+    } catch {}
+  }
+}
+
+function projectOf(u: Partial<Unit>): string {
+  return u.project_path ?? (u.repo ?? '').replace(/^.*\/post-release-sync\//, '').replace(/\.git$/, '');
+}
+
+export async function conflictPrepare(id: string): Promise<ReleaseAction> {
+  return withStep(id, 'Preparando a worktree…', async () => {
+    const { a, r } = conflictOf(id);
+    if (r) throw new Error('o conflito já está preparado');
+    if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
+    const u = (a.unit ?? {}) as Partial<Unit>;
+    const iid = Number(u.mr_iid ?? /!(\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
+    const branch = u.source_branch ?? a.mrs[0]?.branch;
+    const project = projectOf(u);
+    if (!iid || !branch || !project) throw new Error('faltam dados do MR na ação (projeto, número ou branch)');
+    const clone = await findClone(project, conflictHooks.cloneRoots, GITLAB);
+    if (!clone) throw new Error(`não achei um clone local de ${project} em ${conflictHooks.cloneRoots.join(', ')} (o remote origin precisa apontar para ele)`);
+    const target = u.target_branch ?? 'main';
+    const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`) });
+    for (const f of p.files) for (const h of f.hunks) h.sensitive = secretPath(f.path);
+    return update(id, (x) => ({
+      ...x,
+      resolve: {
+        clone,
+        worktree: p.worktree,
+        branch,
+        target,
+        syncBranch: p.syncBranch,
+        originSha: p.originSha,
+        mainSha: p.mainSha,
+        files: p.files,
+        preparedAt: new Date().toISOString(),
+        proposedAt: null,
+        proposalSummary: null,
+        appliedAt: null,
+        verify: null,
+        commit: null,
+        pushId: null,
+        publishedAt: null,
+        busy: null,
+      },
+    }));
+  });
+}
+
+function unfenced(text: string): string {
+  const m = FENCE.exec(text.trim());
+  return m ? `${m[1]}\n` : text;
+}
+
+export async function conflictPropose(id: string): Promise<ReleaseAction> {
+  return withStep(id, 'O agente está propondo a resolução…', async () => {
+    const { a, r } = resolved(id);
+    if (r.appliedAt) throw new Error('já aplicado: reabra a resolução para pedir outra proposta');
+    const hunks = r.files.flatMap((f) => f.hunks).filter((h) => !h.sensitive);
+    const p = await askProposal({
+      issue: a.issue,
+      title: a.issueTitle,
+      mr: a.mrs[0]?.ref ?? '',
+      branch: r.branch,
+      worktree: r.worktree,
+      hunks: hunks.map((h) => ({ id: h.id, file: h.file, ours: h.ours, base: h.base, theirs: h.theirs })),
+    });
+    const byId = new Map(p.items.map((i) => [i.id, i]));
+    return setResolve(id, (x) => ({
+      ...x,
+      proposedAt: new Date().toISOString(),
+      proposalSummary: p.summary,
+      files: x.files.map((f) => ({
+        ...f,
+        hunks: f.hunks.map((h) => {
+          const item = byId.get(h.id);
+          if (!item || h.sensitive) return { ...h, proposal: null, explanation: null, confidence: null, test: null, choice: h.choice === 'proposal' ? null : h.choice };
+          return { ...h, proposal: unfenced(item.resolution), explanation: item.explanation, confidence: item.confidence, test: item.test };
+        }),
+      })),
+    }));
+  });
+}
+
+export function conflictChoose(id: string, hunkId: string, choice: HunkChoice, edited?: string): ReleaseAction {
+  const { r } = resolved(id);
+  if (r.appliedAt) throw new Error('já aplicado: reabra a resolução para mudar');
+  if (!['proposal', 'ours', 'theirs', 'edit'].includes(choice)) throw new Error(`escolha inválida: ${choice}`);
+  if (choice === 'edit') {
+    if (typeof edited !== 'string') throw new Error('falta o texto editado');
+    if (hasMarkers(edited)) throw new Error('o texto editado tem marcador de conflito (<<<<<<< ou >>>>>>>)');
+  }
+  const all = hunkId === '*';
+  if (all && choice !== 'proposal') throw new Error('“todos” só vale para a proposta');
+  if (!all && !r.files.some((f) => f.hunks.some((h) => h.id === hunkId))) throw new Error(`trecho ${hunkId} não existe`);
+  return setResolve(id, (x) => ({
+    ...x,
+    files: x.files.map((f) => ({
+      ...f,
+      hunks: f.hunks.map((h) => {
+        if (all ? h.proposal === null : h.id !== hunkId) return h;
+        if (choice === 'proposal' && h.proposal === null) throw new Error('este trecho não tem proposta');
+        return { ...h, choice, edited: choice === 'edit' ? (edited as string) : h.edited };
+      }),
+    })),
+  }));
+}
+
+function verifyLog(r: ConflictResolve, iid: string): string {
+  return join(CONFLICTS, 'logs', `${basename(r.clone)}-${iid}-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+}
+
+async function writeAndVerify(id: string, skipTests: boolean): Promise<ReleaseAction> {
+  const { a, r } = resolved(id);
+  if (r.appliedAt) throw new Error('já aplicado');
+  const open = r.files.flatMap((f) => f.hunks).filter((h) => !hunkReady(h)).length;
+  if (open) throw new Error(`falta decidir ${open} trecho(s)`);
+  const u = (a.unit ?? {}) as Partial<Unit>;
+  const command = verifyCommandFor(projectOf(u));
+  if (!command && !skipTests) {
+    throw new Error(`Não há comando de verificação configurado para ${projectOf(u)} (Configurações › Verificação de conflitos). Configure um ou confirme “seguir sem testes”.`);
+  }
+  await applyResolutions(r.worktree, r.files);
+  let verify = { command, skipped: !command, exitCode: null as number | null, tail: '', log: null as string | null, at: new Date().toISOString() };
+  if (command) {
+    const logFile = verifyLog(r, String(u.mr_iid ?? a.id));
+    const v = await runVerify({ wt: r.worktree, clone: r.clone, command, logFile });
+    verify = { ...verify, exitCode: v.exitCode, tail: v.tail, log: logFile };
+  }
+  return setResolve(id, (x) => ({ ...x, appliedAt: new Date().toISOString(), verify }));
+}
+
+export async function conflictApply(id: string, options: { skipTests: boolean }): Promise<ReleaseAction> {
+  const done = await withStep(id, 'Aplicando e verificando…', () => writeAndVerify(id, options.skipTests === true));
+  const v = done.resolve?.verify;
+  // A failing run is the user's call (hub-whatsapp has failures on main): the commit waits for conflictCommit.
+  if (v && (v.skipped || v.exitCode === 0)) return conflictCommit(id);
+  return done;
+}
+
+export async function conflictCommit(id: string): Promise<ReleaseAction> {
+  return withStep(id, 'Commitando o merge…', async () => {
+    const { a, r } = resolved(id);
+    if (!r.appliedAt) throw new Error('aplique a resolução antes de commitar');
+    if (r.commit) throw new Error('o merge já foi commitado');
+    const sha = await commitMerge(r.worktree, r.branch, r.mainSha);
+    const push = blank({
+      key: `conflict-push:${a.id}:${sha}`,
+      kind: 'conflict-push',
+      issue: a.issue,
+      issueTitle: a.issueTitle,
+      stage: a.stage,
+      release: a.release,
+      mrs: a.mrs,
+      files: r.files.map((f) => f.path),
+      retest: true,
+      summary: `Publicar a resolução do conflito do ${a.mrs[0]?.ref ?? 'MR'} em ${r.branch}`,
+      unit: { conflictId: a.id, branch: r.branch, commit: sha },
+      output: [
+        `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
+        `Commit ${sha.slice(0, 9)}: ${`Merge branch 'main' into '${r.branch}'`}. Só fast-forward, sem force; antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou.`,
+        r.verify?.skipped ? 'Sem testes (você confirmou).' : r.verify?.exitCode === 0 ? 'Verificação passou.' : `Verificação terminou com código ${r.verify?.exitCode}: você decidiu seguir.`,
+      ].join('\n'),
+    });
+    const s = read();
+    write({ ...s, actions: [push, ...s.actions] });
+    const next = setResolve(id, (x) => ({ ...x, commit: sha, pushId: push.id }));
+    if (getSettings().notifications) {
+      deps?.notify({
+        title: `#${a.issue}: conflito resolvido, aguardando o seu “sim” para publicar`,
+        body: `${a.mrs[0]?.ref ?? 'MR'}: merge commitado e verificado na worktree local. Nada foi enviado ainda.`,
+        onClick: { type: 'conflict', id: a.id },
+      });
+    }
+    return next;
+  });
+}
+
+export async function conflictReopen(id: string): Promise<ReleaseAction> {
+  return withStep(id, 'Reabrindo os conflitos…', async () => {
+    const { r } = resolved(id);
+    if (!r.appliedAt) throw new Error('a resolução ainda não foi aplicada');
+    if (r.commit) throw new Error('o merge já foi commitado: descarte e prepare de novo para refazer');
+    await reopenResolutions(r.worktree, r.files);
+    return setResolve(id, (x) => ({ ...x, appliedAt: null, verify: null }));
+  });
+}
+
+async function discardConflict(id: string): Promise<ReleaseAction> {
+  const { r } = conflictOf(id);
+  if (!r) return conflictOf(id).a;
+  if (r.publishedAt) throw new Error('este conflito já foi publicado');
+  const push = r.pushId ? read().actions.find((x) => x.id === r.pushId) : null;
+  if (push?.state === 'running') throw new Error('o envio está em andamento: espere terminar');
+  await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
+  if (push && push.state !== 'done') update(push.id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: 'Descartado: a worktree foi removida.' }));
+  // The conflict action stays pending: the problem is still there.
+  return update(id, (x) => ({ ...x, resolve: null }));
+}
+
+export async function conflictDiscard(id: string): Promise<ReleaseAction> {
+  return withStep(id, 'Descartando…', () => discardConflict(id));
+}
+
+function pushOwner(a: ReleaseAction): { conflict: ReleaseAction; r: ConflictResolve } {
+  const conflictId = String((a.unit ?? {}).conflictId ?? '');
+  const conflict = read().actions.find((x) => x.id === conflictId);
+  if (!conflict?.resolve?.commit || conflict.resolve.pushId !== a.id) throw new Error('o conflito deste envio foi descartado ou refeito: nada a publicar');
+  return { conflict, r: conflict.resolve };
+}
+
+async function checkPublishable(a: ReleaseAction): Promise<void> {
+  const { r } = pushOwner(a);
+  if (r.publishedAt) throw new Error('já publicado');
+  await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });
+}
+
+async function publishConflict(a: ReleaseAction): Promise<string> {
+  const { r } = pushOwner(a);
+  const fields = { repo: r.clone, branch: r.branch, commit: r.commit as string, mr: a.mrs[0]?.ref ?? '' };
+  return audited(a, { kind: 'push', target: `git push origin HEAD:refs/heads/${r.branch}`, via: 'git', fields }, async () => {
+    // The check ran moments ago, before "running"; repeat it right at the push.
+    await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });
+    return pushBranch(r.worktree, r.branch);
+  });
+}
+
+// After a successful push: clean up, close the conflict and hand the QA comment to its own "sim".
+async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
+  const conflictId = String((push.unit ?? {}).conflictId ?? '');
+  const { a, r } = conflictOf(conflictId);
+  const notes: string[] = [];
+  if (r) {
+    try {
+      await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
+    } catch (e) {
+      notes.push(`A worktree ficou para trás (${(e as Error).message}): remova com git worktree remove.`);
+    }
+  }
+  update(conflictId, (x) => ({
+    ...x,
+    state: 'done',
+    finishedAt: new Date().toISOString(),
+    output: `Resolvido e publicado em ${r?.branch}.`,
+    resolve: x.resolve ? { ...x.resolve, publishedAt: new Date().toISOString() } : x.resolve,
+  }));
+  if (getSettings().notifications) {
+    deps?.notify({ title: `#${a.issue}: resolução publicada`, body: `${a.mrs[0]?.ref ?? 'MR'}: push feito em ${r?.branch}. O comentário do QA vem em seguida, com o seu “sim”.`, onClick: { type: 'navigate', to: 'actions' } });
+  }
+  conflictHooks.scheduleQaComment({
+    ...a,
+    retest: true,
+    output: `Conflito de sincronização resolvido à mão em ${r?.files.length ?? 0} arquivo(s) e publicado em ${r?.branch}: ${a.files.join(', ')}.`,
+  });
+  return notes.length ? update(push.id, (x) => ({ ...x, output: [x.output, ...notes].join('\n') })) : read().actions.find((x) => x.id === push.id) ?? push;
+}
+
 export function startActions(d: { notify(n: Notice): void; emit(ev: AppEvent): void }): void {
   deps = d;
+  // A step interrupted by quitting the app would stay "busy" forever.
+  const s = read();
+  if (s.actions.some((a) => a.resolve?.busy)) write({ ...s, actions: s.actions.map((a) => (a.resolve?.busy ? { ...a, resolve: { ...a.resolve, busy: null } } : a)) });
 }

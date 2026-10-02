@@ -330,7 +330,7 @@ describe('channels refused over the web', () => {
   });
 
   it('policy lists', () => {
-    expect([...DESKTOP_ONLY].sort()).toEqual(['autostart:set', 'claude:continue', 'clipboard:copy', 'retention:apply']);
+    expect([...DESKTOP_ONLY].sort()).toEqual(['autostart:set', 'claude:continue', 'clipboard:copy', 'conflicts:verify-set', 'retention:apply']);
     expect([...EXTERNAL_EFFECT]).toEqual(['actions:approve']);
     expect(webAccess('web:configure')).toBe('deny');
     expect(webAccess('web:pair')).toBe('deny');

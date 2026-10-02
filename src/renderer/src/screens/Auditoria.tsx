@@ -10,6 +10,7 @@ const KIND: Record<AuditEntry['kind'], string> = {
   sync: 'Sincronização',
   publish: 'Publicação',
   'note-edit': 'Edição de nota',
+  push: 'Push de branch',
 };
 
 function Row({ e }: { e: AuditEntry }) {

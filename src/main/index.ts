@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
+import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, Voice } from '../shared/types';
-import { approveAction, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
+import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude } from './claude';
@@ -144,6 +145,13 @@ function handlers(): void {
   handle('actions:approve', (id: string) => approveAction(id));
   handle('actions:skip', (id: string) => skipAction(id));
   handle('actions:conflict', (id: string, question: string) => conflictTalk(id, question));
+  handle('conflict:prepare', (id: string) => conflictPrepare(id));
+  handle('conflict:propose', (id: string) => conflictPropose(id));
+  handle('conflict:choose', (id: string, hunkId: string, choice: HunkChoice, edited?: string) => conflictChoose(id, hunkId, choice, edited));
+  handle('conflict:apply', (id: string, options: { skipTests: boolean }) => conflictApply(id, options));
+  handle('conflict:commit', (id: string) => conflictCommit(id));
+  handle('conflict:reopen', (id: string) => conflictReopen(id));
+  handle('conflict:discard', (id: string) => conflictDiscard(id));
   handle('gate:options', (card: Card) => gateOptions(card));
   handle('gate:start', (card: Card, gate: 1 | 2) => startGate(card, gate));
   handle('gate:get', (id: string) => getGate(id));
