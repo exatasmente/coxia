@@ -48,14 +48,13 @@ export const LEGACY_PROMPT_OVERRIDES: Record<string, PromptOverride> = {
   'gate.doc.note': pt('<!-- Registro do quiz de gate. Mecânica em @skills/agent-pipeline/SKILL.md §2.1. -->'),
   'conflict.comment.rulesRef': pt(' (skill post-release-sync, "Convivência com o comentário do qa-release-branch")'),
   'conflict.ask.skillRef': pt(' e a skill post-release-sync, seção "Conflito: resolução manual"'),
-  'qa.readHint': pt('Leia o diff pelo MCP do GitLab e os comentários da issue com glab api projects/{project}/issues/{iid}/notes'),
+  'qa.readHint': pt('Leia o diff pelo MCP do GitLab e os comentários da issue com {notesHint}'),
   'qa.skillsLine': pt('Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).'),
   'qa.releaseSkillRef': pt(' (skill qa-release-branch)'),
   'retro.docsRef': pt(' e o playbook'),
   'retro.focus': pt('Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.'),
   'retro.improvementsFormat': pt('"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.'),
   'reentry.pipelineLine': pt('Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de {skill}.'),
-  'discussion.viewHint': pt('Para ver o trecho, use glab api {endpoint}/changes ou o MCP do GitLab (get_merge_request_details_and_changes); o checkout local pode estar em outra branch.'),
 };
 
 /** The development cycle of the existing install: the SDD template with the author's specifics. Also what a v2 file that predates the cycle templates is completed with. */
@@ -173,7 +172,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
     },
     devCycle: legacyCycle(),
     agents: { tools: { trackerMcpServer: 'gitlab-issue-analysis' } },
-    voice: { enabled: true, depsInstalled: true },
+    voice: { enabled: true, depsInstalled: true, kokoroDir: '~/projects/hermes-poc/vendor/kokoro' },
     claudeSdk: { installed: true, version: null, path: null },
     externalTools: {
       cardSource: {

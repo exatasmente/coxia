@@ -13,6 +13,8 @@ import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { ResolveConflict } from './ResolveConflict';
 import { conflictMrs } from '../dashboard';
+import { useVoiceEnabled } from '../i18n';
+import { voiceEnabled } from '../../../shared/i18n';
 
 const OPENING = 'Explique o bloqueio desta atividade, o que você leu para chegar nisso e o que precisa de mim para destravar.';
 
@@ -43,6 +45,7 @@ export function Deep({
   const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const voiceOn = useVoiceEnabled();
   const rec = useRecorder(() => void talkRef.current());
   const opened = useRef(false);
   const session = useRef(sessionId);
@@ -113,7 +116,7 @@ export function Deep({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -166,9 +169,11 @@ export function Deep({
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
-          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
-            <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
-          </button>
+          {voiceOn && (
+            <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
+              <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
+            </button>
+          )}
           <ContinueInClaude sessionId={sessionId} dark />
           <button type="button" className="btn btn-red" onClick={() => go({ name: back })}>Encerrar</button>
         </header>

@@ -13,9 +13,11 @@ import { HeaderModuleButtons } from './moduleSlots';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
+import { UpdateBadge } from './UpdateBadge';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
+import { tv } from '../i18n';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -103,6 +105,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         </div>
       </div>
       <div className="dash-top-actions">
+        <UpdateBadge go={go} />
         {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.">Workspace de testes</span>}
         {!phone && (
           <nav className="dash-nav" aria-label="Telas do app">
@@ -209,7 +212,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
           <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : 'Pré-daily'}</h3>
           <p className="small muted">{c.cards ? `${ready} de ${cards.length} agentes prontos` : 'Montando cartões…'}</p>
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
-            {c.startedAt && !c.callEnded ? 'Voltar à call' : 'Entrar na call'}
+            {c.startedAt && !c.callEnded ? tv('call.back') : tv('call.enter')}
           </button>
         </div>
         )}

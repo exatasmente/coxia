@@ -41,7 +41,7 @@ function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: Quick
               {others.map((m) => <option key={m.id} value={m.id}>{m.name} (@{m.username})</option>)}
             </optgroup>
           </select>
-          <button type="button" className="btn" disabled={busy || !reviewer} onClick={() => onPropose({ kind: 'reviewer', projectPath: mr.projectPath, mrIid: mr.iid, userId: Number(reviewer) })}>
+          <button type="button" className="btn" disabled={busy || !reviewer} onClick={() => onPropose({ kind: 'reviewer', projectPath: mr.projectPath, mrIid: mr.iid, userId: /^\d+$/.test(reviewer) ? Number(reviewer) : reviewer })}>
             Propor reviewer
           </button>
         </div>

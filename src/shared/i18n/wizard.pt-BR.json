@@ -343,7 +343,7 @@
   "wizard.voice.working": "Trabalhando…",
   "wizard.voice.resultOk": "Tudo certo.",
   "wizard.voice.resultFail": "Falhou.",
-  "wizard.voice.lazy": "Se pular, o app prepara o ambiente de voz sozinho na primeira fala (precisa de rede e do uv).",
+  "wizard.voice.lazy": "Se pular, a voz fica desligada e as cerimônias funcionam por texto. Dá para instalar depois, em Configurações › Voz (precisa de rede).",
   "wizard.review.edit": "Editar",
   "wizard.review.editStep": "Editar: {step}",
   "wizard.review.status.ok": "configurado",

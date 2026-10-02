@@ -37,11 +37,10 @@ export function stageOfText(cfg: StageConfig, text: string | null | undefined): 
 }
 
 /**
- * The stage a provider's report maps to. The mapping rules of the cycle come first (first match wins, in the order written), restricted to the
- * provider kind when one is given; whatever they leave out is matched by the stages' own `match` patterns on each piece of text the provider
- * offered (the free text, then the status, the board fields, the column, the labels, the state).
+ * The stage the mapping rules of the cycle give a provider's report, or null when none matches. First match wins, in the order written, and a
+ * rule applies only to its provider kind (or "any"). This is what a provider adapter calls before it falls back to its own defaults.
  */
-export function resolveStage(cfg: StageConfig, input: StageInput): StageDef | null {
+export function mapStageByRules(cfg: StageConfig, input: StageInput): StageDef | null {
   const byId = new Map(cfg.stages.map((s) => [s.id, s]));
   const values = (source: string, name: string): string[] => {
     switch (source) {
@@ -68,6 +67,17 @@ export function resolveStage(cfg: StageConfig, input: StageInput): StageDef | nu
     if (!re || !stage) continue;
     if (values(rule.source, rule.name).some((v) => re.test(v))) return stage;
   }
+  return null;
+}
+
+/**
+ * The stage a provider's report maps to: the mapping rules first (mapStageByRules); whatever they leave out is matched by the stages' own
+ * `match` patterns on each piece of text the provider offered (the free text, then the status, the board fields, the column, the labels,
+ * the state).
+ */
+export function resolveStage(cfg: StageConfig, input: StageInput): StageDef | null {
+  const byRule = mapStageByRules(cfg, input);
+  if (byRule) return byRule;
   const texts = [input.text, input.status, ...Object.values(input.fields ?? {}), input.column, ...(input.labels ?? []), input.state].filter((x): x is string => !!x);
   // The stage nearest to done wins when several labels match (an issue labelled for two stages is in the later one).
   const hits = texts.map((t) => stageOfText(cfg, t)).filter((s): s is StageDef => !!s);

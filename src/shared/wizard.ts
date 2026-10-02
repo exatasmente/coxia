@@ -1,3 +1,4 @@
+import type { VcsProbeResult } from './vcs';
 import type { CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
 import { LLM_ROLES, defaultEngine } from './config/types';
 import type { SdkLocationView } from './configView';
@@ -342,6 +343,8 @@ export interface CycleTemplatesResult {
 }
 
 export interface VcsTestResult {
+  /** The whole probe when probeVcs answered: token permissions, a sample of issues and merge requests, warnings. */
+  probe?: VcsProbeResult;
   ok: boolean;
   user: string | null;
   /** probeVcs answered, or the wizard's own minimal call. */

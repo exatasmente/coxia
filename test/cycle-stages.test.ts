@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { stageOf, stagesFor } from '../src/main/vcs/stages';
+import type { VcsIssue, VcsMr } from '../src/main/vcs/types';
 import { LEGACY_STAGES, legacyCycle } from '../src/shared/config/legacy';
 import { builtInTemplate, cycleOf, isBlockedStage, isReadyForQa, isStageKind, resolveStage, returnedFromQa, stageDisplay, stageKind, stageOfText, stageText, stageUrgency } from '../src/shared/cycles';
 
@@ -135,5 +137,41 @@ describe('what each template does with a stage', () => {
   it('counts a returned stage as back from QA when the cycle has no QA stage', () => {
     expect(returnedFromQa(cycle('github-flow'), 'Changes requested')).toBe(true);
     expect(isStageKind(cycle('github-flow'), 'Approved', ['reviewApproved'])).toBe(true);
+  });
+});
+
+// The cards the VCS providers build take their stage from the cycle: its mapping rules first, its stage patterns next, the host's defaults last.
+describe('the stage of a card built from a provider', () => {
+  const issue = (over: Partial<VcsIssue> = {}): VcsIssue => ({ project: 'g/p', iid: 1, title: 'T', state: 'open', status: null, labels: [], milestone: null, assignees: [], author: null, createdAt: null, updatedAt: null, closedAt: null, webUrl: '', ...over });
+  const sdd = cycle('sdd');
+  const of = (i: VcsIssue, host: 'gitlab' | 'github' | 'bitbucket', c = sdd) => stageOf(i, [], c.stages, c.stageMapping, host)?.id ?? null;
+
+  it('applies the mapping rules of the cycle for the host of the card', () => {
+    expect(of(issue({ labels: ['bug', 'STAGE:: Ready To Test'] }), 'gitlab')).toBe('in-testing');
+    expect(of(issue({ status: 'Failed testing' }), 'gitlab')).toBe('test-failed');
+    expect(of(issue({ state: 'closed' }), 'github')).toBe('done');
+    expect(of(issue({ state: 'on hold' as never }), 'bitbucket')).toBe('blocked');
+  });
+
+  it('falls back to the stage patterns, then to what the merge requests say, then to the defaults of the host', () => {
+    expect(of(issue({ labels: ['Code Review OK'] }), 'github')).toBe('review-ok');
+    const kanban = cycle('kanban');
+    // Nothing in the labels: the open merge request being reviewed makes it "review", which Kanban calls Review.
+    const review = { state: 'open', draft: false, approvals: null } as unknown as VcsMr;
+    expect(stageOf(issue(), [review], kanban.stages, kanban.stageMapping, 'github')?.id).toBe('review');
+    // A workspace with no stages of its own gets the host's.
+    expect(stageOf(issue({ labels: ['In Progress'] }), [], stagesFor('gitlab', []), [], 'gitlab')?.label).toBe('In development');
+  });
+
+  it('does not let a rule meant for one host decide for another', () => {
+    const only = { ...sdd, stageMapping: [{ provider: 'github' as const, source: 'label' as const, name: '', pattern: '^urgent$', stage: 'blocked' }] };
+    expect(of(issue({ labels: ['urgent'] }), 'github', only)).toBe('blocked');
+    expect(of(issue({ labels: ['urgent'] }), 'gitlab', only)).not.toBe('blocked');
+  });
+
+  it('keeps the old behavior for a state: an open issue is not "backlog" just because it is open', () => {
+    const open = issue({ state: 'open' });
+    const review = { state: 'open', draft: false, approvals: null } as unknown as VcsMr;
+    expect(stageOf(open, [review], sdd.stages, [], 'gitlab')?.id).toBe('in-review');
   });
 });

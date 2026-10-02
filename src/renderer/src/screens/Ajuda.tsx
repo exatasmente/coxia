@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from 'react';
 import type { Screen } from '../App';
+import { tv, useTv, useVoiceEnabled } from '../i18n';
 import { BackIcon } from './icons';
 
 // F1 opens the help from any screen and closes it when it is already open.
@@ -38,7 +39,15 @@ function Block({ title, intro, children }: { title: string; intro?: string; chil
   );
 }
 
+// Splits a catalog text at {key} so the key can be shown as a keycap.
+function withKey(text: string, key: ReactNode): ReactNode {
+  const [before, after] = text.split('{key}');
+  return <>{before}{key}{after}</>;
+}
+
 export function Ajuda({ go }: { go: (s: Screen) => void }) {
+  useTv();
+  const voiceOn = useVoiceEnabled();
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
@@ -50,40 +59,42 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
           <span className="small muted">Aperte <Key>F1</Key> em qualquer tela para abrir ou fechar.</span>
         </header>
 
-        <Block title="Atalhos e voz" intro="Valem nas telas com microfone: call, desbloqueio, gate, passagem para o QA, retorno do QA, conflito e retro.">
-          <Item term={<Key>Espaço</Key>}>
-            Começa a gravar. Apertando de novo, a fala é enviada. Não vale com o foco num campo de texto, botão, lista ou link: aí o espaço faz o que o controle faz.
-          </Item>
-          <Item term="Envio pelo silêncio">
-            Com a opção ligada, depois que você começa a falar, uma pausa longa envia a fala sozinha. Cada fala tem no máximo 30 segundos. A pausa padrão é de 1200 ms e muda em Configurações › Voz.
-          </Item>
-          <Item term="Digitar">
-            Nas telas de conversa há um campo de texto (“Ou digite…”) para escrever em vez de falar: escreva e aperte <Key>Enter</Key>.
-          </Item>
+        <Block title={tv('help.shortcuts.title')} intro={tv('help.shortcuts.intro')}>
+          {voiceOn && (
+            <>
+              <Item term={<Key>Espaço</Key>}>
+                Começa a gravar. Apertando de novo, a fala é enviada. Não vale com o foco num campo de texto, botão, lista ou link: aí o espaço faz o que o controle faz.
+              </Item>
+              <Item term="Envio pelo silêncio">
+                Com a opção ligada, depois que você começa a falar, uma pausa longa envia a fala sozinha. Cada fala tem no máximo 30 segundos. A pausa padrão é de 1200 ms e muda em Configurações › Voz.
+              </Item>
+            </>
+          )}
+          <Item term="Digitar">{withKey(tv('help.type.text'), <Key>Enter</Key>)}</Item>
           <Item term={<><Key>Tab</Key> e <Key>Shift</Key>+<Key>Tab</Key></>}>
             Passam de controle em controle; <Key>Enter</Key> ou <Key>Espaço</Key> ativa o botão em foco. O contorno do foco aparece só no teclado.
           </Item>
-          <Item term="Voz dos agentes">
-            O botão “Voz ligada/desligada” no alto de Hoje (e Configurações › Voz) liga ou desliga a fala dos agentes. Desligada, tudo continua na tela e nada vai para o Edge.
-          </Item>
+          {voiceOn ? (
+            <Item term="Voz dos agentes">
+              O botão “Voz ligada/desligada” no alto de Hoje (e Configurações › Voz) liga ou desliga a fala dos agentes. Desligada, tudo continua na tela e nada vai para o Edge.
+            </Item>
+          ) : (
+            <Item term={tv('help.voice.off.term')}>{tv('help.voice.off.text')}</Item>
+          )}
         </Block>
 
-        <Block title="Comandos de voz na call" intro="Na pré-daily, o app lê a sua fala (sem acento e sem maiúscula) antes de mandá-la ao agente. Qualquer outra frase vai para o agente da atividade.">
+        <Block title={tv('help.commands.title')} intro={tv('help.commands.intro')}>
           <Item term="“próximo”, “pula”, “passa”, “segue”">
             Passa para o próximo agente. Na última atividade, fecha a pauta. Precisa estar no começo da frase.
           </Item>
           <Item term="“aprofunda”, “desbloqueio”">
             Abre o Desbloqueio da atividade atual: uma conversa a fundo com o agente dela. Em qualquer parte da frase.
           </Item>
-          <Item term="“encerra”, “termina”">
-            Encerra a call e mostra o fim da pauta, de onde você gera a ata. Em qualquer parte da frase.
-          </Item>
+          <Item term="“encerra”, “termina”">{tv('help.cmd.end')}</Item>
         </Block>
 
         <Block title="O que cada cerimônia faz">
-          <Item term="Pré-daily">
-            Lê o GitLab pelo daily-report e monta um agente por atividade, bloqueadas primeiro. Na call, o moderador abre e cada agente fala a sua vez (cerca de 30 segundos): o que andou, o próximo passo, o bloqueio e, se houver, uma pergunta para você. Suas respostas viram decisões e efeitos, que vão para a ata.
-          </Item>
+          <Item term="Pré-daily">{tv('help.preDaily')}</Item>
           <Item term="Desbloqueio">
             Conversa a fundo sobre uma atividade travada. O agente lê spec, GitLab e playbook, e quando há contexto você pede de 2 a 3 saídas, cada uma com a sua consequência.
           </Item>
@@ -111,7 +122,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
           <Item term="Publicar no Teams">
             Nunca. O texto é gerado e você copia e cola.
           </Item>
-          <Item term="Executar efeitos da call">
+          <Item term={tv('help.effects.term')}>
             A fila de efeitos não roda nada: cada item vai para o Claude Code, onde espera o seu “sim”.
           </Item>
           <Item term="Os agentes">
@@ -132,9 +143,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
           <Item term={<span className="mono">~/projects/sz-playbook/.specs/</span>}>
             Specs que o app lê e, nas escritas acima, onde grava o Registro do Plan, o QA_CHECKLIST.md e o diagrama do gate.
           </Item>
-          <Item term="Tema">
-            Configurações › Aparência: sistema, claro ou escuro. A call e os painéis de destaque ficam escuros nos dois.
-          </Item>
+          <Item term="Tema">{tv('help.theme')}</Item>
         </Block>
       </div>
     </div>

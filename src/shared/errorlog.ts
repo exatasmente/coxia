@@ -49,14 +49,15 @@ export interface RendererReport {
 }
 
 const NETWORK = /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|EHOSTUNREACH|ENETUNREACH|could not resolve host|fetch failed|network is unreachable/i;
-const GITLAB = /dark\.smartzap|gitlab|\bglab\b/i;
+// The code host the workspace uses (GitLab, GitHub, Bitbucket) or its CLI; the host name itself is the workspace's, not this file's.
+const GITLAB = /gitlab|github|bitbucket|\bglab\b|\bgh\b/i;
 
 const HINTS: { test: (text: string, source: string) => boolean; hint: string }[] = [
   { test: (t) => /error_max_turns/i.test(t), hint: 'O agente parou antes de terminar: peça de novo ou faça uma pergunta mais estreita.' },
   { test: (t) => /voice sidecar exited/i.test(t), hint: 'O sidecar de voz caiu: reabra o app. Se repetir, rode o app pelo terminal e veja o stderr ([voice]).' },
-  { test: (t) => /spawn glab ENOENT|glab: (command )?not found/i.test(t), hint: 'O glab não está instalado ou fora do PATH.' },
-  { test: (t, s) => /not logged in|glab auth login|authentication required|no token|\b401\b|unauthorized/i.test(t) && (GITLAB.test(t) || /gitlab|glab/i.test(s)), hint: 'O glab não está autenticado: rode glab auth login --hostname dark.smartzap.com.br.' },
-  { test: (t, s) => NETWORK.test(t) && (GITLAB.test(t) || /gitlab|glab|radar|watchers|feedback|worktrees/i.test(s)), hint: 'Sem rede ou VPN: o GitLab não respondeu.' },
+  { test: (t) => /spawn (glab|gh) ENOENT|(glab|gh): (command )?not found|O comando (glab|gh) não foi encontrado|The command (glab|gh) was not found/i.test(t), hint: 'O CLI do host de código (glab ou gh) não está instalado ou fora do PATH: instale-o ou use um token em Configurações › Integrações.' },
+  { test: (t, s) => /not logged in|glab auth login|gh auth login|authentication required|no token|\b401\b|unauthorized|recusou a credencial|rejected the credential/i.test(t) && (GITLAB.test(t) || /gitlab|github|bitbucket|glab|vcs|cards|radar|watchers|feedback|worktrees|efeitos/i.test(s)), hint: 'O acesso ao host de código foi recusado: rode glab auth login (ou gh auth login) para o host configurado, ou refaça o token em Configurações › Integrações.' },
+  { test: (t, s) => NETWORK.test(t) && (GITLAB.test(t) || /gitlab|github|bitbucket|glab|vcs|cards|radar|watchers|feedback|worktrees/i.test(s)), hint: 'Sem rede ou VPN: o host de código (GitLab, GitHub ou Bitbucket) não respondeu.' },
   { test: (t) => /\b402\b|insufficient (credits|funds)|payment required|out of credits/i.test(t), hint: 'Chave ou saldo da OpenRouter: o saldo acabou ou a chave não vale mais. Confira em openrouter.ai.' },
   { test: (t) => /\b401\b|invalid (x-)?api[ -]?key|incorrect api key|user not found/i.test(t) && /openrouter|api error|anthropic|invalid|key|authentication/i.test(t), hint: 'Chave ou saldo da OpenRouter: a chave foi recusada. Rode openrouter-key --status.' },
   { test: (t) => /openrouter-key|sem chave da openrouter/i.test(t), hint: 'Não encontrei a chave da OpenRouter. Rode openrouter-key --status no terminal.' },

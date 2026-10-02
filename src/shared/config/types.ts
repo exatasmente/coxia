@@ -384,13 +384,15 @@ export const VOICE_ENGINES = ['edge', 'kokoro'] as const;
 export type VoiceEngine = (typeof VOICE_ENGINES)[number];
 
 export interface VoiceConfig {
-  /** Master switch (consumed by the voice-optional phase: when off the app talks about "conversa" instead of "call"). */
+  /** Master switch: off means no sidecar, no microphone, no speech, and the app says "conversa" (chat) instead of "call". */
   enabled: boolean;
   engine: VoiceEngine;
   /** faster-whisper model name (tiny, base, small, medium...). */
   sttModel: string;
-  /** The wizard installed the sidecar dependencies on this machine. */
+  /** The sidecar dependencies are installed on this machine (set by voice:install and voice:uninstall). */
   depsInstalled: boolean;
+  /** Folder with kokoro-v1.0.onnx and voices-v1.0.bin, when they live outside the app's own data folder; "~/" expands. null: only the app's folders. */
+  kokoroDir: string | null;
   autoStop: boolean;
   silenceMs: number;
   speak: boolean;

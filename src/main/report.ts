@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { rc } from './workspaceConfig';
+import { providerReport } from './vcs/cardSource';
 
 const run = promisify(execFile);
 
@@ -46,12 +47,13 @@ const status: ReportStatus = { lastOkAt: null, lastDurationMs: null, lastError: 
 
 const timedOut = (e: unknown) => Boolean((e as { killed?: boolean }).killed) || (e as { code?: string }).code === 'ETIMEDOUT';
 
-// A workspace with no card source (externalTools.cardSource off) has no cards: the screens show an empty day, not an error.
+// A workspace with no card source command (externalTools.cardSource off) builds the cards from its VCS integration; with neither it has no
+// cards: the screens show an empty day, not an error.
 const EMPTY: Report = { generated_at: new Date(0).toISOString(), items: [] };
 
 async function spawnOnce(): Promise<Report> {
   const source = rc().cardSource;
-  if (!source) return { ...EMPTY, generated_at: new Date().toISOString() };
+  if (!source) return ((await providerReport()) as Report | null) ?? { ...EMPTY, generated_at: new Date().toISOString() };
   spawned++;
   const { stdout } = await run(source.command, source.reportArgs, { timeout: source.timeoutMs || TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
   return JSON.parse(stdout) as Report;

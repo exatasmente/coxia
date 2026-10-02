@@ -61,6 +61,8 @@ export interface OpenRunParams {
   // tools: [] of the SDK: no tool at all (the final answer still works).
   noTools?: boolean;
   hooks?: SdkHooks;
+  // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
+  extraTools?: ToolImpl[];
   isSecret?: (path: string) => boolean;
   secretGlobs?: string[];
   docs?: DocSources;
@@ -131,6 +133,7 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   if (on('Grep')) tools.push(grepTool);
   if (on('Glob')) tools.push(globTool);
   if (on('Skill') && skills.length) tools.push(skillTool(skills));
+  for (const extra of p.extraTools ?? []) if (on(extra.name)) tools.push(extra);
   if (!denied.has('Bash') && p.allowedTools.some((t) => t === 'Bash' || t.startsWith('Bash('))) tools.push(bashTool);
   const mcpAllowed = p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
   if (mcpAllowed.length) {

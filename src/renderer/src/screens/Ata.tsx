@@ -6,6 +6,7 @@ import type { Ceremony } from '../ceremony';
 import { jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
+import { tv } from '../i18n';
 
 function effectsPrompt(effects: Ceremony['effects']): string {
   return [
@@ -79,7 +80,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="row" style={{ gap: 14 }}>
               <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'today' })}>← Hoje</button>
-              {!c.callEnded && c.startedAt && <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'call' })}>Voltar à call</button>}
+              {!c.callEnded && c.startedAt && <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'call' })}>{tv('call.back')}</button>}
             </div>
             <h1 style={{ fontSize: 30, fontWeight: 700 }}>Ata da pré-daily</h1>
             <div className="muted">

@@ -24,6 +24,7 @@ beforeAll(async () => {
   await installFakeEngine();
   cfg.updateConfig((c) => {
     c.projects.roots = [work];
+    c.voice.enabled = true;
     c.docs = { ...c.docs, autoDetect: false, claudeMdRoots: [other], skillsDirs: [join(other, 'skills')], rulesDirs: [join(other, 'rules')], agentsDirs: [join(other, 'agents')], knowledgeDirs: [join(other, 'kb')], mcpConfigFiles: [] };
     return c;
   });

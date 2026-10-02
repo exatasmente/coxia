@@ -3,7 +3,7 @@ import { basename, join } from 'node:path';
 import type { CardField, DevCycleConfig, Language } from '../shared/config/types';
 import type { DestinationLabels } from '../shared/destination';
 import { renderPrompt } from '../shared/cycles/prompts';
-import { cycleText, joinList, userTerms } from '../shared/cycles/text';
+import { cycleText, joinList, userTerms, voiceText } from '../shared/cycles/text';
 import type { Params, Translate } from '../shared/i18n';
 import type { Card } from '../shared/types';
 import { docsSources, getConfig, rc } from './workspaceConfig';
@@ -55,6 +55,11 @@ export function baseParams(): Params {
     vcsName: vcsName(),
     ceremony: ceremonyLabel(),
     qaMention: qaMention(),
+    // How the conversation reaches the person: "por voz" / "em texto", "transcrição por voz" / "texto digitado", "Call" / "Conversa".
+    mode: voiceText('cycle.voice.mode', lang),
+    heard: voiceText('cycle.voice.heard', lang),
+    call: voiceText('cycle.voice.call', lang),
+    answered: voiceText('cycle.voice.answered', lang),
   };
   const rule = (id: string, extra: Params = {}) => renderPrompt(c, id, lang, { ...base, ...extra });
   return {

@@ -4,6 +4,7 @@ import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
 import { setBargeIn, setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
+import { applyVoiceMode, useTv } from './i18n';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
 import { Glossario } from './screens/Glossario';
@@ -27,7 +28,10 @@ import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { JobsDock } from './JobsDock';
+import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
+import { useReportUpdateBusy } from './updateApi';
+import { useJobsSnapshot } from './useJobs';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
@@ -64,6 +68,8 @@ function sameScreenKey(s: Screen): string {
 }
 
 export function App() {
+  // Re-renders the whole tree when the language or the voice mode changes: the wording follows both.
+  useTv();
   const ceremony = useCeremony();
   useWorkspaces();
   const player = usePlayer();
@@ -93,6 +99,7 @@ export function App() {
   useEffect(() => {
     void api.listActions().then(setActions);
     void api.getSettings().then((s) => {
+      applyVoiceMode(s.voice.enabled);
       setSpeechEnabled(s.voice.speak);
       setBargeIn(s.voice.bargeIn);
     });
@@ -110,6 +117,7 @@ export function App() {
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
         else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
         else if (ev.type === 'settings') {
+          applyVoiceMode(ev.settings.voice.enabled);
           setSpeechEnabled(ev.settings.voice.speak);
           setBargeIn(ev.settings.voice.bargeIn);
         }
@@ -140,6 +148,11 @@ export function App() {
     return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
     // go only touches the player and the screen state
   }, []);
+
+  // Something is running that an update restart would cut: the call, the speech, an agent job.
+  const callLive = !!ceremony.startedAt && !ceremony.callEnded;
+  const jobsRunning = useJobsSnapshot().some((j) => j.status === 'running');
+  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning);
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
@@ -196,9 +209,10 @@ export function App() {
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
       {view}
-      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
+      <UpdatePrompt hidden={screen.name === 'settings'} />
     </>
   );
 }

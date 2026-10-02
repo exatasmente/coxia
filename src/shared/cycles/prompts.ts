@@ -1,5 +1,5 @@
 import type { DevCycleConfig, Language, PromptRole } from '../config/types';
-import { CATALOGS, type Params } from '../i18n';
+import { CATALOGS, NOVOICE_SUFFIX, voiceEnabled, type Params } from '../i18n';
 import { catalogText, renderLines, type RenderOptions } from './text';
 
 // The prompts of the ceremonies. Every text lives in the i18n catalogs under `prompt.<family>.<id>` (pt-BR and en); a cycle picks the family of
@@ -121,10 +121,12 @@ export function refOpenersOf(id: string): RegExp[] {
  * The template of a prompt: the cycle's override for the language, else the text of the role's family, else the base family's.
  * Undefined when no text exists anywhere (a typo in an id).
  */
-export function promptTemplate(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOverrides'>, id: string, language: Language): string | undefined {
+export function promptTemplate(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOverrides'>, id: string, language: Language, voice: boolean = voiceEnabled()): string | undefined {
   const override = cycle.promptOverrides[id]?.[language];
   if (override !== undefined) return override;
-  return catalogText(catalogKey(familyOf(cycle, id), id), language) ?? catalogText(catalogKey(BASE_FAMILY, id), language);
+  // With voice off a text may have its own wording (the key plus ".novoice"): the one that says nothing about speaking or listening.
+  const find = (key: string): string | undefined => (voice ? undefined : catalogText(`${key}${NOVOICE_SUFFIX}`, language)) ?? catalogText(key, language);
+  return find(catalogKey(familyOf(cycle, id), id)) ?? find(catalogKey(BASE_FAMILY, id));
 }
 
 /** The template filled with the params. A missing id throws: it is a bug in the code, and a silent empty prompt would hide it. */

@@ -4,7 +4,8 @@ import type { Card, QaHandoff } from '../shared/types';
 import { askAgent, obj, str } from './agents';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
-import { issueProjectPath, issueWebUrl, rc } from './workspaceConfig';
+import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
+import { issueNotesHint } from './vcs/readPolicy';
 import { assertExternalWrite } from './workspace';
 
 const DIR = join(ATAS, 'qa');
@@ -32,10 +33,10 @@ function write(q: QaHandoff): QaHandoff {
   return { ...q, checklistExists: existsSync(q.checklistFile) };
 }
 
-// The path of the issue project, or nothing for a workspace that has none (the hint then does not name it).
-function projectPath(): string {
+// How the agent reads the comments of the issue (the provider's own commands); nothing when the workspace has no issue project.
+function notesHint(iid: string): string {
   try {
-    return issueProjectPath();
+    return issueNotesHint(rc().issues.project ?? issueProjectKey(), iid);
   } catch {
     return '';
   }
@@ -57,7 +58,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
     completion: layout.documents.completion,
     testPlan: testPlans.length ? cp('qa.testPlan', { plans: testPlans.join(cp('qa.or')) }) : '',
     mrs: JSON.stringify(card.mrPaths),
-    readHint: cp('qa.readHint', { project: projectPath(), iid: card.iid }),
+    readHint: cp('qa.readHint', { notesHint: notesHint(card.iid) }),
     skillsLine: cp('qa.skillsLine'),
     words: cycle().ceremonyParams.qaHandoff.speechWords,
     releaseSkillRef: cp('qa.releaseSkillRef'),

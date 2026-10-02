@@ -1,15 +1,24 @@
 import { useEffect, useState } from 'react';
 import { VOICE_ENGINES } from '../../../../shared/config/types';
+import { STT_MODELS, type VoiceProgress } from '../../../../shared/voiceSetup';
 import type { VoiceAction, VoiceRunResult } from '../../../../shared/wizard';
 import { errorText, moduleEvents } from '../../api';
-import { useT } from '../../i18n';
+import { t as translate, useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
 import { Notice } from '../ui';
 import { wizardApi } from '../wizardApi';
 
-const STT_MODELS = ['tiny', 'base', 'small', 'medium'];
-// The names the voice setup API may use for its progress events (it is built separately).
-const PROGRESS_EVENTS = ['voice-setup', 'voice:progress', 'voice-install'];
+// The voice setup API (src/main/voiceModule.ts) reports an install through this module event: a VoiceProgress.
+const PROGRESS_EVENTS = ['voice:progress'];
+
+function progressText(d: unknown): string | null {
+  if (typeof d === 'string') return d.slice(0, 200);
+  if (typeof d !== 'object' || d === null) return null;
+  const p = d as Partial<VoiceProgress>;
+  if (typeof p.phase !== 'string') return null;
+  const bytes = p.bytes && p.bytes.total ? ` ${Math.round((p.bytes.done / p.bytes.total) * 100)}%` : p.percent !== null && p.percent !== undefined ? ` ${p.percent}%` : '';
+  return `${translate(`voice.phase.${p.phase}`)}${bytes}`;
+}
 
 export function VoiceStep({ cfg, setCfg, avail }: StepProps) {
   const t = useT();
@@ -17,12 +26,13 @@ export function VoiceStep({ cfg, setCfg, avail }: StepProps) {
   const [results, setResults] = useState<Partial<Record<VoiceAction, VoiceRunResult>>>({});
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Edge sends the text the agents speak to Microsoft: installing with it takes an explicit "I understand".
+  const [ack, setAck] = useState(false);
 
   useEffect(() => {
     const on = (e: Event) => {
-      const d = (e as CustomEvent<unknown>).detail;
-      const text = typeof d === 'string' ? d : typeof d === 'object' && d !== null ? [(d as Record<string, unknown>).message, (d as Record<string, unknown>).line, (d as Record<string, unknown>).text, (d as Record<string, unknown>).phase].find((x) => typeof x === 'string') : null;
-      if (typeof text === 'string') setProgress(text.slice(0, 200));
+      const text = progressText((e as CustomEvent<unknown>).detail);
+      if (text) setProgress(text);
     };
     for (const name of PROGRESS_EVENTS) moduleEvents.addEventListener(name, on);
     return () => {
@@ -37,7 +47,7 @@ export function VoiceStep({ cfg, setCfg, avail }: StepProps) {
     setRunning(action);
     setProgress(null);
     try {
-      const r = await wizardApi.voice(action, { engine: cfg.voice.engine, sttModel: cfg.voice.sttModel });
+      const r = await wizardApi.voice(action, { engine: cfg.voice.engine, sttModel: cfg.voice.sttModel, acknowledgeEdge: ack, enable: false });
       setResults((all) => ({ ...all, [action]: r }));
       if (action === 'install' && r.ok) setCfg((c) => ({ ...c, voice: { ...c.voice, depsInstalled: true } }));
     } catch (e) {
@@ -77,6 +87,12 @@ export function VoiceStep({ cfg, setCfg, avail }: StepProps) {
               ))}
             </div>
             {cfg.voice.engine === 'edge' && <Notice tone="warn">{t('wizard.voice.edgePrivacy')}</Notice>}
+            {cfg.voice.engine === 'edge' && (
+              <label className="check-row">
+                <input type="checkbox" checked={ack} onChange={() => setAck((v) => !v)} />
+                <span className="small">{t('voice.engine.edge.ack')}</span>
+              </label>
+            )}
             {cfg.voice.engine === 'kokoro' && <Notice tone="ok">{t('wizard.voice.kokoroPrivacy')}</Notice>}
           </section>
 
@@ -94,7 +110,7 @@ export function VoiceStep({ cfg, setCfg, avail }: StepProps) {
             {!have.install && <Notice tone="info">{t('wizard.voice.soon')} <span className="badge badge-quiet">{t('wizard.soon')}</span></Notice>}
             <div className="wz-actions">
               {(['check', 'install', 'test'] as VoiceAction[]).map((a) => (
-                <button key={a} type="button" className={`btn ${a === 'install' ? 'btn-dark' : ''}`} disabled={!have[a] || running !== null} onClick={() => void run(a)}>
+                <button key={a} type="button" className={`btn ${a === 'install' ? 'btn-dark' : ''}`} disabled={!have[a] || running !== null || (a === 'install' && cfg.voice.engine === 'edge' && !ack)} onClick={() => void run(a)}>
                   {running === a ? <span className="spinner" aria-hidden="true" /> : null} {t(`wizard.voice.${a}`)}
                   {!have[a] && <span className="badge badge-quiet">{t('wizard.soon')}</span>}
                 </button>

@@ -265,15 +265,23 @@ export interface Retro {
   createdAt: string;
 }
 
-// A GitLab write proposed by a module and run only after "seguir" + confirmation.
-export interface GitlabCommand {
-  via: 'glab' | 'curl';
-  method: 'POST' | 'PUT' | 'DELETE';
+// A write to the code host (GitLab, GitHub or Bitbucket) proposed by a module and run only after "seguir" + confirmation.
+export interface VcsCommand {
+  /** Which provider validates and runs it. Absent in actions saved before providers existed: GitLab. */
+  vcs?: 'gitlab' | 'github' | 'bitbucket';
+  via: 'glab' | 'curl' | 'gh' | 'api';
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   endpoint: string;
   fields: Record<string, string>;
+  /** Request body as JSON text, for the providers that take one (GitHub and Bitbucket). */
+  json?: string;
 }
 
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab';
+/** The name the type had when GitLab was the only host. */
+export type GitlabCommand = VcsCommand;
+
+// 'gitlab' is a write to GitLab (what every action saved before providers existed is); 'vcs' a write to GitHub or Bitbucket.
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {
@@ -298,7 +306,7 @@ export interface ReleaseAction {
   msgs: Talk[];
   unit: Record<string, unknown> | null;
   summary: string | null;
-  command: GitlabCommand | null;
+  command: VcsCommand | null;
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }

@@ -76,15 +76,28 @@ Every company-specific or machine-specific assumption the app carried when it wa
 
 ### Git host behavior (`vcs`)
 
+Phase 1 replaced the call sites with the providers of `src/main/vcs/` (see [`vcs-providers.md`](vcs-providers.md)). What is left:
+
 | Where (now) | What | Phase |
 |---|---|---|
-| `src/main/gitlabQuick.ts:22-37` | `RULES`: status transitions with GitLab custom status ids (`75`, `77`, `6`) and `STAGE::` labels | vcs + devcycle: from `devCycle.stages` and per-provider status mapping |
-| `src/main/gitlabQuick.ts:150`, `feedback.ts:128` | GitLab work-item GraphQL | vcs (GitHub issues/Projects, Bitbucket equivalents) |
-| `src/main/actions.ts:104,208-211` | `glab` and `glab config get token` + curl with `PRIVATE-TOKEN` | vcs: API client keyed by `vcs[].secretRef` |
-| `src/main/agents.ts:34-38` | `GLAB_READ` shell allow-list regexes (glab only) | vcs: per-provider read allow-list |
-| `src/main/conflictFromMr.ts`, `conflictGit.ts:61` | MR shape, "clone whose origin is that project" | vcs |
-| `src/main/actions.ts:513` | strips `/post-release-sync/` from a mirror path | vcs / release tool contract |
-| `src/main/efeitos.ts:120-130`, `src/shared/efeitos.ts:25` | verification kinds described in GitLab terms and `STAGE::Ready to test` | vcs |
+| `src/main/gitlabQuick.ts` `RULES` | status transitions with the GitLab custom status ids (`75`, `77`, `6`) and `STAGE::` labels: kept for GitLab + the `sz-sdd` template, empty for every other workspace (no quick status change) | devcycle: ids per instance and per template |
+| `src/main/actions.ts` `previewAction`, `detectRelease`, `projectOf` | the release tool contract: `/post-release-sync/` stripped from a mirror path, `post-release-sync` commands | vcs / release tool contract |
+| `src/main/efeitos.ts` prompt, `src/shared/efeitos.ts:25` | the classification prompt and the verification kinds are worded for GitLab and `STAGE::Ready to test` (the checks themselves run on any provider) | devcycle + i18n |
+| `src/main/agents.ts`, `feedback.ts`, `qa.ts` prompts | prompts that cite `glab` or the GitLab MCP when the provider is GitLab (the hints follow the provider: `vcs/readPolicy.ts`) | devcycle + i18n |
+| `src/renderer/src/screens/Settings.tsx:32` | the tools switch is still labelled "GitLab pelo glab" | wizard + i18n |
+
+### Replaced in phase 1 (vcs)
+
+| Where (base) | What it was | Replaced by |
+|---|---|---|
+| `gitlabQuick.ts`, `feedback.ts`, `actions.ts`, `efeitos.ts`, `watchers.ts`, `radar.ts` | each spawned `glab api` itself, with its own `user` cache and its own GitLab field names | `vcsProvider()` (`src/main/vcs/index.ts`): GitLab, GitHub and Bitbucket Cloud behind one interface; GitLab keeps `glab` when `cliPreference` says so |
+| `actions.ts:104,208-211` | `glab` and `glab config get token` + curl with `PRIVATE-TOKEN` | the executors in `vcs/exec.ts` (`glab`, `curl` for the array field of the migrated user, `api` with the token of `vcs[].secretRef`), reached only by `approveAction` |
+| `actions.ts` `proposeGitlabAction`, `GitlabCommand` | one GitLab-shaped write | `proposeVcsAction` and `VcsCommand` (`vcs`, `json`), validators per provider, audit kinds `gitlab`, `github`, `bitbucket`, `graphql` |
+| `gitlabQuick.ts:150`, `feedback.ts:128` | GitLab work-item GraphQL | `provider.getIssue(..., { status: true })` and `provider.issueStatuses`; GitHub and Bitbucket have no separate status (labels, state) |
+| `agents.ts:34-38` | `GLAB_READ` (glab only) | `vcs/readPolicy.ts`: `GLAB_READ`, `GH_READ`, or the `VcsRead` app tool (Bitbucket, API-only integrations) |
+| `conflictFromMr.ts`, `actions.ts` | the GitLab MR shape and `conflictHooks.gitlabGet` | the neutral `VcsMr`; the hook is gone (tests inject a runtime with `setVcsRuntimeForTests`) |
+| `report.ts` | the only card source was `daily-report` | `externalTools.cardSource` when set, else `vcs/cardSource.ts` (my issues + their MRs, stages from `devCycle.stages` or the host defaults) |
+| `src/shared/errorlog.ts` | hints that named `dark.smartzap` and `glab auth login --hostname dark.smartzap.com.br` | hints for any host and for `gh` |
 
 ### Cycle, stages and documents (`devcycle`)
 
@@ -122,10 +135,10 @@ Done in the development-cycle phase (see [`cycles.md`](cycles.md)): the stage re
 
 | Where (now) | What | Phase |
 |---|---|---|
-| `sidecar/voice_sidecar.py:26` | recognition prompt biased to `hub-whatsapp, new-agent, sz4` | voice (from the glossary/config) |
-| `sidecar/voice_sidecar.py:29-30` | `~/projects/hermes-poc/vendor/kokoro` as a Kokoro model location | voice |
-| `src/main/venv.ts:14-15` | looks in `~/.local/bin` first | packaging |
-| `config.voice.enabled` | stored, but **nothing reads it yet**: the sidecar still starts and the screens still say "call" | voice |
+| `sidecar/voice_sidecar.py` | recognition prompt: the app sends the glossary; the built-in fallback is generic. Done in the voice phase | voice (done) |
+| `sidecar/voice_sidecar.py` | the Kokoro folder of the author's machine now lives in the legacy profile (`voice.kokoroDir`), not in the code. Done | voice (done) |
+| `src/main/venv.ts` | looks in `~/.local/bin` first (a desktop session often lacks it in PATH), then in PATH | packaging |
+| `config.voice.enabled` | read: off means no sidecar, no microphone, no synthesis, and the screens say "conversa"/"chat" instead of "call". Done | voice (done) |
 | `src/main/update.ts:38,94-107`, `scripts/update.sh`, `scripts/install-local.sh` | updates by `git pull` + rebuild of `~/projects/cerimonias`, AppImage in `~/.local/opt/cerimonias`, `cerimonias.desktop` autostart | packaging |
 | `electron-builder.yml:1,24`, `package.json:42-43` | `appId br.com.fortics.cerimonias`, maintainer, homepage `dark.smartzap.com.br` | packaging |
 | `README.md` | the whole README describes the personal setup (paths, daily-report, Clockify, OpenRouter) | wizard + packaging: rewritten for open source |

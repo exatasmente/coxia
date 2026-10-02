@@ -13,6 +13,12 @@ export const CallIcon = () => (
   </svg>
 );
 
+export const ChatIcon = () => (
+  <svg {...base}>
+    <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+  </svg>
+);
+
 export const ActionsIcon = () => (
   <svg {...base}>
     <path d="M5 12l4 4 10-10" />

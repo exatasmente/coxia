@@ -6,7 +6,7 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` v2. O inventário do que foi desacoplado, e do que falta, está em [`decoupling-inventory.md`](decoupling-inventory.md). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` v2. O inventário do que foi desacoplado, e do que falta, está em [`decoupling-inventory.md`](decoupling-inventory.md). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
@@ -87,10 +87,10 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 - **Leia a configuração por `rc()`** (`src/main/workspaceConfig.ts`), na hora do uso, nunca na importação do módulo. `rc()` dá caminhos absolutos e as integrações ligadas: `projectsRoot`, `repos`, `primaryVcs`, `vcsHost`, `issues`, `qaUser`, `specsDir`, `specLayout`, `stages`, `cardSource`, `releaseSync`, `claudeCli`, `role(papel)`. Atalhos: `vcsCliEnv()`, `issueProjectRef()`, `issueWebUrl()`, `isIssueRef()`, `gitlabCliReady()`, `docsSources()`. Para escrever, `saveConfig` / `updateConfig` (valida e grava); `onConfigChange` avisa.
 - **Assistente (wizard):** `config:get` já traz tudo; `setupComplete` é a flag. Detecção de fontes de documentação: `resolveDocs` (`config-resolve.ts`). Teste de conexão de provedor aberto: `probeOpenAIProvider` (grava o resultado em `llm.providers[].capabilities`). Rótulos de `SecretRequirement` estão em inglês: traduza na tela.
-- **Provedores de VCS:** hoje tudo passa por `glab` com `vcsCliEnv()`. Troque os pontos listados em "Git host behavior" do inventário por um cliente por `vcs[].kind`; a chave vem de `providerSecret(vcs.secretRef)` (`llm.ts`). Os jobs que leem o GitLab só rodam com `gitlabCliReady()` (`Job.enabled`).
+- **Provedores de VCS:** `src/main/vcs/` (GitLab, GitHub, Bitbucket Cloud) atrás de uma interface neutra: `vcsProvider()` devolve o da integração primária, `vcsReady()` diz se ela está usável (os jobs que leem o host só rodam com ela, `Job.enabled`), `probeVcs(integração)` alimenta o botão "Testar" do assistente. Escritas só por `proposeVcsAction` + confirmação em Ações. Detalhes, permissões de token e o que cada recurso usa: [`vcs-providers.md`](vcs-providers.md).
 - **Ciclos de desenvolvimento:** [`cycles.md`](cycles.md). `devCycle` é o que as cerimônias seguem; um modelo (`src/shared/cycles/`) o preenche, `cycle:apply` o aplica, e o perfil migrado (`legacyCycle()` em `legacy.ts`) é o SDD com as especificidades do autor. As telas leem `cycle:view` (`useCycle()`), os jobs leem `cycleOn(cerimônia)` (`main/cycle-core.ts`), os textos vêm de `prompt()` (`main/cyclePrompts.ts`). A varredura de documentação do assistente é `prepareAgents` (`main/cycles.ts`).
 - **Motores:** `engineFor(papel)` (`engine/registry.ts`) devolve provedor, modelo e motor; `agents.ts` despacha por `registerEngine(id, runner)`. O motor aberto está registrado, e `openSelection()` monta a seleção dele a partir do config (chave via `providerSecret`, `capabilities`, `structured`, `docs` de `docsSources()`). O gancho `COXIA_ENGINE=open` continua valendo e vence o config.
-- **Voz opcional:** `voice.enabled` é guardado mas **nada o lê ainda**.
+- **Voz opcional:** `voice.enabled` desliga tudo: sem sidecar, sem microfone, sem síntese; e "call" vira "conversa" (`tv()`). A instalação e o teste são os canais `voice:*`. Veja `docs/voice.md`.
 - **i18n:** `t(chave, params)` em `src/shared/i18n` (renderer e main), catálogos `pt-BR.json` e `en.json` com chaves planas; falta de chave cai no pt-BR e depois na própria chave. No renderer: `useT()` e `initLanguage()`. A tela de Configurações usa `t()` nos títulos. `npm run i18n:lint` (`scripts/i18n-lint.mjs`) lista os textos literais por arquivo (`--file`, `--json`, `--max N` para travar em CI, `--keys` confere os dois catálogos).
 - **Testes:** `test/setup.ts` dá a cada arquivo de teste uma pasta de dados própria (config neutra). Para simular uma instalação antiga: `installLegacyConfig()` e `installEnvSecret()` de `test/helpers/config.ts`.
 
@@ -102,7 +102,7 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 - Segredos: digitados só no desktop, vão para `config:secret-set` (guardado, variável de ambiente ou comando); o valor nunca volta para a tela.
 - Teste de conexão: provedores abertos usam `probeOpenAIProvider` (capacidades gravadas no provedor); os da família Claude fazem uma chamada curta pelo Claude Agent SDK, com o mesmo ambiente dos agentes.
 - SDK: instalado com `npm` em `<dados>/claude-sdk` depois dos termos da Anthropic; registra `claudeSdk`. `COXIA_SDK_BUNDLED=0` simula uma build sem o SDK embutido; `COXIA_NPM` troca o executável do npm.
-- Peças de outros trabalhos, procuradas em tempo de execução (o assistente funciona sem elas): `src/main/vcs` (`probeVcs`, senão um GET do usuário atual pela API REST), `src/shared/cycles` (modelos de ciclo e a varredura "Preparar agentes", senão lista de espaço reservado e uma busca simples de `.claude/`, `CLAUDE.md`, `.mcp.json`), canais `voice:check|install|test` (senão "em breve").
+- Peças de outros trabalhos, procuradas em tempo de execução: `src/main/vcs` (`probeVcs`, que o assistente já usa; sem ela, um GET do usuário atual pela API REST) e os canais `voice:check|install|test` (senão "em breve"). Os modelos de ciclo e a varredura "Preparar agentes" fazem parte do app (`src/main/cycles.ts`, ver [`cycles.md`](cycles.md)).
 - `userName` (e `userArticle`, só para o português) é o que os prompts dos agentes e a saudação do Hoje dizem; sem nome, "o usuário".
 
 ### Não verificado
@@ -115,7 +115,7 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` v2. The inventory of what was decoupled, and what remains, is in [`decoupling-inventory.md`](decoupling-inventory.md). Providers and agent engines: [`llm-providers.md`](llm-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` v2. The inventory of what was decoupled, and what remains, is in [`decoupling-inventory.md`](decoupling-inventory.md). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
@@ -196,10 +196,10 @@ Channels (`configModule.ts`; those that write or touch files are **desktop only*
 
 - **Read configuration through `rc()`** (`src/main/workspaceConfig.ts`), at call time, never at module import. `rc()` gives absolute paths and the integrations that are on: `projectsRoot`, `repos`, `primaryVcs`, `vcsHost`, `issues`, `qaUser`, `specsDir`, `specLayout`, `stages`, `cardSource`, `releaseSync`, `claudeCli`, `role(role)`. Shortcuts: `vcsCliEnv()`, `issueProjectRef()`, `issueWebUrl()`, `isIssueRef()`, `gitlabCliReady()`, `docsSources()`. To write, `saveConfig` / `updateConfig` (validates and persists); `onConfigChange` notifies.
 - **Wizard:** `config:get` already carries everything; `setupComplete` is the flag. Documentation source detection: `resolveDocs` (`config-resolve.ts`). Connection test of an open provider: `probeOpenAIProvider` (store the result in `llm.providers[].capabilities`). `SecretRequirement` labels are in English: translate them in the screen.
-- **VCS providers:** today everything goes through `glab` with `vcsCliEnv()`. Replace the call sites listed under "Git host behavior" in the inventory with a client per `vcs[].kind`; the key comes from `providerSecret(vcs.secretRef)` (`llm.ts`). Jobs that read GitLab only run when `gitlabCliReady()` (`Job.enabled`).
+- **VCS providers:** `src/main/vcs/` (GitLab, GitHub, Bitbucket Cloud) behind a neutral interface: `vcsProvider()` returns the primary integration's, `vcsReady()` says whether it is usable (the jobs that read the host only run with it, `Job.enabled`), `probeVcs(integration)` feeds the wizard's "Test" button. Writes only through `proposeVcsAction` + the confirmation in Actions. Details, token permissions and what each feature uses: [`vcs-providers.md`](vcs-providers.md).
 - **Development cycles:** [`cycles.md`](cycles.md). `devCycle` is what the ceremonies follow; a template (`src/shared/cycles/`) fills it, `cycle:apply` applies it, and the migrated profile (`legacyCycle()` in `legacy.ts`) is SDD with the author's specifics. Screens read `cycle:view` (`useCycle()`), jobs read `cycleOn(ceremony)` (`main/cycle-core.ts`), texts come from `prompt()` (`main/cyclePrompts.ts`). The wizard's documentation scan is `prepareAgents` (`main/cycles.ts`).
 - **Engines:** `engineFor(role)` (`engine/registry.ts`) returns provider, model and engine; `agents.ts` dispatches through `registerEngine(id, runner)`. The open engine is registered, and `openSelection()` builds its selection from the config (key through `providerSecret`, `capabilities`, `structured`, `docs` from `docsSources()`). The `COXIA_ENGINE=open` hook still works and beats the config.
-- **Optional voice:** `voice.enabled` is stored but **nothing reads it yet**.
+- **Optional voice:** `voice.enabled` turns everything off: no sidecar, no microphone, no synthesis; and "call" becomes "chat" (`tv()`). Installing and testing are the `voice:*` channels. See `docs/voice.md`.
 - **i18n:** `t(key, params)` in `src/shared/i18n` (renderer and main), `pt-BR.json` and `en.json` catalogs with flat keys; a missing key falls back to pt-BR, then to the key itself. In the renderer: `useT()` and `initLanguage()`. The Settings screen uses `t()` for its headings. `npm run i18n:lint` (`scripts/i18n-lint.mjs`) lists literal strings per file (`--file`, `--json`, `--max N` to ratchet in CI, `--keys` checks both catalogs).
 - **Tests:** `test/setup.ts` gives every test file its own data folder (neutral config). To simulate an old install: `installLegacyConfig()` and `installEnvSecret()` from `test/helpers/config.ts`.
 
@@ -211,7 +211,7 @@ Channels (`configModule.ts`; those that write or touch files are **desktop only*
 - Secrets: typed in the desktop only, sent to `config:secret-set` (stored, environment variable or command); the value never comes back to the screen.
 - Connection test: open providers use `probeOpenAIProvider` (capabilities are stored on the provider); Claude-family ones make a short call through the Claude Agent SDK with the environment the agents would get.
 - SDK: installed with `npm` into `<data>/claude-sdk` after Anthropic's terms; records `claudeSdk`. `COXIA_SDK_BUNDLED=0` simulates a build that does not bundle the SDK; `COXIA_NPM` overrides the npm executable.
-- Pieces from other work, looked up at run time (the wizard works without them): `src/main/vcs` (`probeVcs`, else a GET of the current user through the REST API), `src/shared/cycles` (cycle templates and the "prepare agents" scan, else a placeholder list and a simple search for `.claude/`, `CLAUDE.md`, `.mcp.json`), `voice:check|install|test` channels (else "coming soon").
+- Pieces from other work, looked up at run time: `src/main/vcs` (`probeVcs`, which the wizard now uses; without it, a GET of the current user through the REST API) and the `voice:check|install|test` channels (else "coming soon"). The cycle templates and the "prepare agents" scan are part of the app (`src/main/cycles.ts`, see [`cycles.md`](cycles.md)).
 - `userName` (and `userArticle`, for Portuguese only) is what the agent prompts and the Today greeting say; with no name, "the user".
 
 ### Not verified

@@ -66,18 +66,23 @@ export async function installFakeEngine(): Promise<void> {
   }) as never);
 }
 
-/** Answers the glab calls the feedback module makes (the QA notes of an issue, an MR discussion) with one fixed note each. */
-export function glabAnswer(args: string[]): unknown {
-  const endpoint = args[1] ?? '';
-  if (endpoint === 'user') return { username: 'luiz.neto' };
-  const note = { id: 11, body: 'Reprovado: o filtro por grupo continua listando todos os agentes.', system: false, created_at: '2026-09-30T10:00:00Z', author: { username: 'qa.interno' } };
-  if (/\/issues\/\d+\/notes/.test(endpoint)) return [note];
-  if (/\/discussions\/[0-9a-f]+$/.test(endpoint)) {
-    return { id: 'abcdef12', notes: [{ ...note, id: 12, author: { username: 'revisor' }, body: 'Esse trecho ignora o grupo.', resolvable: true, resolved: false, position: { new_path: 'app/Report.php', new_line: 42 } }] };
-  }
-  if (/\/discussions/.test(endpoint)) return [];
-  return [];
-}
+const note = { id: 11, author: 'qa.interno', body: 'Reprovado: o filtro por grupo continua listando todos os agentes.', createdAt: '2026-09-30T10:00:00Z', system: false, webUrl: null };
+
+/** The slice of the code host the feedback module reads: one QA note on the issue, one open thread on a merge request. */
+export const fakeVcs = {
+  listIssueComments: async () => [note],
+  listMrThreads: async () => [],
+  getMrThread: async (_project: string, _iid: number, id: string) => ({
+    id,
+    resolvable: true,
+    resolved: false,
+    path: 'app/Report.php',
+    line: 42,
+    notes: [{ ...note, id: 12, author: 'revisor', body: 'Esse trecho ignora o grupo.' }],
+  }),
+  noteUrl: () => 'https://example.test/note',
+  issueStatuses: async () => new Map<number, string>(),
+} as never;
 
 export function specFiles(specsDir: string, registro = 'Registro de decisões'): { folder: string; plan: string } {
   const folder = join(specsDir, '#15499-corrigir-filtro');

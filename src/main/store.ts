@@ -8,6 +8,7 @@ import { invalidateReport } from './report';
 import { decisionLogHeading, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
+import { modeText } from './agentVoice';
 
 const run = promisify(execFile);
 

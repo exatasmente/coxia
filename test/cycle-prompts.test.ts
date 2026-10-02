@@ -4,15 +4,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
 import { applyTemplate, builtInTemplate, familyOf, joinList, openersOf, promptFamilies, promptTemplate, refOpenersOf, renderLines, renderPrompt, userTerms, BASE_FAMILY } from '../src/shared/cycles';
 import { CATALOGS } from '../src/shared/i18n';
-import { calls, installFakeEngine, runBasics, runScenario, type Captured, type Scenario } from './helpers/promptCapture';
+import { calls, fakeVcs, installFakeEngine, runBasics, runScenario, type Captured, type Scenario } from './helpers/promptCapture';
 
 vi.mock('../src/main/workspace', async (orig) => ({ ...(await orig<typeof import('../src/main/workspace')>()), assertExternalWrite: () => {}, externalRefusal: () => null }));
-vi.mock('node:child_process', async (orig) => {
-  const real = await orig<typeof import('node:child_process')>();
-  const { glabAnswer } = await import('./helpers/promptCapture');
-  const execFile = (_cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: { stdout: string; stderr: string }) => void) => cb(null, { stdout: JSON.stringify(glabAnswer(args)), stderr: '' });
-  return { ...real, execFile };
-});
+vi.mock('../src/main/vcs', async (orig) => ({ ...(await orig<typeof import('../src/main/vcs')>()), vcsProvider: () => fakeVcs, vcsReady: () => true }));
 
 const ROOT = join(import.meta.dirname, '..');
 const cycleOf = (over: Partial<ReturnType<typeof neutralConfig>['devCycle']> = {}) => ({ ...neutralConfig().devCycle, ...over });
@@ -131,7 +126,9 @@ describe('the prompt catalogs', () => {
     }
     // Ids rendered by the rules of baseParams (cyclePrompts.ts) rather than named at a call.
     const direct = new Set(['rules.speech', 'rules.speechExamples', 'rules.chat', 'options.rule']);
-    const unused = fam[BASE_FAMILY].filter((id) => !used.has(id) && !direct.has(id));
+    // A ".novoice" text is the same prompt worded for a conversation without voice: it is read through its base id.
+    const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !used.has(id) && !direct.has(id));
+    for (const id of fam[BASE_FAMILY].filter((x) => x.endsWith('.novoice'))) expect(fam[BASE_FAMILY], id).toContain(id.replace(/\.novoice$/, ''));
     expect(unused).toEqual([]);
   });
 
@@ -161,7 +158,7 @@ describe('recognising a prompt by how it begins', () => {
   it('captures the ref of the card from the first line', () => {
     const find = (id: string, text: string) => refOpenersOf(id).map((re) => re.exec(text)?.[1]).find(Boolean);
     expect(find('turn.main', 'Você é o agente da atividade sz4#15499 na pré-daily por voz.')).toBe('sz4#15499');
-    expect(find('deep.intro', 'Voice unblock of activity 42. Investigate by reading spec')).toBe('42');
+    expect(find('deep.intro', 'Unblock of activity 42, by voice. Investigate by reading spec')).toBe('42');
     expect(find('gate.start', 'Gate 2 da issue sz4#1 (Título), por voz.')).toBe('sz4#1');
     expect(find('retro.main', 'Retro semanal do Luiz, por voz')).toBeUndefined();
   });
@@ -174,6 +171,8 @@ function configure(patch: (c: ReturnType<typeof neutralConfig>) => void, templat
   return async () => {
     const { saveConfig } = await import('../src/main/workspaceConfig');
     const c = applyTemplate(neutralConfig(), builtInTemplate(templateId)!);
+    // A fresh install has voice off until the wizard sets it up; the wording of a spoken ceremony is what these tests look at.
+    c.voice.enabled = true;
     // What the machine happens to have in ~/.claude must not change what the agents are told.
     c.docs.autoDetect = false;
     patch(c);
@@ -214,8 +213,8 @@ describe('English, a person named Ana, the generic SDD template', () => {
   it('introduces the agent in English, with the name', () => {
     expect(scenario.prompts.turn.system).toContain("voice ceremony of Ana's");
     expect(scenario.prompts.turn.system).toContain('for Ana to run later');
-    expect(scenario.prompts.turn.prompt).toMatch(/^You are the agent of activity sz4#15499 in the voice pre-daily\./);
-    expect(scenario.prompts.reply.prompt).toContain('Ana answered by voice');
+    expect(scenario.prompts.turn.prompt).toMatch(/^You are the agent of activity sz4#15499 in the pre-daily, by voice\./);
+    expect(scenario.prompts.reply.prompt).toContain('Ana answered by voice (the transcript may have errors)');
     expect(scenario.prompts.deep.prompt).toContain("Ana's question (voice transcript)");
   });
 
@@ -229,12 +228,12 @@ describe('English, a person named Ana, the generic SDD template', () => {
   });
 
   it('writes the spec files in English too, into the section the template names', () => {
-    expect(scenario.files['bug/GATE_QUIZ.md']).toContain('**Verdict:** in progress');
+    expect(scenario.files['bug/GATE_QUIZ.md']).toContain('**Verdict:** in progress — 2 round(s) so far · run by voice in the ceremonies app');
     expect(scenario.files['bug/GATE_QUIZ.md']).toContain('### Round 1');
     expect(scenario.files['bug/GATE_QUIZ.md']).toContain('| # | Question (kind) | Options | Chosen | Correct? |');
     expect(scenario.files['bug/GATE_QUIZ.md']).not.toContain('agent-pipeline');
     expect(scenario.files['QA_CHECKLIST.md']).toContain('> **Environment:**');
-    expect(scenario.files['plan-after-registro']).toContain('- 2026-10-02 (voice pre-daily): Seguir com o merge hoje');
+    expect(scenario.files['plan-after-registro']).toContain('- 2026-10-02 (pre-daily, by voice): Seguir com o merge hoje');
   });
 
   it('asks the model for the question kinds in English', () => {
@@ -285,7 +284,7 @@ describe('the Scrum template', () => {
   });
 
   it('calls the preparation a daily scrum and says nothing of specs, gates or QA', () => {
-    expect(basics.turn.prompt).toContain('in the voice daily scrum');
+    expect(basics.turn.prompt).toContain('in the daily scrum, by voice');
     expect(basics.turn.prompt).not.toMatch(/\b(spec|gate|gates)\b/i);
     expect(basics.turn.prompt).toContain('In this team: An impediment');
     expect(basics.turn.prompt).toContain('Spoken English');
@@ -316,5 +315,33 @@ describe('the Scrum template', () => {
     expect(basics.turn.prompt).toContain('Activity card:');
     expect(basics.turn.prompt).not.toContain('Spec in');
     expect(basics.turn.prompt).not.toContain('No spec folder');
+  });
+});
+
+describe('a conversation without voice', () => {
+  it('speaks of text, not of voice, in either language, with the same cycle', async () => {
+    const quiet = (language: 'pt-BR' | 'en') =>
+      configure((c) => {
+        c.language = language;
+        c.userName = 'Sam';
+        c.voice.enabled = false;
+      });
+    await quiet('pt-BR')();
+    calls.length = 0;
+    const pt = await runBasics('quiet#1');
+    expect(pt.turn.prompt).toMatch(/^Você é o agente da atividade quiet#1 na pré-daily em texto\./);
+    expect(pt.turn.prompt).toContain('A voz está desligada');
+    expect(pt.turn.system).toContain('conduzida por texto (a voz está desligada)');
+    expect(pt.reply.prompt).toContain('respondeu por escrito: «go ahead»');
+    expect(pt.deep.prompt).toContain('(texto digitado)');
+    expect(pt.deep.prompt).not.toMatch(/para ser ouvid|falado|transcrição/);
+    await quiet('en')();
+    const en = await runBasics('quiet#2');
+    expect(en.turn.prompt).toMatch(/^You are the agent of activity quiet#2 in the pre-daily, in text\./);
+    expect(en.turn.prompt).toContain('Voice is off');
+    expect(en.reply.prompt).toContain('Sam answered in writing: «go ahead»');
+    expect(en.deep.prompt).toContain('(typed text)');
+    expect(en.deep.prompt).not.toMatch(/to be heard|Spoken English|voice transcript/);
+    for (const p of [...Object.values(pt), ...Object.values(en)]) expect(p.prompt).not.toMatch(LEFTOVER);
   });
 });

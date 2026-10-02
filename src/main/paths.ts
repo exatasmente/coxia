@@ -15,8 +15,10 @@ export const CLAUDE_BIN = PACKAGED
   ? join(process.resourcesPath, 'app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude')
   : undefined;
 
-// Dev keeps the venv next to the script; the installed app builds its own under userData.
-// A function, not a constant: index.ts may move userData (CERIMONIAS_DATA_DIR) after this module loads.
-export function venvDir(): string {
-  return PACKAGED ? join(app.getPath('userData'), 'voice-venv') : join(SIDECAR_DIR, '.venv');
-}
+// Where the voice setup puts what it installs: the Python environment, the speech models and the uv it may fetch, all under userData.
+// A development checkout may still use its own sidecar/.venv (legacyVenvDir); the setup never writes there.
+// Functions, not constants: index.ts may move userData (CERIMONIAS_DATA_DIR) after this module loads.
+export const voiceVenvDir = (): string => join(app.getPath('userData'), 'voice-venv');
+export const voiceModelsDir = (): string => join(app.getPath('userData'), 'voice-models');
+export const voiceToolsDir = (): string => join(app.getPath('userData'), 'voice-tools');
+export const legacyVenvDir = (): string | null => (PACKAGED ? null : join(SIDECAR_DIR, '.venv'));

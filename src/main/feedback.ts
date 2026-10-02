@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import type { Card } from '../shared/types';
 import type {
   DiscussionNote,
@@ -16,19 +14,21 @@ import type {
   ReentryClass,
   ReentryPhase,
 } from '../shared/feedback';
-import { listActions, proposeGitlabAction } from './actions';
+import { listActions, proposeVcsCommands } from './actions';
 import { askAgent, obj, str, strOrNull } from './agents';
 import { returnedFromQa } from '../shared/cycles/stages';
 import { cycle, formatTime, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { docsSources, gitlabCliReady, isIssueRef, issueProjectRef, issueWebUrl, qaUser, rc, vcsCliEnv } from './workspaceConfig';
+import { docsSources, isIssueRef, issueProjectKey, qaUser, rc } from './workspaceConfig';
 import { logError } from './errorlog';
 import type { Module } from './module';
 import type { Notice } from './scheduler';
-
-const exec = promisify(execFile);
+import { vcsProvider, vcsReady } from './vcs';
+import { mrChangesHint } from './vcs/readPolicy';
+import type { VcsComment, VcsThread } from './vcs/types';
+import { tv } from '../shared/i18n';
 
 const SEEN_FILE = join(ATAS, 'feedback.json');
 const DIR = join(ATAS, 'feedback');
@@ -39,22 +39,6 @@ function pipelineSkill(): string | null {
 }
 const POOL = 4;
 const MAX_NOTICES = 4;
-
-interface GlNote {
-  id: number;
-  body: string;
-  system: boolean;
-  created_at: string;
-  author: { username: string };
-  resolvable?: boolean;
-  resolved?: boolean | null;
-  position?: { new_path?: string | null; old_path?: string | null; new_line?: number | null; old_line?: number | null } | null;
-}
-
-interface GlDiscussion {
-  id: string;
-  notes: GlNote[];
-}
 
 interface Seen {
   version: 1;
@@ -78,67 +62,26 @@ interface Deps {
   notify(n: Notice): void;
 }
 
-// ---------- GitLab reads ----------
-
-async function glab(args: string[]): Promise<string> {
-  const { stdout } = await exec('glab', args, { env: vcsCliEnv(), timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
-  return stdout;
-}
-
-async function getJson<T>(endpoint: string): Promise<T> {
-  return JSON.parse(await glab(['api', endpoint])) as T;
-}
-
-// GitLab caps a page at 100; a few pages cover any MR or issue this app follows.
-async function getAll<T>(endpoint: string, maxPages = 5): Promise<T[]> {
-  const out: T[] = [];
-  for (let page = 1; page <= maxPages; page++) {
-    const rows = await getJson<T[]>(`${endpoint}${endpoint.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
-    out.push(...rows);
-    if (rows.length < 100) break;
-  }
-  return out;
-}
-
-let cachedMe: string | null = null;
-
-async function me(): Promise<string> {
-  cachedMe ??= ((await getJson<{ username: string }>('user')).username ?? '').trim();
-  return cachedMe;
-}
-
-const enc = encodeURIComponent;
-
-function mrBase(mr: MrPath): string {
-  return `projects/${enc(mr.project)}/merge_requests/${mr.iid}`;
-}
+// ---------- code host reads ----------
 
 function checkMr(mr: MrPath): MrPath {
   if (!/^[\w.-]+\/[\w.-]+$/.test(mr.project) || !Number.isInteger(mr.iid) || mr.iid <= 0 || !mr.ref) throw new Error('MR inválido');
   return mr;
 }
 
-function isUnresolved(d: GlDiscussion): boolean {
-  return d.notes.some((n) => !n.system && n.resolvable && !n.resolved);
-}
+const isUnresolved = (d: VcsThread): boolean => !d.resolved;
 
-function realNotes(d: GlDiscussion): GlNote[] {
+function realNotes(d: VcsThread): VcsComment[] {
   return d.notes.filter((n) => !n.system);
 }
 
 async function issueStatuses(cards: Card[]): Promise<Map<string, string>> {
-  const iids = cards.filter((c) => isIssueRef(c.ref) && /^\d+$/.test(c.iid)).map((c) => `"${c.iid}"`);
+  const iids = cards.filter((c) => isIssueRef(c.ref) && /^\d+$/.test(c.iid)).map((c) => Number(c.iid));
   const out = new Map<string, string>();
-  if (!iids.length) return out;
-  const query = `{ project(fullPath:"${rc().issues.project}"){ workItems(iids:[${iids.join(',')}]){ nodes{ iid widgets{ ... on WorkItemWidgetStatus{ status{ name } } } } } } }`;
+  const project = rc().issues.project;
+  if (!iids.length || !project) return out;
   try {
-    const r = JSON.parse(await glab(['api', 'graphql', '-f', `query=${query}`])) as {
-      data?: { project?: { workItems?: { nodes: { iid: string; widgets: { status?: { name: string } }[] }[] } } };
-    };
-    for (const n of r.data?.project?.workItems?.nodes ?? []) {
-      const name = n.widgets.find((w) => w.status)?.status?.name;
-      if (name) out.set(n.iid, name);
-    }
+    for (const [iid, name] of await vcsProvider().issueStatuses(project, iids)) out.set(String(iid), name);
   } catch (e) {
     console.error('[feedback] status query failed', (e as Error).message);
     logError('job:feedback', e, { job: 'feedback', phase: 'status' });
@@ -180,25 +123,26 @@ function writeJson(file: string, data: unknown): void {
 export async function detectFeedback(cards: Card[]): Promise<DetectResult & { next: Seen }> {
   const prev = readSeen();
   const firstRun = !prev.checkedAt;
-  const user = await me();
+  const prov = vcsProvider();
+  const user = (await prov.currentUser()).username;
   const statuses = await issueStatuses(cards);
   const next: Seen = { version: 1, checkedAt: new Date().toISOString(), issues: {}, mrs: {} };
   const events: FeedbackEvent[] = [];
-  const mrRuns = new Map<string, Promise<{ discussions: string[]; qaNotes: number[]; fresh: GlDiscussion[]; freshQa: GlNote[] } | null>>();
+  const mrRuns = new Map<string, Promise<{ discussions: string[]; qaNotes: number[]; fresh: VcsThread[]; freshQa: VcsComment[] } | null>>();
 
   const visitMr = (mr: MrPath) => {
     let run = mrRuns.get(mr.ref);
     if (!run) {
       run = (async () => {
         try {
-          const all = await getAll<GlDiscussion>(`${mrBase(mr)}/discussions`);
+          const all = await prov.listMrThreads(mr.project, mr.iid);
           const before = prev.mrs[mr.ref];
           const open = all.filter(isUnresolved);
-          const qa = all.flatMap(realNotes).filter((n) => n.author.username === qaUser());
-          const freshQa = qa.filter((n) => !before?.qaNotes.includes(n.id));
+          const qa = all.flatMap(realNotes).filter((n) => n.author === qaUser());
+          const freshQa = qa.filter((n) => !before?.qaNotes.includes(Number(n.id)));
           // Threads the user opened or last answered are not news to them.
-          const fresh = open.filter((d) => !before?.discussions.includes(d.id) && realNotes(d).at(-1)?.author.username !== user);
-          next.mrs[mr.ref] = { discussions: open.map((d) => d.id), qaNotes: qa.map((n) => n.id) };
+          const fresh = open.filter((d) => !before?.discussions.includes(d.id) && realNotes(d).at(-1)?.author !== user);
+          next.mrs[mr.ref] = { discussions: open.map((d) => d.id), qaNotes: qa.map((n) => Number(n.id)) };
           return { discussions: next.mrs[mr.ref].discussions, qaNotes: next.mrs[mr.ref].qaNotes, fresh: before ? fresh : [], freshQa: before ? freshQa : [] };
         } catch (e) {
           console.error(`[feedback] ${mr.ref}`, (e as Error).message);
@@ -219,14 +163,12 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
     const statusHit = returnedFromQa(cycle(), status);
     const returned = stageHit || statusHit;
     let qaNotes = before?.qaNotes ?? [];
-    let freshNotes: GlNote[] = [];
+    let freshNotes: VcsComment[] = [];
     if (isIssueRef(card.ref) && /^\d+$/.test(card.iid)) {
       try {
-        const notes = (await getAll<GlNote>(`projects/${issueProjectRef()}/issues/${card.iid}/notes?sort=desc&order_by=created_at`)).filter(
-          (n) => !n.system && n.author.username === qaUser(),
-        );
-        qaNotes = notes.map((n) => n.id);
-        if (before) freshNotes = notes.filter((n) => !before.qaNotes.includes(n.id));
+        const notes = (await prov.listIssueComments(issueProjectKey(), Number(card.iid))).filter((n) => !n.system && n.author === qaUser());
+        qaNotes = notes.map((n) => Number(n.id));
+        if (before) freshNotes = notes.filter((n) => !before.qaNotes.includes(Number(n.id)));
       } catch (e) {
         console.error(`[feedback] #${card.iid} notes`, (e as Error).message);
         logError('job:feedback', e, { job: 'feedback', iid: card.iid });
@@ -249,7 +191,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
       if (r.freshQa.length) events.push({ kind: 'qa-note', card, where: mr.ref, note: excerpt(r.freshQa[0].body) });
       if (r.fresh.length) {
         const first = realNotes(r.fresh[0])[0];
-        events.push({ kind: 'discussion', card, mr, count: r.fresh.length, first: `${first.author.username}: ${excerpt(first.body, 140)}` });
+        events.push({ kind: 'discussion', card, mr, count: r.fresh.length, first: `${first.author}: ${excerpt(first.body, 140)}` });
       }
     }
   });
@@ -266,14 +208,14 @@ function noticesFor(events: FeedbackEvent[]): Notice[] {
     if (e.kind === 'returned') {
       return {
         title: `A #${e.card.iid} voltou do QA`,
-        body: `${e.why}${e.note ? `\n${e.note}` : ''}\nClique para a call de reentrada.`,
+        body: `${e.why}${e.note ? `\n${e.note}` : ''}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
     if (e.kind === 'qa-note') {
       return {
         title: `Nota nova do QA na ${e.where}`,
-        body: `${e.note}\nClique para a call de reentrada.`,
+        body: `${e.note}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
@@ -322,17 +264,19 @@ export function getReentry(iid: string): Reentry | null {
 
 async function qaNotesOf(card: Card): Promise<(QaNoteView & { body: string })[]> {
   const found: (QaNoteView & { body: string })[] = [];
+  const prov = vcsProvider();
   if (isIssueRef(card.ref)) {
-    const notes = await getAll<GlNote>(`projects/${issueProjectRef()}/issues/${card.iid}/notes?sort=desc&order_by=created_at`);
-    for (const n of notes.filter((x) => !x.system && x.author.username === qaUser())) {
-      found.push({ id: n.id, at: n.created_at, where: `#${card.iid}`, excerpt: excerpt(n.body), body: n.body, url: `${issueWebUrl(card.iid) ?? ''}#note_${n.id}` });
+    const project = issueProjectKey();
+    const notes = await prov.listIssueComments(project, Number(card.iid));
+    for (const n of notes.filter((x) => !x.system && x.author === qaUser())) {
+      found.push({ id: Number(n.id), at: n.createdAt, where: `#${card.iid}`, excerpt: excerpt(n.body), body: n.body, url: n.webUrl ?? prov.noteUrl(rc().issues.project ?? project, 'issue', Number(card.iid), n.id) });
     }
   }
   for (const mr of card.mrPaths) {
     try {
-      const all = await getAll<GlDiscussion>(`${mrBase(mr)}/discussions`);
-      for (const n of all.flatMap(realNotes).filter((x) => x.author.username === qaUser())) {
-        found.push({ id: n.id, at: n.created_at, where: mr.ref, excerpt: excerpt(n.body), body: n.body, url: `https://${rc().vcsHost}/${mr.project}/-/merge_requests/${mr.iid}#note_${n.id}` });
+      const all = await prov.listMrThreads(mr.project, mr.iid);
+      for (const n of all.flatMap(realNotes).filter((x) => x.author === qaUser())) {
+        found.push({ id: Number(n.id), at: n.createdAt, where: mr.ref, excerpt: excerpt(n.body), body: n.body, url: prov.noteUrl(mr.project, 'mr', mr.iid, n.id) });
       }
     } catch (e) {
       console.error(`[feedback] ${mr.ref}`, (e as Error).message);
@@ -398,7 +342,7 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
 
 export async function askReentry(iid: string, question: string): Promise<Reentry> {
   const re = getReentry(iid);
-  if (!re) throw new Error('call de reentrada não preparada');
+  if (!re) throw new Error(tv('err.reentryNotPrepared'));
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     cp('reentry.ask', { ref: re.ref, question }),
@@ -433,21 +377,20 @@ function readStore(mr: MrPath): DiscussionStore {
 }
 
 function checkDiscussionId(id: string): string {
-  if (!/^[0-9a-f]{8,64}$/.test(id)) throw new Error('discussão inválida');
+  if (!/^[\w=-]{1,64}$/.test(id)) throw new Error('discussão inválida');
   return id;
 }
 
-function viewOf(d: GlDiscussion, stored: StoredDiscussion | undefined): DiscussionView {
+function viewOf(d: VcsThread, stored: StoredDiscussion | undefined): DiscussionView {
   const notes = realNotes(d);
-  const pos = notes.find((n) => n.position)?.position;
   const states = new Map(listActions().map((a) => [a.key, a.state]));
   const proposals: ProposalView[] = (stored?.proposals ?? []).map((p) => ({ ...p, state: states.get(p.key) ?? 'unknown' }));
   const explanation = stored?.explanation ?? null;
   return {
     id: d.id,
-    path: pos?.new_path ?? pos?.old_path ?? null,
-    line: pos?.new_line ?? pos?.old_line ?? null,
-    notes: notes.map((n): DiscussionNote => ({ author: n.author.username, at: n.created_at, body: n.body })),
+    path: d.path,
+    line: d.line,
+    notes: notes.map((n): DiscussionNote => ({ author: n.author, at: n.createdAt, body: n.body })),
     explanation: explanation ? { speech: explanation.speech, text: explanation.text, point: explanation.point, needsCode: explanation.needsCode, draft: explanation.draft, sessionId: explanation.sessionId, at: explanation.at, ...(explanation.partial ? { partial: true } : {}) } : null,
     stale: !!explanation && explanation.notes !== notes.length,
     proposals,
@@ -456,7 +399,7 @@ function viewOf(d: GlDiscussion, stored: StoredDiscussion | undefined): Discussi
 
 export async function listDiscussions(mrIn: MrPath): Promise<DiscussionsResult> {
   const mr = checkMr(mrIn);
-  const all = await getAll<GlDiscussion>(`${mrBase(mr)}/discussions`);
+  const all = await vcsProvider().listMrThreads(mr.project, mr.iid);
   const store = readStore(mr);
   return { mr, fetchedAt: new Date().toISOString(), discussions: all.filter(isUnresolved).map((d) => viewOf(d, store[d.id])) };
 }
@@ -464,10 +407,9 @@ export async function listDiscussions(mrIn: MrPath): Promise<DiscussionsResult> 
 export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): Promise<DiscussionView> {
   const mr = checkMr(mrIn);
   checkDiscussionId(id);
-  const d = await getJson<GlDiscussion>(`${mrBase(mr)}/discussions/${id}`);
+  const d = await vcsProvider().getMrThread(mr.project, mr.iid, id);
   const notes = realNotes(d);
-  const pos = notes.find((n) => n.position)?.position;
-  const where = pos ? `${pos.new_path ?? pos.old_path}:${pos.new_line ?? pos.old_line ?? '?'}` : cp('discussion.noLine');
+  const where = d.path ? `${d.path}:${d.line ?? '?'}` : cp('discussion.noLine');
   const prompt = cp('discussion.main', {
     mr: mr.ref,
     ref: card.ref,
@@ -475,8 +417,8 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     specLine: card.spec ? cp('discussion.specLine', { folder: card.spec.folder, phase: card.spec.phase }) : '',
     where,
     id,
-    notes: notes.map((n) => cp('discussion.note', { author: n.author.username, at: n.created_at, body: n.body.slice(0, 4000) }, { keepEmpty: ['body'] })).join('\n'),
-    viewHint: cp('discussion.viewHint', { endpoint: mrBase(mr) }),
+    notes: notes.map((n) => cp('discussion.note', { author: n.author, at: n.createdAt, body: n.body.slice(0, 4000) }, { keepEmpty: ['body'] })).join('\n'),
+    viewHint: cp('discussion.viewHint', { hint: mrChangesHint(mr.project, mr.iid) }),
   });
   const r = await askAgent<{ fala: string; texto: string; ponto: string; precisa_codigo: boolean; rascunho: string }>(
     'deep',
@@ -499,40 +441,37 @@ function remember(mr: MrPath, id: string, proposal: { key: string; kind: 'reply'
   writeJson(discussionFile(mr), store);
 }
 
-// Both writes only become proposals: nothing reaches GitLab before "seguir" and the confirmation in the Actions screen.
-export function proposeReply(card: Card, mrIn: MrPath, id: string, bodyIn: string): ProposalView {
+// Both writes only become proposals: nothing reaches the code host before "seguir" and the confirmation in the Actions screen.
+export async function proposeReply(card: Card, mrIn: MrPath, id: string, bodyIn: string): Promise<ProposalView> {
   const mr = checkMr(mrIn);
   checkDiscussionId(id);
   const body = bodyIn.trim();
   if (!body) throw new Error('a resposta está vazia');
   if (body.length > 10_000) throw new Error('a resposta passa de 10 mil caracteres');
   const key = `mr-reply:${mr.ref}:${id}:${createHash('sha1').update(body).digest('hex').slice(0, 10)}`;
-  const action = proposeGitlabAction({
-    key,
-    issue: Number(card.iid),
-    issueTitle: card.title,
-    stage: card.stage ?? '',
-    summary: `Responder à discussão no ${mr.ref}`,
-    detail: 'A resposta entra como nota na discussão do revisor.',
-    command: { via: 'glab', method: 'POST', endpoint: `${mrBase(mr)}/discussions/${id}/notes`, fields: { body } },
-  });
+  const commands = await vcsProvider().planWrite({ op: 'replyThread', project: mr.project, iid: mr.iid, threadId: id, body });
+  const [action] = proposeVcsCommands(
+    {
+      key,
+      issue: Number(card.iid),
+      issueTitle: card.title,
+      stage: card.stage ?? '',
+      summary: `Responder à discussão no ${mr.ref}`,
+      detail: 'A resposta entra como nota na discussão do revisor.',
+    },
+    commands,
+  );
   if (!action) throw new Error('Já existe uma proposta igual a esta em Ações.');
   remember(mr, id, { key, kind: 'reply' });
   return { key, kind: 'reply', state: 'pending' };
 }
 
-export function proposeResolve(card: Card, mrIn: MrPath, id: string): ProposalView {
+export async function proposeResolve(card: Card, mrIn: MrPath, id: string): Promise<ProposalView> {
   const mr = checkMr(mrIn);
   checkDiscussionId(id);
   const key = `mr-resolve:${mr.ref}:${id}`;
-  const action = proposeGitlabAction({
-    key,
-    issue: Number(card.iid),
-    issueTitle: card.title,
-    stage: card.stage ?? '',
-    summary: `Marcar como resolvida a discussão no ${mr.ref}`,
-    command: { via: 'glab', method: 'PUT', endpoint: `${mrBase(mr)}/discussions/${id}`, fields: { resolved: 'true' } },
-  });
+  const commands = await vcsProvider().planWrite({ op: 'resolveThread', project: mr.project, iid: mr.iid, threadId: id });
+  const [action] = proposeVcsCommands({ key, issue: Number(card.iid), issueTitle: card.title, stage: card.stage ?? '', summary: `Marcar como resolvida a discussão no ${mr.ref}` }, commands);
   if (!action) throw new Error('Já existe uma proposta para resolver esta discussão em Ações.');
   remember(mr, id, { key, kind: 'resolve' });
   return { key, kind: 'resolve', state: 'pending' };
@@ -541,7 +480,7 @@ export function proposeResolve(card: Card, mrIn: MrPath, id: string): ProposalVi
 // ---------- registration ----------
 
 export const register: Module = (ctx) => {
-  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await checkFeedback({ notify: ctx.notify })) });
+  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, enabled: vcsReady, run: async () => void (await checkFeedback({ notify: ctx.notify })) });
   ctx.handle('feedback:reentry:get', getReentry);
   ctx.handle('feedback:reentry:prepare', prepareReentry);
   ctx.handle('feedback:reentry:ask', askReentry);
