@@ -1,0 +1,203 @@
+import type { JsonSchema } from './jsonSchema';
+import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+
+// The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
+// Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
+
+export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
+export const SECRET_REF = '^[a-z0-9][a-z0-9._-]{0,63}$';
+export const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
+const NO_NUL = '^[^\\u0000]*$';
+
+const string = (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: 'string', description, maxLength: 4000, pattern: NO_NUL, ...extra });
+const nullableString = (description: string): JsonSchema => ({ type: ['string', 'null'], description, maxLength: 4000, pattern: NO_NUL });
+const boolean = (description: string): JsonSchema => ({ type: 'boolean', description });
+const integer = (description: string, minimum?: number, maximum?: number): JsonSchema => ({ type: 'integer', description, ...(minimum !== undefined ? { minimum } : {}), ...(maximum !== undefined ? { maximum } : {}) });
+const enumOf = (description: string, values: readonly string[]): JsonSchema => ({ type: 'string', description, enum: [...values] });
+const list = (description: string, items: JsonSchema, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: 'array', description, items, ...extra });
+const strings = (description: string): JsonSchema => list(description, { type: 'string', maxLength: 4000, pattern: NO_NUL }, { maxItems: 200 });
+
+function object(description: string, properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema {
+  return { type: 'object', description, properties, ...(required.length ? { required } : {}), additionalProperties: false };
+}
+
+function byRole(description: string, item: JsonSchema): JsonSchema {
+  return object(description, Object.fromEntries(LLM_ROLES.map((r) => [r, item])), [...LLM_ROLES]);
+}
+
+const provider = object(
+  'A model provider.',
+  {
+    id: string('Stable id, referenced by llm.roles.', { pattern: ID }),
+    kind: enumOf('Wire protocol: anthropic is spoken natively; openai goes through the translation adapter.', PROVIDER_KINDS),
+    baseUrl: string('API root, e.g. https://api.anthropic.com or http://localhost:11434/v1.', { minLength: 1 }),
+    models: strings('Model ids the provider offers (suggestions; any id may still be typed).'),
+    secretRef: { ...nullableString('Reference into the secrets store. null: no key is sent.') },
+    envFile: nullableString('Claude-settings-style JSON file whose "env" block (minus KEY/TOKEN variables) joins the agent environment.'),
+  },
+  ['id', 'kind', 'baseUrl'],
+);
+
+const repo = object(
+  'A repository the ceremonies look at.',
+  {
+    id: string('Short name used in cards and prompts.', { pattern: ID }),
+    path: string('Local checkout ("~/" expands).', { minLength: 1 }),
+    remoteUrl: nullableString('Remote URL.'),
+    vcsId: nullableString('A vcs integration id.'),
+    projectPath: nullableString('"group/name" on the host when it cannot be derived from remoteUrl.'),
+  },
+  ['id', 'path'],
+);
+
+const vcs = object(
+  'A version control or issue tracker integration.',
+  {
+    id: string('Stable id, referenced by projects.', { pattern: ID }),
+    kind: enumOf('Provider.', VCS_KINDS),
+    host: string('Host without scheme.', { minLength: 1 }),
+    apiUrl: string('API root; empty: derived from host and kind.'),
+    user: string('Login the integration acts as.'),
+    secretRef: nullableString('Reference into the secrets store for an API token. null: rely on the CLI login.'),
+    cliPreference: enumOf('auto: CLI when installed, API otherwise.', CLI_PREFERENCES),
+    cliCommand: nullableString('Executable of the provider CLI; null: the default for the kind.'),
+  },
+  ['id', 'kind', 'host'],
+);
+
+const stage = object(
+  'A stage of the flow an issue goes through.',
+  {
+    id: string('Stable id.', { pattern: ID }),
+    label: string('Name shown on the cards.'),
+    match: strings('Case-insensitive regular expressions tested against the card stage or issue status.'),
+    kind: enumOf('What the stage means.', STAGE_KINDS),
+    rank: integer('Position in the flow: higher is closer to done.', 0, 100),
+  },
+  ['id', 'kind'],
+);
+
+const phaseFile = object('A document whose presence says where an issue is.', { file: string('Base name of the document.', { minLength: 1 }), label: string('Phase text shown on the card.') }, ['file']);
+
+const gateFiles = object(
+  'Where the artifact of a gate lives.',
+  {
+    sub: string('Sub-folder of the spec folder.'),
+    gate: { type: 'integer', description: 'Gate number.', enum: [1, 2] },
+    files: list('[file, label] pairs in order of preference.', { type: 'array', items: { type: 'string', maxLength: 400 }, minItems: 2, maxItems: 2 }),
+  },
+  ['sub', 'gate', 'files'],
+);
+
+const agentRole = object(
+  'Settings of one agent role.',
+  {
+    modelRole: enumOf('The llm.roles entry this agent role calls.', LLM_ROLES),
+    extraInstructions: string('Text appended to the system prompt.', { maxLength: 20_000 }),
+    promptOverride: string('Replaces the built-in role preamble when not empty.', { maxLength: 20_000 }),
+  },
+);
+
+const command = { enabled: boolean('The integration is on.'), command: string('Executable ("~/" expands); never run through a shell.') };
+
+export const CONFIG_SCHEMA: JsonSchema = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  $id: 'https://coxia.app/schemas/workspace-config-v2.json',
+  title: 'Coxia workspace configuration',
+  ...object(
+    'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
+    {
+      schemaVersion: { type: 'integer', description: 'Version of this document.', const: CONFIG_SCHEMA_VERSION },
+      setupComplete: boolean('The setup wizard finished (or the config came from an existing install).'),
+      language: enumOf('Interface and agent language.', LANGUAGES),
+      appearance: object('Look.', { theme: enumOf('Color theme.', THEMES) }),
+      notifications: boolean('Desktop and push notifications.'),
+      closeToTray: boolean('Closing the window keeps the app in the tray.'),
+      retention: object('Local history retention.', { enabled: boolean('Delete history older than days.'), days: integer('Days to keep.', 7, 365) }),
+      schedule: object('When the app reminds and checks.', {
+        preDaily: string('HH:MM of the pre-daily reminder.', { pattern: TIME }),
+        days: list('Weekdays (0 = Sunday) the schedule runs.', integer('Weekday.', 0, 6), { maxItems: 7, uniqueItems: true }),
+        statusEveryMin: integer('Minutes between status checks.', 5, 240),
+        from: string('HH:MM the work day starts.', { pattern: TIME }),
+        to: string('HH:MM the work day ends.', { pattern: TIME }),
+        retroDay: integer('Weekday of the retro reminder.', 0, 6),
+        retroTime: string('HH:MM of the retro reminder.', { pattern: TIME }),
+      }),
+      llm: object('Model providers and which one serves each role.', {
+        providers: list('Providers.', provider, { maxItems: 20 }),
+        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }) }, ['provider', 'model'])),
+      }),
+      projects: object('Where the code lives.', {
+        roots: strings('Folders that contain the repos; the first is the working directory of the agents.'),
+        repos: list('Repositories listed explicitly.', repo, { maxItems: 200 }),
+        autoDiscover: boolean('Also treat git repos directly under the roots as projects.'),
+        issues: object('The project that holds the issues.', {
+          vcsId: nullableString('A vcs integration id.'),
+          project: nullableString('"group/name" of the issue project.'),
+          projectId: { type: ['integer', 'null'], description: 'Numeric id of the issue project.' },
+          refPrefix: string('Prefix of a card ref, e.g. "sz4#".', { maxLength: 40 }),
+        }),
+      }),
+      vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),
+      docs: object('Where the agents find their context (Claude Code layout).', {
+        autoDetect: boolean('Add ~/.claude, <project>/.claude, CLAUDE.md and .mcp.json when present.'),
+        claudeMdRoots: strings('Folders whose CLAUDE.md is part of the context.'),
+        skillsDirs: strings('Skills folders.'),
+        rulesDirs: strings('Rules folders.'),
+        agentsDirs: strings('Agents folders.'),
+        knowledgeDirs: strings('Knowledge base folders.'),
+        mcpConfigFiles: strings('MCP config files.'),
+        specsDir: nullableString('Folder with one subfolder per issue. null: no spec files.'),
+      }),
+      devCycle: object('The development cycle the ceremonies follow.', {
+        templateId: string('Template this section came from.', { pattern: '^[a-z0-9][a-z0-9_.-]{0,47}$' }),
+        ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
+        stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
+        specLayout: object('How an issue folder is laid out.', {
+          folderPrefix: string('The spec folder starts with this; "{iid}" is the issue number.', { minLength: 1, maxLength: 100 }),
+          phaseFiles: list('From the most advanced phase to the first.', phaseFile, { maxItems: 60 }),
+          planFiles: strings('Files that hold the plan.'),
+          gateFiles: list('Artifacts of each gate.', gateFiles, { maxItems: 30 }),
+          documents: object('Names of the documents the app writes.', { gateQuiz: string('Gate quiz record.', { minLength: 1 }), completion: string('Issue completion record.', { minLength: 1 }), qaChecklist: string('QA checklist.', { minLength: 1 }) }),
+        }),
+        qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
+      }),
+      agents: object('How the agents behave.', {
+        tools: object('Tools pre-approved for agents. Writes, web and secret files are always blocked.', {
+          files: boolean('Read, Grep and Glob.'),
+          skills: boolean('Claude Code skills.'),
+          trackerMcp: boolean('Issue tracker MCP tools.'),
+          vcsCli: boolean('Read-only use of the VCS CLI.'),
+          subagents: boolean('Subagents in the unblock ceremony.'),
+        }),
+        extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
+        roles: byRole('Per agent role.', agentRole),
+      }),
+      voice: object('Speech.', {
+        enabled: boolean('Voice is on; off turns calls into text conversations.'),
+        engine: enumOf('Text-to-speech engine.', VOICE_ENGINES),
+        sttModel: string('faster-whisper model name.', { minLength: 1, maxLength: 60 }),
+        depsInstalled: boolean('The sidecar dependencies are installed on this machine.'),
+        autoStop: boolean('Send when the speaker stops.'),
+        silenceMs: integer('Silence that ends an utterance (ms).', 500, 5000),
+        speak: boolean('Agents speak aloud.'),
+        prosody: boolean('Per-sentence intonation.'),
+        bargeIn: boolean('Speaking interrupts the agent.'),
+      }),
+      externalTools: object('Optional tools the app calls. Each one is off until configured.', {
+        cardSource: object('Command that lists the day\'s cards as JSON.', {
+          ...command,
+          reportArgs: strings('Arguments that print the cards.'),
+          noteArgs: strings('Arguments that store a note; {ref} and {note} are replaced.'),
+          stateFile: nullableString('File where the tool keeps its state.'),
+          timeoutMs: integer('Timeout of one run.', 1000, 900_000),
+        }),
+        releaseSync: object('Command that syncs branches with main after a release.', { ...command, cwd: nullableString('Working directory; null: the projects root.'), mirrorsDir: nullableString('Folder of the bare mirrors the tool keeps.') }),
+        timeExport: object('Time tracking export.', { ...command, format: enumOf('Entry format.', ['none', 'clockify-log']) }),
+        terminal: object('Terminal used by "continue in Claude Code".', { command: nullableString('Emulator; null: gnome-terminal, then x-terminal-emulator.'), args: strings('Arguments before the shell command.') }),
+        claudeCli: object('Claude CLI that resumes sessions.', { command: string('Executable.', { minLength: 1 }), cwd: nullableString('Starting directory; null: the projects root.') }),
+      }),
+    },
+    ['schemaVersion'],
+  ),
+};
