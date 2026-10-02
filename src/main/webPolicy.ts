@@ -8,6 +8,9 @@ export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autos
 // post-release-sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 
+// push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.
+// They take the same path as every other call: session cookie, X-Cerimonias header, this policy.
+
 // Pairing and web access settings only exist in the desktop window.
 const WEB_ADMIN = /^web:/;
 

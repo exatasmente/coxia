@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { parseTarget, targetFromSearch, type PushTarget } from '../../shared/push';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
 import { setBargeIn, setSpeechEnabled, usePlayer } from './audio';
@@ -23,6 +24,7 @@ import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
+import { targetToScreen } from './pushTarget';
 
 export type Screen =
   | { name: 'today' }
@@ -90,6 +92,27 @@ export function App() {
     // go only touches the player and the screen state
     [mergeStatus, cards],
   );
+
+  // A tapped push notification arrives as ?open=... (app was closed) or as a message from the service worker (app was open).
+  const cardsLoaded = useRef(false);
+  cardsLoaded.current = !!cards;
+  useEffect(() => {
+    const open = (t: PushTarget) => {
+      const next = targetToScreen(t, cardsLoaded.current);
+      if (next) go(next);
+    };
+    const fromUrl = targetFromSearch(location.search);
+    if (location.search) history.replaceState(null, '', `${location.pathname}${location.hash}`);
+    if (fromUrl) open(fromUrl);
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: unknown; target?: unknown } | null;
+      const t = data?.type === 'cerimonias:open' ? parseTarget(data.target) : null;
+      if (t) open(t);
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+    // go only touches the player and the screen state
+  }, []);
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
