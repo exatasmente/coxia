@@ -367,6 +367,7 @@ html:has(section.hero) { scroll-padding-top: 500px; }
 @media (max-height: 760px) { html:has(section.hero) { scroll-padding-top: 340px; } }
 html:has(.composer) { scroll-padding-bottom: 96px; }
 html:has(.composer-panel) { scroll-padding-bottom: 300px; }
+html:has(.call-controls) { scroll-padding-bottom: 240px; }
 
 /* Phones (browser, PWA) and landscape phones: one column, a compact sticky bar, touch-sized controls.
    The PWA shell sets viewport-fit=cover (safe-area insets) and interactive-widget=resizes-content (composer above the keyboard). */
