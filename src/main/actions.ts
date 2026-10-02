@@ -408,7 +408,7 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
   return update(id, (x) => ({
     ...x,
     sessionId: r.sessionId,
-    msgs: [...x.msgs, ...(x.msgs.length || x.sessionId ? [{ me: true, text: question, at: now() }] : []), { me: false, text: r.speech, at: now() }],
+    msgs: [...x.msgs, ...(x.msgs.length || x.sessionId ? [{ me: true, text: question, at: now() }] : []), { me: false, text: r.text, speech: r.speech, at: now() }],
   }));
 }
 

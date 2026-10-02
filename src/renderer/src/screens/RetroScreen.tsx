@@ -6,7 +6,7 @@ import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { RichText } from './Diagram';
+import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 
 function improvementEntry(m: Improvement): string {
@@ -58,7 +58,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
       const r = await fn();
       setRetro(r);
       const last = r.talk[r.talk.length - 1];
-      if (speakLast && voice && last && !last.me) void player.say(last.text, voice, 'retro').catch(() => undefined);
+      if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'retro').catch(() => undefined);
     } catch (e) {
       setError(errorText(e));
     }
@@ -145,7 +145,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <section className="panel" style={{ padding: 20, gap: 10 }}>
               <h2 className="section-title">Conversa</h2>
               {retro.talk.map((m, i) => (
-                <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Moderador'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
+                <Bubble key={i} m={m} who={m.me ? 'Você' : 'Moderador'} voice={voice} player={player} speaker="retro" />
               ))}
               <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
                 <input className="text-input" placeholder="Ou digite" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Fala na retro" />

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { join } from 'node:path';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
-import { SPEECH_RULES, askAgent, obj, str } from './agents';
+import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
 import { ATAS, HOME } from './env';
 import { getHistory, listHistory } from './state';
 
@@ -141,13 +141,13 @@ export async function prepareRetro(): Promise<Retro> {
 export async function askRetro(id: string, question: string): Promise<Retro> {
   const retro = read(id);
   if (!retro) throw new Error('retro não encontrada');
-  const r = await askAgent<{ fala: string }>(
+  const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Na retro, o Luiz disse (transcrição por voz): «${question}»`, 'Responda, aprofunde ou proponha; "fala" até 90 palavras.', SPEECH_RULES].join('\n'),
-    obj({ fala: str }),
+    [`Na retro, o Luiz disse (transcrição por voz): «${question}»`, 'Responda, aprofunde ou proponha; "fala" até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    obj({ fala: str, texto: str }),
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );
   retro.sessionId = r.sessionId || retro.sessionId;
-  retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.fala, at: now() });
+  retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
   return write(retro);
 }

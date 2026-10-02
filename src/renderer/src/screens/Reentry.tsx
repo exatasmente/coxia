@@ -8,7 +8,7 @@ import type { Ceremony } from '../ceremony';
 import { feedbackApi } from '../feedbackApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { RichText } from './Diagram';
+import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 
 const CLASS_LABEL: Record<ReentryClass, string> = {
@@ -47,7 +47,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
         const r = await fn();
         setRe(r);
         const last = r.talk[r.talk.length - 1];
-        if (speakLast && voice && last && !last.me) void player.say(last.text, voice, 'reentrada').catch(() => undefined);
+        if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'reentrada').catch(() => undefined);
       } catch (e) {
         setError(errorText(e));
       }
@@ -142,7 +142,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas</h2>
                 {re.talk.map((m, i) => (
-                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
+                  <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="reentrada" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) void ask(draft.trim()); setDraft(''); }}>

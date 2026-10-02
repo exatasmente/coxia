@@ -6,7 +6,7 @@ import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { RichText } from './Diagram';
+import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 
 const OPENING = 'Explique o conflito: o que cada lado mudou, por que conflita e a resolução que você propõe, com o que testar depois.';
@@ -33,7 +33,7 @@ export function Conflict({
         const updated = await api.conflictAsk(action.id, question);
         setBusy(null);
         const last = updated.msgs[updated.msgs.length - 1];
-        if (voice && last && !last.me) await player.say(last.text, voice, 'conflito').catch(() => undefined);
+        if (voice && last && !last.me) await player.say(last.speech ?? last.text, voice, 'conflito').catch(() => undefined);
       } catch (e) {
         setError(errorText(e));
         setBusy(null);
@@ -121,12 +121,7 @@ export function Conflict({
           <main className="panel deep-main" style={{ flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }} aria-live="polite">
             <h2 className="section-title">Conversa</h2>
             {action.msgs.map((m, i) => (
-              <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
-                <div className="bubble">
-                  <div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div>
-                  <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
-                </div>
-              </div>
+              <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="conflito" />
             ))}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
             {error && <div className="error">{error}</div>}

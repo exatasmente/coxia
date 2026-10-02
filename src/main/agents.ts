@@ -91,6 +91,13 @@ const SPEECH_RULES =
   'Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp"). ' +
   'Fale só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.';
 
+// The chat is read, not heard: it completes the speech instead of repeating it.
+const CHAT_RULES =
+  '"texto": a mesma resposta para ler no chat, completa: pode ter listas curtas, `arquivo:linha`, comandos e os detalhes que não cabem na fala. ' +
+  'Quando um fluxo, uma sequência entre serviços ou a relação entre partes ficar mais clara desenhada, inclua um diagrama em bloco ```mermaid ' +
+  '(flowchart ou sequenceDiagram, rótulos curtos e entre aspas quando tiverem símbolos, sem estilos nem cores). Sem diagrama quando não ajudar. ' +
+  '"fala": a versão para ser ouvida, que segue as regras de fala abaixo e não lê o diagrama.';
+
 const ROLE =
   'Você participa de uma cerimônia por voz do Luiz como agente de uma atividade. ' +
   'A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. ' +
@@ -268,13 +275,14 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
       : `Desbloqueio por voz da atividade ${card.ref}. Investigue lendo spec, rules e GitLab (só leitura) antes de responder.\n${cardContext(card)}`,
     `Pergunta do Luiz (transcrição por voz): «${question}»`,
     '"fala": resposta em até 80 palavras, para ser ouvida.',
+    CHAT_RULES,
     SPEECH_RULES,
   ].join('\n');
-  const r = await run<{ fala: string }>('deep', prompt, obj({ fala: str }), {
+  const r = await run<{ fala: string; texto: string }>('deep', prompt, obj({ fala: str, texto: str }), {
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
   });
-  return { sessionId: r.sessionId, speech: r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {
@@ -339,17 +347,18 @@ export async function conflictAsk(context: string, question: string, sessionId: 
         ].join('\n'),
     `Pergunta do Luiz (transcrição por voz): «${question}»`,
     '"fala": resposta em até 90 palavras, para ser ouvida.',
+    CHAT_RULES,
     SPEECH_RULES,
   ].join('\n');
-  const r = await run<{ fala: string }>(
+  const r = await run<{ fala: string; texto: string }>(
     'deep',
     prompt,
-    obj({ fala: str }),
+    obj({ fala: str, texto: str }),
     { maxTurns: 20, ...(sessionId ? { resume: sessionId } : {}) },
     { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
   );
-  return { sessionId: r.sessionId, speech: r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
-export { run as askAgent, obj, str, strOrNull, SPEECH_RULES };
+export { run as askAgent, obj, str, strOrNull, SPEECH_RULES, CHAT_RULES };

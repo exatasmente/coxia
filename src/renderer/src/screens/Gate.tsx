@@ -4,8 +4,9 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { Bubble } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
-import { Diagram, RichText } from './Diagram';
+import { Diagram } from './Diagram';
 import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
 
@@ -228,9 +229,7 @@ export function Gate({
                       Não é nota: é sinal de que o material não ensinou. 1) A seção está citada em cada pergunta errada. 2) Leitura assistida: pergunte por voz ou por texto. 3) Recurso visual para a seção. 4) Nova rodada com perguntas novas.
                     </p>
                     {gate.talk.map((m, i) => (
-                      <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
-                        <div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div>
-                      </div>
+                      <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="gate" />
                     ))}
                     <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
                       <input className="text-input" placeholder="Pergunte sobre o ponto que escapou" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta de leitura assistida" />

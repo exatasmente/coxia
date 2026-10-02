@@ -6,7 +6,7 @@ import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { RichText } from './Diagram';
+import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 
 function checklistText(q: Qa): string {
@@ -45,7 +45,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
       const q = await fn();
       setQa(q);
       const last = q.talk[q.talk.length - 1];
-      if (speakLast && voice && last && !last.me) void player.say(last.text, voice, 'qa').catch(() => undefined);
+      if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'qa').catch(() => undefined);
     } catch (e) {
       setError(errorText(e));
     }
@@ -152,7 +152,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas do QA</h2>
                 {qa.talk.map((m, i) => (
-                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Pergunta' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
+                  <Bubble key={i} m={m} who={m.me ? 'Pergunta' : 'Agente'} voice={voice} player={player} speaker="qa" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>

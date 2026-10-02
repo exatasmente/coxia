@@ -1,4 +1,4 @@
-import type { ReleaseAction } from './types';
+import type { ReleaseAction, Talk } from './types';
 
 export type ReentryClass = 'defeito-novo' | 'causa-diferente' | 'so-plano' | 'ambiente';
 export type ReentryPhase = 'F1' | 'F3' | 'F4' | 'nenhuma';
@@ -31,7 +31,7 @@ export interface Reentry {
   phase: ReentryPhase;
   steps: string[];
   notes: QaNoteView[];
-  talk: { me: boolean; text: string; at: string }[];
+  talk: Talk[];
   createdAt: string;
 }
 

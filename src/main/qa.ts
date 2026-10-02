@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
-import { SPEECH_RULES, askAgent, obj, str } from './agents';
+import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
 import { ATAS, GITLAB, SPECS } from './env';
 
 const DIR = join(ATAS, 'qa');
@@ -93,14 +93,14 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
 export async function askQa(iid: string, question: string): Promise<QaHandoff> {
   const q = read(iid);
   if (!q) throw new Error('passagem para o QA não preparada');
-  const r = await askAgent<{ fala: string }>(
+  const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do QA ou do Luiz na passagem da ${q.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', SPEECH_RULES].join('\n'),
-    obj({ fala: str }),
+    [`Pergunta do QA ou do Luiz na passagem da ${q.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(q.sessionId ? { resume: q.sessionId } : {}) },
   );
   q.sessionId = r.sessionId || q.sessionId;
-  q.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.fala, at: now() });
+  q.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
   return write(q);
 }
 

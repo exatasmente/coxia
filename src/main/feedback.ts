@@ -17,7 +17,7 @@ import type {
   ReentryPhase,
 } from '../shared/feedback';
 import { listActions, proposeGitlabAction } from './actions';
-import { SPEECH_RULES, askAgent, obj, str, strOrNull } from './agents';
+import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agents';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS, GITLAB, PLAYBOOK } from './env';
@@ -393,14 +393,14 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
 export async function askReentry(iid: string, question: string): Promise<Reentry> {
   const re = getReentry(iid);
   if (!re) throw new Error('call de reentrada não preparada');
-  const r = await askAgent<{ fala: string }>(
+  const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do Luiz na reentrada da ${re.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', SPEECH_RULES].join('\n'),
-    obj({ fala: str }),
+    [`Pergunta do Luiz na reentrada da ${re.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(re.sessionId ? { resume: re.sessionId } : {}) },
   );
   re.sessionId = r.sessionId || re.sessionId;
-  re.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.fala, at: now() });
+  re.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
   writeJson(reentryFile(iid), re);
   return re;
 }

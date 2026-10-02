@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import type { Card, GateOption, GateRoundView, GateView } from '../shared/types';
-import { SPEECH_RULES, askAgent, obj, str } from './agents';
+import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
+import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
 import { ATAS, SPECS } from './env';
 
 // Quiz mechanics from the agent-pipeline skill, §2.1. The correct answers never leave this module before a round is answered.
@@ -40,7 +40,7 @@ interface Gate {
   summary: string;
   sessionId: string | null;
   rounds: Round[];
-  talk: { me: boolean; text: string; at: string }[];
+  talk: Talk[];
   recorded: string | null;
   createdAt: string;
 }
@@ -225,20 +225,21 @@ export async function explainGate(id: string, question: string): Promise<GateVie
   const g = read(id);
   const round = g.rounds[g.rounds.length - 1];
   const missed = round.questions.filter((_, i) => round.answers[i] && !round.answers[i]?.correct);
-  const r = await askAgent<{ fala: string }>(
+  const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     [
       'Leitura assistida do ciclo de consolidação (agent-pipeline §2.1): leia com o Luiz só a seção onde mora o ponto que escapou, passo a passo, respondendo o que ele perguntar. Não reapresente o artefato inteiro.',
       `Pontos que escaparam: ${missed.map((q) => `«${q.text}» → ${q.section}`).join(' | ') || 'nenhum'}`,
       `Pergunta do Luiz: «${question}»`,
       '"fala": até 90 palavras, para ser ouvida.',
+      CHAT_RULES,
       SPEECH_RULES,
     ].join('\n'),
-    obj({ fala: str }),
+    obj({ fala: str, texto: str }),
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
   g.sessionId = r.sessionId || g.sessionId;
-  g.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.fala, at: now() });
+  g.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
   return view(write(g));
 }
 

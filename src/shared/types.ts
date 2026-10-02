@@ -73,7 +73,9 @@ export interface ReplyResult {
 
 export interface DeepAnswer {
   sessionId: string;
+  // what the voice says; text is what the chat shows (may carry lists and mermaid diagrams)
   speech: string;
+  text: string;
   sources: string[];
 }
 
@@ -108,7 +110,7 @@ export interface LogLine {
 
 export interface DeepState {
   sessionId: string | null;
-  msgs: { me: boolean; text: string; at: string }[];
+  msgs: Talk[];
   sources: string[];
   options: DeepOption[] | null;
   pick: number | null;
@@ -186,7 +188,7 @@ export interface GateView {
   summary: string;
   sessionId: string | null;
   rounds: GateRoundView[];
-  talk: { me: boolean; text: string; at: string }[];
+  talk: Talk[];
   recorded: string | null;
 }
 
@@ -194,6 +196,8 @@ export interface Talk {
   me: boolean;
   text: string;
   at: string;
+  // spoken version of an agent message; absent on old messages and on the user's own
+  speech?: string;
 }
 
 export interface QaHandoff {
@@ -273,7 +277,7 @@ export interface ReleaseAction {
   currentBody: string | null;
   proposedBody: string | null;
   sessionId: string | null;
-  msgs: { me: boolean; text: string; at: string }[];
+  msgs: Talk[];
   unit: Record<string, unknown> | null;
   summary: string | null;
   command: GitlabCommand | null;

@@ -7,7 +7,7 @@ import { type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { RichText } from './Diagram';
+import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 
 const OPENING = 'Explique o bloqueio desta atividade, o que você leu para chegar nisso e o que precisa de mim para destravar.';
@@ -55,7 +55,7 @@ export function Deep({
           ...d,
           sessionId: r.sessionId,
           sources: [...new Set([...d.sources, ...r.sources])],
-          msgs: [...d.msgs, { me: false, text: r.speech, at: now() }],
+          msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now() }],
         }));
         setBusy(null);
         const voice = c.voiceOf(card.ref);
@@ -193,12 +193,7 @@ export function Deep({
               <span className="faint">transcrição ao vivo</span>
             </div>
             {msgs.map((m, i) => (
-              <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
-                <div className="bubble">
-                  <div className="who">{m.me ? 'Você' : `Agente #${card.iid}`} · {m.at}</div>
-                  <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
-                </div>
-              </div>
+              <Bubble key={i} m={m} who={m.me ? 'Você' : `Agente #${card.iid}`} voice={c.voiceOf(card.ref)} player={player} speaker={card.ref} />
             ))}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
             {error && <div className="error">{error}</div>}

@@ -121,6 +121,8 @@ export function usePlayer() {
   const current = useRef<HTMLAudioElement | null>(null);
   const silent = useRef<{ timer: ReturnType<typeof setTimeout>; done: () => void } | null>(null);
   const [speaking, setSpeaking] = useState<string | null>(null);
+  // the chat message being played, so its replay button can turn into stop
+  const [item, setItem] = useState<unknown>(null);
 
   const stop = useCallback(() => {
     current.current?.pause();
@@ -131,6 +133,7 @@ export function usePlayer() {
       silent.current = null;
     }
     setSpeaking(null);
+    setItem(null);
   }, []);
 
   useEffect(() => {
@@ -142,8 +145,8 @@ export function usePlayer() {
   }, [stop]);
 
   const say = useCallback(
-    async (text: string, voice: Voice, who: string) => {
-      if (!speechOn) {
+    async (text: string, voice: Voice, who: string, opts: { force?: boolean; item?: unknown } = {}) => {
+      if (!speechOn && !opts.force) {
         stop();
         setSpeaking(who);
         const ms = readingMs(text);
@@ -165,6 +168,7 @@ export function usePlayer() {
       playing = audio;
       current.current = audio;
       setSpeaking(who);
+      setItem(opts.item ?? null);
       await new Promise<void>((done) => {
         audio.onended = () => done();
         audio.onerror = () => done();
@@ -177,12 +181,13 @@ export function usePlayer() {
       if (current.current === audio) {
         current.current = null;
         setSpeaking(null);
+        setItem(null);
       }
     },
     [stop],
   );
 
-  return { speaking, say, stop };
+  return { speaking, current: item, say, stop };
 }
 
 const SAMPLE_MS = 50;
