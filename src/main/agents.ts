@@ -1,3 +1,6 @@
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, resolve } from 'node:path';
 import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
@@ -48,7 +51,9 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
-    if (patterns.some((re) => re.test(command))) return {};
+    if (patterns.some((re) => re.test(command)) && !(command.startsWith('git ') && command.split(/[\s:"']+/).some((t) => SECRET_PATH.test(t)))) {
+      return {};
+    }
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
@@ -60,7 +65,61 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
 }
 
 // Agents run on a third-party model: secret files never enter the context.
-export const SECRET_PATH = /(^|\/)\.env($|[./*?])|\.env$|secret|credential|token|(^|[\/_.-])key$|\.pem$|(^|\/)\.(ssh|config|aws|docker)($|\/)|(^|\/)\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+export const SECRET_PATH = /(^|\/)\.env(rc)?($|[./*?])|\.env$|secret|credential|token|(^|[\/_.-])key$|\.pem$|(^|\/)\.(ssh|config|aws|docker)($|\/)|(^|\/)\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+
+// SECRET_PATH in gitignore syntax. Read deny rules are the layer that also reaches a Grep or Glob with no path
+// (the SDK turns them into case-insensitive ripgrep ignores placed after any glob the model passes); a hook never
+// sees what a path-less search will walk. The ~/ rules cover the home, outside the cwd.
+export const SECRET_GLOBS = [
+  '**/.env*',
+  '**/*.env',
+  '**/*secret*',
+  '**/*credential*',
+  '**/*token*',
+  '**/key',
+  '**/*_key',
+  '**/*-key',
+  '**/*.key',
+  '**/*.pem',
+  '**/.ssh/**',
+  '**/.config/**',
+  '**/.aws/**',
+  '**/.docker/**',
+  '**/.netrc',
+  '**/.mcp.json',
+  '**/.claude.json',
+  '~/.ssh/**',
+  '~/.config/**',
+  '~/.aws/**',
+  '~/.docker/**',
+  '~/.netrc',
+  '~/.claude.json',
+  '~/.claude/*.json',
+  '~/.claude/projects/**',
+];
+export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
+
+// The Claude Code state in the home holds settings with keys and the transcript of every session.
+function inClaudeState(p: string): boolean {
+  const base = `${homedir()}/.claude/`;
+  if (!p.startsWith(base)) return false;
+  const rel = p.slice(base.length);
+  return rel.startsWith('projects/') || (!rel.includes('/') && rel.endsWith('.json'));
+}
+
+// The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:
+// a link named notes.txt that points at a .env is the .env.
+export function secretPath(p: string, cwd = process.cwd()): boolean {
+  const home = p === '~' || p.startsWith('~/') ? homedir() + p.slice(1) : p;
+  const abs = isAbsolute(home) ? home : resolve(cwd, home);
+  const forms = [p, home, abs];
+  try {
+    forms.push(realpathSync(abs));
+  } catch {
+    // does not exist: the written forms are all there is
+  }
+  return forms.some((f) => SECRET_PATH.test(f) || inClaudeState(f));
+}
 
 export const noSecrets: HookCallback = async (input) => {
   if (input.hook_event_name !== 'PreToolUse') return {};
@@ -68,7 +127,7 @@ export const noSecrets: HookCallback = async (input) => {
   const paths = [args.file_path, args.path, input.tool_name === 'Glob' ? args.pattern : null, args.glob].filter(
     (p): p is string => typeof p === 'string',
   );
-  if (!paths.some((p) => SECRET_PATH.test(p))) return {};
+  if (!paths.some((p) => secretPath(p, input.cwd))) return {};
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
@@ -77,6 +136,48 @@ export const noSecrets: HookCallback = async (input) => {
     },
   };
 };
+
+// Last layer for Grep and Glob: whatever the deny rules let through, a result that names a secret file is cut.
+export function withoutSecretFiles(response: unknown, cwd?: string): object | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const out = response as { filenames?: unknown; content?: unknown };
+  const names = Array.isArray(out.filenames) ? (out.filenames as unknown[]) : null;
+  const keptNames = names?.filter((n) => typeof n !== 'string' || !secretPath(n, cwd));
+  const lines = typeof out.content === 'string' ? out.content.split('\n') : null;
+  // A match line is "path:line:text" (context lines "path-line-text"); a file name may hold ':' or '-', so every
+  // "[:-]digits[:-]" is tried as the end of the path.
+  const keptLines = lines?.filter((l) => {
+    for (const m of l.matchAll(/[:-]\d+[:-]/g)) {
+      const file = l.slice(0, m.index);
+      if (!/\s/.test(file) && secretPath(file, cwd)) return false;
+    }
+    return true;
+  });
+  if (keptNames?.length === names?.length && keptLines?.length === lines?.length) return null;
+  return {
+    ...out,
+    ...(keptNames ? { filenames: keptNames, numFiles: keptNames.length } : {}),
+    ...(keptLines ? { content: keptLines.join('\n') } : {}),
+  };
+}
+
+export const redactSecretResults: HookCallback = async (input) => {
+  if (input.hook_event_name !== 'PostToolUse' || !/^(Grep|Glob)$/.test(input.tool_name)) return {};
+  const clean = withoutSecretFiles(input.tool_response, input.cwd);
+  if (!clean) return {};
+  if (process.env.CERIMONIAS_DEBUG) console.error('[redacted]', input.tool_name);
+  return { hookSpecificOutput: { hookEventName: 'PostToolUse', updatedToolOutput: clean } };
+};
+
+export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks']> {
+  return {
+    PreToolUse: [
+      { matcher: 'Bash', hooks: [shellAllowlist([...GLAB_READ, ...patterns])] },
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
+    ],
+    PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
+  };
+}
 
 const GIT_HINT =
   'No conflito: `git -C <repo do mirror> merge-tree --write-tree --name-only <src_sha> <tgt_sha>`, `git -C <repo> merge-base <src_sha> <tgt_sha>`, `git -C <repo> diff <base> <src_sha> -- <arquivo>` e `git -C <repo> diff <base> <tgt_sha> -- <arquivo>`.';
@@ -150,18 +251,9 @@ async function run<T>(
         'NotebookEdit',
         'WebFetch',
         'WebSearch',
-        'Read(**/*.env)',
-        'Read(**/.env*)',
-        'Read(~/.config/**)',
-        'Read(~/.ssh/**)',
-        'Read(**/.mcp.json)',
+        ...SECRET_READ_DENY,
       ],
-      hooks: {
-        PreToolUse: [
-          { matcher: 'Bash', hooks: [shellAllowlist([...GLAB_READ, ...shell.patterns])] },
-          { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
-        ],
-      },
+      hooks: agentHooks(shell.patterns),
       outputFormat: { type: 'json_schema', schema },
       maxTurns: 8,
       ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
