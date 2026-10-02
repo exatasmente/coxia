@@ -23,7 +23,7 @@ linux:
   category: Office
   maintainer: Luiz Neto <luiz.neto@fortics.com.br>
   synopsis: Cerimônias por voz com agentes por atividade
-  executableArgs: []
+  syncDesktopName: true
   target:
     - AppImage
     - deb

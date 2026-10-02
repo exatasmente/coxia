@@ -17,6 +17,24 @@ npm run build && npx electron .
 
 `npm run dev` sobe com recarga automática.
 
+## Instalar como app (Linux)
+
+```bash
+npm run dist
+```
+
+Gera em `dist/` (fora do git) o `Cerimônias-<versão>.AppImage` e o `cerimonias_<versão>_amd64.deb`, com ícone e categoria Escritório. O binário nativo do Claude Code usado pelo SDK vai desempacotado do `app.asar`, e `sidecar/` e `resources/` vão ao lado dele (`extraResources`). O venv Python **não** vai no pacote.
+
+Instalar (manual):
+
+```bash
+sudo apt install ./dist/cerimonias_0.1.0_amd64.deb   # ou: chmod +x dist/*.AppImage && ./dist/Cerimônias-0.1.0.AppImage
+```
+
+Na primeira vez que o app instalado abre, ele cria o venv da voz em `~/.config/cerimonias/voice-venv` com o `uv` (`~/.local/bin/uv`) a partir de `sidecar/requirements.txt`. Precisa de rede e leva alguns minutos; a voz só responde depois disso. Se falhar, o erro aparece na tela e a próxima tentativa refaz tudo. Em dev (`npm run dev`, `npx electron .`) continua valendo `sidecar/.venv`.
+
+**Abrir ao entrar no sistema:** Configurações → Início → "Abrir ao entrar no sistema". Cria `~/.config/autostart/cerimonias.desktop` (desmarcar remove) apontando para o AppImage que está rodando, para o binário instalado pelo `.deb` ou, em dev, para o `electron` deste repositório. O entry usa `--hidden`: o app começa só na bandeja, sem janela. Se mover ou apagar o AppImage, marque a opção de novo.
+
 ## Tempo por issue (Clockify)
 
 O app grava, a cada 20 min no horário de trabalho e ao abrir a tela Hoje, o tempo medido nas cerimônias do dia em `~/.local/share/cerimonias/atividade/<AAAA-MM-DD>.json`. É um retrato do dia, reescrito a cada vez; o app **não** chama o Clockify.

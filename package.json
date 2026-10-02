@@ -35,5 +35,7 @@
     "electron@44.5.1": true
   },
   "private": true,
-  "author": "Luiz Neto"
+  "author": "Luiz Neto",
+  "homepage": "https://dark.smartzap.com.br",
+  "desktopName": "cerimonias.desktop"
 }
