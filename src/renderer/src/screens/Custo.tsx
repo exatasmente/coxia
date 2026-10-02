@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CustoRow, CustoSummary } from '../../../shared/custo';
 import type { Screen } from '../App';
 import { api, errorText, moduleEvents } from '../api';
+import { FalasEconomia } from './FalasCusto';
 import { BackIcon } from './icons';
 
 const usd = (n: number) => `US$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 3 : 2 })}`;
@@ -136,6 +137,7 @@ export function Custo({ go }: { go: (s: Screen) => void }) {
                   <div className="small faint">{usd(key.usageWeekly)} em 7 dias · tudo que usa a chave</div>
                 </div>
               )}
+              <FalasEconomia falas={data.falas} />
             </div>
 
             <div className="cols" style={{ gap: 20 }}>

@@ -164,3 +164,12 @@ describe('destination of a decision', () => {
     expect(destination(card('sz4#1'), 'ata')).toBe('ata da cerimônia');
   });
 });
+
+import { nullish } from '../src/main/agents';
+
+describe('nullish', () => {
+  it('turns textual nulls into null and keeps real text', () => {
+    for (const v of ['null', 'NULL', ' none ', 'nenhum', 'Nenhuma.', 'n/a', '-', '', null]) expect(nullish(v as string | null)).toBeNull();
+    expect(nullish('O 797 está com conflito.')).toBe('O 797 está com conflito.');
+  });
+});

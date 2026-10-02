@@ -45,6 +45,8 @@ export interface AgentTurn {
   next: string;
   blocker: string | null;
   question: string | null;
+  // Set when the card did not change and the turn of an earlier day was served again, without calling the agent.
+  reused?: { at: string };
 }
 
 export type DecisionTarget = 'spec' | 'daily-report' | 'ata';

@@ -43,4 +43,23 @@ export interface CustoSummary {
   days: CustoRow[];
   kinds: CustoRow[];
   sessions: number;
+  falas: CustoFalas;
+}
+
+export interface CustoModelRow {
+  model: string;
+  speeches: number;
+  cost: number;
+  // Real average price of one agent speech (one pre-daily session) on this model.
+  avg: number;
+}
+
+export interface CustoFalas {
+  reusedToday: number;
+  reusedWeek: number;
+  // Average real price of one speech in the last 7 days; the base of the avoided cost.
+  avgPerSpeech: number | null;
+  avoidedToday: number | null;
+  avoidedWeek: number | null;
+  byModel: CustoModelRow[];
 }

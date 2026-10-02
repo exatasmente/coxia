@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setSpeechEnabled } from '../audio';
 import { applyTheme } from '../theme';
+import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 import { RetentionSection } from './RetentionSection';
 
@@ -100,6 +101,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
                 <div>
                   <div style={{ fontWeight: 600 }}>{label}</div>
                   <div className="small muted">{hint}</div>
+                  {role === 'turn' && <FalaCostByModel current={s.models.turn} />}
                 </div>
                 <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                   <select
