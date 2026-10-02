@@ -4,14 +4,14 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { DepHealth, DepId, SaudeSnapshot, TaskHealth } from '../shared/saude';
 import { getSettings } from './config';
-import { ATAS, GITLAB, HOME, openRouterKey } from './env';
+import { DATA_ROOT, GITLAB, HOME, openRouterKey } from './env';
 import type { Module, ModuleContext } from './module';
 import { readReport, reportStatus } from './report';
 import { voiceStatus } from './voice';
 
 const run = promisify(execFile);
 
-const FILE = join(ATAS, 'saude.json');
+const FILE = join(DATA_ROOT, 'saude.json');
 const DEPS_EVERY_MIN = 30;
 const STREAK_ALERT = 3;
 
@@ -57,7 +57,7 @@ function state(): Stored {
 
 function save(): void {
   try {
-    mkdirSync(ATAS, { recursive: true });
+    mkdirSync(DATA_ROOT, { recursive: true });
     writeFileSync(`${FILE}.tmp`, JSON.stringify(state(), null, 2));
     renameSync(`${FILE}.tmp`, FILE);
   } catch (e) {

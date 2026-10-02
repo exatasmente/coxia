@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
 import { ATAS, GITLAB, SPECS } from './env';
+import { assertExternalWrite } from './workspace';
 
 const DIR = join(ATAS, 'qa');
 const IID = /^\d+$/;
@@ -105,6 +106,7 @@ export async function askQa(iid: string, question: string): Promise<QaHandoff> {
 }
 
 export function writeQaChecklist(iid: string): QaHandoff {
+  assertExternalWrite('gravar o checklist de QA na spec');
   const q = read(iid);
   if (!q) throw new Error('passagem para o QA não preparada');
   if (!q.checklistFile.startsWith(SPECS)) throw new Error('checklist fora do .specs');

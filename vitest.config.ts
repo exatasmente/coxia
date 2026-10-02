@@ -8,7 +8,7 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     environment: 'node',
     env: {
-      CERIMONIAS_DATA_DIR: join(tmpdir(), 'cerimonias-test-data'),
+      CERIMONIAS_DATA_DIR: join(tmpdir(), 'cerimonias-test-data-ws'),
       CERIMONIAS_SPECS_DIR: join(tmpdir(), 'cerimonias-test-specs'),
     },
   },

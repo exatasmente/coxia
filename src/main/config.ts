@@ -1,22 +1,31 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from '../shared/retention';
 import { type Settings, type WebSettings, withDefaults } from '../shared/settings';
-import { ATAS } from './env';
+import { ATAS, DATA_ROOT } from './env';
+import { WEB_FILE } from './workspaces-core';
 
 const FILE = join(ATAS, 'config.json');
+// Browser access is shared by every workspace: it lives in the data root, not in the workspace's config.json.
+const WEB = join(DATA_ROOT, WEB_FILE);
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL = /^[\w.-]+\/[\w.:-]+$/;
 
 let cached: Settings | null = null;
 
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSettings(): Settings {
   if (cached) return cached;
-  try {
-    cached = withDefaults(existsSync(FILE) ? JSON.parse(readFileSync(FILE, 'utf8')) : null);
-  } catch {
-    cached = withDefaults(null);
-  }
+  const base = readJson(FILE);
+  const web = readJson(WEB);
+  cached = withDefaults({ ...base, web: (web ?? undefined) as Partial<WebSettings> } as Partial<Settings>);
   return cached;
 }
 
@@ -53,20 +62,26 @@ export function validateWeb(w: WebSettings): WebSettings {
   return { ...w, enabled: w.enabled === true, allowExternalEffects: w.allowExternalEffects === true };
 }
 
-function persist(s: Settings): Settings {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s, null, 2));
-  renameSync(`${FILE}.tmp`, FILE);
+function writeAtomic(file: string, data: unknown): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(`${file}.tmp`, JSON.stringify(data, null, 2));
+  renameSync(`${file}.tmp`, file);
+}
+
+function persist(s: Settings, part: 'own' | 'web'): Settings {
+  const { web, ...own } = s;
+  if (part === 'own') writeAtomic(FILE, own);
+  else writeAtomic(WEB, web);
   cached = s;
   return s;
 }
 
 // The web access fields never come from a regular save (the screen holds a stale copy; a browser client must not touch them).
 export function saveSettings(next: Settings): Settings {
-  return persist(validate(withDefaults({ ...next, web: getSettings().web })));
+  return persist(validate(withDefaults({ ...next, web: getSettings().web })), 'own');
 }
 
 export function saveWebSettings(web: WebSettings): Settings {
-  return persist({ ...getSettings(), web: validateWeb(web) });
+  return persist({ ...getSettings(), web: validateWeb(web) }, 'web');
 }
 

@@ -26,6 +26,7 @@ import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
 import { ATAS, GITLAB, PLAYBOOK, WORKSPACE } from './env';
 import type { Notice } from './scheduler';
+import { assertExternalWrite } from './workspace';
 
 const exec = promisify(execFile);
 const CLI = join(PLAYBOOK, '.claude/bin/post-release-sync');
@@ -346,6 +347,7 @@ type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
 
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
 async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?: number }) => Promise<string>): Promise<string> {
+  assertExternalWrite('escrever no GitLab, enviar branch ou publicar comentário');
   const meta: { code?: number } = {};
   const entry = { ...base, issue: a.issue, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary } };
   try {
@@ -361,6 +363,7 @@ async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?:
 }
 
 export async function approveAction(id: string): Promise<ReleaseAction> {
+  assertExternalWrite('escrever no GitLab, enviar branch ou publicar comentário');
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');

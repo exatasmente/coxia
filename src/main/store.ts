@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { Decision, Minutes, SaveResult } from '../shared/types';
 import { ATAS, DAILY_REPORT, HOME } from './env';
 import { invalidateReport } from './report';
+import { externalRefusal } from './workspace';
 
 const run = promisify(execFile);
 
@@ -87,6 +88,11 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[])
   for (const i of selected) {
     const d = m.decisions[i];
     if (!d) continue;
+    const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do daily-report');
+    if (blocked) {
+      written.push({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
+      continue;
+    }
     try {
       const r =
         d.target === 'spec'

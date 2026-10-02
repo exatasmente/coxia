@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
 import { ATAS, SPECS } from './env';
+import { assertExternalWrite } from './workspace';
 
 // Quiz mechanics from the agent-pipeline skill, §2.1. The correct answers never leave this module before a round is answered.
 
@@ -263,6 +264,7 @@ export async function visualGate(id: string): Promise<GateView> {
 }
 
 export function insertGateVisual(id: string): GateView {
+  assertExternalWrite('inserir o diagrama no artefato da spec');
   const g = read(id);
   const round = g.rounds[g.rounds.length - 1];
   const v = round.visual;
@@ -307,6 +309,7 @@ function cell(text: string): string {
 }
 
 export function recordGate(id: string): GateView {
+  assertExternalWrite('registrar o quiz no GATE_QUIZ da spec');
   const g = read(id);
   if (!g.quizFile.startsWith(SPECS)) throw new Error('GATE_QUIZ fora do .specs');
   const v = view(g);

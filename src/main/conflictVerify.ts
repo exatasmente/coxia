@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ATAS } from './env';
+import { DATA_ROOT } from './env';
 import type { Module } from './module';
 
 // Per project ("<group>/<project>") shell command that checks a conflict resolution in its worktree. Empty: none.
-const FILE = join(ATAS, 'conflict-verify.json');
+const FILE = join(DATA_ROOT, 'conflict-verify.json');
 const MIRRORS = join(homedir(), '.cache/post-release-sync');
 const PROJECT = /^[\w.-]+(\/[\w.-]+)+$/;
 const MAX = 2000;
@@ -43,7 +43,7 @@ export function validateVerify(commands: Record<string, string>): Record<string,
 
 export function saveVerifyCommands(commands: Record<string, string>): Record<string, string> {
   const clean = validateVerify(commands);
-  mkdirSync(ATAS, { recursive: true });
+  mkdirSync(DATA_ROOT, { recursive: true });
   writeFileSync(`${FILE}.tmp`, JSON.stringify(clean, null, 2));
   renameSync(`${FILE}.tmp`, FILE);
   return clean;

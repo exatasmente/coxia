@@ -11,6 +11,7 @@ import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { saude } from './saude';
+import { workspaces } from './workspaces';
 import type { Module } from './module';
 
 // Feature modules register here, one per line. Keep this list sorted.
@@ -28,4 +29,5 @@ export const MODULES: Module[] = [
   retention,
   saude,
   watchers,
+  workspaces,
 ];

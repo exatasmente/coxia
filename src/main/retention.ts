@@ -13,8 +13,9 @@ import {
 } from '../shared/retention';
 import { getSettings } from './config';
 import { firstPromptOf } from './custo-core';
-import { ATAS, HOME, WORKSPACE } from './env';
+import { ATAS, DATA_ROOT, HOME, WORKSPACE, WORKSPACE_ID } from './env';
 import type { Module } from './module';
+import { readRegistry, workspaceDir } from './workspaces-core';
 import {
   DAY,
   UUID,
@@ -73,10 +74,10 @@ function sessionFiles(): RetentionFile[] {
   return files;
 }
 
-function dataFiles(refs: RetentionRef[]): RetentionFile[] {
+function dataFiles(refs: RetentionRef[], base = ATAS): RetentionFile[] {
   const files: RetentionFile[] = [];
   for (const kind of DATA_GROUPS) {
-    const dir = join(ATAS, kind);
+    const dir = join(base, kind);
     if (!existsSync(dir)) continue;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !DATA_FILE.test(entry.name)) continue;
@@ -97,8 +98,8 @@ function dataFiles(refs: RetentionRef[]): RetentionFile[] {
 
 // acoes.json is one living file, so each action counts with its own last activity, not the file's.
 // null means the store exists but cannot be read: nothing is known about the sessions it references.
-function actionRefs(): RetentionRef[] | null {
-  const file = join(ATAS, 'acoes.json');
+function actionRefs(base = ATAS): RetentionRef[] | null {
+  const file = join(base, 'acoes.json');
   if (!existsSync(file)) return [];
   try {
     const store = JSON.parse(readFileSync(file, 'utf8')) as {
@@ -114,9 +115,21 @@ function actionRefs(): RetentionRef[] | null {
   }
 }
 
+// Transcripts are shared by every workspace: one that another workspace still uses is not unreferenced here.
+function otherWorkspaceRefs(): RetentionRef[] {
+  const refs: RetentionRef[] = [];
+  for (const w of readRegistry(DATA_ROOT)?.list ?? []) {
+    if (w.id === WORKSPACE_ID) continue;
+    const base = workspaceDir(DATA_ROOT, w.id);
+    refs.push(...(actionRefs(base) ?? []));
+    dataFiles(refs, base);
+  }
+  return refs;
+}
+
 export function scan(days: number, now = Date.now()): Selection {
   const actions = actionRefs();
-  const refs = actions ?? [];
+  const refs = [...(actions ?? []), ...otherWorkspaceRefs()];
   const files = [...dataFiles(refs), ...sessionFiles()];
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {

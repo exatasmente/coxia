@@ -3,11 +3,11 @@ import { join } from 'node:path';
 import { DEFAULT_GLOSSARY, type Term, sanitizeGlossary, spoken } from '../shared/glossary';
 import { learn } from '../shared/glossaryLearn';
 import { getSettings } from './config';
-import { ATAS } from './env';
+import { DATA_ROOT } from './env';
 import type { Module } from './module';
 import { planSpeech, speakSegment, voicesFor } from './voice';
 
-const FILE = join(ATAS, 'glossario.json');
+const FILE = join(DATA_ROOT, 'glossario.json');
 
 let cached: Term[] | null = null;
 
@@ -23,7 +23,7 @@ export function glossary(): Term[] {
 
 function save(terms: unknown): Term[] {
   const next = sanitizeGlossary(terms);
-  mkdirSync(ATAS, { recursive: true });
+  mkdirSync(DATA_ROOT, { recursive: true });
   writeFileSync(`${FILE}.tmp`, JSON.stringify(next, null, 2));
   renameSync(`${FILE}.tmp`, FILE);
   cached = next;
