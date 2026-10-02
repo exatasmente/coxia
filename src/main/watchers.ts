@@ -80,7 +80,7 @@ export function gateAlerts(cards: Card[], now = Date.now()): WatcherAlert[] {
     for (const o of gateOptions(card)) {
       const mtime = Math.floor(statSync(o.file).mtimeMs);
       if (now - mtime > GATE_MAX_AGE_DAYS * DAY_MS) continue;
-      if (hasQuizSection(join(dirname(o.file), 'GATE_QUIZ.md'), o.gate)) continue;
+      if (hasQuizSection(join(dirname(o.file), rc().specLayout.documents.gateQuiz), o.gate)) continue;
       out.push({
         id: `gate:${o.file}:${mtime}`,
         kind: 'gate',
@@ -88,7 +88,7 @@ export function gateAlerts(cards: Card[], now = Date.now()): WatcherAlert[] {
         iid: card.iid,
         title: card.title,
         message: `${o.label} da #${card.iid} pronto: quiz agora?`,
-        detail: `Gate ${o.gate} sem registro no GATE_QUIZ.md.`,
+        detail: `Gate ${o.gate} sem registro no ${rc().specLayout.documents.gateQuiz}.`,
         card,
         since: new Date(mtime).toISOString(),
       });
