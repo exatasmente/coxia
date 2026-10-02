@@ -3,6 +3,7 @@ import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/se
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { setSpeechEnabled } from '../audio';
+import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -90,6 +91,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
                 <div>
                   <div style={{ fontWeight: 600 }}>{label}</div>
                   <div className="small muted">{hint}</div>
+                  {role === 'turn' && <FalaCostByModel current={s.models.turn} />}
                 </div>
                 <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                   <select

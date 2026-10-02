@@ -1,4 +1,4 @@
-import { CUSTO_LABEL, type CustoKey, type CustoKind, type CustoRow, type CustoSummary } from '../shared/custo';
+import { CUSTO_LABEL, type CustoFalas, type CustoKey, type CustoKind, type CustoRow, type CustoSummary } from '../shared/custo';
 
 export const DEFAULT_GOAL = 20;
 
@@ -26,6 +26,7 @@ export interface GenStat {
   at: number;
   kind: CustoKind;
   session: string;
+  model?: string;
 }
 
 export interface GenRef {
@@ -33,6 +34,7 @@ export interface GenRef {
   at: number;
   kind: CustoKind;
   session: string;
+  model?: string;
 }
 
 export function firstPromptOf(lines: Iterable<string>): string | null {
@@ -54,9 +56,12 @@ export function gensOf(lines: Iterable<string>, kind: CustoKind, session: string
   for (const line of lines) {
     if (!line.includes('"gen-')) continue;
     try {
-      const o = JSON.parse(line) as { type?: string; timestamp?: string; message?: { id?: string } };
+      const o = JSON.parse(line) as { type?: string; timestamp?: string; message?: { id?: string; model?: string } };
       const id = o.message?.id;
-      if (o.type === 'assistant' && id?.startsWith('gen-') && o.timestamp && !seen.has(id)) seen.set(id, { id, at: Date.parse(o.timestamp), kind, session });
+      if (o.type === 'assistant' && id?.startsWith('gen-') && o.timestamp && !seen.has(id)) {
+        const model = o.message?.model;
+        seen.set(id, { id, at: Date.parse(o.timestamp), kind, session, ...(model ? { model } : {}) });
+      }
     } catch {}
   }
   return [...seen.values()];
@@ -90,6 +95,7 @@ export function parseGeneration(body: unknown, ref: GenRef): GenStat {
     at: typeof d.created_at === 'string' ? Date.parse(d.created_at) : ref.at,
     kind: ref.kind,
     session: ref.session,
+    ...(ref.model ? { model: ref.model } : {}),
   };
 }
 
@@ -103,6 +109,34 @@ function day(ms: number): string {
   return new Date(ms).toLocaleDateString('sv-SE');
 }
 
+// One agent speech is one 'turn' session, so the average per speech is the cost of those sessions' calls divided by their count.
+export function falasOf(gens: GenStat[], reuses: number[], now: number): CustoFalas {
+  const today = day(now);
+  const weekFrom = now - 7 * 86_400_000;
+  const turns = gens.filter((g) => g.kind === 'turn' && g.at >= weekFrom);
+  const sessions = new Set(turns.map((g) => g.session)).size;
+  const avgPerSpeech = sessions ? turns.reduce((n, g) => n + g.cost, 0) / sessions : null;
+  const reusedToday = reuses.filter((t) => day(t) === today).length;
+  const reusedWeek = reuses.filter((t) => t >= weekFrom).length;
+  const models = new Map<string, { sessions: Set<string>; cost: number }>();
+  for (const g of turns) {
+    const m = models.get(g.model ?? 'desconhecido') ?? { sessions: new Set<string>(), cost: 0 };
+    m.sessions.add(g.session);
+    m.cost += g.cost;
+    models.set(g.model ?? 'desconhecido', m);
+  }
+  return {
+    reusedToday,
+    reusedWeek,
+    avgPerSpeech,
+    avoidedToday: avgPerSpeech === null ? null : reusedToday * avgPerSpeech,
+    avoidedWeek: avgPerSpeech === null ? null : reusedWeek * avgPerSpeech,
+    byModel: [...models.entries()]
+      .map(([model, m]) => ({ model, speeches: m.sessions.size, cost: m.cost, avg: m.cost / m.sessions.size }))
+      .sort((a, b) => b.speeches - a.speeches),
+  };
+}
+
 export function summarize(args: {
   gens: GenStat[];
   pending: number;
@@ -110,6 +144,7 @@ export function summarize(args: {
   key: CustoKey | null;
   keyError: string | null;
   refreshedAt: string | null;
+  reuses?: number[];
   now?: number;
 }): CustoSummary {
   const now = args.now ?? Date.now();
@@ -141,5 +176,6 @@ export function summarize(args: {
     days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, g]) => row(date, date, g)),
     kinds,
     sessions: new Set(args.gens.map((g) => g.session)).size,
+    falas: falasOf(args.gens, args.reuses ?? [], now),
   };
 }

@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import type { CustoKey, CustoKind, CustoSummary } from '../shared/custo';
 import { DEFAULT_GOAL, type GenRef, type GenStat, classify, firstPromptOf, gensOf, parseGeneration, parseKey, summarize } from './custo-core';
 import { ATAS, HOME, WORKSPACE, openRouterKey } from './env';
+import { reuseTimes } from './falas';
 import type { Module } from './module';
 
 const FILE = join(ATAS, 'custo.json');
 const API = 'https://openrouter.ai/api/v1';
-const TRANSCRIPTS = process.env.CERIMONIAS_TRANSCRIPTS_DIR ?? join(HOME, '.claude/projects', WORKSPACE.replace(/\//g, '-'));
+export const TRANSCRIPTS = process.env.CERIMONIAS_TRANSCRIPTS_DIR ?? join(HOME, '.claude/projects', WORKSPACE.replace(/\//g, '-'));
 const PARALLEL = 6;
 const DAY = 86_400_000;
 
@@ -16,6 +17,8 @@ interface FileEntry {
   size: number;
   kind: CustoKind | null;
   gens: GenRef[];
+  // 2 = generations carry the model read from the transcript; older entries are read again once.
+  v?: number;
 }
 
 // What OpenRouter answered once is final, so every generation is asked only once; "gone" ones are not asked again.
@@ -45,10 +48,11 @@ function write(c: Cache): void {
 }
 
 function view(c: Cache, keyError: string | null = null): CustoSummary {
-  const stats = Object.values(c.gens).filter((g): g is GenStat => !('gone' in g));
+  const modelOf = new Map(Object.values(c.files).flatMap((f) => f.gens.flatMap((g) => (g.model ? [[g.id, g.model] as const] : []))));
+  const stats = Object.entries(c.gens).flatMap(([id, g]) => ('gone' in g ? [] : [g.model || !modelOf.has(id) ? g : { ...g, model: modelOf.get(id) }]));
   const known = new Set(Object.keys(c.gens));
   const pending = Object.values(c.files).flatMap((f) => f.gens).filter((g) => !known.has(g.id)).length;
-  return summarize({ gens: stats, pending, goal: c.goal, key: c.key, keyError, refreshedAt: c.refreshedAt });
+  return summarize({ gens: stats, pending, goal: c.goal, key: c.key, keyError, refreshedAt: c.refreshedAt, reuses: reuseTimes() });
 }
 
 // Month start or the last 7 days, whichever reaches further back.
@@ -66,10 +70,10 @@ function scan(c: Cache, from: number): GenRef[] {
     if (st.mtimeMs < from) continue;
     live.add(name);
     const known = c.files[name];
-    if (known && known.m === st.mtimeMs && known.size === st.size) continue;
+    if (known && known.v === 2 && known.m === st.mtimeMs && known.size === st.size) continue;
     const lines = readFileSync(path, 'utf8').split('\n');
     const kind = classify(firstPromptOf(lines) ?? '');
-    c.files[name] = { m: st.mtimeMs, size: st.size, kind, gens: kind ? gensOf(lines, kind, name.replace(/\.jsonl$/, '')) : [] };
+    c.files[name] = { m: st.mtimeMs, size: st.size, v: 2, kind, gens: kind ? gensOf(lines, kind, name.replace(/\.jsonl$/, '')) : [] };
   }
   return Object.entries(c.files).flatMap(([name, f]) => (live.has(name) ? f.gens.filter((g) => g.at >= from) : []));
 }

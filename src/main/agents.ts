@@ -4,6 +4,7 @@ import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget,
 import type { ModelRole } from '../shared/settings';
 import { getSettings } from './config';
 import { WORKSPACE, agentEnv } from './env';
+import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
 
 const MCP_GITLAB = [
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
@@ -185,6 +186,9 @@ function cardContext(card: Card): string {
 }
 
 export async function prepareTurn(card: Card): Promise<AgentTurn> {
+  const same = reusableTurn(card);
+  if (same) return same;
+  const fp = cardFingerprint(card);
   const prompt = [
     `Você é o agente da atividade ${card.ref} na pré-daily por voz.`,
     cardContext(card),
@@ -199,7 +203,7 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
     prompt,
     schema,
   );
-  return {
+  const turn: AgentTurn = {
     ref: card.ref,
     sessionId: r.sessionId || null,
     speech: r.data.fala,
@@ -208,6 +212,8 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
     blocker: r.data.bloqueio,
     question: r.data.pergunta,
   };
+  rememberTurn(card, turn, fp);
+  return turn;
 }
 
 export async function reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult> {

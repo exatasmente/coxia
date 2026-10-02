@@ -214,6 +214,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                     {card.blockers.length > 0 && <span className="badge badge-block" title={card.blockers.join('\n')}>Bloqueio</span>}
                     {turn?.question && <span className="badge badge-ask">Pergunta para você</span>}
                     {turn && !turn.question && !card.blockers.length && <span className="badge badge-quiet">Só informa</span>}
+                    {turn?.reused && <span className="badge badge-quiet" title="Falei isto antes e o cartão não mudou.">Sem mudança desde {new Date(turn.reused.at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>}
                   </div>
                   <div className="mono faint" style={{ flex: '0 0 auto' }}>
                     {failed ? <span style={{ color: 'var(--red)' }} title={failed}>agente falhou</span> : turn ? 'agente pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
