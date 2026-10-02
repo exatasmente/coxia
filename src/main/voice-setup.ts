@@ -270,7 +270,8 @@ export async function installVoice(ctx: SetupContext, opts: VoiceInstallOptions,
       mkdirSync(ctx.paths.models, { recursive: true });
       let failure: string | null = null;
       await runStep(venv.python, [ctx.paths.fetchScript, opts.sttModel], {
-        env: { ...ctx.env, HF_HOME: ctx.paths.models },
+        // plain HTTP downloads: the partial file grows as it arrives (progress) and is continued by a range request (resume); xet writes it in one go at the end
+        env: { ...ctx.env, HF_HOME: ctx.paths.models, HF_HUB_DISABLE_XET: '1' },
         signal: hooks.signal,
         onLine: (line, stream) => {
           if (stream !== 'out') return last(line);

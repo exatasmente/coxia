@@ -11,7 +11,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { Diagram } from './Diagram';
 import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
-import { useVoiceEnabled } from '../i18n';
+import { tv, useVoiceEnabled } from '../i18n';
 import { voiceEnabled } from '../../../shared/i18n';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
@@ -261,7 +261,7 @@ export function Gate({
                 ) : (
                   <>
                     <p className="small" style={{ lineHeight: 1.5 }}>
-                      Não é nota: é sinal de que o material não ensinou. 1) A seção está citada em cada pergunta errada. 2) Leitura assistida: pergunte por voz ou por texto. 3) Recurso visual para a seção. 4) Nova rodada com perguntas novas.
+                      Não é nota: é sinal de que o material não ensinou. 1) A seção está citada em cada pergunta errada. 2) Leitura assistida: {tv('gate.assisted.ask')}. 3) Recurso visual para a seção. 4) Nova rodada com perguntas novas.
                     </p>
                     {gate.talk.map((m, i) => (
                       <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="gate" />

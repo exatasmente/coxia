@@ -51,7 +51,9 @@ export function runStep(cmd: string, args: string[], opts: StepOptions): Promise
     if (opts.signal?.aborted) return reject(new CancelledError());
     const child = spawn(cmd, args, { env: opts.env, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     opts.onChild?.(child);
+    // stderr first; a tool that only talks on stdout (the model download reports its error as a JSON line) still leaves a message
     const tail: string[] = [];
+    const outTail: string[] = [];
     let cancelled = false;
     let killer: NodeJS.Timeout | null = null;
     const feed = (stream: 'out' | 'err') => {
@@ -62,8 +64,9 @@ export function runStep(cmd: string, args: string[], opts: StepOptions): Promise
         rest = parts.pop() ?? '';
         for (const line of parts) {
           if (!line.trim()) continue;
-          if (stream === 'err') tail.push(line);
-          if (tail.length > 12) tail.shift();
+          const into = stream === 'err' ? tail : outTail;
+          into.push(line);
+          if (into.length > 12) into.shift();
           opts.onLine?.(line, stream);
         }
       };
@@ -88,7 +91,7 @@ export function runStep(cmd: string, args: string[], opts: StepOptions): Promise
       done();
       if (cancelled) return reject(new CancelledError());
       if (code === 0) return resolve();
-      reject(new Error(tail.join('\n') || `${cmd} exited with ${code ?? signal}`));
+      reject(new Error((tail.length ? tail : outTail.slice(-3)).join('\n') || `${cmd} exited with ${code ?? signal}`));
     });
   });
 }

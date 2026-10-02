@@ -159,5 +159,9 @@
   "voice.uninstall.yes": "Yes, remove",
   "voice.uninstall.done": "Removed: {size} freed.",
   "voice.options.title": "Voice options",
-  "voice.web.hint": "Installing and removing voice only works in the app window."
+  "voice.web.hint": "Installing and removing voice only works in the app window.",
+  "by.voice": "by voice",
+  "by.voice.novoice": "by text",
+  "gate.assisted.ask": "ask by voice or by text",
+  "gate.assisted.ask.novoice": "ask by text"
 }

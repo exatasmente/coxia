@@ -9,7 +9,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
-import { useVoiceEnabled } from '../i18n';
+import { tv, useVoiceEnabled } from '../i18n';
 
 function checklistText(q: Qa): string {
   return [`QA Checklist — #${q.iid} ${q.title}`, '', ...q.checklist.flatMap((s) => [`${s.title}:`, ...s.items.map((i) => `- [ ] ${i}`), ''])].join('\n');
@@ -98,7 +98,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
           <section className="panel" style={{ padding: 20, gap: 12 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Preparar a passagem</h2>
             <p className="small muted" style={{ lineHeight: 1.5 }}>
-              O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica por voz o que mudou e o que testar. Sai daqui o checklist e o texto do Teams. Criar a branch de release, o comentário e o status continuam na skill qa-release-branch, no Claude Code, com “sim”.
+              O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica {tv('by.voice')} o que mudou e o que testar. Sai daqui o checklist e o texto do Teams. Criar a branch de release, o comentário e o status continuam na skill qa-release-branch, no Claude Code, com “sim”.
             </p>
             <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
