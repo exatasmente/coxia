@@ -13,6 +13,8 @@ import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
 import { RESOURCES } from './paths';
+import { wantsQuitForUpdate } from './update-core';
+import { announceRunning, flushRenderer, forgetRunning } from './update';
 import { bindIpc, handle } from './rpc';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
@@ -191,11 +193,33 @@ function handlers(): void {
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
 if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CERIMONIAS_DATA_DIR, 'userData'));
 
+let quitRequested = false;
+
+// scripts/update.sh asks the running app to quit: save what the window holds, then leave the normal way,
+// so the AppImage unmounts after the process is gone and not under it.
+async function quitForUpdate(): Promise<void> {
+  if (quitRequested) return;
+  quitRequested = true;
+  console.log('[update] quit requested');
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    await flushRenderer((ev) => win?.webContents.send('app:event', ev), 3000);
+  }
+  quitting = true;
+  app.quit();
+  setTimeout(() => app.exit(0), 8000).unref();
+}
+
 // A second launch brings the running window back instead of opening another ceremony.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
+} else if (wantsQuitForUpdate(process.argv)) {
+  // Nothing was running, so there is nothing to quit: do not start the app just to close it.
+  app.exit(0);
 } else {
-  app.on('second-instance', show);
+  app.on('second-instance', (_e, argv) => {
+    if (wantsQuitForUpdate(argv)) void quitForUpdate();
+    else show();
+  });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
@@ -211,9 +235,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     startScheduler({ notify, emit });
     void syncWebAccess().catch((e) => console.error('[web]', e));
+    announceRunning();
   });
   app.on('before-quit', () => {
     quitting = true;
+    forgetRunning();
     stopVoice();
     void stopWebAccess();
   });

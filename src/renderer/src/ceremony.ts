@@ -13,7 +13,8 @@ import type {
   Voice,
 } from '../../shared/types';
 import { buildMinutes } from '../../shared/minutes';
-import { AGENT_COLORS, api, clock, errorText } from './api';
+import { FLUSH_EVENT } from '../../shared/update';
+import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
 
 export type { LogLine };
 
@@ -129,6 +130,19 @@ export function useCeremony() {
     const t = setTimeout(() => void api.saveState(snapshot), SAVE_DELAY_MS);
     return () => clearTimeout(t);
   }, [restored, snapshot]);
+
+  // The app is about to quit for an update: write the ceremony now instead of waiting out the debounce, then say so.
+  const latest = useRef({ snapshot, restored });
+  latest.current = { snapshot, restored };
+  useEffect(() => {
+    const onFlush = () => {
+      const { snapshot: s, restored: ready } = latest.current;
+      const saved = ready && s.cards ? api.saveState(s) : Promise.resolve();
+      void saved.catch(() => undefined).finally(() => void api.invoke('update:flushed').catch(() => undefined));
+    };
+    moduleEvents.addEventListener(FLUSH_EVENT, onFlush);
+    return () => moduleEvents.removeEventListener(FLUSH_EVENT, onFlush);
+  }, []);
 
   const reset = useCallback(async () => {
     pending.current.clear();

@@ -27,6 +27,7 @@ import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { JobsDock } from './JobsDock';
+import { UpdateToast } from './UpdateToast';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 
@@ -184,6 +185,7 @@ export function App() {
       {view}
       <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
       <JobsDock screen={screen} go={go} />
+      <UpdateToast />
     </>
   );
 }
