@@ -60,7 +60,7 @@ export function Deep({
           ...d,
           sessionId: r.sessionId,
           sources: [...new Set([...d.sources, ...r.sources])],
-          msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now() }],
+          msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) }],
         }));
         return r;
       });

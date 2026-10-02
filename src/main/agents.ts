@@ -208,7 +208,22 @@ interface Run<T> {
   data: T;
   sessionId: string;
   sources: string[];
+  // The agent ran out of turns and answered from what it had already read.
+  partial?: true;
 }
+
+class MaxTurnsError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly sources: string[],
+  ) {
+    super('agent ended with error_max_turns');
+  }
+}
+
+const WRAP_UP =
+  'Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, ' +
+  'com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.';
 
 type Schema = Record<string, unknown>;
 
@@ -234,7 +249,7 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-async function run<T>(
+async function runOnce<T>(
   role: ModelRole,
   prompt: string,
   schema: Schema,
@@ -285,11 +300,38 @@ async function run<T>(
     }
     if (m.type === 'result') {
       sessionId = m.session_id;
+      if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
   throw new Error('agent ended without a result');
+}
+
+// An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
+// The resume stays in the same session transcript, which is what the cost panel reads, so its generations are counted.
+async function run<T>(
+  role: ModelRole,
+  prompt: string,
+  schema: Schema,
+  extra: Partial<Options> = {},
+  shell: { rules: string[]; patterns: RegExp[] } = { rules: [], patterns: [] },
+): Promise<Run<T>> {
+  try {
+    return await runOnce<T>(role, prompt, schema, extra, shell);
+  } catch (e) {
+    if (!(e instanceof MaxTurnsError)) throw e;
+    const stopped = `O agente parou antes de terminar (limite de passos) e não deu uma resposta final${e.sessionId ? '' : ' nem deixou sessão para retomar'}.`;
+    if (!e.sessionId) throw new Error(stopped);
+    console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
+    try {
+      const r = await runOnce<T>(role, WRAP_UP, schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns });
+      return { ...r, sources: [...e.sources, ...r.sources], partial: true };
+    } catch (again) {
+      console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
+      throw new Error(`${stopped} A tentativa de resposta parcial também falhou (${again instanceof Error ? again.message : String(again)}).`);
+    }
+  }
 }
 
 // The model sometimes answers the literal string "null" (or "nenhum") instead of JSON null.
@@ -389,7 +431,7 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
   });
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {
@@ -465,7 +507,7 @@ export async function conflictAsk(context: string, question: string, sessionId: 
     { maxTurns: 40, ...(sessionId ? { resume: sessionId } : {}) },
     { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
   );
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
 }
 
 export interface ProposeHunk {
@@ -479,6 +521,8 @@ export interface ProposeHunk {
 export interface Proposal {
   summary: string;
   items: { id: string; resolution: string; explanation: string; confidence: 'alta' | 'media' | 'baixa'; test: string }[];
+  // The agent ran out of turns on this batch and proposed from what it had read.
+  partial?: boolean;
 }
 
 const SIDE_MAX = 12_000;
@@ -519,8 +563,8 @@ export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
 
 // Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
 // each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
-export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[] }> {
-  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [] };
+export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[]; partialIds: string[] }> {
+  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [], partialIds: [] };
   const batches = proposeBatches(p.hunks);
   const results: (Proposal | null)[] = new Array(batches.length).fill(null);
   let next = 0;
@@ -542,6 +586,7 @@ export async function conflictPropose(p: ProposeInput): Promise<Proposal & { fai
     summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? `${failed.length} trecho(s) ficaram sem proposta: peça de novo.` : ''].filter(Boolean).join(' '),
     items: results.flatMap((r) => r?.items ?? []),
     failed,
+    partialIds: batches.flatMap((b, i) => (results[i]?.partial ? b.map((h) => h.id) : [])),
   };
 }
 
@@ -570,6 +615,7 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
   );
   return {
     summary: r.data.resumo,
+    ...(r.partial ? { partial: true } : {}),
     items: r.data.trechos.map((t) => ({ id: t.id, resolution: t.resolucao, explanation: t.explicacao, confidence: t.confianca, test: t.testar })),
   };
 }

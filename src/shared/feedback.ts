@@ -50,6 +50,7 @@ export interface Explanation {
   draft: string;
   sessionId: string | null;
   at: string;
+  partial?: boolean;
 }
 
 export interface ProposalView {
