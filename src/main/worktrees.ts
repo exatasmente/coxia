@@ -57,29 +57,30 @@ function parseWorktrees(porcelain: string): Worktree[] {
 }
 
 const TYPE_BY_PREFIX: Record<string, string> = { bugfix: 'bugfix', bug: 'bugfix', fix: 'bugfix', feat: 'feature', feature: 'feature', hotfix: 'hotfix' };
-// Throwaway worktrees (coverage runs, experiments, local-only fixes) never go through a branch convention.
-const SCRATCH = /^(cov|exp|local)\//;
+// Throwaway branches (coverage runs, experiments, local-only work, backups) are local by design:
+// no naming convention, and "not pushed" is expected.
+const SCRATCH = /^(cov|exp|local|backup|test)[/-]/;
 const LONG_LIVED = /^(main|master|develop)$/;
 const RELEASE_VERSION = /^release\/v?\d+(\.\d+)*(-[\w.]+)?$/;
 const WORK = /^release\/(bugfix|feature|hotfix)\/\d+(-[\w.]+)?$/;
 const DOCS = /^docs\/[a-z0-9][a-z0-9-]*$/;
 
 export function issueOf(branch: string | null, path: string): string | null {
-  const fromBranch = branch?.match(/(?<!\d)(\d{4,6})(?!\d)/)?.[1];
+  const fromBranch = branch?.match(/(?<!\d)(\d{5,6})(?!\d)/)?.[1];
   if (fromBranch) return fromBranch;
-  return path.match(/\/wt-(?:cov)?(\d{4,6})(?!\d)/)?.[1] ?? null;
+  return path.match(/\/wt-(?:cov)?(\d{5,6})(?!\d)/)?.[1] ?? null;
 }
 
 // Convention from CLAUDE.md and the branch-rename skill: release/(bugfix|feature|hotfix)/<n>, docs/<slug>.
 export function checkConvention(branch: string): { suggestedName: string | null; note: string | null } | null {
   if (LONG_LIVED.test(branch) || RELEASE_VERSION.test(branch) || WORK.test(branch) || DOCS.test(branch) || SCRATCH.test(branch)) return null;
-  const m = branch.match(/^([a-z]+)\/(\d{4,6}(?:-[\w.]+)?)$/i) ?? branch.match(/^release\/(feat)\/(\d{4,6}(?:-[\w.]+)?)$/);
+  const m = branch.match(/^([a-z]+)\/(\d{5,6}(?:-[\w.]+)?)$/i) ?? branch.match(/^release\/(feat)\/(\d{5,6}(?:-[\w.]+)?)$/);
   const type = m ? TYPE_BY_PREFIX[m[1].toLowerCase()] : undefined;
   if (m && type) return { suggestedName: `release/${type}/${m[2]}`, note: `renomear para release/${type}/${m[2]} (skill branch-rename)` };
-  const number = branch.match(/(?<!\d)(\d{4,6})(?!\d)/)?.[1];
+  const number = branch.match(/(?<!\d)(\d{5,6})(?!\d)/)?.[1];
   return {
     suggestedName: null,
-    note: number ? `usar release/<bugfix|feature|hotfix>/${number}` : 'sem issue: docs/<slug> só vale para mudança de documentação',
+    note: number ? `usar release/<bugfix|feature|hotfix>/${number}` : 'fora de release/<tipo>/<n> e docs/<slug>',
   };
 }
 
@@ -110,7 +111,9 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
   const unpushed = async (branch: string): Promise<{ n: number; own: boolean }> => {
     const ref = refs.get(branch);
     // An upstream that is another branch (a branch cut from origin/main tracks it) says nothing about publishing.
-    const own = !!ref?.upstream && ref.upstream.replace(/^[^/]+\//, '') === branch && !ref.track.includes('gone');
+    // The remote branch was deleted (merged): what is left locally is not waiting for a push.
+    if (ref?.track.includes('gone')) return { n: 0, own: true };
+    const own = !!ref?.upstream && ref.upstream.replace(/^[^/]+\//, '') === branch;
     if (own) return { n: Number(ref.track.match(/ahead (\d+)/)?.[1] ?? 0), own };
     const out = await git(repo, ['rev-list', '--count', branch, '--not', '--remotes']);
     return { n: Number(out.trim()), own };
@@ -131,6 +134,7 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
       branch: w.branch ?? `(detached ${w.head.slice(0, 7)})`,
       worktree: w.path,
       issue: issueOf(w.branch, w.path),
+      base: name === 'new-agent' ? 'develop' : 'main',
       dirty: files.length,
       dirtyFiles: files.slice(0, 8),
       unpushed: push.n,
@@ -149,6 +153,7 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
       branch: b,
       worktree: null,
       issue: issueOf(b, ''),
+      base: name === 'new-agent' ? 'develop' : 'main',
       dirty: 0,
       dirtyFiles: [],
       unpushed: push.n,
@@ -157,7 +162,7 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
       conventionNote: conv?.note ?? null,
     });
   });
-  return items.filter((i) => i.dirty > 0 || i.unpushed > 0 || i.conventionNote);
+  return items.filter((i) => !SCRATCH.test(i.branch) && (i.dirty > 0 || i.unpushed > 0 || i.conventionNote));
 }
 
 export async function worktreeHealth(): Promise<WorktreeHealth> {

@@ -50,6 +50,8 @@ export interface BranchHealth {
   branch: string;
   worktree: string | null;
   issue: string | null;
+  // Where this repository sends its MRs (new-agent uses develop).
+  base: string;
   dirty: number;
   dirtyFiles: string[];
   // Commits that exist only here: ahead of the upstream, or on no remote when there is no upstream.

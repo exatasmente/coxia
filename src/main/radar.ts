@@ -55,6 +55,7 @@ const NOISE = [
   /(^|\/)(locales?|i18n)\//,
   /(^|\/)(translate\.ts|schema\.gql|jest\.config\.json|\.gitlab-ci\.yml)$/,
   /^\.specs\//,
+  /(^|\/)lang\//,
 ];
 const TEST_FILE = /(^|\/)(tests?|__tests__|__mocks__)\/|\.(spec|test)\.[jt]sx?$|_test\.dart$|Test\.php$/;
 const GENERIC_DIR = new Set([
