@@ -137,6 +137,12 @@ describe('conflict:fromMr', () => {
     expect(again.id).toBe(first.id);
   });
 
+  it('does not trust a stale has_conflicts: the local merge decides', async () => {
+    mr = { ...mr, has_conflicts: false };
+    const a = await conflictFromMr(card(f.project), 'proj!1234');
+    expect(a.kind).toBe('conflict');
+  });
+
   it('refuses MRs the app does not resolve, with a clear message and nothing stored', async () => {
     mr = { ...mr, target_branch: 'develop' };
     await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/aponta para develop, não para a main/);
@@ -144,8 +150,7 @@ describe('conflict:fromMr', () => {
     await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/não está aberto/);
     mr = { ...mr, state: 'opened', author: { username: 'colleague' } };
     await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/é de @colleague/);
-    mr = { ...mr, author: { username: me }, has_conflicts: false };
-    await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/não marca conflito/);
+    mr = { ...mr, author: { username: me } };
     await expect(conflictFromMr(card(f.project), 'other!1')).rejects.toThrow(/não é um MR desta atividade/);
     await expect(conflictFromMr({ ...card(f.project), iid: 'abc' }, 'proj!1234')).rejects.toThrow(/sem número de issue/);
     expect(listActions()).toHaveLength(0);

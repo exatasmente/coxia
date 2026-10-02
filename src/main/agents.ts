@@ -520,6 +520,7 @@ export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
 // Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
 // each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
 export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[] }> {
+  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [] };
   const batches = proposeBatches(p.hunks);
   const results: (Proposal | null)[] = new Array(batches.length).fill(null);
   let next = 0;

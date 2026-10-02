@@ -200,7 +200,8 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
         <>
           <p className="cr-note muted mono" style={{ wordBreak: 'break-all' }}>{r.worktree}</p>
           {r.proposalSummary && <p className="cr-note">{r.proposalSummary}</p>}
-          <div className="row">
+          {hunks.length === 0 && <p className="cr-note">A main entrou sem conflito nesta branch: não há trecho para decidir. Verifique e publique a branch sincronizada.</p>}
+          <div className="row" hidden={hunks.length === 0}>
             <button type="button" className="btn btn-dark" disabled={working} onClick={() => void run('O agente está propondo a resolução…', () => api.conflictPropose(action.id))}>
               {busy?.startsWith('O agente') ? <span className="spinner" /> : null} {step === 'proposed' ? 'Pedir outra proposta' : 'Pedir proposta ao agente'}
             </button>

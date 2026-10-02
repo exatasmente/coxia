@@ -45,5 +45,5 @@ export function assertResolvable(ref: string, mr: MrRead, c: MrChecks): void {
   if (mr.state !== 'opened') throw new Error(`${ref} não está aberto (${mr.state}).`);
   if (mr.target_branch !== c.defaultBranch) throw new Error(`${ref} aponta para ${mr.target_branch}, não para a ${c.defaultBranch}: só resolvo conflito com a branch principal.`);
   if (mr.author.username !== c.me) throw new Error(`${ref} é de @${mr.author.username}: só resolvo conflito de MR seu.`);
-  if (!mr.has_conflicts) throw new Error(`O GitLab não marca conflito em ${ref} agora. Atualize o cartão.`);
+  // has_conflicts is computed lazily by GitLab and is often stale (post-release-sync skill): the local merge in Preparar decides.
 }
