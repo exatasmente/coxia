@@ -1,4 +1,4 @@
-// User-facing texts of the LLM transport layer. pt-BR is what the app shows today; the en table is for the later i18n.
+// User-facing texts of the open engine. pt-BR is what the app shows today; the en table is for the later i18n.
 export type Lang = 'pt-BR' | 'en';
 export type Params = Record<string, string | number>;
 
@@ -15,7 +15,7 @@ const ptBR = {
   rateLimit: (p: Params) => `Limite de requisições do provedor atingido. Aguarde um pouco e tente de novo. ${p.detail}`,
   quota: (p: Params) => `A cota ou o saldo do provedor acabou. ${p.detail}`,
   contextTooLong: (p: Params) =>
-    `prompt is too long: ${p.actual} tokens > ${p.limit} maximum. A conversa passou da janela de contexto do modelo: aumente o contexto no servidor (num_ctx no Ollama) ou use um modelo maior. ${p.detail}`,
+    `A conversa passou da janela de contexto do modelo: aumente o contexto no servidor (num_ctx no Ollama) ou use um modelo maior. ${p.detail}`,
   noTools: (p: Params) =>
     `O modelo "${p.model}" não suporta chamada de ferramentas, e a cerimônia precisa dela para ler arquivos e devolver respostas estruturadas. Escolha outro modelo. ${p.detail}`,
   badRequest: (p: Params) => `O provedor recusou a requisição (HTTP ${p.status}): ${p.detail}`,
@@ -24,12 +24,6 @@ const ptBR = {
   contentFilter: () => 'O provedor bloqueou a resposta pelo filtro de conteúdo.',
   streamBroken: (p: Params) => `A resposta do provedor foi interrompida no meio: ${p.detail}`,
   invalidUpstream: (p: Params) => `Resposta inválida do provedor: ${p.detail}`,
-  unauthorizedProxy: () => 'Token do adaptador local inválido.',
-  notFoundRoute: (p: Params) => `Rota desconhecida no adaptador local: ${p.path}`,
-  unknownUpstream: () => 'Provedor não registrado no adaptador local.',
-  invalidJson: () => 'Corpo da requisição não é um JSON válido.',
-  badMethod: () => 'Método não suportado.',
-  tooLarge: () => 'Requisição grande demais para o adaptador local.',
   probeUnreachable: (p: Params) => `Servidor inacessível em ${p.url}: ${p.detail}`,
   probeModelsOk: (p: Params) => `${p.count} modelo(s) listado(s).`,
   probeModelsFail: (p: Params) => `Não foi possível listar os modelos (${p.detail}). Alguns servidores não expõem essa rota; o teste continua.`,
@@ -62,7 +56,7 @@ const en: Table = {
   rateLimit: (p) => `Provider rate limit reached. Wait a moment and try again. ${p.detail}`,
   quota: (p) => `The provider quota or balance is exhausted. ${p.detail}`,
   contextTooLong: (p) =>
-    `prompt is too long: ${p.actual} tokens > ${p.limit} maximum. The conversation exceeded the model context window: raise the context on the server (num_ctx in Ollama) or use a larger model. ${p.detail}`,
+    `The conversation exceeded the model context window: raise the context on the server (num_ctx in Ollama) or use a larger model. ${p.detail}`,
   noTools: (p) =>
     `Model "${p.model}" does not support tool calls, and the ceremony needs them to read files and return structured answers. Pick another model. ${p.detail}`,
   badRequest: (p) => `The provider rejected the request (HTTP ${p.status}): ${p.detail}`,
@@ -71,12 +65,6 @@ const en: Table = {
   contentFilter: () => 'The provider blocked the response with its content filter.',
   streamBroken: (p) => `The provider response was cut off midway: ${p.detail}`,
   invalidUpstream: (p) => `Invalid provider response: ${p.detail}`,
-  unauthorizedProxy: () => 'Invalid local adapter token.',
-  notFoundRoute: (p) => `Unknown route on the local adapter: ${p.path}`,
-  unknownUpstream: () => 'Provider not registered on the local adapter.',
-  invalidJson: () => 'Request body is not valid JSON.',
-  badMethod: () => 'Unsupported method.',
-  tooLarge: () => 'Request too large for the local adapter.',
   probeUnreachable: (p) => `Server unreachable at ${p.url}: ${p.detail}`,
   probeModelsOk: (p) => `${p.count} model(s) listed.`,
   probeModelsFail: (p) => `Could not list models (${p.detail}). Some servers do not expose this route; the test goes on.`,

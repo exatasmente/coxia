@@ -1,15 +1,16 @@
 import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
 import { getSettings } from './config';
-import { WORKSPACE, agentEnv } from './env';
+import { ATAS, GITLAB, WORKSPACE, agentEnv } from './env';
 import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
 import { CLAUDE_BIN } from './paths';
 import { noteSession } from './sessions';
+import { openEngineFromEnv, runOpenOnce } from './engine/open';
 
 const MCP_GITLAB = [
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
@@ -291,12 +292,12 @@ async function runOnce<T>(
 ): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
-  const q = query({
-    prompt,
-    options: {
+  // Test hook (COXIA_ENGINE=open): the same call on the open engine, an agent loop over an OpenAI-compatible API, with no OpenRouter key read.
+  const open = openEngineFromEnv();
+  const options: Options = {
       cwd: WORKSPACE,
       model: getSettings().models[role],
-      env: agentEnv(),
+      ...(open ? {} : { env: agentEnv() }),
       // dontAsk denies every tool that allowedTools does not pre-approve.
       permissionMode: 'dontAsk',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: `${ROLE}\nPara ler o GitLab: ${GITLAB_HINT}` },
@@ -315,8 +316,21 @@ async function runOnce<T>(
       maxTurns: 8,
       ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
       ...extra,
-    },
-  });
+  };
+  if (open) {
+    return runOpenOnce<T>({
+      selection: open,
+      prompt,
+      options,
+      sessionsDir: join(ATAS, 'open-sessions'),
+      secret: { isSecret: (p) => secretPath(p, WORKSPACE), globs: SECRET_GLOBS },
+      shellEnv: { GITLAB_HOST: GITLAB },
+      describeTool: source,
+      events: { onSession: (id) => noteSession(id, role, prompt) },
+      makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
+    });
+  }
+  const q = query({ prompt, options });
   for await (const m of q) {
     if ('session_id' in m) noteSession(m.session_id, role, prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;

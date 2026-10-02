@@ -1,20 +1,35 @@
-// Upstream failures in Anthropic error shape, and the parameter fallbacks that make one request body work across OpenAI-compatible servers.
+// Upstream failures as typed errors, and the parameter fallbacks that make one request body work across OpenAI-compatible servers.
 import { type Lang, msg } from './messages';
-import { estimateTokens, type OpenAIRequest } from './openaiCore';
+import { estimateTokens } from './text';
+import type { ChatRequest } from './types';
 
-export type AnthropicErrorType =
-  | 'invalid_request_error'
-  | 'authentication_error'
-  | 'permission_error'
-  | 'not_found_error'
-  | 'rate_limit_error'
-  | 'api_error'
-  | 'overloaded_error';
+export type ErrorKind =
+  | 'auth'
+  | 'forbidden'
+  | 'not_found'
+  | 'rate_limit'
+  | 'quota'
+  | 'context'
+  | 'no_tools'
+  | 'bad_request'
+  | 'server'
+  | 'overloaded'
+  | 'timeout'
+  | 'network'
+  | 'aborted'
+  | 'invalid_response';
 
-export interface AnthropicError {
-  status: number;
-  body: { type: 'error'; error: { type: AnthropicErrorType; message: string } };
-  headers: Record<string, string>;
+export class EngineError extends Error {
+  constructor(
+    message: string,
+    readonly kind: ErrorKind,
+    readonly status?: number,
+    readonly retryable = false,
+    readonly retryAfterMs?: number,
+  ) {
+    super(message);
+    this.name = 'EngineError';
+  }
 }
 
 export interface ErrorContext {
@@ -22,11 +37,6 @@ export interface ErrorContext {
   model: string;
   // host:port of the upstream, for messages.
   host: string;
-  inputEstimate?: number;
-}
-
-export function errorResponse(status: number, type: AnthropicErrorType, message: string, headers: Record<string, string> = {}): AnthropicError {
-  return { status, body: { type: 'error', error: { type, message } }, headers };
 }
 
 export interface ParsedUpstreamError {
@@ -60,47 +70,44 @@ function isLocalHost(host: string): boolean {
   return /^(localhost|127\.|\[::1\]|::1|0\.0\.0\.0)/.test(host);
 }
 
-// "prompt is too long: <actual> tokens > <limit> maximum" is the sentence the Claude Code binary reads to compact and retry.
-function contextNumbers(message: string, estimate: number): { actual: number; limit: number } {
-  const nums = [...message.matchAll(/\d[\d,]{2,}/g)].map((m) => Number(m[0].replace(/,/g, ''))).filter((n) => n >= 256);
-  if (nums.length >= 2) return { actual: Math.max(...nums), limit: Math.min(...nums) };
-  if (nums.length === 1) return { actual: Math.max(estimate, nums[0] + 1), limit: nums[0] };
-  return { actual: estimate, limit: Math.max(1, Math.floor(estimate * 0.8)) };
-}
-
 const CONTEXT_RE =
   /context[_ ]length|maximum context|context window|context size|exceeds? the (available )?context|too many tokens|prompt is too long|input is too long|reduce the length|token limit|exceed_context_size|n_ctx|requested \d+ tokens/i;
 const NO_TOOLS_RE = /does not support tools|tool use is not supported|tools? (is|are) not supported|doesn't support tool|does not support function|no tool use|tool_use is not supported/i;
 const MODEL_RE = /model[^.]*(not found|does not exist|is not supported|unknown|not available|not loaded|no longer available)|no such model|invalid model|unknown model|model_not_found/i;
 
-export function mapUpstreamError(status: number, bodyText: string, headers: { get(name: string): string | null }, ctx: ErrorContext): AnthropicError {
+function retryAfterMs(headers: { get(name: string): string | null }): number | undefined {
+  const raw = headers.get('retry-after');
+  if (!raw) return undefined;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return Math.min(secs, 60) * 1000;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 0), 60_000) : undefined;
+}
+
+export function mapHttpError(status: number, bodyText: string, headers: { get(name: string): string | null }, ctx: ErrorContext): EngineError {
   const parsed = parseUpstreamError(bodyText);
   const detail = parsed.message;
   const lower = `${detail} ${parsed.code ?? ''} ${parsed.type ?? ''}`.toLowerCase();
-  const retryAfter = headers.get('retry-after');
-  const extra: Record<string, string> = retryAfter ? { 'retry-after': retryAfter } : {};
+  const wait = retryAfterMs(headers);
 
-  if (status === 401) return errorResponse(401, 'authentication_error', msg(ctx.lang, 'auth', { status, detail }));
-  if (status === 403) return errorResponse(403, 'permission_error', msg(ctx.lang, 'forbidden', { status, detail }));
+  if (status === 401) return new EngineError(msg(ctx.lang, 'auth', { status, detail }), 'auth', status);
+  if (status === 403) return new EngineError(msg(ctx.lang, 'forbidden', { status, detail }), 'forbidden', status);
   if (status === 402 || parsed.code === 'insufficient_quota' || (status === 429 && /quota|billing|credit|balance/.test(lower))) {
-    return errorResponse(429, 'rate_limit_error', msg(ctx.lang, 'quota', { detail }), { ...extra, 'x-should-retry': 'false' });
+    return new EngineError(msg(ctx.lang, 'quota', { detail }), 'quota', status);
   }
-  if (status === 429) return errorResponse(429, 'rate_limit_error', msg(ctx.lang, 'rateLimit', { detail }), extra);
-  if ((status === 400 || status === 422) && NO_TOOLS_RE.test(lower)) {
-    return errorResponse(400, 'invalid_request_error', msg(ctx.lang, 'noTools', { model: ctx.model, detail }));
-  }
+  if (status === 429) return new EngineError(msg(ctx.lang, 'rateLimit', { detail }), 'rate_limit', status, true, wait);
+  if ((status === 400 || status === 422) && NO_TOOLS_RE.test(lower)) return new EngineError(msg(ctx.lang, 'noTools', { model: ctx.model, detail }), 'no_tools', status);
   if (status === 404 || parsed.code === 'model_not_found' || ((status === 400 || status === 422) && MODEL_RE.test(lower))) {
     const hint = isLocalHost(ctx.host) ? 'ollama list / GET /v1/models' : 'GET /v1/models';
-    return errorResponse(404, 'not_found_error', msg(ctx.lang, 'modelNotFound', { model: ctx.model, detail, hint }));
+    return new EngineError(msg(ctx.lang, 'modelNotFound', { model: ctx.model, detail, hint }), 'not_found', status);
   }
   if ([400, 413, 422].includes(status) && (CONTEXT_RE.test(lower) || parsed.code === 'context_length_exceeded')) {
-    const { actual, limit } = contextNumbers(detail, ctx.inputEstimate ?? 0);
-    return errorResponse(400, 'invalid_request_error', msg(ctx.lang, 'contextTooLong', { actual, limit, detail }));
+    return new EngineError(msg(ctx.lang, 'contextTooLong', { detail }), 'context', status);
   }
-  if (status === 408 || status === 504) return errorResponse(504, 'api_error', msg(ctx.lang, 'timeout', { host: ctx.host }));
-  if (status === 503 || status === 529) return errorResponse(status === 503 ? 503 : 529, 'overloaded_error', msg(ctx.lang, 'overloaded', { status, detail }), extra);
-  if (status >= 500) return errorResponse(status === 500 ? 500 : 502, 'api_error', msg(ctx.lang, 'serverError', { status, detail }));
-  return errorResponse(400, 'invalid_request_error', msg(ctx.lang, 'badRequest', { status, detail }));
+  if (status === 408 || status === 504) return new EngineError(msg(ctx.lang, 'timeout', { host: ctx.host }), 'timeout', status, true);
+  if (status === 503 || status === 529) return new EngineError(msg(ctx.lang, 'overloaded', { status, detail }), 'overloaded', status, true, wait);
+  if (status >= 500) return new EngineError(msg(ctx.lang, 'serverError', { status, detail }), 'server', status, true, wait);
+  return new EngineError(msg(ctx.lang, 'badRequest', { status, detail }), 'bad_request', status);
 }
 
 interface NetworkLike {
@@ -121,16 +128,15 @@ function networkCode(err: unknown): { code: string; message: string } {
   return { code: '', message };
 }
 
-export function mapNetworkError(err: unknown, ctx: ErrorContext): AnthropicError {
+export function mapNetworkError(err: unknown, ctx: ErrorContext): EngineError {
   const { code, message } = networkCode(err);
-  const noRetry = { 'x-should-retry': 'false' };
-  if (code === 'ECONNREFUSED') return errorResponse(502, 'api_error', msg(ctx.lang, 'connRefused', { host: ctx.host }), noRetry);
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return errorResponse(502, 'api_error', msg(ctx.lang, 'hostNotFound', { host: ctx.host }), noRetry);
+  if (code === 'ECONNREFUSED') return new EngineError(msg(ctx.lang, 'connRefused', { host: ctx.host }), 'network');
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return new EngineError(msg(ctx.lang, 'hostNotFound', { host: ctx.host }), 'network');
   if (/^(ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/.test(code)) {
-    return errorResponse(504, 'api_error', msg(ctx.lang, 'timeout', { host: ctx.host }));
+    return new EngineError(msg(ctx.lang, 'timeout', { host: ctx.host }), 'timeout', undefined, true);
   }
-  if (/CERT|TLS|SSL/.test(code)) return errorResponse(502, 'api_error', msg(ctx.lang, 'upstreamUnreachable', { host: ctx.host, detail: `${code} ${message}` }), noRetry);
-  return errorResponse(502, 'api_error', msg(ctx.lang, 'connReset', { host: ctx.host, detail: code || message }));
+  if (/CERT|TLS|SSL/.test(code)) return new EngineError(msg(ctx.lang, 'upstreamUnreachable', { host: ctx.host, detail: `${code} ${message}` }), 'network');
+  return new EngineError(msg(ctx.lang, 'connReset', { host: ctx.host, detail: code || message }), 'network', undefined, true);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -143,6 +149,8 @@ export interface Learned {
   maxOutputTokens?: number;
   // The upstream sent reasoning_content, so it expects it back on assistant turns with tool calls.
   echoReasoning?: boolean;
+  // The model answered that it cannot use tools: the engine stops offering them.
+  noTools?: boolean;
 }
 
 export function newLearned(): Learned {
@@ -162,10 +170,10 @@ function outputLimit(message: string, current: number): number | null {
 }
 
 // Returns the body to retry with, or null when the error is not one of the known parameter complaints.
-export function adaptBodyForError(body: OpenAIRequest, status: number, message: string, learned: Learned): OpenAIRequest | null {
+export function adaptBodyForError(body: ChatRequest, status: number, message: string, learned: Learned): ChatRequest | null {
   if (status !== 400 && status !== 422) return null;
   const m = message.toLowerCase();
-  const next: OpenAIRequest = { ...body };
+  const next: ChatRequest = { ...body };
   if (next.max_tokens !== undefined && /max_completion_tokens/.test(m)) {
     next.max_completion_tokens = next.max_tokens;
     delete next.max_tokens;
@@ -198,6 +206,6 @@ export function adaptBodyForError(body: OpenAIRequest, status: number, message: 
   return null;
 }
 
-export function inputEstimateOf(body: OpenAIRequest): number {
+export function requestEstimate(body: ChatRequest): number {
   return estimateTokens(body.messages) + estimateTokens(body.tools ?? []);
 }
