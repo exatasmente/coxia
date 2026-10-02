@@ -21,7 +21,7 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
-import { checkIid, checkProject, enc, iso, num, pool } from './util';
+import { checkIid, checkProject, enc, iso, issueRefsOf, num, pool } from './util';
 
 // GitLab, REST v4 plus the one GraphQL read the work item status needs. The transport is the glab CLI (the migrated user's setup) or
 // fetch with a token; this file does not know which. Endpoints and fields are the ones the app called before providers existed.
@@ -178,7 +178,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     mergedAt: iso(m.merged_at),
     description: m.description ?? '',
     roles,
-    issueRefs: [],
+    issueRefs: issueRefsOf(`${m.title}\n${m.description ?? ''}`, m.source_branch),
   });
 
   const noteOf = (n: GlNote, kind: 'issue' | 'mr', project: string, iid: number): VcsComment => ({

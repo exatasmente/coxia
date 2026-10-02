@@ -10,10 +10,14 @@ import { vcsCliFor, vcsReady } from './index';
 
 export const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
 
+// A path segment that is not "." or ".." (nor their percent-encoded forms): a repository named like a dot segment would climb out of repos/.
+const GL_SEG = '(?!(?:\\.|%2[eE]){1,2}\\/)[\\w%.-]+';
+const GH_SEG = '(?!\\.{1,2}\\/)[\\w.-]+';
+
 /** The only glab commands a ceremony agent may run: GitLab reads, one command, no flags that write. */
 export const GLAB_READ = [
-  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes|pipelines))?(\?[\w=&]+)?"?( --paginate)?$/,
-  /^glab api "?projects\/[\w%.-]+\/pipelines(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
+  new RegExp(`^glab api "?projects\\/${GL_SEG}\\/(merge_requests|issues)\\/\\d+(\\/(discussions|notes|approvals|changes|pipelines))?(\\?[\\w=&]+)?"?( --paginate)?$`),
+  new RegExp(`^glab api "?projects\\/${GL_SEG}\\/pipelines(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
   /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
 ];
 
@@ -24,9 +28,9 @@ export const GH_RULES = ['Bash(gh api:*)', 'Bash(gh pr view:*)', 'Bash(gh issue 
  * only flag accepted is --paginate; graphql, search and every endpoint outside pulls, issues, commit checks and Actions runs are out.
  */
 export const GH_READ = [
-  /^gh api "?repos\/[\w.-]+\/[\w.-]+\/(pulls|issues)\/\d+(\/(comments|reviews|files|commits|timeline|requested_reviewers))?(\?[\w=&]+)?"?( --paginate)?$/,
-  /^gh api "?repos\/[\w.-]+\/[\w.-]+\/commits\/[0-9a-f]{7,40}\/(check-runs|status)(\?[\w=&]+)?"?$/,
-  /^gh api "?repos\/[\w.-]+\/[\w.-]+\/actions\/runs(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
+  new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/(pulls|issues)\\/\\d+(\\/(comments|reviews|files|commits|timeline|requested_reviewers))?(\\?[\\w=&]+)?"?( --paginate)?$`),
+  new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/commits\\/[0-9a-f]{7,40}\\/(check-runs|status)(\\?[\\w=&]+)?"?$`),
+  new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/actions\\/runs(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
   /^gh (pr|issue) view \d+ -R [\w.-]+\/[\w.-]+( --comments)?$/,
 ];
 

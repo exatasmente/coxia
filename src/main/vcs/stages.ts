@@ -25,8 +25,8 @@ const COMMON: StageDef[] = [
 
 // Bitbucket's issue tracker has a fixed set of states.
 const BITBUCKET: StageDef[] = [
-  stage('done', 'Done', ['^resolved$', '^closed$', '^invalid$', '^duplicate$', '^wontfix$']),
-  stage('backlog', 'Backlog', ['^new$', '^open$', '^on hold$']),
+  stage('done', 'Done', ['^done$', '^resolved$', '^closed$', '^invalid$', '^duplicate$', '^wontfix$']),
+  stage('backlog', 'Backlog', ['^backlog$', '^new$', '^open$', '^on hold$']),
 ];
 
 export const DEFAULT_STAGES: Record<VcsKind, StageDef[]> = {

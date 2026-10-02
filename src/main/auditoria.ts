@@ -10,7 +10,7 @@ const RESULT_MAX = 300;
 const LIST_MAX = 2000;
 
 // Tokens never reach the log, not even inside an error message echoed by glab or curl.
-const SECRETS = [/glpat-[\w-]+/g, /sk-or-[\w-]+/g, /\b(?:ghp|gho|ghu|ghs|ghr)_[\w]{20,}/g, /github_pat_[\w]{20,}/g, /\bATBB[\w-]{16,}/g, /\bBasic\s+[\w+/=]{12,}/g, /(PRIVATE-TOKEN|Authorization)[:=]\s*\S+/gi, /(token=)[^\s&"']+/gi];
+const SECRETS = [/glpat-[\w-]+/g, /sk-or-[\w-]+/g, /\b(?:ghp|gho|ghu|ghs|ghr)_[\w]{20,}/g, /github_pat_[\w]{20,}/g, /\bATBB[\w-]{16,}/g, /\b(?:Bearer|Basic)\s+[\w.~+/=-]{8,}/g, /(PRIVATE-TOKEN|Authorization)[:=]\s*\S+/gi, /(token=)[^\s&"']+/gi];
 
 export function scrub(text: string): string {
   return SECRETS.reduce((t, re) => t.replace(re, (m, p1) => (typeof p1 === 'string' ? `${p1}[removido]` : '[removido]')), text);

@@ -4,7 +4,7 @@ import { VcsError } from '../src/main/vcs/errors';
 import { STATUS_MUTATION, validateGitLabCommand } from '../src/main/vcs/gitlab';
 import { type VcsRuntime, type VcsSettings, buildRuntime } from '../src/main/vcs/runtime';
 import type { CliRun } from '../src/main/vcs/transport';
-import type { VcsCommand } from '../src/main/vcs/types';
+import type { VcsCommand, VcsWriteOp } from '../src/main/vcs/types';
 import { type FakeHost, fixture, noSleep, startFakeHost } from './helpers/fakeHost';
 
 const TOKEN = 'TESTTOKEN-gitlab-not-real-0001';
@@ -309,13 +309,14 @@ describe('planWrite: the commands are the ones the app always proposed', () => {
   });
 
   it('every planned command passes its own validator', async () => {
-    for (const op of [
+    const ops: VcsWriteOp[] = [
       { op: 'commentIssue', project: 'acme/app', iid: 1, body: 'x' },
       { op: 'replyThread', project: 'acme/app', iid: 1, threadId: 'abcdef12', body: 'x' },
       { op: 'resolveThread', project: 'acme/app', iid: 1, threadId: 'abcdef12' },
       { op: 'setIssueLabels', project: '1', iid: 1, add: ['a'], remove: ['b'] },
       { op: 'playJob', project: '1', jobId: 3 },
-    ] as const) {
+    ];
+    for (const op of ops) {
       for (const c of await plan(true, op)) expect(() => validateGitLabCommand(c), op.op).not.toThrow();
     }
   });

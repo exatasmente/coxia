@@ -3,13 +3,13 @@ import { secrets } from '../secrets';
 import { getConfig, rc } from '../workspaceConfig';
 import { VcsError } from './errors';
 import { type RuntimeDeps, type VcsRuntime, type VcsSettings, buildRuntime, useCli } from './runtime';
-import type { VcsExecutor } from './exec';
 import type { VcsProvider } from './types';
 
 // The provider of the running workspace: built from the config at call time (never at import), cached until the config it was built
 // from changes. Call sites ask for the primary integration (the one that holds the issues); the others are reachable by id.
 
-export type { VcsExecutor, VcsProvider, VcsRuntime };
+export type VcsExecutor = VcsRuntime['exec'];
+export type { VcsProvider, VcsRuntime };
 
 const installedCache = new Map<string, boolean>();
 
