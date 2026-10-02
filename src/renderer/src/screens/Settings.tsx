@@ -56,6 +56,12 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
     }
   };
 
+  const running = useJobs<string>('settings:', {
+    done: (text) => setStatus(text),
+    failed: (message) => setStatus(`Falhou: ${message}`),
+  });
+  const checking = running.length > 0;
+
   if (!s) return <div className="page"><div className="wrap">{error ? <div className="error">{error}</div> : <span className="spinner" />}</div></div>;
 
   const set = (change: (prev: Settings) => Settings) => {
@@ -77,12 +83,6 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       setError(errorText(e));
     }
   };
-
-  const running = useJobs<string>('settings:', {
-    done: (text) => setStatus(text),
-    failed: (message) => setStatus(`Falhou: ${message}`),
-  });
-  const checking = running.length > 0;
 
   const check = () => {
     setStatus(null);
