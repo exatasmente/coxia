@@ -157,7 +157,7 @@ export function Deep({
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Desbloqueio · #{card.iid}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Presence recording={rec.recording} face={c.colorOf(card.ref)} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
+          <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
           <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>

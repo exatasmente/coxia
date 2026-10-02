@@ -128,7 +128,7 @@ export function Discussions({
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Discussões · {mr?.ref ?? 'sem MR'} · #{card.iid}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Presence recording={false} face={'var(--night-violet)'} on={!!player.speaking} color="var(--night-violet)" small />
+          <Presence recording={false} thinking={!!busy || loading} on={!!player.speaking} color="var(--night-violet)" small />
           <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && void load(mr)}>
             {loading ? <span className="spinner" /> : null} Atualizar
           </button>

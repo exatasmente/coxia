@@ -94,7 +94,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Retorno do QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Presence recording={talk.recording} face={'var(--night-orange)'} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} small />
+          <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} small />
           {re && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}

@@ -345,21 +345,9 @@ select.text-input { background: var(--surface); }
 .diagram-svg-full svg { width: 100% !important; height: 100% !important; max-width: none !important; }
 .diagram-hint { margin: 0; text-align: center; color: var(--on-night-muted); }
 
-/* 2D avatar shown instead of the waveform when the voice is off */
+/* The spectrum is the avatar: bars that move with the voice and regroup into faces */
 .presence { display: inline-flex; align-items: center; gap: 12px; min-height: 36px; }
 .presence-caption { color: var(--on-night-muted); }
-.avatar { display: inline-block; flex: 0 0 auto; }
-.avatar svg { display: block; overflow: visible; }
-.avatar-head { fill: var(--face); }
-.avatar-ring { fill: none; stroke: var(--face); stroke-width: 2; opacity: 0; }
-.avatar-eyes ellipse { fill: var(--on-night); transform-box: fill-box; transform-origin: center; animation: avatar-blink 4.5s infinite; }
-.avatar-mouth-rest { fill: none; stroke: var(--on-night); stroke-width: 2.6; stroke-linecap: round; }
-.avatar-mouth-talk { fill: var(--on-night); transform-box: fill-box; transform-origin: center; animation: avatar-talk 0.32s ease-in-out infinite alternate; }
-.avatar-talking .avatar-ring { opacity: 0.45; animation: avatar-pulse 1.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-.avatar-listening .avatar-ring { opacity: 0.9; stroke: var(--rec-blue); stroke-dasharray: 4 5; animation: avatar-spin 6s linear infinite; transform-box: fill-box; transform-origin: center; }
-.avatar-listening .avatar-eyes ellipse { animation: none; transform: translateY(-1px); }
-@keyframes avatar-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
-@keyframes avatar-talk { from { transform: scaleY(0.25); } to { transform: scaleY(1.15); } }
-@keyframes avatar-pulse { from { transform: scale(1); opacity: 0.5; } to { transform: scale(1.18); opacity: 0; } }
-@keyframes avatar-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .avatar * { animation: none !important; } }
+.spectrum { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; overflow: hidden; }
+.spectrum span { flex: 0 0 4px; width: 4px; border-radius: 2px; transition: height 200ms ease, transform 240ms ease, opacity 200ms ease; }
+.spectrum-small span { flex-basis: 3px; width: 3px; }

@@ -133,7 +133,7 @@ export function Gate({
             </div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Presence recording={rec.recording} face={'var(--night-blue)'} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
+          <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
           {gate && (
             <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
               <MicIcon /> {rec.recording ? 'Enviar fala' : roundDone ? 'Perguntar (espaço)' : 'Responder (espaço)'}

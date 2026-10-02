@@ -79,7 +79,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Passagem para o QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Presence recording={talk.recording} face={'var(--night-violet)'} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
+          <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
           {qa && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}

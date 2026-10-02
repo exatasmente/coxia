@@ -103,7 +103,7 @@ export function Conflict({
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
           </div>
-          <Presence recording={rec.recording} face={'var(--night-orange)'} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
+          <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
           <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>

@@ -275,7 +275,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </div>
 
                   <div className="row" style={{ gap: 16, minHeight: 64, flexWrap: 'nowrap' }}>
-                    <Presence recording={rec.recording} face={card ? c.colorOf(card.ref) : 'var(--muted)'} on={!!speakingWho || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={rec.level} />
+                    <Presence recording={rec.recording} thinking={phase === 'preparing' || phase === 'thinking' || phase === 'transcribing'} on={!!speakingWho || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={rec.level} />
                     <span className={`speaker ${rec.recording ? 'me' : !speakingWho && !busy && phase !== 'preparing' ? 'idle' : ''}`}>{speakerLabel}</span>
                   </div>
 
