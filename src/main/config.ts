@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from '../shared/retention';
 import { type Settings, withDefaults } from '../shared/settings';
 import { ATAS } from './env';
 
@@ -28,6 +29,9 @@ function validate(s: Settings): Settings {
   }
   if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error('intervalo deve ficar entre 5 e 240 minutos');
   if (!(s.voice.silenceMs >= 500 && s.voice.silenceMs <= 5000)) throw new Error('silêncio deve ficar entre 500 e 5000 ms');
+  if (!Number.isInteger(s.retention.days) || s.retention.days < RETENTION_MIN_DAYS || s.retention.days > RETENTION_MAX_DAYS) {
+    throw new Error(`retenção: o prazo deve ficar entre ${RETENTION_MIN_DAYS} e ${RETENTION_MAX_DAYS} dias`);
+  }
   return s;
 }
 
