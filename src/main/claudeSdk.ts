@@ -22,7 +22,8 @@ export interface LocateDeps {
   bundled: boolean;
 }
 
-const defaults: LocateDeps = { exists: existsSync, read: (p) => readFileSync(p, 'utf8'), bundled: true };
+// COXIA_SDK_BUNDLED=0 simulates a public build that does not ship the SDK (the wizard's install flow is tested that way).
+const defaults: LocateDeps = { exists: existsSync, read: (p) => readFileSync(p, 'utf8'), bundled: process.env.COXIA_SDK_BUNDLED !== '0' };
 
 function entryOf(pkg: { exports?: unknown; main?: string; module?: string }): string | null {
   const dot = typeof pkg.exports === 'object' && pkg.exports !== null ? (pkg.exports as Record<string, unknown>)['.'] : pkg.exports;

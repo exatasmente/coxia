@@ -45,6 +45,10 @@ export interface VcsProbeResult {
   mrs: { total: number; sample: VcsProbeSample[] } | null;
   rateLimit: { limit: number | null; remaining: number | null; resetAt: string | null } | null;
   warnings: string[];
+  /** One line for the screen: who it connected as, or why it did not (already translated). */
+  message: string;
+  /** HTTP status of the failure, when the host answered with one. */
+  status: number | null;
   durationMs: number;
 }
 

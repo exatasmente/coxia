@@ -14,7 +14,9 @@ import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { saude } from './saude';
 import { update } from './update';
+import { updates } from './updates';
 import { vcsModule } from './vcs/module';
+import { wizard } from './wizard';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
 
@@ -35,7 +37,9 @@ export const MODULES: Module[] = [
   retention,
   saude,
   update,
+  updates,
   vcsModule,
   watchers,
+  wizard,
   workspaces,
 ];

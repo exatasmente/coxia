@@ -11,9 +11,11 @@ import { HeaderModuleButtons } from './moduleSlots';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
+import { UpdateBadge } from './UpdateBadge';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
+import { wizardApi } from '../wizard/wizardApi';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -22,6 +24,11 @@ const TOP = 3;
 export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
+  // The name the user gave the setup wizard (empty: no name in the greeting).
+  const [userName, setUserName] = useState('');
+  useEffect(() => {
+    void wizardApi.config().then((v) => setUserName(v.config.userName), () => undefined);
+  }, []);
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
@@ -93,10 +100,11 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         )}
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
-          <h1>{greeting(now.getHours())}, Luiz</h1>
+          <h1>{greeting(now.getHours())}{userName ? `, ${userName}` : ''}</h1>
         </div>
       </div>
       <div className="dash-top-actions">
+        <UpdateBadge go={go} />
         {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.">Workspace de testes</span>}
         {!phone && (
           <nav className="dash-nav" aria-label="Telas do app">

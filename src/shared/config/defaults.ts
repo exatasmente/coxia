@@ -17,6 +17,7 @@ export function neutralConfig(): WorkspaceConfig {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     setupComplete: false,
     language: 'pt-BR',
+    userName: '',
     appearance: { theme: 'system' },
     notifications: true,
     closeToTray: true,

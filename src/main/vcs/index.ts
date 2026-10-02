@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { secrets } from '../secrets';
 import { getConfig, rc } from '../workspaceConfig';
+import type { VcsIntegration } from '../../shared/config/types';
+import type { VcsProbeResult } from '../../shared/vcs';
 import { VcsError } from './errors';
+import { probeIntegration } from './probe';
 import { type RuntimeDeps, type VcsRuntime, type VcsSettings, buildRuntime, useCli } from './runtime';
 import type { VcsProvider } from './types';
 
@@ -106,4 +109,22 @@ export function vcsCliFor(): { kind: 'gitlab' | 'github'; command: string; host:
   const s = settingsOf(null);
   if (!s || s.kind === 'bitbucket' || !s.cli || !useCli(s, cliInstalled)) return null;
   return { kind: s.kind, command: s.cli, host: s.host };
+}
+
+/**
+ * What the setup wizard calls: probes one integration of the config (auth, user, token permissions, a sample of my issues and MRs).
+ * The issue project and the repositories it looks in come from the workspace config; a token typed but not yet stored can be passed to
+ * test it without saving it. Reads only.
+ */
+export async function probeVcs(integration: VcsIntegration, extra: { token?: string } = {}): Promise<VcsProbeResult> {
+  const { projects } = getConfig();
+  return probeIntegration(
+    {
+      integration: { id: integration.id, kind: integration.kind, host: integration.host, apiUrl: integration.apiUrl, user: integration.user, secretRef: integration.secretRef, cliPreference: integration.cliPreference, cliCommand: integration.cliCommand },
+      ...(extra.token ? { token: extra.token } : {}),
+      issueProject: projects.issues.vcsId === integration.id ? projects.issues.project : null,
+      repos: projects.repos.filter((r) => r.vcsId === integration.id && r.projectPath).map((r) => r.projectPath as string),
+    },
+    vcsRuntimeDeps(),
+  );
 }

@@ -8,6 +8,7 @@
 #   ~/.local/share/icons/hicolor/256x256/apps/cerimonias.png    icon
 #   ~/.local/share/applications/cerimonias.desktop              launcher entry
 #   ~/.config/autostart/cerimonias.desktop                      only with --autostart
+#   ~/.local/state/cerimonias/install-source.json               which source tree this install came from
 # Safe to run again: unchanged files are left alone, a new build replaces the AppImage atomically.
 set -euo pipefail
 
@@ -19,6 +20,8 @@ APP="$PREFIX/cerimonias.AppImage"
 ICON_DIR="$DATA_HOME/icons/hicolor/256x256/apps"
 LAUNCHER="$DATA_HOME/applications/cerimonias.desktop"
 AUTOSTART_FILE="$CONFIG_HOME/autostart/cerimonias.desktop"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/cerimonias"
+SOURCE_RECORD="$STATE/install-source.json"
 
 AUTOSTART=0
 ARTIFACT=""
@@ -66,6 +69,12 @@ else
   mv -f "$APP.new" "$APP"
   if [ "$was_installed" = 1 ]; then say "updated    $APP  (from $(basename "$ARTIFACT"))"; else say "installed  $APP  (from $(basename "$ARTIFACT"))"; fi
 fi
+
+# 1b. Record the source tree: the installed app reads it to know it is a source install and which tree to compare with main.
+mkdir -p "$STATE"
+write_if_changed "$SOURCE_RECORD" 644 <<EOF
+{"source":"$ROOT","appImage":"$APP"}
+EOF
 
 # 2. Icon
 if [ -f "$ICON_DIR/cerimonias.png" ] && cmp -s "$ROOT/resources/icon.png" "$ICON_DIR/cerimonias.png"; then

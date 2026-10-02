@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildState, stripDirty, updatedToast } from '../src/shared/update';
-import { QUIT_FLAG, parseBehind, parseLatest, parseUpdatedMarker, readBuild, runInfo, stateDir, updateEnv, wantsQuitForUpdate } from '../src/main/update-core';
+import { stripDirty } from '../src/shared/update';
+import { QUIT_FLAG, announcement, parseBehind, parseUpdatedMarker, readBuild, runInfo, stateDir, updateEnv, wantsQuitForUpdate } from '../src/main/update-core';
 
 describe('wantsQuitForUpdate', () => {
   it('sees the flag anywhere in a second instance argv', () => {
@@ -25,26 +25,6 @@ describe('readBuild', () => {
   });
 });
 
-describe('parseLatest', () => {
-  it('reads hash, date and subject', () => {
-    expect(parseLatest('a0547e8\x1f2026-10-02T11:30:00-03:00\x1ffix: let the local merge decide\n')).toEqual({
-      commit: 'a0547e8',
-      date: '2026-10-02T11:30:00-03:00',
-      subject: 'fix: let the local merge decide',
-    });
-  });
-
-  it('keeps a subject that contains the separator', () => {
-    expect(parseLatest('a0547e8\x1f2026-10-02T11:30:00Z\x1fone\x1ftwo')?.subject).toBe('one\x1ftwo');
-  });
-
-  it('refuses output that is not a commit', () => {
-    expect(parseLatest('')).toBeNull();
-    expect(parseLatest('fatal: not a git repository')).toBeNull();
-    expect(parseLatest('a0547e8')).toBeNull();
-  });
-});
-
 describe('parseBehind', () => {
   it('reads a count', () => {
     expect(parseBehind('3\n')).toBe(3);
@@ -58,24 +38,7 @@ describe('parseBehind', () => {
   });
 });
 
-describe('buildState', () => {
-  const latest = { commit: 'a0547e8', date: '', subject: '', behind: 0 };
-
-  it('is current when the installed commit is the tip of main', () => {
-    expect(buildState('a0547e8', latest)).toBe('current');
-    expect(buildState('a0547e8a1', { ...latest, commit: 'a0547e8' })).toBe('current');
-  });
-
-  it('is behind when main moved, or when the build carried uncommitted changes', () => {
-    expect(buildState('1111111', latest)).toBe('behind');
-    expect(buildState('a0547e8+dirty', latest)).toBe('behind');
-  });
-
-  it('is unknown without a commit on either side', () => {
-    expect(buildState('dev', latest)).toBe('unknown');
-    expect(buildState('a0547e8', null)).toBe('unknown');
-  });
-
+describe('stripDirty', () => {
   it('strips the dirty stamp', () => {
     expect(stripDirty('a0547e8+dirty')).toBe('a0547e8');
     expect(stripDirty('a0547e8')).toBe('a0547e8');
@@ -123,8 +86,9 @@ describe('stateDir', () => {
 
 describe('update marker and run info', () => {
   it('reads the commit update.sh left behind', () => {
-    expect(parseUpdatedMarker('{"commit":"a0547e8","at":"2026-10-02T12:00:00-03:00"}')).toEqual({ commit: 'a0547e8' });
-    expect(parseUpdatedMarker('{}')).toEqual({ commit: null });
+    expect(parseUpdatedMarker('{"commit":"a0547e8","at":"2026-10-02T12:00:00-03:00"}')).toEqual({ commit: 'a0547e8', version: null });
+    expect(parseUpdatedMarker('{"version":"0.2.0"}')).toEqual({ commit: null, version: '0.2.0' });
+    expect(parseUpdatedMarker('{}')).toEqual({ commit: null, version: null });
   });
 
   it('ignores a marker that is not JSON', () => {
@@ -140,7 +104,11 @@ describe('update marker and run info', () => {
     expect(lines).toContain(' "commit": "abc1234",');
   });
 
-  it('words the toast', () => {
-    expect(updatedToast('a0547e8')).toBe('Atualizado para a0547e8');
+  it('announces the commit after a rebuild, and the version only once the app runs it', () => {
+    const build = readBuild('0.2.0', 'a0547e8', '');
+    expect(announcement({ commit: 'a0547e8', version: null }, build)).toBe('a0547e8');
+    expect(announcement({ commit: null, version: '0.2.0' }, build)).toBe('0.2.0');
+    expect(announcement({ commit: null, version: '0.3.0' }, build)).toBeNull();
+    expect(announcement(null, build)).toBeNull();
   });
 });

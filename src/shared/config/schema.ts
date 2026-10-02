@@ -133,6 +133,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       schemaVersion: { type: 'integer', description: 'Version of this document.', const: CONFIG_SCHEMA_VERSION },
       setupComplete: boolean('The setup wizard finished (or the config came from an existing install).'),
       language: enumOf('Interface and agent language.', LANGUAGES),
+      userName: string('How the agents address the user; empty: no name.', { maxLength: 80 }),
       appearance: object('Look.', { theme: enumOf('Color theme.', THEMES) }),
       notifications: boolean('Desktop and push notifications.'),
       closeToTray: boolean('Closing the window keeps the app in the tray.'),

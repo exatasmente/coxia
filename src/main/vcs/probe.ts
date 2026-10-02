@@ -99,6 +99,8 @@ export async function probeWithRuntime(rt: VcsRuntime, o: { issueProject: string
     mrs: null,
     rateLimit: null,
     warnings: [],
+    message: '',
+    status: null,
     durationMs: 0,
   };
   const check = (id: VcsProbeCheck['id'], ok: boolean, detail: string) => result.checks.push({ id, ok, detail });
@@ -108,9 +110,12 @@ export async function probeWithRuntime(rt: VcsRuntime, o: { issueProject: string
     const me = await provider.currentUser();
     result.user = { username: me.username, name: me.name };
     result.ok = true;
-    check('auth', true, t('vcs.probe.auth', { user: me.username, host: settings.host }));
+    result.message = t('vcs.probe.auth', { user: me.username, host: settings.host });
+    check('auth', true, result.message);
   } catch (e) {
-    check('auth', false, message(e));
+    result.message = message(e);
+    result.status = e instanceof VcsError ? e.status : null;
+    check('auth', false, result.message);
     result.durationMs = now() - started;
     return result;
   }
@@ -168,7 +173,7 @@ export async function probeWithRuntime(rt: VcsRuntime, o: { issueProject: string
 }
 
 /** Probes an integration as the wizard describes it. `deps.token` supplies the credential; a typed token overrides the stored one for this call only. */
-export async function probeVcs(request: VcsProbeRequest, deps: RuntimeDeps, cliDefault: (kind: VcsKind) => string | null = (k) => (k === 'gitlab' ? 'glab' : k === 'github' ? 'gh' : null)): Promise<VcsProbeResult> {
+export async function probeIntegration(request: VcsProbeRequest, deps: RuntimeDeps, cliDefault: (kind: VcsKind) => string | null = (k) => (k === 'gitlab' ? 'glab' : k === 'github' ? 'gh' : null)): Promise<VcsProbeResult> {
   const settings = settingsOfRequest(request, cliDefault(request.integration.kind));
   const typed = request.token?.trim();
   const rt = buildRuntime(settings, typed ? { ...deps, token: () => typed } : deps);

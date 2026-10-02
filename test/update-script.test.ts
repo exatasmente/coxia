@@ -207,6 +207,8 @@ describe('update.sh against a running app', () => {
     expect(alive(run.pid)).toBe(true);
     expect(JSON.parse(readFileSync(join(w.root, 'xdg-state/cerimonias/updated.json'), 'utf8')).commit).toMatch(/^[0-9a-f]{7,}$/);
     expect(readFileSync(join(w.root, 'xdg-state/cerimonias/update.log'), 'utf8')).toContain('instalado e rodando');
+    // The app reads this to know it is a source install and which tree to compare with main.
+    expect(JSON.parse(readFileSync(join(w.root, 'xdg-state/cerimonias/install-source.json'), 'utf8'))).toEqual({ source: join(w.root, 'repo'), appImage: w.app });
   }, 60_000);
 
   it('does not kill an app that ignores the request, and installs nothing', async () => {

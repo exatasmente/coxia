@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
 import type { VcsProbeRequest } from '../src/shared/vcs';
 import { VcsError } from '../src/main/vcs/errors';
-import { SCOPES, probeVcs } from '../src/main/vcs/probe';
+import { SCOPES, probeIntegration as probeVcs } from '../src/main/vcs/probe';
 import type { CliRun } from '../src/main/vcs/transport';
 import { type FakeHost, fixture, noSleep, startFakeHost } from './helpers/fakeHost';
 
