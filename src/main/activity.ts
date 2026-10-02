@@ -61,7 +61,7 @@ export function safeText(text: string, max: number, isSecretPath?: (token: strin
       .split(' ')
       .map((token) => {
         const bare = token.replace(/^["'`(]+|["'`),;]+$/g, '');
-        return /[/.~]/.test(bare) && hidden(isSecretPath, bare) ? '[secret file]' : token;
+        return /[/.~]/.test(bare) && hidden(isSecretPath, bare) ? t('activity.secretFile') : token;
       })
       .join(' ');
   }

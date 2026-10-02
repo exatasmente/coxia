@@ -86,7 +86,7 @@ describe('the activity log', () => {
     });
     const run = log.begin('deep', { isSecretPath: () => { throw new Error('fs'); } });
     expect(() => run.tool('Read /a/b')).not.toThrow();
-    expect(log.get(run.id)[0].label).toBe('Read [secret file]');
+    expect(log.get(run.id)[0].label).toBe('Read [arquivo secreto]');
   });
 
   it('answers by run id, by job id (latest invocation only) and for the runs no job asked for', () => {
@@ -120,7 +120,7 @@ describe('what a label may carry', () => {
 
   it('hides the path of a secret file and shortens the home folder', () => {
     const isSecret = (p: string) => p.endsWith('.env');
-    expect(safeText('Read /srv/app/.env', 240, isSecret)).toBe('Read [secret file]');
+    expect(safeText('Read /srv/app/.env', 240, isSecret)).toBe('Read [arquivo secreto]');
     expect(safeText('Read "/srv/app/src/a.ts"', 240, isSecret)).toBe('Read "/srv/app/src/a.ts"');
   });
 

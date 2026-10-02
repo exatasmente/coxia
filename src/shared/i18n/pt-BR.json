@@ -211,6 +211,7 @@
   "activity.failed": "Falhou",
   "activity.failedWith": "Falhou: {reason}",
   "activity.blocked": "Bloqueado: {what}",
+  "activity.secretFile": "[arquivo secreto]",
   "notify.preDaily.body": "Os agentes estão prontos para a call. Clique para entrar.",
   "notify.preDaily.body.novoice": "Os agentes estão prontos para a conversa. Clique para entrar.",
   "notify.reentry.hint": "Clique para a call de reentrada.",

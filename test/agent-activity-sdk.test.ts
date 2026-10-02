@@ -101,7 +101,7 @@ describe('activity from the Claude SDK message loop', () => {
     expect(wire).not.toContain('glpat-abcdefghij');
     expect(wire).not.toContain('sk-ant-api03-abcdefghijklmnop');
     expect(wire).not.toContain('/.env');
-    expect(pushed.some((e) => e.label === 'Read [secret file]')).toBe(true);
+    expect(pushed.some((e) => e.label === 'Read [arquivo secreto]')).toBe(true);
     expect(pushed.some((e) => e.kind === 'text' && e.label.includes('[key]'))).toBe(true);
   });
 

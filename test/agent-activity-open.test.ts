@@ -63,8 +63,8 @@ describe('activity from the open engine', () => {
       ['text', null, 'Vou ler a nota e procurar a chave.'],
       ['tool', null, `Read ${join(projects, 'note.txt').replace(home, '~')}`],
       ['tool', null, 'Grep [key]'],
-      ['tool', null, 'Read [secret file]'],
-      ['status', 'blocked', 'Bloqueado: Read [secret file]'],
+      ['tool', null, 'Read [arquivo secreto]'],
+      ['status', 'blocked', 'Bloqueado: Read [arquivo secreto]'],
       ['status', 'finished', 'Terminou'],
     ]);
     expect(entries.every((e) => e.jobId === 'deep:#7:ask' && e.role === 'deep' && e.runId === entries[0].runId)).toBe(true);
