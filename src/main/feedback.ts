@@ -276,15 +276,15 @@ function noticesFor(events: FeedbackEvent[]): Notice[] {
 
 let checking = false;
 
-async function check(deps: Deps): Promise<void> {
-  if (checking) return;
+// `cards` is injectable so a test can replay a transition; the job always loads them.
+export async function checkFeedback(deps: Deps, cards?: Card[]): Promise<DetectResult | null> {
+  if (checking) return null;
   checking = true;
   try {
-    const { cards } = await loadCards(100);
-    const { firstRun, events, next } = await detectFeedback(cards);
+    const { firstRun, events, checked, next } = await detectFeedback(cards ?? (await loadCards(100)).cards);
     writeJson(SEEN_FILE, next);
-    if (firstRun || !getSettings().notifications) return;
-    for (const n of noticesFor(events)) deps.notify(n);
+    if (!firstRun && getSettings().notifications) for (const n of noticesFor(events)) deps.notify(n);
+    return { firstRun, events, checked };
   } finally {
     checking = false;
   }
@@ -538,7 +538,7 @@ export function proposeResolve(card: Card, mrIn: MrPath, id: string): ProposalVi
 // ---------- registration ----------
 
 export const register: Module = (ctx) => {
-  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, run: () => check({ notify: ctx.notify }) });
+  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, run: async () => void (await checkFeedback({ notify: ctx.notify })) });
   ctx.handle('feedback:reentry:get', getReentry);
   ctx.handle('feedback:reentry:prepare', prepareReentry);
   ctx.handle('feedback:reentry:ask', askReentry);
