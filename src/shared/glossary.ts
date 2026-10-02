@@ -14,23 +14,23 @@ export interface Term {
 }
 
 export const DEFAULT_GLOSSARY: Term[] = [
-  { term: 'sz4', say: 'ésse zê quatro', heard: ['SZ 4', 'esse zê quatro', 'esse z quatro'] },
-  { term: 'sz-playbook', say: 'ésse zê plêibuk', heard: ['SZ playbook', 'esse zê playbook'] },
-  { term: 'hub-whatsapp', say: 'hub uótsap', heard: ['hub WhatsApp', 'hub whats app', 'rub WhatsApp'] },
-  { term: 'new-agent', say: 'niú êidjent', heard: ['new agent', 'niu agent'] },
+  { term: 'sz4', say: 'ésse zê quatro', sayKokoro: 'esse zeta quatro', heard: ['SZ 4', 'esse zê quatro', 'esse z quatro', 'SC-4', 'SC4', 'SC-Z4'] },
+  { term: 'sz-playbook', say: '', heard: ['SZ playbook', 'esse zê playbook', 'szplaybook'] },
+  { term: 'hub-whatsapp', say: 'hub uótsap', heard: ['hub WhatsApp', 'hub whats app', 'rub WhatsApp', 'Rubio WhatsApp', 'Rubio-whatsapp', 'Ruby WhatsApp'] },
+  { term: 'new-agent', say: 'niú agent', sayKokoro: 'niú êidjent', heard: ['new agent', 'niu agent', 'New Age', 'Neu Agente'] },
   { term: 'QA', say: 'quiu ei', heard: ['Q&A', 'Q.A.', 'kiu ei', 'quiu ei'] },
   { term: 'MR', say: '', heard: ['M.R.', 'emerre', 'eme erre'] },
   { term: 'merge', say: '', heard: ['merdi', 'mérgi', 'mergi', 'merdj'] },
   { term: 'deploy', say: '', heard: ['deploi', 'diploy', 'diplói'] },
-  { term: 'pipeline', say: '', heard: ['pipe line', 'paipline', 'paipelaine'] },
-  { term: 'hotfix', say: '', heard: ['hot fix', 'rótfix'] },
+  { term: 'pipeline', say: '', sayKokoro: 'páipilaine', heard: ['pipe line', 'paipline', 'paipelaine', 'Pipelini'] },
+  { term: 'hotfix', say: '', heard: ['hot fix', 'rótfix', 'Otifix', 'WatchFix'] },
   { term: 'rebase', say: '', heard: ['ribeis', 'rebeis'] },
-  { term: 'Gate', say: '', heard: ['gueite', 'guêit'] },
-  { term: 'pré-daily', say: '', heard: ['pre daily', 'pré deili', 'pré-deili'] },
-  { term: 'daily', say: '', heard: ['deili'] },
-  { term: 'GitLab', say: '', heard: ['git lab', 'guitlab'] },
-  { term: 'Teams', say: '', heard: ['tíms'] },
-  { term: 'Claude Code', say: '', heard: ['cloud code', 'clod code'] },
+  { term: 'Gate', say: '', sayKokoro: 'gueite', heard: ['gueite', 'guêit', 'GAT'] },
+  { term: 'pré-daily', say: '', heard: ['pre daily', 'pré deili', 'pré-deili', 'predale'] },
+  { term: 'daily', say: '', heard: ['deili', 'Daili'] },
+  { term: 'GitLab', say: '', heard: ['git lab', 'guitlab', 'JitLab', 'githlab'] },
+  { term: 'Teams', say: '', heard: ['tíms', 'TAMS', 'Tiamz'] },
+  { term: 'Claude Code', say: '', heard: ['cloud code', 'clod code', 'clode code', 'cloud codi'] },
 ];
 
 const MAX_TERMS = 300;
