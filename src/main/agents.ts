@@ -6,6 +6,7 @@ import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage } from '../shared/i18n';
+import { answeredText, callWord, chatRules, heardText, modeText, roleText, speechRules } from './agentVoice';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
@@ -262,23 +263,6 @@ export function qaMention(): string {
   return user ? `@${user}` : 'o usuário de QA';
 }
 
-const SPEECH_RULES =
-  'Português do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. ' +
-  'Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp"). ' +
-  'Fale só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.';
-
-// The chat is read, not heard: it completes the speech instead of repeating it.
-const CHAT_RULES =
-  '"texto": a mesma resposta para ler no chat, completa: pode ter listas curtas, `arquivo:linha`, comandos e os detalhes que não cabem na fala. ' +
-  'Quando um fluxo, uma sequência entre serviços ou a relação entre partes ficar mais clara desenhada, inclua um diagrama em bloco ```mermaid ' +
-  '(flowchart ou sequenceDiagram, rótulos curtos e entre aspas quando tiverem símbolos, sem estilos nem cores). Sem diagrama quando não ajudar. ' +
-  '"fala": a versão para ser ouvida, que segue as regras de fala abaixo e não lê o diagrama.';
-
-const ROLE =
-  'Você participa de uma cerimônia por voz do Luiz como agente de uma atividade. ' +
-  'A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. ' +
-  'Toda ação com efeito externo vira item da ata para o Luiz executar depois, com confirmação.';
-
 const WRAP_UP =
   'Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, ' +
   'com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.';
@@ -308,7 +292,7 @@ function source(name: string, input: Record<string, unknown>): string {
 // The prompt of an agent call: the role preamble (or the workspace's override), the VCS hints and the extra instructions of the config.
 function systemPrompt(role: ModelRole): string {
   const agents = getConfig().agents;
-  const preamble = agents.roles[role].promptOverride.trim() || ROLE;
+  const preamble = agents.roles[role].promptOverride.trim() || roleText();
   return [preamble, vcsHint(), agents.extraInstructions.trim(), agents.roles[role].extraInstructions.trim()].filter(Boolean).join('\n');
 }
 
@@ -486,13 +470,13 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
   if (same) return same;
   const fp = cardFingerprint(card);
   const prompt = [
-    `Você é o agente da atividade ${card.ref} na pré-daily por voz.`,
+    `Você é o agente da atividade ${card.ref} na pré-daily ${modeText()}.`,
     cardContext(card),
     'Se precisar, leia o spec (no máximo 3 leituras).',
     'Monte a sua vez: "fala" com até 60 palavras, dizendo o que mudou desde ontem, o próximo passo e o bloqueio.',
     'Se houver uma decisão que só o Luiz pode tomar, termine a fala com UMA pergunta objetiva e repita-a em "pergunta"; senão, "pergunta" é null.',
     `${OPTIONS_RULE} Ofereça opções quando houver pergunta ou bloqueio.`,
-    SPEECH_RULES,
+    speechRules(),
   ].join('\n');
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
@@ -517,13 +501,13 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
 export async function reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult> {
   const prompt = [
     turn.sessionId ? '' : `${cardContext(card)}\nSua fala foi: ${turn.speech}`,
-    `O Luiz respondeu por voz (a transcrição pode ter erros): «${text}»`,
+    `O Luiz respondeu ${answeredText()}: «${text}»`,
     '"ack": até 25 palavras confirmando o que você entendeu.',
     '"decisao": o que ficou decidido, ou null. "alvo": "spec" se muda escopo ou plano da issue e ela tem spec; "daily-report" se é lembrete pessoal sobre a atividade; "ata" no resto.',
     '"efeito": ação externa que o Luiz terá de executar depois com confirmação (push, MR, status, comentário, pipeline, reviewer, issue nova), ou null.',
     '"desbloqueio": true se ele pediu para aprofundar ou se a resposta pede investigação.',
     `${OPTIONS_RULE} Aqui, próximos passos possíveis depois desta resposta.`,
-    SPEECH_RULES,
+    speechRules(),
   ].join('\n');
   const schema = obj({
     ack: str,
@@ -556,11 +540,11 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
   const prompt = [
     sessionId
       ? ''
-      : `Desbloqueio por voz da atividade ${card.ref}. Investigue lendo spec, rules e GitLab (só leitura) antes de responder.\n${cardContext(card)}`,
-    `Pergunta do Luiz (transcrição por voz): «${question}»`,
-    '"fala": resposta em até 80 palavras, para ser ouvida.',
-    CHAT_RULES,
-    SPEECH_RULES,
+      : `Desbloqueio ${modeText()} da atividade ${card.ref}. Investigue lendo spec, rules e GitLab (só leitura) antes de responder.\n${cardContext(card)}`,
+    `Pergunta do Luiz (${heardText()}): «${question}»`,
+    '"fala": resposta em até 80 palavras.',
+    chatRules(),
+    speechRules(),
   ].join('\n');
   const r = await run<{ fala: string; texto: string }>('deep', prompt, obj({ fala: str, texto: str }), {
     maxTurns: 20,
@@ -623,17 +607,17 @@ export async function conflictAsk(context: string, question: string, sessionId: 
     sessionId
       ? ''
       : [
-          'Call sobre um conflito de sincronização com a main depois de uma release. Você explica; não resolve nada aqui.',
+          `${callWord()} sobre um conflito de sincronização com a main depois de uma release. Você explica; não resolve nada aqui.`,
           'Leia os dois lados no mirror da ferramenta (git -C <repo> merge-tree/diff/show/log, só leitura) e a skill post-release-sync, seção "Conflito: resolução manual".',
           'Explique: o que cada lado mudou, por que conflita e a resolução que você propõe (qual lado fica em cada trecho e o que testar depois).',
           'Seja econômico: comece pelo merge-tree dos arquivos em conflito e pelo diff de cada lado só nesses arquivos; no máximo umas 10 leituras antes de responder. Na dúvida, responda com o que já sabe e diga o que falta conferir.',
           'O ajuste será feito depois no Claude Code, numa worktree temporária, com confirmação do Luiz.',
           context,
         ].join('\n'),
-    `Pergunta do Luiz (transcrição por voz): «${question}»`,
-    '"fala": resposta em até 90 palavras, para ser ouvida.',
-    CHAT_RULES,
-    SPEECH_RULES,
+    `Pergunta do Luiz (${heardText()}): «${question}»`,
+    '"fala": resposta em até 90 palavras.',
+    chatRules(),
+    speechRules(),
   ].join('\n');
   const r = await run<{ fala: string; texto: string }>(
     'deep',
@@ -756,4 +740,4 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
-export { run as askAgent, obj, str, strOrNull, SPEECH_RULES, CHAT_RULES };
+export { run as askAgent, obj, str, strOrNull, speechRules, chatRules };

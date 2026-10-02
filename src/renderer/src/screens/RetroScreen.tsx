@@ -9,6 +9,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
+import { useVoiceEnabled } from '../i18n';
 
 function improvementEntry(m: Improvement): string {
   return [`### N. ${m.title}`, '', `**Dimensão:** ${m.dimension}`, '', `**O problema hoje:** ${m.problem}`, '', `**O que seria:** ${m.proposal}`, ''].join('\n');
@@ -74,6 +75,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
     },
     [retro],
   );
+  const voiceOn = useVoiceEnabled();
   const talk = useTalk(player, ask, setError);
 
   const copy = async (what: string, text: string) => {
@@ -94,7 +96,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <div style={{ fontSize: 19, fontWeight: 600 }}>Processo, não pessoas</div>
           </div>
           <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={talk.level} small />
-          {retro && (
+          {retro && voiceOn && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}
             </button>

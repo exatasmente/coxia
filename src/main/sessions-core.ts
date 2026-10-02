@@ -15,7 +15,7 @@ export interface SessionEntry {
   ref: string | null;
 }
 
-const REF = /^(?:Você é o agente da atividade|Desbloqueio por voz da atividade|Gate \d da issue|Passagem para o QA da issue|Call de reentrada da issue) (\S+?)[ .,:;]/;
+const REF = /^(?:Você é o agente da atividade|Desbloqueio (?:por voz|em texto) da atividade|Gate \d da issue|Passagem para o QA da issue|(?:Call|Conversa) de reentrada da issue) (\S+?)[ .,:;]/;
 
 export function entryOf(id: string, role: string, prompt: string, now = new Date()): SessionEntry {
   return { id, at: now.toISOString(), role, kind: classify(prompt), ref: REF.exec(prompt)?.[1] ?? null };

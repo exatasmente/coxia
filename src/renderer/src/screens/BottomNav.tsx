@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import type { Screen } from '../App';
 import { bottomNavActive, type NavKey } from '../dashboard';
+import { tv } from '../i18n';
 import { useIsPhone } from '../useIsPhone';
 import { ActionsIcon, CallIcon, HistoryIcon, HomeIcon, MoreIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
@@ -77,7 +78,7 @@ export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Pr
     <>
       <nav className="bnav" aria-label="Navegação principal">
         {item('today', 'Hoje', <HomeIcon />, () => go({ name: 'today' }))}
-        {item('call', 'Call', <CallIcon />, () => go({ name: 'call' }), { disabled: !hasCards, live: callLive, ariaLabel: callLive ? 'Call, em andamento' : 'Call' })}
+        {item('call', tv('nav.call'), <CallIcon />, () => go({ name: 'call' }), { disabled: !hasCards, live: callLive, ariaLabel: callLive ? tv('nav.call.live') : tv('nav.call') })}
         {item('actions', 'Ações', <ActionsIcon />, () => go({ name: 'actions' }), { badge: pendingActions, ariaLabel: pendingActions ? `Ações, ${pendingActions} pendentes` : 'Ações' })}
         {item('history', 'Histórico', <HistoryIcon />, () => go({ name: 'history' }))}
         {item('more', 'Mais', <MoreIcon />, () => setMore(true))}

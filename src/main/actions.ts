@@ -28,6 +28,7 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { issueProjectRef, qaNoteMarker, rc, requireVcsHost, vcsCliEnv } from './workspaceConfig';
+import { tv } from '../shared/i18n';
 
 const exec = promisify(execFile);
 const FILE = join(ATAS, 'acoes.json');
@@ -370,7 +371,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
-  if (a.kind === 'conflict') throw new Error('o conflito se resolve na tela dele: abra a call');
+  if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   update(id, (x) => ({ ...x, state: 'running' }));

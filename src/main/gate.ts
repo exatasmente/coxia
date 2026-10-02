@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
+import { chatRules, speechRules, askAgent, obj, str } from './agents';
+import { callWord, heardText, modeText } from './agentVoice';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
@@ -144,11 +145,11 @@ export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
   const option = gateOptions(card).find((o) => o.gate === gate);
   if (!option) throw new Error(`a #${card.iid} não tem artefato para o Gate ${gate}`);
   const prompt = [
-    `Gate ${gate} da issue ${card.ref} (${card.title}), por voz. Leia o artefato ${option.file} inteiro (e o que ele citar, se precisar).`,
+    `Gate ${gate} da issue ${card.ref} (${card.title}), ${modeText()}. Leia o artefato ${option.file} inteiro (e o que ele citar, se precisar).`,
     '"resumo": o Resumo do gate para ser ouvido, até 150 palavras: o que o artefato conclui ou propõe, os riscos e o que o Luiz está aprovando.',
     '"perguntas": o quiz.',
     QUIZ_RULES,
-    SPEECH_RULES,
+    speechRules(),
   ].join('\n');
   const r = await askAgent<{ resumo: string; perguntas: RawQuestion[] }>(
     'deep',
@@ -208,7 +209,7 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
         `Pergunta: ${q.text}`,
         `Opções: ${q.options.map((o, i) => `${LETTERS[i]}) ${o}`).join(' · ')}`,
         `Correta: ${LETTERS[q.correct]}) ${q.options[q.correct]}. Por quê: ${q.explanation}`,
-        `Resposta do Luiz (transcrição por voz): «${input.text ?? ''}»`,
+        `Resposta do Luiz (${heardText()}): «${input.text ?? ''}»`,
         '"comentario": uma frase dizendo o que acertou ou o que faltou, sem revelar a opção certa.',
       ].join('\n'),
       obj({ certa: { type: 'boolean' }, comentario: str }),
@@ -231,8 +232,8 @@ export async function explainGate(id: string, question: string): Promise<GateVie
       `Pontos que escaparam: ${missed.map((q) => `«${q.text}» → ${q.section}`).join(' | ') || 'nenhum'}`,
       `Pergunta do Luiz: «${question}»`,
       '"fala": até 90 palavras, para ser ouvida.',
-      CHAT_RULES,
-      SPEECH_RULES,
+      chatRules(),
+      speechRules(),
     ].join('\n'),
     obj({ fala: str, texto: str }),
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
@@ -317,7 +318,7 @@ export function recordGate(id: string): GateView {
     '',
     `## Gate ${g.gate} — ${g.label} (${new Date().toLocaleDateString('sv-SE')})`,
     '',
-    `**Veredito:** ${final ?? 'em andamento'} — ${g.rounds.length} rodada(s)${final === 'assertivo' ? ' até fechar' : ' até aqui'} · conduzido por voz no app de cerimônias`,
+    `**Veredito:** ${final ?? 'em andamento'} — ${g.rounds.length} rodada(s)${final === 'assertivo' ? ' até fechar' : ' até aqui'} · conduzido ${modeText()} no app de cerimônias`,
   ];
   g.rounds.forEach((r, ri) => {
     lines.push('', `### Rodada ${ri + 1}`, '', '| # | Pergunta (tipo) | Opções | Escolhida | Certa? |', '|---|---|---|---|---|');
@@ -328,7 +329,7 @@ export function recordGate(id: string): GateView {
     });
     const missed = r.questions.filter((_, qi) => r.answers[qi] && !r.answers[qi]?.correct);
     if (missed.length) {
-      lines.push('', `**Lacuna e como foi fechada:** ${missed.map((q) => `«${q.text}» — a resposta mora em ${q.section}`).join('; ')}.${g.talk.length ? ' Leitura assistida por voz.' : ''}`);
+      lines.push('', `**Lacuna e como foi fechada:** ${missed.map((q) => `«${q.text}» — a resposta mora em ${q.section}`).join('; ')}.${g.talk.length ? ` Leitura assistida ${modeText()}.` : ''}`);
     }
     lines.push('', `**Recurso visual produzido:** ${r.visual ? `mermaid — ${r.visual.description}${r.visual.inserted ? ` (inserido em ${basename(g.artifact)} › ${r.visual.heading})` : ' (não inserido)'}` : '—'}`);
   });

@@ -9,6 +9,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
+import { useVoiceEnabled } from '../i18n';
 
 function checklistText(q: Qa): string {
   return [`QA Checklist — #${q.iid} ${q.title}`, '', ...q.checklist.flatMap((s) => [`${s.title}:`, ...s.items.map((i) => `- [ ] ${i}`), ''])].join('\n');
@@ -62,6 +63,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
     },
     [card],
   );
+  const voiceOn = useVoiceEnabled();
   const talk = useTalk(player, ask, setError);
 
   const copy = async (what: string, text: string) => {
@@ -84,7 +86,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
-          {qa && (
+          {qa && voiceOn && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
             </button>

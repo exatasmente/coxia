@@ -14,6 +14,7 @@ import { TempoHoje } from './TempoHoje';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
+import { tv } from '../i18n';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -201,7 +202,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
           <h3>Pré-daily</h3>
           <p className="small muted">{c.cards ? `${ready} de ${cards.length} agentes prontos` : 'Montando cartões…'}</p>
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
-            {c.startedAt && !c.callEnded ? 'Voltar à call' : 'Entrar na call'}
+            {c.startedAt && !c.callEnded ? tv('call.back') : tv('call.enter')}
           </button>
         </div>
         <div className="cer">

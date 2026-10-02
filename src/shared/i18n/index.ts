@@ -12,6 +12,9 @@ export type Catalog = Record<string, string>;
 export type Params = Record<string, string | number>;
 export type Translate = (key: string, params?: Params) => string;
 
+/** Suffix of the variant a key has while voice is off: `call.enter` is the voice wording, `call.enter.novoice` the text one. */
+export const NOVOICE_SUFFIX = '.novoice';
+
 export const FALLBACK_LANGUAGE: Language = 'pt-BR';
 
 export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': ptBR, en };
@@ -30,6 +33,14 @@ function format(template: string, params?: Params): string {
   return params ? template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : template;
 }
 
+/** Voice-aware translator: with voice off it prefers `<key>.novoice` and falls back to the plain key (most strings are the same either way). */
+export function createVoiceTranslator(language: Language, voice: boolean, catalogs: Record<Language, Catalog> = CATALOGS): Translate {
+  const base = createTranslator(language, catalogs);
+  if (voice) return base;
+  const hasVariant = (key: string) => `${key}${NOVOICE_SUFFIX}` in (catalogs[language] ?? {}) || `${key}${NOVOICE_SUFFIX}` in (catalogs[FALLBACK_LANGUAGE] ?? {});
+  return (key, params) => base(hasVariant(key) ? `${key}${NOVOICE_SUFFIX}` : key, params);
+}
+
 export function createTranslator(language: Language, catalogs: Record<Language, Catalog> = CATALOGS): Translate {
   const active = catalogs[language] ?? {};
   const base = catalogs[FALLBACK_LANGUAGE] ?? {};
@@ -40,27 +51,53 @@ export function createTranslator(language: Language, catalogs: Record<Language, 
   };
 }
 
-// The language the running process uses. The renderer sets it from the workspace config at start and when the setting changes;
-// the main process sets it from the config it loaded.
+// The language (and whether voice is on) the running process uses. The renderer sets them from the workspace config at start and when
+// they change; the main process sets them from the config it loaded. Voice starts on: the wording the app always had.
 let current: Language = FALLBACK_LANGUAGE;
+let voice = true;
 let translate: Translate = createTranslator(current);
+let voiceTranslate: Translate = createVoiceTranslator(current, voice);
 const listeners = new Set<() => void>();
+
+function rebuild(): void {
+  translate = createTranslator(current);
+  voiceTranslate = createVoiceTranslator(current, voice);
+  for (const fn of listeners) fn();
+}
 
 export function setLanguage(language: Language): void {
   if (language === current) return;
   current = language;
-  translate = createTranslator(language);
-  for (const fn of listeners) fn();
+  rebuild();
 }
 
 export function getLanguage(): Language {
   return current;
 }
 
+/** Voice on or off: `tv` follows it. */
+export function setVoiceEnabled(on: boolean): void {
+  if (on === voice) return;
+  voice = on;
+  rebuild();
+}
+
+export function voiceEnabled(): boolean {
+  return voice;
+}
+
 export const t: Translate = (key, params) => translate(key, params);
 
-/** For useSyncExternalStore: re-render when the language changes. */
+/** Translate a string that says "call" while voice is on and "conversa"/"chat" while it is off (key + `.novoice`). */
+export const tv: Translate = (key, params) => voiceTranslate(key, params);
+
+/** For useSyncExternalStore: re-render when the language or the voice mode changes. */
 export function subscribeLanguage(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/** Snapshot for useSyncExternalStore: changes whenever the language or the voice mode does. */
+export function i18nSnapshot(): string {
+  return `${current}|${voice ? 'voice' : 'novoice'}`;
 }

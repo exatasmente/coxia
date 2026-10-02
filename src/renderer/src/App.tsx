@@ -4,6 +4,7 @@ import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
 import { setBargeIn, setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
+import { applyVoiceMode, useTv } from './i18n';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
 import { Glossario } from './screens/Glossario';
@@ -61,6 +62,8 @@ function sameScreenKey(s: Screen): string {
 }
 
 export function App() {
+  // Re-renders the whole tree when the language or the voice mode changes: the wording follows both.
+  useTv();
   const ceremony = useCeremony();
   useWorkspaces();
   const player = usePlayer();
@@ -85,6 +88,7 @@ export function App() {
   useEffect(() => {
     void api.listActions().then(setActions);
     void api.getSettings().then((s) => {
+      applyVoiceMode(s.voice.enabled);
       setSpeechEnabled(s.voice.speak);
       setBargeIn(s.voice.bargeIn);
     });
@@ -102,6 +106,7 @@ export function App() {
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
         else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
         else if (ev.type === 'settings') {
+          applyVoiceMode(ev.settings.voice.enabled);
           setSpeechEnabled(ev.settings.voice.speak);
           setBargeIn(ev.settings.voice.bargeIn);
         }

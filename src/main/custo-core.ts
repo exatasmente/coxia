@@ -6,13 +6,13 @@ export const DEFAULT_GOAL = 20;
 // A session belongs to the app when its first prompt starts like one of the prompts the app sends.
 const FIRST_PROMPTS: [RegExp, CustoKind][] = [
   [/^Você é o agente da atividade /, 'turn'],
-  [/^Desbloqueio por voz da atividade /, 'deep'],
+  [/^Desbloqueio (?:por voz|em texto) da atividade /, 'deep'],
   [/^Gate \d da issue /, 'gate'],
   [/^Passagem para o QA da issue /, 'qa'],
   [/^Retro semanal do Luiz/, 'retro'],
   [/^Escreva o texto que o Luiz vai colar no Teams/, 'teams'],
   [/^A issue \S*\d+ foi sincronizada com a main/, 'release'],
-  [/^Call sobre um conflito de sincronização/, 'release'],
+  [/^(?:Call|Conversa) sobre um conflito de sincronização/, 'release'],
   [/^Conflito de sincronização com a main depois de uma release/, 'release'],
 ];
 

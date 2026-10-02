@@ -11,6 +11,8 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { Diagram } from './Diagram';
 import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
+import { useVoiceEnabled } from '../i18n';
+import { voiceEnabled } from '../../../shared/i18n';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -50,6 +52,7 @@ export function Gate({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirmInsert, setConfirmInsert] = useState(false);
+  const voiceOn = useVoiceEnabled();
   const rec = useRecorder(() => void talkRef.current());
   const spokenFor = useRef<string | null>(null);
   const voice = c.voices?.moderator ?? null;
@@ -134,7 +137,7 @@ export function Gate({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -167,7 +170,7 @@ export function Gate({
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
-          {gate && (
+          {gate && voiceOn && (
             <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
               <MicIcon /> {rec.recording ? 'Enviar fala' : roundDone ? 'Perguntar (espaço)' : 'Responder (espaço)'}
             </button>

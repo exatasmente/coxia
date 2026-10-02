@@ -9,6 +9,8 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { FixHeard } from './FixHeard';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
+import { tv, useVoiceEnabled } from '../i18n';
+import { voiceEnabled } from '../../../shared/i18n';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
 
@@ -32,6 +34,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   const [draft, setDraft] = useState('');
   // follow-up replies the agent offered after the last answer, per card
   const [followUps, setFollowUps] = useState<Record<string, string[]>>({});
+  const voiceOn = useVoiceEnabled();
   const rec = useRecorder(() => void talkRef.current());
   const runId = useRef(0);
   const latest = useRef(c);
@@ -48,7 +51,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     const id = ++runId.current;
     c.start();
     const blocked = cards.filter((x) => x.blockers.length).length;
-    const text = `Bom dia. São ${cards.length} atividades, ${blocked} com bloqueio. Começo pelas bloqueadas. Para responder, aperte espaço, fale e aperte de novo.`;
+    const text = tv('call.opening', { total: cards.length, blocked });
     void (async () => {
       await new Promise((r) => setTimeout(r, 50));
       if (runId.current !== id) return;
@@ -190,7 +193,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -278,7 +281,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                           </div>
                           <div style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25 }}>{card.title}</div>
                           <div className="small" style={{ color: 'var(--on-night-muted)', marginTop: 4 }}>
-                            {card.mrs.join(' · ') || 'sem MR'} · voz {c.voiceOf(card.ref)?.label}
+                            {card.mrs.join(' · ') || 'sem MR'}{voiceOn && ` · voz ${c.voiceOf(card.ref)?.label}`}
                           </div>
                         </div>
                       </div>
@@ -286,7 +289,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                       <div className="row" style={{ gap: 16 }}>
                         <div className="chip chip-lg" style={{ background: 'var(--night-line)' }}>M</div>
                         <div>
-                          <div className="small" style={{ color: 'var(--on-night-muted)' }}>Moderador · voz {c.voices?.moderator.label}</div>
+                          <div className="small" style={{ color: 'var(--on-night-muted)' }}>Moderador{voiceOn && ` · voz ${c.voices?.moderator.label}`}</div>
                           <div style={{ fontSize: 21, fontWeight: 600 }}>Abertura da pré-daily</div>
                         </div>
                       </div>
@@ -334,7 +337,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             <section className="panel" aria-live="polite" style={{ gap: 4 }}>
               <div className="row spread" style={{ marginBottom: 6 }}>
                 <h2 className="section-title">Transcrição</h2>
-                <span className="faint">whisper local · últimas falas</span>
+                <span className="faint">{tv('call.transcript.note')}</span>
               </div>
               {c.log.slice(-8).map((l, i) => {
                 const spoken = l.who === 'Moderador' ? { who: 'Moderador', voice: c.voices?.moderator } : (() => {
@@ -346,7 +349,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                     <span className="at">{l.at}</span>
                     <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
                     <span className="text">{l.text}{l.who === 'Você' && <FixHeard text={l.text} />}</span>
-                    {spoken?.voice && (
+                    {voiceOn && spoken?.voice && (
                       <ReplayButton
                         playing={player.speaking === spoken.who && player.current === l}
                         label={`Ouvir de novo a fala de ${l.who}`}
@@ -360,7 +363,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
 
             {phase !== 'ended' && (
-              <div className="row composer call-controls" style={{ flexWrap: 'wrap' }} role="group" aria-label="Controles da call">
+              <div className="row composer call-controls" style={{ flexWrap: 'wrap' }} role="group" aria-label={tv('call.controls')}>
                 {card && offers.length > 0 && (
                   <div className="call-offers" role="group" aria-label="Respostas sugeridas pelo agente">
                     <span className="small muted">Responder com um toque:</span>
@@ -380,7 +383,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 >
                   <input
                     className="text-input"
-                    placeholder={card ? 'Ou digite a resposta (ou "próximo", "aprofunda")' : 'Digite "próximo" para começar'}
+                    placeholder={card ? tv('call.input.placeholder') : tv('call.input.placeholder.intro')}
                     aria-label="Resposta por texto"
                     value={draft}
                     disabled={phase === 'intro'}
@@ -391,11 +394,15 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="send-icon"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
                   </button>
                 </form>
-                <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
-                  <MicIcon />
-                  <span className="lbl">{rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}</span>
-                </button>
-                <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
+                {voiceOn && (
+                  <>
+                    <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
+                      <MicIcon />
+                      <span className="lbl">{rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}</span>
+                    </button>
+                    <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
+                  </>
+                )}
                 <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>
                 <ContinueInClaude sessionId={turn?.sessionId} />
                 <span className="grow" />
@@ -441,7 +448,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </div>
                 </div>
               ))}
-              <p className="faint" style={{ fontSize: 12, lineHeight: 1.45 }}>Nada daqui roda na call. Cada item vai para o Claude Code e espera o seu “sim”.</p>
+              <p className="faint" style={{ fontSize: 12, lineHeight: 1.45 }}>{tv('call.effectsNote')}</p>
             </section>
           </aside>
         </div>

@@ -9,7 +9,7 @@ export const APP_ENTRYPOINT = 'sdk-ts';
 // Anything else, including sessions that look similar, is the user's own work and is never listed.
 const APP_PROMPTS: [RegExp, string][] = [
   [/^Você é o agente da atividade /, 'fala do agente'],
-  [/^Desbloqueio por voz da atividade /, 'desbloqueio'],
+  [/^Desbloqueio (?:por voz|em texto) da atividade /, 'desbloqueio'],
   [/^Gate [12] da issue /, 'gate'],
   [/^Avalie uma resposta livre a uma pergunta de quiz de gate/, 'gate'],
   [/^Leitura assistida do ciclo de consolidação/, 'gate'],
@@ -17,15 +17,15 @@ const APP_PROMPTS: [RegExp, string][] = [
   [/^Nova rodada do quiz do Gate /, 'gate'],
   [/^Passagem para o QA da issue /, 'passagem para o QA'],
   [/^Pergunta do QA ou do Luiz na passagem /, 'passagem para o QA'],
-  [/^Retro semanal do Luiz, por voz/, 'retro'],
+  [/^Retro semanal do Luiz, (?:por voz|em texto)/, 'retro'],
   [/^Na retro, o Luiz disse /, 'retro'],
   [/^Escreva o texto que o Luiz vai colar no Teams/, 'texto do Teams'],
   [/^A issue \S*\d+ foi sincronizada com a main depois de uma release/, 'sincronização com a release'],
-  [/^Call sobre um conflito de sincronização com a main/, 'sincronização com a release'],
-  [/^Call de reentrada da issue /, 'reentrada'],
+  [/^(?:Call|Conversa) sobre um conflito de sincronização com a main/, 'sincronização com a release'],
+  [/^(?:Call|Conversa) de reentrada da issue /, 'reentrada'],
   [/^Revisão do MR \S+ \(issue /, 'revisão de MR'],
   [/^Com base no que você investigou sobre /, 'desbloqueio'],
-  [/^O Luiz respondeu por voz /, 'fala do agente'],
+  [/^O Luiz respondeu (?:por voz |por escrito)/, 'fala do agente'],
 ];
 
 export function appPromptKind(firstPrompt: string | null | undefined): string | null {

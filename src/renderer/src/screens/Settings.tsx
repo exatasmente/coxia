@@ -5,7 +5,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setBargeIn, setSpeechEnabled } from '../audio';
 import { autostartApi } from '../autostartApi';
-import { applyLanguage, useT } from '../i18n';
+import { applyLanguage, applyVoiceMode, tv, useT } from '../i18n';
 import { applyTheme } from '../theme';
 import { jobs, useJobs } from '../useJobs';
 import { FalaCostByModel } from './FalasCusto';
@@ -81,6 +81,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
     try {
       const saved = await api.saveSettings(s);
       setS(saved);
+      applyVoiceMode(saved.voice.enabled);
       setSpeechEnabled(saved.voice.speak);
       setBargeIn(saved.voice.bargeIn);
       clearSpeechCache();
@@ -286,7 +287,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             <input type="checkbox" checked={s.notifications} onChange={() => set((p) => ({ ...p, notifications: !p.notifications }))} />
             <span>
               <span style={{ fontWeight: 600, display: 'block' }}>Notificações</span>
-              <span className="small muted">Hora da pré-daily, bloqueio novo (com convite para a call) e mudança de status.</span>
+              <span className="small muted">{tv('settings.notifications.hint')}</span>
             </span>
           </label>
           <label className="check-row">
@@ -323,7 +324,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.appearance.title')}</h2>
-            <p className="small muted" style={{ marginTop: 4 }}>Vale ao salvar. A call e os painéis escuros ficam escuros nos dois temas.</p>
+            <p className="small muted" style={{ marginTop: 4 }}>{tv('settings.appearance.hint')}</p>
           </div>
           <div role="group" aria-label="Tema" className="row" style={{ gap: 8 }}>
             {THEME_LABELS.map(([value, label, hint]) => (
