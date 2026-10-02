@@ -225,7 +225,7 @@ run_update() {
       if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
         STARTED=1
         log "instalado e rodando: versão $(run_field version), commit $(run_field commit), compilado em $(run_field builtAt) (pid $pid)"
-        log "atualização concluída em $((SECONDS - t0))s"
+        log "atualização concluída em $((SECONDS - t0))s (log em $LOG, app em $APP_LOG)"
         return 0
       fi
     fi
