@@ -11,8 +11,15 @@ function darkTheme(): boolean {
 // Diagrams come from agents: strict mode sanitizes labels and blocks scripts and click handlers inside the SVG.
 async function renderSvg(id: string, code: string): Promise<string> {
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: darkTheme() ? 'dark' : 'default', fontFamily: 'IBM Plex Sans, system-ui, sans-serif' });
-  const { svg } = await mermaid.render(id, code);
-  return svg;
+  try {
+    const { svg } = await mermaid.render(id, code);
+    return svg;
+  } catch (e) {
+    // A failed render leaves its scratch container (and error graphic) in <body>.
+    document.getElementById(`d${id}`)?.remove();
+    document.getElementById(id)?.remove();
+    throw e;
+  }
 }
 
 function cleanCode(code: string): string {
