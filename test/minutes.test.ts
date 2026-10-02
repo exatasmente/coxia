@@ -144,24 +144,33 @@ describe('teamsKey: the Teams text is regenerated only when what it is written f
   });
 });
 
+const labels = { heading: 'Registro', noteTool: 'daily-report', noteFallback: 'nota do cartão', minutes: 'ata da cerimônia' };
+
 describe('destination of a decision', () => {
   it('goes to the plan registry when the card has a spec', () => {
     const c = card('sz4#1', { spec: { folder: '/s/#1-x', phase: 'Plan escrito', planFile: '/s/#1-x/bug/2_PLAN.md' } });
-    expect(destination(c, 'spec')).toBe('/s/#1-x/bug/2_PLAN.md › Registro');
+    expect(destination(c, 'spec', labels)).toBe('/s/#1-x/bug/2_PLAN.md › Registro');
   });
 
   it('falls back to the spec folder without a plan file', () => {
     const c = card('sz4#1', { spec: { folder: '/s/#1-x', phase: 'x', planFile: null } });
-    expect(destination(c, 'spec')).toBe('/s/#1-x › Registro');
+    expect(destination(c, 'spec', labels)).toBe('/s/#1-x › Registro');
   });
 
   it('goes to the ata when a spec decision has no spec', () => {
-    expect(destination(card('sz4#1'), 'spec')).toBe('ata da cerimônia');
+    expect(destination(card('sz4#1'), 'spec', labels)).toBe('ata da cerimônia');
   });
 
   it('goes to the daily-report note or the ata', () => {
-    expect(destination(card('sz4#1'), 'daily-report')).toBe('daily-report note sz4#1');
-    expect(destination(card('sz4#1'), 'ata')).toBe('ata da cerimônia');
+    expect(destination(card('sz4#1'), 'daily-report', labels)).toBe('daily-report note sz4#1');
+    expect(destination(card('sz4#1'), 'ata', labels)).toBe('ata da cerimônia');
+  });
+
+  it('follows the cycle: no decision log means the minutes, no card tool means a plain card note', () => {
+    const c = card('sz4#1', { spec: { folder: '/s/#1-x', phase: 'x', planFile: null } });
+    expect(destination(c, 'spec', { ...labels, heading: '' })).toBe('ata da cerimônia');
+    expect(destination(c, 'spec', { ...labels, heading: 'Decision log' })).toBe('/s/#1-x › Decision log');
+    expect(destination(c, 'daily-report', { ...labels, noteTool: null })).toBe('nota do cartão sz4#1');
   });
 });
 

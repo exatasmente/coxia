@@ -17,7 +17,9 @@ import type {
   ReentryPhase,
 } from '../shared/feedback';
 import { listActions, proposeGitlabAction } from './actions';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agents';
+import { askAgent, obj, str, strOrNull } from './agents';
+import { returnedFromQa } from '../shared/cycles/stages';
+import { cycle, formatTime, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
@@ -30,9 +32,10 @@ const exec = promisify(execFile);
 
 const SEEN_FILE = join(ATAS, 'feedback.json');
 const DIR = join(ATAS, 'feedback');
-// The team's pipeline skill, when one of the configured skills folders has it.
+// The team's pipeline skill (devCycle.pipelineSkill), when one of the configured skills folders has it.
 function pipelineSkill(): string | null {
-  return docsSources().skillsDirs.map((d) => join(d, 'agent-pipeline/SKILL.md')).find((f) => existsSync(f)) ?? null;
+  const name = cycle().pipelineSkill.trim();
+  return name ? (docsSources().skillsDirs.map((d) => join(d, name, 'SKILL.md')).find((f) => existsSync(f)) ?? null) : null;
 }
 const POOL = 4;
 const MAX_NOTICES = 4;
@@ -212,7 +215,9 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
   await pool(cards, POOL, async (card) => {
     const before = prev.issues[card.iid];
     const status = statuses.get(card.iid) ?? before?.status ?? null;
-    const returned = card.stage === 'Test Fail' || status === 'Failed testing';
+    const stageHit = returnedFromQa(cycle(), card.stage);
+    const statusHit = returnedFromQa(cycle(), status);
+    const returned = stageHit || statusHit;
     let qaNotes = before?.qaNotes ?? [];
     let freshNotes: GlNote[] = [];
     if (isIssueRef(card.ref) && /^\d+$/.test(card.iid)) {
@@ -231,7 +236,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
 
     // An issue or MR seen for the first time is only registered: its old notes are not news.
     if (before && returned && !before.returned) {
-      const why = card.stage === 'Test Fail' && status === 'Failed testing' ? 'Estágio Test Fail e status Failed testing.' : card.stage === 'Test Fail' ? 'Estágio Test Fail.' : 'Status Failed testing.';
+      const why = stageHit && statusHit ? cycleWord('cycle.feedback.whyBoth', { stage: card.stage ?? '', status: status ?? '' }) : stageHit ? cycleWord('cycle.feedback.whyStage', { stage: card.stage ?? '' }) : cycleWord('cycle.feedback.whyStatus', { status: status ?? '' });
       events.push({ kind: 'returned', card, why, note: freshNotes[0] ? excerpt(freshNotes[0].body) : null });
     } else if (freshNotes.length) {
       events.push({ kind: 'qa-note', card, where: `#${card.iid}`, note: excerpt(freshNotes[0].body) });
@@ -299,7 +304,7 @@ export async function checkFeedback(deps: Deps, cards?: Card[]): Promise<DetectR
 // ---------- reentry call ----------
 
 function now(): string {
-  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(new Date());
 }
 
 function reentryFile(iid: string): string {
@@ -343,25 +348,19 @@ const PHASES: ReentryPhase[] = ['F1', 'F3', 'F4', 'nenhuma'];
 export async function prepareReentry(card: Card): Promise<Reentry> {
   const notes = await qaNotesOf(card);
   const recent = notes.slice(0, 3);
-  const prompt = [
-    `Call de reentrada da issue ${card.ref} (${card.title}), por voz: o QA ou a revisão devolveu a atividade. Você explica ao Luiz o que voltou e onde ela reentra no pipeline.`,
-    `Estágio atual: ${card.stage ?? 'sem estágio'}. ${card.spec ? `Spec em ${card.spec.folder} (${card.spec.phase}); leia o Plan, a investigação ou o spec técnico e o ISSUE_COMPLETION, no máximo 5 leituras.` : 'A issue não tem pasta de spec: diga isso.'}`,
-    `MRs: ${JSON.stringify(card.mrPaths)}.`,
-    recent.length
-      ? `Comentários mais recentes do ${qaUser()} (a conta do QA), do mais novo para o mais antigo:\n${recent.map((n) => `--- ${n.where}, ${n.at}\n${n.body.slice(0, 5000)}`).join('\n')}`
-      : `Não há nota do ${qaUser()} na issue nem nos MRs. Diga isso e não invente achado do QA.`,
-    ...(pipelineSkill() ? [`Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de ${pipelineSkill()}.`] : []),
-    'Classifique o retorno:',
-    '- "defeito-novo": o QA expôs um defeito que o fix criou ou deixou aparecer, fora do que a issue tratava. Reentra em F1 (ciclo novo, nova investigação, Gate 1 novo).',
-    '- "causa-diferente": o problema é o mesmo sintoma, mas a causa não é a investigada. Reentra em F1.',
-    '- "so-plano": o fix não cumpre o que o Plan já descrevia, ou falta um detalhe dentro do Plan. Reentra em F4 com o mesmo Plan; F3 só se a correção tocar arquivo fora do Plan.',
-    '- "ambiente": a evidência do QA é inválida (login bloqueado, skip, ocupante do ambiente, versão diferente). "fase" é "nenhuma": não vira tarefa; corrige-se o ambiente e o QA reteste.',
-    'Se o comentário não bastar para classificar, escolha a mais provável e diga a dúvida em "duvida"; senão "duvida" é null.',
-    '"fala": até 130 palavras, para ser ouvida: o que o QA encontrou, a classificação, em que fase reentra e o primeiro passo.',
-    '"achou": o que o QA encontrou, em um parágrafo, com os cenários que falharam. "motivo": por que essa classificação, em uma ou duas frases.',
-    '"passos": de 2 a 4 passos do que o agente faz na reentrada, da coluna "O agente faz" da tabela, aplicados a esta issue (inclua o quiz do delta quando houver).',
-    SPEECH_RULES,
-  ].join('\n');
+  const qa = qaUser() || cycleWord('reentry.qaUserFallback');
+  const skill = pipelineSkill();
+  const prompt = cp('reentry.main', {
+    ref: card.ref,
+    title: card.title,
+    stage: card.stage ?? cp('reentry.noStage'),
+    specPart: card.spec ? cp('reentry.spec', { folder: card.spec.folder, phase: card.spec.phase, completion: rc().specLayout.documents.completion.replace(/\.md$/i, '') }) : cp('reentry.noSpec'),
+    mrs: JSON.stringify(card.mrPaths),
+    notesPart: recent.length
+      ? cp('reentry.notes', { qaUser: qa, notes: recent.map((n) => cp('reentry.note', { where: n.where, at: n.at, body: n.body.slice(0, 5000) }, { keepEmpty: ['body'] })).join('\n') })
+      : cp('reentry.noNotes', { qaUser: qa }),
+    pipelineLine: skill ? cp('reentry.pipelineLine', { skill }) : '',
+  });
   const r = await askAgent<{ fala: string; achou: string; classificacao: ReentryClass; motivo: string; fase: ReentryPhase; passos: string[]; duvida: string | null }>(
     'deep',
     prompt,
@@ -402,7 +401,7 @@ export async function askReentry(iid: string, question: string): Promise<Reentry
   if (!re) throw new Error('call de reentrada não preparada');
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do Luiz na reentrada da ${re.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    cp('reentry.ask', { ref: re.ref, question }),
     obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(re.sessionId ? { resume: re.sessionId } : {}) },
   );
@@ -468,22 +467,17 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
   const d = await getJson<GlDiscussion>(`${mrBase(mr)}/discussions/${id}`);
   const notes = realNotes(d);
   const pos = notes.find((n) => n.position)?.position;
-  const where = pos ? `${pos.new_path ?? pos.old_path}:${pos.new_line ?? pos.old_line ?? '?'}` : 'comentário geral, sem linha';
-  const prompt = [
-    `Revisão do MR ${mr.ref} (issue ${card.ref}, ${card.title}). Explique ao Luiz UMA discussão aberta do revisor e proponha o rascunho da resposta dele. Não publique nada.`,
-    card.spec ? `Spec em ${card.spec.folder} (${card.spec.phase}); consulte o Plan se o ponto tocar o escopo.` : '',
-    `Local: ${where}.`,
-    `Discussão ${id}, da mais antiga para a mais nova:\n${notes.map((n) => `--- ${n.author.username}, ${n.created_at}\n${n.body.slice(0, 4000)}`).join('\n')}`,
-    `Para ver o trecho, use glab api ${mrBase(mr)}/changes ou o MCP do GitLab (get_merge_request_details_and_changes); o checkout local pode estar em outra branch.`,
-    '"ponto": o que o revisor está pedindo ou questionando, em uma frase. "precisa_codigo": true se atender exige mudar o código.',
-    '"fala": até 90 palavras, para ser ouvida: o ponto, se o revisor tem razão pelo que você leu e o que o Luiz precisa decidir.',
-    '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa e com a acentuação correta. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
-    '"texto" explica o ponto; o rascunho da resposta vai só em "rascunho", sem repeti-lo no texto.',
-    CHAT_RULES,
-    SPEECH_RULES,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const where = pos ? `${pos.new_path ?? pos.old_path}:${pos.new_line ?? pos.old_line ?? '?'}` : cp('discussion.noLine');
+  const prompt = cp('discussion.main', {
+    mr: mr.ref,
+    ref: card.ref,
+    title: card.title,
+    specLine: card.spec ? cp('discussion.specLine', { folder: card.spec.folder, phase: card.spec.phase }) : '',
+    where,
+    id,
+    notes: notes.map((n) => cp('discussion.note', { author: n.author.username, at: n.created_at, body: n.body.slice(0, 4000) }, { keepEmpty: ['body'] })).join('\n'),
+    viewHint: cp('discussion.viewHint', { endpoint: mrBase(mr) }),
+  });
   const r = await askAgent<{ fala: string; texto: string; ponto: string; precisa_codigo: boolean; rascunho: string }>(
     'deep',
     prompt,

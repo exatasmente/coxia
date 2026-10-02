@@ -3,6 +3,7 @@ import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { configModule } from './configModule';
 import { register as conflictVerify } from './conflictVerify';
+import { cycleModule } from './cycle';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
 import { errorlog } from './errorlog';
@@ -23,6 +24,7 @@ export const MODULES: Module[] = [
   autostart,
   configModule,
   conflictVerify,
+  cycleModule,
   custoTempo,
   diagramFix,
   efeitos,

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { isReadyForQa } from '../../../shared/cycles/stages';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api } from '../api';
 import type { Ceremony } from '../ceremony';
+import { useCycle } from '../cycleApi';
 import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue, sortByUrgency } from '../dashboard';
 import { useIsPhone } from '../useIsPhone';
 import { useWatcherAlerts } from '../watchersApi';
@@ -22,6 +24,9 @@ const TOP = 3;
 export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
+  const cycle = useCycle();
+  const stages = useMemo(() => cycle?.stages ?? [], [cycle]);
+  const on = cycle?.ceremonies;
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
@@ -31,10 +36,10 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
   const ready = cards.filter((card) => c.turns[card.ref]).length;
-  const sorted = useMemo(() => sortByUrgency(cards, c.turns, c.answered), [cards, c.turns, c.answered]);
+  const sorted = useMemo(() => sortByUrgency(cards, c.turns, c.answered, stages), [cards, c.turns, c.answered, stages]);
   const blocked = sorted.filter((card) => card.blockers.length);
   const asking = pendingQuestions(sorted, c.turns, c.answered);
-  const forQa = cards.filter((card) => card.spec && /Code Review OK|Test Fail|Ready To Test/i.test(card.stage ?? ''));
+  const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : sorted;
   const visible = listOpen || filter !== 'all' ? shown : shown.slice(0, TOP);
   const needs = needsYou({ cards, turns: c.turns, answered: c.answered, actions, alerts });
@@ -53,7 +58,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     void api.getSettings().then((s) => setRetro({ day: s.schedule.retroDay, time: s.schedule.retroTime }), () => undefined);
   }, []);
 
-  const retroToday = !!retro && retroDue(now, retro.day, retro.time);
+  const retroToday = on?.retro !== false && !!retro && retroDue(now, retro.day, retro.time);
   const plan = agoraPlan({
     hasCards: !!c.cards,
     loadingCards: c.loadingCards,
@@ -93,7 +98,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         )}
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
-          <h1>{greeting(now.getHours())}, Luiz</h1>
+          <h1>{greeting(now.getHours())}{cycle?.userName ? `, ${cycle.userName}` : ''}</h1>
         </div>
       </div>
       <div className="dash-top-actions">
@@ -118,7 +123,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     </header>
   );
 
-  const agora = <AgoraCard plan={plan} onAction={onAgora} />;
+  // A cycle with no daily preparation has no call to start: the card and the filters that lead to it are left out.
+  const agora = on?.preDaily === false ? null : <AgoraCard plan={plan} onAction={onAgora} />;
   const tiles = <Tiles blocked={blocked.length} asking={asking.length} actions={pendingActions} onBlocked={() => showFilter('blocked')} onAsking={() => showFilter('ask')} onActions={() => go({ name: 'actions' })} />;
   const needsBlock = (
     <>
@@ -197,13 +203,16 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     <section className="dash-sec" aria-labelledby="cer-h">
       <h2 id="cer-h" className="section-title">Cerimônias</h2>
       <div className="cer-row">
+        {on?.preDaily !== false && (
         <div className="cer">
-          <h3>Pré-daily</h3>
+          <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : 'Pré-daily'}</h3>
           <p className="small muted">{c.cards ? `${ready} de ${cards.length} agentes prontos` : 'Montando cartões…'}</p>
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
             {c.startedAt && !c.callEnded ? 'Voltar à call' : 'Entrar na call'}
           </button>
         </div>
+        )}
+        {on?.unblock !== false && (
         <div className="cer">
           <h3>Desbloqueio</h3>
           <p className="small muted">{blocked.length ? `${blocked.length} com bloqueio` : 'Nenhuma bloqueada'}</p>
@@ -211,6 +220,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             {firstBlocked ? `Aprofundar #${firstBlocked.iid}` : 'Aprofundar'}
           </button>
         </div>
+        )}
+        {on?.qaHandoff !== false && (
         <div className="cer">
           <h3>Passagem ao QA</h3>
           <p className="small muted">{forQa.length ? `${forQa.length} pronta(s) para o QA` : 'Quando subir release'}</p>
@@ -229,11 +240,14 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             ))}
           </select>
         </div>
+        )}
+        {on?.retro !== false && (
         <div className="cer">
           <h3>Retro</h3>
           <p className="small muted">{retroToday ? 'É hoje, semanal' : 'Semanal, últimos 7 dias'}</p>
           <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>Abrir a retro</button>
         </div>
+        )}
       </div>
     </section>
   );

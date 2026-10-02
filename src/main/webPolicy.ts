@@ -18,8 +18,9 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 const WEB_ADMIN = /^web:/;
 
 // The configuration can name programs to run and folders to read, and the secrets store holds keys: reading the config and its schema is
-// open to a paired browser; saving it, the secrets and export/import files are not.
-const CONFIG_ADMIN = /^config:(save|secret|secrets|export|import)/;
+// open to a paired browser; saving it, the secrets and export/import files are not. The same goes for applying or importing a cycle template
+// and for scanning the machine's projects (it reads folders).
+const CONFIG_ADMIN = /^(config:(save|secret|secrets|export|import)|cycle:(apply|template-save|template-remove|template-pick)|agents:(scan|apply|summarize))/;
 
 export function webAccess(channel: string): WebAccess {
   if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel)) return 'deny';

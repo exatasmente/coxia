@@ -313,7 +313,7 @@
   },
   "gate-answer-free": {
    "role": "reply",
-   "prompt": "Avalie uma resposta livre a uma pergunta de quiz de gate. Ela só é certa se chega à mesma conclusão da opção correta, com o mesmo motivo.\nPergunta: x\nOpções: A) x · B) x · C) x · D) x\nCorreta: C) x. Por quê: x\nResposta do Luiz (transcrição por voz): «o cache é invalidado»\n\"comentario\": uma frase dizendo o que acertou ou o que faltou, sem revelar a opção certa.",
+   "prompt": "Avalie uma resposta livre a uma pergunta de quiz de gate. Ela só é certa se chega à mesma conclusão da opção correta, com o mesmo motivo.\nPergunta: x\nOpções: A) x · B) x · C) x · D) x\nCorreta: B) x. Por quê: x\nResposta do Luiz (transcrição por voz): «o cache é invalidado»\n\"comentario\": uma frase dizendo o que acertou ou o que faltou, sem revelar a opção certa.",
    "system": "Você participa de uma cerimônia por voz do Luiz como agente de uma atividade. A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. Toda ação com efeito externo vira item da ata para o Luiz executar depois, com confirmação.\nPara ler o GitLab: `glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), `glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou `glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.",
    "maxTurns": 2,
    "resume": null,

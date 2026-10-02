@@ -1,4 +1,5 @@
-import { LLM_ROLES, type DeepPartial, type LlmRole, type RoleModel, type StageDef, type WorkspaceConfig } from './types';
+import { sameFamily } from '../cycles/neutral';
+import { CARD_FIELDS, LLM_ROLES, type DeepPartial, type DevCycleConfig, type LlmRole, type PromptOverride, type RoleModel, type StageDef, type UserConfig, type WorkspaceConfig } from './types';
 
 // The one place where the original author's company and machine live: what the app hardcoded before the configuration existed.
 // It reaches a workspace only through the v1 migration (migrations.ts), so an existing install keeps working unchanged.
@@ -35,11 +36,95 @@ export const LEGACY_STAGES: StageDef[] = [
   { id: 'doing', label: 'Doing', match: ['Doing', 'In development', 'Blocked in development'], kind: 'development', rank: 2 },
 ];
 
+export const LEGACY_USER: UserConfig = { displayName: 'Luiz', article: 'o' };
+
+const pt = (text: string): PromptOverride => ({ 'pt-BR': text });
+
+// The wording of the original prompts that points at the author's own playbook, skills and tools. The generic text of the SDD template
+// leaves these out; this is how the migrated profile keeps saying exactly what it said before templates existed.
+export const LEGACY_PROMPT_OVERRIDES: Record<string, PromptOverride> = {
+  'rules.speechExamples': pt('Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp").'),
+  'gate.rulesRef': pt(' (agent-pipeline §2.1)'),
+  'gate.doc.note': pt('<!-- Registro do quiz de gate. Mecânica em @skills/agent-pipeline/SKILL.md §2.1. -->'),
+  'conflict.comment.rulesRef': pt(' (skill post-release-sync, "Convivência com o comentário do qa-release-branch")'),
+  'conflict.ask.skillRef': pt(' e a skill post-release-sync, seção "Conflito: resolução manual"'),
+  'qa.readHint': pt('Leia o diff pelo MCP do GitLab e os comentários da issue com glab api projects/{project}/issues/{iid}/notes'),
+  'qa.skillsLine': pt('Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).'),
+  'qa.releaseSkillRef': pt(' (skill qa-release-branch)'),
+  'retro.docsRef': pt(' e o playbook'),
+  'retro.focus': pt('Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.'),
+  'retro.improvementsFormat': pt('"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.'),
+  'reentry.pipelineLine': pt('Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de {skill}.'),
+  'discussion.viewHint': pt('Para ver o trecho, use glab api {endpoint}/changes ou o MCP do GitLab (get_merge_request_details_and_changes); o checkout local pode estar em outra branch.'),
+};
+
+/** The development cycle of the existing install: the SDD template with the author's specifics. Also what a v2 file that predates the cycle templates is completed with. */
+export function legacyCycle(): DevCycleConfig {
+  return {
+    templateId: 'sz-sdd',
+    ceremonies: { preDaily: true, unblock: true, gate: true, qaHandoff: true, retro: true, releaseConflicts: true },
+    ceremonyParams: {
+      preDaily: {
+        label: 'pré-daily',
+        speechWords: 60,
+        specReads: 3,
+        summaryTarget: 'Teams',
+        summaryStyle: 'Estilo dele: "Bom dia, pessoal!", depois parágrafos "Ontem:", "Hoje:" e "Bloqueios:", frases curtas, links das issues quando ajudar, sem tabela, sem markdown além das quebras de linha.',
+      },
+      unblock: { speechWords: 80 },
+      gate: { maxQuestions: 3, questionKinds: ['previsão', 'contrafactual', 'fronteira', 'side effect', 'rollback', 'regressão'], summaryWords: 150 },
+      qaHandoff: { speechWords: 150 },
+      retro: { windowDays: 7, speechWords: 150 },
+      releaseConflicts: { speechWords: 90 },
+    },
+    stages: LEGACY_STAGES,
+    stageMapping: [],
+    meanings: {
+      blocker: { stageKinds: ['blocked'], text: '' },
+      question: { enabled: true, text: 'cycle.meaning.question' },
+      readyForQa: { stageKinds: ['reviewApproved', 'returned', 'qa'], requiresSpec: true, text: '' },
+    },
+    enrichment: { specFolder: true, cardFields: [...CARD_FIELDS], extraFiles: [] },
+    prompts: sameFamily('sdd'),
+    promptOverrides: LEGACY_PROMPT_OVERRIDES,
+    pipelineSkill: 'agent-pipeline',
+    releaseLabelPattern: '^sz4-(\\d+\\.\\d+\\.\\d+)$',
+    specLayout: {
+      folderPrefix: '#{iid}-',
+      phaseFiles: [
+        { file: 'ISSUE_COMPLETION.md', label: 'ISSUE_COMPLETION escrito' },
+        { file: '3_TEST_PLAN.md', label: 'test plan escrito' },
+        { file: '4_TEST_PLAN.md', label: 'test plan escrito' },
+        { file: '2_PLAN.md', label: 'Plan escrito' },
+        { file: '3_PLAN.md', label: 'Plan escrito' },
+        { file: '2_SPEC_TECNICO.md', label: 'spec técnico escrito' },
+        { file: '1_SPEC_FUNCIONAL.md', label: 'spec funcional escrito' },
+        { file: '1_INVESTIGATION.md', label: 'investigação escrita' },
+        { file: '1_FINDINGS.md', label: 'findings escritos' },
+        { file: '0_RFC.md', label: 'RFC escrita' },
+        { file: '0_BUG_REPORT.md', label: 'bug report escrito' },
+      ],
+      planFiles: ['2_PLAN.md', '3_PLAN.md'],
+      gateFiles: [
+        { sub: 'bug', gate: 1, files: [['1_INVESTIGATION.md', 'Investigation']] },
+        { sub: 'bug', gate: 2, files: [['2_PLAN.md', 'Plan']] },
+        { sub: 'feat', gate: 1, files: [['1_SPEC_FUNCIONAL.md', 'Spec Funcional'], ['0_RFC.md', 'RFC']] },
+        { sub: 'feat', gate: 2, files: [['3_PLAN.md', 'Plan']] },
+        { sub: 'investigation', gate: 1, files: [['1_FINDINGS.md', 'Findings']] },
+      ],
+      decisionLog: { heading: 'Registro' },
+      documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
+    },
+    qa: { user: 'qa.interno' },
+  };
+}
+
 /** The company profile as a patch over the neutral defaults. Models come from the old settings (migrations.ts), not from here. */
 export function legacyProfile(): DeepPartial<WorkspaceConfig> {
   return {
     setupComplete: true,
     language: 'pt-BR',
+    user: LEGACY_USER,
     llm: {
       roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: LEGACY_PROVIDER_ID, model: LEGACY_DEFAULT_MODEL }])) as Record<LlmRole, RoleModel>,
       providers: [
@@ -85,38 +170,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
       mcpConfigFiles: [],
       specsDir: '~/projects/sz-playbook/.specs',
     },
-    devCycle: {
-      templateId: 'sz-sdd',
-      ceremonies: { preDaily: true, unblock: true, gate: true, qaHandoff: true, retro: true, releaseConflicts: true },
-      stages: LEGACY_STAGES,
-      releaseLabelPattern: '^sz4-(\\d+\\.\\d+\\.\\d+)$',
-      specLayout: {
-        folderPrefix: '#{iid}-',
-        phaseFiles: [
-          { file: 'ISSUE_COMPLETION.md', label: 'ISSUE_COMPLETION escrito' },
-          { file: '3_TEST_PLAN.md', label: 'test plan escrito' },
-          { file: '4_TEST_PLAN.md', label: 'test plan escrito' },
-          { file: '2_PLAN.md', label: 'Plan escrito' },
-          { file: '3_PLAN.md', label: 'Plan escrito' },
-          { file: '2_SPEC_TECNICO.md', label: 'spec técnico escrito' },
-          { file: '1_SPEC_FUNCIONAL.md', label: 'spec funcional escrito' },
-          { file: '1_INVESTIGATION.md', label: 'investigação escrita' },
-          { file: '1_FINDINGS.md', label: 'findings escritos' },
-          { file: '0_RFC.md', label: 'RFC escrita' },
-          { file: '0_BUG_REPORT.md', label: 'bug report escrito' },
-        ],
-        planFiles: ['2_PLAN.md', '3_PLAN.md'],
-        gateFiles: [
-          { sub: 'bug', gate: 1, files: [['1_INVESTIGATION.md', 'Investigation']] },
-          { sub: 'bug', gate: 2, files: [['2_PLAN.md', 'Plan']] },
-          { sub: 'feat', gate: 1, files: [['1_SPEC_FUNCIONAL.md', 'Spec Funcional'], ['0_RFC.md', 'RFC']] },
-          { sub: 'feat', gate: 2, files: [['3_PLAN.md', 'Plan']] },
-          { sub: 'investigation', gate: 1, files: [['1_FINDINGS.md', 'Findings']] },
-        ],
-        documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
-      },
-      qa: { user: 'qa.interno' },
-    },
+    devCycle: legacyCycle(),
     agents: { tools: { trackerMcpServer: 'gitlab-issue-analysis' } },
     voice: { enabled: true, depsInstalled: true },
     claudeSdk: { installed: true, version: null, path: null },

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, qaMention, str } from './agents';
+import { askAgent, obj, str } from './agents';
+import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
 import { issueProjectPath, issueWebUrl, rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
@@ -10,7 +11,7 @@ const DIR = join(ATAS, 'qa');
 const IID = /^\d+$/;
 
 function now(): string {
-  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(new Date());
 }
 
 function read(iid: string): QaHandoff | null {
@@ -40,18 +41,19 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
   const layout = rc().specLayout;
   const testPlans = layout.phaseFiles.map((f) => f.file).filter((f) => /TEST_PLAN/i.test(f));
   const noteUrl = issueWebUrl(card.iid);
-  const prompt = [
-    `Passagem para o QA da issue ${card.ref} (${card.title}), por voz. Você explica ao QA o que mudou e o que testar.`,
-    `Leia em ${card.spec.folder}: ${layout.documents.completion} (Testes do Desenvolvedor e checklist de impacto)${testPlans.length ? `, o plano de testes (${testPlans.join(' ou ')})` : ''}, o Plan e o que precisar.`,
-    `MRs: ${JSON.stringify(card.mrPaths)}. Leia o diff pelo MCP do GitLab e os comentários da issue com glab api projects/${issueProjectPath()}/issues/${card.iid}/notes, procurando a nota "${qaMention()}" (branch de release e pipelines).`,
-    'Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).',
-    '"fala": até 150 palavras para o QA ouvir: o que mudou para o usuário, onde testar, o que mais pode quebrar.',
-    '"mudou": um parágrafo em linguagem de produto, sem nome de classe.',
-    '"checklist": seções (ex.: "Cenários principais (fluxo feliz)", "Regressão", "Bordas") com itens verificáveis, cada um com ação e resultado esperado.',
-    '"riscos": o que pode quebrar além do fluxo corrigido. "ambiente": branch de release, pipeline e jobs de deploy pela nota do QA; se não houver nota, diga que a branch de release ainda não foi criada (skill qa-release-branch).',
-    `"nota_qa": o id da nota ${qaMention()} mais recente, ou null. "teams": ${noteUrl ? `se houver nota, exatamente "Bom dia!\\n\\nAtividades disponíveis para testes :\\n${noteUrl}#note_<id>"; sem nota, ""` : '""'}.`,
-    SPEECH_RULES,
-  ].join('\n');
+  const prompt = cp('qa.prepare', {
+    ref: card.ref,
+    title: card.title,
+    folder: card.spec.folder,
+    completion: layout.documents.completion,
+    testPlan: testPlans.length ? cp('qa.testPlan', { plans: testPlans.join(cp('qa.or')) }) : '',
+    mrs: JSON.stringify(card.mrPaths),
+    readHint: cp('qa.readHint', { project: issueProjectPath(), iid: card.iid }),
+    skillsLine: cp('qa.skillsLine'),
+    words: cycle().ceremonyParams.qaHandoff.speechWords,
+    releaseSkillRef: cp('qa.releaseSkillRef'),
+    handoff: noteUrl ? cp('qa.handoffWith', { message: cp('qa.handoffMessage', { url: noteUrl }) }) : cp('qa.handoffNone'),
+  });
   const r = await askAgent<{
     fala: string;
     mudou: string;
@@ -100,7 +102,7 @@ export async function askQa(iid: string, question: string): Promise<QaHandoff> {
   if (!q) throw new Error('passagem para o QA não preparada');
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do QA ou do Luiz na passagem da ${q.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    cp('qa.ask', { ref: q.ref, question }),
     obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(q.sessionId ? { resume: q.sessionId } : {}) },
   );
@@ -116,16 +118,16 @@ export function writeQaChecklist(iid: string): QaHandoff {
   const specs = rc().specsDir;
   if (!specs || !q.checklistFile.startsWith(specs)) throw new Error('checklist fora da pasta de specs');
   const body = [
-    `# QA Checklist — #${q.iid} ${q.title}`,
+    cp('qa.doc.title', { iid: q.iid, title: q.title }),
     '',
     `> ${q.changed.replace(/\n+/g, ' ')}`,
     `>`,
-    `> **Ambiente:** ${q.environment.replace(/\n+/g, ' ')}`,
-    `> Gerado na passagem para o QA por voz (${new Date().toLocaleDateString('sv-SE')}).`,
+    cp('qa.doc.environment', { environment: q.environment.replace(/\n+/g, ' ') }),
+    cp('qa.doc.generated', { date: new Date().toLocaleDateString('sv-SE') }),
     '',
     '---',
     ...q.checklist.flatMap((s, i) => ['', `## ${i + 1}. ${s.title}`, '', ...s.items.map((it) => `- [ ] ${it}`)]),
-    ...(q.risks.length ? ['', '## Riscos', '', ...q.risks.map((r) => `- ${r}`)] : []),
+    ...(q.risks.length ? ['', cp('qa.doc.risks'), '', ...q.risks.map((r) => `- ${r}`)] : []),
     '',
   ].join('\n');
   writeFileSync(q.checklistFile, body);

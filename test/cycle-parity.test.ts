@@ -20,6 +20,8 @@ let scenario: Scenario;
 beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-02T12:00:00'));
+  // The quiz shuffles the options of each question; a fixed value makes the shuffle, and so the letter of the right answer, repeatable.
+  vi.spyOn(Math, 'random').mockReturnValue(0.42);
   await installLegacyConfig();
   // The migrated profile points at the author's daily-report files; the test uses its own so nothing real is read.
   const dir = mkdtempSync(join(tmpdir(), 'cycle-parity-'));
@@ -36,6 +38,12 @@ beforeAll(async () => {
   calls.length = 0;
 });
 
+// The one place the new prompt differs from the original on purpose: the release comment prompt printed the text "${qaMention()}" because the
+// template was written in single quotes. It now says the QA mention it meant to say.
+const INTENDED: Record<string, (text: string) => string> = {
+  'release-comment': (text) => text.replace('${qaMention()}', '@qa.interno'),
+};
+
 describe('legacy parity: the migrated user gets the prompts and files the app produced before the cycle templates', () => {
   it('matches the golden captured from the original code', () => {
     if (process.env.UPDATE_GOLDEN === '1' || !existsSync(GOLDEN)) {
@@ -44,7 +52,10 @@ describe('legacy parity: the migrated user gets the prompts and files the app pr
     }
     const golden = JSON.parse(readFileSync(GOLDEN, 'utf8')) as Scenario;
     expect(Object.keys(scenario.prompts)).toEqual(Object.keys(golden.prompts));
-    for (const [name, want] of Object.entries(golden.prompts)) expect(scenario.prompts[name], name).toEqual(want);
+    for (const [name, want] of Object.entries(golden.prompts)) {
+      const fix = INTENDED[name];
+      expect(scenario.prompts[name], name).toEqual(fix ? { ...want, prompt: fix(want.prompt) } : want);
+    }
     expect(scenario.files).toEqual(golden.files);
   });
 });

@@ -1,4 +1,6 @@
-import { CEREMONY_IDS, CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type CeremonyId, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
+import { neutralDevCycle } from '../cycles/neutral';
+import { LEGACY_USER, legacyCycle } from './legacy';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // The values of the original author live in legacy.ts and reach a workspace only through the v1 migration.
@@ -17,6 +19,7 @@ export function neutralConfig(): WorkspaceConfig {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     setupComplete: false,
     language: 'pt-BR',
+    user: { displayName: '', article: '' },
     appearance: { theme: 'system' },
     notifications: true,
     closeToTray: true,
@@ -29,24 +32,12 @@ export function neutralConfig(): WorkspaceConfig {
     projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '' } },
     vcs: [],
     docs: { autoDetect: true, claudeMdRoots: [], skillsDirs: [], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null },
-    devCycle: {
-      templateId: 'none',
-      ceremonies: Object.fromEntries(CEREMONY_IDS.map((c) => [c, c !== 'qaHandoff' && c !== 'releaseConflicts'])) as Record<CeremonyId, boolean>,
-      stages: [],
-      releaseLabelPattern: '^v?(\\d+\\.\\d+\\.\\d+)$',
-      specLayout: {
-        folderPrefix: '#{iid}-',
-        phaseFiles: [],
-        planFiles: [],
-        gateFiles: [],
-        documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
-      },
-      qa: { user: null },
-    },
+    devCycle: neutralDevCycle(),
     agents: {
       tools: { files: true, skills: true, trackerMcp: true, trackerMcpServer: '', vcsCli: true, subagents: true },
       extraInstructions: '',
-      roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '' })),
+      persona: '',
+      roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '', persona: '', maxTurns: null, docs: { claudeMd: true, skills: true, rules: true, agents: true, knowledge: true, mcp: true } })),
     },
     voice: { enabled: true, engine: 'edge', sttModel: 'small', depsInstalled: false, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
     claudeSdk: { installed: false, version: null, path: null },
@@ -89,13 +80,22 @@ function completeProvider(p: Pick<LlmProvider, 'id' | 'kind'> & Partial<LlmProvi
   return Object.assign({ id: p.id, kind: p.kind, engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }, PROVIDER_DEFAULTS, p, { engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }) as LlmProvider;
 }
 
+// A file written for the existing install before cycle templates existed names the template "sz-sdd" and has none of the newer fields:
+// its blanks are the author's cycle, not the neutral one, so the migrated user keeps behaving exactly as before.
+function isLegacyCycle(partial: unknown): boolean {
+  const cycle = isPlain(partial) && isPlain(partial.devCycle) ? partial.devCycle : null;
+  return cycle?.templateId === 'sz-sdd';
+}
+
 /** Fills whatever a stored or imported config leaves out with the neutral default (forward compatible: a newer field never breaks an older file). */
 export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Record<string, unknown> | null | undefined): WorkspaceConfig {
-  const c = mergeDeep(neutralConfig(), partial ?? {});
+  const base = isLegacyCycle(partial) ? mergeDeep(neutralConfig(), { user: LEGACY_USER, devCycle: legacyCycle() }) : neutralConfig();
+  const c = mergeDeep(base, partial ?? {});
   return {
     ...c,
     llm: { ...c.llm, providers: c.llm.providers.map(completeProvider) },
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
+    devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) },
   };
 }

@@ -163,7 +163,7 @@ export interface DocsConfig {
 export const CEREMONY_IDS = ['preDaily', 'unblock', 'gate', 'qaHandoff', 'retro', 'releaseConflicts'] as const;
 export type CeremonyId = (typeof CEREMONY_IDS)[number];
 
-export const STAGE_KINDS = ['backlog', 'development', 'review', 'reviewApproved', 'qa', 'qaApproved', 'returned', 'done'] as const;
+export const STAGE_KINDS = ['backlog', 'development', 'review', 'reviewApproved', 'qa', 'qaApproved', 'returned', 'done', 'blocked'] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
 export interface StageDef {
@@ -199,6 +199,11 @@ export interface SpecLayout {
   /** Files that hold the plan, in order of preference. */
   planFiles: string[];
   gateFiles: GateFiles[];
+  /** The section of the plan where the decisions taken in the ceremonies are recorded. */
+  decisionLog: {
+    /** Heading text (matched as a substring of a "##" heading). Empty: decisions are never written into the plan, they stay in the minutes. */
+    heading: string;
+  };
   documents: {
     gateQuiz: string;
     completion: string;
@@ -206,11 +211,121 @@ export interface SpecLayout {
   };
 }
 
+/**
+ * Where a provider carries the stage of an issue. label: a (scoped) label; status: the issue status (GitLab work item status);
+ * field: a project board field (GitHub Projects v2; `name` is the field); state: the open/closed style state (Bitbucket and GitHub issues);
+ * column: a board column.
+ */
+export const STAGE_SOURCES = ['label', 'status', 'field', 'state', 'column'] as const;
+export type StageSource = (typeof STAGE_SOURCES)[number];
+
+export interface StageMappingRule {
+  /** Which kind of provider the rule is for; "any" applies to all of them. */
+  provider: VcsKind | 'any';
+  source: StageSource;
+  /** For source "field": the name of the project field (e.g. "Status"). Empty for the others. */
+  name: string;
+  /** Case-insensitive regular expression tested against the label, status, field value, state or column. */
+  pattern: string;
+  /** The StageDef id the match maps to. */
+  stage: string;
+}
+
+/** The roles a prompt is written for; each is one family of agent calls (the ids in each are in cycles/prompts.ts). */
+export const PROMPT_ROLES = ['turn', 'reply', 'deep', 'teams', 'gate', 'qa', 'retro', 'conflict'] as const;
+export type PromptRole = (typeof PROMPT_ROLES)[number];
+
+/** Fields of a card that the agent is shown. */
+export const CARD_FIELDS = ['ref', 'iid', 'title', 'stage', 'mrs', 'mrPaths', 'blockers', 'pending', 'changes', 'note', 'url'] as const;
+export type CardField = (typeof CARD_FIELDS)[number];
+
+/** Parameters of each ceremony. A text parameter is a catalog key or a literal, in the language of the team. */
+export interface CeremonyParams {
+  preDaily: {
+    /** How the team calls this ceremony ("pré-daily", "daily scrum", "standup"). */
+    label: string;
+    /** Words of the spoken turn of each agent. */
+    speechWords: number;
+    /** Reads of the spec the agent may do while preparing its turn; 0 tells it not to read. */
+    specReads: number;
+    /** Where the team summary of the ceremony is pasted (Teams, Slack...). Empty: a generic team chat. */
+    summaryTarget: string;
+    /** How the summary is written: greeting, sections, length. */
+    summaryStyle: string;
+  };
+  unblock: { speechWords: number };
+  gate: {
+    /** Most questions of one quiz round. */
+    maxQuestions: number;
+    /** The kinds of consequence question a quiz may use. */
+    questionKinds: string[];
+    summaryWords: number;
+  };
+  qaHandoff: { speechWords: number };
+  retro: {
+    /** Days the retro looks back over. */
+    windowDays: number;
+    speechWords: number;
+  };
+  releaseConflicts: { speechWords: number };
+}
+
+/** What the team means by the words the agents use. A text is a catalog key or a literal and may carry {userName}, {theUser}, {ofUser}. */
+export interface CycleMeanings {
+  blocker: {
+    /** A card in a stage of one of these kinds counts as blocked, whatever the provider reports. */
+    stageKinds: StageKind[];
+    /** What a blocker is, handed to the agent. Empty: nothing is said. */
+    text: string;
+  };
+  question: {
+    /** Agents end their turn with a question for the user when there is something only the user can decide. */
+    enabled: boolean;
+    /** What the agent may ask about; it goes after "if there is". */
+    text: string;
+  };
+  readyForQa: {
+    /** A card in a stage of one of these kinds is ready for the QA hand-off. */
+    stageKinds: StageKind[];
+    /** Only a card that has a spec folder can be handed to QA. */
+    requiresSpec: boolean;
+    /** What "ready for QA" means; shown to the agents. Empty: nothing is said. */
+    text: string;
+  };
+}
+
+/** What the agent is given about each card. */
+export interface CardEnrichment {
+  /** Look the issue's folder up in docs.specsDir and describe it on the card. */
+  specFolder: boolean;
+  /** Fields of the card the agent sees, in the card's own order. */
+  cardFields: CardField[];
+  /** Documents (relative to the spec folder, or to the projects root when they start with "./") the card names when they exist. */
+  extraFiles: string[];
+}
+
+export interface PromptOverride {
+  'pt-BR'?: string;
+  en?: string;
+}
+
 export interface DevCycleConfig {
-  /** Template this section was filled from ("none", "sz-sdd", later: "scrum", "kanban"...). Informational once edited. */
+  /** Template this section was filled from ("none", "sdd", "scrum", "kanban", "github-flow", "minimal", or a custom one). Informational once edited. */
   templateId: string;
   ceremonies: Record<CeremonyId, boolean>;
+  ceremonyParams: CeremonyParams;
   stages: StageDef[];
+  /** How a provider's states and labels map to the stages above, first match wins; StageDef.match is the fallback on free text. */
+  stageMapping: StageMappingRule[];
+  /** What blocker, question for me and ready for QA mean here. */
+  meanings: CycleMeanings;
+  enrichment: CardEnrichment;
+  /** Which prompt family each role uses ("sdd", "scrum", "kanban", "flow"); a prompt the family does not have falls back to "sdd". */
+  prompts: Record<PromptRole, string>;
+  /** Replaces one prompt text, per language, by its id (e.g. "turn.main"); the placeholders are the ones of the built-in text. */
+  promptOverrides: Record<string, PromptOverride>;
+  /** Name of the skill (a folder of docs.skillsDirs with a SKILL.md) that describes the team's pipeline; agents are pointed at it when a ceremony needs the rules. Empty: none. */
+  pipelineSkill: string;
   /** Regular expression for the label that says an issue shipped in a version. Group 1, when present, is the version shown. */
   releaseLabelPattern: string;
   specLayout: SpecLayout;
@@ -220,6 +335,15 @@ export interface DevCycleConfig {
   };
 }
 
+export interface AgentDocsSelection {
+  claudeMd: boolean;
+  skills: boolean;
+  rules: boolean;
+  agents: boolean;
+  knowledge: boolean;
+  mcp: boolean;
+}
+
 export interface AgentRoleConfig {
   /** The llm.roles entry this agent role calls. */
   modelRole: LlmRole;
@@ -227,6 +351,12 @@ export interface AgentRoleConfig {
   extraInstructions: string;
   /** Replaces the built-in role preamble when not empty. */
   promptOverride: string;
+  /** Persona or tone of this agent ("direct and brief", "formal"), appended after the shared one. */
+  persona: string;
+  /** Turn limit of every call of this role; null: each call keeps its own limit. */
+  maxTurns: number | null;
+  /** Which documentation sources of `docs` this role may read. */
+  docs: AgentDocsSelection;
 }
 
 export interface AgentToolsConfig {
@@ -245,6 +375,8 @@ export interface AgentsConfig {
   tools: AgentToolsConfig;
   /** Appended to every agent, before the role's own text. */
   extraInstructions: string;
+  /** Persona or tone shared by every agent; a role's own persona comes after it. */
+  persona: string;
   roles: Record<LlmRole, AgentRoleConfig>;
 }
 
@@ -337,11 +469,19 @@ export interface ClaudeSdkConfig {
   path: string | null;
 }
 
+export interface UserConfig {
+  /** How the agents and the screens address the person ("Ana"). Empty: they say "you" / "the user". */
+  displayName: string;
+  /** Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone, no article. Only pt-BR text reads it. */
+  article: '' | 'o' | 'a';
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
   setupComplete: boolean;
   language: Language;
+  user: UserConfig;
   appearance: { theme: Theme };
   notifications: boolean;
   closeToTray: boolean;

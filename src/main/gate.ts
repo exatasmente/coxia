@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
+import { askAgent, obj, str } from './agents';
+import { cycle, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
@@ -50,7 +51,6 @@ interface Gate {
 const DIR = join(ATAS, 'gates');
 const ID = /^[\w-]+$/;
 export const LETTERS = ['A', 'B', 'C', 'D'];
-const KINDS = ['previsão', 'contrafactual', 'fronteira', 'side effect', 'rollback', 'regressão'];
 
 function inSpecs(file: string): boolean {
   const specs = rc().specsDir;
@@ -58,7 +58,7 @@ function inSpecs(file: string): boolean {
 }
 
 function now(): string {
-  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(new Date());
 }
 
 function read(id: string): Gate {
@@ -101,18 +101,31 @@ export function gateOptions(card: Card): GateOption[] {
   const folder = card.spec.folder;
   return rc().specLayout.gateFiles.flatMap((c) => {
     const hit = c.files.find(([f]) => existsSync(join(folder, c.sub, f)));
-    return hit ? [{ gate: c.gate, label: hit[1], file: join(folder, c.sub, hit[0]) }] : [];
+    return hit ? [{ gate: c.gate, label: cycleWord(hit[1]), file: join(folder, c.sub, hit[0]) }] : [];
   });
 }
 
-const QUESTION = obj({
-  pergunta: str,
-  tipo: { enum: KINDS },
-  opcoes: { type: 'array', items: str, minItems: 4, maxItems: 4 },
-  correta: { type: 'integer', minimum: 0, maximum: 3 },
-  secao: str,
-  explicacao: str,
-});
+// The quiz as the cycle defines it: how many questions a round has and the kinds of consequence question it may use.
+function gateParams() {
+  const p = cycle().ceremonyParams.gate;
+  return { max: p.maxQuestions, kinds: p.questionKinds.map((k) => cycleWord(k)), words: p.summaryWords };
+}
+
+function questionSchema(kinds: string[]) {
+  return obj({
+    pergunta: str,
+    tipo: { enum: kinds },
+    opcoes: { type: 'array', items: str, minItems: 4, maxItems: 4 },
+    correta: { type: 'integer', minimum: 0, maximum: 3 },
+    secao: str,
+    explicacao: str,
+  });
+}
+
+function quizSchema(extra: Record<string, unknown>) {
+  const { max, kinds } = gateParams();
+  return obj({ ...extra, perguntas: { type: 'array', items: questionSchema(kinds), minItems: 1, maxItems: max } });
+}
 
 export type RawQuestion = { pergunta: string; tipo: string; opcoes: string[]; correta: number; secao: string; explicacao: string };
 
@@ -130,32 +143,21 @@ export function toQuestion(q: RawQuestion, random: () => number = Math.random): 
     correct: order.indexOf(q.correta),
     section: q.secao,
     // The explanation may cite the original letter; letters are dropped so it stays true after shuffling.
-    explanation: q.explicacao.replace(/\b(?:op[cç][aã]o|letra|alternativa)\s+[A-D]\b/gi, 'a opção certa'),
+    explanation: q.explicacao.replace(/\b(?:op[cç][aã]o|letra|alternativa|option|letter|choice)\s+[A-D]\b/gi, cp('gate.correctOption')),
   };
 }
 
-const QUIZ_RULES = [
-  'Regras do quiz (agent-pipeline §2.1): até 3 perguntas de CONSEQUÊNCIA (previsão, contrafactual, fronteira, side effect, rollback, regressão), nunca fato localizável por busca;',
-  'cada uma com 4 opções plausíveis e uma certa; os distratores saem de leituras erradas reais do artefato; nunca "todas as anteriores", nunca absurdo de propósito;',
-  'com mais de 3 pontos de risco, escolha os 3 de maior consequência. Em "secao" cite arquivo + heading exato onde a resposta mora; em "explicacao", por que a certa é a certa (2 frases).',
-].join('\n');
+function quizRules(): string {
+  const { max, kinds } = gateParams();
+  return cp('gate.rules', { rulesRef: cp('gate.rulesRef'), max, kinds: kinds.join(', ') });
+}
 
 export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
   const option = gateOptions(card).find((o) => o.gate === gate);
   if (!option) throw new Error(`a #${card.iid} não tem artefato para o Gate ${gate}`);
-  const prompt = [
-    `Gate ${gate} da issue ${card.ref} (${card.title}), por voz. Leia o artefato ${option.file} inteiro (e o que ele citar, se precisar).`,
-    '"resumo": o Resumo do gate para ser ouvido, até 150 palavras: o que o artefato conclui ou propõe, os riscos e o que o Luiz está aprovando.',
-    '"perguntas": o quiz.',
-    QUIZ_RULES,
-    SPEECH_RULES,
-  ].join('\n');
-  const r = await askAgent<{ resumo: string; perguntas: RawQuestion[] }>(
-    'deep',
-    prompt,
-    obj({ resumo: str, perguntas: { type: 'array', items: QUESTION, minItems: 1, maxItems: 3 } }),
-    { maxTurns: 16 },
-  );
+  const { words } = gateParams();
+  const prompt = cp('gate.start', { gate, ref: card.ref, title: card.title, file: option.file, words, quizRules: quizRules() });
+  const r = await askAgent<{ resumo: string; perguntas: RawQuestion[] }>('deep', prompt, quizSchema({ resumo: str }), { maxTurns: 16 });
   const g: Gate = {
     id: `${card.iid}-gate${gate}-${Date.now().toString(36)}`,
     ref: card.ref,
@@ -203,14 +205,13 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
   } else {
     const r = await askAgent<{ certa: boolean; comentario: string }>(
       'reply',
-      [
-        'Avalie uma resposta livre a uma pergunta de quiz de gate. Ela só é certa se chega à mesma conclusão da opção correta, com o mesmo motivo.',
-        `Pergunta: ${q.text}`,
-        `Opções: ${q.options.map((o, i) => `${LETTERS[i]}) ${o}`).join(' · ')}`,
-        `Correta: ${LETTERS[q.correct]}) ${q.options[q.correct]}. Por quê: ${q.explanation}`,
-        `Resposta do Luiz (transcrição por voz): «${input.text ?? ''}»`,
-        '"comentario": uma frase dizendo o que acertou ou o que faltou, sem revelar a opção certa.',
-      ].join('\n'),
+      cp('gate.answer', {
+        question: q.text,
+        options: q.options.map((o, i) => `${LETTERS[i]}) ${o}`).join(' · '),
+        correct: `${LETTERS[q.correct]}) ${q.options[q.correct]}`,
+        why: q.explanation,
+        text: input.text ?? '',
+      }),
       obj({ certa: { type: 'boolean' }, comentario: str }),
       { maxTurns: 2 },
     );
@@ -226,14 +227,11 @@ export async function explainGate(id: string, question: string): Promise<GateVie
   const missed = round.questions.filter((_, i) => round.answers[i] && !round.answers[i]?.correct);
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [
-      'Leitura assistida do ciclo de consolidação (agent-pipeline §2.1): leia com o Luiz só a seção onde mora o ponto que escapou, passo a passo, respondendo o que ele perguntar. Não reapresente o artefato inteiro.',
-      `Pontos que escaparam: ${missed.map((q) => `«${q.text}» → ${q.section}`).join(' | ') || 'nenhum'}`,
-      `Pergunta do Luiz: «${question}»`,
-      '"fala": até 90 palavras, para ser ouvida.',
-      CHAT_RULES,
-      SPEECH_RULES,
-    ].join('\n'),
+    cp('gate.explain', {
+      rulesRef: cp('gate.rulesRef'),
+      missed: missed.map((q) => `«${q.text}» → ${q.section}`).join(' | ') || cp('gate.explainNone'),
+      question,
+    }),
     obj({ fala: str, texto: str }),
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
@@ -247,13 +245,10 @@ export async function visualGate(id: string): Promise<GateView> {
   const round = g.rounds[g.rounds.length - 1];
   const missed = round.questions.filter((_, i) => !round.answers[i]?.correct);
   if (!missed.length) throw new Error('nenhum ponto errado nesta rodada');
+  const points = missed.map((q) => cp('gate.visualPoint', { text: q.text, correct: q.options[q.correct], section: q.section })).join(' | ');
   const r = await askAgent<{ mermaid: string; heading: string; descricao: string }>(
     'deep',
-    [
-      `Produza o recurso visual do ciclo de consolidação para ${g.artifact}, mirando o ponto que escapou: ${missed.map((q) => `«${q.text}» (certa: ${q.options[q.correct]}; seção ${q.section})`).join(' | ')}.`,
-      'Mermaid (flowchart ou sequenceDiagram) por padrão; só o código, sem cercas ```.',
-      '"heading": o texto EXATO de um heading do artefato (sem os #), onde o diagrama vai entrar, no fim da seção. "descricao": uma frase dizendo o que o diagrama mostra.',
-    ].join('\n'),
+    cp('gate.visual', { artifact: g.artifact, missed: points }),
     obj({ mermaid: str, heading: str, descricao: str }),
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
@@ -275,7 +270,7 @@ export function insertGateVisual(id: string): GateView {
   let end = lines.findIndex((l, i) => i > start && /^#{1,6} /.test(l) && (/^#+/.exec(l) as RegExpExecArray)[0].length <= level);
   if (end < 0) end = lines.length;
   while (end > start + 1 && lines[end - 1].trim() === '') end--;
-  lines.splice(end, 0, '', `<!-- recurso visual do quiz de gate (${new Date().toLocaleDateString('sv-SE')}): ${v.description} -->`, '```mermaid', v.mermaid, '```');
+  lines.splice(end, 0, '', cp('gate.doc.visualComment', { date: new Date().toLocaleDateString('sv-SE'), description: v.description }), '```mermaid', v.mermaid, '```');
   writeFileSync(g.artifact, lines.join('\n'));
   v.inserted = true;
   return view(write(g));
@@ -288,14 +283,15 @@ export async function newGateRound(id: string): Promise<GateView> {
   const asked = g.rounds.flatMap((r) => r.questions.map((q) => q.text));
   const r = await askAgent<{ perguntas: RawQuestion[] }>(
     'deep',
-    [
-      `Nova rodada do quiz do Gate ${g.gate} de ${g.ref} sobre o mesmo ponto que escapou, com perguntas NOVAS (não as mesmas reembaralhadas), mais o que ficou pendente.`,
-      `Pontos: ${missed.map((q) => `«${q.text}» (${q.section})`).join(' | ')}`,
-      `Já perguntado: ${asked.map((t) => `«${t}»`).join(' ')}`,
-      `Releia ${g.artifact}: a seção pode ter mudado.`,
-      QUIZ_RULES,
-    ].join('\n'),
-    obj({ perguntas: { type: 'array', items: QUESTION, minItems: 1, maxItems: 3 } }),
+    cp('gate.round', {
+      gate: g.gate,
+      ref: g.ref,
+      points: missed.map((q) => `«${q.text}» (${q.section})`).join(' | '),
+      asked: asked.map((t) => `«${t}»`).join(' '),
+      artifact: g.artifact,
+      quizRules: quizRules(),
+    }),
+    quizSchema({}),
     { maxTurns: 10, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
   g.rounds.push({ questions: r.data.perguntas.map((q) => toQuestion(q)), answers: r.data.perguntas.map(() => null), visual: null });
@@ -315,29 +311,35 @@ export function recordGate(id: string): GateView {
   const final = verdicts[verdicts.length - 1];
   const lines = [
     '',
-    `## Gate ${g.gate} — ${g.label} (${new Date().toLocaleDateString('sv-SE')})`,
+    cp('gate.doc.heading', { gate: g.gate, label: g.label, date: new Date().toLocaleDateString('sv-SE') }),
     '',
-    `**Veredito:** ${final ?? 'em andamento'} — ${g.rounds.length} rodada(s)${final === 'assertivo' ? ' até fechar' : ' até aqui'} · conduzido por voz no app de cerimônias`,
+    cp('gate.doc.verdict', {
+      verdict: final === 'assertivo' ? cp('gate.doc.verdictRight') : final ? cp('gate.doc.verdictWrong') : cp('gate.doc.verdictOpen'),
+      rounds: g.rounds.length,
+      tail: final === 'assertivo' ? cp('gate.doc.tailDone') : cp('gate.doc.tailOpen'),
+    }),
   ];
   g.rounds.forEach((r, ri) => {
-    lines.push('', `### Rodada ${ri + 1}`, '', '| # | Pergunta (tipo) | Opções | Escolhida | Certa? |', '|---|---|---|---|---|');
+    lines.push('', cp('gate.doc.round', { n: ri + 1 }), '', cp('gate.doc.table'));
     r.questions.forEach((q, qi) => {
       const a = r.answers[qi];
-      const chosen = !a ? '—' : a.choice !== null ? LETTERS[a.choice] : `Other: "${cell(a.other ?? '')}"`;
-      lines.push(`| ${qi + 1} | ${cell(q.text)} (${q.kind}) | ${q.options.map((o, i) => `${LETTERS[i]}) ${cell(o)}`).join(' · ')} | ${chosen} | ${!a ? '—' : a.correct ? 'sim' : '**não**'} |`);
+      const chosen = !a ? '—' : a.choice !== null ? LETTERS[a.choice] : cp('gate.doc.other', { text: cell(a.other ?? '') });
+      lines.push(`| ${qi + 1} | ${cell(q.text)} (${q.kind}) | ${q.options.map((o, i) => `${LETTERS[i]}) ${cell(o)}`).join(' · ')} | ${chosen} | ${!a ? '—' : a.correct ? cp('gate.doc.yes') : cp('gate.doc.no')} |`);
     });
     const missed = r.questions.filter((_, qi) => r.answers[qi] && !r.answers[qi]?.correct);
     if (missed.length) {
-      lines.push('', `**Lacuna e como foi fechada:** ${missed.map((q) => `«${q.text}» — a resposta mora em ${q.section}`).join('; ')}.${g.talk.length ? ' Leitura assistida por voz.' : ''}`);
+      lines.push('', cp('gate.doc.gap', { items: missed.map((q) => cp('gate.doc.gapItem', { text: q.text, section: q.section })).join('; '), voice: g.talk.length ? cp('gate.doc.gapVoice') : '' }));
     }
-    lines.push('', `**Recurso visual produzido:** ${r.visual ? `mermaid — ${r.visual.description}${r.visual.inserted ? ` (inserido em ${basename(g.artifact)} › ${r.visual.heading})` : ' (não inserido)'}` : '—'}`);
+    const visual = r.visual
+      ? r.visual.inserted
+        ? cp('gate.doc.visualDone', { description: r.visual.description, file: basename(g.artifact), heading: r.visual.heading })
+        : cp('gate.doc.visualPending', { description: r.visual.description })
+      : '—';
+    lines.push('', cp('gate.doc.visual', { value: visual }));
   });
   lines.push('');
   if (!existsSync(g.quizFile)) {
-    writeFileSync(
-      g.quizFile,
-      `# Gate quiz — #${g.iid} ${g.title}\n\n<!-- Registro do quiz de gate. Mecânica em @skills/agent-pipeline/SKILL.md §2.1. -->\n`,
-    );
+    writeFileSync(g.quizFile, cp('gate.doc.title', { iid: g.iid, title: g.title, note: cp('gate.doc.note') }));
   }
   writeFileSync(g.quizFile, `${readFileSync(g.quizFile, 'utf8').replace(/\n*$/, '\n')}${lines.join('\n')}`);
   g.recorded = new Date().toISOString();

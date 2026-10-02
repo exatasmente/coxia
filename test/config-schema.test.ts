@@ -38,7 +38,8 @@ describe('config schema', () => {
   it('describes exactly the keys the defaults and the legacy profile can hold (types, schema and defaults cannot drift apart)', () => {
     const declared = new Set(schemaKeys(CONFIG_SCHEMA));
     const holds = new Set([...valueKeys(neutralConfig()), ...valueKeys(mergeDeep(neutralConfig(), legacyProfile()))]);
-    expect([...holds].filter((k) => !declared.has(k))).toEqual([]);
+    // promptOverrides is a map keyed by prompt id: its keys are data, not fields.
+    expect([...holds].filter((k) => !declared.has(k) && !k.startsWith('devCycle.promptOverrides.'))).toEqual([]);
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
     const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]'));
     expect(optionalOnlyInItems).toEqual([]);

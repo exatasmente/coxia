@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { Decision, Minutes, SaveResult } from '../shared/types';
 import { ATAS } from './env';
 import { invalidateReport } from './report';
+import { decisionLogHeading, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
 
@@ -41,20 +42,21 @@ function minutesMarkdown(m: Minutes, teams: string): string {
 }
 
 function planPath(dest: string): string | null {
-  const path = dest.replace(/ › Registro$/, '');
+  const path = dest.replace(/ › [^›]*$/, '');
   return path.endsWith('.md') && existsSync(path) ? path : null;
 }
 
 function writeSpecRegistro(d: Decision): { ok: boolean; detail: string } {
   const path = planPath(d.dest);
-  if (!path) return { ok: false, detail: 'issue sem Plan: ficou só na ata' };
+  if (!path) return { ok: false, detail: cycleWord('cycle.log.noPlan') };
   const text = readFileSync(path, 'utf8');
-  const heading = /^##+ .*Registro.*$/m.exec(text);
-  if (!heading) return { ok: false, detail: 'Plan sem seção Registro: ficou só na ata' };
+  const name = decisionLogHeading();
+  const heading = name ? new RegExp(`^##+ .*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*$`, 'm').exec(text) : null;
+  if (!heading) return { ok: false, detail: cycleWord('cycle.log.noHeading', { heading: name }) };
   const start = heading.index + heading[0].length;
   const nextHeading = text.slice(start).search(/^#{1,2} /m);
   const end = nextHeading === -1 ? text.length : start + nextHeading;
-  const entry = `- ${today()} (pré-daily por voz): ${d.text}\n`;
+  const entry = `${cp('turn.doc.logEntry', { date: today(), text: d.text })}\n`;
   const before = text.slice(0, end).replace(/\n*$/, '\n');
   writeFileSync(path, `${before}${entry}${end < text.length ? '\n' : ''}${text.slice(end)}`);
   return { ok: true, detail: path };

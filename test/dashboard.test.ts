@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
+import { LEGACY_STAGES } from '../src/shared/config/legacy';
 import type { WatcherAlert } from '../src/shared/watchers';
 import {
   agoraPlan,
@@ -148,13 +149,13 @@ describe('sortByUrgency', () => {
     const ready = card('5', { stage: 'Ready To Test' });
     const block = card('6', { blockers: ['x'] });
     const turns = { [ask.ref]: turn(ask.ref, { question: '?' }), [ask2.ref]: turn(ask2.ref, { question: '?' }) };
-    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true });
+    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true }, LEGACY_STAGES);
     expect(sorted.map((c) => c.iid)).toEqual(['6', '3', '4', '5', '1', '2', '9']);
   });
 
   it('does not mutate the input', () => {
     const input = [card('1'), card('2', { blockers: ['x'] })];
-    sortByUrgency(input, {}, {});
+    sortByUrgency(input, {}, {}, LEGACY_STAGES);
     expect(input.map((c) => c.iid)).toEqual(['1', '2']);
   });
 });

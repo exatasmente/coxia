@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Card, ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api } from '../api';
+import { useCycle } from '../cycleApi';
 import { conflictMrs } from '../dashboard';
 import { jobs, useJobs } from '../useJobs';
 
@@ -10,6 +11,7 @@ export type ConflictPlace = 'deep' | 'need' | 'act';
 /** One "Resolver conflito" button per MR of the card that the report blocks for conflicts. Creates (or reuses) the resolution and opens it. */
 export function ResolveConflict({ card, go, place, only, className = 'btn btn-amber' }: { card: Card; go: (s: Screen) => void; place: ConflictPlace; only?: string; className?: string }) {
   const [error, setError] = useState<string | null>(null);
+  const cycle = useCycle();
   const prefix = `conflictmr:${place}:${card.ref}:`;
   const running = useJobs<ReleaseAction>(prefix, {
     done: (a, _job, late) => {
@@ -18,7 +20,8 @@ export function ResolveConflict({ card, go, place, only, className = 'btn btn-am
     failed: (e) => setError(e),
   });
   const mrs = conflictMrs(card).filter((m) => !only || m.ref === only);
-  if (!mrs.length) return null;
+  // The release and conflict ceremony is part of the cycle: a cycle without it has no conflict button.
+  if (!mrs.length || cycle?.ceremonies.releaseConflicts === false) return null;
 
   const start = (ref: string) => {
     setError(null);

@@ -5,6 +5,7 @@ import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
+import { destinationLabels, useCycle } from '../cycleApi';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -35,6 +36,7 @@ export function Deep({
   passedCard?: Card;
 }) {
   const card = c.cards?.cards.find((x) => x.ref === refName) ?? passedCard;
+  const cycle = useCycle();
   const { sessionId, msgs, sources, options, pick, saved } = c.deep[refName] ?? EMPTY_DEEP;
   const { updateDeep } = c;
   const update = useCallback((change: (d: DeepState) => DeepState) => updateDeep(refName, change), [updateDeep, refName]);
@@ -145,7 +147,7 @@ export function Deep({
 
   const keep = () => {
     if (!chosen) return;
-    c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target) });
+    c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target, destinationLabels(cycle)) });
     if (chosen.effect) c.addEffect({ ref: card.ref, text: chosen.effect, repo: card.mrs[0]?.split('!')[0] ?? card.ref.split('#')[0] });
     c.markAnswered(card.ref);
     update((d) => ({ ...d, saved: true }));
@@ -249,7 +251,7 @@ export function Deep({
               <section className="panel" style={{ border: saved ? '2px solid var(--teal)' : undefined }}>
                 <h2 className="section-title">Vai para a ata</h2>
                 <div className="small" style={{ lineHeight: 1.5 }}>{chosen.decision}</div>
-                <div className="dest">→ {destination(card, target)}</div>
+                <div className="dest">→ {destination(card, target, destinationLabels(cycle))}</div>
                 <button type="button" className={`btn ${saved ? 'btn-on' : 'btn-dark'}`} disabled={saved} onClick={keep}>
                   {saved ? 'Na ata' : 'Levar para a ata'}
                 </button>

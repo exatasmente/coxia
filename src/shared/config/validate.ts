@@ -1,3 +1,4 @@
+import { promptFamilies } from '../cycles/prompts';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA } from './schema';
@@ -61,6 +62,20 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
       }
     }),
   );
+  const stageIds = new Set(c.devCycle.stages.map((s) => s.id));
+  c.devCycle.stageMapping.forEach((r, i) => {
+    if (!stageIds.has(r.stage)) errors.push({ path: `devCycle.stageMapping[${i}].stage`, message: `unknown stage "${r.stage}"` });
+    try {
+      new RegExp(r.pattern, 'i');
+    } catch {
+      errors.push({ path: `devCycle.stageMapping[${i}].pattern`, message: 'not a valid regular expression' });
+    }
+    if (r.source === 'field' && !r.name.trim()) warnings.push({ path: `devCycle.stageMapping[${i}].name`, message: 'a board field rule needs the field name' });
+  });
+  const families = promptFamilies('pt-BR');
+  for (const [role, family] of Object.entries(c.devCycle.prompts)) {
+    if (!families[family]) warnings.push({ path: `devCycle.prompts.${role}`, message: `no prompt family "${family}": the "sdd" texts are used` });
+  }
   try {
     new RegExp(c.devCycle.releaseLabelPattern);
   } catch {
