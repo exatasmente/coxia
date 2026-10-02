@@ -324,8 +324,14 @@ export class ChatClient {
   }
 
   async listModels(signal?: AbortSignal): Promise<{ ids: string[]; raw: Json[] }> {
-    const res = await this.fetchImpl(`${this.baseUrl}/models`, { headers: this.headers(false), signal: signal ?? AbortSignal.timeout(10_000) });
-    if (!res.ok) throw mapHttpError(res.status, await res.text().catch(() => ''), res.headers, { lang: this.lang, model: this.cfg.model, host: this.host });
+    const ctx = { lang: this.lang, model: this.cfg.model, host: this.host };
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/models`, { headers: this.headers(false), signal: signal ?? AbortSignal.timeout(10_000) });
+    } catch (e) {
+      throw this.aborted(e, signal, ctx) ?? mapNetworkError(e, ctx);
+    }
+    if (!res.ok) throw mapHttpError(res.status, await res.text().catch(() => ''), res.headers, ctx);
     const json = (await res.json()) as { data?: Json[]; models?: Json[] };
     const raw = json.data ?? json.models ?? [];
     const ids = raw.map((m) => String(m.id ?? m.name ?? m.model ?? '')).filter(Boolean);
