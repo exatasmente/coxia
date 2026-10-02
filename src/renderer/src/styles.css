@@ -360,6 +360,13 @@ select.text-input { background: var(--surface); }
 .composer > .text-input { min-width: 0; }
 @media (max-height: 760px) { .hero .quad { display: none; } }
 .composer-panel { position: sticky; bottom: 12px; z-index: 40; box-shadow: 0 -6px 24px -12px color-mix(in srgb, var(--night) 45%, transparent); }
+@media (max-height: 760px) { .composer-panel textarea { height: 6.5em; } }
+/* Keyboard focus and anchors scroll clear of the sticky hero (top) and composer (bottom) */
+html:has(.hero) { scroll-padding-top: 140px; }
+html:has(.composer) { scroll-padding-bottom: 96px; }
+html:has(.composer-panel) { scroll-padding-bottom: 300px; }
+/* A narrow window stacks the hero into 200 to 700 px: stuck, it would hide the page */
+@media (max-width: 760px) { .hero { position: static; } html:has(.hero) { scroll-padding-top: 0; } }
 .glossary { display: flex; flex-direction: column; gap: 8px; }
 .glossary-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(130px, 1.2fr) minmax(160px, 2fr) 124px; gap: 8px; align-items: center; }
 .glossary-row > .text-input { min-width: 0; }

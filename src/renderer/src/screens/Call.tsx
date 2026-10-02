@@ -303,21 +303,6 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
               )}
             </section>
 
-            {phase !== 'ended' && (
-              <div className="row composer" role="group" aria-label="Controles da call">
-                <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
-                  <MicIcon />
-                  {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}
-                </button>
-                <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
-                <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>
-                <ContinueInClaude sessionId={turn?.sessionId} />
-                <span className="grow" />
-                <button type="button" className="btn btn-dark" disabled={phase === 'intro' || busy || rec.recording} onClick={next}>
-                  {idx >= cards.length - 1 ? 'Fechar pauta' : 'Próximo agente'} <NextIcon />
-                </button>
-              </div>
-            )}
             {hint && <div className="item ask small">{hint}</div>}
             {error && <div className="error">{error}</div>}
 
@@ -334,6 +319,22 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 </div>
               ))}
             </section>
+
+            {phase !== 'ended' && (
+              <div className="row composer" style={{ flexWrap: 'wrap' }} role="group" aria-label="Controles da call">
+                <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
+                  <MicIcon />
+                  {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}
+                </button>
+                <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
+                <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>
+                <ContinueInClaude sessionId={turn?.sessionId} />
+                <span className="grow" />
+                <button type="button" className="btn btn-dark" disabled={phase === 'intro' || busy || rec.recording} onClick={next}>
+                  {idx >= cards.length - 1 ? 'Fechar pauta' : 'Próximo agente'} <NextIcon />
+                </button>
+              </div>
+            )}
           </main>
 
           <aside className="call-side" style={{ flex: '1 1 300px', maxWidth: 360, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 16 }}>
