@@ -28,6 +28,13 @@ export function desktopEntry(command: string[]): string {
   ].join('\n');
 }
 
+// What the login entry runs. Packaged: the AppImage that is running (APPIMAGE) or the installed binary,
+// never the dev tree. Dev: electron on the repository.
+export function launchCommandFor(opts: { packaged: boolean; execPath: string; appPath: string; appImage?: string }): string[] {
+  if (!opts.packaged) return [opts.execPath, opts.appPath, '--hidden'];
+  return [opts.appImage || opts.execPath, '--hidden'];
+}
+
 export function isAutostart(): boolean {
   return existsSync(autostartFile());
 }

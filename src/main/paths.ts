@@ -16,4 +16,7 @@ export const CLAUDE_BIN = PACKAGED
   : undefined;
 
 // Dev keeps the venv next to the script; the installed app builds its own under userData.
-export const VENV_DIR = PACKAGED ? join(app.getPath('userData'), 'voice-venv') : join(SIDECAR_DIR, '.venv');
+// A function, not a constant: index.ts may move userData (CERIMONIAS_DATA_DIR) after this module loads.
+export function venvDir(): string {
+  return PACKAGED ? join(app.getPath('userData'), 'voice-venv') : join(SIDECAR_DIR, '.venv');
+}

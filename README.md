@@ -34,17 +34,35 @@ Sem `sidecar/models`, o sidecar também procura em `~/projects/hermes-poc/vendor
 npm run dist
 ```
 
-Gera em `dist/` (fora do git) o `Cerimônias-<versão>.AppImage` e o `cerimonias_<versão>_amd64.deb`, com ícone e categoria Escritório. O binário nativo do Claude Code usado pelo SDK vai desempacotado do `app.asar`, e `sidecar/` e `resources/` vão ao lado dele (`extraResources`). O venv Python **não** vai no pacote.
+Gera em `dist/` (fora do git) o `cerimonias-<versão>.AppImage` e o `cerimonias_<versão>_amd64.deb`, com ícone e categoria Escritório. O binário nativo do Claude Code usado pelo SDK vai desempacotado do `app.asar`, e `sidecar/` e `resources/` vão ao lado dele (`extraResources`). O venv Python **não** vai no pacote.
 
 Instalar (manual):
 
 ```bash
-sudo apt install ./dist/cerimonias_0.1.0_amd64.deb   # ou: chmod +x dist/*.AppImage && ./dist/Cerimônias-0.1.0.AppImage
+sudo apt install ./dist/cerimonias_0.1.0_amd64.deb   # ou: chmod +x dist/*.AppImage && ./dist/cerimonias-0.1.0.AppImage
 ```
 
 Na primeira vez que o app instalado abre, ele cria o venv da voz em `~/.config/cerimonias/voice-venv` com o `uv` (`~/.local/bin/uv`) a partir de `sidecar/requirements.txt`. Precisa de rede e leva alguns minutos; a voz só responde depois disso. Se falhar, o erro aparece na tela e a próxima tentativa refaz tudo. Em dev (`npm run dev`, `npx electron .`) continua valendo `sidecar/.venv`.
 
 **Abrir ao entrar no sistema:** Configurações → Início → "Abrir ao entrar no sistema". Cria `~/.config/autostart/cerimonias.desktop` (desmarcar remove) apontando para o AppImage que está rodando, para o binário instalado pelo `.deb` ou, em dev, para o `electron` deste repositório. O entry usa `--hidden`: o app começa só na bandeja, sem janela. Se mover ou apagar o AppImage, marque a opção de novo.
+
+## Instalar para uso diário
+
+Para usar o app instalado e deixar o `npx electron .` só para desenvolver:
+
+```bash
+npm run dist                       # gera dist/cerimonias-<versão>.AppImage (leva alguns minutos)
+scripts/install-local.sh           # instala só no seu usuário
+scripts/install-local.sh --autostart   # idem, e abre ao entrar no sistema (opcional)
+```
+
+O script copia o AppImage mais novo de `dist/` para `~/.local/opt/cerimonias/cerimonias.AppImage`, o ícone para `~/.local/share/icons/hicolor/256x256/apps/` e cria `~/.local/share/applications/cerimonias.desktop` (aparece no menu de aplicativos). Com `--autostart` escreve `~/.config/autostart/cerimonias.desktop` apontando para o AppImage instalado, com `--hidden`; sem a flag, não mexe nisso e avisa se o entry existente aponta para outro lugar (por exemplo, a árvore de desenvolvimento). Rodar de novo é seguro: o que não mudou é deixado como está e o AppImage novo troca o antigo por renomeação. Cada passo é impresso. Precisa de `libfuse2` (`sudo apt install libfuse2t64`) para o AppImage abrir.
+
+**Atualizar:** `git pull`, `npm run dist`, `scripts/install-local.sh`, e fechar e abrir o app. O venv da voz e os dados não são tocados.
+
+**Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: atas, histórico, configurações) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
+
+O pacote não leva os modelos do Kokoro; a voz local continua lendo `CERIMONIAS_KOKORO_DIR` ou `~/projects/hermes-poc/vendor/kokoro`.
 
 ## Tempo por issue (Clockify)
 
