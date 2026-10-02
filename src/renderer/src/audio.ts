@@ -45,6 +45,53 @@ export function speechEnabled(): boolean {
   return speechOn;
 }
 
+// The playing speech goes through an analyser so the spectrum avatar follows the real audio.
+let audioCtx: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let bins: Uint8Array<ArrayBuffer> | null = null;
+
+function attachAnalyser(audio: HTMLAudioElement): void {
+  try {
+    audioCtx ??= new AudioContext();
+    void audioCtx.resume();
+    const source = audioCtx.createMediaElementSource(audio);
+    const node = audioCtx.createAnalyser();
+    node.fftSize = 1024;
+    node.smoothingTimeConstant = 0.5;
+    source.connect(node);
+    node.connect(audioCtx.destination);
+    analyser = node;
+    bins = new Uint8Array(node.frequencyBinCount);
+  } catch {
+    analyser = null;
+  }
+}
+
+function detachAnalyser(): void {
+  analyser?.disconnect();
+  analyser = null;
+}
+
+/**
+ * Energy of the speech playing now in `count` bands from 90 Hz to 6 kHz on a log scale, 0..1 each,
+ * or null when no audio is playing (voice off, between phrases).
+ */
+export function speechBands(count: number): number[] | null {
+  if (!analyser || !bins || !audioCtx) return null;
+  analyser.getByteFrequencyData(bins);
+  const hzPerBin = audioCtx.sampleRate / 2 / bins.length;
+  const lo = Math.log(90);
+  const hi = Math.log(6000);
+  return Array.from({ length: count }, (_, k) => {
+    const from = Math.max(1, Math.floor(Math.exp(lo + ((hi - lo) * k) / count) / hzPerBin));
+    const to = Math.max(from + 1, Math.floor(Math.exp(lo + ((hi - lo) * (k + 1)) / count) / hzPerBin));
+    let sum = 0;
+    for (let i = from; i < to && i < bins!.length; i++) sum += bins![i];
+    // sqrt lifts the quieter high bands so the whole mouth moves, not only the first bars
+    return Math.sqrt(sum / (to - from) / 255);
+  });
+}
+
 export function useSpeechEnabled(): boolean {
   const [on, setOn] = useState(speechOn);
   useEffect(() => {
@@ -101,6 +148,7 @@ export function usePlayer() {
       stop();
       const url = URL.createObjectURL(new Blob([bytes], { type: mimeOf(bytes) }));
       const audio = new Audio(url);
+      attachAnalyser(audio);
       current.current = audio;
       setSpeaking(who);
       await new Promise<void>((done) => {
@@ -110,6 +158,7 @@ export function usePlayer() {
         audio.play().catch(() => done());
       });
       URL.revokeObjectURL(url);
+      detachAnalyser();
       if (current.current === audio) {
         current.current = null;
         setSpeaking(null);
