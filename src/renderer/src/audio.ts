@@ -2,6 +2,25 @@ import { useCallback, useRef, useState } from 'react';
 import type { Voice } from '../../shared/types';
 import { api } from './api';
 
+const CACHE_SIZE = 40;
+
+// Synthesized speech stays in memory only (never on disk), so a phrase heard again is not sent to Edge again.
+const speechCache = new Map<string, ArrayBuffer>();
+
+async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
+  const key = `${voice.voice}|${voice.rate}|${voice.pitch}|${text}`;
+  const hit = speechCache.get(key);
+  if (hit) {
+    speechCache.delete(key);
+    speechCache.set(key, hit);
+    return hit;
+  }
+  const bytes = await api.speak(text, voice);
+  speechCache.set(key, bytes);
+  if (speechCache.size > CACHE_SIZE) speechCache.delete(speechCache.keys().next().value as string);
+  return bytes;
+}
+
 export function usePlayer() {
   const current = useRef<HTMLAudioElement | null>(null);
   const [speaking, setSpeaking] = useState<string | null>(null);
@@ -14,7 +33,7 @@ export function usePlayer() {
 
   const say = useCallback(
     async (text: string, voice: Voice, who: string) => {
-      const bytes = await api.speak(text, voice);
+      const bytes = await synthesize(text, voice);
       stop();
       const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
       const audio = new Audio(url);
