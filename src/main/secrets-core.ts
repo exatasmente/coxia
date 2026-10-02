@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { join } from 'node:path';
 import { expandHome } from '../shared/config/paths';
 import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInfo, type SecretInput, type SecretSource, type SecretsStorageStatus } from '../shared/secrets';
+import { t } from '../shared/i18n';
 
 // The secrets store: values keyed by a secretRef, in DATA_ROOT/secrets.json (mode 0600), shared by every workspace and never exported.
 //   stored   encrypted with the OS keychain (Electron safeStorage). Without a keychain it is refused, unless the user accepted the insecure file.
@@ -54,7 +55,7 @@ interface FileShape {
   entries: Record<string, Entry>;
 }
 
-const WARNING = 'Do not share or commit this file. Stored values are encrypted with the OS keychain; any value marked "plain" is readable by anyone who can read this file (mode 0600 only).';
+const WARNING = 'Do not share or commit this file. Stored values are encrypted with the OS keychain; any value marked "plain" is readable by anyone who can read this file (mode 0600 only).'; // i18n-ignore: written into the secrets file for whoever opens it
 
 const emptyFile = (): FileShape => ({ version: 1, warning: WARNING, insecure: { accepted: false, acceptedAt: null }, entries: {} });
 
@@ -87,7 +88,7 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<FileShape>;
       return { ...emptyFile(), ...raw, insecure: { ...emptyFile().insecure, ...raw.insecure }, entries: { ...raw.entries } };
     } catch {
-      throw new SecretError('unavailable', 'the secrets file is unreadable; fix or remove it');
+      throw new SecretError('unavailable', t('main.secrets.unreadable'));
     }
   }
 
@@ -116,7 +117,7 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
 
   function valueOfStored(e: Entry): string {
     if (e.cipher !== undefined) {
-      if (!deps.crypto.available()) throw new SecretError('unavailable', 'the OS keychain is not available to decrypt this secret');
+      if (!deps.crypto.available()) throw new SecretError('unavailable', t('main.secrets.noKeychainDecrypt'));
       return deps.crypto.decrypt(Buffer.from(e.cipher, 'base64'));
     }
     return e.plain ?? '';
@@ -133,7 +134,7 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
       out = deps.run(expandHome(source.command, deps.home), source.args);
     } catch (e) {
       const code = (e as { status?: number; code?: string }).status ?? (e as { code?: string }).code ?? 'error';
-      throw new SecretError('command-failed', `the secret command failed (${String(code)})`);
+      throw new SecretError('command-failed', t('main.secrets.commandFailed', { code: String(code) }));
     }
     return out.trim();
   }
@@ -143,12 +144,12 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
     const hit = cache.get(ref);
     if (hit) return hit;
     const e = read().entries[ref];
-    if (!e) throw new SecretError('missing', `secret "${ref}" is not configured`);
+    if (!e) throw new SecretError('missing', t('main.secrets.notConfigured', { ref }));
     let value: string;
     if (e.source.type === 'stored') value = valueOfStored(e);
     else if (e.source.type === 'env') value = (deps.env[e.source.name] ?? '').trim();
     else value = fromCommand(e.source);
-    if (!value) throw new SecretError('missing', `secret "${ref}" is empty (${e.source.type === 'env' ? `variable ${e.source.name} is not set` : e.source.type})`);
+    if (!value) throw new SecretError('missing', t('main.secrets.empty', { ref, why: e.source.type === 'env' ? t('main.secrets.envNotSet', { name: e.source.name }) : e.source.type }));
     if (e.source.type === 'command') cache.set(ref, value);
     return value;
   }
@@ -170,15 +171,15 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
       const at = deps.now().toISOString();
       let entry: Entry;
       if (input.source === 'stored') {
-        if (!input.value || input.value.length > SECRET_MAX_LENGTH) throw new SecretError('invalid', 'the secret value is empty or too long');
+        if (!input.value || input.value.length > SECRET_MAX_LENGTH) throw new SecretError('invalid', t('main.secrets.badValue'));
         const status = storageStatus(data);
-        if (!status.canStore) throw new SecretError('insecure-refused', 'no OS keychain is available to encrypt the secret; accept the insecure file explicitly, or use a command or an environment variable');
+        if (!status.canStore) throw new SecretError('insecure-refused', t('main.secrets.noKeychain'));
         entry = status.secure ? { source: { type: 'stored' }, cipher: deps.crypto.encrypt(input.value).toString('base64'), updatedAt: at } : { source: { type: 'stored' }, plain: input.value, updatedAt: at };
       } else if (input.source === 'command') {
-        if (!input.command.trim() || /[\0\n\r]/.test(input.command)) throw new SecretError('invalid', 'the secret command is empty or has control characters');
+        if (!input.command.trim() || /[\0\n\r]/.test(input.command)) throw new SecretError('invalid', t('main.secrets.badCommand'));
         entry = { source: { type: 'command', command: input.command.trim(), args: (input.args ?? []).map(String) }, updatedAt: at };
       } else {
-        if (!ENV_NAME.test(input.name)) throw new SecretError('invalid', `invalid environment variable name "${input.name}"`);
+        if (!ENV_NAME.test(input.name)) throw new SecretError('invalid', t('main.secrets.badEnvName', { name: input.name }));
         entry = { source: { type: 'env', name: input.name }, updatedAt: at };
       }
       data.entries[input.ref] = entry;

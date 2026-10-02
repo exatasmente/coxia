@@ -142,7 +142,7 @@ export function falasOf(gens: GenStat[], reuses: number[], now: number): CustoFa
   };
 }
 
-export const NO_WORKSPACE = 'sem workspace';
+export const noWorkspace = (): string => t('main.custo.noWorkspace');
 
 // The workspace that started a session, or null when none did (sessions from before the index existed).
 export type Owners = ReadonlyMap<string, string>;
@@ -160,7 +160,7 @@ export function byWorkspaceOf(gens: GenStat[], owners: Owners, workspaces: Works
     const id = owners.get(g.session);
     return id && known.has(id) ? id : null;
   };
-  const rows: CustoWorkspaceRow[] = [...workspaces.map((w) => ({ id: w.id as string | null, name: w.name, test: w.test })), { id: null, name: NO_WORKSPACE, test: false }].map((w) => {
+  const rows: CustoWorkspaceRow[] = [...workspaces.map((w) => ({ id: w.id as string | null, name: w.name, test: w.test })), { id: null, name: noWorkspace(), test: false }].map((w) => {
     const mine = gens.filter((g) => owner(g) === w.id);
     const sum = (list: GenStat[]) => list.reduce((n, g) => n + g.cost, 0);
     return {

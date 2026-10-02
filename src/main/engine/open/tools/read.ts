@@ -74,14 +74,14 @@ export const readTool: ToolImpl = {
       throw new ToolError(t('main.engine.text.read.noFile', { path: String(input.file_path), cwd: ctx.cwd }));
     }
     if (st.isDirectory()) throw new ToolError(t('main.engine.text.read.directory'));
-    if (st.size > MAX_FILE) throw new ToolError(`Arquivo grande demais (${st.size} bytes); use Grep ou leia por offset/limit em um arquivo menor.`);
+    if (st.size > MAX_FILE) throw new ToolError(t('main.engine.text.read.tooBig', { size: st.size }));
     if (isBinary(path)) throw new ToolError(t('main.engine.text.read.binary'));
     const lines = (await readFile(path, 'utf8')).split('\n');
     const offset = Math.max(1, Number(input.offset) || 1);
     const limit = Math.max(1, Math.min(Number(input.limit) || 2000, 2000));
     const slice = lines.slice(offset - 1, offset - 1 + limit);
     const text = slice.map((l, i) => `${offset + i}\t${l.length > LINE_MAX ? `${l.slice(0, LINE_MAX)}…` : l}`).join('\n');
-    const more = offset - 1 + limit < lines.length ? `\n… (mais ${lines.length - (offset - 1 + limit)} linhas; use offset ${offset + limit})` : '';
+    const more = offset - 1 + limit < lines.length ? `\n${t('main.engine.text.read.more', { count: lines.length - (offset - 1 + limit), offset: offset + limit })}` : '';
     return { response: { type: 'text', file: { filePath: path, content: text, numLines: slice.length, startLine: offset, totalLines: lines.length } }, render: (r) => renderRead(r, ctx.outputMax, more) };
   },
 };

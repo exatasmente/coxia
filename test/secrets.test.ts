@@ -1,7 +1,8 @@
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { setLanguage } from '../src/shared/i18n';
 import { SECRETS_FILE, type CryptoPort, SecretError, createSecretsStore } from '../src/main/secrets-core';
 
 // safeStorage stand-in: "encrypts" by reversing and tagging, so a test can tell ciphertext from plain text.
@@ -15,6 +16,10 @@ const keychain = (available = true): CryptoPort => ({
   },
   backend: () => (available ? 'gnome_libsecret' : 'basic_text'),
 });
+
+// The assertions below read the English wording of the messages.
+beforeAll(() => setLanguage('en'));
+afterAll(() => setLanguage('pt-BR'));
 
 let root: string;
 let env: NodeJS.ProcessEnv;

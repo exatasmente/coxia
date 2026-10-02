@@ -70,7 +70,7 @@ export function listTemplates(language: Language = getConfig().language): Templa
 /** Applies a template to the running workspace: validates, saves and returns the new view. Throws with the problems named. */
 export function applyCycleTemplate(id: string, options?: ApplyOptions): CycleView {
   const template = findTemplate(id);
-  if (!template) throw new Error(`modelo de ciclo desconhecido: ${id}`);
+  if (!template) throw new Error(t('main.cycle.unknown', { id }));
   saveConfig(applyTemplate(getConfig(), template, options));
   return cycleView();
 }

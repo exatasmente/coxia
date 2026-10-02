@@ -269,7 +269,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
       const channel = rel.slice('api/rpc/'.length);
-      if (!deps.hasChannel(channel)) throw new HttpError(404, `Canal desconhecido: ${channel}`);
+      if (!deps.hasChannel(channel)) throw new HttpError(404, t('main.rpc.unknownChannel', { channel }));
       const refusal = webRefusal(channel, deps.settings().allowExternalEffects);
       if (refusal) throw new HttpError(403, refusal);
       let args: unknown;

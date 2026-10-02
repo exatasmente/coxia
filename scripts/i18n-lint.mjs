@@ -5,8 +5,13 @@
 //   node scripts/i18n-lint.mjs --file <path>   every finding of one file
 //   node scripts/i18n-lint.mjs --max <n>       exit 1 when the total is above n (a ratchet for CI)
 //   node scripts/i18n-lint.mjs --keys          also check that pt-BR.json and en.json define the same keys
+//   node scripts/i18n-lint.mjs --scope <p,q>   count only the files under these path prefixes (e.g. src/main,src/shared)
 // It is a heuristic: JSX text, user-facing attributes (title, aria-label, placeholder, alt, label) and string literals that look like prose
 // (two or more words, or an accented letter). Imports, console calls, regexes, CSS values and keys are skipped.
+// The .ts files are read with a small tokenizer (strings, templates and their ${} expressions, comments, regex literals), so only real
+// literals are judged. Text that is not for people goes in one of two ways, each with a reason in the code:
+//   // i18n-ignore: <why>          on the line, or the line above: this literal is code, an id, a protocol or a model-facing tool text
+//   // i18n-lint: allow-file <why> in the first lines of a file: the whole file is data in a fixed language (JSON Schema docs, templates)
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -38,12 +43,109 @@ const looksLikeProse = (text) => {
   return /\s/.test(t) || /[À-ÿ]/.test(t);
 };
 
+
+// Every string and template literal of a .ts file, with the line it starts on. A template counts by its static parts only
+// (the expressions are scanned on their own), so "`#${iid}: ${stage}`" has no prose and "`Bloqueio na #${iid}`" has.
+function tsLiterals(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  const lineAt = (pos) => text.slice(0, pos).split('\n').length;
+  const REGEX_AFTER = /[(,=:[!&|?{};+\-*%<>~^]/;
+  let lastSignificant = '';
+  const code = (stopAtBrace) => {
+    let depth = 0;
+    while (i < n) {
+      const c = text[i];
+      const next = text[i + 1];
+      if (c === '/' && next === '/') {
+        while (i < n && text[i] !== '\n') i++;
+        continue;
+      }
+      if (c === '/' && next === '*') {
+        i = text.indexOf('*/', i + 2);
+        i = i < 0 ? n : i + 2;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        const start = i++;
+        let value = '';
+        while (i < n && text[i] !== c && text[i] !== '\n') {
+          if (text[i] === '\\') i++;
+          value += text[i++];
+        }
+        i++;
+        out.push({ index: start, line: lineAt(start), value });
+        lastSignificant = c;
+        continue;
+      }
+      if (c === '`') {
+        const start = i++;
+        let value = '';
+        while (i < n && text[i] !== '`') {
+          if (text[i] === '\\') {
+            i += 2;
+            value += ' ';
+            continue;
+          }
+          if (text[i] === '$' && text[i + 1] === '{') {
+            i += 2;
+            value += '\u0000';
+            code(true);
+            continue;
+          }
+          value += text[i++];
+        }
+        i++;
+        out.push({ index: start, line: lineAt(start), value, template: true });
+        lastSignificant = '`';
+        continue;
+      }
+      if (c === '/' && (lastSignificant === '' || REGEX_AFTER.test(lastSignificant) || /(?:return|typeof|case)$/.test(text.slice(Math.max(0, i - 7), i).trim()))) {
+        i++;
+        let inClass = false;
+        while (i < n && text[i] !== '\n') {
+          if (text[i] === '\\') i++;
+          else if (text[i] === '[') inClass = true;
+          else if (text[i] === ']') inClass = false;
+          else if (text[i] === '/' && !inClass) break;
+          i++;
+        }
+        i++;
+        while (/[a-z]/.test(text[i] ?? '')) i++;
+        lastSignificant = '/';
+        continue;
+      }
+      if (c === '{') depth++;
+      if (c === '}') {
+        if (stopAtBrace && depth === 0) {
+          i++;
+          return;
+        }
+        depth--;
+      }
+      if (!/\s/.test(c)) lastSignificant = c;
+      i++;
+    }
+  };
+  code(false);
+  return out;
+}
+
+// Two or more words in one piece, or a piece with an accented letter: a lone "[" or ": " between two placeholders is not prose.
+const wordsOf = (text) => {
+  const pieces = text.split(/\n/);
+  return pieces.some((p) => /\p{L}{2,}\s+\p{L}{2,}/u.test(p) || /[À-ÿ]/.test(p));
+};
+
 function findings(file) {
   const text = readFileSync(file, 'utf8');
   const out = [];
   const lineOf = (index) => text.slice(0, index).split('\n').length;
   const lines = text.split('\n');
-  const skippedLine = (n) => /^\s*(import|export .* from|\/\/|\*|\/\*)/.test(lines[n - 1]) || /console\.|throw new Error|logError|\bt\(|\bt\('/.test(lines[n - 1]);
+  const ignored = (n) => /i18n-ignore/.test(lines[n - 1] ?? '') || /i18n-ignore/.test(lines[n - 2] ?? '');
+  const skippedLine = (n) => /^\s*(import|export .* from|\/\/|\*|\/\*)/.test(lines[n - 1]) || /console\.|logError\(/.test(lines[n - 1]) || ignored(n);
+  if (/i18n-lint:\s*allow-file/.test(lines.slice(0, 6).join('\n'))) return [];
   const seen = new Set();
   const add = (index, raw) => {
     const line = lineOf(index);
@@ -56,9 +158,17 @@ function findings(file) {
     for (const m of text.matchAll(JSX_TEXT)) if (looksLikeProse(m[1]) || /^\p{Lu}\p{L}+$/u.test(m[1].trim())) add(m.index, m[1]);
     for (const m of text.matchAll(ATTR)) add(m.index, m[1] ?? m[2]);
   }
-  for (const m of text.matchAll(LITERAL)) {
-    const raw = m[1] ?? m[2] ?? m[3];
-    if (looksLikeProse(raw)) add(m.index, raw);
+  if (file.endsWith('.ts')) {
+    for (const lit of tsLiterals(text)) {
+      // A template is judged by its static text: the placeholders between the pieces are not words.
+      const raw = lit.template ? lit.value.replace(/\u0000/g, ' ') : lit.value;
+      if (looksLikeProse(raw) && wordsOf(lit.template ? lit.value.replace(/\u0000/g, '\n') : raw)) add(lit.index, raw);
+    }
+  } else {
+    for (const m of text.matchAll(LITERAL)) {
+      const raw = m[1] ?? m[2] ?? m[3];
+      if (looksLikeProse(raw)) add(m.index, raw);
+    }
   }
   return out.sort((a, b) => a.line - b.line);
 }
@@ -84,6 +194,8 @@ if (flag('--keys')) {
   console.log(`i18n keys: ${pt.size} in both catalogs.`);
 }
 
+const scope = (value('--scope') ?? '').split(',').filter(Boolean);
+if (scope.length) for (const name of Object.keys(report)) if (!scope.some((prefix) => name.startsWith(prefix))) delete report[name];
 const total = Object.values(report).reduce((n, list) => n + list.length, 0);
 const file = value('--file');
 

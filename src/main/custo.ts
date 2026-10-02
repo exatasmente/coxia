@@ -91,7 +91,7 @@ function scan(c: Cache, from: number): GenRef[] {
 
 class HttpError extends Error {
   constructor(readonly status: number) {
-    super(`OpenRouter respondeu ${status}`);
+    super(t('main.custo.httpError', { status }));
   }
 }
 

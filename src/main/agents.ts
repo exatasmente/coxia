@@ -18,7 +18,7 @@ import { ATAS } from './env';
 import { cardContext, cycle, decisionLogRef, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
-import { GITLAB_HINT, GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { GLAB_READ, gitlabHint, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider } from './vcs';
 
 export { GLAB_READ };
@@ -65,7 +65,7 @@ export function stripOutputSuffix(command: string): string {
   return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage = GITLAB_HINT): HookCallback {
+export function shellAllowlist(patterns: RegExp[], usage = gitlabHint()): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
@@ -225,7 +225,7 @@ export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks'
   const cli = policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : GITLAB_HINT)] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : gitlabHint())] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],

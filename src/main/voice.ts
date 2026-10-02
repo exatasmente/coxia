@@ -17,33 +17,40 @@ import { getConfig } from './workspaceConfig';
 const SCRIPT = join(SIDECAR_DIR, 'voice_sidecar.py');
 const AUDIO = process.env.CERIMONIAS_AUDIO_DIR ?? join(tmpdir(), 'cerimonias-audio');
 
-export const MODERATOR: Voice = { voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+0%', pitch: '+0Hz', label: 'Thalita' };
+// The label of a voice is translated when it is read (the descriptors "grave", "aguda", "rápido"... follow the language), so the voice is
+// built with a getter and the label key it stands for.
+function voice<T extends Omit<Voice, 'label'>>(base: T, key: string): T & { label: string } {
+  return Object.defineProperty({ ...base }, 'label', { enumerable: true, get: () => t(`main.voice.label.${key}`) }) as T & { label: string };
+}
+
+export const MODERATOR: Voice = voice({ voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+0%', pitch: '+0Hz' }, 'thalita');
 
 // The free Edge endpoint has three pt-BR voices; rate and pitch tell the activity agents apart.
 export const AGENT_VOICES: Voice[] = [
-  { voice: 'pt-BR-AntonioNeural', rate: '+5%', pitch: '+0Hz', label: 'Antonio' },
-  { voice: 'pt-BR-FranciscaNeural', rate: '+5%', pitch: '+0Hz', label: 'Francisca' },
-  { voice: 'pt-BR-AntonioNeural', rate: '+0%', pitch: '-8Hz', label: 'Antonio grave' },
-  { voice: 'pt-BR-FranciscaNeural', rate: '+0%', pitch: '+6Hz', label: 'Francisca aguda' },
-  { voice: 'pt-BR-AntonioNeural', rate: '+10%', pitch: '+5Hz', label: 'Antonio rápido' },
-  { voice: 'pt-BR-FranciscaNeural', rate: '-5%', pitch: '-6Hz', label: 'Francisca grave' },
-  { voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+5%', pitch: '-5Hz', label: 'Thalita grave' },
-  { voice: 'pt-BR-AntonioNeural', rate: '-5%', pitch: '+3Hz', label: 'Antonio calmo' },
+  voice({ voice: 'pt-BR-AntonioNeural', rate: '+5%', pitch: '+0Hz' }, 'antonio'),
+  voice({ voice: 'pt-BR-FranciscaNeural', rate: '+5%', pitch: '+0Hz' }, 'francisca'),
+  voice({ voice: 'pt-BR-AntonioNeural', rate: '+0%', pitch: '-8Hz' }, 'antonioLow'),
+  voice({ voice: 'pt-BR-FranciscaNeural', rate: '+0%', pitch: '+6Hz' }, 'franciscaHigh'),
+  voice({ voice: 'pt-BR-AntonioNeural', rate: '+10%', pitch: '+5Hz' }, 'antonioFast'),
+  voice({ voice: 'pt-BR-FranciscaNeural', rate: '-5%', pitch: '-6Hz' }, 'franciscaLow'),
+  voice({ voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+5%', pitch: '-5Hz' }, 'thalitaLow'),
+  voice({ voice: 'pt-BR-AntonioNeural', rate: '-5%', pitch: '+3Hz' }, 'antonioCalm'),
 ];
 
 // Kokoro has three pt-BR voices and no pitch: speed tells the agents apart. Same length as the Edge list so a slot keeps its index.
-const KOKORO_MODERATOR: Voice = { voice: 'pf_dora', rate: '+0%', pitch: '+0Hz', label: 'Dora', engine: 'kokoro', speed: 1 };
+const KOKORO_MODERATOR: Voice = voice({ voice: 'pf_dora', rate: '+0%', pitch: '+0Hz', engine: 'kokoro' as const, speed: 1 }, 'dora');
 
+const kokoro = (id: string, speed: number, key: string): Voice => voice({ voice: id, speed, rate: '+0%', pitch: '+0Hz', engine: 'kokoro' as const }, key);
 const KOKORO_AGENTS: Voice[] = [
-  { voice: 'pm_alex', speed: 1.05, label: 'Alex' },
-  { voice: 'pm_santa', speed: 1.05, label: 'Santa' },
-  { voice: 'pf_dora', speed: 1.15, label: 'Dora rápida' },
-  { voice: 'pm_alex', speed: 0.92, label: 'Alex calmo' },
-  { voice: 'pm_santa', speed: 0.9, label: 'Santa calmo' },
-  { voice: 'pm_alex', speed: 1.2, label: 'Alex rápido' },
-  { voice: 'pf_dora', speed: 0.88, label: 'Dora calma' },
-  { voice: 'pm_santa', speed: 1.18, label: 'Santa rápido' },
-].map((v) => ({ ...v, rate: '+0%', pitch: '+0Hz', engine: 'kokoro' as const }));
+  kokoro('pm_alex', 1.05, 'alex'),
+  kokoro('pm_santa', 1.05, 'santa'),
+  kokoro('pf_dora', 1.15, 'doraFast'),
+  kokoro('pm_alex', 0.92, 'alexCalm'),
+  kokoro('pm_santa', 0.9, 'santaCalm'),
+  kokoro('pm_alex', 1.2, 'alexFast'),
+  kokoro('pf_dora', 0.88, 'doraCalm'),
+  kokoro('pm_santa', 1.18, 'santaFast'),
+];
 
 export function voicesFor(engine: VoiceEngine): { moderator: Voice; agents: Voice[] } {
   return engine === 'kokoro' ? { moderator: KOKORO_MODERATOR, agents: KOKORO_AGENTS } : { moderator: MODERATOR, agents: AGENT_VOICES };

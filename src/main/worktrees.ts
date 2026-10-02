@@ -83,7 +83,7 @@ export function checkConvention(branch: string): { suggestedName: string | null;
   const number = branch.match(/(?<!\d)(\d{5,6})(?!\d)/)?.[1];
   return {
     suggestedName: null,
-    note: number ? `usar release/<bugfix|feature|hotfix>/${number}` : 'fora de release/<tipo>/<n> e docs/<slug>',
+    note: number ? t('main.worktrees.useRelease', { number }) : t('main.worktrees.offConvention'),
   };
 }
 

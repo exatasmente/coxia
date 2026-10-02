@@ -106,7 +106,7 @@ describe('the prompt catalogs', () => {
   it('cover every prompt the code asks for', () => {
     const asked = new Set<string>();
     const dir = join(ROOT, 'src/main');
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
+    for (const file of readdirSync(dir, { recursive: true }).map(String).filter((f) => f.endsWith('.ts'))) {
       const text = readFileSync(join(dir, file), 'utf8');
       for (const m of text.matchAll(/\b(?:cp|prompt)\(\s*'([a-z][\w.]*)'/g)) asked.add(m[1]);
     }
@@ -120,7 +120,7 @@ describe('the prompt catalogs', () => {
   it('leave no prompt of the base family unused', () => {
     const used = new Set<string>();
     const dir = join(ROOT, 'src/main');
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
+    for (const file of readdirSync(dir, { recursive: true }).map(String).filter((f) => f.endsWith('.ts'))) {
       const text = readFileSync(join(dir, file), 'utf8');
       for (const m of text.matchAll(/\b(?:cp|prompt)\(\s*'([a-z][\w.]*)'/g)) used.add(m[1]);
     }
