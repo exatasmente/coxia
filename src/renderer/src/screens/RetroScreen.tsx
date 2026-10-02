@@ -89,7 +89,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <div className="small" style={{ color: '#99F6E4', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>Processo, não pessoas</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? '#60A5FA' : '#2DD4BF'} small />
+          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? '#60A5FA' : '#2DD4BF'} level={talk.level} small />
           {retro && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}

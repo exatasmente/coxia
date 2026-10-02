@@ -26,7 +26,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   const [now, setNow] = useState(Date.now());
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const rec = useRecorder();
+  const rec = useRecorder(() => void talkRef.current());
   const runId = useRef(0);
   const latest = useRef(c);
   latest.current = c;
@@ -275,7 +275,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </div>
 
                   <div className="row" style={{ gap: 16, minHeight: 64, flexWrap: 'nowrap' }}>
-                    <Wave on={!!speakingWho || rec.recording} color={rec.recording ? '#60A5FA' : '#2DD4BF'} />
+                    <Wave on={!!speakingWho || rec.recording} color={rec.recording ? '#60A5FA' : '#2DD4BF'} level={rec.level} />
                     <span className={`speaker ${rec.recording ? 'me' : !speakingWho && !busy && phase !== 'preparing' ? 'idle' : ''}`}>{speakerLabel}</span>
                   </div>
 

@@ -19,7 +19,7 @@ export function Conflict({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const rec = useRecorder();
+  const rec = useRecorder(() => void talkRef.current());
   const opened = useRef(false);
   const voice = c.voices?.agents[2] ?? null;
 
@@ -102,7 +102,7 @@ export function Conflict({
             <div className="small" style={{ color: '#FCD34D', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#FDBA74'} small />
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#FDBA74'} level={rec.level} small />
           <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>

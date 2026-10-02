@@ -26,7 +26,7 @@ export function Gate({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirmInsert, setConfirmInsert] = useState(false);
-  const rec = useRecorder();
+  const rec = useRecorder(() => void talkRef.current());
   const spokenFor = useRef<string | null>(null);
   const voice = c.voices?.moderator ?? null;
 
@@ -132,7 +132,7 @@ export function Gate({
             </div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#93C5FD'} small />
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#93C5FD'} level={rec.level} small />
           {gate && (
             <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
               <MicIcon /> {rec.recording ? 'Enviar fala' : roundDone ? 'Perguntar (espaço)' : 'Responder (espaço)'}
