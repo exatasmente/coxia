@@ -471,6 +471,7 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     '"ponto": o que o revisor está pedindo ou questionando, em uma frase. "precisa_codigo": true se atender exige mudar o código.',
     '"fala": até 90 palavras, para ser ouvida: o ponto, se o revisor tem razão pelo que você leu e o que o Luiz precisa decidir.',
     '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa e com a acentuação correta. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
+    '"texto" explica o ponto; o rascunho da resposta vai só em "rascunho", sem repeti-lo no texto.',
     CHAT_RULES,
     SPEECH_RULES,
   ]
