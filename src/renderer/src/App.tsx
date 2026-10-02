@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
-import { setSpeechEnabled, usePlayer } from './audio';
+import { setBargeIn, setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
@@ -63,7 +63,10 @@ export function App() {
 
   useEffect(() => {
     void api.listActions().then(setActions);
-    void api.getSettings().then((s) => setSpeechEnabled(s.voice.speak));
+    void api.getSettings().then((s) => {
+      setSpeechEnabled(s.voice.speak);
+      setBargeIn(s.voice.bargeIn);
+    });
   }, []);
 
   const { mergeStatus, cards } = ceremony;

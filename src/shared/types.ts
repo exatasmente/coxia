@@ -37,6 +37,18 @@ export interface Voice {
   speed?: number;
 }
 
+// One sentence of a planned speech, with everything the engine needs to synthesize it.
+export interface SpeechSegment {
+  text: string;
+  engine: VoiceEngine;
+  voice: string;
+  rate: string;
+  pitch: string;
+  speed: number;
+  // silence after this sentence
+  pauseMs: number;
+}
+
 export interface AgentTurn {
   ref: string;
   sessionId: string | null;
@@ -306,7 +318,9 @@ export interface Api {
   deepOptions(card: Card, sessionId: string): Promise<DeepOption[]>;
   teamsText(minutes: Minutes, cards: Card[]): Promise<string>;
   saveMinutes(minutes: Minutes, teams: string, selected: number[]): Promise<SaveResult>;
-  speak(text: string, voice: Voice): Promise<ArrayBuffer>;
+  planSpeech(text: string, voice: Voice): Promise<SpeechSegment[]>;
+  speakSegment(token: string, segment: SpeechSegment): Promise<ArrayBuffer>;
+  cancelSpeech(token: string): Promise<void>;
   transcribe(audio: ArrayBuffer): Promise<string>;
   voices(): Promise<{ moderator: Voice; agents: Voice[] }>;
   copy(text: string): Promise<void>;

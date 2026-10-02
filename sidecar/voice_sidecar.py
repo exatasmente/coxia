@@ -9,6 +9,7 @@ Protocol: one JSON object per line on stdin, one JSON reply per line on stdout.
   {"id": 4, "cmd": "tts", "engine": "edge", "voice": "...", "segments": [{"text": "...", "rate": "+0%", "pitch": "+0Hz", "speed": 1, "pause_ms": 300}], "out": "/tmp/w.wav"}
                                                                        -> {"id": 4, "path": "/tmp/w.wav"}   (one request per segment, joined)
   {"id": 5, "cmd": "ping"}                                            -> {"id": 5}
+  {"id": 6, "cmd": "cancel", "target": 3}                             -> {"id": 6}   (request 3 answers "cancelled" if it has not started synthesizing)
   any failure                                                          -> {"id": n, "error": "..."}
 """
 import asyncio
@@ -33,6 +34,12 @@ _kokoro = None
 _model_lock = threading.Lock()
 _kokoro_lock = threading.Lock()  # loads the model once and runs one synthesis at a time (the onnx session is shared)
 _out_lock = threading.Lock()
+_cancelled = set()
+
+
+def check_cancelled(req):
+    if req.get("id") in _cancelled:
+        raise RuntimeError("cancelled")
 
 
 def model():
@@ -72,6 +79,7 @@ def tts_kokoro(req):
     import soundfile
 
     with _kokoro_lock:
+        check_cancelled(req)
         audio, rate = kokoro().create(req["text"], voice=req["voice"], speed=float(req.get("speed", 1.0)), lang="pt-br")
     soundfile.write(req["out"], audio, rate)
     return {"path": req["out"]}
@@ -150,6 +158,7 @@ def tts_segments(req):
 
 
 def tts(req):
+    check_cancelled(req)
     if req.get("segments"):
         return tts_segments(req)
     if req.get("engine", "edge") == "kokoro":
@@ -159,11 +168,16 @@ def tts(req):
     return {"path": req["out"]}
 
 
+def cancel(req):
+    _cancelled.add(req["target"])
+    return {}
+
+
 def handle(line):
     req = {}
     try:
         req = json.loads(line)
-        result = {"stt": stt, "tts": tts, "ping": lambda _req: {}}[req["cmd"]](req)
+        result = {"stt": stt, "tts": tts, "cancel": cancel, "ping": lambda _req: {}}[req["cmd"]](req)
         reply({"id": req["id"], **result})
     except Exception as e:  # noqa: BLE001 - every failure goes back to the caller
         reply({"id": req.get("id"), "error": f"{type(e).__name__}: {e}"})

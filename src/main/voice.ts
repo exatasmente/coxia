@@ -1,10 +1,10 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { type Term, corrected, spoken, whisperHint } from '../shared/glossary';
-import type { Voice, VoiceEngine } from '../shared/types';
+import type { SpeechSegment, Voice, VoiceEngine } from '../shared/types';
 import { PACKAGED, SIDECAR_DIR, venvDir } from './paths';
 import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
 import { ensureVenv, venvPython } from './venv';
@@ -97,8 +97,9 @@ async function sidecar(): Promise<ChildProcessWithoutNullStreams> {
   return starting;
 }
 
-function call(req: Record<string, unknown>): Promise<Reply> {
+function call(req: Record<string, unknown>, onId?: (id: number) => void): Promise<Reply> {
   const id = nextId++;
+  onId?.(id);
   return new Promise((resolve, reject) => {
     waiting.set(id, (r) => (r.error ? reject(new Error(r.error)) : resolve(r)));
     sidecar().then(
@@ -133,26 +134,52 @@ export function stopVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
 }
 
-export async function speak(text: string, wanted: Voice, engine: VoiceEngine, opts: { prosody: boolean; glossary: Term[] }): Promise<string> {
+// The renderer plays sentence by sentence: the plan carries what each sentence needs, and every sentence is its own request.
+export function planSpeech(text: string, wanted: Voice, engine: VoiceEngine, opts: { prosody: boolean; glossary: Term[] }): SpeechSegment[] {
   const voice = resolveVoice(wanted, engine);
   // the tone is read from the written terms, the voice gets their pronunciation
   const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary) }));
   if (needsJoin(plan)) {
-    const out = join(AUDIO, `tts-${Date.now()}-${nextId}.wav`);
-    const segments = plan.map((s) => ({
+    return plan.map((s) => ({
       text: s.text,
+      engine,
+      voice: voice.voice,
       rate: edgeRate(voice.rate, s.rate),
       pitch: edgePitch(voice.pitch, s.pitch),
       speed: kokoroSpeed(voice.speed ?? 1, s.rate),
-      pause_ms: s.pauseMs,
+      pauseMs: s.pauseMs,
     }));
-    const r = await call({ cmd: 'tts', engine, voice: voice.voice, segments, out });
-    return r.path ?? out;
   }
-  const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${engine === 'kokoro' ? 'wav' : 'mp3'}`);
   const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary);
-  const r = await call({ cmd: 'tts', engine, text: said, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
-  return r.path ?? out;
+  return said.trim() ? [{ text: said, engine, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, pauseMs: 0 }] : [];
+}
+
+// Requests in flight per speech, so stopping it can tell the sidecar to skip the ones it has not started.
+const live = new Map<string, Set<number>>();
+const cancelled = new Set<string>();
+
+export async function speakSegment(token: string, seg: SpeechSegment): Promise<ArrayBuffer> {
+  if (cancelled.has(token)) throw new Error('cancelled');
+  const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${seg.engine === 'kokoro' ? 'wav' : 'mp3'}`);
+  const ids = live.get(token) ?? new Set<number>();
+  live.set(token, ids);
+  let id = 0;
+  try {
+    const r = await call({ cmd: 'tts', engine: seg.engine, text: seg.text, voice: seg.voice, rate: seg.rate, pitch: seg.pitch, speed: seg.speed, out }, (n) => ids.add((id = n)));
+    const path = r.path ?? out;
+    const bytes = readFileSync(path);
+    unlinkSync(path);
+    return new Uint8Array(bytes).buffer;
+  } finally {
+    ids.delete(id);
+    if (ids.size === 0) live.delete(token);
+  }
+}
+
+export function cancelSpeech(token: string): void {
+  cancelled.add(token);
+  if (cancelled.size > 200) cancelled.delete(cancelled.values().next().value as string);
+  for (const id of live.get(token) ?? []) proc?.stdin.write(`${JSON.stringify({ id: nextId++, cmd: 'cancel', target: id })}\n`);
 }
 
 export async function transcribe(audio: ArrayBuffer, glossary: Term[]): Promise<string> {

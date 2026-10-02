@@ -1,23 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SETTINGS } from '../../shared/settings';
-import type { Voice } from '../../shared/types';
+import type { SpeechSegment, Voice } from '../../shared/types';
 import { api } from './api';
+import { type Handoff, startMonitor, stopMonitor, subscribeBarge, takeHandoff } from './bargeMonitor';
+import { type Placed, placeSegment, speechProgressAt, trimRange } from './speech';
 import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
 
-const CACHE_SIZE = 40;
+export { setBargeIn } from './bargeMonitor';
 
-// Synthesized speech stays in memory only (never on disk), so a phrase heard again is not synthesized again.
+const CACHE_SIZE = 200;
+// Audio scheduled this far ahead of the clock is enough; the next sentences are requested when it runs lower.
+const AHEAD_S = 8;
+// Edge takes parallel requests; Kokoro runs one synthesis at a time.
+const MAX_PARALLEL = { edge: 3, kokoro: 1 };
+
+// Synthesized sentences stay in memory only (never on disk), so a phrase heard again is not synthesized again.
 const speechCache = new Map<string, ArrayBuffer>();
 
-async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
-  const key = `${voice.engine ?? 'edge'}|${voice.voice}|${voice.rate}|${voice.pitch}|${voice.speed ?? 1}|${text}`;
+async function synthesize(token: string, seg: SpeechSegment): Promise<ArrayBuffer> {
+  const key = `${seg.engine}|${seg.voice}|${seg.rate}|${seg.pitch}|${seg.speed}|${seg.text}`;
   const hit = speechCache.get(key);
   if (hit) {
     speechCache.delete(key);
     speechCache.set(key, hit);
     return hit;
   }
-  const bytes = await api.speak(text, voice);
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await api.speakSegment(token, seg);
+  } catch (e) {
+    // one retry: the free Edge endpoint drops a request now and then
+    if (/cancelled/.test(String(e))) throw e;
+    bytes = await api.speakSegment(token, seg);
+  }
   speechCache.set(key, bytes);
   if (speechCache.size > CACHE_SIZE) speechCache.delete(speechCache.keys().next().value as string);
   return bytes;
@@ -25,11 +40,6 @@ async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
 
 export function clearSpeechCache(): void {
   speechCache.clear();
-}
-
-// Kokoro returns WAV, Edge MP3.
-function mimeOf(bytes: ArrayBuffer): string {
-  return new TextDecoder().decode(new Uint8Array(bytes, 0, 4)) === 'RIFF' ? 'audio/wav' : 'audio/mpeg';
 }
 
 // When speech is off nothing is synthesized: the agents' text still shows on screen and nothing goes to Edge.
@@ -45,49 +55,92 @@ export function speechEnabled(): boolean {
   return speechOn;
 }
 
-// The playing speech goes through an analyser so the spectrum avatar follows the real audio.
+// All speech goes through one analyser so the spectrum avatar follows the sentence that is playing.
 let audioCtx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let bins: Uint8Array<ArrayBuffer> | null = null;
+let wave: Float32Array<ArrayBuffer> | null = null;
 
 // Mobile browsers start the AudioContext suspended until a user gesture.
 export function unlockAudio(): void {
   try {
-    audioCtx ??= new AudioContext();
-    void audioCtx.resume();
+    ensureAudio();
   } catch {
     // no Web Audio: the avatar just loses its spectrum
   }
 }
 
-function attachAnalyser(audio: HTMLAudioElement): void {
-  try {
-    audioCtx ??= new AudioContext();
-    void audioCtx.resume();
-    const source = audioCtx.createMediaElementSource(audio);
-    const node = audioCtx.createAnalyser();
-    node.fftSize = 1024;
-    node.smoothingTimeConstant = 0.5;
-    source.connect(node);
-    node.connect(audioCtx.destination);
-    analyser = node;
-    bins = new Uint8Array(node.frequencyBinCount);
-  } catch {
-    analyser = null;
+function ensureAudio(): { ctx: AudioContext; node: AnalyserNode } {
+  audioCtx ??= new AudioContext();
+  void audioCtx.resume();
+  if (!analyser) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.5;
+    analyser.connect(audioCtx.destination);
+    bins = new Uint8Array(analyser.frequencyBinCount);
+    wave = new Float32Array(analyser.fftSize);
   }
+  return { ctx: audioCtx, node: analyser };
 }
 
-function detachAnalyser(): void {
-  analyser?.disconnect();
-  analyser = null;
+// One speech at a time: its sentences are scheduled on the audio clock, back to back, as they come out of synthesis.
+interface Playback {
+  token: string;
+  cancelled: boolean;
+  started: boolean;
+  placed: Placed[];
+  totalWeight: number;
+  sources: AudioBufferSourceNode[];
+  finish: () => void;
+}
+
+let active: Playback | null = null;
+let tokens = 0;
+
+function beginPlayback(): { pb: Playback; ended: Promise<void> } {
+  let finish!: () => void;
+  const ended = new Promise<void>((resolve) => (finish = resolve));
+  const pb: Playback = { token: `speech-${++tokens}-${Date.now()}`, cancelled: false, started: false, placed: [], totalWeight: 0, sources: [], finish };
+  return { pb, ended };
+}
+
+// Stops what is playing, drops what is still being synthesized and releases whoever waits for the speech to end.
+function endPlayback(pb: Playback): void {
+  if (active === pb) active = null;
+  pb.cancelled = true;
+  for (const source of pb.sources) {
+    source.onended = null;
+    try {
+      source.stop();
+    } catch {
+      // never started
+    }
+    source.disconnect();
+  }
+  pb.sources = [];
+  void api.cancelSpeech(pb.token).catch(() => undefined);
+  stopMonitor();
+  pb.finish();
+}
+
+/** Silences whatever is playing or still being synthesized. */
+export function stopSpeech(): void {
+  speechEvents.dispatchEvent(new Event('stop'));
+}
+
+function playbackRms(): number {
+  if (!analyser || !wave || !active?.started) return 0;
+  analyser.getFloatTimeDomainData(wave);
+  return rmsOf(wave);
 }
 
 /**
  * Energy of the speech playing now in `count` bands from 90 Hz to 6 kHz on a log scale, 0..1 each,
- * or null when no audio is playing (voice off, between phrases).
+ * or null when no audio is playing (voice off, still synthesizing the first sentence).
  */
 export function speechBands(count: number): number[] | null {
-  if (!analyser || !bins || !audioCtx) return null;
+  if (!analyser || !bins || !audioCtx || !active?.started) return null;
   analyser.getByteFrequencyData(bins);
   const hzPerBin = audioCtx.sampleRate / 2 / bins.length;
   const lo = Math.log(90);
@@ -102,12 +155,11 @@ export function speechBands(count: number): number[] | null {
   });
 }
 
-// How far the current speech is, 0..1: the real audio position, or the reading time when the voice is off.
-let playing: HTMLAudioElement | null = null;
+// How far the current speech is, 0..1, over the whole of it: the audio clock, or the reading time when the voice is off.
 let reading: { start: number; ms: number } | null = null;
 
 export function speechProgress(): number | null {
-  if (playing && Number.isFinite(playing.duration) && playing.duration > 0) return Math.min(1, playing.currentTime / playing.duration);
+  if (active?.started && audioCtx) return speechProgressAt(active.placed, active.totalWeight, audioCtx.currentTime - (audioCtx.outputLatency || 0));
   if (reading) return Math.min(1, (performance.now() - reading.start) / reading.ms);
   return null;
 }
@@ -127,16 +179,102 @@ export function readingMs(text: string): number {
   return Math.min(9000, Math.max(1200, text.length * 45));
 }
 
+interface Sentence {
+  buffer: AudioBuffer;
+  offset: number;
+  duration: number;
+}
+
+async function decode(pb: Playback, ctx: AudioContext, seg: SpeechSegment): Promise<Sentence | null> {
+  const bytes = await synthesize(pb.token, seg);
+  if (pb.cancelled) throw new Error('cancelled');
+  const buffer = await ctx.decodeAudioData(bytes.slice(0));
+  const range = trimRange(buffer.getChannelData(0), buffer.sampleRate);
+  return range && { buffer, ...range };
+}
+
+// The first sentence starts as soon as it is ready; the next ones are requested ahead and scheduled right after it.
+async function playSpeech(pb: Playback, ended: Promise<void>, text: string, voice: Voice, onStart: () => void): Promise<void> {
+  const segments = await api.planSpeech(text, voice);
+  if (pb.cancelled || segments.length === 0) return;
+  const { ctx, node } = ensureAudio();
+  pb.totalWeight = segments.reduce((sum, s) => sum + Math.max(1, s.text.length), 0);
+
+  const slots = segments.map(() => {
+    const slot = {} as { promise: Promise<Sentence | null>; resolve: (s: Sentence | null) => void; reject: (e: unknown) => void };
+    slot.promise = new Promise((resolve, reject) => Object.assign(slot, { resolve, reject }));
+    slot.promise.catch(() => undefined);
+    return slot;
+  });
+  const maxParallel = MAX_PARALLEL[segments[0].engine];
+  let requested = 0;
+  let inflight = 0;
+  let cursor = 0;
+  let last: AudioBufferSourceNode | null = null;
+  let failure: unknown = null;
+
+  const pump = () => {
+    while (!pb.cancelled && requested < segments.length && inflight < maxParallel && (!pb.started || cursor - ctx.currentTime < AHEAD_S)) {
+      const slot = slots[requested];
+      inflight++;
+      decode(pb, ctx, segments[requested++])
+        .then(slot.resolve, slot.reject)
+        .finally(() => {
+          inflight--;
+          pump();
+        });
+    }
+  };
+  const timer = window.setInterval(pump, 250);
+  try {
+    pump();
+    for (let i = 0; i < segments.length; i++) {
+      let sentence: Sentence | null;
+      try {
+        // a stop settles `ended` while a sentence may never have been requested
+        sentence = await Promise.race([slots[i].promise, ended.then(() => null)]);
+      } catch (e) {
+        // a sentence that failed twice is skipped; the speech only fails if nothing could be played
+        if (pb.cancelled) return;
+        failure = e;
+        continue;
+      }
+      if (pb.cancelled) return;
+      if (!sentence) continue;
+      const placed = placeSegment(cursor, ctx.currentTime, sentence.duration, segments[i].pauseMs, Math.max(1, segments[i].text.length));
+      const source = ctx.createBufferSource();
+      source.buffer = sentence.buffer;
+      source.connect(node);
+      source.start(placed.start, sentence.offset, sentence.duration);
+      pb.sources.push(source);
+      pb.placed.push(placed);
+      cursor = placed.end;
+      last = source;
+      if (!pb.started) {
+        pb.started = true;
+        onStart();
+        void startMonitor(playbackRms);
+      }
+    }
+    if (!last) {
+      if (failure) throw failure;
+      return;
+    }
+    last.onended = pb.finish;
+    await ended;
+  } finally {
+    window.clearInterval(timer);
+  }
+}
+
 export function usePlayer() {
-  const current = useRef<HTMLAudioElement | null>(null);
   const silent = useRef<{ timer: ReturnType<typeof setTimeout>; done: () => void } | null>(null);
   const [speaking, setSpeaking] = useState<string | null>(null);
   // the chat message being played, so its replay button can turn into stop
   const [item, setItem] = useState<unknown>(null);
 
   const stop = useCallback(() => {
-    current.current?.pause();
-    current.current = null;
+    if (active) endPlayback(active);
     if (silent.current) {
       clearTimeout(silent.current.timer);
       silent.current.done();
@@ -151,7 +289,11 @@ export function usePlayer() {
       if (!speechOn) stop();
     };
     speechEvents.addEventListener('change', onChange);
-    return () => speechEvents.removeEventListener('change', onChange);
+    speechEvents.addEventListener('stop', stop);
+    return () => {
+      speechEvents.removeEventListener('change', onChange);
+      speechEvents.removeEventListener('stop', stop);
+    };
   }, [stop]);
 
   const say = useCallback(
@@ -170,28 +312,21 @@ export function usePlayer() {
         setSpeaking((w) => (w === who ? null : w));
         return;
       }
-      const bytes = await synthesize(text, voice);
       stop();
-      const url = URL.createObjectURL(new Blob([bytes], { type: mimeOf(bytes) }));
-      const audio = new Audio(url);
-      attachAnalyser(audio);
-      playing = audio;
-      current.current = audio;
-      setSpeaking(who);
-      setItem(opts.item ?? null);
-      await new Promise<void>((done) => {
-        audio.onended = () => done();
-        audio.onerror = () => done();
-        audio.onpause = () => done();
-        audio.play().catch(() => done());
-      });
-      URL.revokeObjectURL(url);
-      detachAnalyser();
-      if (playing === audio) playing = null;
-      if (current.current === audio) {
-        current.current = null;
-        setSpeaking(null);
-        setItem(null);
+      const { pb, ended } = beginPlayback();
+      active = pb;
+      try {
+        await playSpeech(pb, ended, text, voice, () => {
+          setSpeaking(who);
+          setItem(opts.item ?? null);
+        });
+      } finally {
+        // still the current speech: it ended by itself (a stop or a newer speech has already taken care of the state)
+        if (active === pb) {
+          endPlayback(pb);
+          setSpeaking(null);
+          setItem(null);
+        }
       }
     },
     [stop],
@@ -203,10 +338,13 @@ export function usePlayer() {
 const SAMPLE_MS = 50;
 
 // onSilence fires once per recording, when the speaker stopped talking (or hit the time limit); the screen then sends as if space was pressed.
+// It also fires when the person starts talking over the agent's voice (barge-in), when the screen then starts recording as if space was pressed.
 export function useRecorder(onSilence?: () => void) {
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const meter = useRef<{ timer: number; ctx: AudioContext } | null>(null);
+  const taken = useRef<Handoff | null>(null);
+  const autoStopped = useRef(false);
   const silenceRef = useRef(onSilence);
   silenceRef.current = onSilence;
   const [recording, setRecording] = useState(false);
@@ -241,6 +379,7 @@ export function useRecorder(onSilence?: () => void) {
           vad = step.state;
           if (step.stop) {
             fired = true;
+            autoStopped.current = true;
             silenceRef.current?.();
           }
         }, SAMPLE_MS);
@@ -253,31 +392,53 @@ export function useRecorder(onSilence?: () => void) {
   );
 
   const start = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const handoff = takeHandoff();
+    stopSpeech();
+    autoStopped.current = false;
+    let stream: MediaStream;
+    try {
+      stream = handoff?.stream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
+    } catch (e) {
+      handoff?.release();
+      throw e;
+    }
     const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     chunks.current = [];
     rec.ondataavailable = (e) => chunks.current.push(e.data);
     rec.start();
     recorder.current = rec;
+    taken.current = handoff;
     setRecording(true);
     const voice = await api.getSettings().then((s) => s.voice, () => DEFAULT_SETTINGS.voice);
-    if (recorder.current === rec) startMeter(stream, voice.autoStop, voice.silenceMs);
+    if (recorder.current === rec) startMeter(handoff?.live ?? stream, voice.autoStop, voice.silenceMs);
   }, [startMeter]);
 
   const stop = useCallback(async (): Promise<ArrayBuffer | null> => {
     const rec = recorder.current;
     if (!rec) return null;
+    recorder.current = null;
     stopMeter();
+    const handoff = taken.current;
+    taken.current = null;
+    // the recording runs behind the microphone by the pre-roll: let it catch up with what was just said
+    if (handoff && !autoStopped.current) await new Promise((done) => setTimeout(done, handoff.prerollMs));
     const stopped = new Promise<void>((done) => (rec.onstop = () => done()));
     rec.stop();
     await stopped;
     for (const track of rec.stream.getTracks()) track.stop();
-    recorder.current = null;
+    handoff?.release();
     setRecording(false);
     return new Blob(chunks.current, { type: 'audio/webm' }).arrayBuffer();
   }, [stopMeter]);
 
-  useEffect(() => stopMeter, [stopMeter]);
+  useEffect(() => subscribeBarge(() => !recorder.current && silenceRef.current?.()), []);
+  useEffect(
+    () => () => {
+      stopMeter();
+      taken.current?.release();
+    },
+    [stopMeter],
+  );
 
   return { recording, level: recording ? level : undefined, start, stop };
 }
