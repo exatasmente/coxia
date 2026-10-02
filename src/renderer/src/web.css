@@ -31,3 +31,15 @@
   .web-access .web-device .row { flex-direction: column; align-items: stretch; }
   .web-access .web-device .btn { width: 100%; }
 }
+
+/* Offline queue banner (browser build): pinned above the safe area, never covers the page content for long. */
+.outbox { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; flex-direction: column; gap: 8px; padding: 8px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); pointer-events: none; }
+.outbox-item { pointer-events: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); max-width: 560px; width: 100%; margin: 0 auto; box-shadow: 0 6px 24px var(--glow); }
+.outbox-ok { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-ink); }
+.outbox-fail { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
+.outbox-text { min-width: 0; overflow-wrap: anywhere; }
+.outbox-labels { opacity: 0.85; }
+@media (max-width: 480px) {
+  .outbox-item { flex-direction: column; align-items: stretch; }
+  .outbox-item .btn { width: 100%; }
+}

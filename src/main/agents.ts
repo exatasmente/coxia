@@ -213,6 +213,15 @@ interface Run<T> {
 type Schema = Record<string, unknown>;
 
 const str = { type: 'string' };
+// Up to three ready-made replies: in the call the person may tap one instead of speaking.
+const OPTIONS = { type: 'array', items: { type: 'string' }, maxItems: 3 };
+const OPTIONS_RULE =
+  '"opcoes": de 0 a 3 respostas prontas, curtas (até 12 palavras), escritas como o Luiz responderia, cada uma uma saída concreta ' +
+  '(ex.: "Pode seguir com o merge", "Pede ajuda ao QA hoje", "Deixa para amanhã"). Lista vazia quando não há nada a decidir.';
+
+function options(list: unknown): string[] {
+  return Array.isArray(list) ? list.filter((o): o is string => typeof o === 'string' && !!o.trim()).map((o) => o.trim().slice(0, 120)).slice(0, 3) : [];
+}
 const strOrNull = { type: ['string', 'null'] };
 
 function obj(properties: Record<string, unknown>): Schema {
@@ -305,10 +314,11 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
     'Se precisar, leia o spec (no máximo 3 leituras).',
     'Monte a sua vez: "fala" com até 60 palavras, dizendo o que mudou desde ontem, o próximo passo e o bloqueio.',
     'Se houver uma decisão que só o Luiz pode tomar, termine a fala com UMA pergunta objetiva e repita-a em "pergunta"; senão, "pergunta" é null.',
+    `${OPTIONS_RULE} Ofereça opções quando houver pergunta ou bloqueio.`,
     SPEECH_RULES,
   ].join('\n');
-  const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull });
-  const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null }>(
+  const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
+  const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
     'turn',
     prompt,
     schema,
@@ -321,6 +331,7 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
     next: r.data.proximo,
     blocker: nullish(r.data.bloqueio),
     question: nullish(r.data.pergunta),
+    options: options(r.data.opcoes),
   };
   rememberTurn(card, turn, fp);
   return turn;
@@ -334,6 +345,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     '"decisao": o que ficou decidido, ou null. "alvo": "spec" se muda escopo ou plano da issue e ela tem spec; "daily-report" se é lembrete pessoal sobre a atividade; "ata" no resto.',
     '"efeito": ação externa que o Luiz terá de executar depois com confirmação (push, MR, status, comentário, pipeline, reviewer, issue nova), ou null.',
     '"desbloqueio": true se ele pediu para aprofundar ou se a resposta pede investigação.',
+    `${OPTIONS_RULE} Aqui, próximos passos possíveis depois desta resposta.`,
     SPEECH_RULES,
   ].join('\n');
   const schema = obj({
@@ -341,12 +353,14 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'daily-report', 'ata'] } })] },
     efeito: { anyOf: [{ type: 'null' }, obj({ texto: str, repo: str })] },
     desbloqueio: { type: 'boolean' },
+    opcoes: OPTIONS,
   });
   type Out = {
     ack: string;
     decisao: { texto: string; alvo: DecisionTarget } | null;
     efeito: { texto: string; repo: string } | null;
     desbloqueio: boolean;
+    opcoes: string[];
   };
   const r = await run<Out>('reply', prompt, schema, { maxTurns: 3, ...(turn.sessionId ? { resume: turn.sessionId } : {}) });
   const target = r.data.decisao?.alvo === 'spec' && !card.spec ? 'ata' : r.data.decisao?.alvo;
@@ -357,6 +371,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     decision,
     effect: r.data.efeito ? { ref: card.ref, text: r.data.efeito.texto, repo: r.data.efeito.repo } : null,
     needsDeepDive: r.data.desbloqueio,
+    options: options(r.data.opcoes),
   };
 }
 

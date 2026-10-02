@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SETTINGS } from '../../shared/settings';
 import type { SpeechSegment, Voice } from '../../shared/types';
 import { api } from './api';
+import { hasAudioSession, isIos, setAudioSession } from './audioSession';
 import { type Handoff, startMonitor, stopMonitor, subscribeBarge, takeHandoff } from './bargeMonitor';
 import { type Placed, placeSegment, speechProgressAt, trimRange } from './speech';
 import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
@@ -61,9 +62,53 @@ let analyser: AnalyserNode | null = null;
 let bins: Uint8Array<ArrayBuffer> | null = null;
 let wave: Float32Array<ArrayBuffer> | null = null;
 
+// iOS mutes Web Audio with the ring/silent switch unless the page is in the playback audio session.
+// Safari 17+ takes it directly; older ones join it while a media element plays, so a silent one runs during speech.
+let sessionKeeper: HTMLAudioElement | null = null;
+
+function silentWav(): string {
+  const rate = 8000;
+  const samples = rate / 2;
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const text = (at: number, t: string) => [...t].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  text(0, 'RIFF');
+  v.setUint32(4, 36 + samples, true);
+  text(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true);
+  text(36, 'data');
+  v.setUint32(40, samples, true);
+  new Uint8Array(buf, 44).fill(128);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+function preferPlaybackSession(): boolean {
+  if (!hasAudioSession()) return false;
+  setAudioSession('playback');
+  return true;
+}
+
+function keepPlaybackSession(on: boolean): void {
+  if (!sessionKeeper) return;
+  if (on) void sessionKeeper.play().catch(() => undefined);
+  else sessionKeeper.pause();
+}
+
 // Mobile browsers start the AudioContext suspended until a user gesture.
 export function unlockAudio(): void {
   try {
+    if (!preferPlaybackSession() && !sessionKeeper && isIos()) {
+      sessionKeeper = new Audio(silentWav());
+      sessionKeeper.loop = true;
+      // played once inside the gesture, so later speech can start it without one
+      void sessionKeeper.play().then(() => sessionKeeper?.pause(), () => undefined);
+    }
     ensureAudio();
   } catch {
     // no Web Audio: the avatar just loses its spectrum
@@ -107,7 +152,10 @@ function beginPlayback(): { pb: Playback; ended: Promise<void> } {
 
 // Stops what is playing, drops what is still being synthesized and releases whoever waits for the speech to end.
 function endPlayback(pb: Playback): void {
-  if (active === pb) active = null;
+  if (active === pb) {
+    active = null;
+    keepPlaybackSession(false);
+  }
   pb.cancelled = true;
   for (const source of pb.sources) {
     source.onended = null;
@@ -315,6 +363,7 @@ export function usePlayer() {
       stop();
       const { pb, ended } = beginPlayback();
       active = pb;
+      keepPlaybackSession(true);
       try {
         await playSpeech(pb, ended, text, voice, () => {
           setSpeaking(who);
@@ -421,9 +470,11 @@ export function useRecorder(onSilence?: () => void) {
     autoStopped.current = false;
     let stream: MediaStream;
     try {
+      if (!handoff) setAudioSession('play-and-record');
       stream = handoff?.stream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
     } catch (e) {
       handoff?.release();
+      setAudioSession('playback');
       throw e;
     }
     const mimeType = recordingType();
@@ -451,6 +502,7 @@ export function useRecorder(onSilence?: () => void) {
     rec.stop();
     await stopped;
     for (const track of rec.stream.getTracks()) track.stop();
+    setAudioSession('playback');
     handoff?.release();
     setRecording(false);
     return new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' }).arrayBuffer();

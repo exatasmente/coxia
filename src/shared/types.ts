@@ -57,6 +57,8 @@ export interface AgentTurn {
   next: string;
   blocker: string | null;
   question: string | null;
+  // Ready-made replies the person can tap instead of speaking (absent on turns saved before they existed).
+  options?: string[];
   // Set when the card did not change and the turn of an earlier day was served again, without calling the agent.
   reused?: { at: string };
 }
@@ -81,6 +83,7 @@ export interface ReplyResult {
   decision: Decision | null;
   effect: Effect | null;
   needsDeepDive: boolean;
+  options?: string[];
 }
 
 export interface DeepAnswer {
@@ -302,7 +305,9 @@ export type AppEvent =
   | { type: 'open'; screen: { name: string; [key: string]: unknown } }
   | { type: 'module'; name: string; payload: unknown }
   | { type: 'deep'; card: Card }
-  | { type: 'status'; result: CardsResult; checkedAt: string };
+  | { type: 'status'; result: CardsResult; checkedAt: string }
+  // every window and browser follows a settings change made in any of them
+  | { type: 'settings'; settings: import('./settings').Settings };
 
 export interface Api {
   // Generic channel for modules: each one keeps its typed wrapper next to its screen.

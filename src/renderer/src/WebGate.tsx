@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { errorText } from './api';
+import { OutboxBanner } from './OutboxBanner';
 import { consumePairFragment } from './pairFragment';
 import { isWeb } from './platform';
 import { HttpStatusError, UNAUTHORIZED, post, sessionCheck } from './webApi';
@@ -116,7 +117,14 @@ export function WebGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  if (state === 'ready') return <>{children}</>;
+  if (state === 'ready') {
+    return (
+      <>
+        {children}
+        {isWeb() && <OutboxBanner />}
+      </>
+    );
+  }
   if (state === 'login') return <Login notice={notice} onDone={() => location.reload()} />;
   if (state === 'offline') {
     return (
