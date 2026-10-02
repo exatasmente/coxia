@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import type { Card, QaHandoff as Qa } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
@@ -9,10 +9,14 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
-import { tv, useVoiceEnabled } from '../i18n';
+import { useT, useTv, useVoiceEnabled } from '../i18n';
+import type { Translate } from '../../../shared/i18n';
 
-function checklistText(q: Qa): string {
-  return [`QA Checklist — #${q.iid} ${q.title}`, '', ...q.checklist.flatMap((s) => [`${s.title}:`, ...s.items.map((i) => `- [ ] ${i}`), ''])].join('\n');
+const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
+const DIVIDER = '1px solid var(--line-2)'; // i18n-ignore: CSS value
+
+function checklistText(t: Translate, q: Qa): string {
+  return [t('ui.qa.checklistHeading', { iid: q.iid, title: q.title }), '', ...q.checklist.flatMap((s) => [`${s.title}:`, ...s.items.map((i) => `- [ ] ${i}`), ''])].join('\n');
 }
 
 export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
@@ -22,6 +26,8 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
   const [draft, setDraft] = useState('');
   const [confirmWrite, setConfirmWrite] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const t = useT();
+  const tv = useTv();
   const spoken = useRef<string | null>(null);
   const voice = c.voices?.agents[1] ?? null;
 
@@ -51,15 +57,15 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
     void player.say(qa.speech, voice, 'qa').catch(() => undefined);
   }, [qa, voice, player]);
 
-  const act = (op: string, name: string, label: string, fn: () => Promise<Qa>) => {
+  const act = (op: string, label: string, busyLabel: string, fn: () => Promise<Qa>) => {
     if (!card) return;
     setError(null);
-    jobs.launch(`qa:${card.ref}:${op}`, { label: `${name} da ${card.iid}`, busy: label, screen: { name: 'qa', ref: card.ref, card } }, fn);
+    jobs.launch(`qa:${card.ref}:${op}`, { label, busy: busyLabel, screen: { name: 'qa', ref: card.ref, card } }, fn);
   };
 
   const ask = useCallback(
     async (text: string) => {
-      if (card) act('ask', 'Pergunta do QA', 'O agente está respondendo…', () => api.askQa(card.iid, text));
+      if (card) act('ask', t('ui.qa.job.ask', { iid: card.iid }), t('ui.qa.busy.answering'), () => api.askQa(card.iid, text));
     },
     [card],
   );
@@ -73,22 +79,22 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
   };
 
   if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">Atividade não encontrada.</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>Voltar</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.qa.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.qa.back')}</button></div></div></div>;
   }
 
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
-        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+        <header className="panel-dark hero" style={HEADER_STYLE}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.qa.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Passagem para o QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
+            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.qa.header', { iid: card.iid })}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
           {qa && voiceOn && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
-              <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
+              <MicIcon /> {talk.recording ? t('ui.qa.mic.send') : t('ui.qa.mic.ask')}
             </button>
           )}
         </header>
@@ -96,11 +102,11 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
 
         {loaded && !qa && (
           <section className="panel" style={{ padding: 20, gap: 12 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Preparar a passagem</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.qa.prepare.title')}</h2>
             <p className="small muted" style={{ lineHeight: 1.5 }}>
-              O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica {tv('by.voice')} o que mudou e o que testar. Sai daqui o checklist e o texto do Teams. Criar a branch de release, o comentário e o status continuam na skill qa-release-branch, no Claude Code, com “sim”.
+              {t('ui.qa.prepare.intro', { by: tv('by.voice') })}
             </p>
-            <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
+            <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', t('ui.qa.job.prepare', { iid: card.iid }), t('ui.qa.busy.reading'), () => api.prepareQa(card))}>{t('ui.qa.prepare.button')}</button></div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
           </section>
         )}
@@ -109,15 +115,15 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
           <div className="cols" style={{ gap: 18 }}>
             <main style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <section className="panel" style={{ padding: 20, gap: 10 }}>
-                <h2 className="section-title">O que mudou</h2>
+                <h2 className="section-title">{t('ui.qa.changed')}</h2>
                 <p style={{ lineHeight: 1.6 }}>{qa.changed}</p>
-                <h2 className="section-title" style={{ marginTop: 6 }}>Ambiente</h2>
+                <h2 className="section-title" style={{ marginTop: 6 }}>{t('ui.qa.environment')}</h2>
                 <p className="small" style={{ lineHeight: 1.5 }}>{qa.environment}</p>
               </section>
               <section className="panel" style={{ padding: 20, gap: 12 }}>
                 <div className="row spread">
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Checklist</h2>
-                  <button type="button" className="btn" onClick={() => void copy('checklist', checklistText(qa))}>{copied === 'checklist' ? 'Copiado' : 'Copiar'}</button>
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.qa.checklist')}</h2>
+                  <button type="button" className="btn" onClick={() => void copy('checklist', checklistText(t, qa))}>{copied === 'checklist' ? t('ui.qa.copied') : t('ui.qa.copy')}</button>
                 </div>
                 {qa.checklist.map((s) => (
                   <div key={s.title} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -127,20 +133,20 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
                 ))}
                 {qa.risks.length > 0 && (
                   <div className="item" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
-                    <span className="section-title">Riscos</span>
+                    <span className="section-title">{t('ui.qa.risks')}</span>
                     {qa.risks.map((r) => <span key={r} className="small">{r}</span>)}
                   </div>
                 )}
-                <div className="row" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>
+                <div className="row" style={{ borderTop: DIVIDER, paddingTop: 12 }}>
                   {confirmWrite ? (
                     <>
-                      <button type="button" className="btn btn-red" onClick={() => { setConfirmWrite(false); act('write', 'Checklist do QA', 'Gravando…', () => api.writeQaChecklist(qa.iid)); }}>
-                        Confirmar: {qa.checklistExists ? 'substituir' : 'criar'} QA_CHECKLIST.md
+                      <button type="button" className="btn btn-red" onClick={() => { setConfirmWrite(false); act('write', t('ui.qa.job.write', { iid: card.iid }), t('ui.qa.busy.saving'), () => api.writeQaChecklist(qa.iid)); }}>
+                        {qa.checklistExists ? t('ui.qa.write.confirmReplace') : t('ui.qa.write.confirmCreate')}
                       </button>
-                      <button type="button" className="btn" onClick={() => setConfirmWrite(false)}>Cancelar</button>
+                      <button type="button" className="btn" onClick={() => setConfirmWrite(false)}>{t('ui.qa.cancel')}</button>
                     </>
                   ) : (
-                    <button type="button" className="btn" onClick={() => setConfirmWrite(true)}>{qa.written ? 'Gravar de novo no .specs' : 'Gravar no .specs'}</button>
+                    <button type="button" className="btn" onClick={() => setConfirmWrite(true)}>{qa.written ? t('ui.qa.write.again') : t('ui.qa.write.save')}</button>
                   )}
                   <span className="mono faint" style={{ wordBreak: 'break-all' }}>{qa.checklistFile.replace(/^.*\/\.specs\//, '.specs/')}</span>
                 </div>
@@ -149,28 +155,28 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <aside style={{ flex: '2 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
                 <div className="row spread">
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aviso no Teams</h2>
-                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!qa.teams} onClick={() => void copy('teams', qa.teams)}>{copied === 'teams' ? 'Copiado' : 'Copiar'}</button>
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.qa.teams.title')}</h2>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!qa.teams} onClick={() => void copy('teams', qa.teams)}>{copied === 'teams' ? t('ui.qa.copied') : t('ui.qa.copy')}</button>
                 </div>
-                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: 'var(--on-night-muted)' }}>Sem a nota do QA na issue ainda: o texto sai depois que a qa-release-branch criar a branch e o comentário.</p>}
-                <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>
+                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: 'var(--on-night-muted)' }}>{t('ui.qa.teams.empty')}</p>}
+                <p className="small" style={{ color: 'var(--on-night-muted)' }}>{t('ui.qa.teams.note')}</p>
               </section>
               <section className="panel" style={{ gap: 10 }}>
-                <h2 className="section-title">Perguntas do QA</h2>
+                <h2 className="section-title">{t('ui.qa.questions')}</h2>
                 {qa.talk.map((m, i) => (
-                  <Bubble key={i} m={m} who={m.me ? 'Pergunta' : 'Agente'} voice={voice} player={player} speaker="qa" />
+                  <Bubble key={i} m={m} who={m.me ? t('ui.qa.who.question') : t('ui.qa.who.agent')} voice={voice} player={player} speaker="qa" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) ask(draft.trim()); setDraft(''); }}>
-                  <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
-                  <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>
+                  <input className="text-input" placeholder={t('ui.qa.draft.placeholder')} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={t('ui.qa.draft.aria')} />
+                  <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>{t('ui.qa.draft.submit')}</button>
                 </form>
               </section>
               <section className="panel" style={{ gap: 10 }}>
-                <h2 className="section-title">Levar ao QA</h2>
-                <p className="small" style={{ lineHeight: 1.5 }}>Branch de release, pipelines, comentário @qa.interno e status Ready for testing: skill qa-release-branch, no Claude Code, com “sim” por ação.</p>
+                <h2 className="section-title">{t('ui.qa.take.title')}</h2>
+                <p className="small" style={{ lineHeight: 1.5 }}>{t('ui.qa.take.text')}</p>
                 <ContinueInClaude sessionId={qa.sessionId} />
-                <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está relendo a atividade…', () => api.prepareQa(card))}>Preparar de novo</button>
+                <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', t('ui.qa.job.prepare', { iid: card.iid }), t('ui.qa.busy.rereading'), () => api.prepareQa(card))}>{t('ui.qa.prepare.again')}</button>
               </section>
             </aside>
           </div>
