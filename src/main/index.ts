@@ -39,7 +39,7 @@ function show(): void {
 }
 
 function emit(ev: AppEvent): void {
-  win?.webContents.send('app:event', ev);
+  if (win && !win.isDestroyed()) win.webContents.send('app:event', ev);
   broadcast(ev);
 }
 
