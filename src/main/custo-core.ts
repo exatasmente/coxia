@@ -136,7 +136,8 @@ export function summarize(args: {
     today: row('today', 'Hoje', byDay.get(today) ?? []),
     week: row('week', 'Últimos 7 dias', week),
     month: row('month', 'Este mês', args.gens.filter((g) => day(g.at).startsWith(month))),
-    projected: args.key ? (args.key.usageMonthly / d.getDate()) * daysInMonth : null,
+    // Spent so far plus the pace of the last 7 days for the days left; the month alone is too noisy in its first days.
+    projected: args.key ? args.key.usageMonthly + (args.key.usageWeekly / 7) * (daysInMonth - d.getDate()) : null,
     days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, g]) => row(date, date, g)),
     kinds,
     sessions: new Set(args.gens.map((g) => g.session)).size,

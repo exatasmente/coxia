@@ -38,7 +38,7 @@ export interface CustoSummary {
   today: CustoRow;
   week: CustoRow;
   month: CustoRow;
-  // Projection of the month spend of the whole key (Claude Code through OpenRouter included).
+  // Month spend of the whole key (Claude Code through OpenRouter included) plus the last 7 days' pace for the days left.
   projected: number | null;
   days: CustoRow[];
   kinds: CustoRow[];
