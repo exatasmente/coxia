@@ -162,7 +162,8 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
   } catch (e) {
     return failure('claude-sdk', 'no-key', e instanceof Error ? e.message : String(e), started);
   }
-  const env = sdkEnv({ target: { kind: p.kind, baseUrl: p.baseUrl, options: p.options }, base: process.env, secret, profile: readProfileEnv(p.envFile ? expandHome(p.envFile, HOME) : null), vcsHost: null });
+  // No retries: a test wants the first answer (a wrong key would otherwise be retried for minutes).
+  const env = { ...sdkEnv({ target: { kind: p.kind, baseUrl: p.baseUrl, options: p.options }, base: process.env, secret, profile: readProfileEnv(p.envFile ? expandHome(p.envFile, HOME) : null), vcsHost: null }), CLAUDE_CODE_MAX_RETRIES: '0' };
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TEST_TIMEOUT_MS);
   try {
