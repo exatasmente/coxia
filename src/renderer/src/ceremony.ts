@@ -52,6 +52,7 @@ export function useCeremony() {
   const [teamsKey, setTeamsKey] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [resumed, setResumed] = useState(false);
+  const [statusAt, setStatusAt] = useState<string | null>(null);
   const pending = useRef(new Map<string, Promise<AgentTurn>>());
 
   const loadCards = useCallback(async () => {
@@ -137,6 +138,14 @@ export function useCeremony() {
     await loadCards();
   }, [hydrate, snapshot, loadCards]);
 
+  // A status check refreshes the GitLab data of the cards already on the agenda; turns stay as they were.
+  const mergeStatus = useCallback((result: CardsResult, checkedAt: string) => {
+    setStatusAt(checkedAt);
+    setCards((prev) =>
+      prev ? { ...prev, generatedAt: result.generatedAt, cards: prev.cards.map((c) => result.cards.find((x) => x.ref === c.ref) ?? c) } : prev,
+    );
+  }, []);
+
   const getTurn = useCallback((card: Card): Promise<AgentTurn> => {
     const known = pending.current.get(card.ref);
     if (known) return known;
@@ -197,6 +206,8 @@ export function useCeremony() {
   return {
     restored,
     resumed,
+    statusAt,
+    mergeStatus,
     reset,
     cards,
     cardsError,

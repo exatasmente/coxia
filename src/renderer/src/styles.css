@@ -148,3 +148,25 @@ h1, h2, h3, p { margin: 0; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.settings-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: center; padding-top: 12px; border-top: 1px solid var(--line-2); }
+select.text-input { background: var(--surface); }
+
+/* Narrow windows: the agenda becomes a strip of chips above the stage; side panels go below it. */
+@media (max-width: 1100px) {
+  .call-layout, .deep-layout { flex-direction: column; align-items: stretch; }
+  .call-layout > *, .deep-layout > * { flex: none !important; max-width: none !important; min-width: 0 !important; width: 100%; }
+  .call-queue { flex-direction: row !important; overflow-x: auto; padding: 10px; }
+  .call-queue .section-title, .call-queue .queue-item > div:not(.chip), .call-queue .queue-item .badge { display: none; }
+  .call-queue .queue-item { flex: 0 0 auto; padding: 4px; }
+  .deep-main { order: -1; }
+  .quad { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1100px) and (min-width: 720px) {
+  .quad { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .call-side, .deep-side { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+@media (max-width: 760px) {
+  .settings-row { grid-template-columns: minmax(0, 1fr); }
+  .page { padding: 16px; }
+}

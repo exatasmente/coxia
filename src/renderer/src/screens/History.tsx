@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react';
 import { buildMinutes } from '../../../shared/minutes';
 import type { HistoryEntry, SavedCeremony } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api, errorText } from '../api';
+import { api, errorText, plural } from '../api';
+import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon } from './icons';
 
 function time(ms: number | null): string {
   return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
 }
 
 function span(start: number | null, end: number | null): string {
@@ -193,6 +190,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                         </span>
                         <span className="small">{turn?.speech ?? 'Agente não chegou a falar.'}</span>
                         {turn?.question && <span className="small" style={{ color: 'var(--blue-ink)' }}>Pergunta: {turn.question}{detail.answered[card.ref] ? ' (respondida)' : ''}</span>}
+                        <span><ContinueInClaude sessionId={turn?.sessionId} /></span>
                       </div>
                     );
                   })}
@@ -200,7 +198,10 @@ export function History({ go }: { go: (s: Screen) => void }) {
 
                 {deepDives.map(([ref, d]) => (
                   <section key={ref} className="panel" style={{ padding: 20, gap: 12 }}>
-                    <h2 style={{ fontSize: 18, fontWeight: 600 }}>Desbloqueio · {ref}</h2>
+                    <div className="row spread">
+                      <h2 style={{ fontSize: 18, fontWeight: 600 }}>Desbloqueio · {ref}</h2>
+                      <ContinueInClaude sessionId={d.sessionId} />
+                    </div>
                     {d.msgs.map((msg, i) => (
                       <div key={i} className={`bubble-row ${msg.me ? 'me' : ''}`}>
                         <div className="bubble">

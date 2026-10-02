@@ -144,6 +144,11 @@ export interface HistoryEntry {
   ataSaved: boolean;
 }
 
+export type AppEvent =
+  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' }
+  | { type: 'deep'; card: Card }
+  | { type: 'status'; result: CardsResult; checkedAt: string };
+
 export interface Api {
   loadState(): Promise<SavedCeremony | null>;
   saveState(state: SavedCeremony): Promise<void>;
@@ -160,4 +165,9 @@ export interface Api {
   transcribe(audio: ArrayBuffer): Promise<string>;
   voices(): Promise<{ moderator: Voice; agents: Voice[] }>;
   copy(text: string): Promise<void>;
+  getSettings(): Promise<import('./settings').Settings>;
+  saveSettings(settings: import('./settings').Settings): Promise<import('./settings').Settings>;
+  continueInClaude(sessionId: string): Promise<{ ok: boolean; command: string }>;
+  checkStatus(): Promise<string>;
+  onEvent(cb: (event: AppEvent) => void): () => void;
 }

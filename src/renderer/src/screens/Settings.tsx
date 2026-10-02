@@ -1,0 +1,197 @@
+import { useEffect, useState } from 'react';
+import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/settings';
+import type { Screen } from '../App';
+import { api, errorText } from '../api';
+import { BackIcon } from './icons';
+
+const ROLES: [ModelRole, string, string][] = [
+  ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
+  ['reply', 'Resposta ao que você diz', 'Entende a sua resposta e tira dela a decisão e a ação.'],
+  ['deep', 'Desbloqueio', 'Investiga a fundo, lendo spec, GitLab e playbook. Vale um modelo mais forte.'],
+  ['teams', 'Texto do Teams', 'Escreve o resumo para a daily do time.'],
+];
+
+const TOOLS: [keyof Settings['tools'], string, string][] = [
+  ['files', 'Ler arquivos', 'Read, Grep e Glob no workspace (specs, rules, código). Arquivos de segredo ficam sempre bloqueados.'],
+  ['skills', 'Skills do playbook', 'Carregar skills como no Claude Code.'],
+  ['gitlabMcp', 'GitLab pelo MCP', 'Descrição e diff de issue e MR (gitlab-issue-analysis).'],
+  ['glab', 'GitLab pelo glab', 'Só leitura: discussões de MR, comentários de issue, mr/issue view. Escrita sempre bloqueada.'],
+  ['subagents', 'Subagentes no desbloqueio', 'O agente do desbloqueio pode delegar leitura (kb-reader, Explore).'],
+];
+
+const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
+  const [s, setS] = useState<Settings | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    api.getSettings().then(setS, (e) => setError(errorText(e)));
+  }, []);
+
+  if (!s) return <div className="page"><div className="wrap">{error ? <div className="error">{error}</div> : <span className="spinner" />}</div></div>;
+
+  const set = (change: (prev: Settings) => Settings) => {
+    setSaved(null);
+    setS((prev) => (prev ? change(prev) : prev));
+  };
+
+  const save = async () => {
+    setError(null);
+    try {
+      setS(await api.saveSettings(s));
+      setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const check = async () => {
+    setChecking(true);
+    setStatus(null);
+    try {
+      setStatus(await api.checkStatus());
+    } catch (e) {
+      setStatus(`Falhou: ${errorText(e)}`);
+    }
+    setChecking(false);
+  };
+
+  return (
+    <div className="page">
+      <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
+        <header className="row spread">
+          <div className="row" style={{ gap: 14 }}>
+            <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <h1 style={{ fontSize: 26, fontWeight: 700 }}>Configurações</h1>
+          </div>
+          <div className="row">
+            {saved && <span className="small" style={{ color: 'var(--teal-ink)' }}>{saved}</span>}
+            <button type="button" className="btn btn-dark" onClick={() => void save()}>Salvar</button>
+          </div>
+        </header>
+        {error && <div className="error">{error}</div>}
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Modelos</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>Pelo OpenRouter. Vale a partir da próxima chamada de agente.</p>
+          </div>
+          {ROLES.map(([role, label, hint]) => {
+            const custom = !MODEL_OPTIONS.includes(s.models[role]);
+            return (
+              <div key={role} className="settings-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>{label}</div>
+                  <div className="small muted">{hint}</div>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                  <select
+                    className="text-input"
+                    aria-label={`Modelo: ${label}`}
+                    value={custom ? '__custom' : s.models[role]}
+                    onChange={(e) => set((p) => ({ ...p, models: { ...p.models, [role]: e.target.value === '__custom' ? '' : e.target.value } }))}
+                  >
+                    {MODEL_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    <option value="__custom">Outro…</option>
+                  </select>
+                  {custom && (
+                    <input
+                      className="text-input mono"
+                      aria-label={`Outro modelo: ${label}`}
+                      placeholder="provedor/modelo"
+                      value={s.models[role]}
+                      onChange={(e) => set((p) => ({ ...p, models: { ...p.models, [role]: e.target.value.trim() } }))}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Ferramentas dos agentes</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>
+              Sempre bloqueado, independentemente daqui: editar arquivos, web, arquivos de segredo e qualquer escrita no GitLab.
+            </p>
+          </div>
+          {TOOLS.map(([key, label, hint]) => (
+            <label key={key} className="check-row">
+              <input type="checkbox" checked={s.tools[key]} onChange={() => set((p) => ({ ...p, tools: { ...p.tools, [key]: !p.tools[key] } }))} />
+              <span>
+                <span style={{ fontWeight: 600, display: 'block' }}>{label}</span>
+                <span className="small muted">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Agenda e notificações</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>Conferir o status usa só o daily-report: não chama nenhum modelo.</p>
+          </div>
+          <div className="settings-row">
+            <div style={{ fontWeight: 600 }}>Dias</div>
+            <div className="row" style={{ gap: 6 }}>
+              {DAYS.map((d, i) => {
+                const on = s.schedule.days.includes(i);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`filter ${on ? 'on' : ''}`}
+                    aria-pressed={on}
+                    onClick={() => set((p) => ({ ...p, schedule: { ...p.schedule, days: on ? p.schedule.days.filter((x) => x !== i) : [...p.schedule.days, i].sort() } }))}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="settings-row">
+            <label htmlFor="pre" style={{ fontWeight: 600 }}>Aviso da pré-daily</label>
+            <input id="pre" type="time" className="text-input" style={{ maxWidth: 140 }} value={s.schedule.preDaily} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, preDaily: e.target.value } }))} />
+          </div>
+          <div className="settings-row">
+            <div style={{ fontWeight: 600 }}>Conferir o status</div>
+            <div className="row" style={{ gap: 8 }}>
+              <span className="small muted">a cada</span>
+              <input type="number" min={5} max={240} className="text-input" aria-label="Intervalo em minutos" style={{ maxWidth: 90 }} value={s.schedule.statusEveryMin} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, statusEveryMin: Number(e.target.value) } }))} />
+              <span className="small muted">min, das</span>
+              <input type="time" className="text-input" aria-label="Início" style={{ maxWidth: 130 }} value={s.schedule.from} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, from: e.target.value } }))} />
+              <span className="small muted">às</span>
+              <input type="time" className="text-input" aria-label="Fim" style={{ maxWidth: 130 }} value={s.schedule.to} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, to: e.target.value } }))} />
+            </div>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={s.notifications} onChange={() => set((p) => ({ ...p, notifications: !p.notifications }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Notificações</span>
+              <span className="small muted">Hora da pré-daily, bloqueio novo (com convite para a call) e mudança de status.</span>
+            </span>
+          </label>
+          <label className="check-row">
+            <input type="checkbox" checked={s.closeToTray} onChange={() => set((p) => ({ ...p, closeToTray: !p.closeToTray }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Fechar mantém na bandeja</span>
+              <span className="small muted">A janela some, o app fica no ícone da bandeja e o agendador continua. Para sair de vez: Sair, no menu da bandeja.</span>
+            </span>
+          </label>
+          <div className="row">
+            <button type="button" className="btn" disabled={checking} onClick={() => void check()}>
+              {checking ? <span className="spinner" /> : null} Conferir status agora
+            </button>
+            {status && <span className="small muted" style={{ whiteSpace: 'pre-line' }}>{status}</span>}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

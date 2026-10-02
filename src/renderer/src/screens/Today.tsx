@@ -44,6 +44,7 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
               Só leitura · efeitos vão para a ata
             </span>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
+            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
           </div>
         </header>
 
@@ -190,9 +191,14 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
             <p className="faint">
               Cada agente é montado a cada cerimônia a partir do cartão do GitLab, do spec e do playbook. Nada fica guardado só na cabeça dele.
             </p>
-            <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.loadCards()}>
-              {c.loadingCards ? <span className="spinner" /> : null} Atualizar do GitLab
-            </button>
+            <span className="row" style={{ gap: 10 }}>
+              {c.statusAt && (
+                <span className="faint">Status conferido às {new Date(c.statusAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+              )}
+              <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.loadCards()}>
+                {c.loadingCards ? <span className="spinner" /> : null} Atualizar do GitLab
+              </button>
+            </span>
           </div>
         </section>
 

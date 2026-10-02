@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { destination } from '../../../shared/destination';
-import type { DeepState } from '../../../shared/types';
+import type { Card, DeepState } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
+import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Wave } from './Wave';
 
@@ -20,8 +21,16 @@ export function Deep({
   go,
   refName,
   back,
-}: { ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void; refName: string; back: 'today' | 'call' }) {
-  const card = c.cards?.cards.find((x) => x.ref === refName);
+  passedCard,
+}: {
+  ceremony: Ceremony;
+  player: ReturnType<typeof usePlayer>;
+  go: (s: Screen) => void;
+  refName: string;
+  back: 'today' | 'call';
+  passedCard?: Card;
+}) {
+  const card = c.cards?.cards.find((x) => x.ref === refName) ?? passedCard;
   const { sessionId, msgs, sources, options, pick, saved } = c.deep[refName] ?? EMPTY_DEEP;
   const { updateDeep } = c;
   const update = useCallback((change: (d: DeepState) => DeepState) => updateDeep(refName, change), [updateDeep, refName]);
@@ -151,11 +160,12 @@ export function Deep({
           <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>
+          <ContinueInClaude sessionId={sessionId} dark />
           <button type="button" className="btn btn-red" onClick={() => go({ name: back })}>Encerrar</button>
         </header>
 
-        <div className="cols">
-          <aside className="panel" style={{ flex: '1 1 260px', maxWidth: 320, minWidth: 250, gap: 12 }}>
+        <div className="cols deep-layout">
+          <aside className="panel deep-sources" style={{ flex: '1 1 260px', maxWidth: 320, minWidth: 250, gap: 12 }}>
             <h2 className="section-title">O que o agente leu</h2>
             {card.blockers.map((b) => (
               <div key={b} className="item" style={{ borderColor: '#FECACA', background: '#FEF2F2' }}>
@@ -176,7 +186,7 @@ export function Deep({
             {!sources.length && <p className="faint">As leituras do agente aparecem aqui.</p>}
           </aside>
 
-          <main className="panel" style={{ flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }} aria-live="polite">
+          <main className="panel deep-main" style={{ flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }} aria-live="polite">
             <div className="row spread">
               <h2 className="section-title">Conversa</h2>
               <span className="faint">transcrição ao vivo</span>
@@ -205,7 +215,7 @@ export function Deep({
             </form>
           </main>
 
-          <aside style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <aside className="deep-side" style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <section className="panel">
               <h2 className="section-title">Saídas possíveis</h2>
               {!options && (

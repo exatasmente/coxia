@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Api } from '../shared/types';
+import type { Api, AppEvent } from '../shared/types';
 
 const api: Api = {
   loadState: () => ipcRenderer.invoke('state:load'),
@@ -17,6 +17,15 @@ const api: Api = {
   transcribe: (audio) => ipcRenderer.invoke('voice:transcribe', audio),
   voices: () => ipcRenderer.invoke('voice:list'),
   copy: (text) => ipcRenderer.invoke('clipboard:copy', text),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  continueInClaude: (sessionId) => ipcRenderer.invoke('claude:continue', sessionId),
+  checkStatus: () => ipcRenderer.invoke('status:check'),
+  onEvent: (cb) => {
+    const listener = (_e: unknown, ev: AppEvent) => cb(ev);
+    ipcRenderer.on('app:event', listener);
+    return () => ipcRenderer.removeListener('app:event', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

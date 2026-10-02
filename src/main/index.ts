@@ -1,29 +1,97 @@
 import { readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { BrowserWindow, app, clipboard, ipcMain, session, shell } from 'electron';
-import type { AgentTurn, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
+import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
+import type { Settings } from '../shared/settings';
+import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
+import { continueInClaude } from './claude';
+import { getSettings, saveSettings } from './config';
+import { checkStatus, type Notice, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
 
+const RESOURCES = join(import.meta.dirname, '../../resources');
+
+let win: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let quitting = false;
+
+function show(): void {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function emit(ev: AppEvent): void {
+  win?.webContents.send('app:event', ev);
+}
+
+function notify(n: Notice): void {
+  if (!Notification.isSupported()) return;
+  const note = new Notification({ title: n.title, body: n.body, icon: join(RESOURCES, 'icon.png') });
+  note.on('click', () => {
+    show();
+    emit(n.onClick);
+  });
+  note.show();
+}
+
 function createWindow(): void {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1440,
     height: 940,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 760,
+    minHeight: 560,
     title: 'Cerimônias',
+    icon: join(RESOURCES, 'icon.png'),
+    autoHideMenuBar: true,
     backgroundColor: '#F4F5F7',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true },
   });
+  win.setMenuBarVisibility(false);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
+  // Closing keeps the app in the tray so the scheduler goes on; "Sair" in the tray quits.
+  win.on('close', (e) => {
+    if (!quitting && getSettings().closeToTray && tray) {
+      e.preventDefault();
+      win?.hide();
+    }
+  });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
+}
+
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
+  tray.setToolTip('Cerimônias');
+  const go = (to: 'today' | 'call' | 'settings' | 'history') => () => {
+    show();
+    emit({ type: 'navigate', to });
+  };
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Abrir', click: show },
+      { label: 'Pré-daily agora', click: go('call') },
+      { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => console.error('[status]', e)) },
+      { label: 'Histórico', click: go('history') },
+      { label: 'Configurações', click: go('settings') },
+      { type: 'separator' },
+      {
+        label: 'Sair',
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on('click', show);
 }
 
 function handlers(): void {
@@ -47,16 +115,32 @@ function handlers(): void {
   ipcMain.handle('voice:transcribe', (_e, audio: ArrayBuffer) => transcribe(audio));
   ipcMain.handle('voice:list', () => ({ moderator: MODERATOR, agents: AGENT_VOICES }));
   ipcMain.handle('clipboard:copy', (_e, text: string) => clipboard.writeText(text));
+  ipcMain.handle('settings:get', () => getSettings());
+  ipcMain.handle('settings:save', (_e, s: Settings) => saveSettings(s));
+  ipcMain.handle('claude:continue', (_e, sessionId: string) => continueInClaude(sessionId));
+  ipcMain.handle('status:check', () => checkStatus(true));
 }
 
-app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
-  handlers();
-  startVoice();
-  createWindow();
-});
+// A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
+if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CERIMONIAS_DATA_DIR, 'userData'));
 
-app.on('window-all-closed', () => {
-  stopVoice();
+// A second launch brings the running window back instead of opening another ceremony.
+if (!app.requestSingleInstanceLock()) {
   app.quit();
-});
+} else {
+  app.on('second-instance', show);
+  app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
+    handlers();
+    startVoice();
+    createWindow();
+    createTray();
+    startScheduler({ notify, emit });
+  });
+  app.on('before-quit', () => {
+    quitting = true;
+    stopVoice();
+  });
+  app.on('window-all-closed', () => app.quit());
+}

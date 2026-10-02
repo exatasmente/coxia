@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Screen } from '../App';
-import { api, clock, errorText, shortRef } from '../api';
+import { api, clock, errorText, plural, shortRef } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Wave } from './Wave';
 
@@ -92,7 +93,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     const cc = latest.current;
     cc.end();
     setPhase('ended');
-    const text = `Fim da pauta. Ficaram ${cc.decisions.length} decisões e ${cc.effects.length} ações na fila. Vou montar a ata.`;
+    const text = `Fim da pauta. Ficaram ${plural(cc.decisions.length, 'decisão', 'decisões')} e ${plural(cc.effects.length, 'ação', 'ações')} na fila. Vou montar a ata.`;
     cc.addLog('Moderador', text, MODERATOR_COLOR);
     if (cc.voices) await player.say(text, cc.voices.moderator, 'Moderador').catch(() => undefined);
   }, [player]);
@@ -205,8 +206,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
           </button>
         </header>
 
-        <div className="cols">
-          <aside className="panel" style={{ flex: '1 1 240px', maxWidth: 300, minWidth: 240, gap: 6 }}>
+        <div className="cols call-layout">
+          <aside className="panel call-queue" style={{ flex: '1 1 240px', maxWidth: 300, minWidth: 240, gap: 6 }}>
             <h2 className="section-title" style={{ marginBottom: 8 }}>Pauta</h2>
             {cards.map((x, i) => {
               const done = i < idx || phase === 'ended';
@@ -227,13 +228,13 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             })}
           </aside>
 
-          <main style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <main className="call-main" style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <section className="panel-dark">
               {phase === 'ended' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 4px' }}>
                   <div className="small" style={{ color: '#99F6E4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fim da pauta</div>
                   <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.3 }}>
-                    {c.decisions.length} decisões, {c.effects.length} efeitos na fila e {c.minutes.unanswered.length} perguntas sem resposta.
+                    {plural(c.decisions.length, 'decisão', 'decisões')}, {plural(c.effects.length, 'efeito', 'efeitos')} na fila e {plural(c.minutes.unanswered.length, 'pergunta', 'perguntas')} sem resposta.
                   </div>
                   <div><button type="button" className="btn btn-accent" onClick={() => go({ name: 'ata' })}>Gerar ata</button></div>
                 </div>
@@ -310,6 +311,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 </button>
                 <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
                 <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>
+                <ContinueInClaude sessionId={turn?.sessionId} />
                 <span className="grow" />
                 <button type="button" className="btn btn-dark" disabled={phase === 'intro' || busy || rec.recording} onClick={next}>
                   {idx >= cards.length - 1 ? 'Fechar pauta' : 'Próximo agente'} <NextIcon />
@@ -334,7 +336,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
           </main>
 
-          <aside style={{ flex: '1 1 300px', maxWidth: 360, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <aside className="call-side" style={{ flex: '1 1 300px', maxWidth: 360, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <section className="panel">
               <h2 className="section-title">Pendente de você · {pending.length}</h2>
               {!pending.length && <p className="small faint">Nenhuma pergunta em aberto.</p>}

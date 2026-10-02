@@ -1,19 +1,28 @@
 import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
-import { MODEL, WORKSPACE, agentEnv } from './env';
+import type { ModelRole } from '../shared/settings';
+import { getSettings } from './config';
+import { WORKSPACE, agentEnv } from './env';
 
-const READ_ONLY = [
-  'Read',
-  'Grep',
-  'Glob',
-  'Skill',
+const MCP_GITLAB = [
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
   'mcp__gitlab-issue-analysis__get_merge_request_details_and_changes',
-  'Bash(glab api:*)',
-  'Bash(glab mr view:*)',
-  'Bash(glab issue view:*)',
 ];
+const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
+
+// Tools pre-approved for a role, from the settings; dontAsk denies everything else.
+function allowedFor(role: ModelRole): string[] {
+  if (role === 'teams') return [];
+  const t = getSettings().tools;
+  return [
+    ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
+    ...(t.skills ? ['Skill'] : []),
+    ...(t.gitlabMcp ? MCP_GITLAB : []),
+    ...(t.glab ? GLAB_RULES : []),
+    ...(t.subagents && role === 'deep' ? ['Agent'] : []),
+  ];
+}
 
 // The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
 const GLAB_READ = [
@@ -89,20 +98,21 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-async function run<T>(prompt: string, schema: Schema, extra: Partial<Options> = {}): Promise<Run<T>> {
+async function run<T>(role: ModelRole, prompt: string, schema: Schema, extra: Partial<Options> = {}): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
   const q = query({
     prompt,
     options: {
       cwd: WORKSPACE,
-      model: MODEL,
+      model: getSettings().models[role],
       env: agentEnv(),
       // dontAsk denies every tool that allowedTools does not pre-approve.
       permissionMode: 'dontAsk',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: `${ROLE}\nPara ler o GitLab: ${GITLAB_HINT}` },
-      allowedTools: READ_ONLY,
+      allowedTools: allowedFor(role),
       disallowedTools: [
+        ...(getSettings().tools.glab ? [] : ['Bash']),
         'Edit',
         'Write',
         'NotebookEdit',
@@ -165,6 +175,7 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
   ].join('\n');
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null }>(
+    'turn',
     prompt,
     schema,
   );
@@ -201,7 +212,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     efeito: { texto: string; repo: string } | null;
     desbloqueio: boolean;
   };
-  const r = await run<Out>(prompt, schema, { maxTurns: 3, ...(turn.sessionId ? { resume: turn.sessionId } : {}) });
+  const r = await run<Out>('reply', prompt, schema, { maxTurns: 3, ...(turn.sessionId ? { resume: turn.sessionId } : {}) });
   const target = r.data.decisao?.alvo === 'spec' && !card.spec ? 'ata' : r.data.decisao?.alvo;
   const decision: Decision | null =
     r.data.decisao && target ? { ref: card.ref, text: r.data.decisao.texto, target, dest: destination(card, target) } : null;
@@ -222,9 +233,8 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
     '"fala": resposta em até 80 palavras, para ser ouvida.',
     SPEECH_RULES,
   ].join('\n');
-  const r = await run<{ fala: string }>(prompt, obj({ fala: str }), {
+  const r = await run<{ fala: string }>('deep', prompt, obj({ fala: str }), {
     maxTurns: 20,
-    allowedTools: [...READ_ONLY, 'Agent'],
     ...(sessionId ? { resume: sessionId } : {}),
   });
   return { sessionId: r.sessionId, speech: r.data.fala, sources: r.sources };
@@ -237,6 +247,7 @@ export async function deepOptions(card: Card, sessionId: string): Promise<DeepOp
   ].join('\n');
   const option = obj({ titulo: str, consequencia: str, efeito: strOrNull, decisao: str, recomendada: { type: 'boolean' } });
   const r = await run<{ opcoes: { titulo: string; consequencia: string; efeito: string | null; decisao: string; recomendada: boolean }[] }>(
+    'deep',
     prompt,
     obj({ opcoes: { type: 'array', items: option, minItems: 2, maxItems: 3 } }),
     { maxTurns: 4, resume: sessionId },
@@ -258,6 +269,6 @@ export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string
     `Decisões: ${JSON.stringify(minutes.decisions)}`,
     `Efeitos pendentes: ${JSON.stringify(minutes.effects)}`,
   ].join('\n');
-  const r = await run<{ texto: string }>(prompt, obj({ texto: str }), { maxTurns: 2, allowedTools: [] });
+  const r = await run<{ texto: string }>('teams', prompt, obj({ texto: str }), { maxTurns: 2 });
   return r.data.texto;
 }
