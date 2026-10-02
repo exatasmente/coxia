@@ -6,7 +6,7 @@ import { join } from 'node:path';
 export const HOME = homedir();
 export const WORKSPACE = join(HOME, 'projects');
 export const PLAYBOOK = join(WORKSPACE, 'sz-playbook');
-export const SPECS = join(PLAYBOOK, '.specs');
+export const SPECS = process.env.CERIMONIAS_SPECS_DIR ?? join(PLAYBOOK, '.specs');
 export const DAILY_REPORT = join(HOME, '.local/bin/daily-report');
 export const ATAS = process.env.CERIMONIAS_DATA_DIR ?? join(HOME, '.local/share/cerimonias');
 export const GITLAB = 'dark.smartzap.com.br';

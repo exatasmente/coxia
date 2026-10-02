@@ -333,3 +333,6 @@ export async function conflictAsk(context: string, question: string, sessionId: 
   );
   return { sessionId: r.sessionId, speech: r.data.fala, sources: r.sources };
 }
+
+// Structured agent call for the other ceremony modules (gate, QA handoff, retro).
+export { run as askAgent, obj, str, strOrNull, SPEECH_RULES };

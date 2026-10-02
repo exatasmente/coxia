@@ -144,6 +144,45 @@ export interface HistoryEntry {
   ataSaved: boolean;
 }
 
+export interface GateOption {
+  gate: 1 | 2;
+  label: string;
+  file: string;
+}
+
+export interface GateQuestionView {
+  text: string;
+  kind: string;
+  options: string[];
+  answer: { choice: number | null; other: string | null; correct: boolean; comment: string } | null;
+  // Only after the whole round is answered:
+  correct: number | null;
+  section: string | null;
+  explanation: string | null;
+}
+
+export interface GateRoundView {
+  questions: GateQuestionView[];
+  verdict: 'assertivo' | 'não assertivo' | null;
+  visual: { mermaid: string; heading: string; description: string; inserted: boolean } | null;
+}
+
+export interface GateView {
+  id: string;
+  ref: string;
+  iid: string;
+  title: string;
+  gate: 1 | 2;
+  label: string;
+  artifact: string;
+  quizFile: string;
+  summary: string;
+  sessionId: string | null;
+  rounds: GateRoundView[];
+  talk: { me: boolean; text: string; at: string }[];
+  recorded: string | null;
+}
+
 export type ActionKind = 'sync' | 'qa-comment' | 'conflict';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
@@ -203,5 +242,14 @@ export interface Api {
   approveAction(id: string): Promise<ReleaseAction>;
   skipAction(id: string): Promise<ReleaseAction>;
   conflictAsk(id: string, question: string): Promise<ReleaseAction>;
+  gateOptions(card: Card): Promise<GateOption[]>;
+  startGate(card: Card, gate: 1 | 2): Promise<GateView>;
+  getGate(id: string): Promise<GateView | null>;
+  answerGate(id: string, question: number, input: { choice?: number; text?: string }): Promise<GateView>;
+  explainGate(id: string, question: string): Promise<GateView>;
+  visualGate(id: string): Promise<GateView>;
+  insertGateVisual(id: string): Promise<GateView>;
+  newGateRound(id: string): Promise<GateView>;
+  recordGate(id: string): Promise<GateView>;
   onEvent(cb: (event: AppEvent) => void): () => void;
 }

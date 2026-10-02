@@ -8,6 +8,7 @@ import { Ata } from './screens/Ata';
 import { Call } from './screens/Call';
 import { Conflict } from './screens/Conflict';
 import { Deep } from './screens/Deep';
+import { Gate } from './screens/Gate';
 import { History } from './screens/History';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
@@ -20,7 +21,8 @@ export type Screen =
   | { name: 'history' }
   | { name: 'settings' }
   | { name: 'actions' }
-  | { name: 'conflict'; id: string };
+  | { name: 'conflict'; id: string }
+  | { name: 'gate'; ref: string; card?: Card };
 
 export function App() {
   const ceremony = useCeremony();
@@ -70,6 +72,8 @@ export function App() {
       return <SettingsScreen go={go} />;
     case 'actions':
       return <Actions actions={actions} go={go} />;
+    case 'gate':
+      return <Gate card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }

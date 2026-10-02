@@ -8,6 +8,7 @@ import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude } from './claude';
 import { getSettings, saveSettings } from './config';
+import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { checkStatus, type Notice, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
@@ -128,6 +129,15 @@ function handlers(): void {
   ipcMain.handle('actions:approve', (_e, id: string) => approveAction(id));
   ipcMain.handle('actions:skip', (_e, id: string) => skipAction(id));
   ipcMain.handle('actions:conflict', (_e, id: string, question: string) => conflictTalk(id, question));
+  ipcMain.handle('gate:options', (_e, card: Card) => gateOptions(card));
+  ipcMain.handle('gate:start', (_e, card: Card, gate: 1 | 2) => startGate(card, gate));
+  ipcMain.handle('gate:get', (_e, id: string) => getGate(id));
+  ipcMain.handle('gate:answer', (_e, id: string, q: number, input: { choice?: number; text?: string }) => answerGate(id, q, input));
+  ipcMain.handle('gate:explain', (_e, id: string, question: string) => explainGate(id, question));
+  ipcMain.handle('gate:visual', (_e, id: string) => visualGate(id));
+  ipcMain.handle('gate:insert', (_e, id: string) => insertGateVisual(id));
+  ipcMain.handle('gate:round', (_e, id: string) => newGateRound(id));
+  ipcMain.handle('gate:record', (_e, id: string) => recordGate(id));
 }
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.

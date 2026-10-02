@@ -27,6 +27,15 @@ const api: Api = {
   approveAction: (id) => ipcRenderer.invoke('actions:approve', id),
   skipAction: (id) => ipcRenderer.invoke('actions:skip', id),
   conflictAsk: (id, question) => ipcRenderer.invoke('actions:conflict', id, question),
+  gateOptions: (card) => ipcRenderer.invoke('gate:options', card),
+  startGate: (card, gate) => ipcRenderer.invoke('gate:start', card, gate),
+  getGate: (id) => ipcRenderer.invoke('gate:get', id),
+  answerGate: (id, q, input) => ipcRenderer.invoke('gate:answer', id, q, input),
+  explainGate: (id, question) => ipcRenderer.invoke('gate:explain', id, question),
+  visualGate: (id) => ipcRenderer.invoke('gate:visual', id),
+  insertGateVisual: (id) => ipcRenderer.invoke('gate:insert', id),
+  newGateRound: (id) => ipcRenderer.invoke('gate:round', id),
+  recordGate: (id) => ipcRenderer.invoke('gate:record', id),
   onEvent: (cb) => {
     const listener = (_e: unknown, ev: AppEvent) => cb(ev);
     ipcRenderer.on('app:event', listener);

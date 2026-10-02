@@ -191,7 +191,10 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                   <div className="mono faint" style={{ flex: '0 0 auto' }}>
                     {failed ? <span style={{ color: 'var(--red)' }} title={failed}>agente falhou</span> : turn ? 'agente pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
                   </div>
-                  <button type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
+                  <div className="row" style={{ gap: 8 }}>
+                    {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
+                    <button type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
+                  </div>
                 </div>
               );
             })}
