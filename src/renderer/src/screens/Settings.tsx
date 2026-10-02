@@ -3,6 +3,7 @@ import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/se
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { setSpeechEnabled } from '../audio';
+import { autostartApi } from '../autostartApi';
 import { BackIcon } from './icons';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -28,10 +29,21 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [autostart, setAutostart] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.getSettings().then(setS, (e) => setError(errorText(e)));
+    autostartApi.get().then(setAutostart, () => setAutostart(false));
   }, []);
+
+  const toggleAutostart = async () => {
+    setError(null);
+    try {
+      setAutostart(await autostartApi.set(!autostart));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
 
   if (!s) return <div className="page"><div className="wrap">{error ? <div className="error">{error}</div> : <span className="spinner" />}</div></div>;
 
@@ -230,6 +242,18 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </button>
             {status && <span className="small muted" style={{ whiteSpace: 'pre-line' }}>{status}</span>}
           </div>
+        </section>
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Início</h2>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={autostart === true} disabled={autostart === null} onChange={() => void toggleAutostart()} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Abrir ao entrar no sistema</span>
+              <span className="small muted">Começa só na bandeja, sem janela. Vale na hora, sem precisar salvar.</span>
+            </span>
+          </label>
         </section>
       </div>
     </div>

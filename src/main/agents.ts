@@ -4,6 +4,7 @@ import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget,
 import type { ModelRole } from '../shared/settings';
 import { getSettings } from './config';
 import { WORKSPACE, agentEnv } from './env';
+import { CLAUDE_BIN } from './paths';
 
 const MCP_GITLAB = [
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
@@ -152,6 +153,7 @@ async function run<T>(
       },
       outputFormat: { type: 'json_schema', schema },
       maxTurns: 8,
+      ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
       ...extra,
     },
   });

@@ -12,12 +12,14 @@ import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGat
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
+import { RESOURCES } from './paths';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
 
-const RESOURCES = join(import.meta.dirname, '../../resources');
+// Autostart launches with --hidden: the app starts in the tray only.
+const HIDDEN = process.argv.includes('--hidden');
 
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -53,6 +55,7 @@ function createWindow(): void {
     title: 'Cerimônias',
     icon: join(RESOURCES, 'icon.png'),
     autoHideMenuBar: true,
+    show: !HIDDEN,
     backgroundColor: '#F4F5F7',
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true },
   });

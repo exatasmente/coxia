@@ -6,3 +6,4 @@ scratch/
 .npm-*.log
 .uv-*.log
 .electron-dl.log
+dist/
