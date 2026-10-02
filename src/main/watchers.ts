@@ -7,6 +7,7 @@ import type { WatcherAlert } from '../shared/watchers';
 import { loadCards, specInfo } from './cards';
 import { getSettings } from './config';
 import { ATAS, GITLAB, HOME } from './env';
+import { logError } from './errorlog';
 import { gateOptions } from './gate';
 import type { Module, ModuleContext } from './module';
 import type { Notice } from './scheduler';
@@ -270,6 +271,7 @@ export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()
         s.prod[iid] = check;
       } catch (e) {
         console.error(`[watchers] gitlab #${iid}`, e);
+        logError('job:watchers', e, { job: 'watchers', iid });
         continue;
       }
     }
@@ -313,6 +315,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
         found.push(...(await fn()));
       } catch (e) {
         console.error(`[watchers] ${name}`, e);
+        logError('job:watchers', e, { job: 'watchers', phase: name });
       }
     };
     await attempt('gate', () => gateAlerts(cards));

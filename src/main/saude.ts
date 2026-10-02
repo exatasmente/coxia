@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { DepHealth, DepId, SaudeSnapshot, TaskHealth } from '../shared/saude';
 import { getSettings } from './config';
+import { logError } from './errorlog';
 import { DATA_ROOT, GITLAB, HOME, openRouterKey } from './env';
 import type { Module, ModuleContext } from './module';
 import { readReport, reportStatus } from './report';
@@ -115,6 +116,7 @@ export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
   } catch (e) {
     t.ok = false;
     t.failStreak += 1;
+    logError(`job:${name}`, e, { job: name });
     t.message = short(e instanceof Error ? e.message : String(e)) || 'Falhou sem mensagem.';
     // Only the third failure of a sequence warns; a success resets the count.
     if (t.failStreak === STREAK_ALERT && ctx && getSettings().notifications) {

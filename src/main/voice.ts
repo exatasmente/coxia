@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { type Term, corrected, spoken, whisperHint } from '../shared/glossary';
 import type { SpeechSegment, Voice, VoiceEngine } from '../shared/types';
+import { logError } from './errorlog';
 import { PACKAGED, SIDECAR_DIR, venvDir } from './paths';
 import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
 import { ensureVenv, venvPython } from './venv';
@@ -61,6 +62,9 @@ let starting: Promise<ChildProcessWithoutNullStreams> | null = null;
 let installer: ChildProcess | null = null;
 let nextId = 1;
 const waiting = new Map<number, (r: Reply) => void>();
+let stopping = false;
+// The last stderr lines tell why the sidecar died; they go to the error log with the exit.
+const stderrTail: string[] = [];
 
 function launch(python: string): ChildProcessWithoutNullStreams {
   mkdirSync(AUDIO, { recursive: true });
@@ -71,8 +75,17 @@ function launch(python: string): ChildProcessWithoutNullStreams {
     waiting.get(r.id)?.(r);
     waiting.delete(r.id);
   });
-  child.stderr.on('data', (d) => process.stderr.write(`[voice] ${d}`));
-  child.on('exit', () => {
+  child.stderr.on('data', (d) => {
+    process.stderr.write(`[voice] ${d}`);
+    stderrTail.push(...String(d).split('\n').filter(Boolean));
+    stderrTail.splice(0, Math.max(0, stderrTail.length - 12));
+  });
+  child.on('exit', (code, signal) => {
+    if (!stopping) {
+      const error = new Error(`voice sidecar exited (code ${code ?? 'none'}, signal ${signal ?? 'none'})`);
+      error.stack = stderrTail.join('\n');
+      logError('sidecar:voice', error, { exitCode: code ?? -1, signal: signal ?? 'none' });
+    }
     proc = null;
     ready = false;
     for (const [, resolve] of waiting) resolve({ id: -1, error: 'voice sidecar exited' });
@@ -101,7 +114,11 @@ function call(req: Record<string, unknown>, onId?: (id: number) => void): Promis
   const id = nextId++;
   onId?.(id);
   return new Promise((resolve, reject) => {
-    waiting.set(id, (r) => (r.error ? reject(new Error(r.error)) : resolve(r)));
+    waiting.set(id, (r) => {
+      // A dead sidecar is logged once, by its exit; cancelled requests are not failures.
+      if (r.error && r.id !== -1 && r.error !== 'cancelled') logError('sidecar:voice', new Error(r.error.slice(0, 160)), { cmd: String(req.cmd) });
+      return r.error ? reject(new Error(r.error)) : resolve(r);
+    });
     sidecar().then(
       (p) => p.stdin.write(`${JSON.stringify({ id, ...req })}\n`),
       (e) => {
@@ -125,10 +142,14 @@ export async function voiceStatus(): Promise<{ alive: boolean; ready: boolean; p
 
 export function startVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
-  sidecar().catch((e) => console.error('[voice]', (e as Error).message));
+  sidecar().catch((e) => {
+    console.error('[voice]', (e as Error).message);
+    logError('sidecar:voice', e, { phase: 'start' });
+  });
 }
 
 export function stopVoice(): void {
+  stopping = true;
   installer?.kill();
   proc?.kill();
   rmSync(AUDIO, { recursive: true, force: true });

@@ -4,6 +4,7 @@ import { register as auditoria } from './auditoria';
 import { register as conflictVerify } from './conflictVerify';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
+import { errorlog } from './errorlog';
 import { register as feedback } from './feedback';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
@@ -22,6 +23,7 @@ export const MODULES: Module[] = [
   custoTempo,
   diagramFix,
   efeitos,
+  errorlog,
   feedback,
   gitlabQuick,
   glossary,
