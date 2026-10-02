@@ -12,6 +12,7 @@ import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { saude } from './saude';
+import { update } from './update';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
 
@@ -30,6 +31,7 @@ export const MODULES: Module[] = [
   radar,
   retention,
   saude,
+  update,
   watchers,
   workspaces,
 ];

@@ -12,6 +12,7 @@ import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
 import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
+import { UpdateSection } from './UpdateSection';
 import { WorkspacesSection } from './WorkspacesSection';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -335,6 +336,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
           </label>
         </section>
 
+        <UpdateSection />
         <PushSection />
         <WebAccessSection />
       </div>
