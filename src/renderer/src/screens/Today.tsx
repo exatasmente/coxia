@@ -18,6 +18,7 @@ import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
 import { tv } from '../i18n';
+import { useDay } from '../minutesApi';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -60,6 +61,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     void api.getSettings().then((s) => setRetro({ day: s.schedule.retroDay, time: s.schedule.retroTime }), () => undefined);
   }, []);
 
+  const { day: todayDay } = useDay(c.snapshot.id.slice(0, 10), c.startedAt);
+  const todayVersion = todayDay?.versions.find((v) => v.ceremonyId === c.snapshot.id)?.n ?? null;
   const retroToday = on?.retro !== false && !!retro && retroDue(now, retro.day, retro.time);
   const plan = agoraPlan({
     hasCards: !!c.cards,
@@ -74,6 +77,11 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     effects: c.effects.length,
     retroDue: retroToday,
     label: cycle?.preDailyLabel,
+    sameDay: {
+      version: todayVersion,
+      unchanged: Object.values(c.marks).filter((x) => x.kind === 'unchanged').length,
+      changed: Object.values(c.marks).filter((x) => x.kind === 'changed').length,
+    },
   });
 
   const onAgora = (a: AgoraAction) => {

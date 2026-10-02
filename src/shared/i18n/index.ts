@@ -1,5 +1,7 @@
 import type { Language } from '../config/types';
 import en from './en.json';
+import minutesEn from './minutes.en.json';
+import minutesPtBR from './minutes.pt-BR.json';
 import ptBR from './pt-BR.json';
 import wizardEn from './wizard.en.json';
 import wizardPtBR from './wizard.pt-BR.json';
@@ -19,8 +21,8 @@ export const NOVOICE_SUFFIX = '.novoice';
 
 export const FALLBACK_LANGUAGE: Language = 'pt-BR';
 
-// The setup wizard's strings live in their own files (wizard.*.json) so the catalogs other work adds to do not collide with them.
-export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR }, en: { ...en, ...wizardEn } };
+// The setup wizard's and the minutes versions' strings live in their own files (wizard.*.json, minutes.*.json) so the catalogs other work adds to do not collide with them.
+export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR, ...minutesPtBR }, en: { ...en, ...wizardEn, ...minutesEn } };
 
 export function normalizeLanguage(value: unknown): Language {
   if (value === 'pt-BR' || value === 'en') return value;

@@ -61,6 +61,44 @@ export interface AgentTurn {
   options?: string[];
   // Set when the card did not change and the turn of an earlier day was served again, without calling the agent.
   reused?: { at: string };
+  // What the card looked like when this turn was prepared; the next meeting of the day compares against it.
+  seen?: CardSeen;
+  // Set when the card was already covered in an earlier meeting of the same day.
+  sameDay?: SameDayInfo;
+}
+
+// The part of a card the agent is told about, kept with the turn so a later meeting of the day can say what moved since.
+export interface CardSeen {
+  at: string;
+  fp: string;
+  stage: string | null;
+  blockers: string[];
+  pending: string[];
+  mrs: string[];
+  changes: string[];
+  note: string | null;
+  phase: string | null;
+  artifacts: [string, number][];
+}
+
+export interface SameDayInfo {
+  kind: 'unchanged' | 'changed';
+  // When the earlier meeting's turn for this card was prepared (ISO).
+  since: string;
+  // Version of the day's minutes the earlier meeting became, when it has one.
+  version: number | null;
+  // What moved since, already worded for the person (changed only).
+  changes: string[];
+  // What the earlier meetings of the day decided about this card.
+  decided: string[];
+  // The card did not change but the person asked to go deeper, so the agent was called anyway.
+  deepened?: boolean;
+}
+
+// ceremonyId: the meeting being held (earlier meetings of the day are the ones before it); deepen: the person asked to go deeper on a card that did not change.
+export interface TurnOptions {
+  ceremonyId?: string;
+  deepen?: boolean;
 }
 
 export type DecisionTarget = 'spec' | 'daily-report' | 'ata';
@@ -112,9 +150,24 @@ export interface Minutes {
   transcript: { who: string; text: string; at: string }[];
 }
 
+export interface WrittenDecision {
+  ref: string;
+  dest: string;
+  ok: boolean;
+  detail: string;
+  // The decision text, so a later version of the day can tell it was already written.
+  text?: string;
+  // Set when an earlier version of the day (or the document itself) already had this decision and nothing was written again.
+  duplicateOf?: number | 'document';
+  // Where it went: the plan's decision log, the card note, or only the minutes.
+  target?: DecisionTarget;
+}
+
 export interface SaveResult {
   ataPath: string;
-  written: { ref: string; dest: string; ok: boolean; detail: string }[];
+  written: WrittenDecision[];
+  // Which version of the day's minutes this saved (absent in results saved before versions existed).
+  version?: number;
 }
 
 export interface LogLine {
@@ -167,6 +220,10 @@ export interface HistoryEntry {
   unanswered: number;
   deepDives: number;
   ataSaved: boolean;
+  // Version of the day's minutes this ceremony is (null: the call never started, so it has none).
+  version: number | null;
+  // The call was left unfinished: it cannot be deleted until it ends.
+  live: boolean;
 }
 
 export interface GateOption {
@@ -330,12 +387,12 @@ export interface Api {
   listHistory(): Promise<HistoryEntry[]>;
   getHistory(id: string): Promise<SavedCeremony | null>;
   loadCards(limit: number, refresh?: boolean): Promise<CardsResult>;
-  prepareTurn(card: Card): Promise<AgentTurn>;
+  prepareTurn(card: Card, options?: TurnOptions): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;
   deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer>;
   deepOptions(card: Card, sessionId: string): Promise<DeepOption[]>;
   teamsText(minutes: Minutes, cards: Card[]): Promise<string>;
-  saveMinutes(minutes: Minutes, teams: string, selected: number[]): Promise<SaveResult>;
+  saveMinutes(minutes: Minutes, teams: string, selected: number[], ceremonyId?: string): Promise<SaveResult>;
   planSpeech(text: string, voice: Voice): Promise<SpeechSegment[]>;
   speakSegment(token: string, segment: SpeechSegment): Promise<ArrayBuffer>;
   cancelSpeech(token: string): Promise<void>;

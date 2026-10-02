@@ -73,8 +73,8 @@ for (const dir of SCAN) {
 
 if (flag('--keys')) {
   const load = (...names) => names.flatMap((n) => Object.keys(JSON.parse(readFileSync(join(ROOT, `src/shared/i18n/${n}.json`), 'utf8'))));
-  const pt = new Set(load('pt-BR', 'wizard.pt-BR'));
-  const en = new Set(load('en', 'wizard.en'));
+  const pt = new Set(load('pt-BR', 'wizard.pt-BR', 'minutes.pt-BR'));
+  const en = new Set(load('en', 'wizard.en', 'minutes.en'));
   const missingEn = [...pt].filter((k) => !en.has(k));
   const missingPt = [...en].filter((k) => !pt.has(k));
   if (missingEn.length || missingPt.length) {

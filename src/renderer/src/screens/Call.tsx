@@ -9,7 +9,11 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { FixHeard } from './FixHeard';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
-import { tv, useVoiceEnabled } from '../i18n';
+import { t, tv, useVoiceEnabled } from '../i18n';
+import { clockOf } from '../../../shared/sameDay';
+import { getLanguage } from '../../../shared/i18n';
+import { useDay } from '../minutesApi';
+import { versionTitle } from './MinutesParts';
 import { voiceEnabled } from '../../../shared/i18n';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
@@ -35,6 +39,9 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   // follow-up replies the agent offered after the last answer, per card
   const [followUps, setFollowUps] = useState<Record<string, string[]>>({});
   const voiceOn = useVoiceEnabled();
+  const date = c.snapshot.id.slice(0, 10);
+  const { day } = useDay(date, c.startedAt);
+  const versionN = day?.versions.find((v) => v.ceremonyId === c.snapshot.id)?.n ?? null;
   const rec = useRecorder(() => void talkRef.current());
   const runId = useRef(0);
   const latest = useRef(c);
@@ -106,6 +113,29 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     cc.addLog('Moderador', text, MODERATOR_COLOR);
     if (cc.voices) await player.say(text, cc.voices.moderator, 'Moderador').catch(() => undefined);
   }, [player]);
+
+  // A card that did not change got a short turn; "aprofundar mesmo assim" asks the agent anyway, still told what was said before.
+  const deepenSame = useCallback(async () => {
+    if (!card) return;
+    setError(null);
+    runId.current++;
+    const id = runId.current;
+    player.stop();
+    setPhase('preparing');
+    try {
+      const cc = latest.current;
+      const t2 = await cc.getTurn(card, { deepen: true });
+      if (runId.current !== id) return;
+      cc.addLog(`#${card.iid}`, t2.speech, cc.colorOf(card.ref));
+      setTurnStart(Date.now());
+      setPhase('speaking');
+      const voice = cc.voiceOf(card.ref);
+      if (voice) await player.say(t2.speech, voice, card.ref).catch(() => undefined);
+    } catch (e) {
+      setError(`O agente da #${card.iid} falhou: ${errorText(e)}`);
+    }
+    if (runId.current === id) setPhase('idle');
+  }, [card, player]);
 
   const next = useCallback(() => {
     runId.current++;
@@ -224,6 +254,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
           <div className="row" style={{ gap: 14 }}>
             <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>Pré-daily</h1>
+            {versionN !== null && <span className="pill">{versionTitle(versionN, date)}</span>}
             <span className="pill" style={{ background: 'var(--chip-teal-bg)', color: 'var(--chip-teal-ink)', borderColor: 'var(--chip-teal-bg)', fontWeight: 600 }}>
               <span className="live-dot" />{phase === 'ended' ? 'Encerrada' : 'Ao vivo'} · {clock(c.startedAt ?? now, now)}
             </span>
@@ -247,6 +278,9 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                     <div className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>#{x.iid}</div>
                     <div className="t">{x.title}</div>
+                    {c.marks[x.ref]?.kind !== undefined && c.marks[x.ref].kind !== 'new' && c.marks[x.ref].since && (
+                      <div className="small faint">{t(c.marks[x.ref].kind === 'unchanged' ? 'sameDay.mark.unchanged' : 'sameDay.mark.changed', { time: clockOf(c.marks[x.ref].since as string, getLanguage()) })}</div>
+                    )}
                   </div>
                   <span className={`badge ${nowItem ? 'badge-now' : q && !done ? 'badge-ask' : 'badge-quiet'}`} style={{ fontSize: 11 }}>
                     {nowItem ? 'agora' : done ? 'feito' : q ? 'pergunta' : 'na fila'}
@@ -331,6 +365,18 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
               )}
             </section>
 
+            {turn?.sameDay && card && (
+              <div className={`item small ${turn.sameDay.kind === 'changed' || turn.sameDay.deepened ? 'ask' : ''}`} role="note">
+                <span>
+                  {turn.sameDay.kind === 'changed'
+                    ? t('sameDay.badge.changed', { time: clockOf(turn.sameDay.since, getLanguage()), changes: turn.sameDay.changes.join('; ') })
+                    : t('sameDay.badge.unchanged', { time: clockOf(turn.sameDay.since, getLanguage()) })}
+                </span>
+                {turn.sameDay.kind === 'unchanged' && !turn.sameDay.deepened && (
+                  <span><button type="button" className="btn" disabled={busy || phase === 'preparing'} onClick={() => void deepenSame()}>{t('sameDay.deepen')}</button></span>
+                )}
+              </div>
+            )}
             {hint && <div className="item ask small">{hint}</div>}
             {error && <div className="error">{error}</div>}
 

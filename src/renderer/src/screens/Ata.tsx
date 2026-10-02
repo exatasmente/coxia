@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { teamsKey } from '../../../shared/minutes';
+import { diffVersions, previousOf, snapshotOf } from '../../../shared/minutesVersions';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
 import { jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
-import { tv } from '../i18n';
+import { ChangeSummary, DayPanel, DeleteSheet, type MinutesView, VersionPanel, VersionSwitcher, versionTitle } from './MinutesParts';
+import { t, tv } from '../i18n';
+import { type Which, useDay } from '../minutesApi';
 
 function effectsPrompt(effects: Ceremony['effects']): string {
   return [
@@ -27,6 +30,27 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
   const [copied, setCopied] = useState<'teams' | 'effects' | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const asked = useRef(false);
+
+  // The minutes are versions of the day: this screen shows the call being held (or just held) and lets the person read the others.
+  const date = c.snapshot.id.slice(0, 10);
+  const { day, reload } = useDay(date, `${c.snapshot.id}:${!!c.saveResult}:${c.snapshot.endedAt}`);
+  const currentN = day?.versions.find((v) => v.ceremonyId === c.snapshot.id)?.n ?? null;
+  const [sel, setSel] = useState<'current' | MinutesView>('current');
+  const [deleting, setDeleting] = useState<Which | null>(null);
+  const [copiedOther, setCopiedOther] = useState(false);
+  const liveNow = !!c.startedAt && !c.callEnded;
+  // The version's registration happens with the first save of the call, a moment after it starts.
+  useEffect(() => {
+    if (!c.startedAt || !day || currentN !== null) return;
+    const timer = setTimeout(() => void reload(), 900);
+    return () => clearTimeout(timer);
+  }, [c.startedAt, day, currentN, reload]);
+  const shownView: MinutesView = sel === 'current' ? { kind: 'version', n: currentN ?? -1 } : sel;
+  const others = day?.versions.filter((v) => v.n !== currentN) ?? [];
+  const liveDiff = day ? diffVersions(previousOf(day.versions, currentN ?? Number.MAX_SAFE_INTEGER), snapshotOf(c.snapshot)) : null;
+  const picked = sel !== 'current' && sel.kind === 'version' ? day?.versions.find((v) => v.n === sel.n) : undefined;
+  const deleteTarget: Which | null = sel === 'current' ? (currentN !== null ? [currentN] : null) : sel.kind === 'version' ? [sel.n] : 'all';
+  const deleteBlocked = (sel === 'current' && liveNow) || !!picked?.live || (sel !== 'current' && sel.kind === 'day' && (liveNow || !!day?.versions.some((v) => v.live)));
 
   const key = teamsKey(c.snapshot);
   const current = !!teams && c.teamsKey === key;
@@ -64,7 +88,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
     setSaveError(null);
     const idx = selected.flatMap((on, i) => (on ? [i] : []));
     jobs.launch('ata:save', { label: 'Gravação da ata', busy: 'Gravando a ata…', screen: { name: 'ata' } }, async () => {
-      const saved = await api.saveMinutes(m, teams ?? '', idx);
+      const saved = await api.saveMinutes(m, teams ?? '', idx, c.snapshot.id);
       setResult(saved);
       return saved;
     });
@@ -83,6 +107,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               {!c.callEnded && c.startedAt && <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'call' })}>{tv('call.back')}</button>}
             </div>
             <h1 style={{ fontSize: 30, fontWeight: 700 }}>Ata da pré-daily</h1>
+            {currentN !== null && <div className="small" style={{ fontWeight: 600 }}>{versionTitle(currentN, date)}</div>}
             <div className="muted">
               {new Date(m.startedAt).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })} · {fmt(m.startedAt)} às {fmt(m.endedAt)} ·{' '}
               {c.cards?.cards.length ?? 0} atividades
@@ -102,8 +127,50 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
           </div>
         </header>
 
+        {day && day.versions.length > 0 && (
+          <div className="row spread" style={{ gap: 12 }}>
+            <VersionSwitcher versions={day.versions} selected={shownView} withDay onSelect={(v) => setSel(v.kind === 'version' && v.n === currentN ? 'current' : v)} />
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn" disabled={!deleteTarget || deleteBlocked} title={deleteBlocked ? tv('minutes.delete.liveHint') : undefined} onClick={() => deleteTarget && setDeleting(deleteTarget)}>
+                {sel !== 'current' && sel.kind === 'day' ? t('minutes.delete.day') : t('minutes.delete.version')}
+              </button>
+              {(sel === 'current' || sel.kind === 'version') && day.versions.length > 1 && (
+                <button type="button" className="btn" disabled={liveNow || day.versions.some((v) => v.live)} title={liveNow ? tv('minutes.delete.liveHint') : undefined} onClick={() => setDeleting('all')}>{t('minutes.delete.day')}</button>
+              )}
+            </div>
+          </div>
+        )}
+        {deleteBlocked && <p className="small muted">{tv('minutes.delete.liveHint')}</p>}
+        {deleting && day && (
+          <DeleteSheet
+            date={date}
+            which={deleting}
+            onClose={() => setDeleting(null)}
+            onDone={(entry) => {
+              setDeleting(null);
+              setSel('current');
+              void reload();
+              // The ceremony itself starts over through the event the deletion broadcasts.
+              if (entry.ceremonyIds.includes(c.snapshot.id)) go({ name: 'today' });
+            }}
+          />
+        )}
+
+        {sel !== 'current' && sel.kind === 'day' && day && (
+          <DayPanel day={day} copied={copiedOther} onCopy={(text) => void api.copy(text).then(() => { setCopiedOther(true); setTimeout(() => setCopiedOther(false), 2000); })} />
+        )}
+        {picked && day && <VersionPanel version={picked} date={date} copied={copiedOther} onChanged={() => void reload()} onCopy={(text) => void api.copy(text).then(() => { setCopiedOther(true); setTimeout(() => setCopiedOther(false), 2000); })} />}
+        {sel !== 'current' && sel.kind === 'version' && <p className="small muted">{t('minutes.ata.readOnly')} <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'history' })}>{t('minutes.ata.openHistory')}</button></p>}
+
+        {sel === 'current' && (
         <div className="cols" style={{ gap: 20 }}>
           <div style={{ flex: '3 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {liveDiff && liveDiff.base !== null && (
+              <section className="panel" style={{ padding: 20 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('minutes.diff.title')}</h2>
+                <ChangeSummary diff={liveDiff} />
+              </section>
+            )}
             <section className="panel" style={{ padding: 20, gap: 12 }}>
               <div className="row spread">
                 <div>
@@ -126,7 +193,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                         <span style={{ lineHeight: 1.45 }}>{d.text}</span>
                       </span>
                       <span className="dest">→ {d.dest}</span>
-                      {w && <span className="small" style={{ color: w.ok ? 'var(--teal-ink)' : 'var(--amber-ink)' }}>{w.ok ? 'gravada' : w.detail}</span>}
+                      {w && <span className="small" style={{ color: w.ok ? 'var(--teal-ink)' : 'var(--amber-ink)' }}>{w.ok && w.duplicateOf === undefined ? 'gravada' : w.detail}</span>}
                     </span>
                   </label>
                 );
@@ -201,17 +268,18 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
             <section className="panel" style={{ padding: 20 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600 }}>Transcrição</h2>
               <div style={{ maxHeight: 420, overflow: 'auto' }}>
-                {m.transcript.map((t, i) => (
+                {m.transcript.map((line, i) => (
                   <div key={i} className="log-line">
-                    <span className="at">{t.at}</span>
-                    <span className="who">{t.who}</span>
-                    <span className="text">{t.text}</span>
+                    <span className="at">{line.at}</span>
+                    <span className="who">{line.who}</span>
+                    <span className="text">{line.text}</span>
                   </div>
                 ))}
               </div>
             </section>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

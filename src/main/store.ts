@@ -1,11 +1,14 @@
 import { execFile } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
 import { promisify } from 'node:util';
-import type { Decision, Minutes, SaveResult } from '../shared/types';
+import { norm } from '../shared/minutesVersions';
+import type { Decision, Minutes, SaveResult, WrittenDecision } from '../shared/types';
 import { ATAS } from './env';
 import { invalidateReport } from './report';
 import { decisionLogHeading, prompt as cp, text as cycleWord } from './cyclePrompts';
+import { dateOfId } from './historyFiles';
+import { commitVersion, openVersion, recordSelfWrite, writeVersionFile } from './minutesStore';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
 import { modeText } from './agentVoice';
@@ -47,7 +50,15 @@ function planPath(dest: string): string | null {
   return path.endsWith('.md') && existsSync(path) ? path : null;
 }
 
-function writeSpecRegistro(d: Decision): { ok: boolean; detail: string } {
+interface Written {
+  ok: boolean;
+  detail: string;
+  // The document already had this decision: nothing was written.
+  duplicate?: boolean;
+  path?: string;
+}
+
+function writeSpecRegistro(d: Decision): Written {
   const path = planPath(d.dest);
   if (!path) return { ok: false, detail: cycleWord('cycle.log.noPlan') };
   const text = readFileSync(path, 'utf8');
@@ -58,9 +69,11 @@ function writeSpecRegistro(d: Decision): { ok: boolean; detail: string } {
   const nextHeading = text.slice(start).search(/^#{1,2} /m);
   const end = nextHeading === -1 ? text.length : start + nextHeading;
   const entry = `${cp('turn.doc.logEntry', { date: today(), text: d.text })}\n`;
+  // A meeting later the same day does not write again what an earlier one already wrote.
+  if (text.slice(start, end).includes(entry.trim())) return { ok: true, detail: path, duplicate: true, path };
   const before = text.slice(0, end).replace(/\n*$/, '\n');
   writeFileSync(path, `${before}${entry}${end < text.length ? '\n' : ''}${text.slice(end)}`);
-  return { ok: true, detail: path };
+  return { ok: true, detail: path, path };
 }
 
 function currentNote(ref: string): string | null {
@@ -77,41 +90,67 @@ function currentNote(ref: string): string | null {
   }
 }
 
-async function writeDailyNote(d: Decision): Promise<{ ok: boolean; detail: string }> {
+async function writeDailyNote(d: Decision): Promise<Written & { note?: string }> {
   // `daily-report note` replaces the note, so the previous one is kept in front.
   const previous = currentNote(d.ref);
-  const note = previous ? `${previous} | ${today()}: ${d.text}` : `${today()}: ${d.text}`;
+  const line = `${today()}: ${d.text}`;
+  const note = previous ? `${previous} | ${line}` : line;
   const source = rc().cardSource;
   if (!source?.noteArgs.length) return { ok: false, detail: 'a fonte de cartões não grava notas: ficou só na ata' };
+  const detail = `${basename(source.command)} note ${d.ref}`;
+  if (previous?.includes(line)) return { ok: true, detail, duplicate: true };
   await run(source.command, source.noteArgs.map((a) => a.replace('{ref}', d.ref).replace('{note}', note)), { timeout: 30_000 });
   invalidateReport();
-  return { ok: true, detail: `${basename(source.command)} note ${d.ref}` };
+  return { ok: true, detail, note };
 }
 
-export async function saveMinutes(m: Minutes, teams: string, selected: number[]): Promise<SaveResult> {
+// The same decision written by an earlier version of the day, if one did.
+function earlierWrite(d: Decision, earlier: { n: number; written: WrittenDecision[] }[]): number | null {
+  for (const v of [...earlier].reverse()) {
+    if (v.written.some((w) => w.ok && w.duplicateOf === undefined && w.target === d.target && w.dest === d.dest && w.ref === d.ref && norm(w.text ?? '') === norm(d.text))) return v.n;
+  }
+  return null;
+}
+
+export async function saveMinutes(m: Minutes, teams: string, selected: number[], ceremonyId?: string): Promise<SaveResult> {
   mkdirSync(ATAS, { recursive: true });
-  const ataPath = join(ATAS, `${today()}-pre-daily.md`);
-  appendFileSync(ataPath, `\n${minutesMarkdown(m, teams)}`);
+  const date = ceremonyId ? dateOfId(ceremonyId) : today();
+  const version = openVersion(date, ceremonyId, m);
+  const ataPath = writeVersionFile(date, version.n, minutesMarkdown(m, teams));
   const written: SaveResult['written'] = [];
+  // What the index keeps about each decision (its text and where it went); the result the screen gets stays as it always was.
+  const records: WrittenDecision[] = [];
   for (const i of selected) {
     const d = m.decisions[i];
     if (!d) continue;
+    const record = (w: WrittenDecision) => {
+      written.push({ ref: w.ref, dest: w.dest, ok: w.ok, detail: w.detail, ...(w.duplicateOf !== undefined ? { duplicateOf: w.duplicateOf } : {}) });
+      records.push({ ...w, text: d.text, target: d.target });
+    };
     const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do daily-report');
     if (blocked) {
-      written.push({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
+      record({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
+      continue;
+    }
+    const before = d.target === 'ata' ? null : earlierWrite(d, version.earlier);
+    if (before !== null) {
+      record({ ref: d.ref, dest: d.dest, ok: true, detail: cycleWord('minutes.duplicate.version', { n: before }), duplicateOf: before });
       continue;
     }
     try {
-      const r =
-        d.target === 'spec'
-          ? writeSpecRegistro(d)
-          : d.target === 'daily-report'
-            ? await writeDailyNote(d)
-            : { ok: true, detail: ataPath };
-      written.push({ ref: d.ref, dest: d.dest, ...r });
+      if (d.target === 'spec') {
+        const r = writeSpecRegistro(d);
+        if (r.ok && r.path && !r.duplicate) recordSelfWrite(date, { file: r.path });
+        record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });
+      } else if (d.target === 'daily-report') {
+        const r = await writeDailyNote(d);
+        if (r.note) recordSelfWrite(date, { note: { ref: d.ref, text: r.note } });
+        record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });
+      } else record({ ref: d.ref, dest: d.dest, ok: true, detail: ataPath });
     } catch (e) {
-      written.push({ ref: d.ref, dest: d.dest, ok: false, detail: String(e) });
+      record({ ref: d.ref, dest: d.dest, ok: false, detail: String(e) });
     }
   }
-  return { ataPath, written };
+  commitVersion(date, version.n, { teams, written: records });
+  return { ataPath, written, version: version.n };
 }

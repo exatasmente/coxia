@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
-import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
+import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage } from '../shared/i18n';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
@@ -11,7 +11,8 @@ import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
-import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
+import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
+import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
 import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
@@ -497,20 +498,28 @@ export function nullish(value: string | null): string | null {
   return !v || /^(null|none|nenhum|nenhuma|n\/a|-)\.?$/i.test(v) ? null : v;
 }
 
-export async function prepareTurn(card: Card): Promise<AgentTurn> {
-  const same = reusableTurn(card);
-  if (same) return same;
-  const fp = cardFingerprint(card);
+export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<AgentTurn> {
+  // A card already covered in an earlier meeting today is compared with what that meeting saw; this comes before the reuse of earlier days.
+  const earlier = earlierMeetings(opts.ceremonyId);
+  const day = earlier.length ? judge(card, earlier) : null;
+  if (day?.kind === 'unchanged' && !opts.deepen) {
+    recordReuse(card.ref);
+    return unchangedTurn(card, day);
+  }
+  const same = day ? null : reusableTurn(card);
+  if (same) return { ...same, seen: cardSnapshot(card).seen };
+  const snap = day?.now ?? cardSnapshot(card);
   const c = cycle();
   const pre = c.ceremonyParams.preDaily;
-  const prompt = cp('turn.main', {
+  const common = {
     ref: card.ref,
     card: cardContext(card),
     specHint: pre.specReads > 0 && c.enrichment.specFolder ? cp('turn.specHint', { reads: pre.specReads }) : '',
     words: pre.speechWords,
     questionLine: c.meanings.question.enabled ? cp('turn.questionOn', { question: cycleWord(c.meanings.question.text) }) : cp('turn.questionOff'),
     meanings: meaningsLine(),
-  });
+  };
+  const prompt = day ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day), delta: deltaText(day) }) : cp('turn.main', common);
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
     'turn',
@@ -526,8 +535,10 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
     blocker: nullish(r.data.bloqueio),
     question: nullish(r.data.pergunta),
     options: options(r.data.opcoes),
+    seen: snap.seen,
+    ...(day ? { sameDay: { ...infoOf(day), ...(opts.deepen ? { deepened: true } : {}) } } : {}),
   };
-  rememberTurn(card, turn, fp);
+  rememberTurn(card, turn, snap.fp);
   return turn;
 }
 

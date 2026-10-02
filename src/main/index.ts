@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
-import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, Voice } from '../shared/types';
+import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
@@ -151,12 +151,12 @@ function handlers(): void {
   handle('history:list', () => listHistory());
   handle('history:get', (id: string) => getHistory(id));
   handle('cards:load', (limit: number, refresh?: boolean) => loadCards(limit, refresh));
-  handle('agent:prepare', (card: Card) => prepareTurn(card));
+  handle('agent:prepare', (card: Card, options?: TurnOptions) => prepareTurn(card, options));
   handle('agent:reply', (card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
   handle('deep:ask', (card: Card, question: string, sessionId: string | null) => deepAsk(card, question, sessionId));
   handle('deep:options', (card: Card, sessionId: string) => deepOptions(card, sessionId));
   handle('ata:teams', (minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
-  handle('ata:save', (minutes: Minutes, teams: string, selected: number[]) => saveMinutes(minutes, teams, selected));
+  handle('ata:save', (minutes: Minutes, teams: string, selected: number[], ceremonyId?: string) => saveMinutes(minutes, teams, selected, ceremonyId));
   handle('voice:plan', (text: string, voice: Voice) => {
     const { engine, prosody } = getSettings().voice;
     return planSpeech(text, voice, engine, { prosody, glossary: glossary() });

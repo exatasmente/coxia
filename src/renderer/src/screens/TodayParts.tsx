@@ -6,6 +6,9 @@ import { useCycle } from '../cycleApi';
 import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
 import { returnedFromQa } from '../../../shared/cycles/stages';
 import type { Card } from '../../../shared/types';
+import { getLanguage } from '../../../shared/i18n';
+import { clockOf } from '../../../shared/sameDay';
+import { t } from '../i18n';
 import { ChevronIcon } from './dashIcons';
 import { ResolveConflict } from './ResolveConflict';
 import { WorktreeBadge } from './radarSlots';
@@ -126,6 +129,8 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
   const failed = c.turnErrors[card.ref];
   const blocked = card.blockers.length > 0;
   const asking = !!turn?.question && !c.answered[card.ref];
+  const mark = c.marks[card.ref];
+  const markText = mark?.since && mark.kind !== 'new' ? t(mark.kind === 'unchanged' ? 'sameDay.mark.unchanged' : 'sameDay.mark.changed', { time: clockOf(mark.since, getLanguage()) }) : null;
   const detailId = `act-${shortRef(card.ref)}-${card.iid}`;
   return (
     <li className={`act ${open ? 'open' : ''}`}>
@@ -135,6 +140,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <span className="act-title">{card.title}</span>
           <span className="act-sub">{stageLabel(card)} · {mrLabel(card.mrs.length)}</span>
         </span>
+        {markText && <span className={`badge ${mark?.kind === 'unchanged' ? 'badge-quiet' : 'badge-ask'}`}>{markText}</span>}
         {blocked && <span className="badge badge-block">bloqueio</span>}
         {!blocked && asking && <span className="badge badge-ask">pergunta</span>}
         <span className={`chev ${open ? 'open' : ''}`}><ChevronIcon /></span>

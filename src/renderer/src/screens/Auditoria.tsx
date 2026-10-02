@@ -13,6 +13,7 @@ const KIND: Record<AuditEntry['kind'], string> = {
   publish: 'Publicação',
   'note-edit': 'Edição de nota',
   push: 'Push de branch',
+  minutes: 'Atas',
 };
 
 function Row({ e }: { e: AuditEntry }) {
@@ -22,7 +23,7 @@ function Row({ e }: { e: AuditEntry }) {
       <div className="row" style={{ gap: 10 }}>
         <span className={`badge ${e.ok ? 'badge-now' : 'badge-block'}`}>{e.ok ? 'ok' : 'erro'}{e.code ? ` ${e.code}` : ''}</span>
         <span className="badge badge-quiet">{KIND[e.kind]}</span>
-        <span className="mono small">#{e.issue}</span>
+        {e.issue > 0 && <span className="mono small">#{e.issue}</span>}
         <span className="faint">{new Date(e.at).toLocaleString('pt-BR')}</span>
         <span className="faint" style={{ marginLeft: 'auto' }}>{e.origin.kind}{e.origin.summary ? ` · ${e.origin.summary}` : ''}</span>
       </div>

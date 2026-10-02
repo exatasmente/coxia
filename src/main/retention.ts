@@ -12,6 +12,7 @@ import {
   type RetentionResult,
 } from '../shared/retention';
 import { getSettings } from './config';
+import { purgeTrash } from './minutesStore';
 import { firstPromptOf } from './custo-core';
 import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
 import { rc } from './workspaceConfig';
@@ -230,6 +231,9 @@ export const retention: Module = (ctx) => {
     everyMin: 24 * 60,
     workHoursOnly: false,
     run: async () => {
+      // The minutes trash has its own fixed term, whatever the retention setting says.
+      const purged = purgeTrash();
+      if (purged) appendFileSync(LOG, `${new Date().toISOString()} lixeira das atas: ${purged} apagada(s)\n`);
       const r = getSettings().retention;
       if (r.enabled) applyRetention(r.days, null);
     },

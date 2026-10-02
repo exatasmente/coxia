@@ -13,8 +13,10 @@ import type {
   Voice,
 } from '../../shared/types';
 import { buildMinutes } from '../../shared/minutes';
+import type { SameDayMark } from '../../shared/sameDay';
 import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
+import { minutesApi } from './minutesApi';
 
 export type { LogLine };
 
@@ -54,13 +56,22 @@ export function useCeremony() {
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [resumed, setResumed] = useState(false);
   const [statusAt, setStatusAt] = useState<string | null>(null);
+  const [marks, setMarks] = useState<Record<string, SameDayMark>>({});
   const pending = useRef(new Map<string, Promise<AgentTurn>>());
+  // The ceremony being held, read by calls that outlive a render (a reset starts a new one and loads its cards right away).
+  const idRef = useRef(id);
+  idRef.current = id;
+  const nextId = useRef<string | null>(null);
 
   const loadCards = useCallback(async (refresh = false) => {
     setLoadingCards(true);
     setCardsError(null);
     try {
-      setCards(await api.loadCards(LIMIT, refresh));
+      const result = await api.loadCards(LIMIT, refresh);
+      // A card already covered in an earlier meeting today is marked, and what moved (or is blocked) goes first.
+      const agenda = await minutesApi.agenda(result.cards, nextId.current ?? idRef.current).catch(() => null);
+      setMarks(agenda?.marks ?? {});
+      setCards(agenda ? { ...result, cards: agenda.cards } : result);
     } catch (e) {
       setCardsError(errorText(e));
     } finally {
@@ -131,6 +142,17 @@ export function useCeremony() {
     return () => clearTimeout(t);
   }, [restored, snapshot]);
 
+  // The ceremony this window holds was deleted from the history (here or in another window): start a fresh one.
+  const resetRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    const onDeleted = (e: Event) => {
+      const ids = (e as CustomEvent<string[]>).detail;
+      if (Array.isArray(ids) && ids.includes(idRef.current)) void resetRef.current();
+    };
+    moduleEvents.addEventListener('minutes:deleted', onDeleted);
+    return () => moduleEvents.removeEventListener('minutes:deleted', onDeleted);
+  }, []);
+
   // The app is about to quit for an update: write the ceremony now instead of waiting out the debounce, then say so.
   const latest = useRef({ snapshot, restored });
   latest.current = { snapshot, restored };
@@ -146,11 +168,24 @@ export function useCeremony() {
 
   const reset = useCallback(async () => {
     pending.current.clear();
-    hydrate({ ...snapshot, id: newId(), cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
+    nextId.current = newId();
+    hydrate({ ...snapshot, id: nextId.current, cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
     setTurnErrors({});
     setResumed(false);
-    await loadCards(true);
+    try {
+      await loadCards(true);
+    } finally {
+      nextId.current = null;
+    }
   }, [hydrate, snapshot, loadCards]);
+
+  resetRef.current = reset;
+
+  // Marks for a ceremony that came back from disk (or whose cards were refreshed by a status check).
+  useEffect(() => {
+    if (!restored || !cards) return;
+    void minutesApi.agenda(cards.cards, id).then((a) => setMarks(a.marks), () => undefined);
+  }, [restored, cards, id]);
 
   // A status check refreshes the GitLab data of the cards already on the agenda; turns stay as they were.
   const mergeStatus = useCallback((result: CardsResult, checkedAt: string) => {
@@ -160,10 +195,10 @@ export function useCeremony() {
     );
   }, []);
 
-  const getTurn = useCallback((card: Card): Promise<AgentTurn> => {
-    const known = pending.current.get(card.ref);
+  const getTurn = useCallback((card: Card, options: { deepen?: boolean } = {}): Promise<AgentTurn> => {
+    const known = options.deepen ? undefined : pending.current.get(card.ref);
     if (known) return known;
-    const p = api.prepareTurn(card).then(
+    const p = api.prepareTurn(card, { ceremonyId: idRef.current, ...(options.deepen ? { deepen: true } : {}) }).then(
       (turn) => {
         setTurns((t) => ({ ...t, [card.ref]: turn }));
         return turn;
@@ -220,6 +255,7 @@ export function useCeremony() {
   return {
     restored,
     resumed,
+    marks,
     statusAt,
     mergeStatus,
     reset,

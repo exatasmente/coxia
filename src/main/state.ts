@@ -1,52 +1,30 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildMinutes } from '../shared/minutes';
 import type { HistoryEntry, SavedCeremony } from '../shared/types';
-import { ATAS } from './env';
+import { CEREMONY_ID, HISTORY, ceremonyIds, isLive, readCeremony, today } from './historyFiles';
+import { registerCeremony, trashedCeremonyIds, versionOfCeremony } from './minutesStore';
 
 // One file per ceremony; the newest one of the day is the one the app resumes.
-const HISTORY = join(ATAS, 'historico');
-const ID = /^\d{4}-\d{2}-\d{2}T\d{6}$/;
-
-function today(): string {
-  return new Date().toLocaleDateString('sv-SE');
-}
-
-function read(id: string): SavedCeremony | null {
-  if (!ID.test(id)) return null;
-  try {
-    const state = JSON.parse(readFileSync(join(HISTORY, `${id}.json`), 'utf8')) as SavedCeremony;
-    return state.version === 1 ? state : null;
-  } catch {
-    return null;
-  }
-}
-
-function ids(): string[] {
-  if (!existsSync(HISTORY)) return [];
-  return readdirSync(HISTORY)
-    .map((f) => f.replace(/\.json$/, ''))
-    .filter((id) => ID.test(id))
-    .sort()
-    .reverse();
-}
-
 export function loadState(): SavedCeremony | null {
-  const latest = ids().find((id) => id.startsWith(today()));
-  return latest ? read(latest) : null;
+  const latest = ceremonyIds().find((id) => id.startsWith(today()));
+  return latest ? readCeremony(latest) : null;
 }
 
 export function saveState(state: SavedCeremony): void {
-  if (!ID.test(state.id)) throw new Error(`invalid ceremony id ${state.id}`);
+  if (!CEREMONY_ID.test(state.id)) throw new Error(`invalid ceremony id ${state.id}`);
+  // Deleted from the history while a window still held it: the stale save does not bring it back (Restore does).
+  if (trashedCeremonyIds().has(state.id)) return;
   mkdirSync(HISTORY, { recursive: true });
   const file = join(HISTORY, `${state.id}.json`);
   writeFileSync(`${file}.tmp`, JSON.stringify({ ...state, date: state.id.slice(0, 10) }));
   renameSync(`${file}.tmp`, file);
+  registerCeremony(state);
 }
 
 export function listHistory(): HistoryEntry[] {
-  return ids().flatMap((id) => {
-    const s = read(id);
+  return ceremonyIds().flatMap((id) => {
+    const s = readCeremony(id);
     if (!s) return [];
     const m = buildMinutes(s);
     return [
@@ -62,11 +40,13 @@ export function listHistory(): HistoryEntry[] {
         unanswered: m.unanswered.length,
         deepDives: Object.values(s.deep).filter((d) => d.msgs.length).length,
         ataSaved: !!s.saveResult,
+        version: versionOfCeremony(id),
+        live: isLive(s),
       },
     ];
   });
 }
 
 export function getHistory(id: string): SavedCeremony | null {
-  return read(id);
+  return readCeremony(id);
 }

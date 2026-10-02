@@ -41,6 +41,8 @@ export interface AgoraInput {
   retroDue: boolean;
   /** How the cycle calls the daily preparation; absent: "pré-daily". */
   label?: string;
+  /** Earlier meetings today: which version this one is, and how many cards need nothing new. */
+  sameDay?: { version: number | null; unchanged: number; changed: number };
 }
 
 export interface AgoraButton {
@@ -87,7 +89,7 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   if (ended) {
     return {
       phase: 'ended',
-      title: `${capital(label)} encerrada`,
+      title: `${capital(label)} encerrada${i.sameDay?.version ? ` · ${t('minutes.version.label', { n: i.sameDay.version })}` : ''}`,
       hint: ataHint(i) ?? note,
       progress: null,
       primary: ata,
@@ -117,7 +119,11 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   return {
     phase: 'ready',
     title: capital(label),
-    hint: note ?? `${i.total} ${i.total === 1 ? 'atividade' : 'atividades'}, bloqueadas primeiro. ~30 s por atividade.`,
+    hint:
+      note ??
+      (i.sameDay && i.sameDay.unchanged + i.sameDay.changed > 0
+        ? t('sameDay.today.hint', { unchanged: i.sameDay.unchanged, changed: i.sameDay.changed })
+        : `${i.total} ${i.total === 1 ? 'atividade' : 'atividades'}, bloqueadas primeiro. ~30 s por atividade.`),
     progress: i.ready < i.total ? `Agentes prontos ${i.ready} de ${i.total}` : null,
     primary: { action: 'call', label: `Começar a ${label}` },
     secondary: [...(i.resumed ? [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards } as AgoraButton] : []), ...retro],

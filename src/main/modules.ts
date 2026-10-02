@@ -11,6 +11,7 @@ import { errorlog } from './errorlog';
 import { register as feedback } from './feedback';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
+import { minutes } from './minutes';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
@@ -38,6 +39,7 @@ export const MODULES: Module[] = [
   feedback,
   gitlabQuick,
   glossary,
+  minutes,
   radar,
   retention,
   saude,
