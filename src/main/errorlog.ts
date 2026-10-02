@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RENDERER_KINDS, type ErrorsSummary, type ErrorsView, type RendererReport } from '../shared/errorlog';
-import { appendEntry, buildEntry, clearLog, createLimiter, groupEntries, logFile, readEntries } from './errorlog-core';
+import { appendEntry, buildEntry, clearLog, createLimiter, groupEntries, logFile, readEntries, redact } from './errorlog-core';
 import { DATA_ROOT, WORKSPACE_ID } from './env';
 import type { Module, ModuleContext } from './module';
 
@@ -81,7 +81,7 @@ function fromRenderer(raw: unknown): RendererReport | null {
 function logRenderer(raw: unknown): void {
   const report = fromRenderer(raw);
   if (!report || !allowRenderer()) return;
-  console.error(`[renderer ${report.platform}]`, report.message.slice(0, 300));
+  console.error(`[renderer ${report.platform}]`, redact(report.message.slice(0, 300)));
   logError(`renderer:${report.kind}`, { name: 'Error', message: report.message, stack: report.stack }, { platform: report.platform, kind: report.kind });
 }
 
@@ -101,6 +101,7 @@ export function installProcessHandlers(): void {
 export const errorlog: Module = (c) => {
   ctx = c;
   c.handle('errors:get', () => errorsView());
+  c.handle('errors:summary', () => summary());
   c.handle('errors:seen', () => {
     markSeen(Date.now());
     changed();

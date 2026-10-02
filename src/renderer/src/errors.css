@@ -1,0 +1,16 @@
+/* Saúde > Erros recentes. Phone first (360 to 430 px), 44 px targets. */
+.err-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.err-item { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--line-2); min-width: 0; }
+.err-item:first-child { border-top: 0; padding-top: 0; }
+.err-head { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.err-msg { flex: 1 1 220px; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.err-hint { padding: 8px 10px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
+.err-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; overflow-wrap: anywhere; }
+.err-details summary { cursor: pointer; color: var(--link); font-size: 13px; min-height: 32px; display: inline-flex; align-items: center; }
+.err-stack { margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; color: var(--ink-2); }
+.err-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 480px) {
+  .err-actions .btn { flex: 1 1 100%; min-height: 44px; }
+  .err-details summary { min-height: 44px; }
+}

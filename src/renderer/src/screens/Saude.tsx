@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { errorText } from '../api';
 import { saudeApi } from '../saudeApi';
 import { jobs, useJobs } from '../useJobs';
+import { ErrorsSection } from './ErrorsSection';
 import { BackIcon } from './icons';
 
 const when = (iso: string | null) =>
@@ -52,6 +53,8 @@ export function Saude({ go }: { go: (s: Screen) => void }) {
 
         {error && <div className="error">{error}</div>}
         {!snap && <div className="row faint"><span className="spinner" /> Lendo…</div>}
+
+        <ErrorsSection />
 
         {snap && (
           <>

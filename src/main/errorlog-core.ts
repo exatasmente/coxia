@@ -33,9 +33,9 @@ export function redact(text: string, home = homedir()): string {
 }
 
 export function trimStack(stack: string, home?: string): string {
-  const lines = stack.split('\n').map((l) => l.trimEnd()).filter(Boolean);
+  const lines = stack.split('\n').map((l) => l.trim()).filter(Boolean);
   // V8 stacks start with the message: keep the frames. Anything else (a Python traceback tail, a component stack) is kept whole.
-  const frames = lines.filter((l) => /^\s*at\s/.test(l));
+  const frames = lines.filter((l) => /^at\s/.test(l));
   return redact((frames.length ? frames : lines).slice(0, MAX_STACK_LINES).join('\n'), home).slice(0, MAX_STACK);
 }
 

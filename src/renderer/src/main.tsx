@@ -10,11 +10,14 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { unlockAudio } from './audio';
+import { ErrorBoundary } from './ErrorBoundary';
+import { installErrorReporting } from './errorReport';
 import { isWeb } from './platform';
 import { initTheme } from './theme';
 import { WebGate } from './WebGate';
 
 initTheme();
+installErrorReporting();
 
 // Mobile browsers keep the AudioContext suspended until a gesture.
 if (isWeb()) {
@@ -29,8 +32,10 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <WebGate>
-      <App />
-    </WebGate>
+    <ErrorBoundary>
+      <WebGate>
+        <App />
+      </WebGate>
+    </ErrorBoundary>
   </StrictMode>,
 );

@@ -4,7 +4,7 @@ import { bottomNavActive, type NavKey } from '../dashboard';
 import { useIsPhone } from '../useIsPhone';
 import { ActionsIcon, CallIcon, HistoryIcon, HomeIcon, MoreIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
-import { useSaudeProblems } from './SaudeButton';
+import { badgeTitle, useSaudeBadge } from './SaudeButton';
 import { Sheet } from './Sheet';
 
 interface Props {
@@ -16,16 +16,16 @@ interface Props {
 }
 
 function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => void }) {
-  const problems = useSaudeProblems();
+  const badge = useSaudeBadge();
   const open = (s: Screen) => {
     onClose();
     go(s);
   };
-  const rows: { label: string; screen: Screen; badge?: number }[] = [
+  const rows: { label: string; screen: Screen; badge?: number; badgeLabel?: string }[] = [
     { label: 'Configurações', screen: { name: 'settings' } },
     { label: 'Custo', screen: { name: 'custo' } },
     { label: 'Radar', screen: { name: 'radar' } },
-    { label: 'Saúde', screen: { name: 'saude' }, badge: problems },
+    { label: 'Saúde', screen: { name: 'saude' }, badge: badge.total, badgeLabel: badgeTitle(badge) },
     { label: 'Auditoria', screen: { name: 'auditoria' } },
     { label: 'Ajuda', screen: { name: 'help' } },
   ];
@@ -35,7 +35,7 @@ function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => vo
         {rows.map((r) => (
           <button key={r.label} type="button" className="sheet-row" onClick={() => open(r.screen)}>
             <span>{r.label}</span>
-            {r.badge ? <span className="badge badge-block" aria-label={`${r.badge} problema(s)`}>{r.badge}</span> : null}
+            {r.badge ? <span className="badge badge-block" aria-label={r.badgeLabel}>{r.badge}</span> : null}
           </button>
         ))}
         <div className="sheet-slot">
