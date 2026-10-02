@@ -449,6 +449,7 @@ export async function conflictAsk(context: string, question: string, sessionId: 
           'Call sobre um conflito de sincronização com a main depois de uma release. Você explica; não resolve nada aqui.',
           'Leia os dois lados no mirror da ferramenta (git -C <repo> merge-tree/diff/show/log, só leitura) e a skill post-release-sync, seção "Conflito: resolução manual".',
           'Explique: o que cada lado mudou, por que conflita e a resolução que você propõe (qual lado fica em cada trecho e o que testar depois).',
+          'Seja econômico: comece pelo merge-tree dos arquivos em conflito e pelo diff de cada lado só nesses arquivos; no máximo umas 10 leituras antes de responder. Na dúvida, responda com o que já sabe e diga o que falta conferir.',
           'O ajuste será feito depois no Claude Code, numa worktree temporária, com confirmação do Luiz.',
           context,
         ].join('\n'),
@@ -461,7 +462,7 @@ export async function conflictAsk(context: string, question: string, sessionId: 
     'deep',
     prompt,
     obj({ fala: str, texto: str }),
-    { maxTurns: 20, ...(sessionId ? { resume: sessionId } : {}) },
+    { maxTurns: 40, ...(sessionId ? { resume: sessionId } : {}) },
     { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
   );
   return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
