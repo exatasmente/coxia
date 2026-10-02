@@ -348,7 +348,7 @@ const PHASES: ReentryPhase[] = ['F1', 'F3', 'F4', 'nenhuma'];
 export async function prepareReentry(card: Card): Promise<Reentry> {
   const notes = await qaNotesOf(card);
   const recent = notes.slice(0, 3);
-  const qa = qaUser() || cycleWord('reentry.qaUserFallback');
+  const qa = qaUser() || cp('reentry.qaUserFallback');
   const skill = pipelineSkill();
   const prompt = cp('reentry.main', {
     ref: card.ref,

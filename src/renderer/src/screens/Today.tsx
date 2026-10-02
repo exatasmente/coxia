@@ -71,6 +71,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     decisions: c.decisions.length,
     effects: c.effects.length,
     retroDue: retroToday,
+    label: cycle?.preDailyLabel,
   });
 
   const onAgora = (a: AgoraAction) => {

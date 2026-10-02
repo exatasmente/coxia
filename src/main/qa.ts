@@ -32,6 +32,15 @@ function write(q: QaHandoff): QaHandoff {
   return { ...q, checklistExists: existsSync(q.checklistFile) };
 }
 
+// The path of the issue project, or nothing for a workspace that has none (the hint then does not name it).
+function projectPath(): string {
+  try {
+    return issueProjectPath();
+  } catch {
+    return '';
+  }
+}
+
 export function getQa(iid: string): QaHandoff | null {
   return read(iid);
 }
@@ -48,7 +57,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
     completion: layout.documents.completion,
     testPlan: testPlans.length ? cp('qa.testPlan', { plans: testPlans.join(cp('qa.or')) }) : '',
     mrs: JSON.stringify(card.mrPaths),
-    readHint: cp('qa.readHint', { project: issueProjectPath(), iid: card.iid }),
+    readHint: cp('qa.readHint', { project: projectPath(), iid: card.iid }),
     skillsLine: cp('qa.skillsLine'),
     words: cycle().ceremonyParams.qaHandoff.speechWords,
     releaseSkillRef: cp('qa.releaseSkillRef'),

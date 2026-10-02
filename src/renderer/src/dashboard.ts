@@ -38,6 +38,8 @@ export interface AgoraInput {
   decisions: number;
   effects: number;
   retroDue: boolean;
+  /** How the cycle calls the daily preparation; absent: "pré-daily". */
+  label?: string;
 }
 
 export interface AgoraButton {
@@ -55,11 +57,15 @@ export interface AgoraPlan {
   secondary: AgoraButton[];
 }
 
-export function resumeNote(startedAt: number | null, saved: boolean): string {
-  if (saved) return 'A pré-daily de hoje já foi encerrada e a ata está gravada.';
+/** What the team calls the daily preparation; the cycle says it ("pré-daily", "daily scrum", "standup"). */
+const DEFAULT_LABEL = 'pré-daily';
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function resumeNote(startedAt: number | null, saved: boolean, label = DEFAULT_LABEL): string {
+  if (saved) return `A ${label} de hoje já foi encerrada e a ata está gravada.`;
   if (startedAt) {
     const at = new Date(startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `Retomando a pré-daily de hoje, começada às ${at}: os agentes já preparados não são chamados de novo.`;
+    return `Retomando a ${label} de hoje, começada às ${at}: os agentes já preparados não são chamados de novo.`;
   }
   return 'Cartões e agentes de hoje recuperados do disco, sem chamar o GitLab nem os agentes de novo.';
 }
@@ -71,19 +77,20 @@ function ataHint(i: AgoraInput): string | null {
 
 /** The one primary action of the "Agora" card, by the moment of the pre-daily. */
 export function agoraPlan(i: AgoraInput): AgoraPlan {
+  const label = i.label ?? DEFAULT_LABEL;
   const ended = i.callEnded || i.saved;
   const retro: AgoraButton[] = i.retroDue ? [{ action: 'retro', label: 'Abrir a retro' }] : [];
-  const note = i.resumed ? resumeNote(i.startedAt, i.saved) : null;
+  const note = i.resumed ? resumeNote(i.startedAt, i.saved, label) : null;
   const ata: AgoraButton = { action: 'ata', label: 'Ver ata' };
 
   if (ended) {
     return {
       phase: 'ended',
-      title: 'Pré-daily encerrada',
+      title: `${capital(label)} encerrada`,
       hint: ataHint(i) ?? note,
       progress: null,
       primary: ata,
-      secondary: [{ action: 'reset', label: 'Nova pré-daily', disabled: i.loadingCards }, ...retro],
+      secondary: [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards }, ...retro],
     };
   }
   if (i.startedAt) {
@@ -99,20 +106,20 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   if (!i.hasCards) {
     return {
       phase: 'loading',
-      title: 'Pré-daily',
+      title: capital(label),
       hint: 'Lendo o GitLab pelo daily-report (~30 s).',
       progress: 'Montando cartões…',
-      primary: { action: 'call', label: 'Começar a pré-daily', disabled: true },
+      primary: { action: 'call', label: `Começar a ${label}`, disabled: true },
       secondary: retro,
     };
   }
   return {
     phase: 'ready',
-    title: 'Pré-daily',
+    title: capital(label),
     hint: note ?? `${i.total} ${i.total === 1 ? 'atividade' : 'atividades'}, bloqueadas primeiro. ~30 s por atividade.`,
     progress: i.ready < i.total ? `Agentes prontos ${i.ready} de ${i.total}` : null,
-    primary: { action: 'call', label: 'Começar a pré-daily' },
-    secondary: [...(i.resumed ? [{ action: 'reset', label: 'Nova pré-daily', disabled: i.loadingCards } as AgoraButton] : []), ...retro],
+    primary: { action: 'call', label: `Começar a ${label}` },
+    secondary: [...(i.resumed ? [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards } as AgoraButton] : []), ...retro],
   };
 }
 

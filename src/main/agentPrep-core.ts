@@ -198,7 +198,7 @@ export function firstParagraph(markdown: string, max = 240): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
   const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
-  return sentence > 80 ? cut.slice(0, sentence + 1) : `${cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : max)}…`;
+  return sentence > 40 ? cut.slice(0, sentence + 1) : `${cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : max)}…`;
 }
 
 function mcpServers(file: string): string[] {
@@ -284,7 +284,8 @@ export function targetsOf(config: WorkspaceConfig, home: string): ScanTarget[] {
   };
   for (const r of config.projects.repos) add(r.id, expandHome(r.path, home));
   for (const root of config.projects.roots.map((r) => expandHome(r, home))) {
-    add(basename(root), root);
+    // A root is a project of its own only when it carries context (a CLAUDE.md or a .claude folder); otherwise it is just a folder of repos.
+    if (existsSync(join(root, 'CLAUDE.md')) || isDir(join(root, '.claude'))) add(basename(root), root);
     if (!config.projects.autoDiscover) continue;
     for (const name of entries(root).slice(0, 400)) {
       if (out.size >= MAX_REPOS) break;

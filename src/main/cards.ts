@@ -28,7 +28,7 @@ export function specInfo(iid: string): SpecInfo | null {
 }
 
 // A card in a stage the cycle counts as blocked (a "Blocked" column) is blocked even when the source reports no reason.
-function withStageBlocker(stage: string | null, blockers: string[]): string[] {
+export function withStageBlocker(stage: string | null, blockers: string[]): string[] {
   return !blockers.length && stage && isBlockedStage(cycle(), stage) ? [cycleWord('cycle.blocker.stage', { stage })] : blockers;
 }
 

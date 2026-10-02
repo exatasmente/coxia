@@ -79,13 +79,13 @@ export function glabAnswer(args: string[]): unknown {
   return [];
 }
 
-export function specFiles(specsDir: string): { folder: string; plan: string } {
+export function specFiles(specsDir: string, registro = 'Registro de decisões'): { folder: string; plan: string } {
   const folder = join(specsDir, '#15499-corrigir-filtro');
   mkdirSync(join(folder, 'bug'), { recursive: true });
   writeFileSync(join(folder, 'bug', '0_BUG_REPORT.md'), '# Bug\n');
   writeFileSync(join(folder, 'bug', '1_INVESTIGATION.md'), '# Investigation\n\n## Causa\n\ntexto\n');
   const plan = join(folder, 'bug', '2_PLAN.md');
-  writeFileSync(plan, '# Plan\n\n## Passos\n\n- um\n\n## Registro de decisões\n\n- 2026-09-01: anterior\n\n## Rollback\n\nnada\n');
+  writeFileSync(plan, `# Plan\n\n## Passos\n\n- um\n\n## ${registro}\n\n- 2026-09-01: anterior\n\n## Rollback\n\nnada\n`);
   writeFileSync(join(folder, 'bug', '3_TEST_PLAN.md'), '# Test plan\n');
   writeFileSync(join(folder, 'ISSUE_COMPLETION.md'), '# Completion\n');
   return { folder, plan };
@@ -115,7 +115,7 @@ export interface Scenario {
 }
 
 // The prompts of every ceremony, in the order a day goes: pre-daily, unblock, summary, gate, QA hand-off, retro, return from QA, release sync.
-export async function runScenario(specsDir: string): Promise<Scenario> {
+export async function runScenario(specsDir: string, opts: { registro?: string } = {}): Promise<Scenario> {
   const agents = await import('../../src/main/agents');
   const gate = await import('../../src/main/gate');
   const qa = await import('../../src/main/qa');
@@ -123,7 +123,7 @@ export async function runScenario(specsDir: string): Promise<Scenario> {
   const feedback = await import('../../src/main/feedback');
   const store = await import('../../src/main/store');
 
-  const { folder, plan } = specFiles(specsDir);
+  const { folder, plan } = specFiles(specsDir, opts.registro);
   const card = cardFixture(folder, plan);
   const bare = cardFixture(folder, plan, { ref: 'sz4#15500', iid: '15500', spec: null, blockers: [], pending: [], changes: [] });
   const prompts: Record<string, Captured> = {};
@@ -192,4 +192,25 @@ export async function runScenario(specsDir: string): Promise<Scenario> {
   // Machine-specific paths out, so the same run on another machine gives the same text.
   const text = JSON.stringify({ prompts, files }).split(specsDir).join('<SPECS>').split(process.env.CERIMONIAS_DATA_DIR as string).join('<DATA>');
   return JSON.parse(text) as Scenario;
+}
+
+/** The prompts of the ceremonies every template has (the daily preparation, the unblock conversation, the summary and the retro). */
+export async function runBasics(ref = 'sz4#15499'): Promise<Record<string, Captured>> {
+  const agents = await import('../../src/main/agents');
+  const retro = await import('../../src/main/retro');
+  const card = cardFixture('/nowhere', '/nowhere/plan.md', { ref, iid: ref.split('#').pop() as string, spec: null, blockers: [], pending: [] });
+  const prompts: Record<string, Captured> = {};
+  const grab = async (name: string, fn: () => Promise<unknown>) => {
+    const before = calls.length;
+    await fn();
+    calls.slice(before).forEach((c, i, all) => (prompts[all.length > 1 ? `${name}#${i + 1}` : name] = c));
+  };
+  const turn = { ref: card.ref, sessionId: null, speech: 'Spoke.', did: 'a', next: 'b', blocker: null, question: null };
+  await grab('turn', () => agents.prepareTurn(card));
+  await grab('reply', () => agents.reply(card, turn, 'go ahead'));
+  await grab('deep', () => agents.deepAsk(card, 'why does it fail?', null));
+  await grab('deep-options', () => agents.deepOptions(card, 'sess-deep'));
+  await grab('teams', () => agents.teamsText({ startedAt: '2026-10-02T09:40:00Z', endedAt: '2026-10-02T09:55:00Z', decisions: [], effects: [], unanswered: [], transcript: [] }, [card]));
+  await grab('retro', () => retro.prepareRetro());
+  return prompts;
 }

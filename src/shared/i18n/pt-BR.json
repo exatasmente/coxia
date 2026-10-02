@@ -218,5 +218,7 @@
   "agents.scan.noteDocs": "O projeto {project} tem uma pasta docs/ com {count} arquivos de texto; ela não entrou na proposta porque costuma não ser contexto de agente. Acrescente-a às bases de conhecimento se quiser.",
   "agents.scan.noteMissing": "A pasta {path} não existe aqui e não foi lida.",
   "agents.scan.noteSpecs": "Pasta de specs encontrada em {dir} ({count} issues): proposta como pasta de specs.",
-  "agents.scan.noteMcp": "O projeto {project} tem .mcp.json (servidores: {servers}); só os nomes foram lidos."
+  "agents.scan.noteMcp": "O projeto {project} tem .mcp.json (servidores: {servers}); só os nomes foram lidos.",
+  "agents.scan.noteDocs_one": "O projeto {project} tem uma pasta docs/ com {count} arquivo de texto; ela não entrou na proposta porque costuma não ser contexto de agente. Acrescente-a às bases de conhecimento se quiser.",
+  "agents.scan.noteDocs_other": "O projeto {project} tem uma pasta docs/ com {count} arquivos de texto; ela não entrou na proposta porque costuma não ser contexto de agente. Acrescente-a às bases de conhecimento se quiser."
 }

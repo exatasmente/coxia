@@ -218,5 +218,7 @@
   "agents.scan.noteDocs": "Project {project} has a docs/ folder with {count} text files; it was left out of the proposal because it is usually not agent context. Add it to the knowledge bases if you want it.",
   "agents.scan.noteMissing": "The folder {path} does not exist here and was not read.",
   "agents.scan.noteSpecs": "A specs folder was found at {dir} ({count} issues): proposed as the specs folder.",
-  "agents.scan.noteMcp": "Project {project} has a .mcp.json (servers: {servers}); only the names were read."
+  "agents.scan.noteMcp": "Project {project} has a .mcp.json (servers: {servers}); only the names were read.",
+  "agents.scan.noteDocs_one": "Project {project} has a docs/ folder with {count} text file; it was left out of the proposal because it is usually not agent context. Add it to the knowledge bases if you want it.",
+  "agents.scan.noteDocs_other": "Project {project} has a docs/ folder with {count} text files; it was left out of the proposal because it is usually not agent context. Add it to the knowledge bases if you want it."
 }

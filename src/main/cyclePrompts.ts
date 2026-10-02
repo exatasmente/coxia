@@ -116,7 +116,7 @@ export function cardContext(card: Card): string {
 export function investigationSources(): string {
   const lang = language();
   const parts: string[] = [];
-  if (cycle().enrichment.specFolder && getConfig().docs.specsDir) parts.push(text('cycle.source.spec'));
+  if (cycle().enrichment.specFolder && rc().specsDir) parts.push(text('cycle.source.spec'));
   const docs = docsSources();
   if (docs.rulesDirs.length) parts.push(text('cycle.source.rules'));
   else if (docs.skillsDirs.length || docs.claudeMdRoots.length || docs.knowledgeDirs.length) parts.push(text('cycle.source.docs'));
