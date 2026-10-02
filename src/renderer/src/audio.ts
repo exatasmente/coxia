@@ -222,7 +222,8 @@ async function playSpeech(pb: Playback, ended: Promise<void>, text: string, voic
     for (let i = 0; i < segments.length; i++) {
       let sentence: Sentence | null;
       try {
-        sentence = await slots[i].promise;
+        // a stop settles `ended` while a sentence may never have been requested
+        sentence = await Promise.race([slots[i].promise, ended.then(() => null)]);
       } catch (e) {
         // a sentence that failed twice is skipped; the speech only fails if nothing could be played
         if (pb.cancelled) return;
