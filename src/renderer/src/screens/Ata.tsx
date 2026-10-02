@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
+import { EfeitoStatus } from './EfeitoStatus';
 
 function effectsPrompt(effects: Ceremony['effects']): string {
   return [
@@ -145,6 +146,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <span className="badge-e3">E3</span>
                   <span style={{ flex: '1 1 260px' }}>{e.text}</span>
                   <span className="mono faint">{e.repo} · {e.ref}</span>
+                  <EfeitoStatus effect={e} ceremonyId={c.snapshot.id} />
                   {c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId ? (
                     <ContinueInClaude sessionId={c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId} prompt={effectPrompt(e)} label="Executar no Claude Code" />
                   ) : (

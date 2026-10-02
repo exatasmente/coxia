@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import type { AuditEntry } from '../shared/auditoria';
 import type { AppEvent, GitlabCommand, ReleaseAction } from '../shared/types';
 import { conflictAsk, rewriteQaComment } from './agents';
+import { recordWrite } from './auditoria';
 import { getSettings } from './config';
 import { ATAS, GITLAB, PLAYBOOK } from './env';
 import type { Notice } from './scheduler';
@@ -153,7 +155,7 @@ export function proposeGitlabAction(input: {
   return action;
 }
 
-async function runGitlab(c: GitlabCommand): Promise<string> {
+async function runGitlab(c: GitlabCommand, meta: { code?: number } = {}): Promise<string> {
   if (c.via === 'glab') {
     const args = ['api', '--method', c.method, c.endpoint];
     const files: string[] = [];
@@ -185,6 +187,7 @@ async function runGitlab(c: GitlabCommand): Promise<string> {
   args.push(`https://${GITLAB}/api/v4/${c.endpoint}`);
   const { stdout } = await exec('curl', args, { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
   const code = /HTTP (\d+)\s*$/.exec(stdout)?.[1];
+  if (code) meta.code = Number(code);
   if (!code || Number(code) >= 400) throw new Error(`GitLab respondeu ${code ?? '?'}: ${stdout.slice(0, 500)}`);
   return stdout.slice(0, 2000);
 }
@@ -315,6 +318,24 @@ async function proposeQaComment(sync: ReleaseAction): Promise<void> {
   }
 }
 
+type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
+
+// Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
+async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?: number }) => Promise<string>): Promise<string> {
+  const meta: { code?: number } = {};
+  const entry = { ...base, issue: a.issue, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary } };
+  try {
+    const out = await write(meta);
+    recordWrite({ ...entry, ok: true, code: meta.code ?? null, result: out });
+    return out;
+  } catch (e) {
+    const message = String((e as Error).message);
+    const code = meta.code ?? Number(/(?:respondeu|HTTP(?: error)?:?)\s*(\d{3})/i.exec(message)?.[1] ?? NaN);
+    recordWrite({ ...entry, ok: false, code: Number.isNaN(code) ? null : code, result: message });
+    throw e;
+  }
+}
+
 export async function approveAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
@@ -324,20 +345,27 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   try {
     let output: string;
     if (a.kind === 'gitlab' && a.command) {
-      output = await runGitlab(a.command);
+      const c = a.command;
+      output = await audited(a, { kind: c.endpoint === 'graphql' ? 'graphql' : 'gitlab', target: `${c.method} ${c.endpoint}`, via: c.via, fields: c.fields }, (meta) => runGitlab(c, meta));
     } else if (a.kind === 'sync') {
-      output = await cli(['sync', '--apply', '--issue', String(a.issue)]);
+      const args = ['sync', '--apply', '--issue', String(a.issue)];
+      output = await audited(a, { kind: 'sync', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
       const file = join(tmpdir(), `qa-note-${a.issue}-${Date.now()}.md`);
       writeFileSync(file, a.proposedBody);
+      const endpoint = `projects/${ISSUE_PROJECT}/issues/${a.issue}/notes/${a.noteId}`;
+      const body = a.proposedBody;
       try {
-        await glab(['api', '--method', 'PUT', `projects/${ISSUE_PROJECT}/issues/${a.issue}/notes/${a.noteId}`, '-F', `body=@${file}`]);
+        output = await audited(a, { kind: 'note-edit', target: `PUT ${endpoint}`, via: 'glab', fields: { body } }, async () => {
+          await glab(['api', '--method', 'PUT', endpoint, '-F', `body=@${file}`]);
+          return `Comentário ${a.noteId} da #${a.issue} editado.`;
+        });
       } finally {
         unlinkSync(file);
       }
-      output = `Comentário ${a.noteId} da #${a.issue} editado.`;
     } else {
-      output = await cli(['publish', '--publish', '--issue', String(a.issue)]);
+      const args = ['publish', '--publish', '--issue', String(a.issue)];
+      output = await audited(a, { kind: 'publish', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.

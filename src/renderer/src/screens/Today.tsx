@@ -53,6 +53,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
             <RadarButton go={go} />
             <VoiceToggle />
+            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'auditoria' })}>Auditoria</button>
             {/* slot: header buttons of feature modules */}
           </div>
         </header>

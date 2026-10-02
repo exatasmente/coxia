@@ -5,6 +5,7 @@ import { setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ata } from './screens/Ata';
+import { Auditoria } from './screens/Auditoria';
 import { Call } from './screens/Call';
 import { Conflict } from './screens/Conflict';
 import { Custo } from './screens/Custo';
@@ -37,6 +38,7 @@ export type Screen =
   | { name: 'reentry'; ref: string; card?: Card }
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   | { name: 'radar' }
+  | { name: 'auditoria' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -106,6 +108,8 @@ export function App() {
     case 'discussions':
       return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
     // slot: routes of feature modules
+    case 'auditoria':
+      return <Auditoria go={go} />;
     case 'radar':
       return <Radar go={go} />;
     case 'conflict':
