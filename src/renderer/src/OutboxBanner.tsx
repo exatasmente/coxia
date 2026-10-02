@@ -27,6 +27,7 @@ export function OutboxBanner() {
   const queued = items.filter((i) => i.status === 'queued');
   const done = items.filter((i) => i.status === 'done');
   const failed = items.filter((i) => i.status === 'failed');
+  const last = done[done.length - 1];
   if (!items.length) return null;
 
   const sendNow = () => {
@@ -48,16 +49,17 @@ export function OutboxBanner() {
           </button>
         </div>
       )}
-      {done.map((i) => (
-        <div key={i.id} className="outbox-item outbox-ok">
+      {done.length > 0 && (
+        <div className="outbox-item outbox-ok">
           <div className="outbox-text">
-            <strong>Enviado: {i.label}</strong>
-            {i.excerpt && <div className="small outbox-labels">{i.excerpt}</div>}
-            <div className="small">{SAVED.has(i.channel) ? 'A resposta já está salva; abra a tela para ver.' : 'A resposta chegou depois que você saiu da tela.'}</div>
+            <strong>{done.length > 1 ? `${done.length} envios concluídos` : `Enviado: ${last.label}`}</strong>
+            {done.length > 1 && <div className="small">Mais recente: {last.label}</div>}
+            {last.excerpt && <div className="small outbox-labels">{last.excerpt}</div>}
+            <div className="small">{SAVED.has(last.channel) ? 'A resposta já está salva; abra a tela para ver.' : 'A resposta chegou depois que você saiu da tela.'}</div>
           </div>
-          <button type="button" className="btn" onClick={() => void dismiss(i.id)}>Ok</button>
+          <button type="button" className="btn" onClick={() => void Promise.all(done.map((i) => dismiss(i.id)))}>Ok</button>
         </div>
-      ))}
+      )}
       {failed.map((i) => (
         <div key={i.id} className="outbox-item outbox-fail">
           <div className="outbox-text">
