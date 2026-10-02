@@ -26,7 +26,7 @@ export const StopIcon = () => (
 );
 
 export const ClockIcon = () => (
-  <svg {...base} width={16} height={16} stroke="#B45309">
+  <svg {...base} width={16} height={16} style={{ stroke: 'var(--warn)' }}>
     <circle cx="12" cy="12" r="9" />
     <path d="M12 7v5l3 2" />
   </svg>

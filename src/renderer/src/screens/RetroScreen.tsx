@@ -84,18 +84,18 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#99F6E4', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
+            <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>Processo, não pessoas</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? '#60A5FA' : '#2DD4BF'} level={talk.level} small />
+          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={talk.level} small />
           {retro && (
-            <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
+            <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}
             </button>
           )}
-          <button type="button" className="btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!!busy} onClick={() => void act('O moderador está montando a retro da semana…', () => api.prepareRetro())}>
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!!busy} onClick={() => void act('O moderador está montando a retro da semana…', () => api.prepareRetro())}>
             {retro ? 'Montar de novo' : 'Montar a retro'}
           </button>
         </header>
@@ -122,7 +122,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             </section>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               <Items title="Funcionou" items={retro.worked} tone="var(--teal)" />
-              <Items title="Travou" items={retro.stuck} tone="#B45309" />
+              <Items title="Travou" items={retro.stuck} tone="var(--warn)" />
               <Items title="Retrabalho" items={retro.rework} tone="var(--red)" />
             </div>
             <section className="panel" style={{ padding: 20, gap: 12 }}>

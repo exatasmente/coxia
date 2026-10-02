@@ -135,7 +135,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <h2 style={{ fontSize: 18, fontWeight: 600 }}>Fila de efeitos</h2>
                   <p className="small muted" style={{ marginTop: 4 }}>Vai para o Claude Code. Lá, cada item espera o seu “sim”.</p>
                 </div>
-                <button type="button" className="btn" style={{ background: '#B45309', color: '#fff', borderColor: '#B45309' }} disabled={!m.effects.length} onClick={() => void copy('effects', effectsPrompt(m.effects))}>
+                <button type="button" className="btn" style={{ background: 'var(--warn-solid)', color: 'var(--white)', borderColor: 'var(--warn-solid)' }} disabled={!m.effects.length} onClick={() => void copy('effects', effectsPrompt(m.effects))}>
                   {copied === 'effects' ? 'Copiado' : 'Copiar para o Claude Code'}
                 </button>
               </div>
@@ -172,23 +172,23 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               <div className="row spread">
                 <h2 style={{ fontSize: 18, fontWeight: 600 }}>Para a daily do time</h2>
                 <div className="row" style={{ gap: 8 }}>
-                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!teams} onClick={() => void loadTeams()}>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!teams} onClick={() => void loadTeams()}>
                     Reescrever
                   </button>
-                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!teams} onClick={() => teams && void copy('teams', teams)}>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!teams} onClick={() => teams && void copy('teams', teams)}>
                     {copied === 'teams' ? 'Copiado' : 'Copiar'}
                   </button>
                 </div>
               </div>
               {teams && <pre className="teams">{teams}</pre>}
-              {!teams && !teamsError && <div className="row small" style={{ color: '#9CA3AF' }}><span className="spinner" /> O agente está escrevendo no seu estilo…</div>}
+              {!teams && !teamsError && <div className="row small" style={{ color: 'var(--on-night-muted)' }}><span className="spinner" /> O agente está escrevendo no seu estilo…</div>}
               {teamsError && (
                 <div className="row">
-                  <span className="small" style={{ color: '#FCA5A5' }}>{teamsError}</span>
+                  <span className="small" style={{ color: 'var(--night-red)' }}>{teamsError}</span>
                   <button type="button" className="btn" onClick={() => void loadTeams()}>Tentar de novo</button>
                 </div>
               )}
-              <p className="small" style={{ color: '#9CA3AF' }}>Você cola no Teams; nada é publicado daqui.</p>
+              <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>
             </section>
 
             <section className="panel" style={{ padding: 20 }}>

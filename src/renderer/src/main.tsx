@@ -8,6 +8,9 @@ import './styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { initTheme } from './theme';
+
+initTheme();
 
 // No context menu anywhere in the app.
 window.addEventListener('contextmenu', (e) => e.preventDefault());

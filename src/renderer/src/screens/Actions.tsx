@@ -81,7 +81,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
 
       {a.kind === 'qa-comment' && a.currentBody && a.proposedBody && (
         <div className="quad" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-          <div style={{ background: '#F7F7F8' }}>
+          <div style={{ background: 'var(--surface-2)' }}>
             <div className="section-title" style={{ marginBottom: 6 }}>Hoje na issue</div>
             <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'var(--mono)' }}>{a.currentBody}</pre>
           </div>
@@ -91,8 +91,8 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           </div>
         </div>
       )}
-      {a.output && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: '#F7F7F8', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
-      {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: '#F7F7F8', padding: 12, borderRadius: 10 }}>{preview}</pre>}
+      {a.output && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
 
       {open && (

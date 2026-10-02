@@ -4,6 +4,7 @@ import { api, moduleEvents } from './api';
 import { setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
+import { Ajuda, useHelpShortcut } from './screens/Ajuda';
 import { Ata } from './screens/Ata';
 import { Call } from './screens/Call';
 import { Conflict } from './screens/Conflict';
@@ -37,6 +38,7 @@ export type Screen =
   | { name: 'reentry'; ref: string; card?: Card }
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   | { name: 'radar' }
+  | { name: 'help' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -50,6 +52,8 @@ export function App() {
     player.stop();
     setScreen(next);
   };
+
+  useHelpShortcut(screen.name, go);
 
   useEffect(() => {
     void api.listActions().then(setActions);
@@ -105,6 +109,8 @@ export function App() {
       return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'discussions':
       return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
+    case 'help':
+      return <Ajuda go={go} />;
     // slot: routes of feature modules
     case 'radar':
       return <Radar go={go} />;

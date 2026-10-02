@@ -63,7 +63,7 @@ function Finding({ f }: { f: RadarFinding }) {
           )}
         </details>
       )}
-      <div className="item" style={{ background: 'var(--teal-soft)', borderColor: '#99F6E4' }}>
+      <div className="item" style={{ background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
         <div className="section-title">O que fazer</div>
         <div className="small" style={{ color: 'var(--teal-ink)', lineHeight: 1.5 }}>{f.recommendation}</div>
         {f.identicalLines >= 3 && f.kind === 'same-fix' && (

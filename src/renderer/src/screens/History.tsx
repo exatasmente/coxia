@@ -170,7 +170,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                   <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
                     <div className="row spread">
                       <h2 style={{ fontSize: 18, fontWeight: 600 }}>Texto da daily do time</h2>
-                      <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} onClick={() => void copy('teams', detail.teams as string)}>
+                      <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} onClick={() => void copy('teams', detail.teams as string)}>
                         {copied === 'teams' ? 'Copiado' : 'Copiar'}
                       </button>
                     </div>

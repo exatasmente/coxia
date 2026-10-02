@@ -115,7 +115,7 @@ export function Custo({ go }: { go: (s: Screen) => void }) {
                 </label>
               </div>
               <div className="row" style={{ gap: 14, flexWrap: 'nowrap' }}>
-                <Bar value={spent} max={goalNow} color={over ? '#B45309' : 'var(--teal)'} />
+                <Bar value={spent} max={goalNow} color={over ? 'var(--warn)' : 'var(--teal)'} />
                 <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{usd(spent)} de {usd(goalNow)} · {pct((spent / goalNow) * 100)}</span>
               </div>
               {data.projected !== null && (

@@ -195,7 +195,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
   ref.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void ref.current();
     };

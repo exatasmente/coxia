@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/settings';
+import { MODEL_OPTIONS, type ModelRole, type Settings, type Theme } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { setSpeechEnabled } from '../audio';
+import { applyTheme } from '../theme';
 import { BackIcon } from './icons';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -18,6 +19,12 @@ const TOOLS: [keyof Settings['tools'], string, string][] = [
   ['gitlabMcp', 'GitLab pelo MCP', 'Descrição e diff de issue e MR (gitlab-issue-analysis).'],
   ['glab', 'GitLab pelo glab', 'Só leitura: discussões de MR, comentários de issue, mr/issue view. Escrita sempre bloqueada.'],
   ['subagents', 'Subagentes no desbloqueio', 'O agente do desbloqueio pode delegar leitura (kb-reader, Explore).'],
+];
+
+const THEME_LABELS: [Theme, string, string][] = [
+  ['system', 'Sistema', 'Segue o claro ou escuro do computador.'],
+  ['light', 'Claro', 'Sempre claro.'],
+  ['dark', 'Escuro', 'Sempre escuro.'],
 ];
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -46,6 +53,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       const saved = await api.saveSettings(s);
       setS(saved);
       setSpeechEnabled(saved.voice.speak);
+      applyTheme(saved.appearance.theme);
       setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (e) {
       setError(errorText(e));
@@ -230,6 +238,28 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </button>
             {status && <span className="small muted" style={{ whiteSpace: 'pre-line' }}>{status}</span>}
           </div>
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aparência</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>Vale ao salvar. A call e os painéis escuros ficam escuros nos dois temas.</p>
+          </div>
+          <div role="group" aria-label="Tema" className="row" style={{ gap: 8 }}>
+            {THEME_LABELS.map(([value, label, hint]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={s.appearance.theme === value}
+                title={hint}
+                className={`filter ${s.appearance.theme === value ? 'on' : ''}`}
+                onClick={() => set((p) => ({ ...p, appearance: { ...p.appearance, theme: value } }))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="small muted">{THEME_LABELS.find(([value]) => value === s.appearance.theme)?.[2]}</p>
         </section>
       </div>
     </div>

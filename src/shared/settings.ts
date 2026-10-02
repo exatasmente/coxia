@@ -1,5 +1,8 @@
 export type ModelRole = 'turn' | 'reply' | 'deep' | 'teams';
 
+export type Theme = 'system' | 'light' | 'dark';
+export const THEMES: Theme[] = ['system', 'light', 'dark'];
+
 export interface Settings {
   models: Record<ModelRole, string>;
   tools: {
@@ -21,6 +24,7 @@ export interface Settings {
   voice: { autoStop: boolean; silenceMs: number; speak: boolean };
   notifications: boolean;
   closeToTray: boolean;
+  appearance: { theme: Theme };
 }
 
 export const MODEL_OPTIONS = ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-pro-0813', 'qwen/qwen3.7-flash'];
@@ -37,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voice: { autoStop: true, silenceMs: 1200, speak: true },
   notifications: true,
   closeToTray: true,
+  appearance: { theme: 'system' },
 };
 
 export function withDefaults(partial: Partial<Settings> | null | undefined): Settings {
@@ -48,5 +53,6 @@ export function withDefaults(partial: Partial<Settings> | null | undefined): Set
     voice: { ...DEFAULT_SETTINGS.voice, ...p.voice },
     notifications: p.notifications ?? DEFAULT_SETTINGS.notifications,
     closeToTray: p.closeToTray ?? DEFAULT_SETTINGS.closeToTray,
+    appearance: { theme: THEMES.includes(p.appearance?.theme as Theme) ? (p.appearance?.theme as Theme) : DEFAULT_SETTINGS.appearance.theme },
   };
 }

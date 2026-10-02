@@ -101,7 +101,7 @@ export function Deep({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -148,16 +148,16 @@ export function Deep({
     <div className="page">
       <div className="wrap" style={{ gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: back })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: back })}>
             <BackIcon />
           </button>
           <div className="chip" style={{ width: 48, height: 48, borderRadius: 14, fontSize: 18, background: c.colorOf(card.ref) }}>{shortRef(card.ref)}</div>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#FCD34D', fontWeight: 600 }}>Desbloqueio · #{card.iid}</div>
+            <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Desbloqueio · #{card.iid}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#FDBA74'} level={rec.level} small />
-          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
+          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>
           <ContinueInClaude sessionId={sessionId} dark />
@@ -168,7 +168,7 @@ export function Deep({
           <aside className="panel deep-sources" style={{ flex: '1 1 260px', maxWidth: 320, minWidth: 250, gap: 12 }}>
             <h2 className="section-title">O que o agente leu</h2>
             {card.blockers.map((b) => (
-              <div key={b} className="item" style={{ borderColor: '#FECACA', background: '#FEF2F2' }}>
+              <div key={b} className="item" style={{ borderColor: 'var(--red-line)', background: 'var(--red-faint)' }}>
                 <div className="small" style={{ color: 'var(--red-ink)' }}>{b}</div>
               </div>
             ))}
@@ -228,7 +228,7 @@ export function Deep({
                 <button key={o.title} type="button" className={`option ${pick === i ? 'on' : ''}`} aria-pressed={pick === i} onClick={() => update((d) => ({ ...d, pick: i, saved: false }))}>
                   <span className="row spread" style={{ alignItems: 'baseline' }}>
                     <span style={{ fontWeight: 600 }}>{String.fromCharCode(65 + i)}. {o.title}</span>
-                    {o.recommended && <span className="badge" style={{ background: '#CCFBF1', color: 'var(--teal-ink)', fontSize: 11 }}>recomendada</span>}
+                    {o.recommended && <span className="badge" style={{ background: 'var(--chip-teal-bg)', color: 'var(--chip-teal-ink)', fontSize: 11 }}>recomendada</span>}
                   </span>
                   <span className="small muted" style={{ display: 'block', marginTop: 6, lineHeight: 1.45 }}>{o.consequence}</span>
                   <span className="mono" style={{ display: 'block', fontSize: 12, color: 'var(--red-ink)', marginTop: 6 }}>{o.effect ? `E3 · ${o.effect}` : 'sem efeito'}</span>

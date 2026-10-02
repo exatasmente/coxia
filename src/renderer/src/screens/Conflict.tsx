@@ -74,7 +74,7 @@ export function Conflict({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -95,15 +95,15 @@ export function Conflict({
     <div className="page">
       <div className="wrap" style={{ gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'actions' })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'actions' })}>
             <BackIcon />
           </button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#FCD34D', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
+            <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#FDBA74'} level={rec.level} small />
-          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
+          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>
         </header>
@@ -114,7 +114,7 @@ export function Conflict({
             {action.mrs.map((m) => (
               <a key={m.ref} className="item mono small" href={m.url} target="_blank" rel="noreferrer">{m.ref} · {m.branch} · {m.behind} atrás</a>
             ))}
-            {action.files.map((f) => <div key={f} className="item mono" style={{ fontSize: 12, wordBreak: 'break-all', borderColor: '#FECACA', background: '#FEF2F2' }}>{f}</div>)}
+            {action.files.map((f) => <div key={f} className="item mono" style={{ fontSize: 12, wordBreak: 'break-all', borderColor: 'var(--red-line)', background: 'var(--red-faint)' }}>{f}</div>)}
           </aside>
 
           <main className="panel deep-main" style={{ flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }} aria-live="polite">
