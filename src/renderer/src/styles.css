@@ -370,7 +370,7 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 
 /* Phones (browser, PWA) and landscape phones: one column, a compact sticky bar, touch-sized controls.
    The PWA shell sets viewport-fit=cover (safe-area insets) and interactive-widget=resizes-content (composer above the keyboard). */
-@media (max-width: 760px), (max-height: 500px) {
+@media (max-width: 760px), (max-height: 500px) and (orientation: landscape) {
   .page { padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
   .wrap { gap: 14px !important; }
   html:has(.hero) { scroll-padding-top: 84px; }
@@ -423,10 +423,12 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   .diagram-toolbar { flex-wrap: wrap; }
   .diagram-toolbar > span:first-child { flex: 1 0 100% !important; }
 }
-@media (max-height: 500px) { header.hero > div > div:last-child { -webkit-line-clamp: 1; } header.hero > button.btn:not(.icon-btn):not(:has(> svg)) { display: none; } .composer-panel { position: static; } }
+@media (max-height: 500px) and (orientation: landscape) { header.hero > div > div:last-child { -webkit-line-clamp: 1; } header.hero > button.btn:not(.icon-btn):not(:has(> svg)) { display: none; } .composer-panel { position: static; } }
 /* touch: 44 px targets, 16 px inputs (no iOS zoom), and the replay button needs no hover */
 @media (pointer: coarse), (max-width: 760px) {
   .btn { min-height: 44px !important; min-width: 44px; }
+  button.badge { display: inline-flex; align-items: center; min-height: 44px; }
+  .list-row a.mono { display: inline-block; padding: 14px 10px 14px 0; margin: -14px 0; }
   a.badge, a.item { display: inline-flex; align-items: center; min-height: 44px; }
   .text-input, input:not([type="checkbox"]):not([type="radio"]), textarea, select { min-height: 44px !important; }
   .filter { min-height: 44px; }
