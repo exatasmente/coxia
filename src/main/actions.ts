@@ -609,7 +609,10 @@ export async function conflictPropose(id: string): Promise<ReleaseAction> {
   return withStep(id, 'O agente está propondo a resolução…', async () => {
     const { a, r } = resolved(id);
     if (r.appliedAt) throw new Error('já aplicado: reabra a resolução para pedir outra proposta');
-    const hunks = r.files.flatMap((f) => f.hunks).filter((h) => !h.sensitive);
+    const all = r.files.flatMap((f) => f.hunks).filter((h) => !h.sensitive);
+    // after a partial proposal, asking again only fills the hunks still without one
+    const missing = all.filter((h) => !h.proposal);
+    const hunks = missing.length && missing.length < all.length ? missing : all;
     const p = await askProposal({
       issue: a.issue,
       title: a.issueTitle,
@@ -627,6 +630,7 @@ export async function conflictPropose(id: string): Promise<ReleaseAction> {
         ...f,
         hunks: f.hunks.map((h) => {
           const item = byId.get(h.id);
+          if (!item && !h.sensitive && !hunks.some((x) => x.id === h.id)) return h;
           if (!item || h.sensitive) return { ...h, proposal: null, explanation: null, confidence: null, test: null, choice: h.choice === 'proposal' ? null : h.choice };
           return { ...h, proposal: unfenced(item.resolution), explanation: item.explanation, confidence: item.confidence, test: item.test };
         }),

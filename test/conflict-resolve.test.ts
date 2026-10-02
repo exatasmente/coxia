@@ -152,6 +152,26 @@ describe('propose and choose', () => {
     expect(get(id).resolve?.proposalSummary).toContain('handlers');
   });
 
+  it('after a partial proposal, asking again sends only the hunks still without one and keeps the others', async () => {
+    const id = seed(f);
+    await conflictPrepare(id);
+    proposeSpy.mockImplementationOnce(async (p: { hunks: { id: string; ours: string; theirs: string }[] }) => ({
+      summary: 'parcial',
+      items: [p.hunks[0]].map((h) => ({ id: h.id, resolution: h.ours + h.theirs, explanation: 'primeiro', confidence: 'alta' as const, test: 't' })),
+      failed: p.hunks.slice(1).map((h) => h.id),
+    }));
+    await conflictPropose(id);
+    const first = (proposeSpy.mock.calls[0][0] as { hunks: { id: string }[] }).hunks.map((h) => h.id);
+    expect(first.length).toBeGreaterThan(1);
+    combineStub();
+    await conflictPropose(id);
+    const second = (proposeSpy.mock.calls[1][0] as { hunks: { id: string }[] }).hunks.map((h) => h.id);
+    expect(second).toEqual(first.slice(1));
+    const hunks = get(id).resolve?.files.flatMap((x) => x.hunks).filter((h) => !h.sensitive) ?? [];
+    expect(hunks.every((h) => h.proposal)).toBe(true);
+    expect(hunks.find((h) => h.id === first[0])?.explanation).toBe('primeiro');
+  });
+
   it('validates choices and edited text', async () => {
     const id = seed(f);
     await toProposed(id);

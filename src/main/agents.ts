@@ -481,8 +481,11 @@ export interface Proposal {
   items: { id: string; resolution: string; explanation: string; confidence: 'alta' | 'media' | 'baixa'; test: string }[];
 }
 
-const SIDE_MAX = 6000;
-const PROMPT_MAX = 60_000;
+const SIDE_MAX = 12_000;
+// One call per batch: a batch is the hunks of one file, split when their text passes BATCH_CHARS.
+const BATCH_CHARS = 24_000;
+const BATCH_PARALLEL = 3;
+const PROMPT_MAX = 40_000;
 
 function clip(text: string | null, left: { n: number }): string {
   if (text === null) return '(sem ancestral comum)';
@@ -491,8 +494,57 @@ function clip(text: string | null, left: { n: number }): string {
   return text.length > max ? `${text.slice(0, max)}\n… (cortado em ${max} de ${text.length} caracteres: leia o arquivo na worktree)` : text;
 }
 
-// Read-only: the agent proposes the text for each conflicting hunk; nothing is written until the user reviews it.
-export async function conflictPropose(p: { issue: number; title: string; mr: string; branch: string; worktree: string; hunks: ProposeHunk[] }): Promise<Proposal> {
+type ProposeInput = { issue: number; title: string; mr: string; branch: string; worktree: string; hunks: ProposeHunk[] };
+
+const hunkChars = (h: ProposeHunk) => h.ours.length + h.theirs.length + (h.base?.length ?? 0);
+
+export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
+  const batches: ProposeHunk[][] = [];
+  for (const file of [...new Set(hunks.map((h) => h.file))]) {
+    let batch: ProposeHunk[] = [];
+    let size = 0;
+    for (const h of hunks.filter((x) => x.file === file)) {
+      if (batch.length && size + hunkChars(h) > BATCH_CHARS) {
+        batches.push(batch);
+        batch = [];
+        size = 0;
+      }
+      batch.push(h);
+      size += hunkChars(h);
+    }
+    if (batch.length) batches.push(batch);
+  }
+  return batches;
+}
+
+// Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
+// each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
+export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[] }> {
+  const batches = proposeBatches(p.hunks);
+  const results: (Proposal | null)[] = new Array(batches.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      const i = next++;
+      try {
+        results[i] = await proposeBatch({ ...p, hunks: batches[i] });
+      } catch (e) {
+        console.error('[conflict:propose]', batches[i][0]?.file, (e as Error).message);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BATCH_PARALLEL, batches.length) }, worker));
+  const failed = batches.flatMap((b, i) => (results[i] ? [] : b.map((h) => h.id)));
+  if (failed.length === p.hunks.length) throw new Error('o agente não conseguiu propor nenhum trecho; tente de novo');
+  const summaries = results.filter((r): r is Proposal => !!r).map((r) => r.summary.trim()).filter(Boolean);
+  return {
+    summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? `${failed.length} trecho(s) ficaram sem proposta: peça de novo.` : ''].filter(Boolean).join(' '),
+    items: results.flatMap((r) => r?.items ?? []),
+    failed,
+  };
+}
+
+async function proposeBatch(p: ProposeInput): Promise<Proposal> {
   const left = { n: PROMPT_MAX };
   const blocks = p.hunks.map((h) =>
     [`### trecho ${h.id}`, `arquivo: ${h.file}`, '--- BRANCH (ours) ---', clip(h.ours, left), '--- BASE ---', clip(h.base, left), '--- MAIN (theirs) ---', clip(h.theirs, left)].join('\n'),
@@ -502,7 +554,7 @@ export async function conflictPropose(p: { issue: number; title: string; mr: str
     'Para cada trecho em conflito abaixo, proponha o texto final (sem marcadores de conflito). BRANCH é o que o MR escreveu; MAIN é o que a release trouxe; BASE é o ancestral comum (quando houver).',
     'O conflito típico pós-release é COMPLEMENTAR: os dois lados acrescentaram coisas diferentes no mesmo trecho, e a resolução é combinar os dois. Mantenha o que cada lado fez; ajuste só o necessário para os dois conviverem (ordem, vírgulas, imports).',
     'Nunca invente código além de combinar ou adaptar os dois lados. Se os lados são incompatíveis e a combinação exigiria inventar, escolha um lado inteiro, diga qual e marque confianca "baixa".',
-    `Os arquivos com marcadores estão na worktree ${p.worktree} (pode ler com Read para ver o contexto ao redor); a skill post-release-sync tem a seção "Conflito: resolução manual".`,
+    `Os arquivos com marcadores estão na worktree ${p.worktree}. Leia um arquivo só se um trecho abaixo estiver cortado ou se o contexto ao redor for indispensável: no máximo 3 leituras.`,
     '"resolucao": o texto exato que fica no lugar do trecho, com a indentação e as quebras de linha do arquivo, sem cerca de código, sem marcadores.',
     '"explicacao": um parágrafo curto em português dizendo o que cada lado fez e por que a resolução é essa. "confianca": alta, media ou baixa. "testar": o que testar depois (uma frase).',
     '"resumo": uma ou duas frases sobre o conflito como um todo. Devolva um item para cada id, com o id exatamente como está.',
