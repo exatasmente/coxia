@@ -1,4 +1,4 @@
-import { type Options, query } from '@anthropic-ai/claude-agent-sdk';
+import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import { MODEL, WORKSPACE, agentEnv } from './env';
@@ -10,7 +10,53 @@ const READ_ONLY = [
   'Skill',
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
   'mcp__gitlab-issue-analysis__get_merge_request_details_and_changes',
+  'Bash(glab api:*)',
+  'Bash(glab mr view:*)',
+  'Bash(glab issue view:*)',
 ];
+
+// The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
+const GLAB_READ = [
+  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes))?(\?[\w=&]+)?"?( --paginate)?$/,
+  /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
+];
+
+const glabReadOnly: HookCallback = async (input) => {
+  if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
+  const command = String((input.tool_input as { command?: unknown }).command ?? '').trim();
+  if (GLAB_READ.some((re) => re.test(command))) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `Na cerimônia o terminal só lê o GitLab. Use: ${GITLAB_HINT}`,
+    },
+  };
+};
+
+// Agents run on a third-party model: secret files never enter the context.
+const SECRET_PATH = /(^|\/)\.env($|[./])|\.env$|secret|credential|token|(^|\/)key$|\.pem$|\/\.ssh\/|\/\.config\/|\/\.aws\/|\/\.docker\/|\/\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+
+const noSecrets: HookCallback = async (input) => {
+  if (input.hook_event_name !== 'PreToolUse') return {};
+  const args = input.tool_input as { file_path?: unknown; path?: unknown; pattern?: unknown; glob?: unknown };
+  const paths = [args.file_path, args.path, input.tool_name === 'Glob' ? args.pattern : null, args.glob].filter(
+    (p): p is string => typeof p === 'string',
+  );
+  if (!paths.some((p) => SECRET_PATH.test(p))) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'Arquivo de configuração ou segredo: fora do alcance da cerimônia.',
+    },
+  };
+};
+
+const GITLAB_HINT =
+  '`glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), ' +
+  '`glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou ' +
+  '`glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.';
 
 const SPEECH_RULES =
   'Português do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. ' +
@@ -19,7 +65,7 @@ const SPEECH_RULES =
 
 const ROLE =
   'Você participa de uma cerimônia por voz do Luiz como agente de uma atividade. ' +
-  'A cerimônia é somente leitura: não edite arquivos, não rode comandos, não publique nada. ' +
+  'A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. ' +
   'Toda ação com efeito externo vira item da ata para o Luiz executar depois, com confirmação.';
 
 interface Run<T> {
@@ -38,7 +84,8 @@ function obj(properties: Record<string, unknown>): Schema {
 }
 
 function source(name: string, input: Record<string, unknown>): string {
-  const detail = input.file_path ?? input.pattern ?? input.skill ?? input.iid ?? input.issue_iid ?? input.merge_request_iid ?? '';
+  const detail =
+    input.command ?? input.file_path ?? input.pattern ?? input.skill ?? input.iid ?? input.issue_iid ?? input.mr_iid ?? input.merge_request_iid ?? '';
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
@@ -53,9 +100,26 @@ async function run<T>(prompt: string, schema: Schema, extra: Partial<Options> = 
       env: agentEnv(),
       // dontAsk denies every tool that allowedTools does not pre-approve.
       permissionMode: 'dontAsk',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: ROLE },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: `${ROLE}\nPara ler o GitLab: ${GITLAB_HINT}` },
       allowedTools: READ_ONLY,
-      disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Bash', 'WebFetch', 'WebSearch'],
+      disallowedTools: [
+        'Edit',
+        'Write',
+        'NotebookEdit',
+        'WebFetch',
+        'WebSearch',
+        'Read(**/*.env)',
+        'Read(**/.env*)',
+        'Read(~/.config/**)',
+        'Read(~/.ssh/**)',
+        'Read(**/.mcp.json)',
+      ],
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [glabReadOnly] },
+          { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
+        ],
+      },
       outputFormat: { type: 'json_schema', schema },
       maxTurns: 8,
       ...extra,
@@ -65,7 +129,14 @@ async function run<T>(prompt: string, schema: Schema, extra: Partial<Options> = 
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
       for (const block of m.message.content) {
-        if (block.type === 'tool_use') sources.push(source(block.name, block.input as Record<string, unknown>));
+        if (block.type !== 'tool_use') continue;
+        sources.push(source(block.name, block.input as Record<string, unknown>));
+        if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
+      }
+    }
+    if (process.env.CERIMONIAS_DEBUG && m.type === 'user' && Array.isArray(m.message.content)) {
+      for (const block of m.message.content) {
+        if (block.type === 'tool_result' && block.is_error) console.error('[tool error]', JSON.stringify(block.content).slice(0, 300));
       }
     }
     if (m.type === 'result') {

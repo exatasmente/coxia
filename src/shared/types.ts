@@ -11,6 +11,7 @@ export interface Card {
   stage: string | null;
   spec: SpecInfo | null;
   mrs: string[];
+  mrPaths: { ref: string; project: string; iid: number }[];
   blockers: string[];
   pending: string[];
   changes: string[];
