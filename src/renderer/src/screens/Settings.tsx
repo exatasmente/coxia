@@ -185,6 +185,13 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </span>
           </label>
           <label className="check-row">
+            <input type="checkbox" checked={s.voice.prosody} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, prosody: !p.voice.prosody } }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Entonação por frase</span>
+              <span className="small muted">Cada frase sai com ritmo e tom próprios: pergunta sobe, bloqueio desacelera, boa notícia anima, e há pausas entre frases e itens de lista. {s.voice.engine === 'kokoro' ? 'No Kokoro só o ritmo muda: ele não ajusta o tom.' : ''}</span>
+            </span>
+          </label>
+          <label className="check-row">
             <input type="checkbox" checked={s.voice.autoStop} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, autoStop: !p.voice.autoStop } }))} />
             <span>
               <span style={{ fontWeight: 600, display: 'block' }}>Enviar sozinho quando eu parar de falar</span>

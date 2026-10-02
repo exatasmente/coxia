@@ -118,7 +118,8 @@ function handlers(): void {
   ipcMain.handle('ata:teams', (_e, minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
   ipcMain.handle('ata:save', (_e, minutes: Minutes, teams: string, selected: number[]) => saveMinutes(minutes, teams, selected));
   ipcMain.handle('voice:speak', async (_e, text: string, voice: Voice) => {
-    const path = await speak(text, voice, getSettings().voice.engine);
+    const { engine, prosody } = getSettings().voice;
+    const path = await speak(text, voice, engine, prosody);
     const bytes = readFileSync(path);
     unlinkSync(path);
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);

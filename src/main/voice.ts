@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Voice, VoiceEngine } from '../shared/types';
 import { PACKAGED, SIDECAR_DIR, VENV_DIR } from './paths';
+import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
 import { ensureVenv, venvPython } from './venv';
 
 const SCRIPT = join(SIDECAR_DIR, 'voice_sidecar.py');
@@ -131,10 +132,24 @@ export function stopVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
 }
 
-export async function speak(text: string, wanted: Voice, engine: VoiceEngine): Promise<string> {
+export async function speak(text: string, wanted: Voice, engine: VoiceEngine, prosody = true): Promise<string> {
   const voice = resolveVoice(wanted, engine);
+  const plan = prosody ? prosodyPlan(text) : [];
+  if (needsJoin(plan)) {
+    const out = join(AUDIO, `tts-${Date.now()}-${nextId}.wav`);
+    const segments = plan.map((s) => ({
+      text: s.text,
+      rate: edgeRate(voice.rate, s.rate),
+      pitch: edgePitch(voice.pitch, s.pitch),
+      speed: kokoroSpeed(voice.speed ?? 1, s.rate),
+      pause_ms: s.pauseMs,
+    }));
+    const r = await call({ cmd: 'tts', engine, voice: voice.voice, segments, out });
+    return r.path ?? out;
+  }
   const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${engine === 'kokoro' ? 'wav' : 'mp3'}`);
-  const r = await call({ cmd: 'tts', engine, text, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
+  const spoken = plan[0]?.text ?? speakable(text);
+  const r = await call({ cmd: 'tts', engine, text: spoken, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
   return r.path ?? out;
 }
 
