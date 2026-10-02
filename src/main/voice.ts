@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { type Term, corrected, spoken, whisperHint } from '../shared/glossary';
 import type { Voice, VoiceEngine } from '../shared/types';
-import { PACKAGED, SIDECAR_DIR, VENV_DIR } from './paths';
+import { PACKAGED, SIDECAR_DIR, venvDir } from './paths';
 import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
 import { ensureVenv, venvPython } from './venv';
 
@@ -86,8 +86,8 @@ async function sidecar(): Promise<ChildProcessWithoutNullStreams> {
   if (proc) return proc;
   starting ??= (async () => {
     const python = PACKAGED
-      ? await ensureVenv(VENV_DIR, join(SIDECAR_DIR, 'requirements.txt'), (c) => (installer = c))
-      : venvPython(VENV_DIR);
+      ? await ensureVenv(venvDir(), join(SIDECAR_DIR, 'requirements.txt'), (c) => (installer = c))
+      : venvPython(venvDir());
     proc = launch(python);
     return proc;
   })().finally(() => {

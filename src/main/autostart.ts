@@ -1,12 +1,11 @@
 import { app } from 'electron';
 import type { Module } from './module';
-import { isAutostart, setAutostart } from './autostart-core';
+import { isAutostart, launchCommandFor, setAutostart } from './autostart-core';
 import { PACKAGED } from './paths';
 
 // What the login entry runs: the AppImage that is running, the installed binary, or (dev) electron on this repo.
 export function launchCommand(): string[] {
-  if (!PACKAGED) return [process.execPath, app.getAppPath(), '--hidden'];
-  return [process.env.APPIMAGE ?? process.execPath, '--hidden'];
+  return launchCommandFor({ packaged: PACKAGED, execPath: process.execPath, appPath: app.getAppPath(), appImage: process.env.APPIMAGE });
 }
 
 export const autostart: Module = (ctx) => {
