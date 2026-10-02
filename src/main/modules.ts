@@ -1,3 +1,4 @@
+import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
@@ -20,6 +21,7 @@ import type { Module } from './module';
 
 // Feature modules register here, one per line. Keep this list sorted.
 export const MODULES: Module[] = [
+  agentPrep,
   auditoria,
   autostart,
   configModule,

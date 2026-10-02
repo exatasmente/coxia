@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CustoKind } from '../shared/custo';
+import { refOpenersOf } from '../shared/cycles/prompts';
 import { classify } from './custo-core';
 import { type Registry, workspaceDir } from './workspaces-core';
 
@@ -15,10 +16,21 @@ export interface SessionEntry {
   ref: string | null;
 }
 
-const REF = /^(?:Você é o agente da atividade|Desbloqueio por voz da atividade|Gate \d da issue|Passagem para o QA da issue|Call de reentrada da issue) (\S+?)[ .,:;]/;
+// The prompts whose first line names the card: its ref is what ties a session to an activity.
+const REF_PROMPTS = ['turn.main', 'deep.intro', 'gate.start', 'qa.prepare', 'reentry.main'];
+
+function refOf(prompt: string): string | null {
+  for (const id of REF_PROMPTS) {
+    for (const re of refOpenersOf(id)) {
+      const m = re.exec(prompt);
+      if (m) return m[1];
+    }
+  }
+  return null;
+}
 
 export function entryOf(id: string, role: string, prompt: string, now = new Date()): SessionEntry {
-  return { id, at: now.toISOString(), role, kind: classify(prompt), ref: REF.exec(prompt)?.[1] ?? null };
+  return { id, at: now.toISOString(), role, kind: classify(prompt), ref: refOf(prompt) };
 }
 
 export function parseIndex(text: string): SessionEntry[] {

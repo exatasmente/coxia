@@ -44,6 +44,79 @@ export function promptFamilies(language: Language = 'pt-BR'): Record<string, str
   return out;
 }
 
+const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const openerCache = new Map<string, RegExp[]>();
+
+/**
+ * Regular expressions that recognise how a prompt begins, whatever the family, the language, the person's name or the ceremony label put in the
+ * placeholders. The app tells its own sessions apart from the person's by the first prompt (cost and retention screens), so a reworded or
+ * translated prompt must still be recognised: the patterns are built from the catalogs, never written by hand.
+ */
+export function openersOf(id: string): RegExp[] {
+  const cached = openerCache.get(id);
+  if (cached) return cached;
+  const sources = new Set<string>();
+  for (const catalog of Object.values(CATALOGS)) {
+    for (const [key, template] of Object.entries(catalog)) {
+      const m = /^prompt\.[\w-]+\.(.+)$/.exec(key);
+      if (!m || m[1] !== id) continue;
+      // The first line that is more than a placeholder (the leading ones may be optional context).
+      const line = template.split('\n').find((l) => l.replace(/\{\w+\}/g, '').trim().length >= 8);
+      if (!line) continue;
+      let literal = 0;
+      let source = '';
+      let pending = '';
+      // Just enough of the line to tell it from the others: a placeholder stands for any short text, the literal stops after about 14-24 characters.
+      for (const part of line.split(/(\{\w+\})/)) {
+        if (!part) continue;
+        if (/^\{\w+\}$/.test(part)) {
+          pending += '[^\\n]{0,80}?';
+          continue;
+        }
+        const take = part.slice(0, 24 - literal);
+        source += pending + escapeRe(take);
+        pending = '';
+        literal += take.length;
+        if (literal >= 14) break;
+      }
+      sources.add(`^\\s*${source}`);
+    }
+  }
+  const list = [...sources].map((s) => new RegExp(s));
+  openerCache.set(id, list);
+  return list;
+}
+
+const refCache = new Map<string, RegExp[]>();
+
+/**
+ * Like openersOf, for prompts whose first line carries the card ref ("... da atividade {ref} ..."): each expression captures the ref in group 1.
+ * Templates whose first line has no {ref} yield nothing.
+ */
+export function refOpenersOf(id: string): RegExp[] {
+  const cached = refCache.get(id);
+  if (cached) return cached;
+  const sources = new Set<string>();
+  for (const catalog of Object.values(CATALOGS)) {
+    for (const [key, template] of Object.entries(catalog)) {
+      const m = /^prompt\.[\w-]+\.(.+)$/.exec(key);
+      if (!m || m[1] !== id) continue;
+      const line = template.split('\n').find((l) => l.replace(/\{\w+\}/g, '').trim().length >= 8);
+      const at = line ? line.indexOf('{ref}') : -1;
+      if (!line || at < 0) continue;
+      const before = line
+        .slice(0, at)
+        .split(/(\{\w+\})/)
+        .map((part) => (/^\{\w+\}$/.test(part) ? '[^\\n]{0,80}?' : escapeRe(part)))
+        .join('');
+      sources.add(`^\\s*${before}(\\S+?)[ .,:;]`);
+    }
+  }
+  const list = [...sources].map((s) => new RegExp(s));
+  refCache.set(id, list);
+  return list;
+}
+
 /**
  * The template of a prompt: the cycle's override for the language, else the text of the role's family, else the base family's.
  * Undefined when no text exists anywhere (a typo in an id).

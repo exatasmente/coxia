@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
+import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, GitlabCommand, ReleaseAction } from '../shared/types';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
@@ -24,6 +25,7 @@ import {
 import { assertResolvable, resolveMr, type MrRead } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
+import { cycle } from './cyclePrompts';
 import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
@@ -325,7 +327,8 @@ async function qaNote(issue: number): Promise<{ id: number; body: string } | nul
 
 // After a sync, the QA comment is a separate action: authorization does not carry over (post-release-sync skill).
 async function proposeQaComment(sync: ReleaseAction): Promise<void> {
-  if (/Code Review/i.test(sync.stage) && !/Code Review OK/i.test(sync.stage)) return;
+  // An issue still in code review has nothing to retest yet.
+  if (isStageKind(cycle(), sync.stage, ['review'])) return;
   const base = { key: `qa-comment:${sync.issue}:${sync.id}`, kind: 'qa-comment' as const, issue: sync.issue, issueTitle: sync.issueTitle, stage: sync.stage, release: sync.release, mrs: sync.mrs, files: sync.files, retest: sync.retest, unit: sync.unit };
   const note = await qaNote(sync.issue);
   let action: ReleaseAction;

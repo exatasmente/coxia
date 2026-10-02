@@ -2,9 +2,12 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { isStageKind, returnedFromQa } from '../shared/cycles/stages';
 import type { Card } from '../shared/types';
 import type { WatcherAlert } from '../shared/watchers';
 import { loadCards, specInfo } from './cards';
+import { cycle } from './cyclePrompts';
+import { cycleOn } from './cycle-core';
 import { getSettings } from './config';
 import { ATAS } from './env';
 import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
@@ -19,8 +22,8 @@ const FILE = join(ATAS, 'watchers.json');
 const EVERY_MIN = 15;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
-// Past implementation the gate quiz has nothing left to gate.
-const PAST_GATES = /code review|ready to test|in testing|test |done/i;
+// Past implementation (in review or later) the gate quiz has nothing left to gate.
+const pastGates = (stage: string | null): boolean => isStageKind(cycle(), stage, ['review', 'reviewApproved', 'qa', 'qaApproved', 'done']) || returnedFromQa(cycle(), stage);
 const GATE_MAX_AGE_DAYS = 14;
 const POSTMORTEM_MAX_AGE_DAYS = 30;
 const NOT_PROD_RECHECK_MS = 3 * HOUR_MS;
@@ -76,7 +79,7 @@ function hasQuizSection(quizFile: string, gate: number): boolean {
 export function gateAlerts(cards: Card[], now = Date.now()): WatcherAlert[] {
   const out: WatcherAlert[] = [];
   for (const card of cards) {
-    if (!card.spec || PAST_GATES.test(card.stage ?? '')) continue;
+    if (!card.spec || pastGates(card.stage)) continue;
     for (const o of gateOptions(card)) {
       const mtime = Math.floor(statSync(o.file).mtimeMs);
       if (now - mtime > GATE_MAX_AGE_DAYS * DAY_MS) continue;
@@ -127,15 +130,16 @@ function readHistory(): HistoryRow[] {
 
 const STOP = 'Pare: decida com o revisor e registre no Plan. Não rode uma terceira rodada.';
 
-// history.jsonl only records the days the daily-report ran, so a Test Fail the card shows but the history has not seen yet counts too.
+// history.jsonl only records the days the card source ran, so a return from QA the card shows but the history has not seen yet counts too.
 export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAlert[] {
   const out: WatcherAlert[] = [];
   const changes = history.filter((r) => r.type === 'change').sort((a, b) => a.at.localeCompare(b.at));
   for (const card of cards) {
     const stages = changes.filter((r) => r.ref === card.ref && r.field === 'stage');
-    let fails = stages.filter((r) => r.to === 'Test Fail').length;
-    if (card.stage === 'Test Fail' && stages[stages.length - 1]?.to !== 'Test Fail') fails++;
-    if (fails >= 2 && !/test ok|done/i.test(card.stage ?? '')) {
+    const failed = (stage: unknown) => returnedFromQa(cycle(), typeof stage === 'string' ? stage : null);
+    let fails = stages.filter((r) => failed(r.to)).length;
+    if (failed(card.stage) && !failed(stages[stages.length - 1]?.to)) fails++;
+    if (fails >= 2 && !isStageKind(cycle(), card.stage, ['qaApproved', 'done'])) {
       out.push({
         id: `rej:${card.ref}:qa:${fails}`,
         kind: 'rejections',
@@ -145,7 +149,7 @@ export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAl
         message: `#${card.iid} reprovada ${fails} vezes no QA`,
         detail: STOP,
         card: null,
-        since: stages.filter((r) => r.to === 'Test Fail').pop()?.at ?? new Date().toISOString(),
+        since: stages.filter((r) => failed(r.to)).pop()?.at ?? new Date().toISOString(),
       });
     }
     for (const mr of card.mrs) {
@@ -319,7 +323,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
         logError('job:watchers', e, { job: 'watchers', phase: name });
       }
     };
-    await attempt('gate', () => gateAlerts(cards));
+    if (cycleOn('gate')) await attempt('gate', () => gateAlerts(cards));
     await attempt('rejections', () => rejectionAlerts(cards, readHistory()));
     await attempt('postmortem', () => postmortemAlerts(cards, s));
 

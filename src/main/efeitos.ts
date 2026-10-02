@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type EfeitosView, WINDOW_DAYS, effectKey } from '../shared/efeitos';
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
+import { baseParams } from './cyclePrompts';
 import { ATAS } from './env';
 import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module } from './module';
@@ -125,8 +126,8 @@ const KIND_HELP: Record<CheckKind, string> = {
   mr_new_commit: 'o MR recebeu commit novo (push) depois da cerimônia',
   mr_pipeline: 'uma pipeline do MR rodou depois da cerimônia (valor opcional: status esperado, como success)',
   mr_job: 'um job com esse nome rodou numa pipeline do MR depois da cerimônia (valor: nome do job)',
-  mr_comment: 'o Luiz comentou no MR depois da cerimônia',
-  issue_comment: 'o Luiz comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
+  mr_comment: '{theUser} comentou no MR depois da cerimônia',
+  issue_comment: '{theUser} comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
   issue_label: 'a issue ganhou a label (valor: a label, como STAGE::Ready to test)',
   issue_label_removed: 'a issue deixou de ter a label (valor: a label)',
   issue_closed: 'a issue foi fechada',
@@ -141,7 +142,7 @@ function classifyPrompt(entry: EffectEntry, card: Card | undefined): string {
     `Atividade: ${entry.ref} (repositório citado: ${entry.repo}). A issue ${issueIid ? `#${issueIid}` : ''} vive no projeto ${rc().issues.project ?? 'não configurado'}.`,
     `MRs da atividade (project e iid para usar): ${JSON.stringify(card?.mrPaths ?? [])}. Estágio: ${card?.stage ?? 'desconhecido'}.`,
     'Tipos de verificação disponíveis:',
-    ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k]}`),
+    ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k].replace('{theUser}', String(baseParams().theUser))}`),
     'Regras: escolha um tipo só se o estado do GitLab provar que a ação foi feita. Se ela for vaga, pessoal, local (git, worktree, spec), mudança de status de work item (não é label) ou exigir julgamento, responda tipo "nenhum" e verificavel false.',
     'Quando o MR citado não está na lista de MRs acima, use "nenhum". "projeto" é o caminho do projeto (grupo/repo), "iid" o número do MR ou da issue (null nos tipos que criam coisa), "valor" o parâmetro do tipo ou null, "motivo" uma frase curta.',
   ].join('\n');
