@@ -145,6 +145,11 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     };
   }, [open]);
 
+  // A notice about the screen the person just reached is no longer news.
+  useEffect(() => {
+    setToasts((t) => (t.some((x) => sameScreen(x.screen, screen)) ? t.filter((x) => !sameScreen(x.screen, screen)) : t));
+  }, [screen]);
+
   // The bell in the top bar of Hoje opens the same panel, even when there is nothing to show yet.
   useEffect(() => {
     const onOpen = () => {
