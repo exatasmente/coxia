@@ -18,7 +18,7 @@ export interface Settings {
     retroDay: number;
     retroTime: string;
   };
-  voice: { autoStop: boolean; silenceMs: number };
+  voice: { autoStop: boolean; silenceMs: number; speak: boolean };
   notifications: boolean;
   closeToTray: boolean;
 }
@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   tools: { files: true, skills: true, gitlabMcp: true, glab: true, subagents: true },
   schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
-  voice: { autoStop: true, silenceMs: 1200 },
+  voice: { autoStop: true, silenceMs: 1200, speak: true },
   notifications: true,
   closeToTray: true,
 };

@@ -4,6 +4,7 @@ import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
 import { TempoHoje } from './TempoHoje';
+import { VoiceToggle } from './VoiceToggle';
 import { RadarButton, WorktreeBadge } from './radarSlots';
 import { WatchersBanner } from './WatchersBanner';
 
@@ -51,6 +52,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
             <RadarButton go={go} />
+            <VoiceToggle />
             {/* slot: header buttons of feature modules */}
           </div>
         </header>

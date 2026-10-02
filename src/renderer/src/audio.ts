@@ -23,6 +23,19 @@ async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
   return bytes;
 }
 
+// When speech is off nothing is synthesized: the agents' text still shows on screen and nothing goes to Edge.
+let speechOn = true;
+const speechEvents = new EventTarget();
+
+export function setSpeechEnabled(on: boolean): void {
+  speechOn = on;
+  speechEvents.dispatchEvent(new Event('change'));
+}
+
+export function speechEnabled(): boolean {
+  return speechOn;
+}
+
 export function usePlayer() {
   const current = useRef<HTMLAudioElement | null>(null);
   const [speaking, setSpeaking] = useState<string | null>(null);
@@ -33,8 +46,17 @@ export function usePlayer() {
     setSpeaking(null);
   }, []);
 
+  useEffect(() => {
+    const onChange = () => {
+      if (!speechOn) stop();
+    };
+    speechEvents.addEventListener('change', onChange);
+    return () => speechEvents.removeEventListener('change', onChange);
+  }, [stop]);
+
   const say = useCallback(
     async (text: string, voice: Voice, who: string) => {
+      if (!speechOn) return;
       const bytes = await synthesize(text, voice);
       stop();
       const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));

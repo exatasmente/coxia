@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
-import { usePlayer } from './audio';
+import { setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ata } from './screens/Ata';
@@ -53,6 +53,7 @@ export function App() {
 
   useEffect(() => {
     void api.listActions().then(setActions);
+    void api.getSettings().then((s) => setSpeechEnabled(s.voice.speak));
   }, []);
 
   const { mergeStatus, cards } = ceremony;

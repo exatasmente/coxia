@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
+import { setSpeechEnabled } from '../audio';
 import { BackIcon } from './icons';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -42,7 +43,9 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
   const save = async () => {
     setError(null);
     try {
-      setS(await api.saveSettings(s));
+      const saved = await api.saveSettings(s);
+      setS(saved);
+      setSpeechEnabled(saved.voice.speak);
       setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (e) {
       setError(errorText(e));
@@ -136,6 +139,13 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Voz</h2>
             <p className="small muted" style={{ marginTop: 4 }}>O espaço continua enviando a fala antes da hora. Vale a partir da próxima gravação.</p>
           </div>
+          <label className="check-row">
+            <input type="checkbox" checked={s.voice.speak} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, speak: !p.voice.speak } }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Agentes falam em voz alta</span>
+              <span className="small muted">Desligado, tudo continua na tela (transcrição, perguntas, respostas) e nenhum texto vai para o Edge. O microfone segue funcionando.</span>
+            </span>
+          </label>
           <label className="check-row">
             <input type="checkbox" checked={s.voice.autoStop} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, autoStop: !p.voice.autoStop } }))} />
             <span>
