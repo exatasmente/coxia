@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
@@ -187,6 +187,43 @@ export const noSecrets: HookCallback = async (input) => {
   };
 };
 
+// A Glob or Grep with no path from a folder that holds many repositories walks all of them (node_modules, worktrees…)
+// and takes minutes: the agent is sent back to search inside one repository.
+const repoCounts = new Map<string, { at: number; repos: string[] }>();
+
+function reposUnder(root: string): string[] {
+  const hit = repoCounts.get(root);
+  if (hit && Date.now() - hit.at < 60_000) return hit.repos;
+  let repos: string[] = [];
+  try {
+    repos = readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && existsSync(join(root, d.name, '.git')))
+      .map((d) => d.name);
+  } catch {
+    repos = [];
+  }
+  repoCounts.set(root, { at: Date.now(), repos });
+  return repos;
+}
+
+export const noBroadSearch: HookCallback = async (input) => {
+  if (input.hook_event_name !== 'PreToolUse' || !/^(Grep|Glob)$/.test(input.tool_name)) return {};
+  const args = input.tool_input as { path?: unknown; pattern?: unknown; glob?: unknown; type?: unknown };
+  const root = resolve(input.cwd ?? '.', typeof args.path === 'string' && args.path.trim() ? args.path : '.');
+  const repos = reposUnder(root);
+  if (repos.length < 2) return {};
+  // A Glob whose pattern already starts inside one repository ("repo/**/x") is fine.
+  if (input.tool_name === 'Glob' && typeof args.pattern === 'string' && repos.some((r) => args.pattern === r || (args.pattern as string).startsWith(`${r}/`))) return {};
+  const sample = repos.slice(0, 3).map((r) => join(root, r)).join(', ');
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: cp('system.broadSearch', { root, hint: sample ? ` (${sample}…)` : '' }),
+    },
+  };
+};
+
 // Last layer for Grep and Glob: whatever the deny rules let through, a result that names a secret file is cut.
 export function withoutSecretFiles(response: unknown, cwd?: string): object | null {
   if (typeof response !== 'object' || response === null) return null;
@@ -227,6 +264,7 @@ export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks'
     PreToolUse: [
       { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : GITLAB_HINT)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
+      { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
   };
