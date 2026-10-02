@@ -88,7 +88,7 @@ function hhmm(date: string, at: string): number | null {
 }
 
 // Pre-daily: log lines carry the activity (#iid) and the time since the call started. An activity lasts from its first line
-// to the first line of the next one; the opening and the closing are the daily itself.
+// to the first line of the next one (the last one, to the end of the call); the opening is the daily itself.
 export function ceremonySpans(s: SavedCeremony, fileMtime: number): Span[] {
   if (!s.startedAt) return [];
   const started = s.startedAt;
@@ -123,9 +123,6 @@ export function ceremonySpans(s: SavedCeremony, fileMtime: number): Span[] {
     const to = next - run.last > PAUSE_MS ? run.last + TAIL_MS : next;
     push('pre-daily', run.iid, run.from, to, 'call');
   });
-  const lastRun = runs[runs.length - 1];
-  const lastTo = end - lastRun.last > PAUSE_MS ? lastRun.last + TAIL_MS : end;
-  if (end > lastTo) push('daily', null, lastTo, end, 'encerramento');
   return spans;
 }
 
@@ -176,7 +173,7 @@ export function blocksOf(spans: Span[], date: string): TempoBlock[] {
       seconds: Math.round((sp.to - sp.from) / 1000),
       projects: [PROJECT],
       gitlab_ids: { issues: sp.iid ? [`#${sp.iid}`] : [], mrs: [] },
-      events: [{ time: new Date(sp.from).toTimeString().slice(0, 5), kind: 'ceremony', project: PROJECT, text: clip(`${TEMPO_LABEL[sp.kind]}: ${sp.title || sp.note} (${sp.note})`, 120) }],
+      events: [{ time: new Date(sp.from).toTimeString().slice(0, 5), kind: 'ceremony', project: PROJECT, text: clip(`${TEMPO_LABEL[sp.kind]}: ${sp.title ? `${sp.title} (${sp.note})` : sp.note}`, 120) }],
       ceremony: sp.kind,
       ref: sp.ref,
       sessionId: sp.sessionId,
