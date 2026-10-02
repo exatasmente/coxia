@@ -6,6 +6,7 @@ import { type Lang, msg } from './messages';
 import { validate } from './schema';
 import { parseToolArguments } from './text';
 import type { Json } from './types';
+import { t } from '../../../shared/i18n';
 
 export interface ProbeStep {
   ok: boolean;
@@ -97,10 +98,10 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
 
   // 1. reachability and model list
   try {
-    const t = Date.now();
+    const startedAt = Date.now();
     const { ids, raw } = await client.listModels(opts.signal);
     result.reachable = true;
-    result.models = { ok: true, ids, modelListed: ids.includes(model), ms: Date.now() - t };
+    result.models = { ok: true, ids, modelListed: ids.includes(model), ms: Date.now() - startedAt };
     messages.push(msg(lang, 'probeModelsOk', { count: ids.length }));
     if (!ids.includes(model) && ids.length) messages.push(msg(lang, 'probeModelMissing', { model, hint: ids.slice(0, 3).join(', ') }));
     const ctx = contextOf(raw, model);
@@ -127,9 +128,9 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
 
   // 2. plain completion (streaming first, then plain JSON)
   const plain = async (c: ChatClient) => {
-    const t = Date.now();
+    const startedAt = Date.now();
     const out = await c.complete({ messages: [{ role: 'user', content: 'Reply with the single word: ok' }], maxTokens: 256, signal: opts.signal });
-    return { out, ms: Date.now() - t };
+    return { out, ms: Date.now() - startedAt };
   };
   try {
     const { out, ms } = await plain(client);
@@ -163,7 +164,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
 
   // 3. tool call
   try {
-    const t = Date.now();
+    const startedAt = Date.now();
     const out = await client.complete({
       messages: [{ role: 'user', content: 'Call the echo tool with the text "ola". Do not answer in text.' }],
       tools: [ECHO_TOOL],
@@ -171,7 +172,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
       maxTokens: 256,
       signal: opts.signal,
     });
-    const ms = Date.now() - t;
+    const ms = Date.now() - startedAt;
     const call = out.toolCalls.find((c) => c.function.name === 'echo');
     if (!call) {
       result.tools = { ok: false, ms, detail: msg(lang, 'probeToolsNoCall') };
@@ -191,7 +192,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
 
   // 4. response_format json_schema
   try {
-    const t = Date.now();
+    const startedAt = Date.now();
     const out = await client.complete({
       messages: [{ role: 'user', content: 'Return a JSON object with answer "ok" and n 1.' }],
       responseFormat: { type: 'json_schema', json_schema: { name: 'probe', schema: PROBE_SCHEMA, strict: false } },
@@ -206,7 +207,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     }
     const dropped = client.learned.dropParams.has('response_format');
     const ok = !dropped && parsed !== undefined && validate(parsed, PROBE_SCHEMA).length === 0;
-    result.jsonSchema = { ok, ms: Date.now() - t, ...(ok ? {} : { detail: dropped ? 'response_format recusado pelo servidor' : 'resposta fora do esquema' }) };
+    result.jsonSchema = { ok, ms: Date.now() - startedAt, ...(ok ? {} : { detail: dropped ? t('main.engine.text.formatRefused') : t('main.engine.text.outOfSchema') }) };
     result.capabilities.jsonSchema = ok;
   } catch (e) {
     result.jsonSchema = { ok: false, detail: (e as Error).message };

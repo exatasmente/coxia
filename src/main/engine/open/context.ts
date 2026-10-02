@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { ToolImpl } from './tools/types';
 import { ToolError, clip } from './tools/types';
+import { t } from '../../../shared/i18n';
 
 export interface DocSources {
   // CLAUDE.md files, or folders that hold CLAUDE.md or .claude/CLAUDE.md.
@@ -199,7 +200,7 @@ export function skillTool(skills: Skill[]): ToolImpl {
     async run(input, ctx) {
       const name = String(input.skill ?? '').replace(/^\//, '');
       const found = skills.find((s) => s.name === name);
-      if (!found) throw new ToolError(`Skill desconhecida: ${name}. Disponíveis: ${skills.map((s) => s.name).join(', ')}`);
+      if (!found) throw new ToolError(t('main.engine.text.unknownSkill', { name, available: skills.map((s) => s.name).join(', ') }));
       const body = parseFrontmatter(readFileSync(found.file, 'utf8')).body.trim();
       return { response: `Base directory for this skill: ${dirname(found.file)}\n\n${body}`, render: (r) => clip(String(r), ctx.outputMax) };
     },

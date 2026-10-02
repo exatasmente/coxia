@@ -145,3 +145,8 @@ export function formatDate(date: Date): string {
 export function formatTime(date: Date): string {
   return date.toLocaleTimeString(language() === 'en' ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
+
+/** Time of day with seconds, as the minutes print it. */
+export function formatClock(date: Date): string {
+  return date.toLocaleTimeString(language() === 'en' ? 'en-US' : 'pt-BR');
+}

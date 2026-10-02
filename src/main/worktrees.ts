@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { BranchHealth, WorktreeHealth } from '../shared/radar';
 import { rc } from './workspaceConfig';
 import { logError } from './errorlog';
+import { t } from '../shared/i18n';
 
 const exec = promisify(execFile);
 
@@ -78,7 +79,7 @@ export function checkConvention(branch: string): { suggestedName: string | null;
   if (LONG_LIVED.test(branch) || RELEASE_VERSION.test(branch) || WORK.test(branch) || DOCS.test(branch) || SCRATCH.test(branch)) return null;
   const m = branch.match(/^([a-z]+)\/(\d{5,6}(?:-[\w.]+)?)$/i) ?? branch.match(/^release\/(feat)\/(\d{5,6}(?:-[\w.]+)?)$/);
   const type = m ? TYPE_BY_PREFIX[m[1].toLowerCase()] : undefined;
-  if (m && type) return { suggestedName: `release/${type}/${m[2]}`, note: `renomear para release/${type}/${m[2]} (skill branch-rename)` };
+  if (m && type) return { suggestedName: `release/${type}/${m[2]}`, note: t('main.worktrees.rename', { name: `release/${type}/${m[2]}` }) };
   const number = branch.match(/(?<!\d)(\d{5,6})(?!\d)/)?.[1];
   return {
     suggestedName: null,

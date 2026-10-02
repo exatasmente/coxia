@@ -3,6 +3,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChatMessage } from './types';
+import { t } from '../../../shared/i18n';
 
 export interface UsageRecord {
   promptTokens: number;
@@ -60,7 +61,7 @@ export function healMessages(messages: ChatMessage[]): ChatMessage[] {
     let j = i + 1;
     while (messages[j]?.role === 'tool') answered.add(messages[j++].tool_call_id ?? '');
     for (const c of m.tool_calls) {
-      if (!answered.has(c.id)) out.push({ role: 'tool', tool_call_id: c.id, content: '(interrompido: sem resultado)' });
+      if (!answered.has(c.id)) out.push({ role: 'tool', tool_call_id: c.id, content: t('main.engine.text.interrupted') });
     }
   }
   return out;

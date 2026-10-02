@@ -28,7 +28,7 @@ import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
 import { mrChangesHint } from './vcs/readPolicy';
 import type { VcsComment, VcsThread } from './vcs/types';
-import { tv } from '../shared/i18n';
+import { tv, t } from '../shared/i18n';
 
 const SEEN_FILE = join(ATAS, 'feedback.json');
 const DIR = join(ATAS, 'feedback');
@@ -65,7 +65,7 @@ interface Deps {
 // ---------- code host reads ----------
 
 function checkMr(mr: MrPath): MrPath {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(mr.project) || !Number.isInteger(mr.iid) || mr.iid <= 0 || !mr.ref) throw new Error('MR inválido');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(mr.project) || !Number.isInteger(mr.iid) || mr.iid <= 0 || !mr.ref) throw new Error(t('main.feedback.badMr'));
   return mr;
 }
 
@@ -202,26 +202,26 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
 function noticesFor(events: FeedbackEvent[]): Notice[] {
   if (events.length > MAX_NOTICES) {
     const refs = [...new Set(events.map((e) => `#${e.card.iid}`))].join(', ');
-    return [{ title: `${events.length} retornos de QA e revisão`, body: `${refs}\nClique para ver as atividades.`, onClick: { type: 'navigate', to: 'today' } }];
+    return [{ title: t('main.feedback.returns', { count: events.length }), body: `${refs}\n${t('main.feedback.clickActivities')}`, onClick: { type: 'navigate', to: 'today' } }];
   }
   return events.map((e): Notice => {
     if (e.kind === 'returned') {
       return {
-        title: `A #${e.card.iid} voltou do QA`,
+        title: t('main.feedback.returnedTitle', { iid: e.card.iid }),
         body: `${e.why}${e.note ? `\n${e.note}` : ''}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
     if (e.kind === 'qa-note') {
       return {
-        title: `Nota nova do QA na ${e.where}`,
+        title: t('main.feedback.qaNoteTitle', { where: e.where }),
         body: `${e.note}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
     return {
-      title: e.count === 1 ? `Nova discussão no ${e.mr.ref}` : `${e.count} novas discussões no ${e.mr.ref}`,
-      body: `${e.first}\nClique para ver uma por vez.`,
+      title: t('main.feedback.discussionTitle', { count: e.count, mr: e.mr.ref }),
+      body: `${e.first}\n${t('main.feedback.clickOneByOne')}`,
       onClick: { type: 'open', screen: { name: 'discussions', ref: e.card.ref, mr: e.mr.ref, card: e.card } },
     };
   });
@@ -250,7 +250,7 @@ function now(): string {
 }
 
 function reentryFile(iid: string): string {
-  if (!/^\d+$/.test(iid)) throw new Error('issue inválida');
+  if (!/^\d+$/.test(iid)) throw new Error(t('main.feedback.badIssue'));
   return join(DIR, 'reentry', `${iid}.json`);
 }
 
@@ -329,7 +329,7 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
     speech: r.data.fala,
     found: r.data.achou,
     classification: r.data.classificacao,
-    why: r.data.duvida ? `${r.data.motivo} Dúvida: ${r.data.duvida}` : r.data.motivo,
+    why: r.data.duvida ? t('main.feedback.whyDoubt', { reason: r.data.motivo, doubt: r.data.duvida }) : r.data.motivo,
     phase: r.data.fase,
     steps: r.data.passos,
     notes: recent.map(({ body: _body, ...view }) => view),
@@ -377,7 +377,7 @@ function readStore(mr: MrPath): DiscussionStore {
 }
 
 function checkDiscussionId(id: string): string {
-  if (!/^[\w=-]{1,64}$/.test(id)) throw new Error('discussão inválida');
+  if (!/^[\w=-]{1,64}$/.test(id)) throw new Error(t('main.feedback.badDiscussion'));
   return id;
 }
 
@@ -446,8 +446,8 @@ export async function proposeReply(card: Card, mrIn: MrPath, id: string, bodyIn:
   const mr = checkMr(mrIn);
   checkDiscussionId(id);
   const body = bodyIn.trim();
-  if (!body) throw new Error('a resposta está vazia');
-  if (body.length > 10_000) throw new Error('a resposta passa de 10 mil caracteres');
+  if (!body) throw new Error(t('main.feedback.emptyReply'));
+  if (body.length > 10_000) throw new Error(t('main.feedback.longReply'));
   const key = `mr-reply:${mr.ref}:${id}:${createHash('sha1').update(body).digest('hex').slice(0, 10)}`;
   const commands = await vcsProvider().planWrite({ op: 'replyThread', project: mr.project, iid: mr.iid, threadId: id, body });
   const [action] = proposeVcsCommands(
@@ -456,12 +456,12 @@ export async function proposeReply(card: Card, mrIn: MrPath, id: string, bodyIn:
       issue: Number(card.iid),
       issueTitle: card.title,
       stage: card.stage ?? '',
-      summary: `Responder à discussão no ${mr.ref}`,
-      detail: 'A resposta entra como nota na discussão do revisor.',
+      summary: t('main.feedback.replySummary', { mr: mr.ref }),
+      detail: t('main.feedback.replyDetail'),
     },
     commands,
   );
-  if (!action) throw new Error('Já existe uma proposta igual a esta em Ações.');
+  if (!action) throw new Error(t('main.feedback.dupReply'));
   remember(mr, id, { key, kind: 'reply' });
   return { key, kind: 'reply', state: 'pending' };
 }
@@ -471,8 +471,8 @@ export async function proposeResolve(card: Card, mrIn: MrPath, id: string): Prom
   checkDiscussionId(id);
   const key = `mr-resolve:${mr.ref}:${id}`;
   const commands = await vcsProvider().planWrite({ op: 'resolveThread', project: mr.project, iid: mr.iid, threadId: id });
-  const [action] = proposeVcsCommands({ key, issue: Number(card.iid), issueTitle: card.title, stage: card.stage ?? '', summary: `Marcar como resolvida a discussão no ${mr.ref}` }, commands);
-  if (!action) throw new Error('Já existe uma proposta para resolver esta discussão em Ações.');
+  const [action] = proposeVcsCommands({ key, issue: Number(card.iid), issueTitle: card.title, stage: card.stage ?? '', summary: t('main.feedback.resolveSummary', { mr: mr.ref }) }, commands);
+  if (!action) throw new Error(t('main.feedback.dupResolve'));
   remember(mr, id, { key, kind: 'resolve' });
   return { key, kind: 'resolve', state: 'pending' };
 }

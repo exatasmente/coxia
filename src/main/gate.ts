@@ -6,6 +6,7 @@ import { cycle, formatTime, language, prompt as cp, text as cycleWord } from './
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
+import { t } from '../shared/i18n';
 
 // Quiz mechanics from the agent-pipeline skill, §2.1. The correct answers never leave this module before a round is answered.
 
@@ -62,7 +63,7 @@ function now(): string {
 }
 
 function read(id: string): Gate {
-  if (!ID.test(id)) throw new Error('gate inválido');
+  if (!ID.test(id)) throw new Error(t('main.gate.invalid'));
   return JSON.parse(readFileSync(join(DIR, `${id}.json`), 'utf8')) as Gate;
 }
 
@@ -81,6 +82,7 @@ function view(g: Gate): GateView {
       const done = r.answers.every(Boolean);
       return {
         visual: r.visual,
+        // i18n-ignore: the verdict is a code the screens compare, not text
         verdict: done ? (r.answers.every((a) => a?.correct) ? 'assertivo' : 'não assertivo') : null,
         questions: r.questions.map((q, i) => ({
           text: q.text,
@@ -154,7 +156,7 @@ function quizRules(): string {
 
 export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
   const option = gateOptions(card).find((o) => o.gate === gate);
-  if (!option) throw new Error(`a #${card.iid} não tem artefato para o Gate ${gate}`);
+  if (!option) throw new Error(t('main.gate.noArtifact', { iid: card.iid, gate }));
   const { words } = gateParams();
   const prompt = cp('gate.start', { gate, ref: card.ref, title: card.title, file: option.file, words, quizRules: quizRules() });
   const r = await askAgent<{ resumo: string; perguntas: RawQuestion[] }>('deep', prompt, quizSchema({ resumo: str }), { maxTurns: 16 });
@@ -197,7 +199,7 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
   const g = read(id);
   const round = g.rounds[g.rounds.length - 1];
   const q = round.questions[index];
-  if (!q || round.answers[index]) throw new Error('pergunta já respondida ou inexistente');
+  if (!q || round.answers[index]) throw new Error(t('main.gate.answered'));
   const choice = input.choice ?? (input.text ? letter(input.text) : null);
   let answer: Answer;
   if (choice !== null && choice >= 0 && choice <= 3) {
@@ -244,7 +246,7 @@ export async function visualGate(id: string): Promise<GateView> {
   const g = read(id);
   const round = g.rounds[g.rounds.length - 1];
   const missed = round.questions.filter((_, i) => !round.answers[i]?.correct);
-  if (!missed.length) throw new Error('nenhum ponto errado nesta rodada');
+  if (!missed.length) throw new Error(t('main.gate.nothingMissed'));
   const points = missed.map((q) => cp('gate.visualPoint', { text: q.text, correct: q.options[q.correct], section: q.section })).join(' | ');
   const r = await askAgent<{ mermaid: string; heading: string; descricao: string }>(
     'deep',
@@ -257,15 +259,15 @@ export async function visualGate(id: string): Promise<GateView> {
 }
 
 export function insertGateVisual(id: string): GateView {
-  assertExternalWrite('inserir o diagrama no artefato da spec');
+  assertExternalWrite(t('main.gate.whatInsert'));
   const g = read(id);
   const round = g.rounds[g.rounds.length - 1];
   const v = round.visual;
-  if (!v || v.inserted) throw new Error('não há recurso visual a inserir');
-  if (!inSpecs(g.artifact)) throw new Error('artefato fora da pasta de specs');
+  if (!v || v.inserted) throw new Error(t('main.gate.noVisual'));
+  if (!inSpecs(g.artifact)) throw new Error(t('main.gate.outsideSpecs'));
   const lines = readFileSync(g.artifact, 'utf8').split('\n');
   const start = lines.findIndex((l) => /^#{1,6} /.test(l) && l.replace(/^#+\s*/, '').trim() === v.heading);
-  if (start < 0) throw new Error(`heading «${v.heading}» não encontrado em ${basename(g.artifact)}`);
+  if (start < 0) throw new Error(t('main.gate.noHeading', { heading: v.heading, file: basename(g.artifact) }));
   const level = (/^#+/.exec(lines[start]) as RegExpExecArray)[0].length;
   let end = lines.findIndex((l, i) => i > start && /^#{1,6} /.test(l) && (/^#+/.exec(l) as RegExpExecArray)[0].length <= level);
   if (end < 0) end = lines.length;
@@ -303,9 +305,9 @@ function cell(text: string): string {
 }
 
 export function recordGate(id: string): GateView {
-  assertExternalWrite('registrar o quiz no GATE_QUIZ da spec');
+  assertExternalWrite(t('main.gate.whatRecord'));
   const g = read(id);
-  if (!inSpecs(g.quizFile)) throw new Error(`${rc().specLayout.documents.gateQuiz} fora da pasta de specs`);
+  if (!inSpecs(g.quizFile)) throw new Error(t('main.gate.quizOutside', { file: rc().specLayout.documents.gateQuiz }));
   const v = view(g);
   const verdicts = v.rounds.map((r) => r.verdict);
   const final = verdicts[verdicts.length - 1];

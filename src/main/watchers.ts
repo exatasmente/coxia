@@ -14,6 +14,7 @@ import { gateOptions } from './gate';
 import type { Module, ModuleContext } from './module';
 import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
+import { t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'watchers.json');
 const EVERY_MIN = 15;
@@ -87,8 +88,8 @@ export function gateAlerts(cards: Card[], now = Date.now()): WatcherAlert[] {
         ref: card.ref,
         iid: card.iid,
         title: card.title,
-        message: `${o.label} da #${card.iid} pronto: quiz agora?`,
-        detail: `Gate ${o.gate} sem registro no ${rc().specLayout.documents.gateQuiz}.`,
+        message: t('main.watchers.gateReady', { label: o.label, iid: card.iid }),
+        detail: t('main.watchers.gateNoRecord', { gate: o.gate, file: rc().specLayout.documents.gateQuiz }),
         card,
         since: new Date(mtime).toISOString(),
       });
@@ -125,7 +126,7 @@ function readHistory(): HistoryRow[] {
   }
 }
 
-const STOP = 'Pare: decida com o revisor e registre no Plan. Não rode uma terceira rodada.';
+const stop = (): string => t('main.watchers.stop');
 
 // history.jsonl only records the days the card source ran, so a return from QA the card shows but the history has not seen yet counts too.
 export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAlert[] {
@@ -143,8 +144,8 @@ export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAl
         ref: card.ref,
         iid: card.iid,
         title: card.title,
-        message: `#${card.iid} reprovada ${fails} vezes no QA`,
-        detail: STOP,
+        message: t('main.watchers.qaFails', { iid: card.iid, count: fails }),
+        detail: stop(),
         card: null,
         since: stages.filter((r) => failed(r.to)).pop()?.at ?? new Date().toISOString(),
       });
@@ -160,8 +161,8 @@ export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAl
           ref: card.ref,
           iid: card.iid,
           title: card.title,
-          message: `${mr} perdeu a aprovação ${lost.length} vezes (#${card.iid})`,
-          detail: STOP,
+          message: t('main.watchers.lostApproval', { mr, count: lost.length, iid: card.iid }),
+          detail: stop(),
           card: null,
           since: lost[lost.length - 1].at,
         });
@@ -216,11 +217,11 @@ async function inProduction(project: string, iid: number): Promise<{ at: string 
   const shipped = mrs
     .filter((m) => m.state === 'merged' && /^(main|release\/\d[\w.]*)$/.test(m.targetBranch))
     .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
-  if (shipped) return { at: shipped.mergedAt, reason: `!${shipped.iid} mergeada em ${shipped.targetBranch}` };
+  if (shipped) return { at: shipped.mergedAt, reason: t('main.watchers.shippedMr', { iid: shipped.iid, target: shipped.targetBranch }) };
   const pattern = rc().releaseLabelPattern;
   const label = issue.labels.find((l) => pattern.test(l));
   const version = label ? (pattern.exec(label)?.[1] ?? label) : null;
-  if (issue.state === 'closed' && version) return { at: issue.closedAt, reason: `issue fechada na versão ${version}` };
+  if (issue.state === 'closed' && version) return { at: issue.closedAt, reason: t('main.watchers.closedIn', { version }) };
   return null;
 }
 
@@ -275,8 +276,8 @@ export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()
       ref: issue.ref,
       iid,
       title: issue.title,
-      message: `/postmortem da #${iid}`,
-      detail: `P${sev.level} (${sev.source}); ${check.reason}. Sem 0_POSTMORTEM.md.`,
+      message: t('main.watchers.postmortem', { iid }),
+      detail: t('main.watchers.postmortemDetail', { level: sev.level, source: sev.source, reason: String(check.reason) }),
       card: null,
       since: check.when ?? check.at,
     });
@@ -287,9 +288,9 @@ export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()
 // ---------------------------------------------------------------- run
 
 function noticeFor(a: WatcherAlert): Notice {
-  if (a.kind === 'gate' && a.card) return { title: a.message, body: 'Clique para abrir o quiz.', onClick: { type: 'open', screen: { name: 'gate', ref: a.card.ref, card: a.card } } };
-  if (a.kind === 'rejections') return { title: a.message, body: STOP, onClick: { type: 'navigate', to: 'today' } };
-  return { title: a.message, body: 'Fix em produção e sem postmortem. Clique para ver.', onClick: { type: 'navigate', to: 'today' } };
+  if (a.kind === 'gate' && a.card) return { title: a.message, body: t('main.watchers.clickQuiz'), onClick: { type: 'open', screen: { name: 'gate', ref: a.card.ref, card: a.card } } };
+  if (a.kind === 'rejections') return { title: a.message, body: stop(), onClick: { type: 'navigate', to: 'today' } };
+  return { title: a.message, body: t('main.watchers.clickPostmortem'), onClick: { type: 'navigate', to: 'today' } };
 }
 
 let running = false;
@@ -326,7 +327,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
 
     if (notifyEnabled) {
       if (fresh.length > MAX_SEPARATE_NOTICES) {
-        deps.notify({ title: `${fresh.length} alertas dos vigias`, body: 'Gates, reprovações e postmortems. Clique para ver.', onClick: { type: 'navigate', to: 'today' } });
+        deps.notify({ title: t('main.watchers.many', { count: fresh.length }), body: t('main.watchers.manyBody'), onClick: { type: 'navigate', to: 'today' } });
       } else {
         for (const a of fresh) deps.notify(noticeFor(a));
       }

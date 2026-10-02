@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { type ToolContext, type ToolImpl, ToolError, clip } from './types';
+import { t } from '../../../../shared/i18n';
 
 function real(p: string): string {
   try {
@@ -14,7 +15,7 @@ function real(p: string): string {
 
 // The path as the tool will use it: ~ expanded, absolute against the cwd, symlinks resolved, and inside an allowed root.
 export function confine(p: unknown, ctx: ToolContext): string {
-  if (typeof p !== 'string' || !p) throw new ToolError('Caminho ausente.');
+  if (typeof p !== 'string' || !p) throw new ToolError(t('main.engine.text.read.missing'));
   const home = p === '~' || p.startsWith('~/') ? homedir() + p.slice(1) : p;
   const abs = resolve(ctx.cwd, home);
   // A path that does not exist yet is judged by its closest existing parent, so a link above it still counts.
@@ -30,7 +31,7 @@ export function confine(p: unknown, ctx: ToolContext): string {
   const resolved = resolve(real(probe), abs.slice(probe.length).replace(/^[\\/]/, ''));
   const roots = ctx.roots.map(real);
   if (!roots.some((r) => resolved === r || resolved.startsWith(r.endsWith(sep) ? r : r + sep))) {
-    throw new ToolError('Caminho fora das pastas permitidas para esta cerimônia.');
+    throw new ToolError(t('main.engine.text.read.outside'));
   }
   return resolved;
 }
@@ -65,16 +66,16 @@ export const readTool: ToolImpl = {
   },
   async run(input, ctx) {
     const path = confine(input.file_path, ctx);
-    if (ctx.isSecret(path)) throw new ToolError('Arquivo de configuração ou segredo: fora do alcance da cerimônia.');
+    if (ctx.isSecret(path)) throw new ToolError(t('main.engine.text.read.secret'));
     let st;
     try {
       st = statSync(path);
     } catch {
-      throw new ToolError(`File does not exist: ${String(input.file_path)}. O diretório de trabalho é ${ctx.cwd}.`);
+      throw new ToolError(t('main.engine.text.read.noFile', { path: String(input.file_path), cwd: ctx.cwd }));
     }
-    if (st.isDirectory()) throw new ToolError('É um diretório; use Glob ou Grep para listar.');
+    if (st.isDirectory()) throw new ToolError(t('main.engine.text.read.directory'));
     if (st.size > MAX_FILE) throw new ToolError(`Arquivo grande demais (${st.size} bytes); use Grep ou leia por offset/limit em um arquivo menor.`);
-    if (isBinary(path)) throw new ToolError('Arquivo binário: não dá para ler como texto.');
+    if (isBinary(path)) throw new ToolError(t('main.engine.text.read.binary'));
     const lines = (await readFile(path, 'utf8')).split('\n');
     const offset = Math.max(1, Number(input.offset) || 1);
     const limit = Math.max(1, Math.min(Number(input.limit) || 2000, 2000));

@@ -5,10 +5,12 @@ import { promisify } from 'node:util';
 import type { Decision, Minutes, SaveResult } from '../shared/types';
 import { ATAS } from './env';
 import { invalidateReport } from './report';
-import { decisionLogHeading, prompt as cp, text as cycleWord } from './cyclePrompts';
+import { ceremonyLabel, decisionLogHeading, formatClock, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
+import { upperFirst } from '../shared/cycles/text';
 import { modeText } from './agentVoice';
+import { t } from '../shared/i18n';
 
 const run = promisify(execFile);
 
@@ -18,24 +20,24 @@ function today(): string {
 
 function minutesMarkdown(m: Minutes, teams: string): string {
   const lines = [
-    `## Pré-daily ${new Date(m.startedAt).toLocaleTimeString('pt-BR')} às ${new Date(m.endedAt).toLocaleTimeString('pt-BR')}`,
+    t('main.ata.heading', { ceremony: upperFirst(ceremonyLabel()), from: formatClock(new Date(m.startedAt)), to: formatClock(new Date(m.endedAt)) }),
     '',
-    '### Decisões',
-    ...(m.decisions.length ? m.decisions.map((d) => `- ${d.ref}: ${d.text} → ${d.dest}`) : ['- nenhuma']),
+    t('main.ata.decisions'),
+    ...(m.decisions.length ? m.decisions.map((d) => `- ${d.ref}: ${d.text} → ${d.dest}`) : [`- ${t('main.ata.none')}`]),
     '',
-    '### Efeitos aguardando "sim" no Claude Code',
-    ...(m.effects.length ? m.effects.map((e) => `- ${e.ref} (${e.repo}): ${e.text}`) : ['- nenhum']),
+    t('main.ata.effects'),
+    ...(m.effects.length ? m.effects.map((e) => `- ${e.ref} (${e.repo}): ${e.text}`) : [`- ${t('main.ata.noneMasc')}`]),
     '',
-    '### Perguntas sem resposta',
-    ...(m.unanswered.length ? m.unanswered.map((u) => `- ${u.ref}: ${u.question}`) : ['- nenhuma']),
+    t('main.ata.unanswered'),
+    ...(m.unanswered.length ? m.unanswered.map((u) => `- ${u.ref}: ${u.question}`) : [`- ${t('main.ata.none')}`]),
     '',
-    '### Texto para a daily do time',
+    t('main.ata.teams'),
     '',
     '```',
     teams,
     '```',
     '',
-    '### Transcrição',
+    t('main.ata.transcript'),
     ...m.transcript.map((t) => `- ${t.at} **${t.who}**: ${t.text}`),
     '',
   ];
@@ -82,7 +84,7 @@ async function writeDailyNote(d: Decision): Promise<{ ok: boolean; detail: strin
   const previous = currentNote(d.ref);
   const note = previous ? `${previous} | ${today()}: ${d.text}` : `${today()}: ${d.text}`;
   const source = rc().cardSource;
-  if (!source?.noteArgs.length) return { ok: false, detail: 'a fonte de cartões não grava notas: ficou só na ata' };
+  if (!source?.noteArgs.length) return { ok: false, detail: t('main.ata.noNotes') };
   await run(source.command, source.noteArgs.map((a) => a.replace('{ref}', d.ref).replace('{note}', note)), { timeout: 30_000 });
   invalidateReport();
   return { ok: true, detail: `${basename(source.command)} note ${d.ref}` };
@@ -96,9 +98,9 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[])
   for (const i of selected) {
     const d = m.decisions[i];
     if (!d) continue;
-    const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do daily-report');
+    const blocked = d.target === 'ata' ? null : externalRefusal(t('main.ata.whatWrite'));
     if (blocked) {
-      written.push({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
+      written.push({ ref: d.ref, dest: d.dest, ok: false, detail: t('main.ata.testOnly') });
       continue;
     }
     try {

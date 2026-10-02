@@ -7,6 +7,7 @@ import { ATAS } from './env';
 import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
 import { issueNotesHint } from './vcs/readPolicy';
 import { assertExternalWrite } from './workspace';
+import { t } from '../shared/i18n';
 
 const DIR = join(ATAS, 'qa');
 const IID = /^\d+$/;
@@ -47,7 +48,7 @@ export function getQa(iid: string): QaHandoff | null {
 }
 
 export async function prepareQa(card: Card): Promise<QaHandoff> {
-  if (!card.spec) throw new Error(`a #${card.iid} não tem pasta no .specs`);
+  if (!card.spec) throw new Error(t('main.qa.noFolder', { iid: card.iid }));
   const layout = rc().specLayout;
   const testPlans = layout.phaseFiles.map((f) => f.file).filter((f) => /TEST_PLAN/i.test(f));
   const noteUrl = issueWebUrl(card.iid);
@@ -109,7 +110,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
 
 export async function askQa(iid: string, question: string): Promise<QaHandoff> {
   const q = read(iid);
-  if (!q) throw new Error('passagem para o QA não preparada');
+  if (!q) throw new Error(t('main.qa.notPrepared'));
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     cp('qa.ask', { ref: q.ref, question }),
@@ -122,11 +123,11 @@ export async function askQa(iid: string, question: string): Promise<QaHandoff> {
 }
 
 export function writeQaChecklist(iid: string): QaHandoff {
-  assertExternalWrite('gravar o checklist de QA na spec');
+  assertExternalWrite(t('main.qa.whatWrite'));
   const q = read(iid);
-  if (!q) throw new Error('passagem para o QA não preparada');
+  if (!q) throw new Error(t('main.qa.notPrepared'));
   const specs = rc().specsDir;
-  if (!specs || !q.checklistFile.startsWith(specs)) throw new Error('checklist fora da pasta de specs');
+  if (!specs || !q.checklistFile.startsWith(specs)) throw new Error(t('main.qa.outside'));
   const body = [
     cp('qa.doc.title', { iid: q.iid, title: q.title }),
     '',

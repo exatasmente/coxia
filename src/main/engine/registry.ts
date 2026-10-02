@@ -2,6 +2,7 @@ import type { EngineId, LlmRole } from '../../shared/config/types';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import type { EngineRunner } from './contract';
+import { t } from '../../shared/i18n';
 
 // Engines register themselves; agents.ts picks one per call from the provider the role is mapped to.
 const engines = new Map<EngineId, EngineRunner>();
@@ -24,8 +25,8 @@ export function runnerFor(target: ResolvedRole): EngineRunner {
   if (!runner) {
     throw new Error(
       target.engine === 'open'
-        ? `O provedor "${target.providerId}" usa o motor aberto, que não está instalado nesta versão do app.`
-        : `Nenhum motor "${target.engine}" registrado para o provedor "${target.providerId}".`,
+        ? t('main.engine.noOpenEngine', { provider: target.providerId })
+        : t('main.engine.noEngine', { engine: target.engine, provider: target.providerId }),
     );
   }
   return runner;
