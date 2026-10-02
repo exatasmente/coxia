@@ -6,6 +6,7 @@ import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
 import type { Job } from './module';
+import { knownTask, track } from './saude';
 
 interface Snapshot {
   checkedAt: string | null;
@@ -57,6 +58,7 @@ const lastRun = new Map<string, number>();
 
 export function registerJob(job: Job): void {
   jobs.push(job);
+  knownTask(job.name, job.everyMin);
 }
 let running = false;
 
@@ -132,17 +134,19 @@ function tick(): void {
     if (job.workHoursOnly && !(workday && inWindow)) continue;
     if (Date.now() - (lastRun.get(job.name) ?? 0) < job.everyMin * 60_000) continue;
     lastRun.set(job.name, Date.now());
-    void job.run().catch((e) => console.error(`[job ${job.name}]`, e));
+    void track(job.name, () => job.run()).catch((e) => console.error(`[job ${job.name}]`, e));
   }
 
   if (workday && inWindow && due) {
-    void checkStatus(false).catch((e) => console.error('[scheduler]', e));
-    void detectRelease(false).catch((e) => console.error('[release]', e));
+    void track('status', () => checkStatus(false)).catch((e) => console.error('[scheduler]', e));
+    void track('release', () => detectRelease(false)).catch((e) => console.error('[release]', e));
   }
 }
 
 export function startScheduler(d: Deps): void {
   deps = d;
+  knownTask('status', getSettings().schedule.statusEveryMin);
+  knownTask('release', getSettings().schedule.statusEveryMin);
   setTimeout(tick, 15_000);
   setInterval(tick, TICK_MS);
 }

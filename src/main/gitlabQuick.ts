@@ -4,14 +4,14 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickPerson, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeGitlabAction } from './actions';
 import { getSettings } from './config';
-import { DAILY_REPORT, GITLAB } from './env';
+import { GITLAB } from './env';
 import type { Module } from './module';
+import { readReport } from './report';
 import type { Notice } from './scheduler';
 
 const exec = promisify(execFile);
 const ISSUE_PROJECT = 1;
 const JOB_EVERY_MIN = 30;
-const REPORT_TTL_MS = 2 * 60_000;
 const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|wip:)\s*/i;
 // Build, release prep and deploy belong to the QA flow (qa-release-branch skill): the app never plays them.
 const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
@@ -305,14 +305,8 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
   return out;
 }
 
-let report: { at: number; items: ReportMr[] } | null = null;
-
-async function readReport(): Promise<ReportMr[]> {
-  if (report && Date.now() - report.at < REPORT_TTL_MS) return report.items;
-  const { stdout } = await exec(DAILY_REPORT, ['report', '--format', 'json', '--dry-run'], { timeout: 180_000, maxBuffer: 32 * 1024 * 1024 });
-  const items = (JSON.parse(stdout) as { items: ReportMr[] }).items.filter((i) => i.kind === 'mr');
-  report = { at: Date.now(), items };
-  return items;
+async function readMrs(): Promise<ReportMr[]> {
+  return ((await readReport()).items as unknown as ReportMr[]).filter((i) => i.kind === 'mr');
 }
 
 export interface AutoProposal {
@@ -358,7 +352,7 @@ export function autoProposals(items: ReportMr[], jobsOf: (m: ReportMr) => ApiJob
 }
 
 export async function scan(): Promise<AutoProposal[]> {
-  const items = (await readReport()).filter((m) => m.state === 'opened' && m.roles.includes('author'));
+  const items = (await readMrs()).filter((m) => m.state === 'opened' && m.roles.includes('author'));
   const jobs = new Map<string, ApiJob[]>();
   for (const m of items.filter((x) => !x.draft && x.pipeline === 'manual')) {
     const pid = /\/pipelines\/(\d+)/.exec(m.pipeline_url ?? '')?.[1];

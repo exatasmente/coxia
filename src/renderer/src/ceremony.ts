@@ -55,11 +55,11 @@ export function useCeremony() {
   const [statusAt, setStatusAt] = useState<string | null>(null);
   const pending = useRef(new Map<string, Promise<AgentTurn>>());
 
-  const loadCards = useCallback(async () => {
+  const loadCards = useCallback(async (refresh = false) => {
     setLoadingCards(true);
     setCardsError(null);
     try {
-      setCards(await api.loadCards(LIMIT));
+      setCards(await api.loadCards(LIMIT, refresh));
     } catch (e) {
       setCardsError(errorText(e));
     } finally {
@@ -135,7 +135,7 @@ export function useCeremony() {
     hydrate({ ...snapshot, id: newId(), cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
     setTurnErrors({});
     setResumed(false);
-    await loadCards();
+    await loadCards(true);
   }, [hydrate, snapshot, loadCards]);
 
   // A status check refreshes the GitLab data of the cards already on the agenda; turns stay as they were.

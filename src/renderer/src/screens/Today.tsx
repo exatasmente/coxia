@@ -7,6 +7,7 @@ import { TempoHoje } from './TempoHoje';
 import { SpeakPill } from './SpeakPill';
 import { VoiceToggle } from './VoiceToggle';
 import { RadarButton, WorktreeBadge } from './radarSlots';
+import { SaudeButton } from './SaudeButton';
 import { WatchersBanner } from './WatchersBanner';
 
 type Filter = 'all' | 'blocked' | 'ask';
@@ -54,6 +55,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
             <RadarButton go={go} />
             <VoiceToggle />
+            <SaudeButton go={go} />
             {/* slot: header buttons of feature modules */}
           </div>
         </header>
@@ -240,7 +242,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
               {c.statusAt && (
                 <span className="faint">Status conferido às {new Date(c.statusAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
               )}
-              <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.loadCards()}>
+              <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.loadCards(true)}>
                 {c.loadingCards ? <span className="spinner" /> : null} Atualizar do GitLab
               </button>
             </span>

@@ -54,6 +54,7 @@ function resolveVoice(voice: Voice, engine: VoiceEngine): Voice {
 type Reply = { id: number; text?: string; path?: string; error?: string; ready?: boolean };
 
 let proc: ChildProcessWithoutNullStreams | null = null;
+let ready = false;
 let nextId = 1;
 const waiting = new Map<number, (r: Reply) => void>();
 
@@ -63,12 +64,14 @@ function sidecar(): ChildProcessWithoutNullStreams {
   proc = spawn(PYTHON, [SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
   createInterface({ input: proc.stdout }).on('line', (line) => {
     const r = JSON.parse(line) as Reply;
+    if (r.ready) ready = true;
     waiting.get(r.id)?.(r);
     waiting.delete(r.id);
   });
   proc.stderr.on('data', (d) => process.stderr.write(`[voice] ${d}`));
   proc.on('exit', () => {
     proc = null;
+    ready = false;
     for (const [, resolve] of waiting) resolve({ id: -1, error: 'voice sidecar exited' });
     waiting.clear();
   });
@@ -81,6 +84,17 @@ function call(req: Record<string, unknown>): Promise<Reply> {
     waiting.set(id, (r) => (r.error ? reject(new Error(r.error)) : resolve(r)));
     sidecar().stdin.write(`${JSON.stringify({ id, ...req })}\n`);
   });
+}
+
+// Does not respawn a dead sidecar: the health panel has to see it dead.
+export async function voiceStatus(): Promise<{ alive: boolean; ready: boolean; pingMs: number | null }> {
+  if (!proc) return { alive: false, ready: false, pingMs: null };
+  const t = Date.now();
+  const answered = await Promise.race([
+    call({ cmd: 'ping' }).then(() => true, () => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ]);
+  return { alive: Boolean(proc), ready, pingMs: answered ? Date.now() - t : null };
 }
 
 export function startVoice(): void {
