@@ -220,7 +220,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
               if (card) go({ name: 'qa', ref: card.ref, card });
             }}
           >
-            <option value="">Escolher atividade…</option>
+            <option value="">Escolher…</option>
             {[...forQa, ...cards.filter((x) => x.spec && !forQa.includes(x))].map((x) => (
               <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>
             ))}

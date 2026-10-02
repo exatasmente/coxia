@@ -584,7 +584,7 @@ body:has(.bnav) .outbox { bottom: var(--bottom-nav-h); padding-bottom: 8px; }
 
 @media (max-width: 760px) {
   .dash { gap: 14px; }
-  .dash-cols { display: flex; flex-direction: column; gap: 16px; }
+  .dash-cols { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
   .dash-col { display: contents; }
   .d-o1 { order: 1; } .d-o2 { order: 2; } .d-o3 { order: 3; } .d-o4 { order: 4; } .d-o5 { order: 5; } .d-o6 { order: 6; }
   .dash-hello h1 { font-size: 22px; }
@@ -592,7 +592,7 @@ body:has(.bnav) .outbox { bottom: var(--bottom-nav-h); padding-bottom: 8px; }
   .act-detail { padding-left: 14px; }
   .act-facts { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .act-facts dd { margin-bottom: 6px; }
-  .cer-row { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; margin-inline: -12px; padding: 0 12px 4px; scrollbar-width: none; }
+  .cer-row { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; margin-inline: -12px; padding: 0 12px 4px; scroll-padding-inline: 12px; scrollbar-width: none; }
   .cer-row::-webkit-scrollbar { display: none; }
   .cer { flex: 0 0 min(230px, 72vw); scroll-snap-align: start; }
   .dash-more { align-self: stretch; }
@@ -602,8 +602,9 @@ body:has(.bnav) .outbox { bottom: var(--bottom-nav-h); padding-bottom: 8px; }
   .tile { padding: 10px 12px; }
   .need-cta { display: none; }
 }
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 760px) {
   .act-full a { display: inline-block; padding: 12px 6px; margin: -12px -6px; }
+  .act-actions button.badge { min-height: 44px; padding: 0 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chev { transition: none; }
