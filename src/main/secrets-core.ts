@@ -78,7 +78,7 @@ function assertRef(ref: string): void {
 
 export function createSecretsStore(deps: SecretsDeps): SecretsStore {
   const file = join(deps.root, SECRETS_FILE);
-  // Command results stay in memory for the life of the process: the author's script is slow and the value does not change under us.
+  // Command results stay in memory for the life of the process: a key script is slow and the value does not change under us.
   const cache = new Map<string, string>();
 
   function read(): FileShape {
