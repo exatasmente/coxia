@@ -36,6 +36,8 @@ npm run dist
 
 Gera em `dist/` (fora do git) o `cerimonias-<versão>.AppImage` e o `cerimonias_<versão>_amd64.deb`, com ícone e categoria Escritório. O binário nativo do Claude Code usado pelo SDK vai desempacotado do `app.asar`, e `sidecar/` e `resources/` vão ao lado dele (`extraResources`). O venv Python **não** vai no pacote.
 
+`npm run dist` é o build pessoal (leva o SDK). `npm run dist:public` gera o pacote público, **sem** o Claude Agent SDK (a instalação é feita pelo assistente de configuração na primeira execução), e é o que o GitHub Actions publica; veja [`RELEASING.md`](RELEASING.md).
+
 Instalar (manual):
 
 ```bash

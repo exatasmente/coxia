@@ -53,7 +53,7 @@ Every company-specific or machine-specific assumption the app carried when it wa
 | `settings.ts:44-51`, `agents.ts:298` | model ids `deepseek/...`, `qwen/...`; one model per role | `llm.roles[role] = { provider, model }`, provider list `llm.providers[].models` | `haiku` / `sonnet` on Anthropic |
 | `agents.ts:297-305` | one hardcoded engine: Claude Agent SDK with an OpenRouter base URL | `llm.providers[].engine` (`claude-sdk` or `open`), `engineFor(role)` in `engine/registry.ts`; migrated install keeps `legacyCustomEndpoint: true` | no custom endpoint offered |
 | `agents.ts:235,302` | the role preamble and system prompt | `agents.roles[role].promptOverride` / `.extraInstructions`, `agents.extraInstructions`; `agents.roles[role].modelRole` | empty |
-| `package.json` dependency | the SDK bundled in every build | `claudeSdk { installed, version, path }`, `locateSdk()` and `loadClaudeQuery()` in `claudeSdk.ts` | bundled until packaging changes |
+| `package.json` dependency | the SDK bundled in every build | `claudeSdk { installed, version, path }`, `locateSdk()` and `loadClaudeQuery()` in `claudeSdk.ts` | bundled in `npm run dist`; left out of `npm run dist:public` (the wizard installs it) |
 
 ### Development cycle
 

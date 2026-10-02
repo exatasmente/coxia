@@ -67,7 +67,7 @@ Os canais de atualização são só da janela do app: `update:status`, `update:c
 
 ### Segurança
 
-- **HTTPS.** O app só consulta um feed HTTPS. HTTP só para esta própria máquina (loopback), que é o que o teste local usa. Um feed ainda com os marcadores `OWNER`/`REPO` de `electron-builder.yml` não é consultado: nada vai à rede até haver um repositório de verdade. O provedor tem de ser `github` ou `generic`.
+- **HTTPS.** O app só consulta um feed HTTPS. HTTP só para esta própria máquina (loopback), que é o que o teste local usa. Um feed com marcadores `OWNER`/`REPO` (um fork que ainda não trocou o repositório em `electron-builder.yml`) não é consultado: nada vai à rede até haver um repositório de verdade. O provedor tem de ser `github` ou `generic`.
 - **Integridade.** O `latest*.yml` traz o `sha512` do AppImage. O `electron-updater` confere esse hash no arquivo baixado (e em cada bloco de um download diferencial); se não bater, o download falha, nada é instalado e o erro vai para o log. **No Linux não há assinatura do AppImage**: a garantia é o TLS do feed mais esse hash, então quem controla o release controla a atualização. Instaladores web (que pulariam parte da conferência) são recusados (`disableWebInstaller`).
 - **Sem downgrade** sem pedir (acima).
 - **Instalar só com decisão:** `installDecision` (pura, testada) nega a instalação quando nada foi baixado ou quando algo está rodando sem confirmação; só há uma chamada a `quitAndInstall`, atrás dela.
@@ -75,7 +75,7 @@ Os canais de atualização são só da janela do app: `update:status`, `update:c
 
 ### Tamanho das atualizações
 
-O AppImage hoje tem cerca de 290 MB, quase tudo é o binário do Claude Code do SDK. No teste local, uma troca de versão sem mudança de código baixou 0,5 MB (0,2 %); uma mudança real baixa os blocos que mudaram (o `app.asar` e o que mais mudar), nunca o binário do SDK enquanto ele for igual. Os pacotes públicos futuros **não vão levar o binário do SDK** (ele será instalado na primeira execução): o AppImage ficará bem menor, e o download completo, quando for preciso, também. Num feed do GitHub o `electron-updater` usa uma requisição por intervalo (não várias por vez); funciona, só com mais idas e vindas. Não foi testado contra o GitHub de verdade.
+O AppImage de uso pessoal (`npm run dist`) tem cerca de 290 MB, quase tudo é o binário do Claude Code do SDK; o pacote público (`npm run dist:public`) **não leva** o SDK (a pessoa o instala na primeira execução) e tem cerca de 178 MB. No teste local, uma troca de versão sem mudança de código baixou 0,5 MB (0,2 %); uma mudança real baixa os blocos que mudaram (o `app.asar` e o que mais mudar), nunca o binário do SDK enquanto ele for igual. Como o pacote público não leva o binário do SDK, o download completo, quando é preciso, também é menor. Num feed do GitHub o `electron-updater` usa uma requisição por intervalo (não várias por vez); funciona, só com mais idas e vindas. Não foi testado contra o GitHub de verdade.
 
 ### Testar uma atualização localmente
 
@@ -158,7 +158,7 @@ The update channels belong to the app window only: `update:status`, `update:chec
 
 ### Security
 
-- **HTTPS.** The app only queries an HTTPS feed. Plain HTTP is accepted only to this very machine (loopback), which is what the local test uses. A feed that still has the `OWNER`/`REPO` placeholders of `electron-builder.yml` is not queried: nothing goes to the network until there is a real repository. The provider must be `github` or `generic`.
+- **HTTPS.** The app only queries an HTTPS feed. Plain HTTP is accepted only to this very machine (loopback), which is what the local test uses. A feed with `OWNER`/`REPO` placeholders (a fork that has not yet set its repository in `electron-builder.yml`) is not queried: nothing goes to the network until there is a real repository. The provider must be `github` or `generic`.
 - **Integrity.** `latest*.yml` carries the AppImage's `sha512`. `electron-updater` checks that hash on the downloaded file (and on every block of a differential download); if it does not match, the download fails, nothing is installed and the error goes to the log. **On Linux the AppImage is not signed**: the guarantee is the feed's TLS plus that hash, so whoever controls the release controls the update. Web installers (which would skip part of the check) are refused (`disableWebInstaller`).
 - **No downgrade** unless asked for (above).
 - **Install only on a decision:** `installDecision` (pure, tested) refuses to install when nothing is downloaded or when something is running without a confirmation; there is a single `quitAndInstall` call, behind it.
@@ -166,7 +166,7 @@ The update channels belong to the app window only: `update:status`, `update:chec
 
 ### Update sizes
 
-The AppImage is about 290 MB today, almost all of it the Claude Code binary of the SDK. In the local test a version bump with no code change downloaded 0.5 MB (0.2 %); a real change downloads the blocks that changed (`app.asar` and whatever else changes), never the SDK binary while it stays the same. The future public packages **will not ship the SDK binary** (it will be installed on first run): the AppImage will be much smaller, and so will a full download when one is needed. On a GitHub feed `electron-updater` uses one range per request (not several at a time); it works, with more round trips. It has not been tested against real GitHub.
+The personal AppImage (`npm run dist`) is about 290 MB, almost all of it the Claude Code binary of the SDK; the public package (`npm run dist:public`) **does not ship** the SDK (it is installed on first run) and is about 178 MB. In the local test a version bump with no code change downloaded 0.5 MB (0.2 %); a real change downloads the blocks that changed (`app.asar` and whatever else changes), never the SDK binary while it stays the same. Since the public package does not ship the SDK binary, a full download, when one is needed, is smaller too. On a GitHub feed `electron-updater` uses one range per request (not several at a time); it works, with more round trips. It has not been tested against real GitHub.
 
 ### Testing an update locally
 

@@ -31,6 +31,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron downloads its binary lazily, on first require. Some unit tests import it, and several test workers doing that at once
+      # race on the same folder, so download it once, up front.
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
+
       - name: Typecheck
         run: npx tsc --noEmit
 

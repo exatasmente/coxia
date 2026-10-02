@@ -51,7 +51,7 @@ Decisões do produto já refletidas:
 
 1. **Dois motores.** `claude-sdk` só para modelos Claude (Anthropic, Bedrock, Vertex, Foundry); `open` para OpenAI-compatível e local. Login de assinatura do claude.ai nunca é oferecido: só chave de API ou credenciais de nuvem.
 2. **Config migrada mantém o comportamento de hoje:** OpenRouter + deepseek pelo SDK, marcado `engine: 'claude-sdk'` e `legacyCustomEndpoint: true`. Uma instalação nova não oferece essa combinação (a validação avisa).
-3. **O SDK não vem junto nos pacotes públicos:** `claudeSdk` registra a instalação e `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) procura primeiro a instalação local (`claudeSdk.path`) e depois a cópia embutida. O empacotamento muda depois; a busca já é configurável.
+3. **O SDK não vem junto nos pacotes públicos:** `claudeSdk` registra a instalação e `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) procura primeiro a instalação local (`claudeSdk.path`) e depois a cópia embutida. `npm run dist:public` (`electron-builder.public.yml`) deixa o SDK fora do pacote, e `locateSdk` o dá como ausente quando o app empacotado não tem o binário do SDK ao lado do `app.asar`; `npm run dist` (build pessoal, do código-fonte) continua embutindo.
 
 ### Segredos
 
@@ -159,7 +159,7 @@ Product decisions reflected here:
 
 1. **Two engines.** `claude-sdk` only for Claude models (Anthropic, Bedrock, Vertex, Foundry); `open` for OpenAI-compatible and local. A claude.ai subscription login is never offered: API keys or cloud credentials only.
 2. **A migrated config keeps today's behavior:** OpenRouter + deepseek through the SDK, marked `engine: 'claude-sdk'` and `legacyCustomEndpoint: true`. A fresh install does not offer that combination (validation warns).
-3. **Public packages do not bundle the SDK:** `claudeSdk` records the install and `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) looks for a user-local install (`claudeSdk.path`) first, then the bundled copy. Packaging changes later; the lookup is already configurable.
+3. **Public packages do not bundle the SDK:** `claudeSdk` records the install and `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) looks for a user-local install (`claudeSdk.path`) first, then the bundled copy. `npm run dist:public` (`electron-builder.public.yml`) leaves the SDK out of the package, and `locateSdk` reports it missing when the packaged app has no SDK binary next to `app.asar`; `npm run dist` (a personal build from source) still bundles it.
 
 ### Secrets
 
