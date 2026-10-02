@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { OutboxItem } from '../../shared/outbox';
-import { plural } from './api';
+import { useT } from './i18n';
 import { dismiss, replay, retryNow, subscribe } from './outbox';
 
 // Channels whose answer the server keeps: the screen shows it on open. The others answered only to the page that asked.
@@ -8,6 +8,7 @@ const SAVED = new Set(['qa:ask', 'retro:ask', 'gate:answer', 'gate:explain', 'ac
 
 // Browser build only: what is waiting to be sent, what finished while the app was closed, and what failed for good.
 export function OutboxBanner() {
+  const t = useT();
   const [items, setItems] = useState<OutboxItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
@@ -40,35 +41,35 @@ export function OutboxBanner() {
       {queued.length > 0 && (
         <div className="outbox-item outbox-wait">
           <div className="outbox-text">
-            <strong>{plural(queued.length, 'envio na fila', 'envios na fila')}</strong>
-            <span className="small"> — envia quando a conexão voltar{online ? ' (tentando agora)' : ''}.</span>
+            <strong>{t(queued.length === 1 ? 'ui.outbox.queuedOne' : 'ui.outbox.queuedOther', { count: queued.length })}</strong>
+            <span className="small"> {t(online ? 'ui.outbox.waitingNow' : 'ui.outbox.waiting')}</span>
             <div className="small outbox-labels">{queued.map((i) => i.label).join(' · ')}</div>
           </div>
           <button type="button" className="btn" disabled={busy} onClick={sendNow}>
-            {busy ? <span className="spinner" /> : null} Enviar agora
+            {busy ? <span className="spinner" /> : null} {t('ui.outbox.sendNow')}
           </button>
         </div>
       )}
       {done.length > 0 && (
         <div className="outbox-item outbox-ok">
           <div className="outbox-text">
-            <strong>{done.length > 1 ? `${done.length} envios concluídos` : `Enviado: ${last.label}`}</strong>
-            {done.length > 1 && <div className="small">Mais recente: {last.label}</div>}
+            <strong>{done.length > 1 ? t('ui.outbox.doneMany', { count: done.length }) : t('ui.outbox.doneOne', { label: last.label })}</strong>
+            {done.length > 1 && <div className="small">{t('ui.outbox.latest', { label: last.label })}</div>}
             {last.excerpt && <div className="small outbox-labels">{last.excerpt}</div>}
-            <div className="small">{SAVED.has(last.channel) ? 'A resposta já está salva; abra a tela para ver.' : 'A resposta chegou depois que você saiu da tela.'}</div>
+            <div className="small">{t(SAVED.has(last.channel) ? 'ui.outbox.answerSaved' : 'ui.outbox.answerLate')}</div>
           </div>
-          <button type="button" className="btn" onClick={() => void Promise.all(done.map((i) => dismiss(i.id)))}>Ok</button>
+          <button type="button" className="btn" onClick={() => void Promise.all(done.map((i) => dismiss(i.id)))}>{t('ui.outbox.ok')}</button>
         </div>
       )}
       {failed.map((i) => (
         <div key={i.id} className="outbox-item outbox-fail">
           <div className="outbox-text">
-            <strong>Não foi possível enviar: {i.label}</strong>
+            <strong>{t('ui.outbox.failedTitle', { label: i.label })}</strong>
             <div className="small">{i.error}</div>
           </div>
           <div className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn" onClick={() => void retryNow(i.id)}>Tentar de novo</button>
-            <button type="button" className="btn" onClick={() => void dismiss(i.id)}>Descartar</button>
+            <button type="button" className="btn" onClick={() => void retryNow(i.id)}>{t('ui.outbox.retry')}</button>
+            <button type="button" className="btn" onClick={() => void dismiss(i.id)}>{t('ui.outbox.discard')}</button>
           </div>
         </div>
       ))}

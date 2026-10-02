@@ -1,6 +1,7 @@
 // Browser (PWA) stand-in for the preload: window.api over HTTP RPC + Server-Sent Events.
 // Imported first in main.tsx so api.ts finds window.api.
 import { buildApi } from '../../shared/apiChannels';
+import { t } from '../../shared/i18n';
 import type { AppEvent } from '../../shared/types';
 import { isQueueable, IDEMPOTENCY_HEADER } from '../../shared/outbox';
 import { decodeWire, encodeWire } from '../../shared/wire';
@@ -28,7 +29,7 @@ export async function post(path: string, body: unknown, headers: Record<string, 
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; result?: unknown };
   if (res.status === 401 && path !== 'api/login') window.dispatchEvent(new Event(UNAUTHORIZED));
-  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? `Erro ${res.status}`);
+  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? t('ui.error.http', { status: res.status }));
   return data;
 }
 
@@ -95,7 +96,7 @@ async function rpc(channel: string, ...args: unknown[]): Promise<unknown> {
   try {
     await enqueue({ id, channel, body: JSON.stringify(wire) });
   } catch {
-    throw new Error('Sem conexão e não consegui guardar o envio para depois.');
+    throw new Error(t('ui.error.saveSendFailed'));
   }
   return waitFor(id);
 }

@@ -1,11 +1,13 @@
 // Registry of long agent actions, so they outlive the screen that started them. DOM-free: the React side is in useJobs.ts.
 
+import { t } from '../../shared/i18n';
+
 export type JobStatus = 'running' | 'done' | 'failed';
 
 export const RESULT_TTL_MS = 30 * 60_000;
 
 export interface JobMeta<S = unknown> {
-  /** pt-BR, shown in the panel and in notifications. */
+  /** Shown in the panel and in notifications, in the language in force when the job starts. */
   label: string;
   /** The screen that shows the result. */
   screen: S;
@@ -181,6 +183,6 @@ export function screenPayload(screen: Located & { back?: string }): Record<strin
 }
 
 export function notificationText(job: Pick<Job, 'label' | 'status' | 'error'>): { title: string; body: string } {
-  if (job.status === 'failed') return { title: `${job.label} falhou`, body: job.error ?? 'Toque para ver o erro.' };
-  return { title: `${job.label} pronto`, body: 'Toque para abrir.' };
+  if (job.status === 'failed') return { title: t('ui.jobs.notify.failed', { label: job.label }), body: job.error ?? t('ui.jobs.notify.failedBody') };
+  return { title: t('ui.jobs.notify.done', { label: job.label }), body: t('ui.jobs.notify.doneBody') };
 }

@@ -3,11 +3,13 @@ import type { QuickContext, QuickMember, QuickMr, QuickRequest, QuickResult, Qui
 import type { Card } from '../../../shared/types';
 import type { Screen } from '../App';
 import { errorText } from '../api';
+import { useT } from '../i18n';
 import { quickApi } from '../gitlabQuickApi';
 import { jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
 function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: QuickMember[] | undefined; busy: boolean; onPropose: (r: QuickRequest) => void }) {
+  const t = useT();
   const [reviewer, setReviewer] = useState('');
   const usual = (members ?? []).filter((m) => m.usual > 0);
   const others = (members ?? []).filter((m) => !m.usual);
@@ -17,44 +19,44 @@ function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: Quick
     <section className="panel" style={{ padding: 18, gap: 10 }}>
       <div className="row" style={{ gap: 8 }}>
         <a className="mono" href={mr.webUrl} target="_blank" rel="noreferrer">{mr.ref}</a>
-        {mr.draft && <span className="badge badge-ask">Draft</span>}
-        {mr.hasConflicts && <span className="badge badge-block">Conflito</span>}
-        {mr.pipeline && <span className="badge badge-quiet">pipeline {mr.pipeline}</span>}
-        {!mr.mine && <span className="badge badge-quiet">de @{mr.author}</span>}
+        {mr.draft && <span className="badge badge-ask">{t('ui.quick.badge.draft')}</span>}
+        {mr.hasConflicts && <span className="badge badge-block">{t('ui.quick.badge.conflict')}</span>}
+        {mr.pipeline && <span className="badge badge-quiet">{t('ui.quick.badge.pipeline', { status: mr.pipeline })}</span>}
+        {!mr.mine && <span className="badge badge-quiet">{t('ui.quick.badge.author', { author: mr.author })}</span>}
       </div>
       <div className="small">{mr.title}</div>
-      <div className="small muted">Reviewer: {current || 'ninguém ainda'}</div>
+      <div className="small muted">{t('ui.quick.reviewer', { names: current || t('ui.quick.reviewer.none') })}</div>
 
       {mr.mine ? (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {mr.draft && (
-            <button type="button" className="btn" disabled={busy} onClick={() => onPropose({ kind: 'undraft', projectPath: mr.projectPath, mrIid: mr.iid })}>Tirar o Draft</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => onPropose({ kind: 'undraft', projectPath: mr.projectPath, mrIid: mr.iid })}>{t('ui.quick.undraft')}</button>
           )}
-          <select className="text-input" style={{ flex: '0 1 280px' }} value={reviewer} disabled={busy || !members} onChange={(e) => setReviewer(e.target.value)} aria-label={`Reviewer de ${mr.ref}`}>
-            <option value="">{members ? 'Escolher reviewer…' : 'Carregando equipe…'}</option>
+          <select className="text-input" style={{ flex: '0 1 280px' }} value={reviewer} disabled={busy || !members} onChange={(e) => setReviewer(e.target.value)} aria-label={t('ui.quick.reviewer.aria', { ref: mr.ref })}>
+            <option value="">{members ? t('ui.quick.reviewer.choose') : t('ui.quick.team.loading')}</option>
             {usual.length > 0 && (
-              <optgroup label="Costumam revisar">
+              <optgroup label={t('ui.quick.group.usual')}>
                 {usual.map((m) => <option key={m.id} value={m.id}>{m.name} (@{m.username})</option>)}
               </optgroup>
             )}
-            <optgroup label="Equipe do projeto">
+            <optgroup label={t('ui.quick.group.team')}>
               {others.map((m) => <option key={m.id} value={m.id}>{m.name} (@{m.username})</option>)}
             </optgroup>
           </select>
           <button type="button" className="btn" disabled={busy || !reviewer} onClick={() => onPropose({ kind: 'reviewer', projectPath: mr.projectPath, mrIid: mr.iid, userId: /^\d+$/.test(reviewer) ? Number(reviewer) : reviewer })}>
-            Propor reviewer
+            {t('ui.quick.reviewer.propose')}
           </button>
         </div>
       ) : (
-        <p className="small faint">MR de outra pessoa: só leitura.</p>
+        <p className="small faint">{t('ui.quick.mr.readonly')}</p>
       )}
-      {mr.mine && mr.reviewers.length > 0 && <p className="small faint">Escolher outro reviewer substitui os atuais.</p>}
+      {mr.mine && mr.reviewers.length > 0 && <p className="small faint">{t('ui.quick.reviewer.replaces')}</p>}
 
       {mr.mine && mr.manualJobs.length > 0 && (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {mr.manualJobs.map((j) => (
             <button key={j.id} type="button" className="btn" disabled={busy} onClick={() => onPropose({ kind: 'play', projectPath: mr.projectPath, jobId: j.id })}>
-              Rodar job {j.name}
+              {t('ui.quick.job.play', { name: j.name })}
             </button>
           ))}
         </div>
@@ -63,24 +65,26 @@ function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: Quick
   );
 }
 
-function Transition({ t, status, busy, onPropose }: { t: QuickTransition; status: string | null; busy: boolean; onPropose: () => void }) {
+function Transition({ transition, status, busy, onPropose }: { transition: QuickTransition; status: string | null; busy: boolean; onPropose: () => void }) {
+  const t = useT();
   return (
-    <div className="item row spread" style={{ opacity: t.allowed ? 1 : 0.6 }}>
+    <div className="item row spread" style={{ opacity: transition.allowed ? 1 : 0.6 }}>
       <div>
-        <div style={{ fontWeight: 600 }}>{status ?? '—'} → {t.to}</div>
+        <div style={{ fontWeight: 600 }}>{status ?? '—'} → {transition.to}</div>
         <div className="small muted">
-          Label: {t.removeLabels.length ? `${t.removeLabels.join(', ')} → ` : ''}{t.addLabel ?? 'já está certa'}
+          {t('ui.quick.label', { labels: `${transition.removeLabels.length ? `${transition.removeLabels.join(', ')} → ` : ''}${transition.addLabel ?? t('ui.quick.label.already')}` })}
         </div>
-        {t.reason && <div className="small faint">{t.reason}</div>}
+        {transition.reason && <div className="small faint">{transition.reason}</div>}
       </div>
-      {t.allowed && (
-        <button type="button" className="btn" disabled={busy} onClick={onPropose}>Propor label</button>
+      {transition.allowed && (
+        <button type="button" className="btn" disabled={busy} onClick={onPropose}>{t('ui.quick.label.propose')}</button>
       )}
     </div>
   );
 }
 
 export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Screen) => void }) {
+  const t = useT();
   const [ctx, setCtx] = useState<QuickContext | null>(null);
   const [members, setMembers] = useState<Record<string, QuickMember[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +93,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
   const load = useCallback(() => {
     if (!card) return;
     setError(null);
-    jobs.launch(`quick:${card.ref}:context`, { label: `Leitura do GitLab da ${card.iid}`, busy: 'Lendo o GitLab…', screen: { name: 'quick', ref: card.ref, card } }, () => quickApi.context(card));
+    jobs.launch(`quick:${card.ref}:context`, { label: t('ui.quick.job.readLabel', { iid: card.iid }), busy: t('ui.quick.job.readBusy'), screen: { name: 'quick', ref: card.ref, card } }, () => quickApi.context(card));
   }, [card]);
 
   useEffect(() => {
@@ -107,7 +111,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
         return;
       }
       const r = value as QuickResult;
-      setDone((prev) => [...r.created, ...(r.duplicated ? ['Já existe uma proposta igual aguardando você.'] : []), ...prev]);
+      setDone((prev) => [...r.created, ...(r.duplicated ? [t('ui.quick.duplicate')] : []), ...prev]);
       load();
     },
     failed: (message) => setError(message),
@@ -117,7 +121,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
   const propose = (req: QuickRequest) => {
     if (!card) return;
     setError(null);
-    jobs.launch(`quick:${card.ref}:propose`, { label: `Proposta no GitLab da ${card.iid}`, busy: 'Montando a proposta…', screen: { name: 'quick', ref: card.ref, card } }, () =>
+    jobs.launch(`quick:${card.ref}:propose`, { label: t('ui.quick.job.proposeLabel', { iid: card.iid }), busy: t('ui.quick.job.proposeBusy'), screen: { name: 'quick', ref: card.ref, card } }, () =>
       quickApi.propose(req.kind === 'reviewer' || req.kind === 'undraft' ? { ...req, issue: Number(card.iid) || undefined } : req),
     );
   };
@@ -127,41 +131,41 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
       <div className="wrap" style={{ maxWidth: 900, gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.quick.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
             <div>
-              <div className="faint">GitLab · propostas</div>
-              <h1 style={{ fontSize: 24, fontWeight: 700 }}>{card ? `#${card.iid} ${card.title}` : 'Atividade não encontrada'}</h1>
+              <div className="faint">{t('ui.quick.kicker')}</div>
+              <h1 style={{ fontSize: 24, fontWeight: 700 }}>{card ? `#${card.iid} ${card.title}` : t('ui.quick.notFound')}</h1>
             </div>
           </div>
-          <button type="button" className="btn" onClick={() => go({ name: 'actions' })}>Ver ações</button>
+          <button type="button" className="btn" onClick={() => go({ name: 'actions' })}>{t('ui.quick.seeActions')}</button>
         </header>
-        <p className="small muted">Aqui você só monta propostas. Nada vai ao GitLab antes do “seguir” e da confirmação na tela Ações.</p>
+        <p className="small muted">{t('ui.quick.intro')}</p>
 
         {done.length > 0 && (
           <div className="item" style={{ background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
-            <div className="small" style={{ color: 'var(--teal-ink)', fontWeight: 600 }}>Proposta criada — confirme em Ações.</div>
+            <div className="small" style={{ color: 'var(--teal-ink)', fontWeight: 600 }}>{t('ui.quick.created')}</div>
             {done.map((d, i) => <div key={i} className="small">{d}</div>)}
           </div>
         )}
         {error && <div className="error">{error}</div>}
-        {!ctx && !error && <div className="row faint"><span className="spinner" /> Lendo o GitLab…</div>}
+        {!ctx && !error && <div className="row faint"><span className="spinner" /> {t('ui.quick.job.readBusy')}</div>}
         {ctx?.warnings.map((w) => <div key={w} className="small faint">{w}</div>)}
 
         {ctx?.issue && (
           <>
-            <h2 className="section-title">Status da issue · {ctx.issue.status ?? 'sem status'}</h2>
+            <h2 className="section-title">{t('ui.quick.status', { status: ctx.issue.status ?? t('ui.quick.status.none') })}</h2>
             <div className="small muted">
-              Labels de etapa: {ctx.issue.stageLabels.join(', ') || 'nenhuma'}. Revisão e QA movem os demais status.
+              {t('ui.quick.stageLabels', { labels: ctx.issue.stageLabels.join(', ') || t('ui.quick.stageLabels.none') })}
             </div>
-            {ctx.issue.transitions.map((t) => (
-              <Transition key={t.to} t={t} status={ctx.issue?.status ?? null} busy={busy} onPropose={() => propose({ kind: 'transition', issue: ctx.issue?.iid ?? 0, to: t.to })} />
+            {ctx.issue.transitions.map((tr) => (
+              <Transition key={tr.to} transition={tr} status={ctx.issue?.status ?? null} busy={busy} onPropose={() => propose({ kind: 'transition', issue: ctx.issue?.iid ?? 0, to: tr.to })} />
             ))}
-            <p className="small faint">O app propõe só a label. O status é GraphQL e fica por sua conta: a proposta traz o comando.</p>
+            <p className="small faint">{t('ui.quick.statusNote')}</p>
           </>
         )}
 
-        {ctx && <h2 className="section-title">Merge requests · {ctx.mrs.length}</h2>}
-        {ctx && !ctx.mrs.length && <p className="small faint">Esta atividade não tem MR.</p>}
+        {ctx && <h2 className="section-title">{t('ui.quick.mrs', { count: ctx.mrs.length })}</h2>}
+        {ctx && !ctx.mrs.length && <p className="small faint">{t('ui.quick.mrs.none')}</p>}
         {ctx?.mrs.map((m) => <MrBlock key={m.ref} mr={m} members={members[m.projectPath]} busy={busy} onPropose={(r) => propose(r)} />)}
       </div>
     </div>
