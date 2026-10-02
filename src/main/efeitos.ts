@@ -6,7 +6,7 @@ import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type Efe
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
 import { ATAS } from './env';
-import { rc, vcsCliEnv } from './workspaceConfig';
+import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 
@@ -367,7 +367,7 @@ export function mark(effect: Effect, ceremonyId: string | null, done: boolean): 
 
 export const register: Module = (ctx) => {
   deps = ctx;
-  ctx.job({ name: 'efeitos', everyMin: 30, workHoursOnly: true, run: async () => void (await runCycle()) });
+  ctx.job({ name: 'efeitos', everyMin: 30, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await runCycle()) });
   ctx.handle('efeitos:status', () => {
     syncFromHistory();
     return view();

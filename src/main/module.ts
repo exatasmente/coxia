@@ -6,6 +6,8 @@ export interface Job {
   everyMin: number;
   // Only on the configured days and inside the configured hours (Settings → Agenda).
   workHoursOnly: boolean;
+  // The integration the job needs is configured in this workspace; a job that is not enabled is not run (no error noise on a fresh install).
+  enabled?: () => boolean;
   run(): Promise<void>;
 }
 

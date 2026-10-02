@@ -81,7 +81,12 @@ const VCS_DEFAULTS = { apiUrl: '', user: '', secretRef: null, cliPreference: 'au
 
 /** A provider with every field filled: the id and the kind are the only things that cannot be guessed. */
 export function newProvider(partial: Pick<LlmProvider, 'id' | 'kind'> & Partial<LlmProvider>): LlmProvider {
-  return { ...PROVIDER_DEFAULTS, engine: defaultEngine(partial.kind), baseUrl: '', ...partial };
+  return completeProvider(partial);
+}
+
+// Key order is the order a person reads the file in: who it is first, then how it is reached, then the details.
+function completeProvider(p: Pick<LlmProvider, 'id' | 'kind'> & Partial<LlmProvider>): LlmProvider {
+  return Object.assign({ id: p.id, kind: p.kind, engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }, PROVIDER_DEFAULTS, p, { engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }) as LlmProvider;
 }
 
 /** Fills whatever a stored or imported config leaves out with the neutral default (forward compatible: a newer field never breaks an older file). */
@@ -89,7 +94,7 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
   const c = mergeDeep(neutralConfig(), partial ?? {});
   return {
     ...c,
-    llm: { ...c.llm, providers: c.llm.providers.map((p) => ({ ...PROVIDER_DEFAULTS, ...p, engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' })) },
+    llm: { ...c.llm, providers: c.llm.providers.map(completeProvider) },
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
   };

@@ -7,6 +7,7 @@ import { getSettings } from './config';
 import { ATAS } from './env';
 import type { Job } from './module';
 import { knownTask, track } from './saude';
+import { rc } from './workspaceConfig';
 
 interface Snapshot {
   checkedAt: string | null;
@@ -132,14 +133,15 @@ function tick(): void {
   const due = !snap.checkedAt || Date.now() - new Date(snap.checkedAt).getTime() >= s.schedule.statusEveryMin * 60_000;
   for (const job of jobs) {
     if (job.workHoursOnly && !(workday && inWindow)) continue;
+    if (job.enabled && !job.enabled()) continue;
     if (Date.now() - (lastRun.get(job.name) ?? 0) < job.everyMin * 60_000) continue;
     lastRun.set(job.name, Date.now());
     void track(job.name, () => job.run()).catch((e) => console.error(`[job ${job.name}]`, e));
   }
 
   if (workday && inWindow && due) {
-    void track('status', () => checkStatus(false)).catch((e) => console.error('[scheduler]', e));
-    void track('release', () => detectRelease(false)).catch((e) => console.error('[release]', e));
+    if (rc().cardSource) void track('status', () => checkStatus(false)).catch((e) => console.error('[scheduler]', e));
+    if (rc().releaseSync) void track('release', () => detectRelease(false)).catch((e) => console.error('[release]', e));
   }
 }
 

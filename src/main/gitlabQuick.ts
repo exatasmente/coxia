@@ -4,7 +4,7 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickPerson, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeGitlabAction } from './actions';
 import { getSettings } from './config';
-import { isIssueRef, issueProjectRef, rc, vcsCliEnv } from './workspaceConfig';
+import { gitlabCliReady, isIssueRef, issueProjectRef, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
 import type { Notice } from './scheduler';
@@ -378,5 +378,5 @@ export const register: Module = (ctx) => {
   ctx.handle('gitlabQuick:context', (card: Card) => context(card));
   ctx.handle('gitlabQuick:members', (projectPath: string) => members(projectPath));
   ctx.handle('gitlabQuick:propose', (req: QuickRequest) => proposeManual(req));
-  ctx.job({ name: 'gitlab-quick', everyMin: JOB_EVERY_MIN, workHoursOnly: true, run: () => autoRun(ctx.notify) });
+  ctx.job({ name: 'gitlab-quick', everyMin: JOB_EVERY_MIN, workHoursOnly: true, enabled: gitlabCliReady, run: () => autoRun(ctx.notify) });
 };

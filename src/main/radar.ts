@@ -349,7 +349,7 @@ export const register: Module = (ctx) => {
   });
   ctx.handle('radar:latest', () => readRadar());
   ctx.handle('worktrees:health', () => worktreeHealth());
-  ctx.job({ name: 'radar', everyMin: 120, workHoursOnly: true, run: async () => {
+  ctx.job({ name: 'radar', everyMin: 120, workHoursOnly: true, enabled: () => rc().repos.length > 0, run: async () => {
     await fetchRepos();
     await check();
   } });

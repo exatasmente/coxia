@@ -7,7 +7,7 @@ import type { WatcherAlert } from '../shared/watchers';
 import { loadCards, specInfo } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { rc, vcsCliEnv } from './workspaceConfig';
+import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
 import { logError } from './errorlog';
 import { gateOptions } from './gate';
 import type { Module, ModuleContext } from './module';
@@ -349,7 +349,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
 
 export const register: Module = (ctx) => {
   const enabled = () => getSettings().notifications;
-  ctx.job({ name: 'watchers', everyMin: EVERY_MIN, workHoursOnly: true, run: async () => void (await checkWatchers(ctx, enabled())) });
+  ctx.job({ name: 'watchers', everyMin: EVERY_MIN, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await checkWatchers(ctx, enabled())) });
   ctx.handle('watchers:list', () => active(read()));
   ctx.handle('watchers:check', () => checkWatchers(ctx, false));
   ctx.handle('watchers:dismiss', (id: string) => {

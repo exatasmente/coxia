@@ -133,3 +133,9 @@ export function isIssueRef(ref: string): boolean {
 export function qaUser(): string {
   return rc().qaUser ?? '';
 }
+
+/** The GitLab CLI is configured: what the jobs that read GitLab (feedback, watchers, quick actions, effects) need before they run. */
+export function gitlabCliReady(): boolean {
+  const v = rc().primaryVcs;
+  return v?.kind === 'gitlab' && !!v.cli;
+}

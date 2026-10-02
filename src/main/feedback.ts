@@ -21,7 +21,7 @@ import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agent
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { docsSources, isIssueRef, issueProjectRef, issueWebUrl, qaUser, rc, vcsCliEnv } from './workspaceConfig';
+import { docsSources, gitlabCliReady, isIssueRef, issueProjectRef, issueWebUrl, qaUser, rc, vcsCliEnv } from './workspaceConfig';
 import { logError } from './errorlog';
 import type { Module } from './module';
 import type { Notice } from './scheduler';
@@ -547,7 +547,7 @@ export function proposeResolve(card: Card, mrIn: MrPath, id: string): ProposalVi
 // ---------- registration ----------
 
 export const register: Module = (ctx) => {
-  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, run: async () => void (await checkFeedback({ notify: ctx.notify })) });
+  ctx.job({ name: 'feedback', everyMin: 20, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await checkFeedback({ notify: ctx.notify })) });
   ctx.handle('feedback:reentry:get', getReentry);
   ctx.handle('feedback:reentry:prepare', prepareReentry);
   ctx.handle('feedback:reentry:ask', askReentry);
