@@ -147,6 +147,9 @@ export function auditFiles(files, read, allow = []) {
 
 function listFiles(root) {
   try {
+    // A folder inside some other checkout (an export under an ignored path) is not a checkout of its own: walk it.
+    const prefix = execFileSync('git', ['rev-parse', '--show-prefix'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (prefix) throw new Error('not the top of a checkout');
     const out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     // A path git lists may be gone from the disk (deleted, not committed yet): nothing to audit there.
     return out.split('\0').filter((f) => f && existsSync(join(root, f)));
