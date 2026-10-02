@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { parseTarget, targetFromSearch, type PushTarget } from '../../shared/push';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
@@ -24,6 +24,7 @@ import { Radar } from './screens/Radar';
 import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
+import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { targetToScreen } from './pushTarget';
 
@@ -130,56 +131,55 @@ export function App() {
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
-  const content = (() => {
-    switch (screen.name) {
-      case 'today':
-        return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
-      case 'call':
-        return <Call ceremony={ceremony} player={player} go={go} />;
-      case 'deep':
-        return <Deep ceremony={ceremony} player={player} go={go} refName={screen.ref} back={screen.back} passedCard={screen.card} />;
-      case 'ata':
-        return <Ata ceremony={ceremony} go={go} />;
-      case 'history':
-        return <History go={go} />;
-      case 'settings':
-        return <SettingsScreen go={go} />;
-      case 'actions':
-        return <Actions actions={actions} go={go} />;
-      case 'gate':
-        return <Gate card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-      case 'qa':
-        return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-      case 'retro':
-        return <RetroScreen ceremony={ceremony} player={player} go={go} />;
-      case 'custo':
-        return <Custo go={go} />;
-      case 'quick':
-        return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
-      case 'reentry':
-        return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-      case 'discussions':
-        return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
-      case 'help':
-        return <Ajuda go={go} />;
-      // slot: routes of feature modules
-      case 'auditoria':
-        return <Auditoria go={go} />;
-      case 'radar':
-        return <Radar go={go} />;
-      case 'saude':
-        return <Saude go={go} />;
-      case 'glossario':
-        return <Glossario go={go} />;
-      case 'conflict':
-        return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
-    }
-  })();
+  const view = ((): ReactElement => { switch (screen.name) {
+    case 'today':
+      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
+    case 'call':
+      return <Call ceremony={ceremony} player={player} go={go} />;
+    case 'deep':
+      return <Deep ceremony={ceremony} player={player} go={go} refName={screen.ref} back={screen.back} passedCard={screen.card} />;
+    case 'ata':
+      return <Ata ceremony={ceremony} go={go} />;
+    case 'history':
+      return <History go={go} />;
+    case 'settings':
+      return <SettingsScreen go={go} />;
+    case 'actions':
+      return <Actions actions={actions} go={go} />;
+    case 'gate':
+      return <Gate card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+    case 'qa':
+      return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+    case 'retro':
+      return <RetroScreen ceremony={ceremony} player={player} go={go} />;
+    case 'custo':
+      return <Custo go={go} />;
+    case 'quick':
+      return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
+    case 'reentry':
+      return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+    case 'discussions':
+      return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
+    case 'help':
+      return <Ajuda go={go} />;
+    // slot: routes of feature modules
+    case 'auditoria':
+      return <Auditoria go={go} />;
+    case 'radar':
+      return <Radar go={go} />;
+    case 'saude':
+      return <Saude go={go} />;
+    case 'glossario':
+      return <Glossario go={go} />;
+    case 'conflict':
+      return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
+  } })();
 
   return (
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
-      {content}
+      {view}
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
     </>
   );
 }

@@ -3,13 +3,17 @@ import type { SaudeSnapshot } from '../../../shared/saude';
 import type { Screen } from '../App';
 import { saudeApi } from '../saudeApi';
 
-export function SaudeButton({ go }: { go: (s: Screen) => void }) {
+export function useSaudeProblems(): number {
   const [snap, setSnap] = useState<SaudeSnapshot | null>(null);
   useEffect(() => {
     void saudeApi.get().then(setSnap);
     return saudeApi.onChanged(setSnap);
   }, []);
-  const problems = snap?.problems ?? 0;
+  return snap?.problems ?? 0;
+}
+
+export function SaudeButton({ go }: { go: (s: Screen) => void }) {
+  const problems = useSaudeProblems();
   return (
     <button
       type="button"

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { setSpeechEnabled, useSpeechEnabled } from '../audio';
+import { SpeakerOffIcon, SpeakerOnIcon } from './dashIcons';
 
-// Quick switch in the header; the same flag lives in Settings → Voz.
+// Quick switch in the top bar; the same flag lives in Settings → Voz.
 export function VoiceToggle() {
   const on = useSpeechEnabled();
   const [saving, setSaving] = useState(false);
@@ -21,14 +22,14 @@ export function VoiceToggle() {
   return (
     <button
       type="button"
-      className={`btn ${on ? '' : 'btn-amber'}`}
-      style={{ minHeight: 34 }}
-      aria-pressed={!on}
+      className={`btn icon-btn ${on ? '' : 'btn-amber'}`}
+      aria-pressed={on}
+      aria-label="Voz dos agentes"
       disabled={saving}
-      title={on ? 'Os agentes falam em voz alta. Clique para silenciar.' : 'Os agentes só escrevem na tela. Clique para voltar a falar.'}
+      title={on ? 'Os agentes falam em voz alta. Toque para silenciar.' : 'Os agentes só escrevem na tela. Toque para voltar a falar.'}
       onClick={() => void toggle()}
     >
-      {on ? 'Voz ligada' : 'Voz desligada'}
+      {on ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
     </button>
   );
 }
