@@ -57,7 +57,7 @@ describe('activity from the Claude SDK message loop', () => {
         say('Vou procurar o filtro.'),
         toolUse('Grep', { pattern: 'filtro' }),
         toolResult('arquivo.php:10: SEGREDO-NO-RESULTADO'),
-        toolUse('mcp__tracker__get_issue_details_and_comments', { issue_iid: 15499 }),
+        toolUse('mcp__tracker__get_issue_details_and_comments', { issue_iid: 101 }),
         say('{"fala":"final"}'),
         toolUse('StructuredOutput', { fala: 'final' }),
         result('success', 's1', { fala: 'final' }),
@@ -70,7 +70,7 @@ describe('activity from the Claude SDK message loop', () => {
       ['status', 'started', 'Agente iniciado'],
       ['text', '', 'Vou procurar o filtro.'],
       ['tool', '', 'Grep filtro'],
-      ['tool', '', 'get_issue_details_and_comments 15499'],
+      ['tool', '', 'get_issue_details_and_comments 101'],
       ['status', 'finished', 'Terminou'],
     ]);
     expect(new Set(entries.map((e) => e.runId)).size).toBe(1);

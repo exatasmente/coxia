@@ -11,3 +11,4 @@ sidecar/models/
 dist/
 release-notes.md
 .sdk-probe.log
+.claude/worktrees/

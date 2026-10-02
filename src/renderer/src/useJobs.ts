@@ -20,7 +20,7 @@ export function useJobsSnapshot(): readonly Job<Screen>[] {
 }
 
 /**
- * Re-attaches a screen to its jobs. Jobs are looked up by key prefix (`gate:app#101:`); the jobs still running are returned so the
+ * Re-attaches a screen to its jobs. Jobs are looked up by key prefix (`gate:<card>:`); the jobs still running are returned so the
  * screen can show its busy state, and each finished one is handed to the handlers once and leaves the registry.
  */
 export function useJobs<T = unknown>(prefix: string | null, handlers: JobHandlers<T>): Job<Screen>[] {
