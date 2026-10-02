@@ -33,12 +33,12 @@ appImage:
   # The AppImage runtime cannot create its mount dir from a name with accents.
   artifactName: cerimonias-${version}.${ext}
 # Where a published build looks for updates: electron-builder writes this into the app as resources/app-update.yml and electron-updater
-# reads it. OWNER and REPO are placeholders: the app refuses to query a feed that still has them, so nothing goes to the network until a
-# real repository is set here. `npm run dist` never uploads anything; see RELEASING.md for how to release.
+# reads it. `npm run dist` never uploads anything; the release workflow does (RELEASING.md). Another repository (a fork): change owner and
+# repo here, or pass -c.publish.owner=... -c.publish.repo=... to electron-builder.
 publish:
   provider: github
-  owner: OWNER
-  repo: REPO
+  owner: exatasmente
+  repo: coxia
   releaseType: draft
 # Windows and macOS are wired for updates but are not part of `npm run dist` and are not code signed yet: automatic updates there only
 # work with signed builds (docs/updates.md).

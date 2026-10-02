@@ -145,12 +145,13 @@ describe('the feed', () => {
     expect(feedProblem({ provider: 's3', bucket: 'b' })).toBe('unsupported');
   });
 
-  it('the placeholders in electron-builder.yml are caught', () => {
+  it('the feed in electron-builder.yml points at the real repository, not at placeholders', () => {
     const yml = readFileSync(join(import.meta.dirname, '../electron-builder.yml'), 'utf8');
     const publish = /^publish:\n((?: {2}.*\n)+)/m.exec(yml)?.[1] ?? '';
     const feed = parseAppUpdateYml(publish.replace(/^ {2}/gm, ''));
     expect(feed?.provider).toBe('github');
-    expect(feedProblem(feed)).toBe('placeholder');
+    expect(feed).toMatchObject({ owner: 'exatasmente', repo: 'coxia' });
+    expect(feedProblem(feed)).toBeNull();
   });
 });
 
