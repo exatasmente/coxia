@@ -31,3 +31,9 @@ export const ClockIcon = () => (
     <path d="M12 7v5l3 2" />
   </svg>
 );
+
+export const HaltIcon = () => (
+  <svg {...base}>
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </svg>
+);

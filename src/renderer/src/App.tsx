@@ -7,6 +7,7 @@ import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
 import { Glossario } from './screens/Glossario';
+import { NowPlaying } from './screens/NowPlaying';
 import { Ata } from './screens/Ata';
 import { Auditoria } from './screens/Auditoria';
 import { Call } from './screens/Call';
@@ -50,16 +51,29 @@ export type Screen =
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
+function sameScreenKey(s: Screen): string {
+  const { name, ref, id } = s as { name: string; ref?: string; id?: string };
+  return `${name}|${ref ?? ''}|${id ?? ''}`;
+}
+
 export function App() {
   const ceremony = useCeremony();
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
   const [actions, setActions] = useState<ReleaseAction[]>([]);
 
-  const go = (next: Screen) => {
-    player.stop();
-    setScreen(next);
-  };
+  // Speech is not cut by navigation: it keeps playing and NowPlaying offers the way back to its screen.
+  const go = (next: Screen) => setScreen(next);
+  const [origin, setOrigin] = useState<Screen | null>(null);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  useEffect(() => {
+    setOrigin((o) => (player.speaking ? (o ?? screenRef.current) : null));
+  }, [player.speaking]);
+  const away = !!origin && sameScreenKey(origin) !== sameScreenKey(screen);
+  useEffect(() => {
+    document.documentElement.classList.toggle('has-now-playing', away);
+  }, [away]);
 
   useHelpShortcut(screen.name, go);
 
@@ -116,47 +130,56 @@ export function App() {
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
-  switch (screen.name) {
-    case 'today':
-      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
-    case 'call':
-      return <Call ceremony={ceremony} player={player} go={go} />;
-    case 'deep':
-      return <Deep ceremony={ceremony} player={player} go={go} refName={screen.ref} back={screen.back} passedCard={screen.card} />;
-    case 'ata':
-      return <Ata ceremony={ceremony} go={go} />;
-    case 'history':
-      return <History go={go} />;
-    case 'settings':
-      return <SettingsScreen go={go} />;
-    case 'actions':
-      return <Actions actions={actions} go={go} />;
-    case 'gate':
-      return <Gate card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-    case 'qa':
-      return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-    case 'retro':
-      return <RetroScreen ceremony={ceremony} player={player} go={go} />;
-    case 'custo':
-      return <Custo go={go} />;
-    case 'quick':
-      return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
-    case 'reentry':
-      return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
-    case 'discussions':
-      return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
-    case 'help':
-      return <Ajuda go={go} />;
-    // slot: routes of feature modules
-    case 'auditoria':
-      return <Auditoria go={go} />;
-    case 'radar':
-      return <Radar go={go} />;
-    case 'saude':
-      return <Saude go={go} />;
-    case 'glossario':
-      return <Glossario go={go} />;
-    case 'conflict':
-      return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
-  }
+  const content = (() => {
+    switch (screen.name) {
+      case 'today':
+        return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
+      case 'call':
+        return <Call ceremony={ceremony} player={player} go={go} />;
+      case 'deep':
+        return <Deep ceremony={ceremony} player={player} go={go} refName={screen.ref} back={screen.back} passedCard={screen.card} />;
+      case 'ata':
+        return <Ata ceremony={ceremony} go={go} />;
+      case 'history':
+        return <History go={go} />;
+      case 'settings':
+        return <SettingsScreen go={go} />;
+      case 'actions':
+        return <Actions actions={actions} go={go} />;
+      case 'gate':
+        return <Gate card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+      case 'qa':
+        return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+      case 'retro':
+        return <RetroScreen ceremony={ceremony} player={player} go={go} />;
+      case 'custo':
+        return <Custo go={go} />;
+      case 'quick':
+        return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
+      case 'reentry':
+        return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+      case 'discussions':
+        return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
+      case 'help':
+        return <Ajuda go={go} />;
+      // slot: routes of feature modules
+      case 'auditoria':
+        return <Auditoria go={go} />;
+      case 'radar':
+        return <Radar go={go} />;
+      case 'saude':
+        return <Saude go={go} />;
+      case 'glossario':
+        return <Glossario go={go} />;
+      case 'conflict':
+        return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
+    }
+  })();
+
+  return (
+    <>
+      {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
+      {content}
+    </>
+  );
 }

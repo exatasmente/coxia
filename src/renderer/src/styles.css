@@ -461,3 +461,12 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 .call-text > .text-input { flex: 1 1 auto; min-width: 0; }
 .call-offers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
 .call-offer { height: auto; min-height: 40px; white-space: normal; text-align: left; border-color: var(--teal-line); }
+.now-playing { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 32px); padding: 4px; border-radius: 999px; background: var(--night); color: var(--on-night); border: 1px solid var(--night-line); box-shadow: 0 10px 28px -14px color-mix(in srgb, var(--night) 80%, transparent); }
+.now-playing-back { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.now-playing-back .spectrum { flex: 0 1 auto; min-width: 0; max-width: 120px; overflow: hidden; }
+.now-playing-who { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-playing-stop { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--on-night) 12%, transparent); color: inherit; cursor: pointer; }
+.now-playing-back:focus-visible, .now-playing-stop:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: 2px; }
+html.has-now-playing body { padding-top: 60px; }
+html.has-now-playing .hero { top: calc(env(safe-area-inset-top, 0px) + 68px); }
+@media (max-width: 600px) { .now-playing-back .spectrum { max-width: 64px; } }
