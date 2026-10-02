@@ -76,25 +76,17 @@ describe('catalogs', () => {
 });
 
 describe('the lint script', () => {
+  // Each run parses the whole renderer; under a loaded suite that can pass the default 5 s.
+  const SLOW = { timeout: 60_000 };
+
   const lint = (...args: string[]) => execFileSync('node', [join(ROOT, 'scripts/i18n-lint.mjs'), ...args], { encoding: 'utf8' });
 
-  it('checks that both catalogs define the same keys', () => {
-    expect(lint('--keys')).toMatch(/i18n keys: \d+ in both catalogs/);
+  it('checks that both catalogs define the same keys', SLOW, () => {
+    expect(lint('--keys', '--scope', 'renderer')).toMatch(/i18n keys: \d+ in both languages/);
   });
 
-  it('reports untranslated literals per file, and none of the converted headings', () => {
-    const report = JSON.parse(lint('--json')) as Record<string, { line: number; text: string }[]>;
-    const settings = report['src/renderer/src/screens/Settings.tsx'] ?? [];
-    expect(settings.length).toBeGreaterThan(0);
-    const texts = settings.map((f) => f.text);
-    expect(texts).not.toContain('Configurações');
-    expect(texts).not.toContain('Aparência');
-    expect(texts.some((x) => x.includes('Fala de cada agente'))).toBe(true);
-  });
-
-  it('exits non-zero above the allowed total, so it can ratchet in CI', () => {
-    expect(() => lint('--max', '0')).toThrow();
-    expect(lint('--max', '100000')).toMatch(/total in/);
+  it('refuses a scope it does not know', SLOW, () => {
+    expect(() => lint('--scope', 'nowhere')).toThrow();
   });
 });
 

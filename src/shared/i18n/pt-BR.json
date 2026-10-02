@@ -157,7 +157,7 @@
   "settings.appearance.title": "Aparência",
   "settings.start.title": "Início",
   "settings.language.title": "Idioma",
-  "settings.language.hint": "Vale ao salvar. As telas ainda não traduzidas continuam em português.",
+  "settings.language.hint": "Vale ao salvar.",
   "settings.language.pt-BR": "Português (Brasil)",
   "settings.language.en": "English",
   "nav.call": "Call",

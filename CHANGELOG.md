@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The whole interface is translated: every screen, toast, tooltip and the browser (PWA) gate follow the workspace language, with dates and numbers formatted for it. Strings live in `src/shared/i18n/ui-*.json`; `npm run i18n:lint` now blocks untranslated text in the renderer. Glossary and rules in `docs/i18n.md`.
+
 ## [0.1.0] - 2026-10-02
 
 First public version.

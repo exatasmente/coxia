@@ -5,6 +5,7 @@
 //   node scripts/i18n-lint.mjs --file <path>   every finding of one file
 //   node scripts/i18n-lint.mjs --max <n>       exit 1 when the total is above n (a ratchet for CI)
 //   node scripts/i18n-lint.mjs --scope renderer   only src/renderer/src (also: main, all; the default is all)
+//   node scripts/i18n-lint.mjs --dir <path>    scan another folder (used by the tests)
 //   node scripts/i18n-lint.mjs --keys          also check that every <area>.pt-BR.json has the same keys as its <area>.en.json
 // It parses every file (@babel/parser, already in the lockfile through the Vite React plugin) and reports the user-facing text that does
 // not go through t()/tv():
@@ -17,7 +18,7 @@
 // `// i18n-ignore-next-line` on the line above.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { parse } from '@babel/parser';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -31,7 +32,7 @@ const COMPARE_OPS = new Set(['===', '!==', '==', '!=', 'in']);
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
-const SCAN = SCOPES[value('--scope') ?? 'all'];
+const SCAN = value('--dir') ? [value('--dir')] : SCOPES[value('--scope') ?? 'all'];
 if (!SCAN) {
   console.error(`i18n lint: unknown scope "${value('--scope')}" (renderer, main or all)`);
   process.exit(2);
@@ -174,7 +175,7 @@ function analyze(file) {
 
 const report = {};
 for (const dir of SCAN) {
-  for (const file of walk(join(ROOT, dir))) {
+  for (const file of walk(resolve(ROOT, dir))) {
     const found = analyze(file);
     if (found.length) report[relative(ROOT, file)] = found;
   }
