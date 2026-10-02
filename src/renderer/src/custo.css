@@ -5,7 +5,7 @@
 .custo-seg .filter { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; }
 
 .custo-line { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
-.custo-line > .custo-bar { flex: 1 1 120px; min-width: 80px; }
+.custo-bar { flex: 1 1 120px; min-width: 80px; }
 .custo-label { flex: 0 0 92px; }
 .custo-label-wide { flex: 0 0 150px; }
 .custo-cost { flex: 0 0 76px; text-align: right; font-weight: 600; }
