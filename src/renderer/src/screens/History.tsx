@@ -4,6 +4,7 @@ import type { HistoryEntry, SavedCeremony } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText, plural } from '../api';
 import { ContinueInClaude } from './ContinueInClaude';
+import { EfeitoStatus } from './EfeitoStatus';
 import { BackIcon } from './icons';
 
 function time(ms: number | null): string {
@@ -154,6 +155,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                       <span className="badge-e3">E3</span>
                       <span style={{ flex: '1 1 260px' }}>{e.text}</span>
                       <span className="mono faint">{e.repo} · {e.ref}</span>
+                      <EfeitoStatus effect={e} ceremonyId={detail.id} date={detail.date} />
                     </div>
                   ))}
                   {m.unanswered.length > 0 && (
