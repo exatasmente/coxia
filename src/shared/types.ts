@@ -301,7 +301,7 @@ export interface Api {
   copy(text: string): Promise<void>;
   getSettings(): Promise<import('./settings').Settings>;
   saveSettings(settings: import('./settings').Settings): Promise<import('./settings').Settings>;
-  continueInClaude(sessionId: string): Promise<{ ok: boolean; command: string }>;
+  continueInClaude(sessionId: string, prompt?: string): Promise<{ ok: boolean; command: string }>;
   checkStatus(): Promise<string>;
   listActions(): Promise<ReleaseAction[]>;
   detectRelease(): Promise<string>;

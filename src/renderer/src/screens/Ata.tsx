@@ -3,12 +3,17 @@ import { teamsKey } from '../../../shared/minutes';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
+import { ContinueInClaude } from './ContinueInClaude';
 
 function effectsPrompt(effects: Ceremony['effects']): string {
   return [
     'Da minha pré-daily de hoje, ações para executar. Peça o meu "sim" antes de cada uma, uma por vez:',
     ...effects.map((e, i) => `${i + 1}. ${e.ref} (${e.repo}): ${e.text}`),
   ].join('\n');
+}
+
+function effectPrompt(e: Ceremony['effects'][number]): string {
+  return `Execute esta ação da pré-daily, pedindo o meu sim antes: ${e.ref} (${e.repo}): ${e.text}`;
 }
 
 export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) => void }) {
@@ -140,6 +145,11 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <span className="badge-e3">E3</span>
                   <span style={{ flex: '1 1 260px' }}>{e.text}</span>
                   <span className="mono faint">{e.repo} · {e.ref}</span>
+                  {c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId ? (
+                    <ContinueInClaude sessionId={c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId} prompt={effectPrompt(e)} label="Executar no Claude Code" />
+                  ) : (
+                    <button type="button" className="btn" title="A atividade não tem sessão de agente: copie o pedido e cole numa sessão" onClick={() => void api.copy(effectPrompt(e))}>Copiar pedido</button>
+                  )}
                 </div>
               ))}
             </section>

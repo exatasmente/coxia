@@ -28,7 +28,7 @@ function profileEnv(): Record<string, string> {
 
 let cachedKey: string | null = null;
 
-function openRouterKey(): string {
+export function openRouterKey(): string {
   cachedKey ??= execFileSync(join(HOME, '.local/bin/openrouter-key'), { encoding: 'utf8' }).trim();
   return cachedKey;
 }
