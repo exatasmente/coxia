@@ -1,26 +1,8 @@
-import { execFile } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
-import { DAILY_REPORT, SPECS } from './env';
-
-const run = promisify(execFile);
-
-interface ReportItem {
-  kind: 'issue' | 'mr';
-  ref: string;
-  project: string;
-  iid: number;
-  title: string;
-  stage: string | null;
-  web_url: string;
-  issue_refs?: string[];
-  blockers: string[];
-  pending: string[];
-  changes: { field: string; from: unknown; to: unknown }[];
-  manual_note: string | null;
-}
+import { SPECS } from './env';
+import { type ReportItem, readReport } from './report';
 
 const PHASES: [string, string][] = [
   ['ISSUE_COMPLETION.md', 'ISSUE_COMPLETION escrito'],
@@ -58,12 +40,8 @@ function describe(c: { field: string; from: unknown; to: unknown }, prefix = '')
   return `${prefix}${c.field}: ${String(c.from)} → ${String(c.to)}`;
 }
 
-export async function loadCards(limit: number): Promise<CardsResult> {
-  const { stdout } = await run(DAILY_REPORT, ['report', '--format', 'json', '--dry-run'], {
-    timeout: 180_000,
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  const report = JSON.parse(stdout) as { generated_at: string; items: ReportItem[] };
+export async function loadCards(limit: number, refresh = false): Promise<CardsResult> {
+  const report = await readReport({ refresh });
   const mrsByIssue = new Map<string, ReportItem[]>();
   for (const it of report.items) {
     if (it.kind !== 'mr') continue;

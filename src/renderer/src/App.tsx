@@ -17,6 +17,7 @@ import { QuickActions } from './screens/QuickActions';
 import { Reentry } from './screens/Reentry';
 import { Radar } from './screens/Radar';
 import { RetroScreen } from './screens/RetroScreen';
+import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
 
@@ -37,6 +38,7 @@ export type Screen =
   | { name: 'reentry'; ref: string; card?: Card }
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   | { name: 'radar' }
+  | { name: 'saude' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -108,6 +110,8 @@ export function App() {
     // slot: routes of feature modules
     case 'radar':
       return <Radar go={go} />;
+    case 'saude':
+      return <Saude go={go} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }

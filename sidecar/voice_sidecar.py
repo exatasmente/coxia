@@ -4,6 +4,7 @@ Protocol: one JSON object per line on stdin, one JSON reply per line on stdout.
   {"id": 1, "cmd": "stt", "path": "/tmp/x.webm"}                      -> {"id": 1, "text": "..."}
   {"id": 2, "cmd": "tts", "text": "...", "voice": "...", "rate": "+0%", "pitch": "+0Hz", "out": "/tmp/y.mp3"}
                                                                        -> {"id": 2, "path": "/tmp/y.mp3"}
+  {"id": 3, "cmd": "ping"}                                            -> {"id": 3}
   any failure                                                          -> {"id": n, "error": "..."}
 """
 import asyncio
@@ -52,7 +53,7 @@ def handle(line):
     req = {}
     try:
         req = json.loads(line)
-        result = {"stt": stt, "tts": tts}[req["cmd"]](req)
+        result = {"stt": stt, "tts": tts, "ping": lambda _req: {}}[req["cmd"]](req)
         reply({"id": req["id"], **result})
     except Exception as e:  # noqa: BLE001 - every failure goes back to the caller
         reply({"id": req.get("id"), "error": f"{type(e).__name__}: {e}"})

@@ -288,7 +288,7 @@ export interface Api {
   saveState(state: SavedCeremony): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
   getHistory(id: string): Promise<SavedCeremony | null>;
-  loadCards(limit: number): Promise<CardsResult>;
+  loadCards(limit: number, refresh?: boolean): Promise<CardsResult>;
   prepareTurn(card: Card): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;
   deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer>;

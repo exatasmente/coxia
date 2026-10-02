@@ -2,6 +2,7 @@ import { custoTempo } from './custo-tempo';
 import { register as feedback } from './feedback';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as radar } from './radar';
+import { saude } from './saude';
 import { register as watchers } from './watchers';
 import type { Module } from './module';
 
@@ -11,5 +12,6 @@ export const MODULES: Module[] = [
   feedback,
   gitlabQuick,
   radar,
+  saude,
   watchers,
 ];

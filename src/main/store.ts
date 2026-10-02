@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Decision, Minutes, SaveResult } from '../shared/types';
 import { ATAS, DAILY_REPORT, HOME } from './env';
+import { invalidateReport } from './report';
 
 const run = promisify(execFile);
 
@@ -74,6 +75,7 @@ async function writeDailyNote(d: Decision): Promise<{ ok: boolean; detail: strin
   const previous = currentNote(d.ref);
   const note = previous ? `${previous} | ${today()}: ${d.text}` : `${today()}: ${d.text}`;
   await run(DAILY_REPORT, ['note', d.ref, note], { timeout: 30_000 });
+  invalidateReport();
   return { ok: true, detail: `daily-report note ${d.ref}` };
 }
 

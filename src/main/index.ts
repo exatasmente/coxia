@@ -107,7 +107,7 @@ function handlers(): void {
   ipcMain.handle('state:save', (_e, state: SavedCeremony) => saveState(state));
   ipcMain.handle('history:list', () => listHistory());
   ipcMain.handle('history:get', (_e, id: string) => getHistory(id));
-  ipcMain.handle('cards:load', (_e, limit: number) => loadCards(limit));
+  ipcMain.handle('cards:load', (_e, limit: number, refresh?: boolean) => loadCards(limit, refresh));
   ipcMain.handle('agent:prepare', (_e, card: Card) => prepareTurn(card));
   ipcMain.handle('agent:reply', (_e, card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
   ipcMain.handle('deep:ask', (_e, card: Card, question: string, sessionId: string | null) => deepAsk(card, question, sessionId));
