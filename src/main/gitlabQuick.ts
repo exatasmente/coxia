@@ -3,8 +3,10 @@ import { promisify } from 'node:util';
 import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickPerson, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeGitlabAction } from './actions';
+import { getSettings } from './config';
 import { DAILY_REPORT, GITLAB } from './env';
 import type { Module } from './module';
+import type { Notice } from './scheduler';
 
 const exec = promisify(execFile);
 const ISSUE_PROJECT = 1;
@@ -19,13 +21,15 @@ const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
 const RULES = [
   {
     to: 'In development',
+    id: 75,
     label: 'STAGE:: Doing',
     from: ['Open', 'Ready for planning', 'Blocked in development', 'Rejected in code review', 'Failed testing'],
     removable: ['STAGE:: Backlog', 'STAGE:: To Do', 'STAGE:: Code Review Fail', 'STAGE:: Test Fail'],
   },
-  { to: 'Ready for code review', label: 'STAGE:: Code Review', from: ['In development'], removable: ['STAGE:: Doing'] },
+  { to: 'Ready for code review', id: 77, label: 'STAGE:: Code Review', from: ['In development'], removable: ['STAGE:: Doing'] },
   {
     to: 'Ready for testing',
+    id: 6,
     label: 'STAGE:: Ready To Test',
     from: ['Approved in code review', 'Failed testing', 'In development'],
     removable: ['STAGE:: Code Review OK', 'STAGE:: Code Review', 'STAGE:: Test Fail', 'STAGE:: Doing'],
@@ -184,7 +188,7 @@ async function members(projectPath: string): Promise<QuickMember[]> {
   const count = new Map<number, number>();
   for (const mr of recent) for (const r of mr.reviewers) count.set(r.id, (count.get(r.id) ?? 0) + 1);
   return all
-    .filter((m) => m.access_level >= 30 && m.state === 'active' && m.username !== user && !/^k8s|bot$/i.test(m.username))
+    .filter((m) => m.access_level >= 30 && m.state === 'active' && m.username !== user && !/^k8s|_bot_|bot$/i.test(m.username))
     .map((m) => ({ id: m.id, username: m.username, name: m.name, usual: count.get(m.id) ?? 0 }))
     .sort((a, b) => b.usual - a.usual || a.name.localeCompare(b.name))
     .slice(0, 60);
@@ -207,7 +211,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     if (!t?.allowed) throw new Error(t?.reason ?? 'transição não permitida');
     const title = (await get<{ title: string }>(`projects/${ISSUE_PROJECT}/issues/${req.issue}`)).title;
     const statusNote = issue.gid
-      ? `Status "${t.to}": o app ainda não executa status (só a API GraphQL altera). Aplique à parte, conforme a skill issue-status:\nglab api graphql -f query='mutation { workItemUpdate(input: { id: "${issue.gid}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/<id de ${t.to}>" } }) { errors } }'`
+      ? `Status "${t.to}": o app ainda não executa status (só a API GraphQL altera). Aplique à parte, conforme a skill issue-status:\nglab api graphql -f query='mutation { workItemUpdate(input: { id: "${issue.gid}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/${rule.id}" } }) { errors } }'`
       : `Status "${t.to}": aplique à parte (GraphQL), conforme a skill issue-status.`;
     if (!t.addLabel && !t.removeLabels.length) throw new Error('A label já está certa: só falta o status, aplicado à parte.');
     const fields: Record<string, string> = {};
@@ -344,12 +348,17 @@ export async function scan(): Promise<AutoProposal[]> {
   return autoProposals(items, (m) => jobs.get(m.ref) ?? []);
 }
 
-async function autoRun(): Promise<void> {
+const NOTIFY_EACH_UP_TO = 3;
+
+async function autoRun(notify: (n: Notice) => void): Promise<void> {
   // A skipped or failed proposal is not re-created on the next run: it stays a decision the user already made.
   const known = new Set(listActions().map((a) => a.key));
-  for (const p of await scan()) {
-    if (known.has(p.key)) continue;
-    proposeGitlabAction({ key: p.key, issue: p.issue, issueTitle: p.issueTitle, summary: p.summary, command: p.command, notify: p.notify });
+  const fresh = (await scan()).filter((p) => !known.has(p.key));
+  // Many at once (typically right after a push) get one notice instead of a burst.
+  const each = fresh.length <= NOTIFY_EACH_UP_TO;
+  for (const p of fresh) proposeGitlabAction({ key: p.key, issue: p.issue, issueTitle: p.issueTitle, summary: p.summary, command: p.command, notify: each ? p.notify : undefined });
+  if (!each && getSettings().notifications) {
+    notify({ title: `${fresh.length} propostas novas no GitLab`, body: 'Draft e jobs manuais aguardando o seu “seguir”.', onClick: { type: 'navigate', to: 'actions' } });
   }
 }
 
@@ -357,5 +366,5 @@ export const register: Module = (ctx) => {
   ctx.handle('gitlabQuick:context', (card: Card) => context(card));
   ctx.handle('gitlabQuick:members', (projectPath: string) => members(projectPath));
   ctx.handle('gitlabQuick:propose', (req: QuickRequest) => proposeManual(req));
-  ctx.job({ name: 'gitlab-quick', everyMin: JOB_EVERY_MIN, workHoursOnly: true, run: autoRun });
+  ctx.job({ name: 'gitlab-quick', everyMin: JOB_EVERY_MIN, workHoursOnly: true, run: () => autoRun(ctx.notify) });
 };
