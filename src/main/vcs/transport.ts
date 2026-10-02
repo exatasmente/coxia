@@ -49,7 +49,8 @@ export function cliFailure(e: unknown, command: string, host: string): VcsError 
   if (err.code === 'ENOENT') return new VcsError('cli_missing', { command });
   if (err.killed || err.code === 'ETIMEDOUT') return new VcsError('timeout', { host, seconds: 60 });
   const text = `${err.stderr ?? ''}\n${err.stdout ?? ''}\n${err.message ?? ''}`;
-  const status = Number(/HTTP[ /:]*(\d{3})/i.exec(text)?.[1] ?? /\b(40[1349]|429|5\d\d)\b/.exec(text)?.[1] ?? NaN);
+  // "(HTTP 404)" is what glab and gh print; a bare number only counts when its reason phrase follows (a port or an id is not a status).
+  const status = Number(/HTTP[ /:]*(\d{3})/i.exec(text)?.[1] ?? /\b(40[1349]|429|50[0-9])\s+(?:Unauthorized|Forbidden|Not Found|Unprocessable|Too Many|Internal Server|Bad Gateway|Service Unavailable|Gateway)/i.exec(text)?.[1] ?? NaN);
   const first = scrubSecrets(text.split('\n').map((l) => l.trim()).find((l) => l && !/^Command failed/i.test(l)) ?? '').slice(0, 200);
   if (/not logged in|auth login|authentication required|no token/i.test(text) || status === 401) return new VcsError('auth', { host, status: 401 }, { status: 401 });
   if (status === 404) return new VcsError('not_found', { host, what: first }, { status });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { VcsError, scrubSecrets, serverMessage } from '../src/main/vcs/errors';
 import { HttpClient } from '../src/main/vcs/http';
+import { cliFailure } from '../src/main/vcs/transport';
 import { type FakeHost, noSleep, startFakeHost } from './helpers/fakeHost';
 import { setLanguage } from '../src/shared/i18n';
 
@@ -202,5 +203,27 @@ describe('pagination', () => {
     expect(await c.values<number>('vals')).toEqual([1, 2, 3]);
     host.route('GET /api/v4/evil', { json: { values: [1], next: 'http://127.0.0.1:1/steal' } });
     await expect(c.values('evil')).rejects.toBeInstanceOf(VcsError);
+  });
+});
+
+describe('CLI failures read like HTTP failures', () => {
+  const fail = (stderr: string, code: string | number = 1) => cliFailure(Object.assign(new Error(`Command failed: x\n${stderr}`), { stderr, code }), 'glab', 'git.example.test');
+
+  it('maps the status the CLI prints', () => {
+    expect(fail('glab: 404 Not Found (HTTP 404)').code).toBe('not_found');
+    expect(fail('gh: Resource not accessible (HTTP 403)').code).toBe('forbidden');
+    expect(fail('HTTP 429: API rate limit exceeded').code).toBe('rate_limited');
+    expect(fail('glab: 500 Internal Server Error').code).toBe('server');
+    expect(fail('You are not logged in to git.example.test').code).toBe('auth');
+  });
+
+  it('does not take a port or an id for a status', () => {
+    expect(fail('dial tcp 127.0.0.1:5432: connect: connection refused').code).toBe('network');
+    expect(fail('something failed for id 503 and 404 items').code).toBe('invalid');
+  });
+
+  it('knows a missing CLI and a killed one', () => {
+    expect(fail('', 'ENOENT').code).toBe('cli_missing');
+    expect(cliFailure(Object.assign(new Error('timed out'), { killed: true }), 'glab', 'h').code).toBe('timeout');
   });
 });
