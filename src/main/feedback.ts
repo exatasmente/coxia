@@ -470,7 +470,7 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     `Para ver o trecho, use glab api ${mrBase(mr)}/changes ou o MCP do GitLab (get_merge_request_details_and_changes); o checkout local pode estar em outra branch.`,
     '"ponto": o que o revisor está pedindo ou questionando, em uma frase. "precisa_codigo": true se atender exige mudar o código.',
     '"fala": até 90 palavras, para ser ouvida: o ponto, se o revisor tem razão pelo que você leu e o que o Luiz precisa decidir.',
-    '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
+    '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa e com a acentuação correta. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
     SPEECH_RULES,
   ]
     .filter(Boolean)
