@@ -4,6 +4,7 @@ import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
 import { TempoHoje } from './TempoHoje';
+import { RadarButton, WorktreeBadge } from './radarSlots';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -48,6 +49,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
+            <RadarButton go={go} />
             {/* slot: header buttons of feature modules */}
           </div>
         </header>
@@ -213,6 +215,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                     {failed ? <span style={{ color: 'var(--red)' }} title={failed}>agente falhou</span> : turn ? 'agente pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
                   </div>
                   <div className="row" style={{ gap: 8 }}>
+                    <WorktreeBadge iid={card.iid} go={go} />
                     {/* slot: per-activity buttons of feature modules */}
                     <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>GitLab</button>
                     {card.stage === 'Test Fail' && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>Retorno do QA</button>}
