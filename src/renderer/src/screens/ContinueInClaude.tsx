@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { resumeCommand } from '../../../shared/claude-command';
 import { api } from '../api';
+import { isWeb } from '../platform';
 
 export function ContinueInClaude({ sessionId, prompt, label, dark = false }: { sessionId: string | null | undefined; prompt?: string; label?: string; dark?: boolean }) {
   const [state, setState] = useState<string | null>(null);
@@ -19,9 +20,9 @@ export function ContinueInClaude({ sessionId, prompt, label, dark = false }: { s
   const style = dark ? { background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' } : undefined;
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-      <button type="button" className="btn" style={style} title={prompt ? 'Abre um terminal retomando a sessão do agente já com este pedido' : 'Abre um terminal com claude-or --resume nesta sessão do agente'} onClick={() => void open()}>
+      {!isWeb() && <button type="button" className="btn" style={style} title={prompt ? 'Abre um terminal retomando a sessão do agente já com este pedido' : 'Abre um terminal com claude-or --resume nesta sessão do agente'} onClick={() => void open()}>
         {state ?? label ?? 'Continuar no Claude Code'}
-      </button>
+      </button>}
       <button type="button" className="btn icon-btn" style={style} aria-label="Copiar o comando de retomada" title="Copiar o comando" onClick={() => void copy()}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="9" y="9" width="11" height="11" rx="2" />

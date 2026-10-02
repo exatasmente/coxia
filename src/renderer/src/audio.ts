@@ -50,6 +50,16 @@ let audioCtx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let bins: Uint8Array<ArrayBuffer> | null = null;
 
+// Mobile browsers start the AudioContext suspended until a user gesture.
+export function unlockAudio(): void {
+  try {
+    audioCtx ??= new AudioContext();
+    void audioCtx.resume();
+  } catch {
+    // no Web Audio: the avatar just loses its spectrum
+  }
+}
+
 function attachAnalyser(audio: HTMLAudioElement): void {
   try {
     audioCtx ??= new AudioContext();

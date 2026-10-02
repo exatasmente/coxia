@@ -8,6 +8,7 @@ import { applyTheme } from '../theme';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 import { RetentionSection } from './RetentionSection';
+import { WebAccessSection } from './WebAccessSection';
 
 const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
@@ -319,6 +320,8 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </span>
           </label>
         </section>
+
+        <WebAccessSection />
       </div>
     </div>
   );
