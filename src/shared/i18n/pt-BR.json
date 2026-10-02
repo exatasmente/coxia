@@ -55,7 +55,7 @@
   "help.shortcuts.title": "Atalhos e voz",
   "help.shortcuts.title.novoice": "Atalhos",
   "help.shortcuts.intro": "Valem nas telas com microfone: call, desbloqueio, gate, passagem para o QA, retorno do QA, conflito e retro.",
-  "help.shortcuts.intro.novoice": "Todas as telas funcionam por texto, com a voz desligada: pré-daily, desbloqueio, gate, passagem para o QA, retorno do QA, conflito e retro.",
+  "help.shortcuts.intro.novoice": "Todas as telas funcionam por texto, com a voz desligada: a conversa da pré-daily, desbloqueio, gate, passagem para o QA, retorno do QA, conflito e retro.",
   "help.type.text": "Nas telas de conversa há um campo de texto (“Ou digite…”) para escrever em vez de falar: escreva e aperte {key}.",
   "help.type.text.novoice": "Nas telas de conversa há um campo de texto para escrever a resposta ou a pergunta: escreva e aperte {key}.",
   "help.voice.off.term": "Voz",
