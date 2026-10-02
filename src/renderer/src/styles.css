@@ -349,6 +349,6 @@ select.text-input { background: var(--surface); }
 .presence { display: inline-flex; align-items: center; gap: 12px; min-height: 36px; }
 .presence-caption { color: var(--on-night-muted); }
 .spectrum { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; overflow: hidden; }
-.spectrum span { flex: 0 0 4px; width: 4px; border-radius: 2px; transition: height 70ms linear, transform 240ms ease, opacity 200ms ease; }
+.spectrum span { flex: 0 0 4px; width: 4px; border-radius: 2px; transition: height 70ms linear, transform 120ms ease, opacity 160ms ease; }
 .spectrum-small span { flex-basis: 3px; width: 3px; }
 .spectrum span.spectrum-eye { border-radius: 999px; }

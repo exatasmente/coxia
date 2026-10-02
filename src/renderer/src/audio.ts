@@ -92,6 +92,16 @@ export function speechBands(count: number): number[] | null {
   });
 }
 
+// How far the current speech is, 0..1: the real audio position, or the reading time when the voice is off.
+let playing: HTMLAudioElement | null = null;
+let reading: { start: number; ms: number } | null = null;
+
+export function speechProgress(): number | null {
+  if (playing && Number.isFinite(playing.duration) && playing.duration > 0) return Math.min(1, playing.currentTime / playing.duration);
+  if (reading) return Math.min(1, (performance.now() - reading.start) / reading.ms);
+  return null;
+}
+
 export function useSpeechEnabled(): boolean {
   const [on, setOn] = useState(speechOn);
   useEffect(() => {
@@ -136,10 +146,13 @@ export function usePlayer() {
       if (!speechOn) {
         stop();
         setSpeaking(who);
+        const ms = readingMs(text);
+        reading = { start: performance.now(), ms };
         await new Promise<void>((done) => {
-          const entry = { timer: setTimeout(() => done(), readingMs(text)), done };
+          const entry = { timer: setTimeout(() => done(), ms), done };
           silent.current = entry;
         });
+        reading = null;
         silent.current = null;
         setSpeaking((w) => (w === who ? null : w));
         return;
@@ -149,6 +162,7 @@ export function usePlayer() {
       const url = URL.createObjectURL(new Blob([bytes], { type: mimeOf(bytes) }));
       const audio = new Audio(url);
       attachAnalyser(audio);
+      playing = audio;
       current.current = audio;
       setSpeaking(who);
       await new Promise<void>((done) => {
@@ -159,6 +173,7 @@ export function usePlayer() {
       });
       URL.revokeObjectURL(url);
       detachAnalyser();
+      if (playing === audio) playing = null;
       if (current.current === audio) {
         current.current = null;
         setSpeaking(null);
