@@ -28,6 +28,7 @@ import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { JobsDock } from './JobsDock';
 import { targetToScreen } from './pushTarget';
+import { useWorkspaces } from './workspaceApi';
 
 export type Screen =
   | { name: 'today' }
@@ -60,6 +61,7 @@ function sameScreenKey(s: Screen): string {
 
 export function App() {
   const ceremony = useCeremony();
+  useWorkspaces();
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
   const [actions, setActions] = useState<ReleaseAction[]>([]);

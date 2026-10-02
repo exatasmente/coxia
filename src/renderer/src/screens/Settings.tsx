@@ -12,6 +12,7 @@ import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
 import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
+import { WorkspacesSection } from './WorkspacesSection';
 
 const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
@@ -104,6 +105,8 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
           </div>
         </header>
         {error && <div className="error">{error}</div>}
+
+        <WorkspacesSection />
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>

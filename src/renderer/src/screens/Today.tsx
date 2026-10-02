@@ -13,6 +13,7 @@ import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
+import { runningWorkspace, useWorkspaces } from '../workspaceApi';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -20,6 +21,7 @@ const TOP = 3;
 
 export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
   const phone = useIsPhone();
+  const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         </div>
       </div>
       <div className="dash-top-actions">
+        {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.">Workspace de testes</span>}
         {!phone && (
           <nav className="dash-nav" aria-label="Telas do app">
             <button type="button" className="btn" onClick={() => go({ name: 'history' })}>Histórico</button>
