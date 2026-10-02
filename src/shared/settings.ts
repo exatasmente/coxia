@@ -21,11 +21,24 @@ export interface Settings {
     retroDay: number;
     retroTime: string;
   };
-  voice: { autoStop: boolean; silenceMs: number; speak: boolean; engine: 'edge' | 'kokoro'; prosody: boolean };
+  voice: { autoStop: boolean; silenceMs: number; speak: boolean; engine: 'edge' | 'kokoro'; prosody: boolean; bargeIn: boolean };
   notifications: boolean;
   closeToTray: boolean;
   retention: { enabled: boolean; days: number };
   appearance: { theme: Theme };
+  web: WebSettings;
+}
+
+// Browser access (PWA). Only the desktop window changes these, through the web:* channels.
+export interface WebSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  basePath: string;
+  publicUrl: string;
+  // IPv4 CIDR of the reverse proxy: only a peer inside it (or loopback) is believed about X-Real-IP and X-Forwarded-Proto.
+  trustedProxy: string;
+  allowExternalEffects: boolean;
 }
 
 export const MODEL_OPTIONS = ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-pro-0813', 'qwen/qwen3.7-flash'];
@@ -39,11 +52,20 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   tools: { files: true, skills: true, gitlabMcp: true, glab: true, subagents: true },
   schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
-  voice: { autoStop: true, silenceMs: 1200, speak: true, engine: 'edge', prosody: true },
+  voice: { autoStop: true, silenceMs: 1200, speak: true, engine: 'edge', prosody: true, bargeIn: true },
   notifications: true,
   closeToTray: true,
   retention: { enabled: false, days: 30 },
   appearance: { theme: 'system' },
+  web: {
+    enabled: false,
+    host: '172.18.0.1',
+    port: 4330,
+    basePath: '/cerimonias/',
+    publicUrl: 'https://koala.fortics.dev/cerimonias/',
+    trustedProxy: '172.18.0.0/16',
+    allowExternalEffects: false,
+  },
 };
 
 export function withDefaults(partial: Partial<Settings> | null | undefined): Settings {
@@ -57,5 +79,6 @@ export function withDefaults(partial: Partial<Settings> | null | undefined): Set
     closeToTray: p.closeToTray ?? DEFAULT_SETTINGS.closeToTray,
     retention: { ...DEFAULT_SETTINGS.retention, ...p.retention },
     appearance: { theme: THEMES.includes(p.appearance?.theme as Theme) ? (p.appearance?.theme as Theme) : DEFAULT_SETTINGS.appearance.theme },
+    web: { ...DEFAULT_SETTINGS.web, ...p.web },
   };
 }

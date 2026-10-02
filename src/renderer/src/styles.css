@@ -431,13 +431,16 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 }
 .glossary { display: flex; flex-direction: column; gap: 8px; }
-.glossary-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(130px, 1.2fr) minmax(160px, 2fr) 124px; gap: 8px; align-items: center; }
+.glossary-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(110px, 1.1fr) minmax(140px, 1.8fr) 124px; gap: 8px; align-items: center; }
 .glossary-row > .text-input { min-width: 0; }
+.glossary-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.glossary-cap { display: none; }
 .glossary-test { display: flex; flex-direction: column; gap: 6px; }
 @media (max-width: 760px) {
   .glossary-head { display: none; }
   .glossary-row { grid-template-columns: 1fr 1fr; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-  .glossary-row > :nth-child(3) { grid-column: 1 / -1; }
+  .glossary-row > :nth-child(3), .glossary-row > :nth-child(4) { grid-column: 1 / -1; }
+  .glossary-cap { display: block; }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .rich { display: flex; flex-direction: column; gap: 8px; }
@@ -450,4 +453,10 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 .bubble-replay { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -4px -6px -4px 0; border-radius: 8px; border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; opacity: 0.7; }
 .bubble-replay:hover, .bubble-replay:focus-visible { opacity: 1; border-color: var(--line-3); }
 .log-line .bubble-replay { flex: 0 0 26px; margin: -3px 0; }
+/* correction of a voice transcription: a text link under the message and its inline panel */
+.bubble-fix { display: block; margin-top: 6px; padding: 4px 0; border: 0; background: transparent; color: var(--blue-ink); font: inherit; font-size: 12px; font-weight: 600; text-decoration: underline; cursor: pointer; opacity: 0.85; }
+.bubble-fix:hover, .bubble-fix:focus-visible { opacity: 1; }
+.fix-panel { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; min-width: 0; }
+.fix-panel .text-input { min-width: 0; width: 100%; }
+.fix-offer { white-space: normal; text-align: left; height: auto; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; }
 .bubble-replay[aria-pressed="true"] { opacity: 1; color: var(--teal); border-color: var(--teal-line); }

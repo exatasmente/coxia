@@ -10,13 +10,17 @@ interface Row {
   key: number;
   term: string;
   say: string;
+  sayKokoro: string;
   heard: string;
 }
 
 let nextKey = 1;
-const toRows = (terms: Term[]): Row[] => terms.map((t) => ({ key: nextKey++, term: t.term, say: t.say, heard: t.heard.join(', ') }));
+const toRows = (terms: Term[]): Row[] => terms.map((t) => ({ key: nextKey++, term: t.term, say: t.say, sayKokoro: t.sayKokoro ?? '', heard: t.heard.join(', ') }));
 const toTerms = (rows: Row[]): Term[] =>
-  rows.map((r) => ({ term: r.term.trim(), say: r.say.trim(), heard: r.heard.split(',').map((h) => h.trim()).filter(Boolean) })).filter((t) => t.term);
+  rows
+    .map((r) => ({ term: r.term.trim(), say: r.say.trim(), sayKokoro: r.sayKokoro.trim(), heard: r.heard.split(',').map((h) => h.trim()).filter(Boolean) }))
+    .filter((t) => t.term)
+    .map(({ sayKokoro, ...t }) => (sayKokoro ? { ...t, sayKokoro } : t));
 
 export function Glossario({ go }: { go: (s: Screen) => void }) {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -41,9 +45,9 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
 
   const terms = useMemo(() => toTerms(rows ?? []), [rows]);
   const dirty = rows !== null && JSON.stringify(terms) !== saved;
-  const shown = (rows ?? []).filter((r) => !filter.trim() || `${r.term} ${r.say} ${r.heard}`.toLowerCase().includes(filter.trim().toLowerCase()));
+  const shown = (rows ?? []).filter((r) => !filter.trim() || `${r.term} ${r.say} ${r.sayKokoro} ${r.heard}`.toLowerCase().includes(filter.trim().toLowerCase()));
 
-  const edit = (key: number, field: 'term' | 'say' | 'heard', value: string) =>
+  const edit = (key: number, field: 'term' | 'say' | 'sayKokoro' | 'heard', value: string) =>
     setRows((rs) => (rs ?? []).map((r) => (r.key === key ? { ...r, [field]: value } : r)));
 
   const hear = async (text: string, id: string) => {
@@ -97,7 +101,7 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
         </header>
 
         <p className="muted" style={{ margin: 0 }}>
-          Cada termo vale para os dois lados da voz. <strong>Como falar</strong> é o que a voz pronuncia no lugar do termo; vazio, ela lê como está escrito.{' '}
+          Cada termo vale para os dois lados da voz. <strong>Como falar</strong> é o que a voz pronuncia no lugar do termo; vazio, ela lê como está escrito. <strong>Kokoro</strong> é a pronúncia só para essa voz, que lê palavras em inglês pior que a Edge; vazio, ela usa o <strong>Como falar</strong>.{' '}
           <strong>Como o reconhecimento ouve</strong> são as grafias erradas que a transcrição costuma produzir, separadas por vírgula: viram o termo. Os termos também
           entram como dica de vocabulário para o reconhecimento. Na tela tudo continua escrito do jeito certo.
         </p>
@@ -115,7 +119,8 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
                 {busy === 'sample' ? <span className="spinner" /> : null} Ouvir
               </button>
             </div>
-            <span className="small muted">A voz lê: <span className="mono">{spoken(sample, terms)}</span></span>
+            <span className="small muted">Edge lê: <span className="mono">{spoken(sample, terms, 'edge')}</span></span>
+            <span className="small muted">Kokoro lê: <span className="mono">{spoken(sample, terms, 'kokoro')}</span></span>
             <label htmlFor="g-heard" className="small" style={{ fontWeight: 600, marginTop: 6 }}>Transcrição recebida</label>
             <input id="g-heard" className="text-input" value={heardSample} onChange={(e) => setHeardSample(e.target.value)} />
             <span className="small muted">Fica: <span className="mono">{corrected(heardSample, terms)}</span></span>
@@ -131,7 +136,7 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
                 className="btn"
                 onClick={() => {
                   setFilter('');
-                  setRows((rs) => [{ key: nextKey++, term: '', say: '', heard: '' }, ...(rs ?? [])]);
+                  setRows((rs) => [{ key: nextKey++, term: '', say: '', sayKokoro: '', heard: '' }, ...(rs ?? [])]);
                 }}
               >
                 Adicionar termo
@@ -145,14 +150,28 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
               <div className="glossary-row glossary-head small muted" role="row">
                 <span role="columnheader">Termo</span>
                 <span role="columnheader">Como falar</span>
+                <span role="columnheader">Kokoro</span>
                 <span role="columnheader">Como o reconhecimento ouve</span>
                 <span role="columnheader"><span className="sr-only">Ações</span></span>
               </div>
               {shown.map((r) => (
                 <div key={r.key} className="glossary-row" role="row">
-                  <input className="text-input" aria-label="Termo" value={r.term} placeholder="termo" onChange={(e) => edit(r.key, 'term', e.target.value)} />
-                  <input className="text-input" aria-label={`Como falar ${r.term}`} value={r.say} placeholder="como está escrito" onChange={(e) => edit(r.key, 'say', e.target.value)} />
-                  <input className="text-input" aria-label={`Como o reconhecimento ouve ${r.term}`} value={r.heard} placeholder="grafias erradas, por vírgula" onChange={(e) => edit(r.key, 'heard', e.target.value)} />
+                  <label className="glossary-cell">
+                    <span className="glossary-cap small muted">Termo</span>
+                    <input className="text-input" aria-label="Termo" value={r.term} placeholder="termo" onChange={(e) => edit(r.key, 'term', e.target.value)} />
+                  </label>
+                  <label className="glossary-cell">
+                    <span className="glossary-cap small muted">Como falar</span>
+                    <input className="text-input" aria-label={`Como falar ${r.term}`} value={r.say} placeholder="como está escrito" onChange={(e) => edit(r.key, 'say', e.target.value)} />
+                  </label>
+                  <label className="glossary-cell">
+                    <span className="glossary-cap small muted">Como falar no Kokoro</span>
+                    <input className="text-input" aria-label={`Como falar ${r.term} no Kokoro`} value={r.sayKokoro} placeholder="igual ao anterior" onChange={(e) => edit(r.key, 'sayKokoro', e.target.value)} />
+                  </label>
+                  <label className="glossary-cell">
+                    <span className="glossary-cap small muted">Como o reconhecimento ouve</span>
+                    <input className="text-input" aria-label={`Como o reconhecimento ouve ${r.term}`} value={r.heard} placeholder="grafias erradas, por vírgula" onChange={(e) => edit(r.key, 'heard', e.target.value)} />
+                  </label>
                   <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                     <button type="button" className="btn" disabled={busy !== null || !r.term.trim()} title="Ouvir a pronúncia" onClick={() => void hear(r.term, `row-${r.key}`)}>
                       {busy === `row-${r.key}` ? <span className="spinner" /> : null} Ouvir

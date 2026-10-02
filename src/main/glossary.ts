@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_GLOSSARY, type Term, sanitizeGlossary, spoken } from '../shared/glossary';
+import { learn } from '../shared/glossaryLearn';
 import { getSettings } from './config';
 import { ATAS } from './env';
 import type { Module } from './module';
-import { speak, voicesFor } from './voice';
+import { planSpeech, speakSegment, voicesFor } from './voice';
 
 const FILE = join(ATAS, 'glossario.json');
 
@@ -31,16 +32,19 @@ function save(terms: unknown): Term[] {
 
 async function hear(text: string, terms: unknown): Promise<ArrayBuffer> {
   const { engine } = getSettings().voice;
-  const said = spoken(String(text).slice(0, 400), sanitizeGlossary(terms));
-  const path = await speak(said, voicesFor(engine).moderator, engine, { prosody: false, glossary: [] });
-  const bytes = readFileSync(path);
-  unlinkSync(path);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const said = spoken(String(text).slice(0, 400), sanitizeGlossary(terms), engine);
+  const [segment] = planSpeech(said, voicesFor(engine).moderator, engine, { prosody: false, glossary: [] });
+  return segment ? speakSegment('glossary', segment) : new ArrayBuffer(0);
 }
 
 export const register: Module = (ctx) => {
   ctx.handle('glossary:get', () => ({ terms: glossary(), defaults: DEFAULT_GLOSSARY }));
   ctx.handle('glossary:save', (terms: unknown) => save(terms));
   // Plays a draft: the terms come from the screen, not from the saved file.
+  // One click on a corrected transcription: adds the variant to its term (or creates the term).
+  ctx.handle('glossary:learn', (heard: unknown, term: unknown) => {
+    if (typeof heard !== 'string' || typeof term !== 'string' || !heard.trim() || !term.trim()) throw new Error('Correção inválida.');
+    return save(learn(glossary(), { heard, term }));
+  });
   ctx.handle('glossary:hear', (text: string, terms: unknown) => hear(text, terms));
 };

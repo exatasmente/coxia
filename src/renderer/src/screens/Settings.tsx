@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { MODEL_OPTIONS, type ModelRole, type Settings, type Theme } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
-import { clearSpeechCache, setSpeechEnabled } from '../audio';
+import { clearSpeechCache, setBargeIn, setSpeechEnabled } from '../audio';
 import { autostartApi } from '../autostartApi';
 import { applyTheme } from '../theme';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 import { RetentionSection } from './RetentionSection';
+import { WebAccessSection } from './WebAccessSection';
 
 const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
@@ -67,6 +68,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       const saved = await api.saveSettings(s);
       setS(saved);
       setSpeechEnabled(saved.voice.speak);
+      setBargeIn(saved.voice.bargeIn);
       clearSpeechCache();
       applyTheme(saved.appearance.theme);
       setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
@@ -205,6 +207,13 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
               <span className="small muted">Depois que você começa a falar, uma pausa longa envia a fala. Cada fala tem no máximo 30 segundos.</span>
             </span>
           </label>
+          <label className="check-row">
+            <input type="checkbox" checked={s.voice.bargeIn} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, bargeIn: !p.voice.bargeIn } }))} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>Interromper o agente quando eu falar</span>
+              <span className="small muted">Ao falar por cima do agente, ele para e a gravação começa, como se você apertasse espaço. Com fones de ouvido é mais confiável: no alto-falante o eco da voz dele pode atrapalhar.</span>
+            </span>
+          </label>
           <div className="settings-row">
             <label htmlFor="silence" style={{ fontWeight: 600 }}>Pausa que encerra a fala</label>
             <div className="row" style={{ gap: 8 }}>
@@ -319,6 +328,8 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </span>
           </label>
         </section>
+
+        <WebAccessSection />
       </div>
     </div>
   );

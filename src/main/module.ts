@@ -10,7 +10,7 @@ export interface Job {
 }
 
 export interface ModuleContext {
-  // ipcMain.handle under the hood; the renderer reaches it with api.invoke(channel, ...args).
+  // The rpc registry: IPC for the window and the HTTP RPC for the browser; the renderer calls api.invoke(channel, ...args).
   handle(channel: string, fn: (...args: never[]) => unknown): void;
   notify(n: Notice): void;
   emit(ev: AppEvent): void;
