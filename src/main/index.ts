@@ -14,7 +14,8 @@ import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
 import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
-import { announceRunning, flushRenderer, forgetRunning, terminateChildren } from './update';
+import { SHOWN_EVENT } from '../shared/update';
+import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { bindIpc, handle } from './rpc';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
@@ -83,6 +84,8 @@ function createWindow(): void {
     webPreferences: { preload: join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  trackWindow(() => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());
+  win.on('show', () => win?.webContents.send('app:event', { type: 'module', name: SHOWN_EVENT, payload: null } satisfies AppEvent));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };

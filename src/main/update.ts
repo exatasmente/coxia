@@ -70,6 +70,12 @@ function readMarker(): { commit: string | null } | null {
   }
 }
 
+let windowVisible: () => boolean = () => true;
+
+export function trackWindow(visible: () => boolean): void {
+  windowVisible = visible;
+}
+
 async function info(): Promise<UpdateInfo> {
   const found = await latest();
   return {
@@ -79,7 +85,7 @@ async function info(): Promise<UpdateInfo> {
     latest: found.latest,
     latestError: found.error,
     logPath: LOG,
-    announce: readMarker() ? BUILD.commit : null,
+    announce: readMarker() && windowVisible() ? BUILD.commit : null,
   };
 }
 

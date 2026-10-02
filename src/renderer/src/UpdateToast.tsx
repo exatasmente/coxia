@@ -1,36 +1,29 @@
 import { useEffect, useState } from 'react';
-import { updatedToast } from '../../shared/update';
+import { SHOWN_EVENT, updatedToast } from '../../shared/update';
+import { moduleEvents } from './api';
 import { isWeb } from './platform';
 import { updateApi } from './updateApi';
 import './update.css';
 
 const SHOWN_MS = 12_000;
 
-// After scripts/update.sh, the first start says which commit it is running, once. A start in the tray
-// (--hidden) waits until the window is actually seen.
+// After scripts/update.sh, the first start says which commit it is running, once. The main process only hands the
+// commit over while the window is visible: a start in the tray (--hidden) waits until the window is shown.
 export function UpdateToast() {
   const [commit, setCommit] = useState<string | null>(null);
 
   useEffect(() => {
     if (isWeb()) return;
-    let off = (): void => undefined;
-    void updateApi.info().then((info) => {
-      const announce = info.announce;
-      if (!announce) return;
-      const show = () => {
-        if (document.visibilityState !== 'visible') return false;
-        setCommit(announce);
+    const check = () => {
+      void updateApi.info().then((info) => {
+        if (!info.announce) return;
+        setCommit(info.announce);
         void updateApi.seen().catch(() => undefined);
-        return true;
-      };
-      if (show()) return;
-      const onVisible = () => {
-        if (show()) off();
-      };
-      document.addEventListener('visibilitychange', onVisible);
-      off = () => document.removeEventListener('visibilitychange', onVisible);
-    }, () => undefined);
-    return () => off();
+      }, () => undefined);
+    };
+    check();
+    moduleEvents.addEventListener(SHOWN_EVENT, check);
+    return () => moduleEvents.removeEventListener(SHOWN_EVENT, check);
   }, []);
 
   useEffect(() => {

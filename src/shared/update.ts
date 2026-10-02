@@ -21,12 +21,15 @@ export interface UpdateInfo {
   latest: LatestCommit | null;
   latestError: string | null;
   logPath: string;
-  // Commit to announce once (the app was just updated by scripts/update.sh), or null.
+  // Commit to announce once (the app was just updated by scripts/update.sh), or null; only while the window is visible.
   announce: string | null;
 }
 
 // The main process asks the window to save what it holds before the app quits for an update.
 export const FLUSH_EVENT = 'update:flush';
+
+// The window was shown (a start in the tray waits for it): the toast checks again.
+export const SHOWN_EVENT = 'update:shown';
 
 export function stripDirty(commit: string): string {
   return commit.replace(/\+dirty$/, '');
