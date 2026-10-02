@@ -95,7 +95,7 @@ export function Conflict({
   return (
     <div className="page">
       <div className="wrap" style={{ gap: 18 }}>
-        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
           <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'actions' })}>
             <BackIcon />
           </button>
@@ -131,7 +131,7 @@ export function Conflict({
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
             {error && <div className="error">{error}</div>}
             <form
-              className="row"
+              className="row composer"
               style={{ flexWrap: 'nowrap' }}
               onSubmit={(e) => {
                 e.preventDefault();

@@ -123,7 +123,7 @@ export function Gate({
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
-        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
           <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}>
             <BackIcon />
           </button>
@@ -205,7 +205,7 @@ export function Gate({
                     </div>
                   )}
                   {active && (
-                    <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) answer({ text: draft.trim() }); setDraft(''); }}>
+                    <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) answer({ text: draft.trim() }); setDraft(''); }}>
                       <input className="text-input" placeholder="Ou responda com as suas palavras (é avaliado, não aceito direto)" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Resposta livre" />
                       <button type="submit" className="btn" disabled={!draft.trim() || !!busy}>Responder</button>
                     </form>
@@ -232,7 +232,7 @@ export function Gate({
                         <div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div>
                       </div>
                     ))}
-                    <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
+                    <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
                       <input className="text-input" placeholder="Pergunte sobre o ponto que escapou" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta de leitura assistida" />
                       <button type="submit" className="btn" disabled={!draft.trim() || !!busy}>Perguntar</button>
                     </form>

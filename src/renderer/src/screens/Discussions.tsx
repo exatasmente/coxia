@@ -122,7 +122,7 @@ export function Discussions({
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
-        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
           <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Discussões · {mr?.ref ?? 'sem MR'} · #{card.iid}</div>
@@ -190,7 +190,7 @@ export function Discussions({
             </section>
 
             {current.explanation && (
-              <section className="panel" style={{ padding: 20, gap: 10 }}>
+              <section className="panel composer-panel" style={{ padding: 20, gap: 10 }}>
                 <h2 className="section-title">Sua resposta</h2>
                 <textarea
                   aria-label="Rascunho da resposta"

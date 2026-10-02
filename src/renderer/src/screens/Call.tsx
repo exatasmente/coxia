@@ -229,7 +229,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
           </aside>
 
           <main className="call-main" style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <section className="panel-dark">
+            <section className="panel-dark hero">
               {phase === 'ended' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 4px' }}>
                   <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fim da pauta</div>
@@ -304,7 +304,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
 
             {phase !== 'ended' && (
-              <div className="row" role="group" aria-label="Controles da call">
+              <div className="row composer" role="group" aria-label="Controles da call">
                 <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
                   <MicIcon />
                   {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}

@@ -88,7 +88,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
-        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
           <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Retorno do QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
@@ -145,7 +145,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
                   <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
-                <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) void ask(draft.trim()); setDraft(''); }}>
+                <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) void ask(draft.trim()); setDraft(''); }}>
                   <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
                   <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>
                 </form>

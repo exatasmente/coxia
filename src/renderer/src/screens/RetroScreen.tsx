@@ -84,7 +84,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
-        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
           <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
@@ -147,7 +147,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
               {retro.talk.map((m, i) => (
                 <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Moderador'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
               ))}
-              <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
+              <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
                 <input className="text-input" placeholder="Ou digite" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Fala na retro" />
                 <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Enviar</button>
               </form>
