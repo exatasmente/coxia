@@ -360,7 +360,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
 
             {phase !== 'ended' && (
-              <div className="row composer" style={{ flexWrap: 'wrap' }} role="group" aria-label="Controles da call">
+              <div className="row composer call-controls" style={{ flexWrap: 'wrap' }} role="group" aria-label="Controles da call">
                 {card && offers.length > 0 && (
                   <div className="call-offers" role="group" aria-label="Respostas sugeridas pelo agente">
                     <span className="small muted">Responder com um toque:</span>
@@ -386,11 +386,14 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                     disabled={phase === 'intro'}
                     onChange={(e) => setDraft(e.target.value)}
                   />
-                  <button type="submit" className="btn btn-dark" disabled={!draft.trim() || busy || rec.recording || phase === 'intro'}>Enviar</button>
+                  <button type="submit" className="btn btn-dark" aria-label="Enviar" disabled={!draft.trim() || busy || rec.recording || phase === 'intro'}>
+                    <span className="lbl">Enviar</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="send-icon"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                  </button>
                 </form>
                 <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
                   <MicIcon />
-                  {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}
+                  <span className="lbl">{rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}</span>
                 </button>
                 <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
                 <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>

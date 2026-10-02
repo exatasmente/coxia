@@ -439,6 +439,28 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   .bubble-fix { padding: 12px 0; font-size: 14px; }
   summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 }
+/* Call controls: offers, text answer and mic share a few compact rows (the 3 rules for specificity beat the base ones below) */
+.call-controls .send-icon { display: none; }
+.call-controls .call-text { flex: 1 1 240px; }
+.call-controls .call-offers { gap: 6px; }
+.call-controls .call-offer { min-height: 36px; padding: 0 12px; }
+@media (max-width: 600px) {
+  .call-controls { gap: 8px; padding: 8px; }
+  .call-controls .call-offers { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
+  .call-controls .call-offers > span { display: none; }
+  .call-controls .call-offer { flex: 0 0 auto; white-space: nowrap; max-width: 78%; overflow: hidden; text-overflow: ellipsis; min-height: 44px !important; }
+  .call-controls .call-text { flex: 1 1 calc(100% - 52px); gap: 6px; }
+  .call-controls .call-text .lbl { display: none; }
+  .call-controls .call-text .send-icon { display: block; }
+  .call-controls .call-text .btn { padding: 0; width: 44px; }
+  .call-controls > button.btn:has(.lbl) { font-size: 0; gap: 0; width: 44px; padding: 0; }
+  .call-controls > .btn { padding: 0 8px; font-size: 12.5px; gap: 4px; }
+  .call-controls > span.row { display: none; }
+}
+@media (max-width: 380px) {
+  .call-controls { gap: 6px; }
+  .call-controls > .btn { padding: 0 6px; font-size: 12px; }
+}
 .glossary { display: flex; flex-direction: column; gap: 8px; }
 .glossary-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(110px, 1.1fr) minmax(140px, 1.8fr) 124px; gap: 8px; align-items: center; }
 .glossary-row > .text-input { min-width: 0; }
