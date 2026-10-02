@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../api';
 import { conflictApi } from '../conflictApi';
+import { VERIFY_DEFAULTS } from '../conflictVerifyDefaults';
 import { isWeb } from '../platform';
 
 // Per project: the shell command that checks a conflict resolution in its worktree before the merge is committed.
@@ -58,15 +59,20 @@ export function ConflictVerifySection() {
       {projects.map((p) => (
         <div key={p} className="settings-row">
           <label htmlFor={`cv-${p}`} className="mono" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{p}</label>
-          <input
-            id={`cv-${p}`}
-            className="text-input mono"
-            style={{ minWidth: 0 }}
-            placeholder="nenhum"
-            disabled={web}
-            value={commands[p] ?? ''}
-            onChange={(e) => setCommands({ ...commands, [p]: e.target.value })}
-          />
+          <div className="row" style={{ minWidth: 0, flexWrap: 'nowrap' }}>
+            <input
+              id={`cv-${p}`}
+              className="text-input mono"
+              style={{ minWidth: 0, flex: 1 }}
+              placeholder="nenhum"
+              disabled={web}
+              value={commands[p] ?? ''}
+              onChange={(e) => setCommands({ ...commands, [p]: e.target.value })}
+            />
+            {!web && VERIFY_DEFAULTS[p] && commands[p] !== VERIFY_DEFAULTS[p] && (
+              <button type="button" className="btn" onClick={() => setCommands({ ...commands, [p]: VERIFY_DEFAULTS[p] })}>Sugestão</button>
+            )}
+          </div>
         </div>
       ))}
       {!web && (
