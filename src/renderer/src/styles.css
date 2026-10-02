@@ -427,7 +427,7 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 /* touch: 44 px targets, 16 px inputs (no iOS zoom), and the replay button needs no hover */
 @media (pointer: coarse), (max-width: 760px) {
   .btn { min-height: 44px !important; min-width: 44px; }
-  a.badge, a.item, .list-row a { display: inline-flex; align-items: center; min-height: 44px; }
+  a.badge, a.item { display: inline-flex; align-items: center; min-height: 44px; }
   .text-input, input:not([type="checkbox"]):not([type="radio"]), textarea, select { min-height: 44px !important; }
   .filter { min-height: 44px; }
   .text-input, textarea, select, input:not([type="checkbox"]):not([type="radio"]) { font-size: 16px !important; }
