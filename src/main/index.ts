@@ -239,6 +239,7 @@ if (!app.requestSingleInstanceLock()) {
     void syncWebAccess().catch((e) => console.error('[web]', e));
     announceRunning();
   });
+  app.on('quit', (_e, code) => console.log(`[app] quit with exit code ${code}`));
   app.on('before-quit', () => {
     quitting = true;
     forgetRunning();

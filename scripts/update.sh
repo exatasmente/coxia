@@ -77,7 +77,8 @@ instance_pids() {
     grep -lazxF "APPIMAGE=$APP" /proc/[0-9]*/environ 2>/dev/null | sed 's|/proc/\([0-9]*\)/environ|\1|' || true
     local f first
     for f in $(grep -laz -- "$APP" /proc/[0-9]*/cmdline 2>/dev/null | sed 's|/proc/\([0-9]*\)/cmdline|\1|' || true); do
-      first="$(tr '\0' '\n' < "/proc/$f/cmdline" 2>/dev/null | head -n 1 || true)"
+      # the process may be gone by now: the 2>/dev/null goes first so the failed redirect stays quiet
+      first="$(tr '\0' '\n' 2>/dev/null < "/proc/$f/cmdline" | head -n 1 || true)"
       [ "$first" = "$APP" ] && echo "$f"
     done
   } | sort -un | grep -vx "$$" || true
