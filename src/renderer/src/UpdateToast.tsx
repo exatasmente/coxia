@@ -1,23 +1,26 @@
 import { useEffect, useState } from 'react';
-import { SHOWN_EVENT, updatedToast } from '../../shared/update';
+import { SHOWN_EVENT } from '../../shared/update';
 import { moduleEvents } from './api';
+import { useT } from './i18n';
 import { isWeb } from './platform';
 import { updateApi } from './updateApi';
 import './update.css';
 
 const SHOWN_MS = 12_000;
 
-// After scripts/update.sh, the first start says which commit it is running, once. The main process only hands the
-// commit over while the window is visible: a start in the tray (--hidden) waits until the window is shown.
+// After an update (scripts/update.sh, or a downloaded release), the first start says what it is running, once: the commit after a rebuild,
+// the version after a release. The main process only hands it over while the window is visible: a start in the tray (--hidden) waits
+// until the window is shown.
 export function UpdateToast() {
-  const [commit, setCommit] = useState<string | null>(null);
+  const t = useT();
+  const [to, setTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (isWeb()) return;
     const check = () => {
       void updateApi.info().then((info) => {
         if (!info.announce) return;
-        setCommit(info.announce);
+        setTo(info.announce);
         void updateApi.seen().catch(() => undefined);
       }, () => undefined);
     };
@@ -27,16 +30,16 @@ export function UpdateToast() {
   }, []);
 
   useEffect(() => {
-    if (!commit) return;
-    const t = setTimeout(() => setCommit(null), SHOWN_MS);
-    return () => clearTimeout(t);
-  }, [commit]);
+    if (!to) return;
+    const timer = setTimeout(() => setTo(null), SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, [to]);
 
-  if (!commit) return null;
+  if (!to) return null;
   return (
     <div className="upd-toast" role="status" aria-live="polite">
-      <span>{updatedToast(commit)}</span>
-      <button type="button" aria-label="Dispensar aviso" onClick={() => setCommit(null)}>×</button>
+      <span>{t('updates.toast.updated', { to })}</span>
+      <button type="button" aria-label={t('updates.toast.dismiss')} onClick={() => setTo(null)}>×</button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import type { BuildInfo, LatestCommit } from '../shared/update';
+import type { BuildInfo } from '../shared/update';
 
-export { buildState, stripDirty } from '../shared/update';
+export { stripDirty } from '../shared/update';
 
 // scripts/update.sh starts the installed binary with this flag: the running instance receives it as a
 // second-instance argv and quits cleanly; the process that sent it exits at once.
@@ -13,13 +13,6 @@ export function wantsQuitForUpdate(argv: readonly string[]): boolean {
 
 export function readBuild(version: string, commit?: string, builtAt?: string): BuildInfo {
   return { version, commit: commit || 'dev', builtAt: builtAt || '' };
-}
-
-// `git log -1 --format=%h%x1f%cI%x1f%s`
-export function parseLatest(out: string): Omit<LatestCommit, 'behind'> | null {
-  const [commit, date, ...subject] = out.trim().split('\x1f');
-  if (!commit || !/^[0-9a-f]{4,40}$/.test(commit) || !date) return null;
-  return { commit, date, subject: subject.join('\x1f') };
 }
 
 // `git rev-list --count <installed>..main`
@@ -55,14 +48,22 @@ export function stateDir(env: NodeJS.ProcessEnv, home: string): string {
 export const updateLogName = 'update.log';
 export const updatedMarkerName = 'updated.json';
 
-// update.sh leaves this after installing; the next start announces it once.
-export function parseUpdatedMarker(text: string): { commit: string | null } | null {
+// update.sh (commit) or the app itself before a published-release install (version) leaves this; the next start announces it once.
+export function parseUpdatedMarker(text: string): { commit: string | null; version: string | null } | null {
   try {
-    const data = JSON.parse(text) as { commit?: unknown };
-    return { commit: typeof data.commit === 'string' ? data.commit : null };
+    const data = JSON.parse(text) as { commit?: unknown; version?: unknown };
+    return { commit: typeof data.commit === 'string' ? data.commit : null, version: typeof data.version === 'string' ? data.version : null };
   } catch {
     return null;
   }
+}
+
+// A source install announces the commit it now runs; a release install announces the version, and only once the app really runs it
+// (the marker is left when the update is downloaded, and the install may happen on a later quit).
+export function announcement(marker: { commit: string | null; version: string | null } | null, build: BuildInfo): string | null {
+  if (!marker) return null;
+  if (marker.version) return marker.version === build.version ? marker.version : null;
+  return build.commit;
 }
 
 export function runInfo(pid: number, build: BuildInfo, startedAt: string): Record<string, string | number> {
