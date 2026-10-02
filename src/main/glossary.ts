@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_GLOSSARY, type Term, sanitizeGlossary, spoken } from '../shared/glossary';
 import { getSettings } from './config';
 import { ATAS } from './env';
 import type { Module } from './module';
-import { speak, voicesFor } from './voice';
+import { planSpeech, speakSegment, voicesFor } from './voice';
 
 const FILE = join(ATAS, 'glossario.json');
 
@@ -32,10 +32,8 @@ function save(terms: unknown): Term[] {
 async function hear(text: string, terms: unknown): Promise<ArrayBuffer> {
   const { engine } = getSettings().voice;
   const said = spoken(String(text).slice(0, 400), sanitizeGlossary(terms));
-  const path = await speak(said, voicesFor(engine).moderator, engine, { prosody: false, glossary: [] });
-  const bytes = readFileSync(path);
-  unlinkSync(path);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const [segment] = planSpeech(said, voicesFor(engine).moderator, engine, { prosody: false, glossary: [] });
+  return segment ? speakSegment('glossary', segment) : new ArrayBuffer(0);
 }
 
 export const register: Module = (ctx) => {

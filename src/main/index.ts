@@ -1,8 +1,7 @@
-import { readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
 import type { Settings } from '../shared/settings';
-import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
+import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, Voice } from '../shared/types';
 import { approveAction, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
@@ -17,7 +16,7 @@ import { checkStatus, type Notice, registerJob, startScheduler } from './schedul
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { glossary } from './glossary';
-import { speak, startVoice, stopVoice, transcribe, voicesFor } from './voice';
+import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 
 // Autostart launches with --hidden: the app starts in the tray only.
 const HIDDEN = process.argv.includes('--hidden');
@@ -118,13 +117,12 @@ function handlers(): void {
   ipcMain.handle('deep:options', (_e, card: Card, sessionId: string) => deepOptions(card, sessionId));
   ipcMain.handle('ata:teams', (_e, minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
   ipcMain.handle('ata:save', (_e, minutes: Minutes, teams: string, selected: number[]) => saveMinutes(minutes, teams, selected));
-  ipcMain.handle('voice:speak', async (_e, text: string, voice: Voice) => {
+  ipcMain.handle('voice:plan', (_e, text: string, voice: Voice) => {
     const { engine, prosody } = getSettings().voice;
-    const path = await speak(text, voice, engine, { prosody, glossary: glossary() });
-    const bytes = readFileSync(path);
-    unlinkSync(path);
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return planSpeech(text, voice, engine, { prosody, glossary: glossary() });
   });
+  ipcMain.handle('voice:segment', (_e, token: string, segment: SpeechSegment) => speakSegment(token, segment));
+  ipcMain.handle('voice:cancel', (_e, token: string) => cancelSpeech(token));
   ipcMain.handle('voice:transcribe', (_e, audio: ArrayBuffer) => transcribe(audio, glossary()));
   ipcMain.handle('voice:list', () => voicesFor(getSettings().voice.engine));
   ipcMain.handle('clipboard:copy', (_e, text: string) => clipboard.writeText(text));

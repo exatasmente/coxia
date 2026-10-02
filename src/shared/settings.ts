@@ -21,7 +21,7 @@ export interface Settings {
     retroDay: number;
     retroTime: string;
   };
-  voice: { autoStop: boolean; silenceMs: number; speak: boolean; engine: 'edge' | 'kokoro'; prosody: boolean };
+  voice: { autoStop: boolean; silenceMs: number; speak: boolean; engine: 'edge' | 'kokoro'; prosody: boolean; bargeIn: boolean };
   notifications: boolean;
   closeToTray: boolean;
   retention: { enabled: boolean; days: number };
@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   tools: { files: true, skills: true, gitlabMcp: true, glab: true, subagents: true },
   schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
-  voice: { autoStop: true, silenceMs: 1200, speak: true, engine: 'edge', prosody: true },
+  voice: { autoStop: true, silenceMs: 1200, speak: true, engine: 'edge', prosody: true, bargeIn: true },
   notifications: true,
   closeToTray: true,
   retention: { enabled: false, days: 30 },
