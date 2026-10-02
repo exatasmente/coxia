@@ -1,0 +1,386 @@
+import { useState } from 'react';
+import type { LlmProvider, LlmRole, ProviderKind } from '../../../../shared/config/types';
+import { LLM_ROLES } from '../../../../shared/config/types';
+import {
+  DOC_LINKS,
+  OPEN_PRESETS,
+  PROVIDER_CHOICES,
+  type PresetId,
+  type ProviderDraft,
+  type ProviderTestResult,
+  ROLE_TIERS,
+  type SecretDraft,
+  buildProvider,
+  capabilityWarnings,
+  emptySecretDraft,
+  presetById,
+  providerSecretRef,
+  recommendModel,
+  recommendRoles,
+  secretInputFrom,
+} from '../../../../shared/wizard';
+import { errorText } from '../../api';
+import { useT } from '../../i18n';
+import type { StepProps } from '../SetupWizard';
+import { Chip, ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../ui';
+import { wizardApi } from '../wizardApi';
+
+const blankDraft = (kind: ProviderKind = 'anthropic'): ProviderDraft => ({ kind, preset: 'openai', baseUrl: kind === 'openai-compatible' ? presetById('openai').baseUrl : '', options: {}, model: '' });
+
+type TestState = { running: true } | { running: false; result: ProviderTestResult };
+
+function TestResultView({ p, state }: { p: LlmProvider; state: TestState }) {
+  const t = useT();
+  if (state.running) return <div className="small row" role="status"><span className="spinner" aria-hidden="true" /> {t('wizard.models.testing')}</div>;
+  const r = state.result;
+  const warnings = r.ok && r.engine === 'open' ? capabilityWarnings(r.capabilities) : [];
+  return (
+    <div className="wz-result" role="status">
+      <Notice tone={r.ok ? 'ok' : 'error'}>
+        <strong>{t(r.ok ? 'wizard.models.testOk' : `wizard.models.testFail.${r.code}`)}</strong>
+        {r.ok && <span className="small"> {t('wizard.models.testMs', { ms: r.ms })}</span>}
+        {!r.ok && r.detail && r.code !== 'sdk-missing' && <div className="small mono wz-wrap-anywhere">{r.detail}</div>}
+        {!r.ok && r.messages.length > 0 && <ul className="wz-list">{r.messages.map((m, i) => <li key={i} className="small">{m}</li>)}</ul>}
+      </Notice>
+      {r.ok && r.capabilities && (
+        <div className="wz-chips" aria-label={t('wizard.models.capabilities')}>
+          <Chip ok={r.capabilities.chat}>{t('wizard.cap.chat')}</Chip>
+          <Chip ok={r.capabilities.tools}>{t('wizard.cap.tools')}</Chip>
+          <Chip ok={r.capabilities.jsonSchema}>{t('wizard.cap.jsonSchema')}</Chip>
+          <Chip ok={r.capabilities.streaming}>{t('wizard.cap.streaming')}</Chip>
+          <Chip ok={null}>{r.capabilities.contextWindow ? t('wizard.cap.context', { tokens: r.capabilities.contextWindow.toLocaleString() }) : t('wizard.cap.contextUnknown')}</Chip>
+        </div>
+      )}
+      {warnings.filter((w) => w !== 'untested').map((w) => <Notice key={w} tone="warn">{t(`wizard.warn.${w}`)}</Notice>)}
+      {r.ok && r.engine === 'open' && r.messages.length > 0 && (
+        <details className="wz-details"><summary>{t('wizard.models.details')}</summary><ul className="wz-list">{r.messages.map((m, i) => <li key={i} className="small">{m}</li>)}</ul></details>
+      )}
+      {r.ok && r.models.length > 0 && <p className="small muted">{t('wizard.models.listed', { count: r.models.length })}</p>}
+      {p.engine === 'claude-sdk' && r.ok && <p className="small muted">{t('wizard.models.sdkAnswered')}</p>}
+    </div>
+  );
+}
+
+export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
+  const t = useT();
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<ProviderDraft>(blankDraft());
+  const [useKey, setUseKey] = useState(true);
+  const [secret, setSecret] = useState<SecretDraft>(emptySecretDraft());
+  const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [keyFor, setKeyFor] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState<SecretDraft>(emptySecretDraft());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [recFor, setRecFor] = useState('');
+
+  const providers = cfg.llm.providers;
+  const kindInfo = PROVIDER_CHOICES.find((k) => k.kind === draft.kind);
+  const preset = draft.kind === 'openai-compatible' ? presetById(draft.preset) : null;
+  const keyOptional = draft.kind === 'bedrock' || draft.kind === 'foundry' || (preset !== null && !preset.keyRequired);
+  const keyOffered = draft.kind !== 'vertex';
+  const keyOn = keyOffered && (!keyOptional || useKey);
+
+  const acceptInsecure = () => void wizardApi.acceptInsecure().then(refreshView, (e) => setError(errorText(e)));
+  const keyOf = (p: LlmProvider) => (p.secretRef ? view.secrets.find((s) => s.ref === p.secretRef) : undefined);
+
+  const setKind = (kind: ProviderKind) => {
+    setDraft(blankDraft(kind));
+    setUseKey(kind === 'anthropic');
+    setSecret(emptySecretDraft());
+    setError(null);
+  };
+  const setPreset = (id: PresetId) => {
+    const pr = presetById(id);
+    setDraft((d) => ({ ...d, preset: id, baseUrl: pr.baseUrl, model: '' }));
+    setUseKey(pr.keyRequired);
+  };
+
+  const draftProblem = (): string | null => {
+    const o = draft.options;
+    if (draft.kind === 'openai-compatible' && !/^https?:\/\/\S+$/.test(draft.baseUrl.trim())) return 'wizard.models.problem.baseUrl';
+    if (draft.kind === 'bedrock' && !o.region?.trim()) return 'wizard.models.problem.region';
+    if (draft.kind === 'vertex' && !(o.project?.trim() && o.region?.trim())) return 'wizard.models.problem.vertex';
+    if (draft.kind === 'foundry' && !o.resource?.trim()) return 'wizard.models.problem.resource';
+    return null;
+  };
+
+  const runTest = async (p: LlmProvider, config = cfg) => {
+    setTests((all) => ({ ...all, [p.id]: { running: true } }));
+    try {
+      await wizardApi.save(config);
+      const model = Object.values(config.llm.roles).find((r) => r.provider === p.id)?.model ?? p.models[0];
+      const result = await wizardApi.testProvider(p.id, model);
+      setTests((all) => ({ ...all, [p.id]: { running: false, result } }));
+      if (result.ok && result.engine === 'open') {
+        setCfg((c) => ({
+          ...c,
+          llm: { ...c.llm, providers: c.llm.providers.map((x) => (x.id === p.id ? { ...x, capabilities: result.capabilities, models: [...new Set([...x.models, ...result.models])].slice(0, 200) } : x)) },
+        }));
+      }
+    } catch (e) {
+      setTests((all) => ({ ...all, [p.id]: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], answered: false, ms: 0 } } }));
+    }
+  };
+
+  const add = async () => {
+    setError(null);
+    const problem = draftProblem();
+    if (problem) {
+      setError(t(problem));
+      return;
+    }
+    setBusy(true);
+    try {
+      const provider = buildProvider(draft, providers.map((p) => p.id), keyOn);
+      if (keyOn) {
+        const r = secretInputFrom(providerSecretRef(provider.id), secret);
+        if ('problem' in r) {
+          if (!keyOptional) {
+            setError(t(secretProblemKey(r.problem)));
+            return;
+          }
+          provider.secretRef = null;
+        } else await wizardApi.secretSet(r.input);
+      }
+      const next = { ...cfg, llm: { ...cfg.llm, providers: [...providers, provider] } };
+      setCfg(() => next);
+      await wizardApi.save(next);
+      await refreshView();
+      setAdding(false);
+      setDraft(blankDraft());
+      setSecret(emptySecretDraft());
+      if (provider.engine === 'open' && preset?.local) void runTest(provider, next);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveKey = async (p: LlmProvider) => {
+    setError(null);
+    const ref = p.secretRef ?? providerSecretRef(p.id);
+    const r = secretInputFrom(ref, keyDraft);
+    if ('problem' in r) {
+      setError(t(secretProblemKey(r.problem)));
+      return;
+    }
+    try {
+      await wizardApi.secretSet(r.input);
+      if (!p.secretRef) setCfg((c) => ({ ...c, llm: { ...c.llm, providers: c.llm.providers.map((x) => (x.id === p.id ? { ...x, secretRef: ref } : x)) } }));
+      setKeyFor(null);
+      setKeyDraft(emptySecretDraft());
+      await refreshView();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const remove = (p: LlmProvider) => {
+    const rest = providers.filter((x) => x.id !== p.id);
+    if (!rest.length) return;
+    setCfg((c) => {
+      const fallback = rest[0];
+      const roles = { ...c.llm.roles };
+      for (const r of LLM_ROLES) if (roles[r].provider === p.id) roles[r] = { provider: fallback.id, model: recommendModel(fallback, ROLE_TIERS[r]) ?? roles[r].model };
+      return { ...c, llm: { providers: rest, roles } };
+    });
+    if (p.secretRef === providerSecretRef(p.id)) void wizardApi.secretRemove(p.secretRef).then(refreshView, () => undefined);
+    setTests((all) => {
+      const { [p.id]: _gone, ...others } = all;
+      return others;
+    });
+  };
+
+  const setRole = (role: LlmRole, patch: Partial<{ provider: string; model: string }>) =>
+    setCfg((c) => {
+      const cur = c.llm.roles[role];
+      const providerChanged = patch.provider !== undefined && patch.provider !== cur.provider;
+      const prov = c.llm.providers.find((p) => p.id === (patch.provider ?? cur.provider));
+      const model = patch.model ?? (providerChanged && prov ? (recommendModel(prov, ROLE_TIERS[role]) ?? '') : cur.model);
+      return { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, [role]: { provider: patch.provider ?? cur.provider, model } } } };
+    });
+
+  const applyRecommendations = (providerId: string) => {
+    const prov = providers.find((p) => p.id === providerId);
+    const rec = prov ? recommendRoles([prov]) : null;
+    if (rec) setCfg((c) => ({ ...c, llm: { ...c.llm, roles: rec } }));
+  };
+
+  const roleWarnings = (role: LlmRole): string[] => {
+    const rm = cfg.llm.roles[role];
+    const p = providers.find((x) => x.id === rm.provider);
+    if (!p || p.engine !== 'open') return [];
+    return capabilityWarnings(p.capabilities).map((w) => `wizard.warn.${w}`).filter((k) => k !== 'wizard.warn.no-json-schema');
+  };
+
+  return (
+    <div className="wz-stack">
+      <Notice tone="info">{t('wizard.models.noSubscription')}</Notice>
+      {error && <div className="error" role="alert">{error}</div>}
+
+      <section className="wz-stack" aria-labelledby="wz-providers">
+        <h3 id="wz-providers" className="wz-sub">{t('wizard.models.providers')}</h3>
+        <ul className="wz-cards">
+          {providers.map((p) => {
+            const key = keyOf(p);
+            const state = tests[p.id];
+            return (
+              <li key={p.id} className="wz-card-item">
+                <div className="wz-card-head">
+                  <div>
+                    <div className="wz-card-title">{t(`wizard.kind.${p.kind}`)} <span className="small muted mono">{p.id}</span></div>
+                    <div className="small muted wz-wrap-anywhere">
+                      {p.baseUrl && <span className="mono">{p.baseUrl}</span>}
+                      {Object.keys(p.options).length > 0 && <span className="mono"> {Object.entries(p.options).map(([k, v]) => `${k}=${v}`).join(' ')}</span>}
+                    </div>
+                  </div>
+                  <span className="badge badge-quiet">{t(p.engine === 'open' ? 'wizard.engine.open' : 'wizard.engine.sdk')}</span>
+                </div>
+                {p.secretRef !== null && (
+                  <div className="small row" style={{ gap: 8 }}>
+                    {key?.available ? <span style={{ color: 'var(--teal-ink)' }}>✓ {t('wizard.models.keyOk', { source: t(`wizard.secret.source.${key.source}`) })}</span> : <span style={{ color: 'var(--warn)' }}>{key ? t('wizard.models.keyUnavailable') : t('wizard.models.keyMissing')}</span>}
+                  </div>
+                )}
+                <div className="wz-actions">
+                  <button type="button" className="btn" disabled={!!state && state.running} onClick={() => void runTest(p)}>{t('wizard.models.test')}</button>
+                  {p.kind !== 'vertex' && <button type="button" className="btn" onClick={() => { setKeyFor(keyFor === p.id ? null : p.id); setKeyDraft(emptySecretDraft()); }}>{t(key ? 'wizard.models.changeKey' : 'wizard.models.setKey')}</button>}
+                  <button type="button" className="btn" disabled={providers.length < 2} title={providers.length < 2 ? t('wizard.models.removeLast') : undefined} onClick={() => remove(p)}>{t('wizard.models.remove')}</button>
+                </div>
+                {keyFor === p.id && (
+                  <div className="wz-stack">
+                    <SecretFields noun={t('wizard.noun.key')} draft={keyDraft} onChange={setKeyDraft} storage={view.storage} onAcceptInsecure={acceptInsecure} />
+                    <div className="wz-actions">
+                      <button type="button" className="btn btn-dark" onClick={() => void saveKey(p)}>{t('wizard.secret.save')}</button>
+                      <button type="button" className="btn" onClick={() => setKeyFor(null)}>{t('wizard.cancel')}</button>
+                    </div>
+                  </div>
+                )}
+                {state && <TestResultView p={p} state={state} />}
+                <datalist id={`models-${p.id}`}>{p.models.map((m) => <option key={m} value={m} />)}</datalist>
+              </li>
+            );
+          })}
+        </ul>
+
+        {!adding ? (
+          <div className="wz-actions"><button type="button" className="btn" onClick={() => setAdding(true)}>{t('wizard.models.add')}</button></div>
+        ) : (
+          <form className="wz-card-item wz-stack" onSubmit={(e) => { e.preventDefault(); void add(); }} aria-label={t('wizard.models.add')}>
+            <Field label={t('wizard.models.kind')} htmlFor="wz-kind">
+              <select id="wz-kind" className="text-input" value={draft.kind} onChange={(e) => setKind(e.target.value as ProviderKind)}>
+                {PROVIDER_CHOICES.map((k) => <option key={k.kind} value={k.kind}>{t(`wizard.kind.${k.kind}`)}</option>)}
+              </select>
+            </Field>
+            <p className="small muted">{t(`wizard.kind.${draft.kind}.hint`)}</p>
+
+            {draft.kind === 'openai-compatible' && (
+              <>
+                <Field label={t('wizard.models.preset')} htmlFor="wz-preset">
+                  <select id="wz-preset" className="text-input" value={draft.preset} onChange={(e) => setPreset(e.target.value as PresetId)}>
+                    {OPEN_PRESETS.map((p) => <option key={p.id} value={p.id}>{t(`wizard.preset.${p.id}`)}</option>)}
+                  </select>
+                </Field>
+                <Field label={t('wizard.models.baseUrl')} htmlFor="wz-base" hint={t('wizard.models.baseUrlHint')}>
+                  <input id="wz-base" className="text-input mono" inputMode="url" spellCheck={false} value={draft.baseUrl} onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
+                </Field>
+                <Field label={t('wizard.models.model')} htmlFor="wz-model" hint={t('wizard.models.modelHint')}>
+                  <input id="wz-model" className="text-input mono" spellCheck={false} placeholder={preset?.suggestedModels[0] ?? ''} value={draft.model} onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))} />
+                </Field>
+                {preset?.local && <Notice tone="info">{t('wizard.models.localHint')}</Notice>}
+                {preset?.keyUrl && <p className="small"><ExternalLink href={preset.keyUrl}>{t('wizard.models.createKey')}</ExternalLink></p>}
+              </>
+            )}
+            {draft.kind === 'bedrock' && (
+              <>
+                <Field label={t('wizard.models.region')} htmlFor="wz-region" hint={t('wizard.models.bedrockRegionHint')}>
+                  <input id="wz-region" className="text-input mono" placeholder="us-east-1" spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
+                </Field>
+                <Field label={t('wizard.models.awsProfile')} htmlFor="wz-profile" hint={t('wizard.models.awsProfileHint')}>
+                  <input id="wz-profile" className="text-input mono" spellCheck={false} value={draft.options.profile ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, profile: e.target.value } }))} />
+                </Field>
+                <Notice tone="info">{t('wizard.models.bedrockCreds')} <ExternalLink href={DOC_LINKS.bedrock}>{t('wizard.docs')}</ExternalLink></Notice>
+              </>
+            )}
+            {draft.kind === 'vertex' && (
+              <>
+                <Field label={t('wizard.models.gcpProject')} htmlFor="wz-gcp">
+                  <input id="wz-gcp" className="text-input mono" spellCheck={false} value={draft.options.project ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, project: e.target.value } }))} />
+                </Field>
+                <Field label={t('wizard.models.region')} htmlFor="wz-vregion" hint={t('wizard.models.vertexRegionHint')}>
+                  <input id="wz-vregion" className="text-input mono" placeholder="global" spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
+                </Field>
+                <Notice tone="info">{t('wizard.models.vertexCreds')} <ExternalLink href={DOC_LINKS.vertex}>{t('wizard.docs')}</ExternalLink></Notice>
+              </>
+            )}
+            {draft.kind === 'foundry' && (
+              <>
+                <Field label={t('wizard.models.foundryResource')} htmlFor="wz-resource" hint={t('wizard.models.foundryResourceHint')}>
+                  <input id="wz-resource" className="text-input mono" spellCheck={false} value={draft.options.resource ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, resource: e.target.value } }))} />
+                </Field>
+                <Notice tone="info">{t('wizard.models.foundryCreds')} <ExternalLink href={DOC_LINKS.foundry}>{t('wizard.docs')}</ExternalLink></Notice>
+              </>
+            )}
+            {draft.kind === 'anthropic' && <p className="small"><ExternalLink href={DOC_LINKS.anthropicKeys}>{t('wizard.models.createKey')}</ExternalLink></p>}
+
+            {keyOffered && (
+              <div className="wz-stack">
+                {keyOptional && (
+                  <label className="wz-radio">
+                    <input type="checkbox" checked={useKey} onChange={(e) => setUseKey(e.target.checked)} />
+                    <span>{t(draft.kind === 'bedrock' ? 'wizard.models.useToken' : 'wizard.models.useKey')}</span>
+                  </label>
+                )}
+                {keyOn && <SecretFields noun={t(draft.kind === 'bedrock' ? 'wizard.noun.token' : 'wizard.noun.key')} draft={secret} onChange={setSecret} storage={view.storage} onAcceptInsecure={acceptInsecure} />}
+              </div>
+            )}
+            {kindInfo && !kindInfo.claude && <p className="small muted">{t('wizard.models.openEngineNote')}</p>}
+
+            <div className="wz-actions">
+              <button type="submit" className="btn btn-dark" disabled={busy}>{busy ? <span className="spinner" aria-hidden="true" /> : null} {t('wizard.models.addSubmit')}</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => { setAdding(false); setError(null); }}>{t('wizard.cancel')}</button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <section className="wz-stack" aria-labelledby="wz-roles">
+        <div className="wz-roles-head">
+          <h3 id="wz-roles" className="wz-sub">{t('wizard.models.roles')}</h3>
+          {providers.length > 0 && (
+            <div className="wz-actions">
+              <label className="wz-sr" htmlFor="wz-rec-provider">{t('wizard.models.recommendFor')}</label>
+              <select id="wz-rec-provider" className="text-input" style={{ maxWidth: 220 }} value={providers.some((p) => p.id === recFor) ? recFor : providers[providers.length - 1].id} onChange={(e) => setRecFor(e.target.value)}>
+                {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+              </select>
+              <button type="button" className="btn" onClick={() => applyRecommendations(providers.some((p) => p.id === recFor) ? recFor : providers[providers.length - 1].id)}>{t('wizard.models.recommend')}</button>
+            </div>
+          )}
+        </div>
+        <p className="small muted">{t('wizard.models.rolesHint')}</p>
+        {LLM_ROLES.map((role) => {
+          const rm = cfg.llm.roles[role];
+          const prov = providers.find((p) => p.id === rm.provider);
+          const rec = prov ? recommendModel(prov, ROLE_TIERS[role]) : null;
+          return (
+            <div key={role} className="wz-role">
+              <div>
+                <div className="wz-label">{t(`wizard.role.${role}`)}</div>
+                <div className="small muted">{t(`wizard.role.${role}.hint`)}</div>
+              </div>
+              <div className="wz-role-pick">
+                <select className="text-input" aria-label={t('wizard.models.roleProvider', { role: t(`wizard.role.${role}`) })} value={rm.provider} onChange={(e) => setRole(role, { provider: e.target.value })}>
+                  {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+                </select>
+                <input className="text-input mono" list={`models-${rm.provider}`} spellCheck={false} aria-label={t('wizard.models.roleModel', { role: t(`wizard.role.${role}`) })} value={rm.model} onChange={(e) => setRole(role, { model: e.target.value.trim() })} />
+              </div>
+              {rec && rec !== rm.model && <button type="button" className="btn wz-linkbtn" onClick={() => setRole(role, { model: rec })}>{t('wizard.models.useRecommended', { model: rec })}</button>}
+              {roleWarnings(role).map((k) => <Notice key={k} tone="warn">{t(k)}</Notice>)}
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}

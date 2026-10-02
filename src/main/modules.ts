@@ -15,6 +15,7 @@ import { retention } from './retention';
 import { saude } from './saude';
 import { update } from './update';
 import { voiceModule } from './voiceModule';
+import { wizard } from './wizard';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
 
@@ -37,5 +38,6 @@ export const MODULES: Module[] = [
   update,
   voiceModule,
   watchers,
+  wizard,
   workspaces,
 ];

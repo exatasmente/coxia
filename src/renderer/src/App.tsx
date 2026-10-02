@@ -31,6 +31,8 @@ import { JobsDock } from './JobsDock';
 import { UpdateToast } from './UpdateToast';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
+import { SetupWizard } from './wizard/SetupWizard';
+import { wizardApi } from './wizard/wizardApi';
 
 export type Screen =
   | { name: 'today' }
@@ -53,6 +55,7 @@ export type Screen =
   | { name: 'auditoria' }
   | { name: 'help' }
   | { name: 'glossario' }
+  | { name: 'wizard' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -69,6 +72,11 @@ export function App() {
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
   const [actions, setActions] = useState<ReleaseAction[]>([]);
+  // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
+  const [setup, setSetup] = useState<'checking' | 'needed' | 'done'>('checking');
+  useEffect(() => {
+    void wizardApi.config().then((v) => setSetup(v.config.setupComplete ? 'done' : 'needed'), () => setSetup('done'));
+  }, []);
 
   // Speech is not cut by navigation: it keeps playing and NowPlaying offers the way back to its screen.
   const go = (next: Screen) => setScreen(next);
@@ -180,9 +188,14 @@ export function App() {
       return <Saude go={go} />;
     case 'glossario':
       return <Glossario go={go} />;
+    case 'wizard':
+      return <SetupWizard firstRun={false} onClose={() => go({ name: 'settings' })} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   } })();
+
+  if (setup === 'checking') return <div className="page"><div className="wrap"><span className="spinner" aria-hidden="true" /></div></div>;
+  if (setup === 'needed') return <SetupWizard firstRun onClose={() => setSetup('done')} />;
 
   return (
     <>

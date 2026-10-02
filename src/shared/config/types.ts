@@ -344,6 +344,8 @@ export interface WorkspaceConfig {
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
   setupComplete: boolean;
   language: Language;
+  /** How the agents address the user. Empty: no name. */
+  userName: string;
   appearance: { theme: Theme };
   notifications: boolean;
   closeToTray: boolean;

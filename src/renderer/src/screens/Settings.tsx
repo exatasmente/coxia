@@ -16,7 +16,7 @@ import { RetentionSection } from './RetentionSection';
 import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
 import { UpdateSection } from './UpdateSection';
-import { WorkspacesSection } from './WorkspacesSection';
+import { ConfigWorkspacesSection } from './ConfigWorkspacesSection';
 
 const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
@@ -114,7 +114,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         </header>
         {error && <div className="error">{error}</div>}
 
-        <WorkspacesSection />
+        <ConfigWorkspacesSection go={go} />
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
