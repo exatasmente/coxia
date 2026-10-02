@@ -8,7 +8,8 @@ import type { Ceremony } from '../ceremony';
 import { feedbackApi } from '../feedbackApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { Wave } from './Wave';
+import { RichText } from './Diagram';
+import { Presence } from './Avatar';
 
 const CLASS_LABEL: Record<ReentryClass, string> = {
   'defeito-novo': 'Defeito novo',
@@ -93,7 +94,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Retorno do QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} small />
+          <Presence recording={talk.recording} face={'var(--night-orange)'} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} small />
           {re && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
@@ -141,7 +142,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas</h2>
                 {re.talk.map((m, i) => (
-                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}>{m.text}</div></div></div>
+                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) void ask(draft.trim()); setDraft(''); }}>

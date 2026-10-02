@@ -6,6 +6,7 @@ import { api, errorText, plural } from '../api';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
 import { BackIcon } from './icons';
+import { RichText } from './Diagram';
 
 function time(ms: number | null): string {
   return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
@@ -208,7 +209,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                       <div key={i} className={`bubble-row ${msg.me ? 'me' : ''}`}>
                         <div className="bubble">
                           <div className="who">{msg.me ? 'Você' : 'Agente'} · {msg.at}</div>
-                          <div style={{ lineHeight: 1.5 }}>{msg.text}</div>
+                          <div style={{ lineHeight: 1.5 }}><RichText text={msg.text} /></div>
                         </div>
                       </div>
                     ))}

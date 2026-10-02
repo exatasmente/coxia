@@ -5,8 +5,9 @@ import { api, errorText } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
+import { Diagram, RichText } from './Diagram';
 import { BackIcon, MicIcon } from './icons';
-import { Wave } from './Wave';
+import { Presence } from './Avatar';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -132,7 +133,7 @@ export function Gate({
             </div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
+          <Presence recording={rec.recording} face={'var(--night-blue)'} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
           {gate && (
             <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
               <MicIcon /> {rec.recording ? 'Enviar fala' : roundDone ? 'Perguntar (espaço)' : 'Responder (espaço)'}
@@ -228,7 +229,7 @@ export function Gate({
                     </p>
                     {gate.talk.map((m, i) => (
                       <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
-                        <div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}>{m.text}</div></div>
+                        <div className="bubble"><div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div>
                       </div>
                     ))}
                     <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
@@ -238,7 +239,7 @@ export function Gate({
                     {round.visual ? (
                       <div className="item">
                         <span className="small">{round.visual.description} → <span className="mono">{round.visual.heading}</span></span>
-                        <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: 0, background: 'var(--surface-2)', padding: 10, borderRadius: 8 }}>{round.visual.mermaid}</pre>
+                        <Diagram code={round.visual.mermaid} title={round.visual.description} />
                         {round.visual.inserted ? (
                           <span className="small" style={{ color: 'var(--teal-ink)' }}>Inserido no artefato.</span>
                         ) : confirmInsert ? (

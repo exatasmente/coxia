@@ -5,7 +5,7 @@ import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
-import { Wave } from './Wave';
+import { Presence } from './Avatar';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
 
@@ -275,7 +275,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </div>
 
                   <div className="row" style={{ gap: 16, minHeight: 64, flexWrap: 'nowrap' }}>
-                    <Wave on={!!speakingWho || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={rec.level} />
+                    <Presence recording={rec.recording} face={card ? c.colorOf(card.ref) : 'var(--muted)'} on={!!speakingWho || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={rec.level} />
                     <span className={`speaker ${rec.recording ? 'me' : !speakingWho && !busy && phase !== 'preparing' ? 'idle' : ''}`}>{speakerLabel}</span>
                   </div>
 

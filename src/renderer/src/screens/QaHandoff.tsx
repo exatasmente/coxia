@@ -6,7 +6,8 @@ import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { Wave } from './Wave';
+import { RichText } from './Diagram';
+import { Presence } from './Avatar';
 
 function checklistText(q: Qa): string {
   return [`QA Checklist — #${q.iid} ${q.title}`, '', ...q.checklist.flatMap((s) => [`${s.title}:`, ...s.items.map((i) => `- [ ] ${i}`), ''])].join('\n');
@@ -78,7 +79,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Passagem para o QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
+          <Presence recording={talk.recording} face={'var(--night-violet)'} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
           {qa && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
@@ -151,7 +152,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas do QA</h2>
                 {qa.talk.map((m, i) => (
-                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Pergunta' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}>{m.text}</div></div></div>
+                  <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Pergunta' : 'Agente'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>

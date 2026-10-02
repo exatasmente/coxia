@@ -45,13 +45,34 @@ export function speechEnabled(): boolean {
   return speechOn;
 }
 
+export function useSpeechEnabled(): boolean {
+  const [on, setOn] = useState(speechOn);
+  useEffect(() => {
+    const onChange = () => setOn(speechOn);
+    speechEvents.addEventListener('change', onChange);
+    return () => speechEvents.removeEventListener('change', onChange);
+  }, []);
+  return on;
+}
+
+// With the voice off the agent still "talks" for its reading time, so the avatar moves and the flow keeps its pace.
+export function readingMs(text: string): number {
+  return Math.min(9000, Math.max(1200, text.length * 45));
+}
+
 export function usePlayer() {
   const current = useRef<HTMLAudioElement | null>(null);
+  const silent = useRef<{ timer: ReturnType<typeof setTimeout>; done: () => void } | null>(null);
   const [speaking, setSpeaking] = useState<string | null>(null);
 
   const stop = useCallback(() => {
     current.current?.pause();
     current.current = null;
+    if (silent.current) {
+      clearTimeout(silent.current.timer);
+      silent.current.done();
+      silent.current = null;
+    }
     setSpeaking(null);
   }, []);
 
@@ -65,7 +86,17 @@ export function usePlayer() {
 
   const say = useCallback(
     async (text: string, voice: Voice, who: string) => {
-      if (!speechOn) return;
+      if (!speechOn) {
+        stop();
+        setSpeaking(who);
+        await new Promise<void>((done) => {
+          const entry = { timer: setTimeout(() => done(), readingMs(text)), done };
+          silent.current = entry;
+        });
+        silent.current = null;
+        setSpeaking((w) => (w === who ? null : w));
+        return;
+      }
       const bytes = await synthesize(text, voice);
       stop();
       const url = URL.createObjectURL(new Blob([bytes], { type: mimeOf(bytes) }));

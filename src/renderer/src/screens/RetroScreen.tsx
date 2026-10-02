@@ -6,7 +6,8 @@ import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { Wave } from './Wave';
+import { RichText } from './Diagram';
+import { Presence } from './Avatar';
 
 function improvementEntry(m: Improvement): string {
   return [`### N. ${m.title}`, '', `**Dimensão:** ${m.dimension}`, '', `**O problema hoje:** ${m.problem}`, '', `**O que seria:** ${m.proposal}`, ''].join('\n');
@@ -89,7 +90,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>Processo, não pessoas</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={talk.level} small />
+          <Presence recording={talk.recording} face={'var(--teal-bright)'} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={talk.level} small />
           {retro && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}
@@ -144,7 +145,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <section className="panel" style={{ padding: 20, gap: 10 }}>
               <h2 className="section-title">Conversa</h2>
               {retro.talk.map((m, i) => (
-                <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Moderador'} · {m.at}</div><div style={{ lineHeight: 1.5 }}>{m.text}</div></div></div>
+                <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Moderador'} · {m.at}</div><div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div></div></div>
               ))}
               <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
                 <input className="text-input" placeholder="Ou digite" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Fala na retro" />

@@ -6,7 +6,8 @@ import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
-import { Wave } from './Wave';
+import { RichText } from './Diagram';
+import { Presence } from './Avatar';
 
 const OPENING = 'Explique o conflito: o que cada lado mudou, por que conflita e a resolução que você propõe, com o que testar depois.';
 
@@ -102,7 +103,7 @@ export function Conflict({
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
+          <Presence recording={rec.recording} face={'var(--night-orange)'} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
           <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
             <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
           </button>
@@ -123,7 +124,7 @@ export function Conflict({
               <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
                 <div className="bubble">
                   <div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div>
-                  <div style={{ lineHeight: 1.5 }}>{m.text}</div>
+                  <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
                 </div>
               </div>
             ))}
