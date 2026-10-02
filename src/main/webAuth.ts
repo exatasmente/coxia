@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Device } from '../shared/webAccess';
+import { t } from '../shared/i18n';
 
 // No 0/O, 1/I/L: the code is read from a screen and typed on a phone.
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -93,7 +94,7 @@ export function createAuth(file: string, now: () => number = Date.now): Auth {
     globalFails = recent(globalFails);
     if (own.length >= FAILS_PER_IP || globalFails.length >= FAILS_GLOBAL) {
       const oldest = own.length >= FAILS_PER_IP ? own[0] : globalFails[0];
-      throw new AuthError(429, 'Muitas tentativas. Aguarde alguns minutos.', Math.max(1, Math.ceil((oldest + FAIL_WINDOW_MS - now()) / 1000)));
+      throw new AuthError(429, t('main.web.tooMany'), Math.max(1, Math.ceil((oldest + FAIL_WINDOW_MS - now()) / 1000)));
     }
   }
 
@@ -102,7 +103,7 @@ export function createAuth(file: string, now: () => number = Date.now): Auth {
     if (fails.size > 1000) for (const [k, list] of fails) if (!recent(list).length) fails.delete(k);
     globalFails.push(now());
     if (pairing && ++pairing.fails >= FAILS_PER_CODE) pairing = null;
-    throw new AuthError(401, 'Código inválido ou expirado.');
+    throw new AuthError(401, t('main.web.badCode'));
   }
 
   return {

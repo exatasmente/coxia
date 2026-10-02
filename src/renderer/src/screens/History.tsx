@@ -2,29 +2,30 @@ import { useEffect, useState } from 'react';
 import { buildMinutes } from '../../../shared/minutes';
 import type { HistoryEntry, SavedCeremony } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api, errorText, plural } from '../api';
+import { api, errorText } from '../api';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
+import { intlLocale, t, tv, useT } from '../i18n';
 import { BackIcon } from './icons';
 import { RichText } from './Diagram';
 import { ChangeSummary, DayPanel, DeleteSheet, TrashSection, clockTime, versionTitle } from './MinutesParts';
 import { type Which, minutesApi, useDay } from '../minutesApi';
-import { t, tv } from '../i18n';
 
 function time(ms: number | null): string {
-  return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  return ms ? new Date(ms).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '--:--';
 }
 
 function span(start: number | null, end: number | null): string {
-  return end ? `${time(start)}–${time(end)}` : `${time(start)} · em andamento`;
+  return end ? `${time(start)}–${time(end)}` : t('ui.history.inProgress', { start: time(start) });
 }
 
 function day(date: string): string {
-  const d = new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const d = new Date(`${date}T12:00:00`).toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
 export function History({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<SavedCeremony | null>(null);
@@ -72,16 +73,16 @@ export function History({ go }: { go: (s: Screen) => void }) {
     <div className="page">
       <div className="wrap" style={{ gap: 20 }}>
         <header className="row" style={{ gap: 14 }}>
-          <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
-          <h1 style={{ fontSize: 26, fontWeight: 700 }}>Histórico de cerimônias</h1>
-          <span className="faint">{entries ? `${entries.length} cerimônias` : ''}</span>
+          <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.history.title')}</h1>
+          <span className="faint">{entries ? t('ui.history.count', { count: entries.length }) : ''}</span>
         </header>
         {error && <div className="error">{error}</div>}
 
         <div className="cols" style={{ gap: 20 }}>
           <aside className="panel" style={{ flex: '1 1 280px', maxWidth: 340, minWidth: 260, gap: 6 }}>
-            {!entries && <div className="row faint"><span className="spinner" /> Lendo o histórico…</div>}
-            {entries?.length === 0 && <p className="small faint">Nenhuma cerimônia gravada ainda.</p>}
+            {!entries && <div className="row faint"><span className="spinner" /> {t('ui.history.loading')}</div>}
+            {entries?.length === 0 && <p className="small faint">{t('ui.history.empty')}</p>}
             {days.map((date) => (
               <div key={date} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
                 <h2 className="section-title" style={{ fontSize: 12 }}>{day(date)}</h2>
@@ -103,15 +104,15 @@ export function History({ go }: { go: (s: Screen) => void }) {
                       style={{ padding: 12 }}
                     >
                       <span className="row spread">
-                        <span style={{ fontWeight: 600 }}>{e.version !== null ? `v${e.version} · ` : ''}Pré-daily · {span(e.startedAt, e.endedAt)}</span>
-                        <span className={`badge ${e.ataSaved ? 'badge-now' : 'badge-quiet'}`} style={{ fontSize: 11 }}>{e.ataSaved ? 'ata gravada' : 'sem ata'}</span>
+                        <span style={{ fontWeight: 600 }}>{e.version !== null ? `v${e.version} · ` : ''}{t('ui.history.entryTitle', { span: span(e.startedAt, e.endedAt) })}</span>
+                        <span className={`badge ${e.ataSaved ? 'badge-now' : 'badge-quiet'}`} style={{ fontSize: 11 }}>{e.ataSaved ? t('ui.history.minutesSaved') : t('ui.history.noMinutes')}</span>
                       </span>
                       <span className="small muted" style={{ display: 'block', marginTop: 4 }}>
                         {[
-                          plural(e.activities, 'atividade', 'atividades'),
-                          plural(e.decisions, 'decisão', 'decisões'),
-                          plural(e.effects, 'efeito', 'efeitos'),
-                          e.deepDives ? plural(e.deepDives, 'desbloqueio', 'desbloqueios') : '',
+                          t('ui.history.activityCount', { count: e.activities }),
+                          t('ui.history.decisionCount', { count: e.decisions }),
+                          t('ui.history.effectCount', { count: e.effects }),
+                          e.deepDives ? t('ui.history.unblockCount', { count: e.deepDives }) : '',
                         ]
                           .filter(Boolean)
                           .join(' · ')}
@@ -138,7 +139,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                 <DayPanel day={dayView} copied={copied === 'day'} onCopy={(text) => void copy('day', text)} />
               </>
             )}
-            {selected && !isDay && !detail && <div className="row faint"><span className="spinner" /> Abrindo a cerimônia…</div>}
+            {selected && !isDay && !detail && <div className="row faint"><span className="spinner" /> {t('ui.history.opening')}</div>}
             {!isDay && detail && m && (
               <>
                 <section className="panel" style={{ padding: 20 }}>
@@ -146,7 +147,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                     <div>
                       <div className="faint">{day(detail.date)}</div>
                       <h2 style={{ fontSize: 22, fontWeight: 700 }}>
-                        {thisVersion ? `${versionTitle(thisVersion.n, detail.date)} · ` : ''}Pré-daily · {span(detail.startedAt, detail.endedAt)}
+                        {thisVersion ? `${versionTitle(thisVersion.n, detail.date)} · ` : ''}{t('ui.history.entryTitle', { span: span(detail.startedAt, detail.endedAt) })}
                       </h2>
                     </div>
                     <div className="row" style={{ gap: 8 }}>
@@ -166,8 +167,8 @@ export function History({ go }: { go: (s: Screen) => void }) {
                 )}
 
                 <section className="panel" style={{ padding: 20 }}>
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Decisões · {m.decisions.length}</h2>
-                  {!m.decisions.length && <p className="small faint">Nenhuma decisão.</p>}
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.decisions', { count: m.decisions.length })}</h2>
+                  {!m.decisions.length && <p className="small faint">{t('ui.history.noDecisions')}</p>}
                   {m.decisions.map((d, i) => {
                     const w = written(d.ref, d.dest);
                     return (
@@ -178,7 +179,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                         </span>
                         <span className="dest">→ {d.dest}</span>
                         <span className="small" style={{ color: w?.ok ? 'var(--teal-ink)' : 'var(--faint)' }}>
-                          {w ? (w.ok ? 'gravada' : w.detail) : 'não gravada'}
+                          {w ? (w.ok ? t('ui.history.written') : w.detail) : t('ui.history.notWritten')}
                         </span>
                       </div>
                     );
@@ -187,21 +188,21 @@ export function History({ go }: { go: (s: Screen) => void }) {
 
                 <section className="panel" style={{ padding: 20 }}>
                   <div className="row spread">
-                    <h2 style={{ fontSize: 18, fontWeight: 600 }}>Efeitos · {m.effects.length}</h2>
+                    <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.effects', { count: m.effects.length })}</h2>
                     <button
                       type="button"
                       className="btn"
                       disabled={!m.effects.length}
                       onClick={() =>
-                        void copy('effects', ['Ações da pré-daily, peça o meu "sim" antes de cada uma:', ...m.effects.map((e, i) => `${i + 1}. ${e.ref} (${e.repo}): ${e.text}`)].join('\n'))
+                        void copy('effects', [t('ui.history.effectsPrompt'), ...m.effects.map((e, i) => `${i + 1}. ${e.ref} (${e.repo}): ${e.text}`)].join('\n'))
                       }
                     >
-                      {copied === 'effects' ? 'Copiado' : 'Copiar para o Claude Code'}
+                      {copied === 'effects' ? t('ui.history.copied') : t('ui.history.copyToClaude')}
                     </button>
                   </div>
                   {m.effects.map((e, i) => (
-                    <div key={`${e.ref}-${i}`} className="row" style={{ padding: '10px 0', borderTop: '1px solid var(--line-2)' }}>
-                      <span className="badge-e3">E3</span>
+                    <div key={`${e.ref}-${i}`} className="row" style={{ padding: '10px 0', borderTop: '1px solid var(--line-2)' }} /* i18n-ignore */>
+                      <span className="badge-e3" /* i18n-ignore */>E3</span>
                       <span style={{ flex: '1 1 260px' }}>{e.text}</span>
                       <span className="mono faint">{e.repo} · {e.ref}</span>
                       <EfeitoStatus effect={e} ceremonyId={detail.id} date={detail.date} />
@@ -209,7 +210,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                   ))}
                   {m.unanswered.length > 0 && (
                     <>
-                      <h3 className="section-title" style={{ marginTop: 8 }}>Perguntas sem resposta</h3>
+                      <h3 className="section-title" style={{ marginTop: 8 }}>{t('ui.history.unanswered')}</h3>
                       {m.unanswered.map((u) => (
                         <div key={u.ref} className="item ask"><span className="mono small">{u.ref}</span><span className="small">{u.question}</span></div>
                       ))}
@@ -220,9 +221,9 @@ export function History({ go }: { go: (s: Screen) => void }) {
                 {detail.teams && (
                   <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
                     <div className="row spread">
-                      <h2 style={{ fontSize: 18, fontWeight: 600 }}>Texto da daily do time</h2>
+                      <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.teamText')}</h2>
                       <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} onClick={() => void copy('teams', detail.teams as string)}>
-                        {copied === 'teams' ? 'Copiado' : 'Copiar'}
+                        {copied === 'teams' ? t('ui.history.copied') : t('ui.history.copy')}
                       </button>
                     </div>
                     <pre className="teams">{detail.teams}</pre>
@@ -230,7 +231,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                 )}
 
                 <section className="panel" style={{ padding: 20 }}>
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>O que cada agente disse</h2>
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.whatAgentsSaid')}</h2>
                   {(detail.cards?.cards ?? []).map((card) => {
                     const turn = detail.turns[card.ref];
                     return (
@@ -239,8 +240,8 @@ export function History({ go }: { go: (s: Screen) => void }) {
                           <span className="mono small muted">#{card.iid}</span>
                           <span style={{ fontWeight: 600 }}>{card.title}</span>
                         </span>
-                        <span className="small">{turn?.speech ?? 'Agente não chegou a falar.'}</span>
-                        {turn?.question && <span className="small" style={{ color: 'var(--blue-ink)' }}>Pergunta: {turn.question}{detail.answered[card.ref] ? ' (respondida)' : ''}</span>}
+                        <span className="small">{turn?.speech ?? t('ui.history.noSpeech')}</span>
+                        {turn?.question && <span className="small" style={{ color: 'var(--blue-ink)' }}>{t(detail.answered[card.ref] ? 'ui.history.questionAnswered' : 'ui.history.question', { question: turn.question })}</span>}
                         <span><ContinueInClaude sessionId={turn?.sessionId} /></span>
                       </div>
                     );
@@ -250,29 +251,29 @@ export function History({ go }: { go: (s: Screen) => void }) {
                 {deepDives.map(([ref, d]) => (
                   <section key={ref} className="panel" style={{ padding: 20, gap: 12 }}>
                     <div className="row spread">
-                      <h2 style={{ fontSize: 18, fontWeight: 600 }}>Desbloqueio · {ref}</h2>
+                      <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.unblock', { ref })}</h2>
                       <ContinueInClaude sessionId={d.sessionId} />
                     </div>
                     {d.msgs.map((msg, i) => (
                       <div key={i} className={`bubble-row ${msg.me ? 'me' : ''}`}>
                         <div className="bubble">
-                          <div className="who">{msg.me ? 'Você' : 'Agente'} · {msg.at}</div>
+                          <div className="who">{msg.me ? t('ui.history.you') : t('ui.history.agent')} · {msg.at}</div>
                           <div style={{ lineHeight: 1.5 }}><RichText text={msg.text} /></div>
                         </div>
                       </div>
                     ))}
-                    {d.sources.length > 0 && <p className="faint mono" style={{ fontSize: 12, wordBreak: 'break-all' }}>Leu: {d.sources.join(' · ')}</p>}
+                    {d.sources.length > 0 && <p className="faint mono" style={{ fontSize: 12, wordBreak: 'break-all' }}>{t('ui.history.read', { sources: d.sources.join(' · ') })}</p>}
                   </section>
                 ))}
 
                 <section className="panel" style={{ padding: 20 }}>
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>Transcrição</h2>
-                  {m.transcript.length === 0 && <p className="small faint">Sem falas registradas.</p>}
-                  {m.transcript.map((t, i) => (
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.history.transcript')}</h2>
+                  {m.transcript.length === 0 && <p className="small faint">{t('ui.history.noTranscript')}</p>}
+                  {m.transcript.map((line, i) => (
                     <div key={i} className="log-line">
-                      <span className="at">{t.at}</span>
-                      <span className="who">{t.who}</span>
-                      <span className="text">{t.text}</span>
+                      <span className="at">{line.at}</span>
+                      <span className="who">{line.who}</span>
+                      <span className="text">{line.text}</span>
                     </div>
                   ))}
                 </section>

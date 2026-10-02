@@ -66,7 +66,8 @@ export interface EncryptOptions {
 
 /** Encrypts `plaintext` for one subscription into the aes128gcm body (header + single record). */
 export function encryptPayload(plaintext: Buffer, keys: PushKeys, opts: EncryptOptions = {}): Buffer {
-  if (plaintext.length > MAX_PLAINTEXT) throw new Error('Payload grande demais para um registro.');
+  // i18n-ignore: developer error, not reachable from a screen
+  if (plaintext.length > MAX_PLAINTEXT) throw new Error('payload too large for one record');
   const ua = fromB64u(keys.p256dh);
   const authSecret = fromB64u(keys.auth);
   const sender = createECDH('prime256v1');

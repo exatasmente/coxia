@@ -107,7 +107,7 @@ describe('http: replays of a queued send', () => {
     mkdirSync(renderer, { recursive: true });
     writeFileSync(join(renderer, 'index.html'), 'x');
     auth = createAuth(join(dir, 'web-sessions.json'));
-    web = { ...DEFAULT_SETTINGS.web, enabled: true, basePath: BASE, publicUrl: 'https://koala.fortics.dev/cerimonias/' };
+    web = { ...DEFAULT_SETTINGS.web, enabled: true, basePath: BASE, publicUrl: 'https://coxia.acme.test/cerimonias/' };
     app = createWebApp({
       settings: () => web,
       rendererDir: renderer,

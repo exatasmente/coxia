@@ -55,13 +55,13 @@ beforeEach(async () => {
   at('09:40:00');
 });
 
-const subject = (over: Partial<Card> = {}): Card => cardFixture(folder, plan, { ref: 'acme#15499', iid: '15499', title: 'Fix the report filter', mrs: ['app!797'], mrPaths: [{ ref: 'app!797', project: 'acme/app', iid: 797 }], url: 'https://git.example.test/acme/app/-/work_items/15499', stage: 'Doing', blockers: ['app!797: MR com conflitos'], pending: ['pipeline vermelha'], changes: [], ...over });
+const subject = (over: Partial<Card> = {}): Card => cardFixture(folder, plan, { ref: 'web#101', iid: '101', title: 'Fix the report filter', mrs: ['web!303'], mrPaths: [{ ref: 'web!303', project: 'acme/web', iid: 303 }], url: 'https://git.acme.test/acme/web/-/work_items/101', stage: 'Doing', blockers: ['web!303: MR com conflitos'], pending: ['pipeline vermelha'], changes: [], ...over });
 
 // The first meeting of the day, as the app saves it: the turn the agent gave, what Ana answered, what was decided and queued.
 async function firstMeeting(c: Card, extra: { question?: string; answered?: boolean; decisions?: Decision[]; reply?: string } = {}): Promise<{ turn: AgentTurn; saved: SavedCeremony }> {
   at('09:40:00');
   const prepared = await agents.prepareTurn(c, { ceremonyId: FIRST });
-  const turn: AgentTurn = { ...prepared, speech: 'The pipeline is red and the MR has conflicts.', next: 'Fix the conflicts', blocker: 'app!797: MR com conflitos', question: extra.question ?? null, options: ['yes', 'no'] };
+  const turn: AgentTurn = { ...prepared, speech: 'The pipeline is red and the MR has conflicts.', next: 'Fix the conflicts', blocker: 'web!303: MR com conflitos', question: extra.question ?? null, options: ['yes', 'no'] };
   const saved = ceremony({
     id: FIRST,
     cards: [c],
@@ -69,7 +69,7 @@ async function firstMeeting(c: Card, extra: { question?: string; answered?: bool
     spoken: [c.ref],
     answered: extra.answered ? [c.ref] : [],
     decisions: extra.decisions ?? [{ ref: c.ref, text: 'Rebase on main before merging', target: 'ata', dest: 'minutes' }],
-    effects: [{ ref: c.ref, text: 'Rebase the branch', repo: 'app' }],
+    effects: [{ ref: c.ref, text: 'Rebase the branch', repo: 'web' }],
     log: [
       { who: 'Moderador', text: 'Good morning', at: '0:00', color: '#000' },
       { who: `#${c.iid}`, text: turn.speech, at: '0:05', color: '#000' },
@@ -121,7 +121,7 @@ describe('a card nothing happened to since an earlier meeting today', () => {
     const again = await agents.prepareTurn(c, { ceremonyId: SECOND });
     expect(calls).toHaveLength(0);
     expect(again.sameDay).toMatchObject({ kind: 'unchanged', changes: [], decided: ['Rebase on main before merging'], version: 1 });
-    expect(again.speech).toBe('Sem mudanças desde a call das 09:40. Ficou decidido: Rebase on main before merging. Bloqueio: app!797: MR com conflitos. Pendente: Can Bruno rebase today?');
+    expect(again.speech).toBe('Sem mudanças desde a call das 09:40. Ficou decidido: Rebase on main before merging. Bloqueio: web!303: MR com conflitos. Pendente: Can Bruno rebase today?');
     expect(again.did).toBe('Sem mudanças desde a call das 09:40.');
     expect(again.next).toBe(turn.next);
     expect(again.question).toBe('Can Bruno rebase today?');
@@ -215,11 +215,11 @@ describe('a card that changed since an earlier meeting today', () => {
     const turn = await agents.prepareTurn(moved, { ceremonyId: SECOND });
     expect(calls).toHaveLength(1);
     const prompt = calls[0].prompt;
-    expect(prompt.split('\n')[0]).toBe('Você é o agente da atividade acme#15499 na pré-daily por voz.');
+    expect(prompt.split('\n')[0]).toBe('Você é o agente da atividade web#101 na pré-daily por voz.');
     expect(openersOf('turn.main').some((re) => re.test(prompt))).toBe(true);
     expect(prompt).toContain('na conversa das 09:40');
     expect(prompt).toContain('- etapa: Doing → Code Review');
-    expect(prompt).toContain('- bloqueio resolvido: app!797: MR com conflitos');
+    expect(prompt).toContain('- bloqueio resolvido: web!303: MR com conflitos');
     expect(prompt).toContain('- nova pendência: falta aprovação');
     expect(prompt).toContain('- O agente disse: The pipeline is red and the MR has conflicts.');
     expect(prompt).toContain('Rebase it, Bruno owns the MR');
@@ -230,7 +230,7 @@ describe('a card that changed since an earlier meeting today', () => {
     expect(prompt).toContain('ainda valem');
     expect(prompt).not.toContain('desde ontem');
     expect(turn.sameDay).toMatchObject({ kind: 'changed', version: 1, decided: ['Rebase on main before merging'] });
-    expect(turn.sameDay?.changes).toEqual(['etapa: Doing → Code Review', 'bloqueio resolvido: app!797: MR com conflitos', 'nova pendência: falta aprovação', 'movimento: stage: Doing → Code Review']);
+    expect(turn.sameDay?.changes).toEqual(['etapa: Doing → Code Review', 'bloqueio resolvido: web!303: MR com conflitos', 'nova pendência: falta aprovação', 'movimento: stage: Doing → Code Review']);
     expect(turn.seen?.stage).toBe('Code Review');
   });
 

@@ -1,14 +1,9 @@
+import { t } from './i18n';
+
 export type RetentionKind = 'sessoes' | 'historico' | 'gates' | 'qa' | 'retros' | 'atividade' | 'feedback';
 
-export const RETENTION_LABEL: Record<RetentionKind, string> = {
-  sessoes: 'Sessões dos agentes (Claude)',
-  historico: 'Histórico das pré-dailies',
-  gates: 'Gates',
-  qa: 'Passagens para o QA',
-  retros: 'Retros',
-  atividade: 'Atividade do dia',
-  feedback: 'Reentradas e revisões',
-};
+/** The name of a kind of retained data, in the language of the running process. */
+export const retentionLabel = (kind: RetentionKind): string => t(`main.retention.kind.${kind}`);
 
 export const RETENTION_MIN_DAYS = 7;
 export const RETENTION_MAX_DAYS = 365;

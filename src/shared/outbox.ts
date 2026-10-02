@@ -1,14 +1,8 @@
+import { lazyLabels } from './i18n';
+
 // Browser (PWA) sends that may wait in the offline queue and be replayed. Each one only talks to the agents or reads/writes
 // local state: nothing here reaches GitLab or the desktop machine, and webPolicy allows all of them (a test enforces it).
-export const QUEUEABLE: Record<string, string> = {
-  'agent:reply': 'Resposta na call',
-  'deep:ask': 'Pergunta no aprofundamento',
-  'gate:answer': 'Resposta do quiz',
-  'gate:explain': 'Dúvida no quiz',
-  'qa:ask': 'Pergunta ao QA',
-  'retro:ask': 'Fala na retro',
-  'actions:conflict': 'Pergunta sobre o conflito',
-};
+export const QUEUEABLE: Record<string, string> = lazyLabels(['agent:reply', 'deep:ask', 'gate:answer', 'gate:explain', 'qa:ask', 'retro:ask', 'actions:conflict'], 'main.outbox');
 
 export const isQueueable = (channel: string): boolean => Object.prototype.hasOwnProperty.call(QUEUEABLE, channel);
 

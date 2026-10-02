@@ -6,6 +6,10 @@ import type { StepProps } from '../SetupWizard';
 import { Field, Notice } from '../ui';
 import { wizardApi } from '../wizardApi';
 
+const MCP_PLACEHOLDER = '~/project/.mcp.json'; // i18n-ignore: example path
+const SKILLS_PLACEHOLDER = '~/project/.claude/skills'; // i18n-ignore: example path
+const SPECS_PLACEHOLDER = '~/project/.specs'; // i18n-ignore: example path
+
 export function DocsStep({ cfg, setCfg }: StepProps) {
   const t = useT();
   const [scan, setScan] = useState<DocsScanResult | null>(null);
@@ -110,7 +114,7 @@ export function DocsStep({ cfg, setCfg }: StepProps) {
           </ul>
           <form className="wz-inline" onSubmit={(e) => { e.preventDefault(); add(k, typed[k] ?? ''); setTyped((all) => ({ ...all, [k]: '' })); }}>
             <Field label={t('wizard.docs.typed')} htmlFor={`docs-in-${k}`}>
-              <input id={`docs-in-${k}`} className="text-input mono" spellCheck={false} placeholder={k === 'mcpConfigFiles' ? '~/project/.mcp.json' : '~/project/.claude/skills'} value={typed[k] ?? ''} onChange={(e) => setTyped((all) => ({ ...all, [k]: e.target.value }))} />
+              <input id={`docs-in-${k}`} className="text-input mono" spellCheck={false} placeholder={k === 'mcpConfigFiles' ? MCP_PLACEHOLDER : SKILLS_PLACEHOLDER} value={typed[k] ?? ''} onChange={(e) => setTyped((all) => ({ ...all, [k]: e.target.value }))} />
             </Field>
             <div className="wz-actions">
               <button type="submit" className="btn" disabled={!(typed[k] ?? '').trim()}>{t('wizard.docs.add')}</button>
@@ -122,7 +126,7 @@ export function DocsStep({ cfg, setCfg }: StepProps) {
 
       <section className="wz-stack wz-group">
         <Field label={t('wizard.docs.specsDir')} htmlFor="wz-specs" hint={t('wizard.docs.specsDirHint')}>
-          <input id="wz-specs" className="text-input mono" spellCheck={false} placeholder="~/project/.specs" value={cfg.docs.specsDir ?? ''} onChange={(e) => setCfg((c) => ({ ...c, docs: { ...c.docs, specsDir: e.target.value.trim() || null } }))} />
+          <input id="wz-specs" className="text-input mono" spellCheck={false} placeholder={SPECS_PLACEHOLDER} value={cfg.docs.specsDir ?? ''} onChange={(e) => setCfg((c) => ({ ...c, docs: { ...c.docs, specsDir: e.target.value.trim() || null } }))} />
         </Field>
         {cfg.docs.specsDir && <Notice tone="info">{t('wizard.docs.specsNote')}</Notice>}
         {scan?.specsDir && scan.specsDir !== cfg.docs.specsDir && (

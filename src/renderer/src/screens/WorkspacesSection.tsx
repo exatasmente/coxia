@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { WorkspaceInfo } from '../../../shared/workspaces';
 import { errorText } from '../api';
+import { intlLocale, tNodes, useT } from '../i18n';
 import { isWeb } from '../platform';
 import { publishWorkspaces, useWorkspaces, workspaceApi } from '../workspaceApi';
 
-const day = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const day = (iso: string): string => new Date(iso).toLocaleDateString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 // The window closes and opens again by itself; a browser waits for the server to come back and reloads.
 export function RestartOverlay({ name }: { name: string }) {
+  const t = useT();
   useEffect(() => {
     if (!isWeb()) return;
     let sawDown = false;
@@ -28,14 +30,15 @@ export function RestartOverlay({ name }: { name: string }) {
     <div className="ws-restart" role="status" aria-live="polite">
       <div className="panel ws-restart-card">
         <span className="spinner" aria-hidden="true" />
-        <div style={{ fontWeight: 600 }}>O app vai reiniciar</div>
-        <div className="small muted">Abrindo o workspace «{name}»{isWeb() ? '. Esta página recarrega sozinha quando ele voltar.' : '.'}</div>
+        <div style={{ fontWeight: 600 }}>{t('ui.workspaces.restart.title')}</div>
+        <div className="small muted">{isWeb() ? t('ui.workspaces.restart.openingWeb', { name }) : t('ui.workspaces.restart.opening', { name })}</div>
       </div>
     </div>
   );
 }
 
 function Item({ w, running, current, onError, onRestart, onlyOne }: { w: WorkspaceInfo; running: boolean; current: boolean; onError: (m: string | null) => void; onRestart: (name: string) => void; onlyOne: boolean }) {
+  const t = useT();
   const web = isWeb();
   const [mode, setMode] = useState<'rename' | 'switch' | 'delete' | null>(null);
   const [draft, setDraft] = useState('');
@@ -65,44 +68,44 @@ function Item({ w, running, current, onError, onRestart, onlyOne }: { w: Workspa
       <div className="ws-head">
         <div className="ws-title">
           <span style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{w.name}</span>
-          {running && <span className="badge badge-now">Em uso</span>}
-          {!running && current && <span className="badge badge-quiet">Abre ao reiniciar</span>}
-          {w.test && <span className="badge badge-block">Testes</span>}
+          {running && <span className="badge badge-now">{t('ui.workspaces.badge.running')}</span>}
+          {!running && current && <span className="badge badge-quiet">{t('ui.workspaces.badge.current')}</span>}
+          {w.test && <span className="badge badge-block">{t('ui.workspaces.badge.test')}</span>}
         </div>
-        <div className="small muted">Criado em {day(w.createdAt)}</div>
+        <div className="small muted">{t('ui.workspaces.createdAt', { date: day(w.createdAt) })}</div>
       </div>
 
       {!web && (
         <label className="ws-flag">
           <input type="checkbox" checked={w.test} disabled={busy} onChange={() => void run(() => workspaceApi.setTest(w.id, !w.test))} />
           <span>
-            <span style={{ fontWeight: 600 }}>Workspace de testes</span>
-            <span className="small muted" style={{ display: 'block' }}>Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.</span>
+            <span style={{ fontWeight: 600 }}>{t('ui.workspaces.test.label')}</span>
+            <span className="small muted" style={{ display: 'block' }}>{t('ui.workspaces.test.hint')}</span>
           </span>
         </label>
       )}
 
       {mode === null && (
         <div className="ws-actions">
-          {!current && <button type="button" className="btn btn-dark" onClick={() => open('switch')}>Usar este</button>}
-          <button type="button" className="btn" onClick={() => open('rename')}>Renomear</button>
-          {!web && !running && !current && !onlyOne && <button type="button" className="btn" onClick={() => open('delete')}>Excluir</button>}
+          {!current && <button type="button" className="btn btn-dark" onClick={() => open('switch')}>{t('ui.workspaces.use')}</button>}
+          <button type="button" className="btn" onClick={() => open('rename')}>{t('ui.workspaces.rename')}</button>
+          {!web && !running && !current && !onlyOne && <button type="button" className="btn" onClick={() => open('delete')}>{t('ui.workspaces.delete')}</button>}
         </div>
       )}
 
       {mode === 'rename' && (
         <form className="ws-form" onSubmit={(e) => { e.preventDefault(); void run(() => workspaceApi.rename(w.id, draft)); }}>
-          <input className="text-input" aria-label="Novo nome" value={draft} maxLength={60} autoFocus onChange={(e) => setDraft(e.target.value)} />
+          <input className="text-input" aria-label={t('ui.workspaces.newNameAria')} value={draft} maxLength={60} autoFocus onChange={(e) => setDraft(e.target.value)} />
           <div className="ws-actions">
-            <button type="submit" className="btn btn-dark" disabled={busy || !draft.trim()}>Salvar nome</button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>Cancelar</button>
+            <button type="submit" className="btn btn-dark" disabled={busy || !draft.trim()}>{t('ui.workspaces.saveName')}</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>{t('ui.workspaces.cancel')}</button>
           </div>
         </form>
       )}
 
       {mode === 'switch' && (
-        <div className="ws-confirm" role="alertdialog" aria-label={`Usar o workspace ${w.name}`}>
-          <div>Usar «{w.name}»? O app vai reiniciar e abrir esse workspace. Execuções em andamento (agentes, voz) são interrompidas.</div>
+        <div className="ws-confirm" role="alertdialog" aria-label={t('ui.workspaces.switch.aria', { name: w.name })}>
+          <div>{t('ui.workspaces.switch.text', { name: w.name })}</div>
           <div className="ws-actions">
             <button
               type="button"
@@ -113,22 +116,20 @@ function Item({ w, running, current, onError, onRestart, onlyOne }: { w: Workspa
                 if (r.restarting) onRestart(w.name);
               })}
             >
-              {busy ? <span className="spinner" aria-hidden="true" /> : null} Reiniciar e usar
+              {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.workspaces.switch.confirm')}
             </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>Cancelar</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>{t('ui.workspaces.cancel')}</button>
           </div>
         </div>
       )}
 
       {mode === 'delete' && (
-        <form className="ws-confirm ws-danger" role="alertdialog" aria-label={`Excluir o workspace ${w.name}`} onSubmit={(e) => { e.preventDefault(); void run(() => workspaceApi.remove(w.id, draft)); }}>
-          <div>
-            Excluir «{w.name}»? A pasta vai para a lixeira, em workspaces/.trash dentro da pasta de dados do app: nada é apagado de vez. Digite o nome para confirmar.
-          </div>
-          <input className="text-input" aria-label="Digite o nome do workspace" value={draft} autoFocus onChange={(e) => setDraft(e.target.value)} />
+        <form className="ws-confirm ws-danger" role="alertdialog" aria-label={t('ui.workspaces.delete.aria', { name: w.name })} onSubmit={(e) => { e.preventDefault(); void run(() => workspaceApi.remove(w.id, draft)); }}>
+          <div>{t('ui.workspaces.delete.text', { name: w.name })}</div>
+          <input className="text-input" aria-label={t('ui.workspaces.delete.inputAria')} value={draft} autoFocus onChange={(e) => setDraft(e.target.value)} />
           <div className="ws-actions">
-            <button type="submit" className="btn btn-red" disabled={busy || draft.trim() !== w.name}>Mover para a lixeira</button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>Cancelar</button>
+            <button type="submit" className="btn btn-red" disabled={busy || draft.trim() !== w.name}>{t('ui.workspaces.delete.confirm')}</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => setMode(null)}>{t('ui.workspaces.cancel')}</button>
           </div>
         </form>
       )}
@@ -138,6 +139,7 @@ function Item({ w, running, current, onError, onRestart, onlyOne }: { w: Workspa
 
 // Applied on the spot, no Salvar needed: the registry is not part of the settings form.
 export function WorkspacesSection() {
+  const t = useT();
   const view = useWorkspaces();
   const [name, setName] = useState('');
   const [copy, setCopy] = useState(true);
@@ -161,15 +163,14 @@ export function WorkspacesSection() {
   return (
     <section className="panel ws" style={{ padding: 20, gap: 14 }}>
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Workspaces</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.workspaces.title')}</h2>
         <p className="small muted" style={{ marginTop: 4 }}>
-          Cada workspace tem o seu histórico, as suas ações e as suas configurações. Aparelhos pareados, acesso pelo navegador e glossário valem para todos.
-          Trocar reinicia o app.
+          {t('ui.workspaces.hint')}
         </p>
       </div>
       {error && <div className="error">{error}</div>}
       {!view ? (
-        <span className="spinner" aria-label="Carregando" />
+        <span className="spinner" aria-label={t('ui.workspaces.loading')} />
       ) : (
         <ul className="ws-list">
           {view.list.map((w) => (
@@ -178,14 +179,14 @@ export function WorkspacesSection() {
         </ul>
       )}
       <form className="ws-new" onSubmit={(e) => { e.preventDefault(); void create(); }}>
-        <div style={{ fontWeight: 600 }}>Novo workspace</div>
-        <input className="text-input" aria-label="Nome do novo workspace" placeholder="Nome, por exemplo Principal" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+        <div style={{ fontWeight: 600 }}>{t('ui.workspaces.new.title')}</div>
+        <input className="text-input" aria-label={t('ui.workspaces.new.nameAria')} placeholder={t('ui.workspaces.new.namePlaceholder')} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
         <label className="ws-copy">
           <input type="checkbox" checked={copy} onChange={() => setCopy(!copy)} />
-          <span>Copiar as configurações do atual <span className="small muted">(nunca o histórico)</span></span>
+          <span>{tNodes('ui.workspaces.new.copy', { note: <span className="small muted">{t('ui.workspaces.new.copyNote')}</span> })}</span>
         </label>
         <div>
-          <button type="submit" className="btn btn-dark" disabled={busy || !name.trim()}>Criar workspace</button>
+          <button type="submit" className="btn btn-dark" disabled={busy || !name.trim()}>{t('ui.workspaces.new.create')}</button>
         </div>
       </form>
       {restarting && <RestartOverlay name={restarting} />}

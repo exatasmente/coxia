@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { PARTIAL_HINT } from '../../../shared/partial';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import type { Card } from '../../../shared/types';
 import type { DiscussionView, DiscussionsResult, MrPath, ProposalView } from '../../../shared/feedback';
 import type { Screen } from '../App';
@@ -8,23 +7,27 @@ import type { usePlayer } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { jobs, useJobs } from '../useJobs';
 import { feedbackApi } from '../feedbackApi';
+import { intlLocale, useT } from '../i18n';
 import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
 import { RichText } from './Diagram';
 import { BackIcon } from './icons';
 import { Presence } from './Avatar';
 
+const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
+const SPEAKER = 'discussão'; // i18n-ignore: speaker id
+
 const STATE_LABEL: Record<ProposalView['state'], string> = {
-  pending: 'aguardando o seu “seguir” em Ações',
-  running: 'executando',
-  done: 'enviada ao GitLab',
-  skipped: 'dispensada em Ações',
-  failed: 'falhou; veja em Ações',
-  unknown: 'proposta registrada',
+  pending: 'ui.discussions.state.pending',
+  running: 'ui.discussions.state.running',
+  done: 'ui.discussions.state.done',
+  skipped: 'ui.discussions.state.skipped',
+  failed: 'ui.discussions.state.failed',
+  unknown: 'ui.discussions.state.unknown',
 };
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 export function Discussions({
@@ -34,6 +37,7 @@ export function Discussions({
   player,
   go,
 }: { card: Card | undefined; initialMr: string | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+  const t = useT();
   const mrs = card?.mrPaths ?? [];
   const [mr, setMr] = useState<MrPath | null>(mrs.find((m) => m.ref === initialMr) ?? mrs[0] ?? null);
   const [result, setResult] = useState<DiscussionsResult | null>(null);
@@ -54,7 +58,7 @@ export function Discussions({
     (target: MrPath) => {
       if (!card) return;
       setError(null);
-      jobs.launch(listKey(target), { label: `Discussões do ${target.ref}`, busy: 'Lendo as discussões no GitLab…', screen: { name: 'discussions', ref: card.ref, mr: target.ref, card } }, () => feedbackApi.listDiscussions(target));
+      jobs.launch(listKey(target), { label: t('ui.discussions.job.list', { ref: target.ref }), busy: t('ui.discussions.reading'), screen: { name: 'discussions', ref: card.ref, mr: target.ref, card } }, () => feedbackApi.listDiscussions(target));
     },
     [card],
   );
@@ -99,7 +103,7 @@ export function Discussions({
     (d: DiscussionView) => {
       if (!card || !mr) return;
       setError(null);
-      jobs.launch(explainKey(mr, d.id), { label: `Explicação da discussão do ${mr.ref}`, busy: 'O agente está lendo o trecho e a discussão…', screen: { name: 'discussions', ref: card.ref, mr: mr.ref, card } }, () => feedbackApi.explainDiscussion(card, mr, d.id));
+      jobs.launch(explainKey(mr, d.id), { label: t('ui.discussions.job.explain', { ref: mr.ref }), busy: t('ui.discussions.explaining'), screen: { name: 'discussions', ref: card.ref, mr: mr.ref, card } }, () => feedbackApi.explainDiscussion(card, mr, d.id));
     },
     [card, mr],
   );
@@ -115,7 +119,7 @@ export function Discussions({
     const e = current?.explanation;
     if (!current || !e || !voice || spoken.current.has(`${current.id}|${e.at}`)) return;
     spoken.current.add(`${current.id}|${e.at}`);
-    void player.say(e.speech, voice, 'discussão', { item: e }).catch(() => undefined);
+    void player.say(e.speech, voice, SPEAKER, { item: e }).catch(() => undefined);
   }, [current, voice, player]);
 
   const propose = async (label: string, d: DiscussionView, fn: () => Promise<ProposalView>) => {
@@ -131,7 +135,7 @@ export function Discussions({
   };
 
   if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">Atividade não encontrada.</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>Voltar</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.discussions.back')}</button></div></div></div>;
   }
 
   const body = current ? (drafts[current.id] ?? current.explanation?.draft ?? '') : '';
@@ -141,15 +145,15 @@ export function Discussions({
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
-        <header className="panel-dark hero" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+        <header className="panel-dark hero" style={HEADER_STYLE}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Discussões · {mr?.ref ?? 'sem MR'} · #{card.iid}</div>
+            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.discussions.header', { mr: mr?.ref ?? t('ui.discussions.noMr'), iid: card.iid })}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={false} thinking={!!busy || loading} on={!!player.speaking} color="var(--night-violet)" small />
           <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && load(mr)}>
-            {loading ? <span className="spinner" /> : null} Atualizar
+            {loading ? <span className="spinner" /> : null} {t('ui.discussions.refresh')}
           </button>
         </header>
 
@@ -161,21 +165,21 @@ export function Discussions({
           </div>
         )}
         {error && <div className="error">{error}</div>}
-        {loading && !result && <div className="row faint"><span className="spinner" /> Lendo as discussões no GitLab…</div>}
-        {result && !list.length && <div className="panel" style={{ padding: 20 }}>Nenhuma discussão aberta no {result.mr.ref}.</div>}
+        {loading && !result && <div className="row faint"><span className="spinner" /> {t('ui.discussions.reading')}</div>}
+        {result && !list.length && <div className="panel" style={{ padding: 20 }}>{t('ui.discussions.none', { ref: result.mr.ref })}</div>}
 
         {current && (
           <>
             <div className="row spread">
-              <span className="faint">Discussão {Math.min(idx, list.length - 1) + 1} de {list.length}</span>
+              <span className="faint">{t('ui.discussions.position', { n: Math.min(idx, list.length - 1) + 1, total: list.length })}</span>
               <span className="row" style={{ gap: 8 }}>
-                <button type="button" className="btn" disabled={idx <= 0} onClick={() => setIdx(idx - 1)}>Anterior</button>
-                <button type="button" className="btn" disabled={idx >= list.length - 1} onClick={() => setIdx(idx + 1)}>Próxima</button>
+                <button type="button" className="btn" disabled={idx <= 0} onClick={() => setIdx(idx - 1)}>{t('ui.discussions.previous')}</button>
+                <button type="button" className="btn" disabled={idx >= list.length - 1} onClick={() => setIdx(idx + 1)}>{t('ui.discussions.next')}</button>
               </span>
             </div>
 
             <section className="panel" style={{ padding: 20, gap: 10 }}>
-              <h2 className="section-title">O que o revisor escreveu</h2>
+              <h2 className="section-title">{t('ui.discussions.reviewer')}</h2>
               {current.path && <div className="mono small muted" style={{ wordBreak: 'break-all' }}>{current.path}{current.line ? `:${current.line}` : ''}</div>}
               {current.notes.map((n) => (
                 <div key={`${n.author}${n.at}`} className="item">
@@ -187,57 +191,57 @@ export function Discussions({
 
             <section className="panel" style={{ padding: 20, gap: 10 }}>
               <div className="row spread">
-                <h2 className="section-title">O ponto, segundo o agente</h2>
+                <h2 className="section-title">{t('ui.discussions.point')}</h2>
                 {current.explanation && (
                   <span className="row" style={{ gap: 10 }}>
-                    <span className={`badge ${current.explanation.needsCode ? 'badge-block' : 'badge-quiet'}`}>{current.explanation.needsCode ? 'Pede mudança de código' : 'Só resposta'}</span>
+                    <span className={`badge ${current.explanation.needsCode ? 'badge-block' : 'badge-quiet'}`}>{current.explanation.needsCode ? t('ui.discussions.needsCode') : t('ui.discussions.replyOnly')}</span>
                     {voice && (
                       <ReplayButton
-                        playing={player.speaking === 'discussão' && player.current === current.explanation}
-                        label="Ouvir esta explicação"
-                        onPlay={() => void player.say(current.explanation?.speech ?? '', voice, 'discussão', { force: true, item: current.explanation }).catch(() => undefined)}
+                        playing={player.speaking === SPEAKER && player.current === current.explanation}
+                        label={t('ui.discussions.listen')}
+                        onPlay={() => void player.say(current.explanation?.speech ?? '', voice, SPEAKER, { force: true, item: current.explanation }).catch(() => undefined)}
                         onStop={() => player.stop()}
                       />
                     )}
                   </span>
                 )}
               </div>
-              {explaining === current.id && <div className="row faint"><span className="spinner" /> O agente está lendo o trecho e a discussão…</div>}
+              {explaining === current.id && <div className="row faint"><span className="spinner" /> {t('ui.discussions.explaining')}</div>}
               {current.explanation && (
                 <>
                   <p style={{ fontWeight: 600, lineHeight: 1.5 }}>{current.explanation.point}</p>
                   <div className="small" style={{ lineHeight: 1.55 }}><RichText text={current.explanation.text || current.explanation.speech} /></div>
-                  {current.explanation.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{PARTIAL_HINT}</p>}
-                  {current.stale && <p className="small" style={{ color: 'var(--amber-ink)' }}>A discussão teve respostas novas depois desta explicação.</p>}
+                  {current.explanation.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{t('ui.discussions.partialHint')}</p>}
+                  {current.stale && <p className="small" style={{ color: 'var(--amber-ink)' }}>{t('ui.discussions.stale')}</p>}
                   <div className="row" style={{ gap: 8 }}>
-                    <button type="button" className="btn" disabled={!!explaining} onClick={() => explain(current)}>Explicar de novo</button>
+                    <button type="button" className="btn" disabled={!!explaining} onClick={() => explain(current)}>{t('ui.discussions.explainAgain')}</button>
                     <ContinueInClaude sessionId={current.explanation.sessionId} />
                   </div>
                 </>
               )}
-              {!current.explanation && !explaining && <button type="button" className="btn btn-dark" onClick={() => explain(current)}>Explicar com o agente</button>}
+              {!current.explanation && !explaining && <button type="button" className="btn btn-dark" onClick={() => explain(current)}>{t('ui.discussions.explain')}</button>}
             </section>
 
             {current.explanation && (
               <section className="panel composer-panel" style={{ padding: 20, gap: 10 }}>
-                <h2 className="section-title">Sua resposta</h2>
+                <h2 className="section-title">{t('ui.discussions.yourReply')}</h2>
                 <textarea
-                  aria-label="Rascunho da resposta"
+                  aria-label={t('ui.discussions.draft.aria')}
                   value={body}
                   onChange={(e) => setDrafts((x) => ({ ...x, [current.id]: e.target.value }))}
                   rows={6}
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--field-line)', font: 'inherit', lineHeight: 1.5, resize: 'vertical' }}
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--field-line)', font: 'inherit', lineHeight: 1.5, resize: 'vertical' }} // i18n-ignore: CSS value
                 />
                 <div className="row" style={{ gap: 8 }}>
-                  <button type="button" className="btn btn-dark" disabled={!!busy || !body.trim()} onClick={() => mr && void propose('reply', current, () => feedbackApi.replyDiscussion(card, mr, current.id, body))}>Responder</button>
-                  <button type="button" className="btn" disabled={!!busy || resolveProposal?.state === 'pending' || resolveProposal?.state === 'done'} onClick={() => mr && void propose('resolve', current, () => feedbackApi.resolveDiscussion(card, mr, current.id))}>Marcar como resolvida</button>
+                  <button type="button" className="btn btn-dark" disabled={!!busy || !body.trim()} onClick={() => mr && void propose('reply', current, () => feedbackApi.replyDiscussion(card, mr, current.id, body))}>{t('ui.discussions.reply')}</button>
+                  <button type="button" className="btn" disabled={!!busy || resolveProposal?.state === 'pending' || resolveProposal?.state === 'done'} onClick={() => mr && void propose('resolve', current, () => feedbackApi.resolveDiscussion(card, mr, current.id))}>{t('ui.discussions.resolve')}</button>
                   {busy && <span className="spinner" />}
                 </div>
-                <p className="faint">Cada botão só cria uma proposta. Nada vai ao GitLab antes do “seguir” e da confirmação na tela Ações.</p>
+                <p className="faint">{t('ui.discussions.proposalNote')}</p>
                 {[...replied, ...(resolveProposal ? [resolveProposal] : [])].map((p) => (
                   <div key={p.key} className="item row spread" style={{ flexDirection: 'row', background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
-                    <span className="small">{p.kind === 'reply' ? 'Resposta' : 'Resolver'}: {STATE_LABEL[p.state]}</span>
-                    <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'actions' })}>Ver em Ações</button>
+                    <span className="small">{p.kind === 'reply' ? t('ui.discussions.proposal.reply', { state: t(STATE_LABEL[p.state]) }) : t('ui.discussions.proposal.resolve', { state: t(STATE_LABEL[p.state]) })}</span>
+                    <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'actions' })}>{t('ui.discussions.viewActions')}</button>
                   </div>
                 ))}
               </section>

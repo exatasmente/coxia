@@ -1,3 +1,4 @@
+// i18n-lint: allow-file English diagnostics that name a path inside a JSON document
 import { promptFamilies } from '../cycles/prompts';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';

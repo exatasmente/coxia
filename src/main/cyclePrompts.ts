@@ -31,7 +31,7 @@ export function vcsName(): string {
 /** What the team calls the daily preparation ("pré-daily", "daily scrum", "standup"). */
 export const ceremonyLabel = (): string => text(cycle().ceremonyParams.preDaily.label);
 
-/** Where the cards come from, as the card context names it: " (GitLab via daily-report)", " (GitHub)", or nothing. */
+/** Where the cards come from, as the card context names it: " (GitLab via the card source command)", " (GitHub)", or nothing. */
 function origin(): string {
   const tool = rc().cardSource?.command;
   const host = rc().primaryVcs ? vcsName() : '';
@@ -144,4 +144,9 @@ export function formatDate(date: Date): string {
 /** Time of day in the language of the workspace. */
 export function formatTime(date: Date): string {
   return date.toLocaleTimeString(language() === 'en' ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Time of day with seconds, as the minutes print it. */
+export function formatClock(date: Date): string {
+  return date.toLocaleTimeString(language() === 'en' ? 'en-US' : 'pt-BR');
 }

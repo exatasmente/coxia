@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 // A queued browser send may reach the server twice (the answer was lost, or the page and the service worker both replay it).
 // The same key from the same device and channel runs the call once: a repeat joins the call in flight or gets the stored answer.
 export interface Idempotency {
@@ -31,7 +32,7 @@ export function createIdempotency(ttlMs = 15 * 60_000, max = 200, now: () => num
       const id = `${deviceId}:${key}`;
       const hit = entries.get(id);
       if (hit) {
-        if (hit.channel !== channel) throw new IdempotencyConflict('Chave de idempotência já usada em outro comando.');
+        if (hit.channel !== channel) throw new IdempotencyConflict(t('main.web.idemUsed'));
         return hit.promise as Promise<T>;
       }
       const promise = fn();

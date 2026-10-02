@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AgentTurn, Card } from '../shared/types';
+import { t } from '../shared/i18n';
 
 // Bump when the content or format of a turn changes, so turns saved under the old prompt are not served again.
 const VERSION = 1;
@@ -50,7 +51,7 @@ export function isReusable(saved: Saved | undefined, fp: string, now: number): s
 
 export function sinceLabel(at: string, now: number): string {
   const d = daysBetween(Date.parse(at), now);
-  return d <= 0 ? 'hoje cedo' : d === 1 ? 'ontem' : d === 2 ? 'anteontem' : `${d} dias`;
+  return d <= 0 ? t('main.falas.earlier') : d === 1 ? t('main.falas.yesterday') : d === 2 ? t('main.falas.dayBefore') : t('main.falas.days', { count: d });
 }
 
 // The model sometimes answers the text "null" instead of a JSON null.
@@ -64,20 +65,20 @@ function sentence(s: string): string {
 // The speech is rebuilt around the saved next step, blocker and question: the saved "what changed" is not news anymore.
 export function reusedTurn(saved: Saved, now: number, sessionAlive: boolean): AgentTurn {
   const since = sinceLabel(saved.at, now);
-  const t = saved.turn;
+  const turn = saved.turn;
   const speech = [
-    `Sem mudança desde ${since}.`,
-    sentence(t.next),
-    present(t.blocker) ? sentence(`Bloqueio: ${t.blocker}`) : '',
-    present(t.question) ? sentence(t.question as string) : '',
+    t('main.falas.unchanged', { since }),
+    sentence(turn.next),
+    present(turn.blocker) ? sentence(t('main.falas.blocker', { blocker: String(turn.blocker) })) : '',
+    present(turn.question) ? sentence(turn.question as string) : '',
   ]
     .filter(Boolean)
     .join(' ');
   return {
-    ...t,
-    sessionId: sessionAlive ? t.sessionId : null,
+    ...turn,
+    sessionId: sessionAlive ? turn.sessionId : null,
     speech,
-    did: `Sem mudança desde ${since}.`,
+    did: t('main.falas.unchanged', { since }),
     reused: { at: saved.at },
   };
 }

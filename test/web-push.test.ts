@@ -81,10 +81,10 @@ describe('vapid', () => {
   it('signs an ES256 JWT with aud, exp and sub that verifies against the public key', () => {
     const keys = generateVapidKeys();
     expect(fromB64u(keys.publicKey)).toHaveLength(65);
-    const jwt = vapidJwt(keys, 'https://fcm.googleapis.com', 'https://koala.fortics.dev/cerimonias/', 1_900_000_000);
+    const jwt = vapidJwt(keys, 'https://fcm.googleapis.com', 'https://coxia.acme.test/cerimonias/', 1_900_000_000);
     const [h, c, s] = jwt.split('.');
     expect(JSON.parse(fromB64u(h).toString())).toEqual({ typ: 'JWT', alg: 'ES256' });
-    expect(JSON.parse(fromB64u(c).toString())).toEqual({ aud: 'https://fcm.googleapis.com', exp: 1_900_000_000, sub: 'https://koala.fortics.dev/cerimonias/' });
+    expect(JSON.parse(fromB64u(c).toString())).toEqual({ aud: 'https://fcm.googleapis.com', exp: 1_900_000_000, sub: 'https://coxia.acme.test/cerimonias/' });
     expect(fromB64u(s)).toHaveLength(64);
     const pub = fromB64u(keys.publicKey);
     const key = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(pub.subarray(1, 33)), y: b64u(pub.subarray(33, 65)) }, format: 'jwk' });
@@ -134,7 +134,7 @@ describe('endpoint allowlist', () => {
     expect(testOriginsFromEnv('http://127.0.0.1:5555')).toEqual(['http://127.0.0.1:5555']);
     expect(testOriginsFromEnv('http://localhost:5555/x')).toEqual(['http://localhost:5555']);
     expect(testOriginsFromEnv('http://evil.example')).toEqual([]);
-    expect(testOriginsFromEnv('http://10.0.0.5:80')).toEqual([]);
+    expect(testOriginsFromEnv('http://203.0.113.6:80')).toEqual([]);
     expect(testOriginsFromEnv(undefined)).toEqual([]);
     expect(allowedEndpoint('http://127.0.0.1:5555/push/1', ['http://127.0.0.1:5555'])).not.toBeNull();
     expect(allowedEndpoint('http://127.0.0.1:6666/push/1', ['http://127.0.0.1:5555'])).toBeNull();
@@ -144,18 +144,18 @@ describe('endpoint allowlist', () => {
 describe('push targets', () => {
   it('maps what a desktop notification does on click to a small target', () => {
     expect(noticeTarget({ type: 'navigate', to: 'call' })).toEqual({ to: 'call' });
-    expect(noticeTarget({ type: 'deep', card: { ref: 'sz4#123' } as never })).toEqual({ to: 'deep', ref: 'sz4#123' });
+    expect(noticeTarget({ type: 'deep', card: { ref: 'web#123' } as never })).toEqual({ to: 'deep', ref: 'web#123' });
     expect(noticeTarget({ type: 'conflict', id: 'abc' })).toEqual({ to: 'conflict', id: 'abc' });
-    expect(noticeTarget({ type: 'open', screen: { name: 'qa', ref: 'sz4#9' } })).toEqual({ to: 'qa', ref: 'sz4#9' });
+    expect(noticeTarget({ type: 'open', screen: { name: 'qa', ref: 'web#9' } })).toEqual({ to: 'qa', ref: 'web#9' });
     expect(noticeTarget({ type: 'open', screen: { name: 'qa' } })).toEqual({ to: 'today' });
     expect(noticeTarget({ type: 'open', screen: { name: 'nope' } })).toEqual({ to: 'today' });
     expect(noticeTarget({ type: 'module', name: 'x', payload: 1 })).toEqual({ to: 'today' });
   });
 
   it('round-trips through the URL query and rejects hostile values', () => {
-    const t = { to: 'discussions', ref: 'sz4#77', mr: '!12' };
+    const t = { to: 'discussions', ref: 'web#77', mr: '!12' };
     expect(targetFromSearch(`?${targetQuery(t)}`)).toBeNull();
-    const ok = { to: 'discussions', ref: 'sz4#77', mr: 'mr-12' };
+    const ok = { to: 'discussions', ref: 'web#77', mr: 'mr-12' };
     expect(targetFromSearch(`?${targetQuery(ok)}`)).toEqual(ok);
     expect(targetFromSearch('?open=deep&ref=<script>')).toBeNull();
     expect(targetFromSearch('?open=javascript:alert(1)')).toBeNull();
@@ -180,7 +180,7 @@ describe('push service', () => {
       const status = typeof opts.status === 'function' ? opts.status() : (opts.status ?? 201);
       return { status } satisfies PushResponse;
     };
-    const push = createPush({ dir, subject: 'https://koala.fortics.dev/cerimonias/', deviceIds: () => devices, notificationsOn: opts.notificationsOn ?? (() => true), transport, retryDelayMs: 0 });
+    const push = createPush({ dir, subject: 'https://coxia.acme.test/cerimonias/', deviceIds: () => devices, notificationsOn: opts.notificationsOn ?? (() => true), transport, retryDelayMs: 0 });
     return { dir, sent, devices, push };
   }
 
@@ -194,7 +194,7 @@ describe('push service', () => {
     const a = sub(1);
     push.subscribe('dev1', a.sub);
     expect(statSync(join(dir, 'web-push.json')).mode & 0o777).toBe(0o600);
-    push.notify({ title: 'Bloqueio novo na #12', body: 'Falta revisão', onClick: { type: 'deep', card: { ref: 'sz4#12' } as never } });
+    push.notify({ title: 'Bloqueio novo na #12', body: 'Falta revisão', onClick: { type: 'deep', card: { ref: 'web#12' } as never } });
     await push.flush();
     expect(sent).toHaveLength(1);
     const m = sent[0];
@@ -206,7 +206,7 @@ describe('push service', () => {
     expect(m.headers.Authorization).toMatch(/^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=/);
     expect(m.headers.Authorization.endsWith(`k=${push.publicKey()}`)).toBe(true);
     const payload = open(m, a.r);
-    expect(payload).toMatchObject({ v: 1, title: 'Bloqueio novo na #12', body: 'Falta revisão', target: { to: 'deep', ref: 'sz4#12' } });
+    expect(payload).toMatchObject({ v: 1, title: 'Bloqueio novo na #12', body: 'Falta revisão', target: { to: 'deep', ref: 'web#12' } });
     expect(JSON.stringify(payload).length).toBeLessThan(600);
   });
 

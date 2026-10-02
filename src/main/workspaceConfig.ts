@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { LEGACY_SECRET_REF, legacyProfile } from '../shared/config/legacy';
 import { setLanguage, setVoiceEnabled, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
 import type { WorkspaceConfig } from '../shared/config/types';
@@ -7,6 +6,7 @@ import { summarizeIssues, validateConfig } from '../shared/config/validate';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
 import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
 import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
+import { loadLegacyProfile } from './legacy-profile';
 import { secrets, seedLegacySecrets } from './secrets';
 
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
@@ -20,19 +20,21 @@ const listeners = new Set<(config: WorkspaceConfig) => void>();
 const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
 
 function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
+  const log = (m: string) => console.log(`[config] ${m}`);
+  const profile = loadLegacyProfile(process.env, log);
   if (!bootstrapped) {
     bootstrapped = true;
-    legacyWorkspace = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log: (m) => console.log(`[config] ${m}`) }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
+    legacyWorkspace = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log, profile }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
   }
   const stored = readConfigFile(ATAS);
   const checked = validateConfig(stored);
   const legacy = legacyWorkspace;
-  const config = checked.config ?? migrateConfig(stored, { legacyInstall: legacy }).config;
-  // A config migrated before userName existed keeps the name the app always used (the prompts still say it).
-  if (legacy && checked.ok && !(typeof stored === 'object' && stored !== null && 'userName' in stored)) config.userName = legacyProfile().userName ?? '';
-  if (legacy && config.llm.providers.some((p) => p.secretRef === LEGACY_SECRET_REF)) {
+  const config = checked.config ?? migrateConfig(stored, { legacyInstall: legacy, profile }).config;
+  // A config migrated before userName existed keeps the name of the legacy profile, when there is one.
+  if (legacy && profile && checked.ok && !(typeof stored === 'object' && stored !== null && 'userName' in stored)) config.userName = profile.config.userName ?? '';
+  if (legacy && profile?.secrets.length) {
     try {
-      seedLegacySecrets();
+      seedLegacySecrets(profile.secrets);
     } catch (e) {
       console.error('[config] could not register the previous secret source', e instanceof Error ? e.message : e);
     }
@@ -60,7 +62,7 @@ export function docsSources(): ResolvedDocs {
 /** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
 export function saveConfig(next: unknown): WorkspaceConfig {
   const checked = validateConfig(next);
-  if (!checked.ok || !checked.config) throw new Error(`configuração inválida: ${summarizeIssues(checked.errors)}`);
+  if (!checked.ok || !checked.config) throw new Error(t('main.config.invalid', { issues: summarizeIssues(checked.errors) }));
   writeConfigFile(ATAS, checked.config);
   state = { config: checked.config, resolved: resolveConfig(checked.config, context()) };
   setLanguage(checked.config.language);
@@ -102,7 +104,7 @@ export function issueProjectRef(): string {
   const { projectId, project } = rc().issues;
   if (projectId !== null) return String(projectId);
   if (project) return encodeURIComponent(project);
-  throw new Error('Este workspace não tem um projeto de issues configurado.');
+  throw new Error(t('main.config.noIssueProject'));
 }
 
 /** The VCS host, or an error naming what is missing: for the calls that cannot work without one. */
@@ -120,7 +122,7 @@ export function issueProjectKey(): string {
   const { projectId, project } = rc().issues;
   if (rc().primaryVcs?.kind === 'gitlab' && projectId !== null) return String(projectId);
   if (project) return project;
-  throw new Error('Este workspace não tem um projeto de issues configurado.');
+  throw new Error(t('main.config.noIssueProject'));
 }
 
 /** Matches a note that opens with the QA user mention (the release hand-off comment), or null when the workspace has no QA user. */
@@ -145,7 +147,7 @@ export function issueWebUrl(iid: string | number): string | null {
   return `https://${v.host}/${project}/-/work_items/${iid}`;
 }
 
-/** A card ref of an issue of the configured project ("sz4#15499" with the prefix, a bare number without one). */
+/** A card ref of an issue of the configured project ("app#101" with the prefix, a bare number without one). */
 export function isIssueRef(ref: string): boolean {
   const { refPrefix, project } = rc().issues;
   return !!project && ref.startsWith(refPrefix) && /^\d+$/.test(ref.slice(refPrefix.length));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { errorText } from '../api';
+import { tNodes, useT } from '../i18n';
 import { isWeb } from '../platform';
 import { disablePush, enablePush, pushStatus, pushSupport, sendTestPush } from '../pushClient';
 import '../web.css';
@@ -8,6 +9,7 @@ type View = { subscribed: boolean; notificationsOn: boolean; permission: Notific
 
 // Browser build only: opt-in to notifications on this phone or computer. The permission prompt only ever follows a tap.
 export function PushSection() {
+  const t = useT();
   const support = pushSupport();
   const [view, setView] = useState<View | null>(null);
   const [busy, setBusy] = useState<'enable' | 'disable' | 'test' | null>(null);
@@ -52,15 +54,15 @@ export function PushSection() {
   const enable = () =>
     run('enable', async () => {
       const permission = await enablePush();
-      return permission === 'granted' ? 'Notificações ativadas neste aparelho.' : permission === 'denied' ? 'O navegador bloqueou as notificações deste site. Libere nas configurações do navegador e tente de novo.' : 'Você fechou o pedido sem escolher. Toque em Ativar de novo quando quiser.';
+      return permission === 'granted' ? t('ui.push.msg.granted') : permission === 'denied' ? t('ui.push.msg.denied') : t('ui.push.msg.dismissed');
     });
 
   return (
     <section className="panel web-access" style={{ padding: 20, gap: 14 }}>
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Notificações neste aparelho</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.push.title')}</h2>
         <p className="small muted" style={{ marginTop: 4 }}>
-          Os mesmos avisos que o app do computador mostra (bloqueios, mudança de status, hora da pré-daily), mesmo com o app fechado.
+          {t('ui.push.hint')}
         </p>
       </div>
 
@@ -69,44 +71,44 @@ export function PushSection() {
 
       {support === 'ios-install' && (
         <div className="web-code-box" role="note">
-          <strong>No iPhone, instale o app primeiro.</strong>
+          <strong>{t('ui.push.ios.title')}</strong>
           <span className="small">
-            Toque em Compartilhar e depois em Adicionar à Tela de Início, abra o app pelo ícone novo e volte aqui. As notificações exigem iOS 16.4 ou mais novo.
+            {t('ui.push.ios.hint')}
           </span>
         </div>
       )}
-      {support === 'unsupported' && <p className="small muted">Este navegador não oferece notificações push. No iPhone, só funciona com o app adicionado à Tela de Início (iOS 16.4 ou mais novo).</p>}
+      {support === 'unsupported' && <p className="small muted">{t('ui.push.unsupported')}</p>}
 
       {support === 'ok' && view && (
         <>
           <p className="small">
-            Estado:{' '}
-            <strong>
-              {view.subscribed ? 'ativadas' : view.permission === 'denied' ? 'bloqueadas pelo navegador' : 'desativadas'}
-            </strong>
-            {view.subscribed && !view.notificationsOn ? ' · desligadas em Configurações › Notificações do computador (só o teste chega)' : ''}
+            {tNodes(
+              'ui.push.state',
+              { value: <strong>{view.subscribed ? t('ui.push.state.on') : view.permission === 'denied' ? t('ui.push.state.blocked') : t('ui.push.state.off')}</strong> },
+              { extra: view.subscribed && !view.notificationsOn ? t('ui.push.state.muted') : '' },
+            )}
           </p>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {!view.subscribed && (
               <button type="button" className="btn btn-dark" disabled={busy !== null || view.permission === 'denied'} onClick={enable}>
-                {busy === 'enable' ? <span className="spinner" /> : null} Ativar notificações neste aparelho
+                {busy === 'enable' ? <span className="spinner" /> : null} {t('ui.push.enable')}
               </button>
             )}
             {view.subscribed && (
               <>
-                <button type="button" className="btn" disabled={busy !== null} onClick={() => run('test', async () => { await sendTestPush(); return 'Teste enviado. Ele chega em alguns segundos.'; })}>
-                  {busy === 'test' ? <span className="spinner" /> : null} Enviar notificação de teste
+                <button type="button" className="btn" disabled={busy !== null} onClick={() => run('test', async () => { await sendTestPush(); return t('ui.push.msg.testSent'); })}>
+                  {busy === 'test' ? <span className="spinner" /> : null} {t('ui.push.sendTest')}
                 </button>
-                <button type="button" className="btn" disabled={busy !== null} onClick={() => run('disable', async () => { await disablePush(); return 'Notificações desativadas neste aparelho.'; })}>
-                  {busy === 'disable' ? <span className="spinner" /> : null} Desativar
+                <button type="button" className="btn" disabled={busy !== null} onClick={() => run('disable', async () => { await disablePush(); return t('ui.push.msg.disabled'); })}>
+                  {busy === 'disable' ? <span className="spinner" /> : null} {t('ui.push.disable')}
                 </button>
               </>
             )}
           </div>
-          {view.permission === 'denied' && !view.subscribed && <p className="small muted">O navegador bloqueou as notificações deste site. Libere em Configurações do site e volte aqui.</p>}
+          {view.permission === 'denied' && !view.subscribed && <p className="small muted">{t('ui.push.deniedHint')}</p>}
         </>
       )}
-      {support === 'ok' && !view && !error && <div className="row" role="status"><span className="spinner" aria-hidden="true" /> <span className="small muted">Conferindo…</span></div>}
+      {support === 'ok' && !view && !error && <div className="row" role="status"><span className="spinner" aria-hidden="true" /> <span className="small muted">{t('ui.push.checking')}</span></div>}
     </section>
   );
 }

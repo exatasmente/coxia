@@ -243,6 +243,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
       if (!opts.status) return issue;
       const full = issue.project || project;
       const q = await tr.graphql<{ data: { project: { workItems: { nodes: { id: string; widgets: { type: string; status?: { name: string } }[] }[] } } | null } }>(
+        // i18n-ignore: query language of the code host
         `query { project(fullPath: "${full}") { workItems(iid: "${iid}") { nodes { id widgets { type ... on WorkItemWidgetStatus { status { name } } } } } } }`,
       );
       const node = q.data?.project?.workItems.nodes[0];
@@ -253,6 +254,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
       const out = new Map<number, string>();
       if (!iids.length) return out;
       const full = checkProject(project, false);
+      // i18n-ignore: query language of the code host
       const query = `{ project(fullPath:"${full}"){ workItems(iids:[${iids.map((i) => `"${checkIid(i)}"`).join(',')}]){ nodes{ iid widgets{ ... on WorkItemWidgetStatus{ status{ name } } } } } } }`;
       try {
         const r = await tr.graphql<{ data?: { project?: { workItems?: { nodes: { iid: string; widgets: { status?: { name: string } }[] }[] } } } }>(query);
@@ -437,6 +439,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
           if (!id) throw new VcsError('invalid', { detail: gid });
           return [
             rest('POST', 'graphql', {
+              // i18n-ignore: query language of the code host
               query: `mutation { workItemUpdate(input: { id: "gid://gitlab/WorkItem/${id}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/${op.status}" } }) { errors } }`,
             }),
           ];

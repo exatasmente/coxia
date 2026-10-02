@@ -11,7 +11,7 @@ import { createAuth, type Auth } from '../src/main/webAuth';
 import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/main/webPolicy';
 
 const BASE = '/cerimonias/';
-const PUBLIC = 'https://koala.fortics.dev/cerimonias/';
+const PUBLIC = 'https://coxia.acme.test/cerimonias/';
 
 let dir: string;
 let app: WebApp;
@@ -192,7 +192,7 @@ describe('login and session', () => {
     await new Promise<void>((ok) => other.server.listen(0, '127.0.0.1', ok));
     const p = (other.server.address() as AddressInfo).port;
     const res = await new Promise<Res>((ok, fail) => {
-      const req = request({ host: '127.0.0.1', port: p, method: 'POST', path: `${BASE}api/login`, headers: { ...JSON_POST, Host: 'koala.fortics.dev', 'X-Forwarded-Proto': 'https' } }, (r) => {
+      const req = request({ host: '127.0.0.1', port: p, method: 'POST', path: `${BASE}api/login`, headers: { ...JSON_POST, Host: 'coxia.acme.test', 'X-Forwarded-Proto': 'https' } }, (r) => {
         let body = '';
         r.on('data', (c) => (body += c));
         r.on('end', () => ok({ status: r.statusCode ?? 0, headers: r.headers, body, json: () => JSON.parse(body) }));
@@ -237,7 +237,7 @@ describe('request guards', () => {
     const cookie = await pairedCookie();
     expect((await rpc('state:load', [], cookie, { Origin: 'https://evil.example' })).status).toBe(403);
     expect((await rpc('state:load', [], cookie, { Origin: 'null' })).status).toBe(403);
-    expect((await rpc('state:load', [], cookie, { Origin: 'https://koala.fortics.dev' })).status).toBe(200);
+    expect((await rpc('state:load', [], cookie, { Origin: 'https://coxia.acme.test' })).status).toBe(200);
     expect((await rpc('state:load', [], cookie, { Origin: `http://127.0.0.1:${port}` })).status).toBe(200);
     expect((await rpc('state:load', [], cookie, { Origin: 'http://localhost:3000' })).status).toBe(200);
     // no Origin (non-browser client) is fine: the cookie and the header still apply
@@ -263,23 +263,23 @@ describe('request guards', () => {
 
   it('originAllowed and clientIp helpers', () => {
     expect(originAllowed(undefined, PUBLIC)).toBe(true);
-    expect(originAllowed('https://koala.fortics.dev', PUBLIC)).toBe(true);
-    expect(originAllowed('http://koala.fortics.dev', PUBLIC)).toBe(false);
-    expect(originAllowed('https://koala.fortics.dev.evil.com', PUBLIC)).toBe(false);
+    expect(originAllowed('https://coxia.acme.test', PUBLIC)).toBe(true);
+    expect(originAllowed('http://coxia.acme.test', PUBLIC)).toBe(false);
+    expect(originAllowed('https://coxia.acme.test.evil.com', PUBLIC)).toBe(false);
     expect(originAllowed('not a url', PUBLIC)).toBe(false);
     // X-Real-IP counts only from the proxy (trusted CIDR or loopback)
-    const cidr = '172.18.0.0/16';
-    expect(clientIp('172.18.0.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
-    expect(clientIp('::ffff:172.18.0.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
+    const cidr = '198.51.100.0/24';
+    expect(clientIp('198.51.100.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
+    expect(clientIp('::ffff:198.51.100.28', '1.2.3.4', cidr)).toBe('1.2.3.4');
     expect(clientIp('127.0.0.1', '1.2.3.4', cidr)).toBe('1.2.3.4');
-    expect(clientIp('192.168.1.50', '1.2.3.4', cidr)).toBe('192.168.1.50');
-    expect(clientIp('172.19.0.2', '1.2.3.4', cidr)).toBe('172.19.0.2');
-    expect(clientIp('172.18.0.28', 'garbage', cidr)).toBe('172.18.0.28');
-    expect(clientIp('172.18.0.28', undefined, cidr)).toBe('172.18.0.28');
-    expect(inCidr('172.18.255.1', '172.18.0.0/16')).toBe(true);
-    expect(inCidr('172.19.0.1', '172.18.0.0/16')).toBe(false);
-    expect(inCidr('10.0.0.1', '0.0.0.0/0')).toBe(true);
-    expect(inCidr('10.0.0.1', 'bad')).toBe(false);
+    expect(clientIp('203.0.113.50', '1.2.3.4', cidr)).toBe('203.0.113.50');
+    expect(clientIp('203.0.113.2', '1.2.3.4', cidr)).toBe('203.0.113.2');
+    expect(clientIp('198.51.100.28', 'garbage', cidr)).toBe('198.51.100.28');
+    expect(clientIp('198.51.100.28', undefined, cidr)).toBe('198.51.100.28');
+    expect(inCidr('198.51.100.255', '198.51.100.0/24')).toBe(true);
+    expect(inCidr('198.51.101.1', '198.51.100.0/24')).toBe(false);
+    expect(inCidr('203.0.113.1', '0.0.0.0/0')).toBe(true);
+    expect(inCidr('203.0.113.1', 'bad')).toBe(false);
   });
 });
 

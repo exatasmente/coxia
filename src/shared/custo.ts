@@ -1,17 +1,11 @@
+import { lazyLabels } from './i18n';
+
 export type CustoKind = 'turn' | 'deep' | 'gate' | 'qa' | 'retro' | 'teams' | 'release';
 
 // 'current' sums only the sessions the running workspace started; 'all' sums every session found, including the ones no workspace claimed.
 export type CustoScope = 'current' | 'all';
 
-export const CUSTO_LABEL: Record<CustoKind, string> = {
-  turn: 'Pré-daily (agentes)',
-  deep: 'Desbloqueio',
-  gate: 'Gate',
-  qa: 'Passagem para o QA',
-  retro: 'Retro',
-  teams: 'Texto do Teams',
-  release: 'Release e conflitos',
-};
+export const CUSTO_LABEL: Record<CustoKind, string> = lazyLabels<CustoKind>(['turn', 'deep', 'gate', 'qa', 'retro', 'teams', 'release'], 'main.custo.kind');
 
 export interface CustoKey {
   limit: number | null;

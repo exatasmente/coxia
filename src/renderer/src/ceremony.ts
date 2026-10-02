@@ -17,6 +17,7 @@ import type { SameDayMark } from '../../shared/sameDay';
 import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
 import { minutesApi } from './minutesApi';
+import { withJob } from './jobs';
 
 export type { LogLine };
 
@@ -198,7 +199,7 @@ export function useCeremony() {
   const getTurn = useCallback((card: Card, options: { deepen?: boolean } = {}): Promise<AgentTurn> => {
     const known = options.deepen ? undefined : pending.current.get(card.ref);
     if (known) return known;
-    const p = api.prepareTurn(card, { ceremonyId: idRef.current, ...(options.deepen ? { deepen: true } : {}) }).then(
+    const p = withJob(`prep:${card.ref}`, () => api.prepareTurn(card, { ceremonyId: idRef.current, ...(options.deepen ? { deepen: true } : {}) })).then(
       (turn) => {
         setTurns((t) => ({ ...t, [card.ref]: turn }));
         return turn;

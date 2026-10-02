@@ -10,7 +10,7 @@ export function isTestWorkspace(): boolean {
   return currentWorkspace()?.test !== false;
 }
 
-/** The refusal for a write that leaves the machine (GitLab, pushes, spec files, daily-report), or null when allowed. */
+/** The refusal for a write that leaves the machine (GitLab, pushes, spec files, card notes), or null when allowed. */
 export function externalRefusal(what: string): string | null {
   return externalWriteRefusal(readRegistry(DATA_ROOT), what);
 }

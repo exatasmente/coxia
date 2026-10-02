@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { ToolImpl } from './tools/types';
 import { ToolError, clip } from './tools/types';
+import { t } from '../../../shared/i18n';
 
 export interface DocSources {
   // CLAUDE.md files, or folders that hold CLAUDE.md or .claude/CLAUDE.md.
@@ -72,6 +73,7 @@ export function loadClaudeMd(sources: string[], max = 60_000): LoadedClaudeMd {
     if (text === null) return;
     seen.add(abs);
     files.push(abs);
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     parts.push(`Contents of ${abs}:\n\n${text.trim()}`);
     for (const ref of importsOf(text)) {
       const target = ref.startsWith('~/') ? join(homedir(), ref.slice(2)) : resolve(dirname(abs), ref);
@@ -190,17 +192,20 @@ export function docIndex(dirs: string[], limit = 120): string[] {
 export function skillTool(skills: Skill[]): ToolImpl {
   return {
     name: 'Skill',
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     description: 'Loads the full instructions of one skill listed in the system prompt. Call it when the task matches the skill description, then follow what it says.',
     parameters: {
       type: 'object',
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       properties: { skill: { type: 'string', description: 'Skill name, exactly as listed' }, args: { type: 'string', description: 'Optional arguments' } },
       required: ['skill'],
     },
     async run(input, ctx) {
       const name = String(input.skill ?? '').replace(/^\//, '');
       const found = skills.find((s) => s.name === name);
-      if (!found) throw new ToolError(`Skill desconhecida: ${name}. Disponíveis: ${skills.map((s) => s.name).join(', ')}`);
+      if (!found) throw new ToolError(t('main.engine.text.unknownSkill', { name, available: skills.map((s) => s.name).join(', ') }));
       const body = parseFrontmatter(readFileSync(found.file, 'utf8')).body.trim();
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       return { response: `Base directory for this skill: ${dirname(found.file)}\n\n${body}`, render: (r) => clip(String(r), ctx.outputMax) };
     },
   };
@@ -218,13 +223,16 @@ export interface PromptParts {
 }
 
 const GUIDE =
+  // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
   'You are an autonomous assistant that answers by using tools. Think step by step, call the tools you need (several at once when they are independent), ' +
   'read the results, and only then answer. Never invent file contents, command output or identifiers: if you did not read it, say you did not. ' +
   'Tools are read-only. Keep going until the task is done, then give the final answer in the format requested.';
+  // i18n-ignore-end
 
 export function buildSystemPrompt(p: PromptParts): string {
   const sections: string[] = [GUIDE];
   sections.push(
+    // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
     `Environment:\n- Working directory: ${p.cwd}\n- Platform: ${process.platform}\n- Date: ${(p.now ?? new Date()).toISOString().slice(0, 10)}\n- Tools: ${p.toolNames.join(', ') || '(none)'}`,
   );
   if (p.claudeMd) sections.push(`Project instructions (CLAUDE.md). Follow them:\n\n${p.claudeMd}`);
@@ -235,6 +243,7 @@ export function buildSystemPrompt(p: PromptParts): string {
     sections.push(`Agents (call the Agent tool with subagent_type to delegate a focused task):\n${p.agents.map((a) => `- ${a.name}: ${a.description}`).join('\n')}`);
   }
   if (p.docs?.length) sections.push(`Reference docs you may read with Read when the task needs them:\n${p.docs.map((d) => `- ${d}`).join('\n')}`);
+    // i18n-ignore-end
   if (p.append) sections.push(p.append);
   return sections.join('\n\n');
 }

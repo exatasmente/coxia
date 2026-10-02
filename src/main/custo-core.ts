@@ -1,6 +1,7 @@
 import { CUSTO_LABEL, type CustoFalas, type CustoKey, type CustoKind, type CustoRow, type CustoScope, type CustoSummary, type CustoWorkspaceRow } from '../shared/custo';
 import { openersOf } from '../shared/cycles/prompts';
 import type { WorkspaceInfo } from '../shared/workspaces';
+import { t } from '../shared/i18n';
 
 export const DEFAULT_GOAL = 20;
 
@@ -73,7 +74,7 @@ export function gensOf(lines: Iterable<string>, kind: CustoKind, session: string
 
 export function parseKey(body: unknown): CustoKey {
   const d = (body as { data?: Record<string, unknown> }).data;
-  if (!d || typeof d.usage !== 'number') throw new Error('resposta inesperada da OpenRouter');
+  if (!d || typeof d.usage !== 'number') throw new Error(t('main.custo.unexpected'));
   const num = (v: unknown) => (typeof v === 'number' ? v : 0);
   return {
     limit: typeof d.limit === 'number' ? d.limit : null,
@@ -89,7 +90,7 @@ export function parseKey(body: unknown): CustoKey {
 export function parseGeneration(body: unknown, ref: GenRef): GenStat {
   const d = (body as { data?: Record<string, unknown> }).data;
   const cost = d && (typeof d.total_cost === 'number' ? d.total_cost : d.usage);
-  if (!d || typeof cost !== 'number') throw new Error('geração sem custo');
+  if (!d || typeof cost !== 'number') throw new Error(t('main.custo.noCost'));
   const num = (v: unknown) => (typeof v === 'number' ? v : 0);
   return {
     cost,
@@ -141,7 +142,7 @@ export function falasOf(gens: GenStat[], reuses: number[], now: number): CustoFa
   };
 }
 
-export const NO_WORKSPACE = 'sem workspace';
+export const noWorkspace = (): string => t('main.custo.noWorkspace');
 
 // The workspace that started a session, or null when none did (sessions from before the index existed).
 export type Owners = ReadonlyMap<string, string>;
@@ -159,7 +160,7 @@ export function byWorkspaceOf(gens: GenStat[], owners: Owners, workspaces: Works
     const id = owners.get(g.session);
     return id && known.has(id) ? id : null;
   };
-  const rows: CustoWorkspaceRow[] = [...workspaces.map((w) => ({ id: w.id as string | null, name: w.name, test: w.test })), { id: null, name: NO_WORKSPACE, test: false }].map((w) => {
+  const rows: CustoWorkspaceRow[] = [...workspaces.map((w) => ({ id: w.id as string | null, name: w.name, test: w.test })), { id: null, name: noWorkspace(), test: false }].map((w) => {
     const mine = gens.filter((g) => owner(g) === w.id);
     const sum = (list: GenStat[]) => list.reduce((n, g) => n + g.cost, 0);
     return {
@@ -217,9 +218,9 @@ export function summarize(args: {
     key: args.key,
     keyError: args.keyError,
     pending: args.pending,
-    today: row('today', 'Hoje', byDay.get(today) ?? []),
-    week: row('week', 'Últimos 7 dias', week),
-    month: row('month', 'Este mês', gens.filter((g) => day(g.at).startsWith(month))),
+    today: row('today', t('main.custo.today'), byDay.get(today) ?? []),
+    week: row('week', t('main.custo.week'), week),
+    month: row('month', t('main.custo.month'), gens.filter((g) => day(g.at).startsWith(month))),
     // Spent so far plus the pace of the last 7 days for the days left; the month alone is too noisy in its first days.
     projected: args.key ? args.key.usageMonthly + (args.key.usageWeekly / 7) * (daysInMonth - d.getDate()) : null,
     days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, g]) => row(date, date, g)),

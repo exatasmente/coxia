@@ -1,10 +1,9 @@
 import type { StageDef } from '../../shared/config/types';
 import { stageDisplay, stageUrgency } from '../../shared/cycles/stages';
-import { t } from '../../shared/i18n';
+import { intlLocale, t, tv } from '../../shared/i18n';
 import type { AgentTurn, Card, ReleaseAction } from '../../shared/types';
 import type { TempoIssue } from '../../shared/tempo';
 import type { WatcherAlert } from '../../shared/watchers';
-import { tv } from '../../shared/i18n';
 
 // Pure rules behind the Hoje dashboard: what the main card offers, what needs the person, how activities are ordered.
 
@@ -39,7 +38,7 @@ export interface AgoraInput {
   decisions: number;
   effects: number;
   retroDue: boolean;
-  /** How the cycle calls the daily preparation; absent: "pré-daily". */
+  /** How the cycle calls the daily preparation; absent: the default label ("pré-daily" / "pre-daily"). */
   label?: string;
   /** Earlier meetings today: which version this one is, and how many cards need nothing new. */
   sameDay?: { version: number | null; unchanged: number; changed: number };
@@ -61,39 +60,39 @@ export interface AgoraPlan {
 }
 
 /** What the team calls the daily preparation; the cycle says it ("pré-daily", "daily scrum", "standup"). */
-const DEFAULT_LABEL = 'pré-daily';
+const defaultLabel = (): string => t('ui.today.preDailyLabel');
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-export function resumeNote(startedAt: number | null, saved: boolean, label = DEFAULT_LABEL): string {
-  if (saved) return `A ${label} de hoje já foi encerrada e a ata está gravada.`;
+export function resumeNote(startedAt: number | null, saved: boolean, label = defaultLabel()): string {
+  if (saved) return t('ui.today.resume.saved', { label });
   if (startedAt) {
-    const at = new Date(startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `Retomando a ${label} de hoje, começada às ${at}: os agentes já preparados não são chamados de novo.`;
+    const at = new Date(startedAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+    return t('ui.today.resume.started', { label, time: at });
   }
-  return 'Cartões e agentes de hoje recuperados do disco, sem chamar o GitLab nem os agentes de novo.';
+  return t('ui.today.resume.restored');
 }
 
 function ataHint(i: AgoraInput): string | null {
   if (!i.decisions && !i.effects) return null;
-  return `${i.decisions} ${i.decisions === 1 ? 'decisão' : 'decisões'} · ${i.effects} ${i.effects === 1 ? 'efeito aguardando' : 'efeitos aguardando'} “sim”`;
+  return `${t('ui.today.ataDecisions', { count: i.decisions })} · ${t('ui.today.ataEffects', { count: i.effects })}`;
 }
 
 /** The one primary action of the "Agora" card, by the moment of the pre-daily. */
 export function agoraPlan(i: AgoraInput): AgoraPlan {
-  const label = i.label ?? DEFAULT_LABEL;
+  const label = i.label ?? defaultLabel();
   const ended = i.callEnded || i.saved;
-  const retro: AgoraButton[] = i.retroDue ? [{ action: 'retro', label: 'Abrir a retro' }] : [];
+  const retro: AgoraButton[] = i.retroDue ? [{ action: 'retro', label: t('ui.today.openRetro') }] : [];
   const note = i.resumed ? resumeNote(i.startedAt, i.saved, label) : null;
-  const ata: AgoraButton = { action: 'ata', label: 'Ver ata' };
+  const ata: AgoraButton = { action: 'ata', label: t('ui.today.viewMinutes') };
 
   if (ended) {
     return {
       phase: 'ended',
-      title: `${capital(label)} encerrada${i.sameDay?.version ? ` · ${t('minutes.version.label', { n: i.sameDay.version })}` : ''}`,
+      title: `${t('ui.today.agora.ended', { label: capital(label) })}${i.sameDay?.version ? ` · ${t('minutes.version.label', { n: i.sameDay.version })}` : ''}`,
       hint: ataHint(i) ?? note,
       progress: null,
       primary: ata,
-      secondary: [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards }, ...retro],
+      secondary: [{ action: 'reset', label: t('ui.today.agora.new', { label }), disabled: i.loadingCards }, ...retro],
     };
   }
   if (i.startedAt) {
@@ -110,9 +109,9 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
     return {
       phase: 'loading',
       title: capital(label),
-      hint: 'Lendo o GitLab pelo daily-report (~30 s).',
-      progress: 'Montando cartões…',
-      primary: { action: 'call', label: `Começar a ${label}`, disabled: true },
+      hint: t('ui.today.agora.loadingHint'),
+      progress: t('ui.today.buildingCards'),
+      primary: { action: 'call', label: t('ui.today.agora.start', { label }), disabled: true },
       secondary: retro,
     };
   }
@@ -123,10 +122,10 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
       note ??
       (i.sameDay && i.sameDay.unchanged + i.sameDay.changed > 0
         ? t('sameDay.today.hint', { unchanged: i.sameDay.unchanged, changed: i.sameDay.changed })
-        : `${i.total} ${i.total === 1 ? 'atividade' : 'atividades'}, bloqueadas primeiro. ~30 s por atividade.`),
-    progress: i.ready < i.total ? `Agentes prontos ${i.ready} de ${i.total}` : null,
-    primary: { action: 'call', label: `Começar a ${label}` },
-    secondary: [...(i.resumed ? [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards } as AgoraButton] : []), ...retro],
+        : t('ui.today.agora.readyHint', { count: i.total })),
+    progress: i.ready < i.total ? t('ui.today.agora.progress', { ready: i.ready, total: i.total }) : null,
+    primary: { action: 'call', label: t('ui.today.agora.start', { label }) },
+    secondary: [...(i.resumed ? [{ action: 'reset', label: t('ui.today.agora.new', { label }), disabled: i.loadingCards } as AgoraButton] : []), ...retro],
   };
 }
 
@@ -181,7 +180,7 @@ function watcherItem(a: WatcherAlert): NeedItem {
     tone: a.kind === 'rejections' ? 'stop' : 'warn',
     title: a.message,
     detail: a.detail,
-    cta: a.card ? 'Abrir o gate' : null,
+    cta: a.card ? t('ui.today.openGate') : null,
     to: a.card ? { to: 'gate', ref: a.card.ref, card: a.card } : null,
     alertId: a.id,
   };
@@ -197,9 +196,9 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       id: `conflict:${a.id}`,
       kind: 'conflict',
       tone: 'warn',
-      title: `Conflito na #${a.issue} ao sincronizar com a main`,
+      title: t('ui.today.need.conflict', { issue: a.issue }),
       detail: a.issueTitle,
-      cta: 'Ver conflito',
+      cta: t('ui.today.need.seeConflict'),
       to: { to: 'conflict', id: a.id },
     });
   }
@@ -211,7 +210,7 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       tone: 'warn',
       title: c.blockers[0],
       detail: `#${c.iid} · ${c.title}`,
-      cta: 'Aprofundar',
+      cta: t('ui.today.deepen'),
       to: { to: 'deep', ref: c.ref },
       ...(MR_CONFLICT.test(c.blockers[0]) && conflictMrs(c).length ? { conflictCard: c } : {}),
     });
@@ -223,9 +222,9 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       id: 'actions',
       kind: 'actions',
       tone: 'warn',
-      title: release === 1 ? '1 ação de release aguardando o seu “seguir”' : `${release} ações de release aguardando o seu “seguir”`,
+      title: t('ui.today.need.releaseActions', { count: release }),
       detail: null,
-      cta: 'Ver ações',
+      cta: t('ui.today.need.seeActions'),
       to: { to: 'actions' },
     });
   }
@@ -237,7 +236,7 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       tone: 'info',
       title: i.turns[c.ref]?.question ?? '',
       detail: `#${c.iid} · ${c.title}`,
-      cta: 'Responder',
+      cta: t('ui.today.need.answer'),
       to: { to: 'deep', ref: c.ref },
     });
   }
@@ -262,7 +261,7 @@ export function sortByUrgency(cards: Card[], turns: Record<string, AgentTurn>, a
 }
 
 export function mrLabel(n: number): string {
-  return n === 0 ? 'sem MR' : n === 1 ? '1 MR' : `${n} MRs`;
+  return n === 0 ? t('ui.today.noMr') : t('ui.today.mrCount', { count: n });
 }
 
 export function stageLabel(card: Card): string {

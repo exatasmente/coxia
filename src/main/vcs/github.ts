@@ -223,6 +223,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
 
   const threadsQuery = (project: string, iid: number): string => {
     const [owner, name] = checkRepo(project).split('/');
+    // i18n-ignore: query language of the code host
     return `query { repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${checkIid(iid)}) { reviewThreads(first: 100) { nodes { id isResolved path line originalLine comments(first: 50) { nodes { databaseId author { login } body createdAt url } } } } } } }`;
   };
 
@@ -269,6 +270,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     },
 
     async searchIssues(project, q) {
+      // i18n-ignore: query language of the code host
       const rows = await searchRaw(`is:issue repo:${checkRepo(project)} in:title ${q.text} created:>=${q.createdAfter.slice(0, 10)}`, 20);
       return rows.filter((i) => !i.pull_request).map((i) => issueOf(i, project));
     },
@@ -286,7 +288,9 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           else found.set(key, { project, number: r.number, roles: [role] });
         }
       };
+      // i18n-ignore: query language of the code host
       if (roles.includes('author')) add(await searchRaw(`is:pr is:open author:${who}`), 'author');
+      // i18n-ignore: query language of the code host
       if (roles.includes('reviewer')) add(await searchRaw(`is:pr is:open review-requested:${who}`), 'reviewer');
       const list = [...found.values()].slice(0, opts.limit ?? 100);
       // The search result has no branch, sha or mergeable flag: one pull request read each (a few at a time).
@@ -330,6 +334,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     },
 
     async searchMrs(project, q) {
+      // i18n-ignore: query language of the code host
       const rows = await searchRaw(`is:pr repo:${checkRepo(project)} in:title ${q.text} created:>=${q.createdAfter.slice(0, 10)}`, 20);
       return rows.map(
         (r): VcsMr => ({
@@ -450,6 +455,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         }
         case 'resolveThread':
           if (!/^[\w=-]{8,}$/.test(op.threadId)) throw new VcsError('invalid', { detail: op.threadId });
+          // i18n-ignore: query language of the code host
           return [graphql(`mutation { resolveReviewThread(input: { threadId: "${op.threadId}" }) { thread { isResolved } } }`)];
         case 'editIssueNote':
           return [call('PATCH', `${repo(op.project)}/issues/comments/${num(op.noteId)}`, { body: op.body })];
@@ -469,6 +475,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           const pr = await tr.get<GhPull>(`${repo(op.project)}/pulls/${checkIid(op.iid)}`);
           if (!pr.node_id || !/^[\w=-]{8,}$/.test(pr.node_id)) throw new VcsError('invalid', { detail: String(pr.node_id) });
           const mutation = op.draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
+          // i18n-ignore: query language of the code host
           return [graphql(`mutation { ${mutation}(input: { pullRequestId: "${pr.node_id}" }) { pullRequest { isDraft } } }`)];
         }
         case 'playJob':

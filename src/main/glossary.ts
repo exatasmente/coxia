@@ -6,6 +6,7 @@ import { getSettings } from './config';
 import { DATA_ROOT } from './env';
 import type { Module } from './module';
 import { planSpeech, speakSegment, voicesFor } from './voice';
+import { t } from '../shared/i18n';
 
 const FILE = join(DATA_ROOT, 'glossario.json');
 
@@ -43,7 +44,7 @@ export const register: Module = (ctx) => {
   // Plays a draft: the terms come from the screen, not from the saved file.
   // One click on a corrected transcription: adds the variant to its term (or creates the term).
   ctx.handle('glossary:learn', (heard: unknown, term: unknown) => {
-    if (typeof heard !== 'string' || typeof term !== 'string' || !heard.trim() || !term.trim()) throw new Error('Correção inválida.');
+    if (typeof heard !== 'string' || typeof term !== 'string' || !heard.trim() || !term.trim()) throw new Error(t('main.glossary.invalid'));
     return save(learn(glossary(), { heard, term }));
   });
   ctx.handle('glossary:hear', (text: string, terms: unknown) => hear(text, terms));

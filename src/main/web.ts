@@ -9,6 +9,7 @@ import { AuthError, createAuth, type Auth, SESSION_TTL_MS } from './webAuth';
 import { createIdempotency, IdempotencyConflict, type Idempotency } from './webIdempotency';
 import { webRefusal } from './webPolicy';
 import { IDEMPOTENCY_KEY, isQueueable } from '../shared/outbox';
+import { t } from '../shared/i18n';
 
 const COOKIE = 'cer_session';
 const MAX_BODY = 15 * 1024 * 1024;
@@ -20,9 +21,11 @@ const CSP = [
   "script-src 'self'",
   // mermaid writes inline style attributes into its diagrams
   "style-src 'self' 'unsafe-inline'",
+  // i18n-ignore-start: HTTP header and content-security-policy values
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "media-src 'self' blob:",
+  // i18n-ignore-end
   "connect-src 'self'",
   "worker-src 'self'",
   "manifest-src 'self'",
@@ -163,7 +166,7 @@ function readBody(req: IncomingMessage, max = MAX_BODY): Promise<Buffer> {
     req.on('data', (c: Buffer) => {
       size += c.length;
       if (size > max) {
-        fail(new HttpError(413, 'Corpo grande demais.'));
+        fail(new HttpError(413, t('main.web.bodyTooLarge')));
         req.destroy();
         return;
       }
@@ -213,21 +216,21 @@ export function createWebApp(deps: WebDeps): WebApp {
   }
 
   function guardWrite(req: IncomingMessage): void {
-    if (req.headers['x-cerimonias'] !== '1') throw new HttpError(403, 'Cabeçalho X-Cerimonias ausente.');
-    if (!originAllowed(req.headers.origin, deps.settings().publicUrl)) throw new HttpError(403, 'Origem não permitida.');
-    if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) throw new HttpError(415, 'Use application/json.');
+    if (req.headers['x-cerimonias'] !== '1') throw new HttpError(403, t('main.web.noHeader'));
+    if (!originAllowed(req.headers.origin, deps.settings().publicUrl)) throw new HttpError(403, t('main.web.origin'));
+    if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) throw new HttpError(415, t('main.web.json'));
   }
 
   async function api(req: IncomingMessage, res: ServerResponse, rel: string): Promise<void> {
     const method = req.method ?? 'GET';
     if (rel === 'api/login') {
-      if (method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+      if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
       let body: { code?: unknown; name?: unknown };
       try {
         body = JSON.parse((await readBody(req, LOGIN_BODY)).toString('utf8')) as { code?: unknown; name?: unknown };
       } catch {
-        throw new HttpError(400, 'JSON inválido.');
+        throw new HttpError(400, t('main.web.badJson'));
       }
       const ip = clientIp(req.socket.remoteAddress, req.headers['x-real-ip'], deps.settings().trustedProxy);
       const { token, device } = deps.auth.login(body?.code, body?.name, ip);
@@ -236,16 +239,16 @@ export function createWebApp(deps: WebDeps): WebApp {
     }
 
     const { token, device } = session(req);
-    if (!device || !token) throw new HttpError(401, 'Entre com um código de pareamento.');
+    if (!device || !token) throw new HttpError(401, t('main.web.pair'));
 
     if (rel === 'api/session') {
-      if (method !== 'GET') throw new HttpError(405, 'Método não permitido.');
+      if (method !== 'GET') throw new HttpError(405, t('main.web.method'));
       json(res, 200, { device, allowExternalEffects: deps.settings().allowExternalEffects }, { 'Set-Cookie': cookieHeader(token, req, SESSION_TTL_MS / 1000) });
       return;
     }
 
     if (rel === 'api/logout') {
-      if (method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+      if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
       deps.auth.revoke(device.id);
       deps.onDeviceGone?.(device.id);
@@ -255,8 +258,9 @@ export function createWebApp(deps: WebDeps): WebApp {
     }
 
     if (rel === 'api/events') {
-      if (method !== 'GET') throw new HttpError(405, 'Método não permitido.');
+      if (method !== 'GET') throw new HttpError(405, t('main.web.method'));
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      // i18n-ignore: HTTP header and content-security-policy values
       res.write('retry: 3000\n\n: open\n\n');
       const client: SseClient = { res, deviceId: device.id };
       sse.add(client);
@@ -265,10 +269,10 @@ export function createWebApp(deps: WebDeps): WebApp {
     }
 
     if (rel.startsWith('api/rpc/')) {
-      if (method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+      if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
       const channel = rel.slice('api/rpc/'.length);
-      if (!deps.hasChannel(channel)) throw new HttpError(404, `Canal desconhecido: ${channel}`);
+      if (!deps.hasChannel(channel)) throw new HttpError(404, t('main.rpc.unknownChannel', { channel }));
       const refusal = webRefusal(channel, deps.settings().allowExternalEffects);
       if (refusal) throw new HttpError(403, refusal);
       let args: unknown;
@@ -276,11 +280,11 @@ export function createWebApp(deps: WebDeps): WebApp {
         args = decodeWire(JSON.parse((await readBody(req)).toString('utf8')));
       } catch (e) {
         if (e instanceof HttpError) throw e;
-        throw new HttpError(400, 'JSON inválido.');
+        throw new HttpError(400, t('main.web.badJson'));
       }
-      if (!Array.isArray(args)) throw new HttpError(400, 'O corpo deve ser a lista de argumentos.');
+      if (!Array.isArray(args)) throw new HttpError(400, t('main.web.args'));
       const key = req.headers['x-idempotency-key'];
-      if (key !== undefined && (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key))) throw new HttpError(400, 'Chave de idempotência inválida.');
+      if (key !== undefined && (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key))) throw new HttpError(400, t('main.web.idemKey'));
       let result: unknown;
       try {
         const run = () => deps.invoke(channel, args, device.id);
@@ -294,7 +298,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       return;
     }
 
-    throw new HttpError(404, 'Não encontrado.');
+    throw new HttpError(404, t('main.web.notFound'));
   }
 
   function dropDevice(id: string): void {
@@ -306,12 +310,13 @@ export function createWebApp(deps: WebDeps): WebApp {
   }
 
   function serveStatic(req: IncomingMessage, res: ServerResponse, rel: string): void {
-    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Método não permitido.');
+    if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, t('main.web.method'));
     const file = resolveStatic(deps.rendererDir, rel);
-    if (!file) throw new HttpError(404, 'Não encontrado.');
+    if (!file) throw new HttpError(404, t('main.web.notFound'));
     const hashed = /^assets\/.+-[\w-]{6,}\.\w+$/.test(rel);
     const headers: Record<string, string | number> = {
       'Content-Type': file.type,
+      // i18n-ignore: HTTP header and content-security-policy values
       'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
     };
     if (rel === 'sw.js') headers['Service-Worker-Allowed'] = deps.settings().basePath;
@@ -332,12 +337,12 @@ export function createWebApp(deps: WebDeps): WebApp {
           res.end();
           return;
         }
-        if (!url.pathname.startsWith(base)) throw new HttpError(404, 'Não encontrado.');
+        if (!url.pathname.startsWith(base)) throw new HttpError(404, t('main.web.notFound'));
         let rel: string;
         try {
           rel = decodeURIComponent(url.pathname.slice(base.length));
         } catch {
-          throw new HttpError(400, 'Caminho inválido.');
+          throw new HttpError(400, t('main.web.badPath'));
         }
         if (rel.startsWith('api/')) await api(req, res, rel);
         else serveStatic(req, res, rel);
@@ -352,7 +357,7 @@ export function createWebApp(deps: WebDeps): WebApp {
           json(res, e.status, { error: e.message });
         } else {
           console.error('[web]', e);
-          json(res, 500, { error: 'Erro interno.' });
+          json(res, 500, { error: t('main.web.internal') });
         }
       }
     })();
@@ -404,19 +409,19 @@ export async function startListening(app: WebApp, settings: WebSettings): Promis
   const code = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).code;
   try {
     await listen(app.server, settings.host, settings.port);
-    return { listening: true, address: `${settings.host}:${settings.port}`, message: `Escutando em ${settings.host}:${settings.port}.` };
+    return { listening: true, address: `${settings.host}:${settings.port}`, message: t('main.web.listening', { address: `${settings.host}:${settings.port}` }) };
   } catch (e) {
-    if (code(e) === 'EADDRINUSE') return { listening: false, address: null, message: `A porta ${settings.port} já está em uso.` };
-    if (code(e) !== 'EADDRNOTAVAIL' && code(e) !== 'EINVAL') return { listening: false, address: null, message: `Falha ao escutar em ${settings.host}:${settings.port}: ${(e as Error).message}` };
+    if (code(e) === 'EADDRINUSE') return { listening: false, address: null, message: t('main.web.portInUse', { port: settings.port }) };
+    if (code(e) !== 'EADDRNOTAVAIL' && code(e) !== 'EINVAL') return { listening: false, address: null, message: t('main.web.listenFailed', { address: `${settings.host}:${settings.port}`, detail: (e as Error).message }) };
   }
   try {
     await listen(app.server, '127.0.0.1', settings.port);
     return {
       listening: true,
       address: `127.0.0.1:${settings.port}`,
-      message: `O endereço ${settings.host} não existe nesta máquina; escutando em 127.0.0.1:${settings.port}. O nginx do Docker não alcança esse endereço.`,
+      message: t('main.web.fallback', { host: settings.host, port: settings.port }),
     };
   } catch (e) {
-    return { listening: false, address: null, message: `Não foi possível escutar em ${settings.host} nem em 127.0.0.1: ${(e as Error).message}` };
+    return { listening: false, address: null, message: t('main.web.cannotListen', { host: settings.host, detail: (e as Error).message }) };
   }
 }

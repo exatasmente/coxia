@@ -1,5 +1,6 @@
 import type { VcsKind } from '../../shared/config/types';
 import { getConfig, rc } from '../workspaceConfig';
+import { prompt as cp } from '../cyclePrompts';
 import { vcsCliFor, vcsReady } from './index';
 
 // What the ceremony agents may read from the code host, per provider. The shell they get is one command at a time, no flags that write:
@@ -8,6 +9,7 @@ import { vcsCliFor, vcsReady } from './index';
 //   Bitbucket, or an integration that uses the API only: no CLI, so the reads go through the app tool `VcsRead` (readTool.ts).
 // The regular expressions are the whole policy: a command that does not match one is denied by the hook (agents.ts shellAllowlist).
 
+// i18n-ignore: permission rules and commands of the code host CLI
 export const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
 
 // A path segment that is not "." or ".." (nor their percent-encoded forms): a repository named like a dot segment would climb out of repos/.
@@ -16,11 +18,14 @@ const GH_SEG = '(?!\\.{1,2}\\/)[\\w.-]+';
 
 /** The only glab commands a ceremony agent may run: GitLab reads, one command, no flags that write. */
 export const GLAB_READ = [
+  // i18n-ignore: permission rules and commands of the code host CLI
   new RegExp(`^glab api "?projects\\/${GL_SEG}\\/(merge_requests|issues)\\/\\d+(\\/(discussions|notes|approvals|changes|pipelines))?(\\?[\\w=&]+)?"?( --paginate)?$`),
+  // i18n-ignore: permission rules and commands of the code host CLI
   new RegExp(`^glab api "?projects\\/${GL_SEG}\\/pipelines(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
   /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
 ];
 
+// i18n-ignore: permission rules and commands of the code host CLI
 export const GH_RULES = ['Bash(gh api:*)', 'Bash(gh pr view:*)', 'Bash(gh issue view:*)'];
 
 /**
@@ -28,25 +33,19 @@ export const GH_RULES = ['Bash(gh api:*)', 'Bash(gh pr view:*)', 'Bash(gh issue 
  * only flag accepted is --paginate; graphql, search and every endpoint outside pulls, issues, commit checks and Actions runs are out.
  */
 export const GH_READ = [
+  // i18n-ignore-start: permission rules and commands of the code host CLI
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/(pulls|issues)\\/\\d+(\\/(comments|reviews|files|commits|timeline|requested_reviewers))?(\\?[\\w=&]+)?"?( --paginate)?$`),
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/commits\\/[0-9a-f]{7,40}\\/(check-runs|status)(\\?[\\w=&]+)?"?$`),
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/actions\\/runs(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
+  // i18n-ignore-end
   /^gh (pr|issue) view \d+ -R [\w.-]+\/[\w.-]+( --comments)?$/,
 ];
 
-export const GITLAB_HINT =
-  '`glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), ' +
-  '`glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou ' +
-  '`glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.';
+export const gitlabHint = (): string => cp('vcs.hint.gitlab');
 
-export const GITHUB_HINT =
-  '`gh api repos/<dono>/<repo>/pulls/<n>/comments` (comentários de revisão), ' +
-  '`gh api repos/<dono>/<repo>/issues/<n>/comments` (comentários de issue ou do PR) ou ' +
-  '`gh pr view <n> -R <dono>/<repo> --comments`. O caminho de cada PR está em mrPaths do cartão.';
+export const githubHint = (): string => cp('vcs.hint.github');
 
-export const TOOL_HINT =
-  'Use a ferramenta VcsRead (op: issue, issue_comments, mr, mr_threads, mr_comments, mr_changes ou mr_ci; project e iid). ' +
-  'O caminho de cada MR está em mrPaths do cartão. Ela só lê.';
+export const toolHint = (): string => cp('vcs.hint.tool');
 
 export interface VcsReadPolicy {
   via: 'cli' | 'tool' | 'none';
@@ -66,9 +65,9 @@ const NONE: VcsReadPolicy = { via: 'none', kind: null, rules: [], patterns: [], 
 /** Pure: the policy for an integration given whether its CLI is on and whether its API is usable. */
 export function readPolicyFor(kind: VcsKind | null, o: { enabled: boolean; cli: boolean; api: boolean }): VcsReadPolicy {
   if (!kind || !o.enabled) return NONE;
-  if (o.cli && kind === 'gitlab') return { via: 'cli', kind, rules: GLAB_RULES, patterns: GLAB_READ, hint: `Para ler o GitLab: ${GITLAB_HINT}`, usage: GITLAB_HINT };
-  if (o.cli && kind === 'github') return { via: 'cli', kind, rules: GH_RULES, patterns: GH_READ, hint: `Para ler o GitHub: ${GITHUB_HINT}`, usage: GITHUB_HINT };
-  if (o.api) return { via: 'tool', kind, rules: [], patterns: [], hint: `Para ler o host de código: ${TOOL_HINT}`, usage: TOOL_HINT };
+  if (o.cli && kind === 'gitlab') return { via: 'cli', kind, rules: GLAB_RULES, patterns: GLAB_READ, hint: cp('vcs.read.gitlab', { hint: gitlabHint() }), usage: gitlabHint() };
+  if (o.cli && kind === 'github') return { via: 'cli', kind, rules: GH_RULES, patterns: GH_READ, hint: cp('vcs.read.github', { hint: githubHint() }), usage: githubHint() };
+  if (o.api) return { via: 'tool', kind, rules: [], patterns: [], hint: cp('vcs.read.tool', { hint: toolHint() }), usage: toolHint() };
   return NONE;
 }
 
@@ -90,15 +89,17 @@ export function vcsShellEnv(): Record<string, string> | undefined {
 /** How the agent sees the changes of an MR, for the prompts that ask it to look at the diff. No trailing punctuation. */
 export function mrChangesHint(project: string, iid: number): string {
   const policy = vcsReadPolicy();
-  if (policy.via === 'cli' && policy.kind === 'github') return `Para ver o trecho, use gh api repos/${project}/pulls/${iid}/files`;
-  if (policy.via === 'tool') return `Para ver o trecho, use a ferramenta VcsRead (op mr_changes, project ${project}, iid ${iid})`;
-  return `Para ver o trecho, use glab api projects/${encodeURIComponent(project)}/merge_requests/${iid}/changes ou o MCP do GitLab (get_merge_request_details_and_changes)`;
+  if (policy.via === 'cli' && policy.kind === 'github') return cp('vcs.changes.github', { project, iid });
+  if (policy.via === 'tool') return cp('vcs.changes.tool', { project, iid });
+  return cp('vcs.changes.gitlab', { project: encodeURIComponent(project), iid });
 }
 
 /** How the agent reads the comments of an issue, for the prompts that ask it to look for a note. */
 export function issueNotesHint(project: string, iid: string | number): string {
   const policy = vcsReadPolicy();
+  // i18n-ignore: permission rules and commands of the code host CLI
   if (policy.via === 'cli' && policy.kind === 'github') return `gh api repos/${project}/issues/${iid}/comments`;
-  if (policy.via === 'tool') return `a ferramenta VcsRead (op issue_comments, project ${project}, iid ${iid})`;
+  if (policy.via === 'tool') return cp('vcs.notes.tool', { project, iid });
+  // i18n-ignore: permission rules and commands of the code host CLI
   return `glab api projects/${encodeURIComponent(project)}/issues/${iid}/notes`;
 }

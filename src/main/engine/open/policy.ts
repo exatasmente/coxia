@@ -2,6 +2,7 @@
 // (shell allowlist, secret-file guard, secret-result redaction), so both engines share one policy.
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Json } from './types';
+import { t } from '../../../shared/i18n';
 
 export type SdkHooks = NonNullable<Options['hooks']>;
 
@@ -43,7 +44,7 @@ export function policyFromHooks(hooks: SdkHooks | undefined, sessionId: string):
     async pre(tool, input, cwd) {
       for (const out of await run('PreToolUse', tool, { tool_input: input, tool_use_id: 'open', cwd })) {
         const spec = (out as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } } | undefined)?.hookSpecificOutput;
-        if (spec?.permissionDecision === 'deny') return spec.permissionDecisionReason ?? 'Ferramenta negada pela política.';
+        if (spec?.permissionDecision === 'deny') return spec.permissionDecisionReason ?? t('main.engine.text.denied');
       }
       return null;
     },

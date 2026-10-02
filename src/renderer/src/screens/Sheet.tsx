@@ -1,9 +1,12 @@
 import { type ReactNode, useEffect, useRef } from 'react';
+import { useT } from '../i18n';
 
+// i18n-ignore-next-line: CSS selector
 const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 // Bottom sheet: Esc and the backdrop close it, Tab stays inside, focus goes back to what opened it.
 export function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+  const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -42,7 +45,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose: ()
         <div className="sheet-grip" aria-hidden="true" />
         <div className="row spread">
           <h2 className="sheet-title">{label}</h2>
-          <button type="button" className="btn" onClick={() => onClose()}>Fechar</button>
+          <button type="button" className="btn" onClick={() => onClose()}>{t('ui.sheet.close')}</button>
         </div>
         {children}
       </div>

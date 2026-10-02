@@ -1,5 +1,6 @@
 import { openersOf } from '../shared/cycles/prompts';
-import { RETENTION_LABEL, type RetentionKind } from '../shared/retention';
+import { t } from '../shared/i18n';
+import { retentionLabel, type RetentionKind } from '../shared/retention';
 
 export const DAY = 86_400_000;
 // A transcript touched this recently may still be in use, whatever the retention says.
@@ -9,29 +10,30 @@ export const APP_ENTRYPOINT = 'sdk-ts';
 // A session belongs to the app only when its first prompt starts like one the app sends (the prompt catalogs, src/shared/i18n: every language
 // and family). Anything else, including sessions that look similar, is the user's own work and is never listed.
 const APP_PROMPTS: [string, string][] = [
-  ['turn.main', 'fala do agente'],
-  ['deep.intro', 'desbloqueio'],
+  ['turn.main', 'turn'],
+  ['deep.intro', 'unblock'],
   ['gate.start', 'gate'],
   ['gate.answer', 'gate'],
   ['gate.explain', 'gate'],
   ['gate.visual', 'gate'],
   ['gate.round', 'gate'],
-  ['qa.prepare', 'passagem para o QA'],
-  ['qa.ask', 'passagem para o QA'],
+  ['qa.prepare', 'qa'],
+  ['qa.ask', 'qa'],
   ['retro.main', 'retro'],
   ['retro.ask', 'retro'],
-  ['teams.main', 'texto do Teams'],
-  ['conflict.comment', 'sincronização com a release'],
-  ['conflict.ask.intro', 'sincronização com a release'],
-  ['reentry.main', 'reentrada'],
-  ['discussion.main', 'revisão de MR'],
-  ['deep.options', 'desbloqueio'],
-  ['reply.main', 'fala do agente'],
+  ['teams.main', 'teams'],
+  ['conflict.comment', 'sync'],
+  ['conflict.ask.intro', 'sync'],
+  ['reentry.main', 'reentry'],
+  ['discussion.main', 'review'],
+  ['deep.options', 'unblock'],
+  ['reply.main', 'turn'],
 ];
 
 export function appPromptKind(firstPrompt: string | null | undefined): string | null {
   if (!firstPrompt) return null;
-  return APP_PROMPTS.find(([id]) => openersOf(id).some((re) => re.test(firstPrompt)))?.[1] ?? null;
+  const kind = APP_PROMPTS.find(([id]) => openersOf(id).some((re) => re.test(firstPrompt)))?.[1];
+  return kind ? t(`main.retention.app.${kind}`) : null;
 }
 
 export interface RetentionRef {
@@ -70,7 +72,7 @@ export interface Selection {
 
 function when(ms: number, now: number): string {
   const d = Math.floor((now - ms) / DAY);
-  return `sem alteração há ${d} dia${d === 1 ? '' : 's'}`;
+  return t('main.retention.unchanged', { count: d });
 }
 
 function name(path: string): string {
@@ -85,41 +87,41 @@ export function selectRetention(files: RetentionFile[], refs: RetentionRef[], op
 
   for (const file of files) {
     if (file.kind !== 'sessoes') {
-      if (file.keep) decide(file, false, 'marcado para manter');
-      else if (now - file.mtimeMs < RECENT_MS) decide(file, false, 'alterado nas últimas 24 h');
-      else if (file.mtimeMs >= cutoff) decide(file, false, 'dentro do prazo');
-      else decide(file, true, `${RETENTION_LABEL[file.kind].toLowerCase()}, ${when(file.mtimeMs, now)}`);
+      if (file.keep) decide(file, false, t('main.retention.marked'));
+      else if (now - file.mtimeMs < RECENT_MS) decide(file, false, t('main.retention.recentFile'));
+      else if (file.mtimeMs >= cutoff) decide(file, false, t('main.retention.inTime'));
+      else decide(file, true, `${retentionLabel(file.kind).toLowerCase()}, ${when(file.mtimeMs, now)}`);
       continue;
     }
 
     const kind = appPromptKind(file.firstPrompt);
     if (!kind) {
-      decide(file, false, 'não é do app: o primeiro prompt não é de nenhum agente');
+      decide(file, false, t('main.retention.notAppPrompt'));
       continue;
     }
     const foreign = (file.entrypoints ?? []).filter((e) => e !== APP_ENTRYPOINT);
     if (!(file.entrypoints ?? []).includes(APP_ENTRYPOINT)) {
-      decide(file, false, 'não é do app: sem registro de execução pelo SDK');
+      decide(file, false, t('main.retention.notAppSdk'));
       continue;
     }
     if (foreign.length) {
-      decide(file, false, `continuada fora do app (${foreign.join(', ')})`);
+      decide(file, false, t('main.retention.continued', { entrypoints: foreign.join(', ') }));
       continue;
     }
     if (now - file.mtimeMs < RECENT_MS) {
-      decide(file, false, 'alterada nas últimas 24 h');
+      decide(file, false, t('main.retention.recentSession'));
       continue;
     }
     if (file.mtimeMs >= cutoff) {
-      decide(file, false, 'dentro do prazo');
+      decide(file, false, t('main.retention.inTime'));
       continue;
     }
     const live = refs.find((r) => r.sessionId === file.sessionId && (r.keep || r.at >= cutoff));
     if (live) {
-      decide(file, false, `usada por ${live.from}, ainda dentro do prazo`);
+      decide(file, false, t('main.retention.usedBy', { from: live.from }));
       continue;
     }
-    decide(file, true, `sessão do app (${kind}), ${when(file.mtimeMs, now)}, sem cerimônia no prazo que a use`);
+    decide(file, true, t('main.retention.removeSession', { kind, when: when(file.mtimeMs, now) }));
   }
   return out;
 }

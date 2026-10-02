@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { errorHint, type ErrorEntry, type ErrorGroup } from '../shared/errorlog';
+import { t } from '../shared/i18n';
 
 export const MAX_BYTES = 2 * 1024 * 1024;
 export const KEEP_FILES = 3;
@@ -65,7 +66,7 @@ function parts(error: unknown): { name: string; message: string; stack: string }
 
 export function buildEntry(source: string, error: unknown, context: Record<string, unknown> | undefined, workspace: string, now = new Date(), home?: string): ErrorEntry {
   const p = parts(error);
-  const message = redact(p.message.slice(0, 2000).split('\n').map((l) => l.trim()).filter(Boolean).join(' · '), home).slice(0, MAX_MESSAGE) || 'Erro sem mensagem';
+  const message = redact(p.message.slice(0, 2000).split('\n').map((l) => l.trim()).filter(Boolean).join(' · '), home).slice(0, MAX_MESSAGE) || t('main.errorlog.noMessage');
   return {
     time: now.toISOString(),
     workspace,

@@ -6,6 +6,7 @@ import { type Settings, type WebSettings, withDefaults } from '../shared/setting
 import { DATA_ROOT } from './env';
 import { WEB_FILE } from './workspaces-core';
 import { getConfig, onConfigChange, saveConfig } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 // Settings is the flat view of the workspace config (shared/config/settingsView.ts); browser access lives in the data root, shared by every workspace.
 const WEB = join(DATA_ROOT, WEB_FILE);
@@ -36,34 +37,34 @@ export function getSettings(): Settings {
 
 function validate(s: Settings): Settings {
   for (const model of Object.values(s.models)) {
-    if (!MODEL.test(model)) throw new Error(`modelo inválido: ${model}`);
+    if (!MODEL.test(model)) throw new Error(t('main.config.invalidModel', { model }));
   }
-  for (const t of [s.schedule.preDaily, s.schedule.from, s.schedule.to, s.schedule.retroTime]) {
-    if (!TIME.test(t)) throw new Error(`horário inválido: ${t}`);
+  for (const time of [s.schedule.preDaily, s.schedule.from, s.schedule.to, s.schedule.retroTime]) {
+    if (!TIME.test(time)) throw new Error(t('main.config.invalidTime', { time }));
   }
-  if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error('intervalo deve ficar entre 5 e 240 minutos');
-  if (!(s.voice.silenceMs >= 500 && s.voice.silenceMs <= 5000)) throw new Error('silêncio deve ficar entre 500 e 5000 ms');
-  if (s.voice.engine !== 'edge' && s.voice.engine !== 'kokoro') throw new Error('motor de voz inválido');
-  if (typeof s.voice.bargeIn !== 'boolean') throw new Error('interrupção por voz inválida');
+  if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error(t('main.config.intervalRange'));
+  if (!(s.voice.silenceMs >= 500 && s.voice.silenceMs <= 5000)) throw new Error(t('main.config.silenceRange'));
+  if (s.voice.engine !== 'edge' && s.voice.engine !== 'kokoro') throw new Error(t('main.config.voiceEngine'));
+  if (typeof s.voice.bargeIn !== 'boolean') throw new Error(t('main.config.bargeIn'));
   if (!Number.isInteger(s.retention.days) || s.retention.days < RETENTION_MIN_DAYS || s.retention.days > RETENTION_MAX_DAYS) {
-    throw new Error(`retenção: o prazo deve ficar entre ${RETENTION_MIN_DAYS} e ${RETENTION_MAX_DAYS} dias`);
+    throw new Error(t('main.config.retentionRange', { min: RETENTION_MIN_DAYS, max: RETENTION_MAX_DAYS }));
   }
   return s;
 }
 
 export function validateWeb(w: WebSettings): WebSettings {
-  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(w.host) && w.host !== 'localhost') throw new Error('acesso pelo navegador: o endereço deve ser um IPv4');
-  if (!Number.isInteger(w.port) || w.port < 1024 || w.port > 65535) throw new Error('acesso pelo navegador: a porta deve ficar entre 1024 e 65535');
-  if (!/^\/([\w.-]+\/)*$/.test(w.basePath) || /\.\./.test(w.basePath)) throw new Error('acesso pelo navegador: o caminho deve começar e terminar com /');
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(w.host) && w.host !== 'localhost') throw new Error(t('main.config.web.host'));
+  if (!Number.isInteger(w.port) || w.port < 1024 || w.port > 65535) throw new Error(t('main.config.web.port'));
+  if (!/^\/([\w.-]+\/)*$/.test(w.basePath) || /\.\./.test(w.basePath)) throw new Error(t('main.config.web.basePath'));
   let url: URL;
   try {
     url = new URL(w.publicUrl);
   } catch {
-    throw new Error('acesso pelo navegador: URL pública inválida');
+    throw new Error(t('main.config.web.publicUrl'));
   }
-  if (url.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) throw new Error('acesso pelo navegador: a URL pública deve ser https');
+  if (url.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) throw new Error(t('main.config.web.https'));
   const cidr = /^((\d{1,3}\.){3}\d{1,3})\/(\d{1,2})$/.exec(w.trustedProxy);
-  if (!cidr || cidr[1].split('.').some((o) => Number(o) > 255) || Number(cidr[3]) > 32) throw new Error('acesso pelo navegador: o proxy confiável deve ser um CIDR IPv4, como 172.18.0.0/16');
+  if (!cidr || cidr[1].split('.').some((o) => Number(o) > 255) || Number(cidr[3]) > 32) throw new Error(t('main.config.web.proxy'));
   return { ...w, enabled: w.enabled === true, allowExternalEffects: w.allowExternalEffects === true };
 }
 

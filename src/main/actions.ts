@@ -26,7 +26,7 @@ import {
 import { assertResolvable, resolveMr } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
-import { cycle } from './cyclePrompts';
+import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
@@ -89,7 +89,7 @@ function write(s: Store): void {
 function update(id: string, change: (a: ReleaseAction) => ReleaseAction): ReleaseAction {
   const s = read();
   const i = s.actions.findIndex((a) => a.id === id);
-  if (i < 0) throw new Error(`ação ${id} não existe`);
+  if (i < 0) throw new Error(t('main.actions.missing', { id }));
   s.actions[i] = change(s.actions[i]);
   write(s);
   return s.actions[i];
@@ -98,7 +98,7 @@ function update(id: string, change: (a: ReleaseAction) => ReleaseAction): Releas
 async function cli(args: string[]): Promise<string> {
   try {
     const sync = rc().releaseSync;
-    if (!sync) throw new Error('A ferramenta de sincronização de release não está configurada neste workspace.');
+    if (!sync) throw new Error(t('main.actions.noSyncTool'));
     const { stdout, stderr } = await exec(sync.command, args, { cwd: sync.cwd, timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     return `${stdout}${stderr ? `\n${stderr}` : ''}`.trim();
   } catch (e) {
@@ -134,8 +134,8 @@ function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'ki
 }
 
 function describe(c: VcsCommand): string {
-  const fields = Object.entries(c.fields).map(([k, v]) => `  ${k} = ${v.length > 300 ? `${v.slice(0, 300)}… (${v.length} caracteres)` : v}`);
-  if (c.json !== undefined) fields.push(`  body = ${c.json.length > 600 ? `${c.json.slice(0, 600)}… (${c.json.length} caracteres)` : c.json}`);
+  const fields = Object.entries(c.fields).map(([k, v]) => `  ${k} = ${v.length > 300 ? `${v.slice(0, 300)}… (${t('main.actions.chars', { count: v.length })})` : v}`);
+  if (c.json !== undefined) fields.push(`  body = ${c.json.length > 600 ? `${c.json.slice(0, 600)}… (${t('main.actions.chars', { count: c.json.length })})` : c.json}`);
   return [`${c.method} ${c.endpoint}  (via ${c.via})`, ...fields].join('\n');
 }
 
@@ -206,8 +206,8 @@ export function listActions(): ReleaseAction[] {
 }
 
 export async function detectRelease(manual: boolean): Promise<string> {
-  if (detecting) return 'Já estou conferindo a release.';
-  if (!rc().releaseSync) return 'A ferramenta de sincronização de release não está configurada neste workspace.';
+  if (detecting) return t('main.actions.alreadyChecking');
+  if (!rc().releaseSync) return t('main.actions.noSyncTool');
   detecting = true;
   try {
     const status = await cli(['status']);
@@ -264,23 +264,23 @@ export async function detectRelease(manual: boolean): Promise<string> {
     const notify = getSettings().notifications ? deps?.notify : undefined;
     for (const a of fresh.filter((x) => x.kind === 'conflict')) {
       notify?.({
-        title: `Conflito na #${a.issue} ao sincronizar com a main`,
-        body: `${a.mrs[0].ref}: ${a.files.length} arquivo(s) em conflito. Vamos conversar sobre a resolução antes do ajuste?`,
+        title: t('main.actions.conflictTitle', { issue: a.issue }),
+        body: t('main.actions.conflictBody', { ref: a.mrs[0].ref, count: a.files.length }),
         onClick: { type: 'conflict', id: a.id },
       });
     }
     const syncs = fresh.filter((x) => x.kind === 'sync');
     if (syncs.length) {
       notify?.({
-        title: `Release ${name ?? 'nova'}: ${syncs.length} atividade(s) para sincronizar`,
-        body: `${syncs.map((a) => `#${a.issue}`).join(', ')} estão atrás da main. Seguir com a sincronização?`,
+        title: t('main.actions.syncTitle', { name: name ?? t('main.actions.newRelease'), count: syncs.length }),
+        body: t('main.actions.syncBody', { issues: syncs.map((a) => `#${a.issue}`).join(', ') }),
         onClick: { type: 'navigate', to: 'actions' },
       });
     }
     if (!fresh.length && manual) {
-      notify?.({ title: 'Sincronização pós-release', body: 'Nada novo para sincronizar.', onClick: { type: 'navigate', to: 'actions' } });
+      notify?.({ title: t('main.actions.postReleaseTitle'), body: t('main.actions.nothingToSync'), onClick: { type: 'navigate', to: 'actions' } });
     }
-    return fresh.length ? `${fresh.length} ação(ões) nova(s).` : 'Nada novo para sincronizar.';
+    return fresh.length ? t('main.actions.newActions', { count: fresh.length }) : t('main.actions.nothingToSync');
   } finally {
     detecting = false;
   }
@@ -288,7 +288,7 @@ export async function detectRelease(manual: boolean): Promise<string> {
 
 export async function previewAction(id: string): Promise<string> {
   const a = read().actions.find((x) => x.id === id);
-  if (!a) throw new Error(`ação ${id} não existe`);
+  if (!a) throw new Error(t('main.actions.missing', { id }));
   if (isVcsAction(a)) return describe(a.command as VcsCommand);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
@@ -303,7 +303,7 @@ async function qaNote(issue: number): Promise<{ id: number; body: string } | nul
   return note ? { id: Number(note.id), body: note.body } : null;
 }
 
-// After a sync, the QA comment is a separate action: authorization does not carry over (post-release-sync skill).
+// After a sync, the QA comment is a separate action: authorization does not carry over (the release tool's own rule).
 async function proposeQaComment(sync: ReleaseAction): Promise<void> {
   // An issue still in code review has nothing to retest yet.
   if (isStageKind(cycle(), sync.stage, ['review'])) return;
@@ -314,14 +314,14 @@ async function proposeQaComment(sync: ReleaseAction): Promise<void> {
     const r = await rewriteQaComment(sync.issue, note.body, sync.output ?? '', sync.unit);
     action = blank({ ...base, noteId: note.id, currentBody: note.body, proposedBody: r.body, output: r.summary });
   } else {
-    action = blank({ ...base, output: 'A issue não tem comentário do QA: a ferramenta publica o comentário dela, com marcador.' });
+    action = blank({ ...base, output: t('main.actions.noQaNote') });
   }
   const s = read();
   write({ ...s, actions: [action, ...s.actions] });
   if (getSettings().notifications) {
     deps?.notify({
-      title: `#${sync.issue} sincronizada. Atualizar o comentário do QA?`,
-      body: note ? 'O agente preparou a nova versão do comentário de pipelines. Revise e confirme.' : 'A ferramenta vai publicar o comentário de sincronização. Revise e confirme.',
+      title: t('main.actions.syncedTitle', { issue: sync.issue }),
+      body: note ? t('main.actions.noteProposed') : t('main.actions.noteByTool'),
       onClick: { type: 'navigate', to: 'actions' },
     });
   }
@@ -349,8 +349,8 @@ async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?:
 export async function approveAction(id: string): Promise<ReleaseAction> {
   assertExternalWrite(t('vcs.write.guard'));
   const a = read().actions.find((x) => x.id === id);
-  if (!a) throw new Error(`ação ${id} não existe`);
-  if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
+  if (!a) throw new Error(t('main.actions.missing', { id }));
+  if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
   if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
@@ -364,17 +364,17 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = await audited(a, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, (meta) => runVcs(c, meta));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'sync', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(a, { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
       const body = a.proposedBody;
       const [cmd] = await vcsProvider().planWrite({ op: 'editIssueNote', project: issueProjectKey(), iid: a.issue, noteId: a.noteId, body });
       output = await audited(a, { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
         await runVcs(cmd, meta);
-        return `Comentário ${a.noteId} da #${a.issue} editado.`;
+        return t('main.actions.noteEdited', { note: a.noteId ?? '', issue: a.issue });
       });
     } else {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'publish', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(a, { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
@@ -388,33 +388,33 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
 
 export async function skipAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
-  if (a?.kind === 'conflict-push') throw new Error('o envio some ao descartar o conflito: use Descartar na tela dele');
+  if (a?.kind === 'conflict-push') throw new Error(t('main.actions.pushGoes'));
   // Treated outside: the worktree this app made for it goes away too.
   if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
   return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString() }));
 }
 
 function now(): string {
-  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(new Date());
 }
 
 export async function conflictTalk(id: string, question: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
-  if (!a || a.kind !== 'conflict') throw new Error(`conflito ${id} não existe`);
+  if (!a || a.kind !== 'conflict') throw new Error(t('main.actions.conflictMissing', { id }));
   const u = (a.unit ?? {}) as Partial<Unit>;
   const commands = u.repo && u.src_sha && u.tgt_sha
     ? [
         `git -C ${u.repo} merge-tree --write-tree --name-only ${u.src_sha} ${u.tgt_sha}`,
         `git -C ${u.repo} merge-base ${u.src_sha} ${u.tgt_sha}`,
-        `git -C ${u.repo} diff <merge-base> ${u.src_sha} -- <arquivo>   (o que a branch mudou)`,
-        `git -C ${u.repo} diff <merge-base> ${u.tgt_sha} -- <arquivo>   (o que a main mudou)`,
+        cp('conflict.context.diffBranch', { repo: u.repo, sha: u.src_sha }),
+        cp('conflict.context.diffMain', { repo: u.repo, sha: u.tgt_sha }),
       ].join('\n')
-    : 'Sem dados do mirror: use o GitLab.';
+    : cp('conflict.context.noMirror');
   const context = [
-    `Issue ${issueRef(a.issue)} (${a.issueTitle}), release ${a.release}. Arquivos em conflito: ${a.files.join(', ') || 'nenhum listado'}.`,
-    `Comandos para ler os dois lados (um por vez):\n${commands}`,
-    a.resolve && !a.resolve.publishedAt ? `Worktree de resolução já preparada (com os marcadores nos arquivos): ${a.resolve.worktree}. Passo atual: ${conflictStep(a)}.` : '',
-    `Unidade da ferramenta: ${JSON.stringify(a.unit).slice(0, 3000)}`,
+    cp('conflict.context.issue', { issue: issueRef(a.issue), title: String(a.issueTitle), release: String(a.release), files: a.files.join(', ') || cp('conflict.context.noFiles') }),
+    cp('conflict.context.commands', { commands }),
+    a.resolve && !a.resolve.publishedAt ? cp('conflict.context.worktree', { worktree: a.resolve.worktree, step: conflictStep(a) }) : '',
+    cp('conflict.context.unit', { unit: JSON.stringify(a.unit).slice(0, 3000) }),
   ].filter(Boolean).join('\n');
   const r = await conflictAsk(context, question, a.sessionId);
   return update(id, (x) => ({
@@ -452,14 +452,14 @@ export const conflictHooks: {
 
 function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {
   const a = read().actions.find((x) => x.id === id);
-  if (!a || a.kind !== 'conflict') throw new Error(`conflito ${id} não existe`);
+  if (!a || a.kind !== 'conflict') throw new Error(t('main.actions.conflictMissing', { id }));
   return { a, r: a.resolve ?? null };
 }
 
 function resolved(id: string): { a: ReleaseAction; r: ConflictResolve } {
   const { a, r } = conflictOf(id);
-  if (!r) throw new Error('o conflito ainda não foi preparado');
-  if (r.publishedAt) throw new Error('este conflito já foi publicado');
+  if (!r) throw new Error(t('main.actions.notPrepared'));
+  if (r.publishedAt) throw new Error(t('main.actions.alreadyPublished'));
   return { a, r };
 }
 
@@ -468,7 +468,7 @@ function setResolve(id: string, change: (r: ConflictResolve) => ConflictResolve)
 }
 
 async function withStep<T>(id: string, label: string, fn: () => Promise<T>): Promise<T> {
-  if (stepLocks.has(id)) throw new Error('este conflito já tem um passo em andamento');
+  if (stepLocks.has(id)) throw new Error(t('main.actions.stepRunning'));
   stepLocks.add(id);
   if (conflictOf(id).r) setResolve(id, (r) => ({ ...r, busy: label }));
   try {
@@ -482,7 +482,9 @@ async function withStep<T>(id: string, label: string, fn: () => Promise<T>): Pro
 }
 
 function projectOf(u: Partial<Unit>): string {
-  return u.project_path ?? (u.repo ?? '').replace(/^.*\/post-release-sync\//, '').replace(/\.git$/, '');
+  const mirrors = rc().releaseSync?.mirrorsDir?.replace(/\/+$/, '');
+  const repo = u.repo ?? '';
+  return u.project_path ?? (mirrors && repo.startsWith(`${mirrors}/`) ? repo.slice(mirrors.length + 1) : repo).replace(/\.git$/, '');
 }
 
 const OPEN_STATES = new Set(['pending', 'running', 'failed']);
@@ -491,7 +493,7 @@ const OPEN_STATES = new Set(['pending', 'running', 'failed']);
 // and writes the same conflict action the scan would, so Preparar needs nothing but a local clone.
 export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' | 'mrPaths'>, mrRef: string): Promise<ReleaseAction> {
   const issue = Number(card.iid);
-  if (!Number.isInteger(issue) || issue <= 0) throw new Error(`atividade sem número de issue: ${card.iid}`);
+  if (!Number.isInteger(issue) || issue <= 0) throw new Error(t('main.actions.noIssueNumber', { iid: card.iid }));
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
   const ref = `${project}!${iid}`;
   const prov = vcsProvider();
@@ -530,7 +532,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     issue,
     issueTitle: card.title,
     stage: card.stage ?? '',
-    release: 'MR em conflito com a main',
+    release: t('main.actions.mrInConflict'),
     mrs: [{ ref, url: mr.webUrl, branch: mr.sourceBranch, behind: 0 }],
     files: [],
     unit: unit as unknown as Record<string, unknown>,
@@ -540,17 +542,17 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
 }
 
 export async function conflictPrepare(id: string): Promise<ReleaseAction> {
-  return withStep(id, 'Preparando a worktree…', async () => {
+  return withStep(id, t('main.actions.stepPreparing'), async () => {
     const { a, r } = conflictOf(id);
-    if (r) throw new Error('o conflito já está preparado');
-    if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
+    if (r) throw new Error(t('main.actions.alreadyPrepared'));
+    if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
     const u = (a.unit ?? {}) as Partial<Unit>;
     const iid = Number(u.mr_iid ?? /!(\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
     const branch = u.source_branch ?? a.mrs[0]?.branch;
     const project = projectOf(u);
-    if (!iid || !branch || !project) throw new Error('faltam dados do MR na ação (projeto, número ou branch)');
+    if (!iid || !branch || !project) throw new Error(t('main.actions.mrDataMissing'));
     const clone = await findClone(project, conflictHooks.cloneRoots, requireVcsHost());
-    if (!clone) throw new Error(`não achei um clone local de ${project} em ${conflictHooks.cloneRoots.join(', ')} (o remote origin precisa apontar para ele)`);
+    if (!clone) throw new Error(t('main.actions.noClone', { project, roots: conflictHooks.cloneRoots.join(', ') }));
     const target = u.target_branch ?? 'main';
     const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`) });
     for (const f of p.files) for (const h of f.hunks) h.sensitive = secretPath(f.path);
@@ -585,9 +587,9 @@ function unfenced(text: string): string {
 }
 
 export async function conflictPropose(id: string): Promise<ReleaseAction> {
-  return withStep(id, 'O agente está propondo a resolução…', async () => {
+  return withStep(id, t('main.actions.stepProposing'), async () => {
     const { a, r } = resolved(id);
-    if (r.appliedAt) throw new Error('já aplicado: reabra a resolução para pedir outra proposta');
+    if (r.appliedAt) throw new Error(t('main.actions.appliedAskAgain'));
     const all = r.files.flatMap((f) => f.hunks).filter((h) => !h.sensitive);
     // after a partial proposal, asking again only fills the hunks still without one
     const missing = all.filter((h) => !h.proposal);
@@ -620,22 +622,22 @@ export async function conflictPropose(id: string): Promise<ReleaseAction> {
 
 export function conflictChoose(id: string, hunkId: string, choice: HunkChoice, edited?: string): ReleaseAction {
   const { r } = resolved(id);
-  if (r.appliedAt) throw new Error('já aplicado: reabra a resolução para mudar');
-  if (!['proposal', 'ours', 'theirs', 'edit'].includes(choice)) throw new Error(`escolha inválida: ${choice}`);
+  if (r.appliedAt) throw new Error(t('main.actions.appliedChange'));
+  if (!['proposal', 'ours', 'theirs', 'edit'].includes(choice)) throw new Error(t('main.actions.badChoice', { choice }));
   if (choice === 'edit') {
-    if (typeof edited !== 'string') throw new Error('falta o texto editado');
-    if (hasMarkers(edited)) throw new Error('o texto editado tem marcador de conflito (<<<<<<< ou >>>>>>>)');
+    if (typeof edited !== 'string') throw new Error(t('main.actions.noEdited'));
+    if (hasMarkers(edited)) throw new Error(t('main.actions.editedMarkers'));
   }
   const all = hunkId === '*';
-  if (all && choice !== 'proposal') throw new Error('“todos” só vale para a proposta');
-  if (!all && !r.files.some((f) => f.hunks.some((h) => h.id === hunkId))) throw new Error(`trecho ${hunkId} não existe`);
+  if (all && choice !== 'proposal') throw new Error(t('main.actions.allOnlyProposal'));
+  if (!all && !r.files.some((f) => f.hunks.some((h) => h.id === hunkId))) throw new Error(t('main.actions.hunkMissing', { id: hunkId }));
   return setResolve(id, (x) => ({
     ...x,
     files: x.files.map((f) => ({
       ...f,
       hunks: f.hunks.map((h) => {
         if (all ? h.proposal === null : h.id !== hunkId) return h;
-        if (choice === 'proposal' && h.proposal === null) throw new Error('este trecho não tem proposta');
+        if (choice === 'proposal' && h.proposal === null) throw new Error(t('main.actions.hunkNoProposal'));
         return { ...h, choice, edited: choice === 'edit' ? (edited as string) : h.edited };
       }),
     })),
@@ -648,13 +650,13 @@ function verifyLog(r: ConflictResolve, iid: string): string {
 
 async function writeAndVerify(id: string, skipTests: boolean): Promise<ReleaseAction> {
   const { a, r } = resolved(id);
-  if (r.appliedAt) throw new Error('já aplicado');
+  if (r.appliedAt) throw new Error(t('main.actions.applied'));
   const open = r.files.flatMap((f) => f.hunks).filter((h) => !hunkReady(h)).length;
-  if (open) throw new Error(`falta decidir ${open} trecho(s)`);
+  if (open) throw new Error(t('main.actions.undecided', { count: open }));
   const u = (a.unit ?? {}) as Partial<Unit>;
   const command = verifyCommandFor(projectOf(u));
   if (!command && !skipTests) {
-    throw new Error(`Não há comando de verificação configurado para ${projectOf(u)} (Configurações › Verificação de conflitos). Configure um ou confirme “seguir sem testes”.`);
+    throw new Error(t('main.actions.noVerify', { project: projectOf(u) }));
   }
   await applyResolutions(r.worktree, r.files);
   let verify = { command, skipped: !command, exitCode: null as number | null, tail: '', log: null as string | null, at: new Date().toISOString() };
@@ -667,18 +669,18 @@ async function writeAndVerify(id: string, skipTests: boolean): Promise<ReleaseAc
 }
 
 export async function conflictApply(id: string, options: { skipTests: boolean }): Promise<ReleaseAction> {
-  const done = await withStep(id, 'Aplicando e verificando…', () => writeAndVerify(id, options.skipTests === true));
+  const done = await withStep(id, t('main.actions.stepApplying'), () => writeAndVerify(id, options.skipTests === true));
   const v = done.resolve?.verify;
-  // A failing run is the user's call (hub-whatsapp has failures on main): the commit waits for conflictCommit.
+  // A failing run is the user's call (a repository can have failures on main): the commit waits for conflictCommit.
   if (v && (v.skipped || v.exitCode === 0)) return conflictCommit(id);
   return done;
 }
 
 export async function conflictCommit(id: string): Promise<ReleaseAction> {
-  return withStep(id, 'Commitando o merge…', async () => {
+  return withStep(id, t('main.actions.stepCommitting'), async () => {
     const { a, r } = resolved(id);
-    if (!r.appliedAt) throw new Error('aplique a resolução antes de commitar');
-    if (r.commit) throw new Error('o merge já foi commitado');
+    if (!r.appliedAt) throw new Error(t('main.actions.applyFirst'));
+    if (r.commit) throw new Error(t('main.actions.alreadyCommitted'));
     const sha = await commitMerge(r.worktree, r.branch, r.mainSha);
     const push = blank({
       key: `conflict-push:${a.id}:${sha}`,
@@ -690,12 +692,14 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
       mrs: a.mrs,
       files: r.files.map((f) => f.path),
       retest: true,
-      summary: `Publicar a resolução do conflito do ${a.mrs[0]?.ref ?? 'MR'} em ${r.branch}`,
+      summary: t('main.actions.publishSummary', { ref: a.mrs[0]?.ref ?? 'MR', branch: r.branch }),
       unit: { conflictId: a.id, branch: r.branch, commit: sha },
       output: [
+        // i18n-ignore: a git command line shown as it runs
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
-        `Commit ${sha.slice(0, 9)}: ${`Merge branch 'main' into '${r.branch}'`}. Só fast-forward, sem force; antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou.`,
-        r.verify?.skipped ? 'Sem testes (você confirmou).' : r.verify?.exitCode === 0 ? 'Verificação passou.' : `Verificação terminou com código ${r.verify?.exitCode}: você decidiu seguir.`,
+        // i18n-ignore: a git command line shown as it runs
+        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: `Merge branch 'main' into '${r.branch}'` }),
+        r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
     });
     const s = read();
@@ -703,8 +707,8 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     const next = setResolve(id, (x) => ({ ...x, commit: sha, pushId: push.id }));
     if (getSettings().notifications) {
       deps?.notify({
-        title: `#${a.issue}: conflito resolvido, aguardando o seu “sim” para publicar`,
-        body: `${a.mrs[0]?.ref ?? 'MR'}: merge commitado e verificado na worktree local. Nada foi enviado ainda.`,
+        title: t('main.actions.resolvedTitle', { issue: a.issue }),
+        body: t('main.actions.resolvedBody', { ref: a.mrs[0]?.ref ?? 'MR' }),
         onClick: { type: 'conflict', id: a.id },
       });
     }
@@ -713,10 +717,10 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
 }
 
 export async function conflictReopen(id: string): Promise<ReleaseAction> {
-  return withStep(id, 'Reabrindo os conflitos…', async () => {
+  return withStep(id, t('main.actions.stepReopening'), async () => {
     const { r } = resolved(id);
-    if (!r.appliedAt) throw new Error('a resolução ainda não foi aplicada');
-    if (r.commit) throw new Error('o merge já foi commitado: descarte e prepare de novo para refazer');
+    if (!r.appliedAt) throw new Error(t('main.actions.notApplied'));
+    if (r.commit) throw new Error(t('main.actions.committedRedo'));
     await reopenResolutions(r.worktree, r.files);
     return setResolve(id, (x) => ({ ...x, appliedAt: null, verify: null }));
   });
@@ -725,11 +729,11 @@ export async function conflictReopen(id: string): Promise<ReleaseAction> {
 async function discardConflict(id: string): Promise<ReleaseAction> {
   const { r } = conflictOf(id);
   if (!r) return conflictOf(id).a;
-  if (r.publishedAt) throw new Error('este conflito já foi publicado');
+  if (r.publishedAt) throw new Error(t('main.actions.alreadyPublished'));
   const push = r.pushId ? read().actions.find((x) => x.id === r.pushId) : null;
-  if (push?.state === 'running') throw new Error('o envio está em andamento: espere terminar');
+  if (push?.state === 'running') throw new Error(t('main.actions.pushRunning'));
   await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
-  if (push && push.state !== 'done') update(push.id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: 'Descartado: a worktree foi removida.' }));
+  if (push && push.state !== 'done') update(push.id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: t('main.actions.discarded') }));
   // The conflict action stays pending: the problem is still there.
   return update(id, (x) => ({ ...x, resolve: null }));
 }
@@ -741,19 +745,20 @@ export async function conflictDiscard(id: string): Promise<ReleaseAction> {
 function pushOwner(a: ReleaseAction): { conflict: ReleaseAction; r: ConflictResolve } {
   const conflictId = String((a.unit ?? {}).conflictId ?? '');
   const conflict = read().actions.find((x) => x.id === conflictId);
-  if (!conflict?.resolve?.commit || conflict.resolve.pushId !== a.id) throw new Error('o conflito deste envio foi descartado ou refeito: nada a publicar');
+  if (!conflict?.resolve?.commit || conflict.resolve.pushId !== a.id) throw new Error(t('main.actions.pushOrphan'));
   return { conflict, r: conflict.resolve };
 }
 
 async function checkPublishable(a: ReleaseAction): Promise<void> {
   const { r } = pushOwner(a);
-  if (r.publishedAt) throw new Error('já publicado');
+  if (r.publishedAt) throw new Error(t('main.actions.published'));
   await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });
 }
 
 async function publishConflict(a: ReleaseAction): Promise<string> {
   const { r } = pushOwner(a);
   const fields = { repo: r.clone, branch: r.branch, commit: r.commit as string, mr: a.mrs[0]?.ref ?? '' };
+  // i18n-ignore: a git command line shown as it runs
   return audited(a, { kind: 'push', target: `git push origin HEAD:refs/heads/${r.branch}`, via: 'git', fields }, async () => {
     // The check ran moments ago, before "running"; repeat it right at the push.
     await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });
@@ -770,23 +775,23 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
     try {
       await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
     } catch (e) {
-      notes.push(`A worktree ficou para trás (${(e as Error).message}): remova com git worktree remove.`);
+      notes.push(t('main.actions.worktreeLeft', { reason: (e as Error).message }));
     }
   }
   update(conflictId, (x) => ({
     ...x,
     state: 'done',
     finishedAt: new Date().toISOString(),
-    output: `Resolvido e publicado em ${r?.branch}.`,
+    output: t('main.actions.resolvedPublished', { branch: r?.branch ?? '' }),
     resolve: x.resolve ? { ...x.resolve, publishedAt: new Date().toISOString() } : x.resolve,
   }));
   if (getSettings().notifications) {
-    deps?.notify({ title: `#${a.issue}: resolução publicada`, body: `${a.mrs[0]?.ref ?? 'MR'}: push feito em ${r?.branch}. O comentário do QA vem em seguida, com o seu “sim”.`, onClick: { type: 'navigate', to: 'actions' } });
+    deps?.notify({ title: t('main.actions.publishedTitle', { issue: a.issue }), body: t('main.actions.publishedBody', { ref: a.mrs[0]?.ref ?? 'MR', branch: r?.branch ?? '' }), onClick: { type: 'navigate', to: 'actions' } });
   }
   conflictHooks.scheduleQaComment({
     ...a,
     retest: true,
-    output: `Conflito de sincronização resolvido à mão em ${r?.files.length ?? 0} arquivo(s) e publicado em ${r?.branch}: ${a.files.join(', ')}.`,
+    output: t('main.actions.handResolved', { count: r?.files.length ?? 0, branch: r?.branch ?? '', files: a.files.join(', ') }),
   });
   return notes.length ? update(push.id, (x) => ({ ...x, output: [x.output, ...notes].join('\n') })) : read().actions.find((x) => x.id === push.id) ?? push;
 }

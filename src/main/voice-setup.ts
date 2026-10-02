@@ -19,6 +19,7 @@ import {
   type VoiceUninstallResult,
 } from '../shared/voiceSetup';
 import { CancelledError, PYTHON_VERSION, READY, dirSize, findUv, freeBytes, runStep, venvPython, venvReady } from './venv';
+import { t } from '../shared/i18n';
 
 // What the voice needs on a machine and how it gets there. No Electron here: the paths and the environment come in, so the flow runs the same
 // in the app and in the tests (with a fake uv and a fake python on PATH).
@@ -176,6 +177,7 @@ class PhaseError extends Error {
   }
 }
 
+// i18n-ignore: python import check
 const IMPORTS = 'import faster_whisper, edge_tts, av, soundfile, kokoro_onnx';
 
 /** Gets uv: the one on the machine, else one installed from PyPI into the app's tools folder with python3. */
@@ -183,7 +185,7 @@ async function ensureUv(ctx: SetupContext, hooks: InstallHooks, step: (line: str
   const found = findUv({ home: ctx.paths.home, env: ctx.env, extraDirs: [join(ctx.paths.tools, 'bin')] });
   if (found) return found;
   const python = await pythonInfo(ctx.env);
-  if (!python.ok) throw new PhaseError('uv', 'no-uv', new Error(python.found ? `python3 ${python.version ?? '?'} is outside 3.9-3.13 and there is no uv` : 'neither uv nor python3 is on this machine'));
+  if (!python.ok) throw new PhaseError('uv', 'no-uv', new Error(python.found ? t('main.voiceSetup.pythonRange', { version: python.version ?? '?' }) : t('main.voiceSetup.noPython')));
   mkdirSync(ctx.paths.tools, { recursive: true });
   const opts = { env: ctx.env, signal: hooks.signal, onLine: step };
   try {
@@ -194,7 +196,7 @@ async function ensureUv(ctx: SetupContext, hooks: InstallHooks, step: (line: str
     throw new PhaseError('uv', 'no-uv', e as Error);
   }
   const installed = join(ctx.paths.tools, 'bin/uv');
-  if (!existsSync(installed)) throw new PhaseError('uv', 'no-uv', new Error('uv was not installed'));
+  if (!existsSync(installed)) throw new PhaseError('uv', 'no-uv', new Error(t('main.voiceSetup.uvMissing')));
   return installed;
 }
 
@@ -225,13 +227,13 @@ export async function installVoice(ctx: SetupContext, opts: VoiceInstallOptions,
   };
 
   if (opts.engine === 'edge' && opts.acknowledgeEdge !== true) {
-    return { ok: false, cancelled: false, phase: 'check', code: 'edge-not-acknowledged', message: 'the Edge engine sends the text to be spoken to Microsoft: it has to be acknowledged' };
+    return { ok: false, cancelled: false, phase: 'check', code: 'edge-not-acknowledged', message: t('main.voiceSetup.edgeAck') };
   }
   if (opts.engine === 'kokoro' && !kokoroDir(ctx.paths.kokoroDirs)) {
-    return { ok: false, cancelled: false, phase: 'check', code: 'kokoro-missing', message: 'the Kokoro model files were not found' };
+    return { ok: false, cancelled: false, phase: 'check', code: 'kokoro-missing', message: t('main.voiceSetup.kokoroMissing') };
   }
   if (!isSttModel(opts.sttModel)) {
-    return { ok: false, cancelled: false, phase: 'check', code: 'failed', message: `unknown speech model: ${String(opts.sttModel)}` };
+    return { ok: false, cancelled: false, phase: 'check', code: 'failed', message: t('main.voiceSetup.unknownModel', { model: String(opts.sttModel) }) };
   }
 
   let phase: VoicePhase = 'check';
@@ -262,7 +264,7 @@ export async function installVoice(ctx: SetupContext, opts: VoiceInstallOptions,
       writeFileSync(join(ctx.paths.venv, READY), new Date().toISOString());
       venv = activeVenv(ctx.paths);
     }
-    if (!venv) throw new Error('the environment is not usable after the install');
+    if (!venv) throw new Error(t('main.voiceSetup.envBroken'));
 
     phase = 'model';
     progress('model', 0);
@@ -277,7 +279,7 @@ export async function installVoice(ctx: SetupContext, opts: VoiceInstallOptions,
           if (stream !== 'out') return last(line);
           const msg = parseFetchLine(line);
           if (!msg) return last(line);
-          if (msg.phase === 'error') failure = String(msg.error ?? 'download failed');
+          if (msg.phase === 'error') failure = String(msg.error ?? t('main.voiceSetup.downloadFailed'));
           if (msg.phase === 'start' || msg.phase === 'progress') {
             const total = typeof msg.total === 'number' && msg.total > 0 ? msg.total : null;
             const done = typeof msg.done === 'number' ? msg.done : 0;

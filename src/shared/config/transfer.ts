@@ -1,3 +1,4 @@
+// i18n-lint: allow-file English diagnostics of the import file, shown next to the JSON path they are about
 import { migrateConfig } from './migrations';
 import { CONFIG_SCHEMA_VERSION, type SecretRequirement, type WorkspaceConfig } from './types';
 import { collectSecretRequirements, validateConfig, type ConfigIssue } from './validate';

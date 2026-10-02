@@ -7,6 +7,7 @@ import { expandHome } from '../shared/config/paths';
 import { HOME } from './env';
 import { CLAUDE_BIN } from './paths';
 import { getConfig } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 // Where the Claude Agent SDK is loaded from. Installs made before the SDK became a separate download carry it inside the app (bundled);
 // a public build installs it on first run into a folder of the user's (claudeSdk.path in the workspace config) and loads it from there.
@@ -45,7 +46,7 @@ function entryOf(pkg: { exports?: unknown; main?: string; module?: string }): st
 
 /** The configured local install when it is there, else the bundled copy, else a reason. Pure over the config and the disk probes. */
 export function locateSdk(cfg: ClaudeSdkConfig, home: string, deps: LocateDeps = defaults): SdkLocation {
-  let reason = 'o Claude Agent SDK não está instalado: abra a configuração e instale-o';
+  let reason = t('main.sdk.notInstalled');
   if (cfg.path?.trim()) {
     const root = join(expandHome(cfg.path, home), 'node_modules', SDK_PACKAGE);
     const manifest = join(root, 'package.json');
@@ -53,11 +54,11 @@ export function locateSdk(cfg: ClaudeSdkConfig, home: string, deps: LocateDeps =
       try {
         const rel = entryOf(JSON.parse(deps.read(manifest)));
         if (rel && deps.exists(join(root, rel))) return { mode: 'local', root, entry: join(root, rel) };
-        reason = `a instalação local do SDK em ${root} não tem o arquivo de entrada`;
+        reason = t('main.sdk.noEntry', { root });
       } catch {
-        reason = `a instalação local do SDK em ${root} tem um package.json ilegível`;
+        reason = t('main.sdk.badManifest', { root });
       }
-    } else reason = `o SDK não está em ${root}`;
+    } else reason = t('main.sdk.notAt', { root });
   }
   return deps.bundled ? { mode: 'bundled' } : { mode: 'missing', reason };
 }

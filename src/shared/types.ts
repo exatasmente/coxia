@@ -101,7 +101,8 @@ export interface TurnOptions {
   deepen?: boolean;
 }
 
-export type DecisionTarget = 'spec' | 'daily-report' | 'ata';
+// A ceremony saved before the card note had its own name holds another value for it: anything that is not 'spec' or 'ata' reads as a note.
+export type DecisionTarget = 'spec' | 'note' | 'ata';
 
 export interface Decision {
   ref: string;
@@ -245,6 +246,7 @@ export interface GateQuestionView {
 
 export interface GateRoundView {
   questions: GateQuestionView[];
+  // i18n-ignore: a verdict code the screens compare
   verdict: 'assertivo' | 'não assertivo' | null;
   visual: { mermaid: string; heading: string; description: string; inserted: boolean } | null;
 }

@@ -16,7 +16,7 @@ export function buildMinutes(s: MinutesSource): Minutes {
   };
 }
 
-// What the Teams text is written from; the text is generated again only when this changes.
+// What the summary text is written from; the text is generated again only when this changes.
 export function teamsKey(s: MinutesSource): string {
   const m = buildMinutes(s);
   return JSON.stringify({

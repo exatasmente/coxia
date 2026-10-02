@@ -74,7 +74,7 @@ describe('a decision for the card note', () => {
       return c;
     });
     const { saveMinutes } = await import('../src/main/store');
-    const d = { ref: 'acme#1', text: 'Wait for Bruno', target: 'daily-report' as const, dest: 'note' };
+    const d = { ref: 'acme#1', text: 'Wait for Bruno', target: 'note' as const, dest: 'note' };
     const m = (start: string) => ({ startedAt: new Date(`${DAY}T${start}`).toISOString(), endedAt: new Date(`${DAY}T${start}`).toISOString(), decisions: [d], effects: [], unanswered: [], transcript: [] });
     state.saveState(ceremony({ id: '2026-10-02T094000', decisions: [d] }));
     state.saveState(ceremony({ id: '2026-10-02T141000', decisions: [d] }));

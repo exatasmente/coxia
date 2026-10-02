@@ -132,6 +132,7 @@ export function promptTemplate(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOv
 /** The template filled with the params. A missing id throws: it is a bug in the code, and a silent empty prompt would hide it. */
 export function renderPrompt(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOverrides'>, id: string, language: Language, params: Params = {}, options?: RenderOptions): string {
   const template = promptTemplate(cycle, id, language);
-  if (template === undefined) throw new Error(`prompt desconhecido: ${id}`);
+  // i18n-ignore: developer error
+  if (template === undefined) throw new Error(`unknown prompt: ${id}`);
   return renderLines(template, params, options);
 }

@@ -1,8 +1,9 @@
-import type { VcsKind } from '../shared/config/types';
+import type { QuickTransitionRule, VcsKind } from '../shared/config/types';
 import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeVcsAction, proposeVcsCommands } from './actions';
 import { getSettings } from './config';
+import { vcsName } from './cyclePrompts';
 import { getConfig, isIssueRef, issueProjectKey, rc } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
@@ -10,39 +11,23 @@ import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
 import { undrafted } from './vcs/gitlab';
 import type { VcsCiJob, VcsWriteOp } from './vcs/types';
+import { t } from '../shared/i18n';
 
 // The quick actions of a card (reviewer, draft, manual jobs, issue status) on whichever code host the workspace uses. Every write is
 // only a proposal: it waits in Ações for the user's "seguir" (proposeVcsAction), then runs through the audited executor.
 
 const JOB_EVERY_MIN = 30;
-// Build, release prep and deploy belong to the QA flow (qa-release-branch skill): the app never plays them.
+// Build, release prep and deploy belong to the QA flow (the team's release flow): the app never plays them.
 const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
 // The AI review job is left to the reviewers' flow: proposing it on every MR was noise.
 const SKIPPED_JOBS = /ai_code_review/i;
 
-// agent-pipeline §8 (what the dev moves) with the closed label sets of qa-release-branch §5. Review and QA exits
-// (In code review, Approved/Rejected, In testing, Failed testing, Approved in testing, Done...) are never offered.
-// The status ids are the custom statuses of one GitLab instance: only the SDD template on GitLab has them.
-const RULES = [
-  {
-    to: 'In development',
-    id: 75,
-    label: 'STAGE:: Doing',
-    from: ['Open', 'Ready for planning', 'Blocked in development', 'Rejected in code review', 'Failed testing'],
-    removable: ['STAGE:: Backlog', 'STAGE:: To Do', 'STAGE:: Code Review Fail', 'STAGE:: Test Fail'],
-  },
-  { to: 'Ready for code review', id: 77, label: 'STAGE:: Code Review', from: ['In development'], removable: ['STAGE:: Doing'] },
-  {
-    to: 'Ready for testing',
-    id: 6,
-    label: 'STAGE:: Ready To Test',
-    from: ['Approved in code review', 'Failed testing', 'In development'],
-    removable: ['STAGE:: Code Review OK', 'STAGE:: Code Review', 'STAGE:: Test Fail', 'STAGE:: Doing'],
-  },
-];
+// The status changes come from devCycle.quickTransitions: their status ids are the custom statuses of one GitLab instance.
+// Review and QA exits are never listed there, the app only offers what the developer moves.
+type Rule = QuickTransitionRule;
 
-function activeRules(): typeof RULES {
-  return rc().primaryVcs?.kind === 'gitlab' && getConfig().devCycle.templateId === 'sz-sdd' ? RULES : [];
+function activeRules(): Rule[] {
+  return rc().primaryVcs?.kind === 'gitlab' ? getConfig().devCycle.quickTransitions : [];
 }
 
 interface ReportMr {
@@ -91,10 +76,10 @@ function transitionsFor(status: string | null, labels: string[]): QuickTransitio
   const stage = labels.filter((l) => /^STAGE\s*::/.test(l));
   return activeRules().map((r) => {
     const base = { to: r.to, addLabel: stage.includes(r.label) ? null : r.label, removeLabels: stage.filter((l) => r.removable.includes(l)) };
-    if (status === r.to) return { ...base, allowed: false, reason: 'Já está neste status.' };
-    if (!status || !r.from.includes(status)) return { ...base, allowed: false, reason: `Não sai de “${status ?? 'sem status'}” por aqui.` };
+    if (status === r.to) return { ...base, allowed: false, reason: t('main.quick.sameStatus') };
+    if (!status || !r.from.includes(status)) return { ...base, allowed: false, reason: t('main.quick.cannotLeave', { status: status ?? t('main.quick.noStatus') }) };
     const foreign = stage.filter((l) => l !== r.label && !r.removable.includes(l));
-    if (foreign.length) return { ...base, allowed: false, reason: `A issue tem ${foreign.join(', ')}, fora do conjunto que o app troca. Ajuste no GitLab.` };
+    if (foreign.length) return { ...base, allowed: false, reason: t('main.quick.foreign', { labels: foreign.join(', '), vcs: vcsName() }) };
     return { ...base, allowed: true, reason: null };
   });
 }
@@ -151,55 +136,55 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
   const prov = vcsProvider();
   if (req.kind === 'transition') {
     const rule = activeRules().find((r) => r.to === req.to);
-    if (!rule) throw new Error(`transição não permitida: ${req.to}`);
+    if (!rule) throw new Error(t('main.quick.notAllowedTo', { to: req.to }));
     const issue = await readIssue(req.issue);
-    const t = issue.transitions.find((x) => x.to === req.to);
-    if (!t?.allowed) throw new Error(t?.reason ?? 'transição não permitida');
+    const step = issue.transitions.find((x) => x.to === req.to);
+    if (!step?.allowed) throw new Error(step?.reason ?? t('main.quick.notAllowed'));
     const project = issueProjectKey();
     const title = issue.title;
     if (issue.gid) {
       await propose(
         {
-          key: `quick:status:${req.issue}:${t.to}:${day()}`,
+          key: `quick:status:${req.issue}:${step.to}:${day()}`,
           issue: req.issue,
           issueTitle: title,
           stage: issue.stageLabels.join(', '),
-          summary: `Status da #${req.issue}: ${issue.status} → ${t.to}`,
-          detail: 'Muda o status do work item (skill issue-status). A label vai numa proposta separada.',
+          summary: t('main.quick.statusSummary', { issue: req.issue, from: String(issue.status), to: step.to }),
+          detail: t('main.quick.statusDetail'),
         },
         { op: 'setIssueStatus', project, iid: req.issue, status: String(rule.id), nodeId: issue.gid },
         out,
       );
     }
-    const labels: VcsWriteOp = { op: 'setIssueLabels', project, iid: req.issue, add: t.addLabel ? [t.addLabel] : [], remove: t.removeLabels };
+    const labels: VcsWriteOp = { op: 'setIssueLabels', project, iid: req.issue, add: step.addLabel ? [step.addLabel] : [], remove: step.removeLabels };
     const hasLabelChange = (labels.add.length || labels.remove.length) > 0;
     if (hasLabelChange) {
       await propose(
         {
-          key: `quick:label:${req.issue}:${t.to}:${day()}`,
+          key: `quick:label:${req.issue}:${step.to}:${day()}`,
           issue: req.issue,
           issueTitle: title,
           stage: issue.stageLabels.join(', '),
-          summary: `Label da #${req.issue}: ${t.removeLabels.length ? `${t.removeLabels.join(', ')} → ` : ''}${t.addLabel ?? ''} (${issue.status} → ${t.to})`,
+          summary: t('main.quick.labelSummary', { issue: req.issue, change: `${step.removeLabels.length ? `${step.removeLabels.join(', ')} → ` : ''}${step.addLabel ?? ''}`, from: String(issue.status), to: step.to }),
         },
         labels,
         out,
       );
     }
-    if (!issue.gid && !hasLabelChange) throw new Error('Nada a mudar: a label já está certa e o status não pôde ser lido.');
+    if (!issue.gid && !hasLabelChange) throw new Error(t('main.quick.nothingToChange'));
     return out;
   }
 
   if (req.kind === 'play') {
-    if (!prov.caps.manualJobs) throw new Error('este host não tem jobs manuais de CI');
+    if (!prov.caps.manualJobs) throw new Error(t('main.quick.noManualJobs'));
     const job = await prov.getCiJob(req.projectPath, req.jobId);
-    if (!manualJobs([job]).length) throw new Error(`o job ${job.name} não pode ser tocado por aqui`);
+    if (!manualJobs([job]).length) throw new Error(t('main.quick.cannotPlay', { job: job.name }));
     await propose(
       {
         key: `quick:play:${job.id}`,
         issue: 0,
         issueTitle: `${req.projectPath} · pipeline ${job.runId}`,
-        summary: `Rodar o job ${job.name} (${req.projectPath}, pipeline ${job.runId})`,
+        summary: t('main.quick.runJobIn', { job: job.name, project: req.projectPath, run: String(job.runId) }),
       },
       { op: 'playJob', project: req.projectPath, jobId: Number(job.id) },
       out,
@@ -208,16 +193,16 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
   }
   const ref = `${req.projectPath.split('/').pop()}!${req.mrIid}`;
   const mr = await prov.getMr(req.projectPath, req.mrIid);
-  if (mr.state !== 'open') throw new Error(`${ref} não está aberto`);
-  if (mr.author !== (await prov.currentUser()).username) throw new Error(`${ref} é de ${mr.author}: só leitura`);
+  if (mr.state !== 'open') throw new Error(t('main.quick.notOpen', { ref }));
+  if (mr.author !== (await prov.currentUser()).username) throw new Error(t('main.quick.readOnly', { ref, author: mr.author }));
   const issue = req.issue ?? 0;
   if (req.kind === 'undraft') {
-    if (!mr.draft) throw new Error(`${ref} não está em draft`);
+    if (!mr.draft) throw new Error(t('main.quick.notDraft', { ref }));
     // GitLab marks a draft by a prefix in the title; GitHub and Bitbucket by a flag.
     const title = prov.kind === 'gitlab' ? undrafted(mr.title) : undefined;
-    if (title !== undefined && title === mr.title) throw new Error('o título não tem prefixo de draft; tire o draft no GitLab');
+    if (title !== undefined && title === mr.title) throw new Error(t('main.quick.noDraftPrefix', { vcs: vcsName() }));
     await propose(
-      { key: `quick:undraft:${ref}`, issue, issueTitle: mr.title, summary: `Tirar o Draft de ${ref}` },
+      { key: `quick:undraft:${ref}`, issue, issueTitle: mr.title, summary: t('main.quick.undraft', { ref }) },
       { op: 'setDraft', project: req.projectPath, iid: req.mrIid, draft: false, ...(title !== undefined ? { title } : {}) },
       out,
     );
@@ -230,8 +215,8 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
       key: `quick:reviewer:${ref}:${person.id}:${day()}`,
       issue,
       issueTitle: mr.title,
-      summary: `Reviewer de ${ref}: @${person.username}${mr.draft ? ' (o MR está em draft)' : ''}`,
-      detail: had.length && prov.kind === 'gitlab' ? `Substitui os reviewers atuais: ${had.join(', ')}.` : undefined,
+      summary: t('main.quick.reviewer', { ref, user: person.username, draft: mr.draft ? t('main.quick.reviewerDraft') : '' }),
+      detail: had.length && prov.kind === 'gitlab' ? t('main.quick.replaceReviewers', { list: had.join(', ') }) : undefined,
     },
     { op: 'addReviewer', project: req.projectPath, iid: req.mrIid, userId: person.id, username: person.username },
     out,
@@ -261,15 +246,15 @@ export function autoProposals(items: ReportMr[], jobsOf: (m: ReportMr) => VcsCiJ
   for (const m of items) {
     if (m.state !== 'opened' || !m.roles.includes('author')) continue;
     const issue = issueOf(m.issue_refs ?? []);
-    const body = 'Proposta criada. Confirme em Ações.';
+    const body = t('main.quick.created');
     if (m.draft && !m.has_conflicts && m.pipeline !== 'failed') {
       out.push({
         key: `quick:undraft:${m.ref}`,
         issue,
         issueTitle: m.title,
-        summary: `Tirar o Draft de ${m.ref}`,
+        summary: t('main.quick.undraft', { ref: m.ref }),
         op: { op: 'setDraft', project: projectOf(m), iid: m.iid, draft: false, ...(kind === 'gitlab' ? { title: undrafted(m.title) } : {}) },
-        notify: { title: `${m.ref} segue em Draft`, body },
+        notify: { title: t('main.quick.stillDraft', { ref: m.ref }), body },
       });
     }
     if (!m.draft && m.pipeline === 'manual') {
@@ -278,9 +263,9 @@ export function autoProposals(items: ReportMr[], jobsOf: (m: ReportMr) => VcsCiJ
           key: `quick:play:${j.id}`,
           issue,
           issueTitle: m.title,
-          summary: `Rodar o job ${j.name} em ${m.ref}`,
+          summary: t('main.quick.runJob', { job: j.name, ref: m.ref }),
           op: { op: 'playJob', project: projectOf(m), jobId: j.id },
-          notify: { title: `Job ${j.name} parado em ${m.ref}`, body },
+          notify: { title: t('main.quick.jobStuck', { job: j.name, ref: m.ref }), body },
         });
       }
     }
@@ -314,7 +299,7 @@ async function autoRun(notify: (n: Notice) => void): Promise<void> {
     proposeVcsCommands({ key: p.key, issue: p.issue, issueTitle: p.issueTitle, summary: p.summary, notify: each ? p.notify : undefined }, await prov.planWrite(p.op));
   }
   if (!each && getSettings().notifications) {
-    notify({ title: `${fresh.length} propostas novas no GitLab`, body: 'Draft e jobs manuais aguardando o seu “seguir”.', onClick: { type: 'navigate', to: 'actions' } });
+    notify({ title: t('main.quick.many', { count: fresh.length, vcs: vcsName() }), body: t('main.quick.manyBody'), onClick: { type: 'navigate', to: 'actions' } });
   }
 }
 

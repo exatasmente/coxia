@@ -24,13 +24,13 @@ beforeEach(() => {
 
 describe('entryOf', () => {
   it('records id, time, role, kind and card ref from the first prompt', () => {
-    const e = entryOf('s1', 'turn', 'Você é o agente da atividade sz4#15965 na pré-daily por voz.\nCartão...', NOW);
-    expect(e).toEqual({ id: 's1', at: '2026-10-02T12:00:00.000Z', role: 'turn', kind: 'turn', ref: 'sz4#15965' });
+    const e = entryOf('s1', 'turn', 'Você é o agente da atividade web#103 na pré-daily por voz.\nCartão...', NOW);
+    expect(e).toEqual({ id: 's1', at: '2026-10-02T12:00:00.000Z', role: 'turn', kind: 'turn', ref: 'web#103' });
   });
 
   it('reads the ref of gate and QA prompts and leaves it null when the prompt has none', () => {
-    expect(entryOf('s2', 'deep', 'Gate 1 da issue sz4#14500, quiz', NOW)).toMatchObject({ kind: 'gate', ref: 'sz4#14500' });
-    expect(entryOf('s3', 'teams', 'Escreva o texto que o Luiz vai colar no Teams', NOW)).toMatchObject({ kind: 'teams', ref: null });
+    expect(entryOf('s2', 'deep', 'Gate 1 da issue web#104, quiz', NOW)).toMatchObject({ kind: 'gate', ref: 'web#104' });
+    expect(entryOf('s3', 'teams', 'Escreva o texto que o Bruno vai colar no chat do time', NOW)).toMatchObject({ kind: 'teams', ref: null });
     expect(entryOf('s4', 'reply', 'uma resposta de continuação', NOW)).toMatchObject({ kind: null, ref: null });
   });
 });
@@ -38,7 +38,7 @@ describe('entryOf', () => {
 describe('parseIndex', () => {
   it('skips broken lines, lines without id or time, and repeated ids (first wins)', () => {
     const text = [
-      JSON.stringify({ id: 'a', at: '2026-10-01T10:00:00.000Z', role: 'turn', kind: 'turn', ref: 'sz4#1' }),
+      JSON.stringify({ id: 'a', at: '2026-10-01T10:00:00.000Z', role: 'turn', kind: 'turn', ref: 'web#1' }),
       'not json',
       JSON.stringify({ at: '2026-10-01T10:00:00.000Z' }),
       JSON.stringify({ id: 'b', at: 'yesterday' }),
@@ -72,11 +72,11 @@ describe('recordEntry', () => {
 describe('noteSession', () => {
   it('writes into the running workspace once, ignoring a missing id', () => {
     noteSession(undefined, 'turn', 'x');
-    noteSession('note-1', 'turn', 'Você é o agente da atividade sz4#9 na pré-daily por voz.');
-    noteSession('note-1', 'turn', 'Você é o agente da atividade sz4#9 na pré-daily por voz.');
+    noteSession('note-1', 'turn', 'Você é o agente da atividade web#9 na pré-daily por voz.');
+    noteSession('note-1', 'turn', 'Você é o agente da atividade web#9 na pré-daily por voz.');
     const mine = readIndex(ATAS).filter((e) => e.id === 'note-1');
     expect(mine).toHaveLength(1);
-    expect(mine[0]).toMatchObject({ role: 'turn', kind: 'turn', ref: 'sz4#9' });
+    expect(mine[0]).toMatchObject({ role: 'turn', kind: 'turn', ref: 'web#9' });
   });
 });
 
@@ -115,7 +115,7 @@ describe('retention keeps working with the index', () => {
       size: 1,
       mtimeMs: old,
       sessionId,
-      firstPrompt: 'Você é o agente da atividade sz4#1 na pré-daily por voz.',
+      firstPrompt: 'Você é o agente da atividade web#1 na pré-daily por voz.',
       entrypoints: ['sdk-ts'],
     });
     const refs = sessionRefs(root, reg, 'principal');

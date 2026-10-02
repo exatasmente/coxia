@@ -13,6 +13,7 @@ import type { Module } from './module';
 import { secrets } from './secrets';
 import { readRegistry } from './workspaces-core';
 import { getConfig, reloadConfig, saveConfig } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 // The channels of the configuration: read it, save it, the secrets store, and export/import. Everything that writes, touches files or
 // stores a secret is desktop-only (webPolicy.ts): a browser client must not be able to change what the app executes or where it reads.
@@ -77,7 +78,7 @@ export const configModule: Module = (ctx) => {
   ctx.handle('config:export', async (): Promise<ExportResult> => {
     const config = getConfig();
     const win = parentWindow();
-    const options = { title: 'Exportar a configuração do workspace', defaultPath: `coxia-${WORKSPACE_ID}.json`, filters: [{ name: 'Configuração Coxia', extensions: ['json'] }] };
+    const options = { title: t('main.config.exportTitle'), defaultPath: `coxia-${WORKSPACE_ID}.json`, filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] };
     const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
     const requiredSecrets = collectSecretRequirements(config);
     if (picked.canceled || !picked.filePath) return { path: null, requiredSecrets };
@@ -88,7 +89,7 @@ export const configModule: Module = (ctx) => {
   ctx.handle('config:import-pick', async (): Promise<string | null> => {
     // Test hook: the isolated UI tests cannot drive a native file dialog.
     if (process.env.COXIA_TEST_IMPORT_FILE) return process.env.COXIA_TEST_IMPORT_FILE;
-    const options = { title: 'Importar uma configuração', properties: ['openFile' as const], filters: [{ name: 'Configuração Coxia', extensions: ['json'] }] };
+    const options = { title: t('main.config.importTitle'), properties: ['openFile' as const], filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] };
     const win = parentWindow();
     const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     return picked.canceled ? null : (picked.filePaths[0] ?? null);

@@ -28,6 +28,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # Nothing of a company or a person in the tree (names, hosts, private addresses, emails, secrets): scripts/public-audit.mjs.
+      - name: Public audit
+        run: node scripts/public-audit.mjs
+
       - name: Install dependencies
         run: npm ci
 

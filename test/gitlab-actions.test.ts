@@ -71,12 +71,12 @@ describe('GraphQL: only the work item status mutation', () => {
 
 describe('REST endpoints', () => {
   const valid = [
-    'projects/sz%2Fsz4/issues/15499/notes',
-    'projects/sz%2Fsz4/merge_requests/797/notes/12',
-    'projects/1/issues/15499/notes/9',
-    'projects/sz%2Fsz4/merge_requests/797?reviewer_ids=1',
-    'projects/sz%2Fhub-whatsapp/merge_requests/797/pipelines',
-    'projects/sz%2Fsz4/issues/15499?labels=QA%3A%3Ax&state_event=close',
+    'projects/acme%2Fweb/issues/101/notes',
+    'projects/acme%2Fweb/merge_requests/303/notes/12',
+    'projects/1/issues/101/notes/9',
+    'projects/acme%2Fweb/merge_requests/303?reviewer_ids=1',
+    'projects/sz%2Fgateway/merge_requests/303/pipelines',
+    'projects/acme%2Fweb/issues/101?labels=QA%3A%3Ax&state_event=close',
   ];
   it.each(valid)('accepts %s', (endpoint) => {
     expect(() => validateGitlabCommand(rest(endpoint))).not.toThrow();

@@ -24,27 +24,33 @@ export function cycleText(value: string, language: Language, params?: Params): s
 
 const upper = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+/** "pré-daily" -> "Pré-daily". */
+export const upperFirst = upper;
+
 /**
- * The words that stand for the person in a prompt. pt-BR needs an article and a contraction ("o Luiz", "do Luiz", "ao Luiz"), which depend on
- * the name's gender, so the config says it (`userArticle`); with no article the name stands alone ("Luiz", "de Luiz", "a Luiz").
+ * The words that stand for the person in a prompt. pt-BR needs an article and a contraction ("o Bruno", "do Bruno", "ao Bruno"), which depend on
+ * the name's gender, so the config says it (`userArticle`); with no article the name stands alone ("Bruno", "de Bruno", "a Bruno").
  * With no name at all the agents say "o usuário" / "the user".
  */
 export function userTerms(language: Language, user: Pick<WorkspaceConfig, 'userName' | 'userArticle'>): Record<string, string> {
   const name = user.userName.trim();
   if (language === 'en') {
     const terms = name
-      ? { userName: name, theUser: name, ofUser: `${name}'s`, toUser: name, he: 'they', his: 'their' }
-      : { userName: '', theUser: 'the user', ofUser: "the user's", toUser: 'the user', he: 'they', his: 'their' };
+      ? { userName: name, theUser: name, ofUser: `${name}'s`, toUser: name, he: 'they', him: 'them', his: 'their' }
+      // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
+      : { userName: '', theUser: 'the user', ofUser: "the user's", toUser: 'the user', he: 'they', him: 'them', his: 'their' };
     return { ...terms, TheUser: upper(terms.theUser) };
   }
   const a = user.userArticle;
   const terms = !name
-    ? { userName: '', theUser: 'o usuário', ofUser: 'do usuário', toUser: 'ao usuário', he: 'a pessoa', his: 'da pessoa' }
+    // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
+    ? { userName: '', theUser: 'o usuário', ofUser: 'do usuário', toUser: 'ao usuário', he: 'a pessoa', him: 'a pessoa', his: 'da pessoa' }
     : a === 'o'
-      ? { userName: name, theUser: `o ${name}`, ofUser: `do ${name}`, toUser: `ao ${name}`, he: 'ele', his: 'dele' }
+      ? { userName: name, theUser: `o ${name}`, ofUser: `do ${name}`, toUser: `ao ${name}`, he: 'ele', him: 'ele', his: 'dele' }
       : a === 'a'
-        ? { userName: name, theUser: `a ${name}`, ofUser: `da ${name}`, toUser: `à ${name}`, he: 'ela', his: 'dela' }
-        : { userName: name, theUser: name, ofUser: `de ${name}`, toUser: `a ${name}`, he: 'a pessoa', his: 'da pessoa' };
+        ? { userName: name, theUser: `a ${name}`, ofUser: `da ${name}`, toUser: `à ${name}`, he: 'ela', him: 'ela', his: 'dela' }
+        // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
+        : { userName: name, theUser: name, ofUser: `de ${name}`, toUser: `a ${name}`, he: 'a pessoa', him: 'a pessoa', his: 'da pessoa' };
   return { ...terms, TheUser: upper(terms.theUser) };
 }
 

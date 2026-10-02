@@ -1,9 +1,9 @@
+// i18n-lint: allow-file default values of the config: model names, commands and ids, not prose
 import { neutralDevCycle } from '../cycles/neutral';
-import { LEGACY_USER, legacyCycle } from './legacy';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
-// The values of the original author live in legacy.ts and reach a workspace only through the v1 migration.
+// A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
 
 export const DEFAULT_PROVIDER_ID = 'anthropic';
 export const DEFAULT_SECRET_REF = 'llm.anthropic';
@@ -81,17 +81,9 @@ function completeProvider(p: Pick<LlmProvider, 'id' | 'kind'> & Partial<LlmProvi
   return Object.assign({ id: p.id, kind: p.kind, engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }, PROVIDER_DEFAULTS, p, { engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' }) as LlmProvider;
 }
 
-// A file written for the existing install before cycle templates existed names the template "sz-sdd" and has none of the newer fields:
-// its blanks are the author's cycle, not the neutral one, so the migrated user keeps behaving exactly as before.
-function isLegacyCycle(partial: unknown): boolean {
-  const cycle = isPlain(partial) && isPlain(partial.devCycle) ? partial.devCycle : null;
-  return cycle?.templateId === 'sz-sdd';
-}
-
 /** Fills whatever a stored or imported config leaves out with the neutral default (forward compatible: a newer field never breaks an older file). */
 export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Record<string, unknown> | null | undefined): WorkspaceConfig {
-  const base = isLegacyCycle(partial) ? mergeDeep(neutralConfig(), { ...LEGACY_USER, devCycle: legacyCycle() }) : neutralConfig();
-  const c = mergeDeep(base, partial ?? {});
+  const c = mergeDeep(neutralConfig(), partial ?? {});
   return {
     ...c,
     llm: { ...c.llm, providers: c.llm.providers.map(completeProvider) },

@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 // Per-sentence prosody: the free Edge endpoint takes one rate and one pitch per request, so each sentence is its own
 // request with its own deltas, and the pauses between them are inserted as silence when the audio is joined.
 
@@ -24,19 +25,20 @@ const PAUSE = { sentence: 300, question: 450, exclaim: 350, ellipsis: 550, colon
 const CLOSING_RATE = -4;
 const MAX_SEGMENTS = 40;
 
-const ALERT = /\b(bloque\w*|conflit\w*|falh\w*|erros?\b|urgent\w*|aten[çc][ãa]o|cuidado|quebr\w*|travad\w*|atrasad\w*|riscos?\b|reprovad\w*|P[01]\b|vencid\w*)/i;
-const POSITIVE = /\b(aprovad\w*|pront[oa]s?\b|mergead\w*|passou|passaram|verdes?\b|resolvid\w*|conclu[íi]d\w*|liberad\w*|deu certo)/i;
-// "sem bloqueio", "nenhum conflito", "não há risco": the alert word is negated
-const NEGATED = /\b(sem|nenhum|nenhuma|n[ãa]o h[áa]|n[ãa]o tem)\s+(\w+\s+)?\w+/gi;
-const ABBREVIATIONS = /\b(sr|sra|dr|dra|ex|p\.ex|etc|aprox|obs|vs|n[ºo]|art|cap|pág|pag)\.$/i;
+// Word lists that decide the tone of a sentence: Portuguese and English together, so the speech follows whatever language the agent answered in.
+const ALERT = /\b(bloque\w*|conflit\w*|falh\w*|erros?\b|urgent\w*|aten[çc][ãa]o|cuidado|quebr\w*|travad\w*|atrasad\w*|riscos?\b|reprovad\w*|P[01]\b|vencid\w*|block\w*|conflict\w*|fail\w*|errors?\b|attention|careful|broken|stuck|late|overdue|risks?\b|rejected|expired)/i; // i18n-ignore: tone heuristic
+const POSITIVE = /\b(aprovad\w*|pront[oa]s?\b|mergead\w*|passou|passaram|verdes?\b|resolvid\w*|conclu[íi]d\w*|liberad\w*|deu certo|approved|ready|merged|passed|green|resolved|done|released|worked)/i; // i18n-ignore: tone heuristic
+// "sem bloqueio", "nenhum conflito", "não há risco", "no blockers": the alert word is negated
+const NEGATED = /\b(sem|nenhum|nenhuma|n[ãa]o h[áa]|n[ãa]o tem|no|none|without|there (?:is|are) no|nothing)\s+(\w+\s+)?\w+/gi; // i18n-ignore: tone heuristic
+const ABBREVIATIONS = /\b(sr|sra|dr|dra|ex|p\.ex|etc|aprox|obs|vs|n[ºo]|art|cap|pág|pag|mr|mrs|ms|prof|e\.g|i\.e|approx|fig|jr|st)\.$/i; // i18n-ignore: abbreviations that do not end a sentence
 
 export function speakable(text: string): string {
   return text
-    .replace(/```mermaid[\s\S]*?```/gi, '\nO diagrama está na tela.\n')
-    .replace(/```[\s\S]*?```/g, '\nO trecho de código está na tela.\n')
+    .replace(/```mermaid[\s\S]*?```/gi, `\n${t('main.speech.diagram')}\n`)
+    .replace(/```[\s\S]*?```/g, `\n${t('main.speech.code')}\n`)
     .replace(/`([^`]+)`/g, '$1')
     .replace(/!?\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/https?:\/\/\S+/g, 'o link na tela')
+    .replace(/https?:\/\/\S+/g, t('main.speech.link'))
     .replace(/(\*\*|__)(.+?)\1/g, '$2')
     .replace(/(^|\s)[*_]([^*_\n]+)[*_](?=\s|[.,;:!?]|$)/g, '$1$2')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')

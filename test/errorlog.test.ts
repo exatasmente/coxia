@@ -21,7 +21,7 @@ describe('redact', () => {
     ['{"token":"supersecretvalue"}', 'supersecretvalue'],
     ['api_key=abc123def456', 'abc123def456'],
     ['password: "p4ss w0rd"', 'p4ss'],
-    ['mail luiz@example.com failed', 'luiz@example.com'],
+    ['mail bruno@example.com failed', 'bruno@example.com'],
     ['GET https://x.test/api?private_token=abc&x=1', 'private_token'],
     ['https://user:pw123@host.test/repo.git', 'pw123'],
     ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123', 'eyJhbGci'],
@@ -31,12 +31,12 @@ describe('redact', () => {
   });
 
   it('keeps what helps diagnosis', () => {
-    const text = 'connect ECONNREFUSED 10.0.0.1:443 at dark.smartzap.com.br, code: ENOENT, exit code=1';
+    const text = 'connect ECONNREFUSED 198.51.100.7:443 at git.acme.test, code: ENOENT, exit code=1';
     expect(redact(text, '/home/x')).toBe(text);
   });
 
   it('replaces the home directory', () => {
-    expect(redact('at /home/luiz/projects/app/x.ts:1:2', '/home/luiz')).toBe('at ~/projects/app/x.ts:1:2');
+    expect(redact('at /home/ana/projects/app/x.ts:1:2', '/home/ana')).toBe('at ~/projects/app/x.ts:1:2');
   });
 });
 
@@ -58,16 +58,16 @@ describe('entries', () => {
   });
 
   it('keeps only short whitelisted context values', () => {
-    const ctx = safeContext({ channel: 'qa:ask', via: 'ipc', exitCode: 1, question: 'what is my password', ref: 'sz4/sz4#15965', id: 'two words', cmd: 'x'.repeat(200), status: true });
-    expect(ctx).toEqual({ channel: 'qa:ask', via: 'ipc', exitCode: 1, ref: 'sz4/sz4#15965', status: true });
+    const ctx = safeContext({ channel: 'qa:ask', via: 'ipc', exitCode: 1, question: 'what is my password', ref: 'acme/web#103', id: 'two words', cmd: 'x'.repeat(200), status: true });
+    expect(ctx).toEqual({ channel: 'qa:ask', via: 'ipc', exitCode: 1, ref: 'acme/web#103', status: true });
   });
 
   it('never takes text arguments as context', () => {
-    expect(rpcContext('qa:ask', ['15965', 'my secret question'], 'ipc')).toEqual({ channel: 'qa:ask', via: 'ipc', id: '15965' });
+    expect(rpcContext('qa:ask', ['103', 'my secret question'], 'ipc')).toEqual({ channel: 'qa:ask', via: 'ipc', id: '103' });
     expect(rpcContext('clipboard:copy', ['some private text'], 'ipc')).toEqual({ channel: 'clipboard:copy', via: 'ipc' });
     expect(rpcContext('voice:plan', ['olá'], 'web')).toEqual({ channel: 'voice:plan', via: 'web' });
-    expect(rpcContext('agent:reply', [{ ref: 'sz4/sz4#15965', title: 'private title' }, {}, 'text'], 'ipc')).toEqual({ channel: 'agent:reply', via: 'ipc', ref: 'sz4/sz4#15965' });
-    expect(rpcContext('conflict:fromMr', [{ ref: 'sz4/sz4#1' }, 'sz4/sz4!925'], 'web')).toMatchObject({ mr: 'sz4/sz4!925' });
+    expect(rpcContext('agent:reply', [{ ref: 'acme/web#103', title: 'private title' }, {}, 'text'], 'ipc')).toEqual({ channel: 'agent:reply', via: 'ipc', ref: 'acme/web#103' });
+    expect(rpcContext('conflict:fromMr', [{ ref: 'acme/web#1' }, 'acme/web!304'], 'web')).toMatchObject({ mr: 'acme/web!304' });
     expect(rpcContext('agent:reply', [{ ref: 'free text with spaces' }], 'ipc')).toEqual({ channel: 'agent:reply', via: 'ipc' });
   });
 });
@@ -144,7 +144,7 @@ describe('limiter', () => {
 describe('hints', () => {
   it.each([
     ['agent ended with error_max_turns', 'rpc:conflict:propose', 'agente parou antes de terminar'],
-    ['connect ECONNREFUSED 10.1.1.1:443', 'job:radar', 'Sem rede ou VPN'],
+    ['connect ECONNREFUSED 198.51.100.9:443', 'job:radar', 'Sem rede ou VPN'],
     ['getaddrinfo ENOTFOUND git.example.test', 'rpc:cards:load', 'Sem rede ou VPN'],
     ['Sem conexão com git.example.test: ENOTFOUND', 'job:feedback', 'Sem rede ou VPN'],
     ['Request failed with status code 401: user not found (OpenRouter)', 'rpc:agent:reply', 'chave ou saldo da OpenRouter'],

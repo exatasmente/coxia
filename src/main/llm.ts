@@ -4,6 +4,7 @@ import { SecretError } from './secrets-core';
 import { secrets } from './secrets';
 import { getConfig, rc } from './workspaceConfig';
 import { vcsShellEnv } from './vcs/readPolicy';
+import { t } from '../shared/i18n';
 
 /** The key of a provider, or null when it has none (local server, machine credentials). A configured ref with no source is an error, never a silent no-key call. */
 export function providerSecret(secretRef: string | null): string | null {
@@ -11,7 +12,7 @@ export function providerSecret(secretRef: string | null): string | null {
   try {
     return secrets().resolve(secretRef);
   } catch (e) {
-    if (e instanceof SecretError) throw new Error(`Chave do provedor não configurada (${secretRef}): ${e.message}. Abra Configurações e defina a chave, um comando ou uma variável de ambiente.`);
+    if (e instanceof SecretError) throw new Error(t('main.llm.keyMissing', { ref: secretRef, reason: e.message }));
     throw e;
   }
 }
@@ -37,8 +38,8 @@ export function openRouterProvider() {
 /** The OpenRouter key. Throws when the workspace has no OpenRouter provider or its secret is not configured. */
 export function openRouterKey(): string {
   const p = openRouterProvider();
-  if (!p) throw new Error('Este workspace não usa o OpenRouter.');
+  if (!p) throw new Error(t('main.llm.noOpenRouter'));
   const key = providerSecret(p.secretRef);
-  if (!key) throw new Error('O provedor OpenRouter está sem chave configurada.');
+  if (!key) throw new Error(t('main.llm.openRouterNoKey'));
   return key;
 }

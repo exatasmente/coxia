@@ -253,7 +253,7 @@
   "wizard.vcs.issuesProject": "Project",
   "wizard.vcs.issuesProjectHint": "In the group/project format.",
   "wizard.vcs.issuesPrefix": "Card prefix",
-  "wizard.vcs.issuesPrefixHint": "Optional, like sz4# in sz4#15499. Empty: just the number.",
+  "wizard.vcs.issuesPrefixHint": "Optional, like app# in app#101. Empty: just the number.",
   "wizard.docs.claudeMdRoots": "CLAUDE.md",
   "wizard.docs.skillsDirs": "Skills",
   "wizard.docs.rulesDirs": "Rules",

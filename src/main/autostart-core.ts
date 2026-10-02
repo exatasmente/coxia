@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { t } from '../shared/i18n';
 
 export function autostartFile(): string {
   return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'autostart/cerimonias.desktop');
@@ -16,10 +17,11 @@ function execArg(arg: string): string {
 
 export function desktopEntry(command: string[]): string {
   return [
+    // i18n-ignore: format of the .desktop file
     '[Desktop Entry]',
     'Type=Application',
     'Name=Coxia',
-    'Comment=Coxia: cerimônias por voz, começa só na bandeja',
+    `Comment=${t('main.autostart.comment')}`,
     `Exec=${command.map(execArg).join(' ')}`,
     'Icon=cerimonias',
     'Terminal=false',

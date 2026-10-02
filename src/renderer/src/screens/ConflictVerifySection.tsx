@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../api';
 import { conflictApi } from '../conflictApi';
-import { VERIFY_DEFAULTS } from '../conflictVerifyDefaults';
+import { VERIFY_SUGGESTION } from '../conflictVerifyDefaults';
+import { tNodes, useT } from '../i18n';
 import { isWeb } from '../platform';
+
+const EXAMPLE_COMMAND = 'source ~/.nvm/nvm.sh; nvm use 18 >/dev/null; ln -sfn "$CLONE_DIR/node_modules" node_modules; npx jest'; // i18n-ignore: shell command
 
 // Per project: the shell command that checks a conflict resolution in its worktree before the merge is committed.
 export function ConflictVerifySection() {
+  const t = useT();
   const [projects, setProjects] = useState<string[]>([]);
   const [commands, setCommands] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, string>>({});
@@ -32,7 +36,7 @@ export function ConflictVerifySection() {
       setProjects(c.projects);
       setCommands(c.commands);
       setSaved(c.commands);
-      setMessage('Salvo.');
+      setMessage(t('ui.verify.saved'));
     } catch (e) {
       setError(errorText(e));
     }
@@ -48,13 +52,11 @@ export function ConflictVerifySection() {
   return (
     <section className="panel" style={{ padding: 20, gap: 14 }}>
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Verificação de conflitos</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.verify.title')}</h2>
         <p className="small muted" style={{ marginTop: 4 }}>
-          Comando de shell que roda na worktree do conflito, depois de aplicar a resolução e antes do commit do merge. Vazio: sem verificação (o app pede um “seguir sem testes”).
-          Variáveis: CLONE_DIR (seu clone, de onde dá para ligar o node_modules) e WORKTREE_DIR. Exemplo para o hub-whatsapp, que só testa no Node 18:{' '}
-          <code className="mono">source ~/.nvm/nvm.sh; nvm use 18 &gt;/dev/null; ln -sfn "$CLONE_DIR/node_modules" node_modules; npx jest</code>
+          {tNodes('ui.verify.hint', { command: <code className="mono">{EXAMPLE_COMMAND}</code> })}
         </p>
-        {web && <p className="small muted">Só a janela do app altera estes comandos: o navegador não pode escolher o que o Aplicar executa.</p>}
+        {web && <p className="small muted">{t('ui.verify.webNote')}</p>}
       </div>
       {projects.map((p) => (
         <div key={p} className="settings-row">
@@ -64,22 +66,22 @@ export function ConflictVerifySection() {
               id={`cv-${p}`}
               className="text-input mono"
               style={{ minWidth: 0, flex: 1 }}
-              placeholder="nenhum"
+              placeholder={t('ui.verify.none')}
               disabled={web}
               value={commands[p] ?? ''}
               onChange={(e) => setCommands({ ...commands, [p]: e.target.value })}
             />
-            {!web && VERIFY_DEFAULTS[p] && commands[p] !== VERIFY_DEFAULTS[p] && (
-              <button type="button" className="btn" onClick={() => setCommands({ ...commands, [p]: VERIFY_DEFAULTS[p] })}>Sugestão</button>
+            {!web && commands[p] !== VERIFY_SUGGESTION && (
+              <button type="button" className="btn" onClick={() => setCommands({ ...commands, [p]: VERIFY_SUGGESTION })}>{t('ui.verify.suggestion')}</button>
             )}
           </div>
         </div>
       ))}
       {!web && (
         <div className="row">
-          <input className="text-input mono" style={{ maxWidth: 320 }} placeholder="grupo/projeto" aria-label="Outro projeto" value={extra} onChange={(e) => setExtra(e.target.value)} />
-          <button type="button" className="btn" disabled={!extra.trim()} onClick={addProject}>Adicionar projeto</button>
-          <button type="button" className="btn btn-dark" disabled={!dirty} onClick={() => void save()}>Salvar comandos</button>
+          <input className="text-input mono" style={{ maxWidth: 320 }} placeholder={t('ui.verify.otherPlaceholder')} aria-label={t('ui.verify.otherAria')} value={extra} onChange={(e) => setExtra(e.target.value)} />
+          <button type="button" className="btn" disabled={!extra.trim()} onClick={addProject}>{t('ui.verify.add')}</button>
+          <button type="button" className="btn btn-dark" disabled={!dirty} onClick={() => void save()}>{t('ui.verify.save')}</button>
         </div>
       )}
       {message && <div className="small muted">{message}</div>}

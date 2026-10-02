@@ -1,18 +1,33 @@
-import { useState } from 'react';
-import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type RetentionPreview } from '../../../shared/retention';
+import { type CSSProperties, useState } from 'react';
+import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type RetentionKind, type RetentionPreview } from '../../../shared/retention';
 import type { Settings } from '../../../shared/settings';
-import { errorText, plural } from '../api';
+import { errorText } from '../api';
+import { intlLocale, useT } from '../i18n';
 import { retentionApi } from '../retentionApi';
 
 const SHOWN = 8;
+const GROUP_STYLE: CSSProperties = { borderTop: '1px solid var(--line-2)', paddingTop: 8 }; // i18n-ignore: CSS value
+
+const KIND_LABEL: Record<RetentionKind, string> = {
+  sessoes: 'ui.retention.kind.sessoes',
+  historico: 'ui.retention.kind.historico',
+  gates: 'ui.retention.kind.gates',
+  qa: 'ui.retention.kind.qa',
+  retros: 'ui.retention.kind.retros',
+  atividade: 'ui.retention.kind.atividade',
+  feedback: 'ui.retention.kind.feedback',
+};
+
 
 function size(bytes: number): string {
+  const number = (value: number, digits: number) => new Intl.NumberFormat(intlLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024) return `${number(bytes / 1024, 0)} KB`;
+  return `${number(bytes / 1024 / 1024, 1)} MB`;
 }
 
 export function RetentionSection({ value, onChange }: { value: Settings['retention']; onChange: (v: Settings['retention']) => void }) {
+  const t = useT();
   const [preview, setPreview] = useState<RetentionPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -47,7 +62,8 @@ export function RetentionSection({ value, onChange }: { value: Settings['retenti
       const r = await retentionApi.apply(preview.days, preview.fingerprint);
       setPreview(null);
       setConfirming(false);
-      setMessage(`Apagados ${plural(r.deleted, 'arquivo', 'arquivos')} (${size(r.bytes)}).${r.failed.length ? ` Não consegui apagar ${r.failed.length}: ${r.failed[0].name} (${r.failed[0].error}).` : ''}`);
+      const failure = r.failed.length ? t('ui.retention.failure', { failed: r.failed.length, name: r.failed[0].name, error: r.failed[0].error }) : '';
+      setMessage(t('ui.retention.deleted', { count: r.deleted, size: size(r.bytes), failure }));
     } catch (e) {
       setError(errorText(e));
       setPreview(null);
@@ -60,21 +76,20 @@ export function RetentionSection({ value, onChange }: { value: Settings['retenti
   return (
     <section className="panel" style={{ padding: 20, gap: 14 }}>
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Retenção de dados</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.retention.title')}</h2>
         <p className="small muted" style={{ marginTop: 4 }}>
-          Apaga o que o app guardou e já passou do prazo: sessões dos agentes, histórico, gates, passagens para o QA, retros e reentradas.
-          Atas em .md e as suas sessões do Claude Code nunca são apagadas.
+          {t('ui.retention.hint')}
         </p>
       </div>
       <label className="check-row">
         <input type="checkbox" checked={value.enabled} onChange={() => { reset(); onChange({ ...value, enabled: !value.enabled }); }} />
         <span>
-          <span style={{ fontWeight: 600, display: 'block' }}>Apagar sozinho, uma vez por dia</span>
-          <span className="small muted">Desligado por padrão. Ligado, o app apaga o que a prévia mostraria, sem perguntar.</span>
+          <span style={{ fontWeight: 600, display: 'block' }}>{t('ui.retention.auto.label')}</span>
+          <span className="small muted">{t('ui.retention.auto.hint')}</span>
         </span>
       </label>
       <div className="settings-row">
-        <label htmlFor="ret-days" style={{ fontWeight: 600 }}>Prazo</label>
+        <label htmlFor="ret-days" style={{ fontWeight: 600 }}>{t('ui.retention.days.label')}</label>
         <div className="row" style={{ gap: 8 }}>
           <input
             id="ret-days"
@@ -86,15 +101,15 @@ export function RetentionSection({ value, onChange }: { value: Settings['retenti
             value={value.days}
             onChange={(e) => { reset(); onChange({ ...value, days: Number(e.target.value) }); }}
           />
-          <span className="small muted">dias (de {RETENTION_MIN_DAYS} a {RETENTION_MAX_DAYS}), contados da última alteração</span>
+          <span className="small muted">{t('ui.retention.days.unit', { min: RETENTION_MIN_DAYS, max: RETENTION_MAX_DAYS })}</span>
         </div>
       </div>
       <div className="row">
         <button type="button" className="btn" disabled={busy} onClick={() => void look()}>
-          {busy && !confirming ? <span className="spinner" /> : null} Ver o que seria apagado
+          {busy && !confirming ? <span className="spinner" /> : null} {t('ui.retention.look')}
         </button>
         {preview && preview.count > 0 && !confirming && (
-          <button type="button" className="btn btn-red" disabled={busy} onClick={() => setConfirming(true)}>Apagar agora</button>
+          <button type="button" className="btn btn-red" disabled={busy} onClick={() => setConfirming(true)}>{t('ui.retention.wipeNow')}</button>
         )}
       </div>
       {error && <div className="error">{error}</div>}
@@ -102,19 +117,19 @@ export function RetentionSection({ value, onChange }: { value: Settings['retenti
       {preview && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {preview.count === 0 ? (
-            <div className="small muted">Nada passou do prazo de {preview.days} dias. Sessões fora do app, que o filtro ignora: {preview.untouchedSessions}.</div>
+            <div className="small muted">{t('ui.retention.nothingExpired', { days: preview.days, untouched: preview.untouchedSessions })}</div>
           ) : (
             <>
               <div style={{ fontWeight: 600 }}>
-                {plural(preview.count, 'arquivo seria apagado', 'arquivos seriam apagados')} · {size(preview.bytes)}
+                {t('ui.retention.wouldDelete', { count: preview.count })} · {size(preview.bytes)}
               </div>
               {preview.groups.map((g) => {
                 const items = preview.items.filter((i) => i.kind === g.kind);
                 const expanded = open === g.kind;
                 return (
-                  <div key={g.kind} style={{ borderTop: '1px solid var(--line-2)', paddingTop: 8 }}>
+                  <div key={g.kind} style={GROUP_STYLE}>
                     <button type="button" className="btn" style={{ minHeight: 36, width: '100%', justifyContent: 'space-between' }} aria-expanded={expanded} onClick={() => setOpen(expanded ? null : g.kind)}>
-                      <span>{g.label}</span>
+                      <span>{t(KIND_LABEL[g.kind])}</span>
                       <span className="small muted">{g.count} · {size(g.bytes)}</span>
                     </button>
                     {expanded && (
@@ -122,25 +137,25 @@ export function RetentionSection({ value, onChange }: { value: Settings['retenti
                         {items.slice(0, SHOWN).map((i) => (
                           <li key={i.name}><span style={{ fontFamily: 'var(--mono)' }}>{i.name.slice(0, 13)}</span>: {i.reason}</li>
                         ))}
-                        {items.length > SHOWN && <li>e mais {items.length - SHOWN}</li>}
+                        {items.length > SHOWN && <li>{t('ui.retention.andMore', { more: items.length - SHOWN })}</li>}
                       </ul>
                     )}
                   </div>
                 );
               })}
-              <div className="small muted">Sessões fora do app, que o filtro ignora: {preview.untouchedSessions}.</div>
+              <div className="small muted">{t('ui.retention.untouched', { untouched: preview.untouchedSessions })}</div>
             </>
           )}
           {confirming && (
-            <div className="error" role="alertdialog" aria-label="Confirmar a exclusão" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="error" role="alertdialog" aria-label={t('ui.retention.confirm.aria')} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontWeight: 600 }}>
-                Apagar {plural(preview.count, 'arquivo', 'arquivos')} ({size(preview.bytes)}) de vez? Não há como desfazer.
+                {t('ui.retention.confirm.text', { count: preview.count, size: size(preview.bytes) })}
               </div>
               <div className="row">
                 <button type="button" className="btn btn-red" disabled={busy} onClick={() => void wipe()}>
-                  {busy ? <span className="spinner" /> : null} Sim, apagar
+                  {busy ? <span className="spinner" /> : null} {t('ui.retention.confirm.yes')}
                 </button>
-                <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>Cancelar</button>
+                <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>{t('ui.retention.confirm.cancel')}</button>
               </div>
             </div>
           )}

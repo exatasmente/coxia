@@ -3,7 +3,7 @@
 // idempotency id, so a replay never runs an agent call twice. The service worker (public/sw.js) shares the same store.
 import { IDEMPOTENCY_HEADER, OUTBOX_CHANNEL, OUTBOX_DB, OUTBOX_MAX_AGE_MS, OUTBOX_STORE, OUTBOX_TAG, QUEUEABLE, type OutboxItem } from '../../shared/outbox';
 import { decodeWire } from '../../shared/wire';
-import { tv } from '../../shared/i18n';
+import { t, tv } from '../../shared/i18n';
 
 // Same event name as webApi's UNAUTHORIZED (not imported: webApi imports this module).
 const UNAUTHORIZED = 'cerimonias:unauthorized';
@@ -77,9 +77,19 @@ export function isTransientFailure(e: unknown): boolean {
   return typeof (e as { status?: unknown })?.status === 'number' && RETRY_STATUS.has((e as { status: number }).status);
 }
 
+const QUEUE_LABEL_KEYS: Record<string, string> = {
+  'deep:ask': 'ui.outbox.label.deepAsk',
+  'gate:answer': 'ui.outbox.label.gateAnswer',
+  'gate:explain': 'ui.outbox.label.gateExplain',
+  'qa:ask': 'ui.outbox.label.qaAsk',
+  'retro:ask': 'ui.outbox.label.retroAsk',
+  'actions:conflict': 'ui.outbox.label.actionsConflict',
+};
+
 export function queuedLabel(channelName: string): string {
   if (channelName === 'agent:reply') return tv('outbox.reply');
-  return QUEUEABLE[channelName] ?? channelName;
+  const key = QUEUE_LABEL_KEYS[channelName];
+  return key ? t(key) : QUEUEABLE[channelName] ?? channelName;
 }
 
 export async function enqueue(item: Pick<OutboxItem, 'id' | 'channel' | 'body'>): Promise<void> {
@@ -125,7 +135,7 @@ async function attempt(item: OutboxItem): Promise<Attempt> {
     await put({ ...item, attempts: item.attempts + 1 });
     return 'later';
   }
-  let error = `Erro ${res.status}`;
+  let error = t('ui.error.http', { status: res.status });
   try {
     error = (JSON.parse(text) as { error?: string }).error ?? error;
   } catch {}
@@ -152,7 +162,7 @@ async function settle(): Promise<void> {
       } catch (e) {
         w.fail(e as Error);
       }
-    } else w.fail(new Error(item.error ?? 'Não foi possível enviar.'));
+    } else w.fail(new Error(item.error ?? t('ui.outbox.error.failed')));
   }
 }
 
@@ -166,7 +176,7 @@ export async function replay(): Promise<void> {
     await withLock(async () => {
       for (const item of (await all()).filter((i) => i.status === 'queued')) {
         if (Date.now() - item.createdAt > OUTBOX_MAX_AGE_MS) {
-          await put({ ...item, status: 'failed', error: 'Passou muito tempo na fila; envie de novo.' });
+          await put({ ...item, status: 'failed', error: t('ui.outbox.error.stale') });
           continue;
         }
         const r = await attempt(item);
@@ -187,7 +197,7 @@ export async function replay(): Promise<void> {
 }
 
 export async function dismiss(id: string): Promise<void> {
-  waiters.get(id)?.fail(new Error('Descartado.'));
+  waiters.get(id)?.fail(new Error(t('ui.outbox.error.discarded')));
   waiters.delete(id);
   await remove(id);
   announce();

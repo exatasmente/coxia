@@ -3,7 +3,9 @@ import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativ
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
+import { ACTIVITY_EVENT, ACTIVITY_GET } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
+import { activityLog, setActivitySink } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
@@ -19,12 +21,16 @@ import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
+import { upperFirst } from '../shared/cycles/text';
+import { ceremonyLabel } from './cyclePrompts';
+import { onConfigChange } from './workspaceConfig';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { glossary } from './glossary';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
+import { t } from '../shared/i18n';
 
 installProcessHandlers();
 
@@ -115,33 +121,38 @@ function createWindow(): void {
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
 }
 
+const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
+  show();
+  emit({ type: 'navigate', to });
+};
+
+function trayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: t('main.tray.open'), click: show },
+    { label: t('main.tray.ceremonyNow', { ceremony: upperFirst(ceremonyLabel()) }), click: go('call') },
+    { label: t('main.tray.statusNow'), click: () => void checkStatus(true).catch((e) => fail('[status]', 'tray:status', e)) },
+    { label: t('main.tray.releaseActions'), click: go('actions') },
+    { label: t('main.tray.releaseNow'), click: () => void detectRelease(true).catch((e) => fail('[release]', 'tray:release', e)) },
+    { label: t('main.tray.retro'), click: go('retro') },
+    { label: t('main.tray.history'), click: go('history') },
+    { label: t('main.tray.settings'), click: go('settings') },
+    { type: 'separator' },
+    {
+      label: t('main.tray.quit'),
+      click: () => {
+        quitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
   tray.setToolTip('Coxia');
-  const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
-    show();
-    emit({ type: 'navigate', to });
-  };
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Abrir', click: show },
-      { label: 'Pré-daily agora', click: go('call') },
-      { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => fail('[status]', 'tray:status', e)) },
-      { label: 'Ações de release', click: go('actions') },
-      { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => fail('[release]', 'tray:release', e)) },
-      { label: 'Retro da semana', click: go('retro') },
-      { label: 'Histórico', click: go('history') },
-      { label: 'Configurações', click: go('settings') },
-      { type: 'separator' },
-      {
-        label: 'Sair',
-        click: () => {
-          quitting = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
+  tray.setContextMenu(trayMenu());
+  // The labels follow the language of the workspace: rebuild when the configuration changes.
+  onConfigChange(() => tray?.setContextMenu(trayMenu()));
   tray.on('click', show);
 }
 
@@ -205,8 +216,15 @@ function handlers(): void {
   handle('retro:prepare', () => prepareRetro());
   handle('retro:latest', () => latestRetro());
   handle('retro:ask', (id: string, question: string) => askRetro(id, question));
+  handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
   handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));
 }
+
+// The runtime app name, and so Electron's userData folder (browser profile, single-instance lock, voice environment), are pinned to what an
+// install made by an earlier version already uses: the public product name (productName, appId) is free to differ without moving anyone's data.
+// An explicit --user-data-dir (a scratch run of a release build) still wins.
+app.setName('cerimonias');
+if (!process.env.CERIMONIAS_DATA_DIR && !app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', join(app.getPath('appData'), 'cerimonias'));
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
 if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CERIMONIAS_DATA_DIR, 'userData'));
@@ -253,6 +271,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
     handlers();
+    setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
     registerWebAccess(join(import.meta.dirname, '../renderer'));
     startVoice();
     createWindow();

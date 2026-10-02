@@ -150,7 +150,7 @@ function KeptBlock({ title, items }: { title: string; items: Kept[] }) {
       <ul>
         {items.map((k, i) => (
           <li key={i}>
-            <span className="mono small">{k.ref}</span> {k.text} <span className="mv-tag">v{k.n}</span>
+            <span className="mono small">{k.ref}</span> {k.text} <span className="mv-tag" /* i18n-ignore: version prefix */>v{k.n}</span>
             <div className="mv-dest">{k.dest}</div>
           </li>
         ))}
@@ -279,7 +279,7 @@ function DecisionRow({ d }: { d: Decision & { version: number } }) {
   );
 }
 
-/** The minutes of the whole day: the latest decision of each activity, and the Teams text of the day. */
+/** The minutes of the whole day: the latest decision of each activity, and the team chat text of the day. */
 export function DayPanel({ day, onCopy, copied }: { day: DayView; onCopy: (text: string) => void; copied: boolean }) {
   const m = day.merged;
   const [error, setError] = useState<string | null>(null);
@@ -314,8 +314,9 @@ export function DayPanel({ day, onCopy, copied }: { day: DayView; onCopy: (text:
         )}
         <h3 className="section-title" style={{ marginTop: 8 }}>{t('minutes.day.effects')} · {m.effects.length}</h3>
         {m.effects.map((e, i) => (
-          <div key={i} className="row" style={{ padding: '8px 0', borderTop: '1px solid var(--line-2)' }}>
-            <span className="badge-e3">E3</span>
+          <div key={i} className="row" style={{ padding: '8px 0', borderTop: '1px solid var(--line-2)' }} // i18n-ignore: CSS shorthand
+          >
+            <span className="badge-e3" /* i18n-ignore */>E3</span>
             <span style={{ flex: '1 1 220px' }}>{e.text}</span>
             <span className="mono faint">{e.repo} · {e.ref}</span>
             <span className="mv-tag">{t('minutes.day.fromVersion', { n: e.version })}</span>
@@ -359,7 +360,7 @@ export function DayPanel({ day, onCopy, copied }: { day: DayView; onCopy: (text:
   );
 }
 
-/** A past version, read-only: what it decided, queued, left open, and its Teams text. */
+/** A past version, read-only: what it decided, queued, left open, and its team chat text. */
 export function VersionPanel({ version, date, onCopy, copied, onChanged }: { version: VersionView; date: string; onCopy: (text: string) => void; copied: boolean; onChanged: () => void }) {
   const s = version.snapshot;
   const [error, setError] = useState<string | null>(null);
@@ -398,8 +399,9 @@ export function VersionPanel({ version, date, onCopy, copied, onChanged }: { ver
         })}
         <h2 style={{ fontSize: 18, fontWeight: 600, marginTop: 8 }}>{t('minutes.day.effects')} · {s.effects.length}</h2>
         {s.effects.map((e, i) => (
-          <div key={i} className="row" style={{ padding: '8px 0', borderTop: '1px solid var(--line-2)' }}>
-            <span className="badge-e3">E3</span><span style={{ flex: '1 1 220px' }}>{e.text}</span><span className="mono faint">{e.repo} · {e.ref}</span>
+          <div key={i} className="row" style={{ padding: '8px 0', borderTop: '1px solid var(--line-2)' }} // i18n-ignore: CSS shorthand
+          >
+            <span className="badge-e3" /* i18n-ignore */>E3</span><span style={{ flex: '1 1 220px' }}>{e.text}</span><span className="mono faint">{e.repo} · {e.ref}</span>
           </div>
         ))}
         {s.unanswered.length > 0 && (

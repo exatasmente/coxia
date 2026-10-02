@@ -9,7 +9,7 @@ describe('diffCorrections', () => {
 
   it('pairs adjacent changed words as one correction', () => {
     expect(diffCorrections('o pipe line quebrou', 'o pipeline quebrou')).toEqual([{ heard: 'pipe line', term: 'pipeline' }]);
-    expect(diffCorrections('o hub whats app caiu', 'o hub-whatsapp caiu')).toEqual([{ heard: 'hub whats app', term: 'hub-whatsapp' }]);
+    expect(diffCorrections('o hub whats app caiu', 'o gateway caiu')).toEqual([{ heard: 'hub whats app', term: 'gateway' }]);
   });
 
   it('finds several separate corrections in one sentence', () => {

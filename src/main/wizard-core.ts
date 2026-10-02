@@ -222,6 +222,7 @@ export function installSdk(dir: string, deps: InstallDeps): Installation {
   let child: ChildProcess | null = null;
   const done = (async () => {
     mkdirSync(dir, { recursive: true });
+    // i18n-ignore: text written into package.json and a developer error
     if (!existsSync(join(dir, 'package.json'))) writeFileSync(join(dir, 'package.json'), `${JSON.stringify({ name: 'coxia-claude-sdk', private: true, description: 'Claude Agent SDK installed by the Coxia setup wizard' }, null, 2)}\n`);
     deps.emit({ phase: 'start', dir });
     await new Promise<void>((resolveRun, reject) => {
@@ -247,6 +248,7 @@ export function installSdk(dir: string, deps: InstallDeps): Installation {
       child.on('close', (code) => {
         if (cancelled) reject(new Error('cancelled'));
         else if (code === 0) resolveRun();
+        // i18n-ignore: text written into package.json and a developer error
         else reject(new Error(tail.slice(-6).join('\n') || `npm exited with ${code}`));
       });
     });

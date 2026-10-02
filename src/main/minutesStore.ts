@@ -332,7 +332,7 @@ const keptOf = (versions: MinutesVersion[]): DeletePreview['kept'] => {
       if (!w.ok || w.duplicateOf !== undefined) continue;
       const item: Kept = { n: v.n, ref: w.ref, text: w.text ?? '', dest: w.dest };
       if (w.target === 'spec') kept.registro.push(item);
-      else if (w.target === 'daily-report') kept.notes.push(item);
+      else if (w.target === 'note') kept.notes.push(item);
     }
     for (const e of v.snapshot.effects) kept.effects.push({ n: v.n, ref: e.ref, text: e.text, dest: e.repo });
   }

@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 // What a browser session may call. The desktop window has no such limits (IPC does not go through here).
 export type WebAccess = 'allow' | 'deny' | 'external';
 
@@ -13,7 +14,7 @@ export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autos
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
-// post-release-sync) waits there, so refusing it refuses all of them.
+// the release sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 
 // push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.
@@ -42,6 +43,6 @@ export function webRefusal(channel: string, allowExternal: boolean): string | nu
   if (access === 'allow') return null;
   if (access === 'external' && allowExternal) return null;
   return access === 'external'
-    ? 'Ação com efeito externo bloqueada pelo navegador. Aprove na janela do app ou habilite em Configurações › Acesso pelo navegador.'
-    : 'Este comando só funciona na janela do app, não pelo navegador.';
+    ? t('main.web.externalBlocked')
+    : t('main.web.appOnly');
 }

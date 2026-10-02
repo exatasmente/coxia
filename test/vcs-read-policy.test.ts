@@ -141,7 +141,7 @@ describe('glab: the dot-segment hardening added with the gh patterns', () => {
   it.each(['glab api projects/../merge_requests/1', 'glab api projects/%2e%2e/issues/1/notes', 'glab api projects/./issues/1', 'glab api projects/..%2Fx/pipelines'.replace('..%2Fx', '..')])('refuses %s', async (command) => {
     expect(await decide(hook, command)).toBe('deny');
   });
-  it.each(['glab api projects/sz%2Fsz4/issues/1/notes', 'glab api projects/12/issues/1', 'glab api projects/.hidden%2Frepo/issues/1', 'glab api projects/a.b-c%2Fd_e/merge_requests/9/changes'])('still allows %s', async (command) => {
+  it.each(['glab api projects/acme%2Fweb/issues/1/notes', 'glab api projects/12/issues/1', 'glab api projects/.hidden%2Frepo/issues/1', 'glab api projects/a.b-c%2Fd_e/merge_requests/9/changes'])('still allows %s', async (command) => {
     expect(await decide(hook, command)).toBe('allow');
   });
 });

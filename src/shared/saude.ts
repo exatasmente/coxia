@@ -10,7 +10,7 @@ export interface TaskHealth {
   failStreak: number;
 }
 
-export type DepId = 'glab' | 'openrouter-key' | 'daily-report' | 'voice' | 'model';
+export type DepId = 'vcs' | 'llm-key' | 'card-source' | 'voice' | 'model';
 
 export interface DepHealth {
   id: DepId;

@@ -91,6 +91,7 @@ export function runStep(cmd: string, args: string[], opts: StepOptions): Promise
       done();
       if (cancelled) return reject(new CancelledError());
       if (code === 0) return resolve();
+      // i18n-ignore: developer log
       reject(new Error((tail.length ? tail : outTail.slice(-3)).join('\n') || `${cmd} exited with ${code ?? signal}`));
     });
   });

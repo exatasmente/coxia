@@ -86,6 +86,7 @@ export function cliTransport(o: CliTransportOptions): RestTransport {
     kind: 'cli',
     get,
     graphql: async <T>(query: string): Promise<T> => {
+      // i18n-ignore: internal marker of a read-only query
       if (!/^\s*(query\b|\{)/.test(query)) throw new VcsError('invalid', { detail: 'read only' });
       return JSON.parse(await call(['api', 'graphql', '-f', `query=${query}`])) as T;
     },
@@ -102,6 +103,7 @@ export function apiTransport(client: HttpClient, graphqlPath: { client: HttpClie
     get,
     graphql: async <T>(query: string): Promise<T> => {
       if (!graphqlPath) throw new VcsError('unsupported', { kind: client.host, what: 'GraphQL' });
+      // i18n-ignore: internal marker of a read-only query
       if (!/^\s*(query\b|\{)/.test(query)) throw new VcsError('invalid', { detail: 'read only' });
       // A POST that only reads: safe to retry.
       return (await graphqlPath.client.request('POST', graphqlPath.path, { json: { query }, idempotent: true })).body as T;

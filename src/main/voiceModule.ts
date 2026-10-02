@@ -64,7 +64,7 @@ export const voiceModule: Module = (ctx) => {
   });
 
   ctx.handle(VOICE_CHANNELS.install, async (opts: VoiceInstallOptions): Promise<VoiceInstallResult> => {
-    if (installing) return { ok: false, cancelled: false, phase: 'check', code: 'busy', message: 'an install is already running' };
+    if (installing) return { ok: false, cancelled: false, phase: 'check', code: 'busy', message: t('main.voiceSetup.busy') };
     const control = new AbortController();
     installing = control;
     try {
@@ -94,12 +94,12 @@ export const voiceModule: Module = (ctx) => {
   });
 
   ctx.handle(VOICE_CHANNELS.test, async (): Promise<VoiceTestResult> => {
-    if (installing) throw new Error('an install is running');
+    if (installing) throw new Error(t('main.voiceSetup.running'));
     return testMessage(await roundTrip());
   });
 
   ctx.handle(VOICE_CHANNELS.uninstall, (): VoiceUninstallResult => {
-    if (installing) throw new Error('an install is running');
+    if (installing) throw new Error(t('main.voiceSetup.running'));
     stopSidecar();
     const result = uninstallVoice(setupContext());
     // The chosen model went with the folder: fall back to one that is still on the machine, so turning voice on later never downloads in the background.

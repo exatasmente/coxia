@@ -8,6 +8,8 @@ import type { StepProps } from '../SetupWizard';
 import { Field, Notice } from '../ui';
 import { wizardApi } from '../wizardApi';
 
+const ROOT_PLACEHOLDER = '~/projects'; // i18n-ignore: example path
+
 const REPO_ID = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 const hostSlug = (host: string): string => host.replace(/^www\./, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
@@ -162,7 +164,7 @@ export function ProjectsStep({ cfg, setCfg }: StepProps) {
         </div>
         <form className="wz-inline" onSubmit={(e) => { e.preventDefault(); void addTyped(); }}>
           <Field label={t('wizard.projects.typed')} htmlFor="wz-typed-root">
-            <input id="wz-typed-root" className="text-input mono" placeholder="~/projects" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} />
+            <input id="wz-typed-root" className="text-input mono" placeholder={ROOT_PLACEHOLDER} spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} />
           </Field>
           <button type="submit" className="btn" disabled={!typed.trim()}>{t('wizard.projects.add')}</button>
         </form>

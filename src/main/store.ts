@@ -6,12 +6,14 @@ import { norm } from '../shared/minutesVersions';
 import type { Decision, Minutes, SaveResult, WrittenDecision } from '../shared/types';
 import { ATAS } from './env';
 import { invalidateReport } from './report';
-import { decisionLogHeading, prompt as cp, text as cycleWord } from './cyclePrompts';
+import { ceremonyLabel, decisionLogHeading, formatClock, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { dateOfId } from './historyFiles';
 import { commitVersion, openVersion, recordSelfWrite, writeVersionFile } from './minutesStore';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
+import { upperFirst } from '../shared/cycles/text';
 import { modeText } from './agentVoice';
+import { t } from '../shared/i18n';
 
 const run = promisify(execFile);
 
@@ -21,24 +23,24 @@ function today(): string {
 
 function minutesMarkdown(m: Minutes, teams: string): string {
   const lines = [
-    `## Pré-daily ${new Date(m.startedAt).toLocaleTimeString('pt-BR')} às ${new Date(m.endedAt).toLocaleTimeString('pt-BR')}`,
+    t('main.ata.heading', { ceremony: upperFirst(ceremonyLabel()), from: formatClock(new Date(m.startedAt)), to: formatClock(new Date(m.endedAt)) }),
     '',
-    '### Decisões',
-    ...(m.decisions.length ? m.decisions.map((d) => `- ${d.ref}: ${d.text} → ${d.dest}`) : ['- nenhuma']),
+    t('main.ata.decisions'),
+    ...(m.decisions.length ? m.decisions.map((d) => `- ${d.ref}: ${d.text} → ${d.dest}`) : [`- ${t('main.ata.none')}`]),
     '',
-    '### Efeitos aguardando "sim" no Claude Code',
-    ...(m.effects.length ? m.effects.map((e) => `- ${e.ref} (${e.repo}): ${e.text}`) : ['- nenhum']),
+    t('main.ata.effects'),
+    ...(m.effects.length ? m.effects.map((e) => `- ${e.ref} (${e.repo}): ${e.text}`) : [`- ${t('main.ata.noneMasc')}`]),
     '',
-    '### Perguntas sem resposta',
-    ...(m.unanswered.length ? m.unanswered.map((u) => `- ${u.ref}: ${u.question}`) : ['- nenhuma']),
+    t('main.ata.unanswered'),
+    ...(m.unanswered.length ? m.unanswered.map((u) => `- ${u.ref}: ${u.question}`) : [`- ${t('main.ata.none')}`]),
     '',
-    '### Texto para a daily do time',
+    t('main.ata.teams'),
     '',
     '```',
     teams,
     '```',
     '',
-    '### Transcrição',
+    t('main.ata.transcript'),
     ...m.transcript.map((t) => `- ${t.at} **${t.who}**: ${t.text}`),
     '',
   ];
@@ -91,12 +93,12 @@ function currentNote(ref: string): string | null {
 }
 
 async function writeDailyNote(d: Decision): Promise<Written & { note?: string }> {
-  // `daily-report note` replaces the note, so the previous one is kept in front.
+  // The card source's note command replaces the note, so the previous one is kept in front.
   const previous = currentNote(d.ref);
   const line = `${today()}: ${d.text}`;
   const note = previous ? `${previous} | ${line}` : line;
   const source = rc().cardSource;
-  if (!source?.noteArgs.length) return { ok: false, detail: 'a fonte de cartões não grava notas: ficou só na ata' };
+  if (!source?.noteArgs.length) return { ok: false, detail: t('main.ata.noNotes') };
   const detail = `${basename(source.command)} note ${d.ref}`;
   if (previous?.includes(line)) return { ok: true, detail, duplicate: true };
   await run(source.command, source.noteArgs.map((a) => a.replace('{ref}', d.ref).replace('{note}', note)), { timeout: 30_000 });
@@ -127,9 +129,9 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[],
       written.push({ ref: w.ref, dest: w.dest, ok: w.ok, detail: w.detail, ...(w.duplicateOf !== undefined ? { duplicateOf: w.duplicateOf } : {}) });
       records.push({ ...w, text: d.text, target: d.target });
     };
-    const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do daily-report');
+    const blocked = d.target === 'ata' ? null : externalRefusal(t('main.ata.whatWrite'));
     if (blocked) {
-      record({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
+      record({ ref: d.ref, dest: d.dest, ok: false, detail: t('main.ata.testOnly') });
       continue;
     }
     const before = d.target === 'ata' ? null : earlierWrite(d, version.earlier);
@@ -142,7 +144,7 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[],
         const r = writeSpecRegistro(d);
         if (r.ok && r.path && !r.duplicate) recordSelfWrite(date, { file: r.path });
         record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });
-      } else if (d.target === 'daily-report') {
+      } else if (d.target === 'note') {
         const r = await writeDailyNote(d);
         if (r.note) recordSelfWrite(date, { note: { ref: d.ref, text: r.note } });
         record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });

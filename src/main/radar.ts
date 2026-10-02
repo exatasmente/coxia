@@ -10,9 +10,10 @@ import { rc } from './workspaceConfig';
 import { vcsProvider } from './vcs';
 import type { Module, ModuleContext } from './module';
 import { fetchRepos, worktreeHealth } from './worktrees';
+import { t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'radar.json');
-// related-work-radar collide uses 40 lines (about one method) as "same place".
+// The collision check treats 40 lines (about one method) as "same place".
 const WINDOW = 40;
 
 interface MrChanges {
@@ -36,7 +37,7 @@ interface Unit {
   mrs: MrChanges[];
 }
 
-// The daily-report stage is coarse; the weights follow PESO_ETAPA in related-work-radar (more advanced = costlier to touch).
+// The stage of a card is coarse; the weight follows its rank (more advanced = costlier to touch).
 export function stageWeight(stage: string | null): number {
   return stageRank(rc().stages, stage);
 }
@@ -108,13 +109,7 @@ function side(u: Unit, mr: MrChanges): RadarSide {
   return { ref: u.card.ref, iid: u.card.iid, title: u.card.title, stage: u.card.stage, mr: `${repoName(mr.project)}!${mr.iid}`, branch: mr.branch, target: mr.target, url: mr.url };
 }
 
-const RECOMMENDATION: Record<RadarKind, string> = {
-  'same-fix':
-    'Leia os dois trechos antes de mergear e comente nas duas MRs no mesmo dia: é o único achado com prazo, porque depois do merge quem perdeu volta ao QA de graça. Se for a mesma correção, fique com uma só.',
-  dependency: 'Sequencie: a atividade mais atrás entra depois. Não branche da branch dela nem duplique o código que ela traz.',
-  file: 'Combine quem mexe no que antes de as duas avançarem. Depois do merge da primeira, atualize a outra com a main e confira de novo.',
-  scope: 'Só alinhe o escopo e confira se as duas dependem da mesma decisão (mesma config, mesma regra de negócio). Não bloqueia nada.',
-};
+const recommendation = (kind: RadarKind): string => t(`main.radar.recommendation.${kind}`);
 
 interface PairEvidence {
   files: Set<string>;
@@ -168,21 +163,21 @@ function evidence(a: Unit, b: Unit): PairEvidence {
 
 function describe(kind: RadarKind, ev: PairEvidence, ahead: Unit, behind: Unit): string {
   const files = [...ev.files];
-  const list = files.slice(0, 2).map((f) => `\`${f}\``).join(', ') + (files.length > 2 ? ` e mais ${files.length - 2}` : '');
+  const list = files.slice(0, 2).map((f) => `\`${f}\``).join(', ') + (files.length > 2 ? t('main.radar.andMore', { count: files.length - 2 }) : '');
   if (kind === 'same-fix') {
     const closest = ev.regions[0];
-    const where = closest?.distance === 0 ? 'no mesmo trecho' : `a ${closest?.distance} linhas de distância`;
-    const parts = [`Mexem ${where} em ${list}.`];
-    parts.push(ev.overlap ? 'O git deve acusar conflito.' : 'O merge sai limpo e nada avisa.');
-    if (ev.identical >= 3) parts.push(`${ev.identical} linhas adicionadas são iguais: parece a mesma correção feita duas vezes.`);
+    const where = closest?.distance === 0 ? t('main.radar.sameSpot') : t('main.radar.linesApart', { count: closest?.distance ?? 0 });
+    const parts = [t('main.radar.touch', { where, list })];
+    parts.push(ev.overlap ? t('main.radar.gitConflict') : t('main.radar.silentMerge'));
+    if (ev.identical >= 3) parts.push(t('main.radar.identical', { count: ev.identical }));
     return parts.join(' ');
   }
   if (kind === 'dependency') {
-    const why = ev.stacked ? 'Uma MR parte da branch da outra.' : `Mexem em ${list}.`;
-    return `${why} #${ahead.card.iid} já está em ${ahead.card.stage ?? 'etapa avançada'}; #${behind.card.iid} depende de código não mergeado.`;
+    const why = ev.stacked ? t('main.radar.stacked') : t('main.radar.touchIn', { list });
+    return t('main.radar.dependency', { why, ahead: ahead.card.iid, stage: ahead.card.stage ?? t('main.radar.advancedStage'), behind: behind.card.iid });
   }
-  if (kind === 'file') return `Mexem no mesmo arquivo, em trechos distantes: ${list}.`;
-  return `Mesmo módulo, sem arquivo em comum: ${[...ev.scopes].slice(0, 3).join(', ')}.`;
+  if (kind === 'file') return t('main.radar.sameFile', { list });
+  return t('main.radar.sameScope', { scopes: [...ev.scopes].slice(0, 3).join(', ') });
 }
 
 export function analyze(units: Unit[], seen: Map<string, string>, now: string): RadarFinding[] {
@@ -211,6 +206,7 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
       const mA = mrOf(first);
       const mB = mrOf(second);
       const repo = mA.project === mB.project ? repoName(mA.project) : null;
+      const repoPath = repo ? rc().repos.find((r) => r.id === repo)?.path : undefined;
       findings.push({
         key,
         kind,
@@ -222,11 +218,8 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
         identicalLines: ev.identical,
         silent: kind === 'same-fix' && !ev.overlap,
         summary: describe(kind, ev, ahead, behind),
-        recommendation: RECOMMENDATION[kind],
-        collideCommand:
-          kind === 'same-fix' && repo
-            ? `related-work-radar collide --repo ~/projects/${repo} --branches origin/${mA.branch} origin/${mB.branch} --base origin/${mA.target}`
-            : null,
+        recommendation: recommendation(kind),
+        collideCommand: kind === 'same-fix' && repoPath ? `git -C ${repoPath} merge-tree --write-tree origin/${mA.branch} origin/${mB.branch}` : null,
         firstSeen: seen.get(key) ?? now,
       });
     }
@@ -313,7 +306,7 @@ async function runRadarOnce() {
   return { result, fresh, first: !previous };
 }
 
-const KIND_LABEL: Record<RadarKind, string> = { 'same-fix': 'Mesma correção', dependency: 'Dependência', file: 'Colisão de arquivo', scope: 'Mesmo escopo' };
+const kindLabel = (kind: RadarKind): string => t(`main.radar.kind.${kind}`);
 
 function announce(ctx: ModuleContext, fresh: RadarFinding[], first: boolean): void {
   if (!getSettings().notifications) return;
@@ -323,11 +316,11 @@ function announce(ctx: ModuleContext, fresh: RadarFinding[], first: boolean): vo
   const onClick = { type: 'open', screen: { name: 'radar' } } as const;
   if (list.length === 1) {
     const f = list[0];
-    ctx.notify({ title: `Radar: ${KIND_LABEL[f.kind].toLowerCase()} entre #${f.a.iid} e #${f.b.iid}`, body: `${f.summary.replace(/`/g, '')}\nClique para abrir o radar.`, onClick });
+    ctx.notify({ title: t('main.radar.one', { kind: kindLabel(f.kind).toLowerCase(), a: f.a.iid, b: f.b.iid }), body: `${f.summary.replace(/`/g, '')}\n${t('main.radar.clickOpen')}`, onClick });
     return;
   }
-  const refs = list.map((f) => `#${f.a.iid} × #${f.b.iid} (${KIND_LABEL[f.kind].toLowerCase()})`).join('\n');
-  ctx.notify({ title: `Radar: ${list.length} achados novos`, body: refs, onClick });
+  const refs = list.map((f) => `#${f.a.iid} × #${f.b.iid} (${kindLabel(f.kind).toLowerCase()})`).join('\n');
+  ctx.notify({ title: t('main.radar.many', { count: list.length }), body: refs, onClick });
 }
 
 export const register: Module = (ctx) => {

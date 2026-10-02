@@ -4,6 +4,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import type { Json } from '../types';
 import { type ToolImpl, ToolError, clip } from './types';
+import { t } from '../../../../shared/i18n';
 
 export interface McpServerConfig {
   command: string;
@@ -60,10 +61,10 @@ export class McpClient {
       this.proc = proc;
       proc.stdout?.setEncoding('utf8');
       proc.stdout?.on('data', (d: string) => this.onData(d));
-      proc.on('error', (e) => this.fail(new Error(`servidor MCP ${this.name}: ${e.message}`)));
+      proc.on('error', (e) => this.fail(new Error(t('main.engine.text.mcp.failed', { name: this.name, detail: e.message }))));
       proc.on('exit', () => {
         this.closed = true;
-        this.fail(new Error(`servidor MCP ${this.name} encerrou`));
+        this.fail(new Error(t('main.engine.text.mcp.exited', { name: this.name })));
       });
       await this.request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'coxia', version: '1' } });
       this.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
@@ -88,7 +89,7 @@ export class McpClient {
         if (!p || msg.id === undefined) continue;
         this.pending.delete(msg.id);
         clearTimeout(p.timer);
-        if (msg.error) p.reject(new Error(msg.error.message ?? 'erro MCP'));
+        if (msg.error) p.reject(new Error(msg.error.message ?? t('main.engine.text.mcp.error')));
         else p.resolve(msg.result);
       } catch {
         // a log line on stdout is not a message
@@ -109,7 +110,7 @@ export class McpClient {
       const id = this.nextId++;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`servidor MCP ${this.name} não respondeu a ${method}`));
+        reject(new Error(t('main.engine.text.mcp.timeout', { name: this.name, method })));
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.send({ jsonrpc: '2.0', id, method, params });
@@ -165,15 +166,15 @@ export async function mcpTools(servers: Record<string, McpServerConfig>, allow: 
     wanted.map(async (server) => {
       const client = poolClient(server, servers[server]);
       try {
-        for (const t of await client.listTools()) {
-          if (!allowedBy(allow, server, t.name)) continue;
+        for (const tool of await client.listTools()) {
+          if (!allowedBy(allow, server, tool.name)) continue;
           out.push({
-            name: `mcp__${server}__${t.name}`,
-            description: t.description ?? t.name,
-            parameters: t.inputSchema ?? { type: 'object', properties: {} },
+            name: `mcp__${server}__${tool.name}`,
+            description: tool.description ?? tool.name,
+            parameters: tool.inputSchema ?? { type: 'object', properties: {} },
             async run(input, ctx) {
-              const r = await client.callTool(t.name, input);
-              if (r.isError) throw new ToolError(r.text || 'erro na ferramenta MCP');
+              const r = await client.callTool(tool.name, input);
+              if (r.isError) throw new ToolError(r.text || t('main.engine.text.mcp.toolError'));
               return { response: r.text, render: (x) => clip(String(x), ctx.outputMax) };
             },
           });

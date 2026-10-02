@@ -5,6 +5,8 @@ import type { SecretDraft } from '../../../shared/wizard';
 import { useT } from '../i18n';
 import './wizard.css';
 
+const COMMAND_PLACEHOLDER = 'pass show my/key'; // i18n-ignore: shell command example
+
 export type Tone = 'info' | 'warn' | 'error' | 'ok';
 
 export function Notice({ tone = 'info', children, role }: { tone?: Tone; children: ReactNode; role?: 'status' | 'alert' }) {
@@ -82,7 +84,7 @@ export function SecretFields({ draft, onChange, storage, onAcceptInsecure, noun,
       )}
       {draft.source === 'command' && (
         <Field label={t('wizard.secret.command')} htmlFor={`${id}-c`} hint={t('wizard.secret.commandHint')}>
-          <input id={`${id}-c`} className="text-input mono" autoComplete="off" spellCheck={false} placeholder="pass show my/key" disabled={disabled} value={draft.command} onChange={(e) => set({ command: e.target.value })} />
+          <input id={`${id}-c`} className="text-input mono" autoComplete="off" spellCheck={false} placeholder={COMMAND_PLACEHOLDER} disabled={disabled} value={draft.command} onChange={(e) => set({ command: e.target.value })} />
         </Field>
       )}
     </div>

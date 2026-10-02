@@ -21,26 +21,12 @@ const FILE = join(DATA_ROOT, 'saude.json');
 const DEPS_EVERY_MIN = 30;
 const STREAK_ALERT = 3;
 
-const LABELS: Record<string, string> = {
-  status: 'Conferir status das atividades',
-  release: 'Conferir release',
-  watchers: 'Vigias',
-  efeitos: 'Conferir efeitos da ata',
-  retention: 'Limpeza de dados antigos',
-  feedback: 'Feedback dos MRs',
-  radar: 'Radar de trabalho paralelo',
-  'gitlab-quick': 'Ações rápidas do GitLab',
-  'tempo-export': 'Exportar o tempo do dia',
-  'saude-deps': 'Verificar dependências',
-};
+const TASK_LABELS = ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps'];
+const DEP_IDS: DepId[] = ['vcs', 'llm-key', 'card-source', 'voice', 'model'];
 
-const DEP_LABELS: Record<DepId, string> = {
-  glab: 'glab autenticado',
-  'openrouter-key': 'Chave do provedor de modelos',
-  'daily-report': 'daily-report',
-  voice: 'Sidecar de voz',
-  model: 'Modelo respondendo',
-};
+// Labels follow the language of the moment, so they are looked up when shown and never stored.
+const taskLabel = (name: string): string => (TASK_LABELS.includes(name) ? t(`main.saude.task.${name}`) : name);
+const depLabel = (id: DepId): string => t(`main.saude.dep.${id}`);
 
 interface Stored {
   tasks: Record<string, TaskHealth>;
@@ -83,9 +69,11 @@ function short(text: string): string {
 
 export function snapshot(): SaudeSnapshot {
   const s = state();
-  const tasks = Object.values(s.tasks).sort((a, b) => a.label.localeCompare(b.label));
-  const deps = (Object.keys(DEP_LABELS) as DepId[]).map(
-    (id): DepHealth => s.deps[id] ?? { id, label: DEP_LABELS[id], ok: null, message: 'Ainda não verificado.', checkedAt: null, durationMs: null },
+  const tasks = Object.values(s.tasks)
+    .map((task) => ({ ...task, label: taskLabel(task.name) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const deps = DEP_IDS.map(
+    (id): DepHealth => ({ ...(s.deps[id] ?? { id, ok: null, message: t('main.saude.notChecked'), checkedAt: null, durationMs: null }), label: depLabel(id) }),
   );
   const problems = tasks.filter((t) => t.ok === false).length + deps.filter((d) => d.ok === false).length;
   return { tasks, deps, problems, checking: checking !== null };
@@ -98,7 +86,7 @@ function changed(): void {
 
 function entry(name: string, everyMin?: number | null): TaskHealth {
   const s = state();
-  s.tasks[name] ??= { name, label: LABELS[name] ?? name, everyMin: everyMin ?? null, lastRunAt: null, durationMs: null, ok: null, message: 'Ainda não rodou.', failStreak: 0 };
+  s.tasks[name] ??= { name, label: taskLabel(name), everyMin: everyMin ?? null, lastRunAt: null, durationMs: null, ok: null, message: t('main.saude.notRun'), failStreak: 0 };
   if (everyMin !== undefined) s.tasks[name].everyMin = everyMin;
   return s.tasks[name];
 }
@@ -110,31 +98,31 @@ export function knownTask(name: string, everyMin: number | null): void {
 
 // Wraps one run of a periodic task: records when, how long and how it ended, and warns on the third failure in a row.
 export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const t = entry(name);
+  const task = entry(name);
   const started = Date.now();
   try {
     const result = await fn();
-    t.ok = true;
-    t.failStreak = 0;
-    t.message = (typeof result === 'string' && short(result)) || 'Ok.';
+    task.ok = true;
+    task.failStreak = 0;
+    task.message = (typeof result === 'string' && short(result)) || t('main.saude.ok');
     return result;
   } catch (e) {
-    t.ok = false;
-    t.failStreak += 1;
+    task.ok = false;
+    task.failStreak += 1;
     logError(`job:${name}`, e, { job: name });
-    t.message = short(e instanceof Error ? e.message : String(e)) || 'Falhou sem mensagem.';
+    task.message = short(e instanceof Error ? e.message : String(e)) || t('main.saude.failedNoMessage');
     // Only the third failure of a sequence warns; a success resets the count.
-    if (t.failStreak === STREAK_ALERT && ctx && getSettings().notifications) {
+    if (task.failStreak === STREAK_ALERT && ctx && getSettings().notifications) {
       ctx.notify({
-        title: `${t.label} falhou ${STREAK_ALERT} vezes seguidas`,
-        body: `${t.message}\nClique para ver a saúde do app.`,
+        title: t('main.saude.failedStreak', { task: task.label, count: STREAK_ALERT }),
+        body: `${task.message}\n${t('main.saude.clickHealth')}`,
         onClick: { type: 'open', screen: { name: 'saude' } },
       });
     }
     throw e;
   } finally {
-    t.lastRunAt = new Date().toISOString();
-    t.durationMs = Date.now() - started;
+    task.lastRunAt = new Date().toISOString();
+    task.durationMs = Date.now() - started;
     changed();
   }
 }
@@ -143,9 +131,9 @@ export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
 
 type Result = { ok: boolean; message: string };
 
-async function glabCheck(): Promise<Result> {
+async function vcsCheck(): Promise<Result> {
   const vcs = rc().primaryVcs;
-  if (!vcs) return { ok: true, message: 'Sem integração de VCS configurada (opcional).' };
+  if (!vcs) return { ok: true, message: t('main.saude.noVcs') };
   const cli = vcsCliFor();
   if (cli) {
     try {
@@ -170,20 +158,20 @@ async function glabCheck(): Promise<Result> {
 async function keyCheck(): Promise<Result> {
   const used = [...new Set(Object.values(getConfig().llm.roles).map((r) => r.provider))].map((id) => getConfig().llm.providers.find((p) => p.id === id)).filter((p) => !!p);
   const withKey = used.filter((p) => p.secretRef);
-  if (!withKey.length) return { ok: true, message: 'Os provedores em uso não pedem chave.' };
+  if (!withKey.length) return { ok: true, message: t('main.saude.noKeyNeeded') };
   const lines: string[] = [];
   for (const p of withKey) {
     const ref = p.secretRef as string;
     const check = secrets().check(ref);
-    if (!check.ok) return { ok: false, message: `Sem chave para ${p.id}: ${check.reason ?? 'não configurada'}. Defina em Configurações.` };
+    if (!check.ok) return { ok: false, message: t('main.saude.noKey', { id: p.id, reason: check.reason ?? t('main.saude.notConfigured') }) };
     const info = secrets().list().find((i) => i.ref === ref);
-    lines.push(`${p.id} (fonte ${info?.source ?? '?'})`);
+    lines.push(t('main.saude.keySource', { id: p.id, source: info?.source ?? '?' }));
   }
-  return { ok: true, message: `Chave presente: ${lines.join(', ')}.` };
+  return { ok: true, message: t('main.saude.keyPresent', { list: lines.join(', ') }) };
 }
 
 async function reportCheck(): Promise<Result> {
-  if (!rc().cardSource) return { ok: true, message: 'Fonte de cartões não configurada (opcional).' };
+  if (!rc().cardSource) return { ok: true, message: t('main.saude.noCardSource') };
   const before = reportStatus();
   // Fresh cache answers without a new run; a stale one makes the single shared run happen now.
   try {
@@ -192,25 +180,25 @@ async function reportCheck(): Promise<Result> {
     return { ok: false, message: short(e instanceof Error ? e.message : String(e)) };
   }
   const after = reportStatus();
-  const took = after.lastDurationMs ? ` em ${Math.round(after.lastDurationMs / 1000)} s` : '';
+  const took = after.lastDurationMs ? t('main.saude.took', { s: Math.round(after.lastDurationMs / 1000) }) : '';
   const fromCache = before.lastOkAt === after.lastOkAt && after.lastOkAt !== null;
-  const age = fromCache ? ` (leitura de ${Math.round((Date.now() - (after.lastOkAt ?? 0)) / 60_000)} min atrás)` : '';
-  return { ok: true, message: `Respondeu${took}${age}.` };
+  const age = fromCache ? t('main.saude.age', { min: Math.round((Date.now() - (after.lastOkAt ?? 0)) / 60_000) }) : '';
+  return { ok: true, message: t('main.saude.answered', { took, age }) };
 }
 
 async function voiceCheck(): Promise<Result> {
   // Voice off is a state, not a failure: no sidecar is expected to run.
   if (!getConfig().voice.enabled) return { ok: true, message: t('voice.health.off') };
   const v = await voiceStatus();
-  if (!v.alive) return { ok: false, message: 'O sidecar de voz não está rodando. Reabra o app.' };
-  if (v.pingMs === null) return { ok: false, message: 'O sidecar de voz não respondeu ao ping em 5 s.' };
-  return { ok: true, message: `Vivo, respondeu em ${v.pingMs} ms${v.ready ? '' : ' (ainda carregando o modelo)'}.` };
+  if (!v.alive) return { ok: false, message: t('main.saude.voiceDown') };
+  if (v.pingMs === null) return { ok: false, message: t('main.saude.voiceNoPing') };
+  return { ok: true, message: t('main.saude.voiceAlive', { ms: v.pingMs, loading: v.ready ? '' : t('main.saude.voiceLoading') }) };
 }
 
 // One minimal request (a few tokens) over the same Anthropic-compatible route the agents use. Only for providers that speak it directly.
 async function modelCheck(): Promise<Result> {
   const target = rc().role('turn');
-  if (target.kind !== 'anthropic' || !target.baseUrl) return { ok: true, message: `Sem teste automático para provedores do tipo ${target.kind}.` };
+  if (target.kind !== 'anthropic' || !target.baseUrl) return { ok: true, message: t('main.saude.noAutoTest', { kind: target.kind }) };
   try {
     const key = providerSecret(target.secretRef);
     const official = /^https:\/\/api\.anthropic\.com\/?$/.test(target.baseUrl);
@@ -220,7 +208,7 @@ async function modelCheck(): Promise<Result> {
       body: JSON.stringify({ model: target.model, max_tokens: 8, messages: [{ role: 'user', content: 'ok' }] }),
       signal: AbortSignal.timeout(40_000),
     });
-    if (res.ok) return { ok: true, message: `${target.model} respondeu.` };
+    if (res.ok) return { ok: true, message: t('main.saude.modelAnswered', { model: target.model }) };
     const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } | string };
     const msg = typeof body.error === 'string' ? body.error : body.error?.message ?? '';
     return { ok: false, message: short(`HTTP ${res.status} ${msg}`) };
@@ -230,9 +218,9 @@ async function modelCheck(): Promise<Result> {
 }
 
 const CHECKS: { id: DepId; run: () => Promise<Result>; costly?: boolean }[] = [
-  { id: 'glab', run: glabCheck },
-  { id: 'openrouter-key', run: keyCheck },
-  { id: 'daily-report', run: reportCheck },
+  { id: 'vcs', run: vcsCheck },
+  { id: 'llm-key', run: keyCheck },
+  { id: 'card-source', run: reportCheck },
   { id: 'voice', run: voiceCheck },
   { id: 'model', run: modelCheck, costly: true },
 ];
@@ -248,7 +236,7 @@ async function runChecks(withModel: boolean): Promise<SaudeSnapshot> {
       } catch (e) {
         r = { ok: false, message: short(e instanceof Error ? e.message : String(e)) };
       }
-      s.deps[c.id] = { id: c.id, label: DEP_LABELS[c.id], ok: r.ok, message: r.message, checkedAt: new Date().toISOString(), durationMs: Date.now() - started };
+      s.deps[c.id] = { id: c.id, label: depLabel(c.id), ok: r.ok, message: r.message, checkedAt: new Date().toISOString(), durationMs: Date.now() - started };
       changed();
     }),
   );

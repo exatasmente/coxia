@@ -1,6 +1,6 @@
 import type { SavedCeremony } from '../shared/types';
 import { TEMPO_LABEL, type TempoBlock, type TempoDay, type TempoEntry, type TempoIssue, type TempoKind } from '../shared/tempo';
-import { tv } from '../shared/i18n';
+import { tv, t } from '../shared/i18n';
 
 const MIN = 60_000;
 // A gap longer than this inside a pre-daily item means the call was paused, not that the agent was still talking.
@@ -43,7 +43,7 @@ export interface RetroFile {
   createdAt: string;
 }
 
-// mtime is the last time the app wrote the file, which is the last time Luiz touched that ceremony.
+// mtime is the last time the app wrote the file, which is the last time the person touched that ceremony.
 export interface Timed<T> {
   data: T;
   mtime: number;
@@ -59,7 +59,7 @@ function offset(d: Date): string {
   return `${m < 0 ? '-' : '+'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
 
-// Same text as Python's isoformat(timespec="minutes"), which is what clockify-log prints and parses.
+// Same text as Python's isoformat(timespec="minutes"), which time-export tools commonly read.
 export function iso(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -72,10 +72,10 @@ function clip(text: string, n = 60): string {
 }
 
 export function describe(kind: TempoKind, iid: string | null, title: string, gate?: number): string {
-  const label = kind === 'gate' && gate ? `gate ${gate}` : TEMPO_LABEL[kind];
-  if (kind === 'daily') return 'Cerimônias - Daily';
-  if (kind === 'retro') return 'Cerimônias - Retro semanal';
-  return clip(iid ? `#${iid} - ${label}: ${title}` : `Cerimônias - ${label}`);
+  const label = kind === 'gate' && gate ? t('main.tempo.gateN', { gate }) : TEMPO_LABEL[kind];
+  if (kind === 'daily') return t('main.tempo.dailyEntry');
+  if (kind === 'retro') return t('main.tempo.retroEntry');
+  return clip(iid ? `#${iid} - ${label}: ${title}` : t('main.tempo.otherEntry', { label }));
 }
 
 function clock(at: string): number {
@@ -141,15 +141,15 @@ export function deepSpans(s: SavedCeremony): Span[] {
 export function gateSpan({ data: g, mtime }: Timed<GateFile>): Span {
   const from = new Date(g.createdAt).getTime();
   const to = Math.max(g.recorded ? new Date(g.recorded).getTime() : 0, mtime);
-  return { kind: 'gate', ref: g.ref, iid: g.iid, title: g.title, sessionId: g.sessionId, from, to, gate: g.gate, note: g.recorded ? 'registrado' : 'sem registro' };
+  return { kind: 'gate', ref: g.ref, iid: g.iid, title: g.title, sessionId: g.sessionId, from, to, gate: g.gate, note: g.recorded ? t('main.tempo.recorded') : t('main.tempo.notRecorded') };
 }
 
 export function qaSpan({ data: q, mtime }: Timed<QaFile>): Span {
-  return { kind: 'qa', ref: q.ref, iid: q.iid, title: q.title, sessionId: q.sessionId, from: new Date(q.createdAt).getTime(), to: mtime, note: 'checklist e aviso' };
+  return { kind: 'qa', ref: q.ref, iid: q.iid, title: q.title, sessionId: q.sessionId, from: new Date(q.createdAt).getTime(), to: mtime, note: t('main.tempo.checklistNotice') };
 }
 
 export function retroSpan({ data: r, mtime }: Timed<RetroFile>): Span {
-  return { kind: 'retro', ref: null, iid: null, title: '', sessionId: r.sessionId, from: new Date(r.createdAt).getTime(), to: mtime, note: 'retro semanal' };
+  return { kind: 'retro', ref: null, iid: null, title: '', sessionId: r.sessionId, from: new Date(r.createdAt).getTime(), to: mtime, note: t('main.tempo.weeklyRetro') };
 }
 
 // Specific work wins the clock over the call it happened in; the call keeps the rest.
@@ -182,7 +182,7 @@ export function blocksOf(spans: Span[], date: string): TempoBlock[] {
     }));
 }
 
-// Clockify refuses overlapping entries, so the day is cut into pieces that never overlap.
+// Time trackers usually refuse overlapping entries, so the day is cut into pieces that never overlap.
 export function entriesOf(blocks: TempoBlock[]): TempoEntry[] {
   const ms = (s: string) => new Date(s).getTime();
   const taken: [number, number][] = [];
@@ -215,7 +215,7 @@ export function issuesOf(entries: TempoEntry[], titles: Map<string, string>): Te
   const by = new Map<string, TempoIssue>();
   for (const e of entries) {
     const key = e.issue ?? '';
-    const row = by.get(key) ?? { issue: e.issue, title: e.issue ? (titles.get(e.issue) ?? '') : 'Cerimônias sem issue', minutes: 0, byCeremony: {} };
+    const row = by.get(key) ?? { issue: e.issue, title: e.issue ? (titles.get(e.issue) ?? '') : t('main.tempo.noIssue'), minutes: 0, byCeremony: {} };
     const m = Math.round((new Date(e.end).getTime() - new Date(e.start).getTime()) / MIN);
     row.minutes += m;
     row.byCeremony[e.ceremony] = (row.byCeremony[e.ceremony] ?? 0) + m;

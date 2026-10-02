@@ -1,7 +1,7 @@
 {
   "name": "cerimonias",
   "version": "0.1.0",
-  "description": "Coxia: cerimônias por voz com agentes por atividade (rotina pessoal)",
+  "description": "Coxia: cerimônias por voz com agentes por atividade",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -9,7 +9,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "i18n:lint": "node scripts/i18n-lint.mjs --keys",
+    "i18n:lint": "node scripts/i18n-lint.mjs --keys --scope renderer --max 0",
     "dist": "electron-vite build && electron-builder --linux AppImage deb",
     "dist:public": "electron-vite build && electron-builder --config electron-builder.public.yml --linux AppImage deb"
   },
@@ -41,7 +41,18 @@
     "electron@44.5.1": true
   },
   "private": true,
-  "author": "Luiz Neto",
-  "homepage": "https://dark.smartzap.com.br",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Luiz Neto",
+    "email": "22161417+exatasmente@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/exatasmente/coxia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/exatasmente/coxia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/exatasmente/coxia/issues"
+  },
   "desktopName": "cerimonias.desktop"
 }

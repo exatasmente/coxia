@@ -1,3 +1,4 @@
+import { t } from './i18n';
 // QR Code encoder for short ASCII/UTF-8 text: byte mode, error correction L, versions 1-6 (up to 134 bytes).
 // Enough for the pairing link; no dependency, nothing leaves the machine.
 
@@ -138,7 +139,7 @@ function penalty(m: boolean[][]): number {
 export function encodeQr(text: string): boolean[][] {
   const bytes = [...new TextEncoder().encode(text)];
   const version = SPECS.findIndex((s) => bytes.length <= Math.floor((s.blocks.reduce((a, b) => a + b, 0) * 8 - 12) / 8)) + 1;
-  if (version === 0) throw new Error(`texto grande demais para o QR (${bytes.length} bytes, máximo ${MAX_QR_BYTES})`);
+  if (version === 0) throw new Error(t('main.qr.tooBig', { bytes: bytes.length, max: MAX_QR_BYTES }));
   const size = 17 + 4 * version;
   const mod: boolean[][] = Array.from({ length: size }, () => new Array<boolean>(size).fill(false));
   const fn: boolean[][] = Array.from({ length: size }, () => new Array<boolean>(size).fill(false));

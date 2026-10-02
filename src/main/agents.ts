@@ -5,7 +5,8 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
-import { getLanguage } from '../shared/i18n';
+import { getLanguage, t } from '../shared/i18n';
+import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
@@ -19,7 +20,7 @@ import { ATAS } from './env';
 import { cardContext, cycle, decisionLogRef, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
-import { GITLAB_HINT, GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { GLAB_READ, gitlabHint, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider } from './vcs';
 
 export { GLAB_READ };
@@ -42,15 +43,10 @@ function allowedFor(role: ModelRole): string[] {
   ];
 }
 
-// Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
-export const GIT_MIRROR_READ = [
-  // Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
-  /^git -C \/home\/[\w-][\w.-]*\/\.cache\/post-release-sync\/(?!\S*\.\.)[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( (--|[\w./:^~][\w./:^~-]*))+$/,
-];
-
 const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
-// The same plumbing-only allow-list, for the folder where the release-sync tool keeps its mirrors (releaseSync.mirrorsDir).
+// Conflict calls may also read the folder where the release-sync tool keeps its mirrors (releaseSync.mirrorsDir); plumbing reads only, no options that write.
+// Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
 export function gitMirrorRead(mirrorsDir: string): RegExp[] {
   const dir = escapeRe(mirrorsDir.replace(/\/+$/, ''));
   return [new RegExp(`^git -C ${dir}\\/(?!\\S*\\.\\.)[\\w./-]+\\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\\d+)?|merge-base)( (--|[\\w./:^~][\\w./:^~-]*))+$`)];
@@ -66,7 +62,7 @@ export function stripOutputSuffix(command: string): string {
   return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage = GITLAB_HINT): HookCallback {
+export function shellAllowlist(patterns: RegExp[], usage = gitlabHint()): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
@@ -263,7 +259,7 @@ export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks'
   const cli = policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : GITLAB_HINT)] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : gitlabHint())] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
       { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],
@@ -271,12 +267,25 @@ export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks'
   };
 }
 
+// A call a hook refuses is reported to the run's activity: the person sees "blocked" next to the call, never the reason the agent was given.
+function reportBlocked(hooks: NonNullable<Options['hooks']>, onBlocked: (call: string) => void): NonNullable<Options['hooks']> {
+  const wrap =
+    (hook: HookCallback): HookCallback =>
+    async (input, id, opts) => {
+      const out = await hook(input, id, opts);
+      const decision = (out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision;
+      if (input.hook_event_name === 'PreToolUse' && decision === 'deny') onBlocked(source(input.tool_name, input.tool_input as Record<string, unknown>));
+      return out;
+    };
+  return Object.fromEntries(Object.entries(hooks).map(([event, groups]) => [event, groups?.map((g) => ({ ...g, hooks: g.hooks.map(wrap) }))])) as NonNullable<Options['hooks']>;
+}
+
 // What the agents are told about the code host; empty when the workspace has none they may read.
 function vcsHint(): string {
   return vcsReadPolicy().hint;
 }
 
-/** "sz4#15499" for a workspace whose cards carry a prefix, "15499" for one that does not. */
+/** "app#101" for a workspace whose cards carry a prefix, "101" for one that does not. */
 export function issueRef(iid: string | number): string {
   return `${rc().issues.refPrefix}${iid}`;
 }
@@ -331,6 +340,7 @@ function extraDirs(cwd: string, role: ModelRole): string[] {
 
 // The call as SDK options, which is also the shape the open engine takes: the permissions, hooks and limits are one policy for both engines.
 function sdkOptions(req: EngineRequest): Options {
+  const hooks = agentHooks(req.shell.patterns);
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -346,7 +356,7 @@ function sdkOptions(req: EngineRequest): Options {
       'WebSearch',
       ...SECRET_READ_DENY,
     ],
-    hooks: agentHooks(req.shell.patterns),
+    hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
     outputFormat: { type: 'json_schema', schema: req.schema },
     maxTurns: 8,
     ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
@@ -400,7 +410,11 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     shellEnv: vcsShellEnv(),
     describeTool: source,
-    events: { onSession: (id) => noteSession(id, req.role, req.prompt) },
+    events: {
+      onSession: (id) => noteSession(id, req.role, req.prompt),
+      onToolUse: (name, input) => req.activity?.tool(source(name, input)),
+      onInterim: (text) => req.activity?.text(text),
+    },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
   });
 }
@@ -427,8 +441,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
       for (const block of m.message.content) {
+        if (block.type === 'text') req.activity?.text(block.text);
         if (block.type !== 'tool_use') continue;
         sources.push(source(block.name, block.input as Record<string, unknown>));
+        if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
         if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
       }
     }
@@ -440,10 +456,12 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (m.type === 'result') {
       sessionId = m.session_id;
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
+      // i18n-ignore: developer error from the SDK result
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
+  // i18n-ignore: developer error from the SDK result
   throw new Error('agent ended without a result');
 }
 
@@ -457,11 +475,12 @@ async function runOnce<T>(
   schema: Schema,
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
+  activity?: RunActivity,
 ): Promise<Run<T>> {
   // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
   const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
   const cwd = rc().projectsRoot;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra });
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -473,17 +492,31 @@ async function run<T>(
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
 ): Promise<Run<T>> {
+  const activity = beginActivity(role, (p) => secretPath(p, rc().projectsRoot));
+  activity.status('started');
+  try {
+    const r = await runResumable<T>(activity, role, prompt, schema, extra, shell);
+    activity.status('finished');
+    return r;
+  } catch (e) {
+    activity.status('failed', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
+}
+
+async function runResumable<T>(activity: RunActivity, role: ModelRole, prompt: string, schema: Schema, extra: Partial<Options>, shell: ShellPolicy): Promise<Run<T>> {
   // A role may have its own turn limit in the config; the one-turn wrap-up below is never raised by it.
   const cap = getConfig().agents.roles[role].maxTurns;
   try {
-    return await runOnce<T>(role, prompt, schema, cap ? { ...extra, maxTurns: cap } : extra, shell);
+    return await runOnce<T>(role, prompt, schema, cap ? { ...extra, maxTurns: cap } : extra, shell, activity);
   } catch (e) {
     if (!(e instanceof MaxTurnsError)) throw e;
     const stopped = cp('system.stopped', { noSession: e.sessionId ? '' : cp('system.noSession') });
     if (!e.sessionId) throw new Error(stopped);
     console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
+    activity.status('resumed');
     try {
-      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns });
+      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns }, activity);
       return { ...r, sources: [...e.sources, ...r.sources], partial: true };
     } catch (again) {
       console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
@@ -557,7 +590,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
   );
   const schema = obj({
     ack: str,
-    decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'daily-report', 'ata'] } })] },
+    decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'note', 'ata'] } })] },
     efeito: { anyOf: [{ type: 'null' }, obj({ texto: str, repo: str })] },
     desbloqueio: { type: 'boolean' },
     opcoes: OPTIONS,
@@ -622,7 +655,7 @@ export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string
   const prompt = cp('teams.main', {
     target: pre.summaryTarget ? cycleWord(pre.summaryTarget) : cycleWord('cycle.summary.chat'),
     style: cycleWord(pre.summaryStyle),
-    activities: JSON.stringify(cards.map((c) => ({ ref: c.ref, titulo: c.title, url: c.url, estagio: c.stage, bloqueios: c.blockers, mudou: c.changes }))),
+    activities: JSON.stringify(cards.map((c) => ({ ref: c.ref, [t('main.teams.field.titulo')]: c.title, url: c.url, [t('main.teams.field.estagio')]: c.stage, [t('main.teams.field.bloqueios')]: c.blockers, [t('main.teams.field.mudou')]: c.changes }))),
     decisions: JSON.stringify(minutes.decisions),
     effects: JSON.stringify(minutes.effects),
   });
@@ -721,7 +754,7 @@ export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
 // Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
 // each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
 export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[]; partialIds: string[] }> {
-  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [], partialIds: [] };
+  if (!p.hunks.length) return { summary: t('main.agents.noHunks'), items: [], failed: [], partialIds: [] };
   const batches = proposeBatches(p.hunks);
   const results: (Proposal | null)[] = new Array(batches.length).fill(null);
   let next = 0;
@@ -737,10 +770,10 @@ export async function conflictPropose(p: ProposeInput): Promise<Proposal & { fai
   };
   await Promise.all(Array.from({ length: Math.min(BATCH_PARALLEL, batches.length) }, worker));
   const failed = batches.flatMap((b, i) => (results[i] ? [] : b.map((h) => h.id)));
-  if (failed.length === p.hunks.length) throw new Error('o agente não conseguiu propor nenhum trecho; tente de novo');
+  if (failed.length === p.hunks.length) throw new Error(t('main.agents.noProposal'));
   const summaries = results.filter((r): r is Proposal => !!r).map((r) => r.summary.trim()).filter(Boolean);
   return {
-    summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? `${failed.length} trecho(s) ficaram sem proposta: peça de novo.` : ''].filter(Boolean).join(' '),
+    summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? t('main.agents.someFailed', { count: failed.length }) : ''].filter(Boolean).join(' '),
     items: results.flatMap((r) => r?.items ?? []),
     failed,
     partialIds: batches.flatMap((b, i) => (results[i]?.partial ? b.map((h) => h.id) : [])),

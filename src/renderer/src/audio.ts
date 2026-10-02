@@ -5,6 +5,7 @@ import type { SpeechSegment, Voice } from '../../shared/types';
 import { api } from './api';
 import { hasAudioSession, isIos, setAudioSession } from './audioSession';
 import { type Handoff, startMonitor, stopMonitor, subscribeBarge, takeHandoff } from './bargeMonitor';
+import { t } from './i18n';
 import { type Placed, placeSegment, speechProgressAt, trimRange } from './speech';
 import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
 
@@ -399,7 +400,7 @@ function recordingType(): string | undefined {
 const transcripts = new Set<string>();
 
 export async function transcribeAudio(audio: ArrayBuffer): Promise<string> {
-  if (!voiceEnabled()) throw new Error('voice is off');
+  if (!voiceEnabled()) throw new Error('voice is off'); // i18n-ignore: assertion, the screens never record while voice is off
   const text = await api.transcribe(audio);
   if (text) {
     transcripts.delete(text);
@@ -470,7 +471,7 @@ export function useRecorder(onSilence?: () => void) {
   );
 
   const start = useCallback(async () => {
-    if (!voiceEnabled()) throw new Error('voice is off');
+    if (!voiceEnabled()) throw new Error('voice is off'); // i18n-ignore: assertion, the screens never record while voice is off
     const handoff = takeHandoff();
     stopSpeech();
     autoStopped.current = false;
@@ -537,7 +538,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
       try {
         await rec.start();
       } catch (e) {
-        onError(`Microfone indisponível: ${e instanceof Error ? e.message : String(e)}`);
+        onError(t('ui.voice.micUnavailable', { error: e instanceof Error ? e.message : String(e) }));
       }
       return;
     }
@@ -550,7 +551,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
       if (text) await onText(text);
     } catch (e) {
       setTranscribing(false);
-      onError(`Falha na transcrição: ${e instanceof Error ? e.message : String(e)}`);
+      onError(t('ui.voice.transcribeFailed', { error: e instanceof Error ? e.message : String(e) }));
     }
   }, [rec, player, onText, onError]);
 
@@ -558,7 +559,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
   ref.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return; // i18n-ignore: CSS selector
       e.preventDefault();
       void ref.current();
     };

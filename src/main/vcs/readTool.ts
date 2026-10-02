@@ -9,14 +9,18 @@ export const VCS_READ_OPS = ['issue', 'issue_comments', 'mr', 'mr_threads', 'mr_
 export type VcsReadOp = (typeof VCS_READ_OPS)[number];
 
 export const VCS_READ_DESCRIPTION =
+  // i18n-ignore: tool description for the model: English by design
   'Reads from the code host (read only): an issue, the comments of an issue, a merge or pull request, its review threads, its comments, ' +
+  // i18n-ignore: tool description for the model: English by design
   'its changed files with diffs, or its CI runs. `project` is "group/repo" (as in mrPaths); `iid` is the issue or MR number.';
 
 export const VCS_READ_SCHEMA = {
   type: 'object',
   properties: {
+    // i18n-ignore: tool description for the model: English by design
     op: { type: 'string', enum: [...VCS_READ_OPS], description: 'What to read' },
     project: { type: 'string', description: 'group/repo (owner/repo, workspace/repo)' },
+    // i18n-ignore: tool description for the model: English by design
     iid: { type: 'integer', description: 'Issue or MR number' },
   },
   required: ['op', 'project', 'iid'],
@@ -31,6 +35,7 @@ const cut = (text: string, max: number): string => (text.length > max ? `${text.
 function parse(input: unknown): { op: VcsReadOp; project: string; iid: number } {
   const i = (input ?? {}) as Record<string, unknown>;
   const op = VCS_READ_OPS.find((o) => o === i.op);
+  // i18n-ignore: tool description for the model: English by design
   if (!op || typeof i.project !== 'string' || typeof i.iid !== 'number') throw new VcsError('invalid', { detail: 'op, project, iid' });
   return { op, project: i.project, iid: checkIid(i.iid) };
 }

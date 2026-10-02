@@ -6,6 +6,7 @@ import { prompt as cp } from './cyclePrompts';
 import { HOME } from './env';
 import type { Module } from './module';
 import { getConfig, rc, saveConfig, secretConfigured } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 // "Preparar agentes" for the setup wizard and the settings screen: scan the workspace's projects, propose the docs section of the config, apply
 // it, and (only when a model provider is ready) ask one cheap call for a one-sentence summary per project. The scan itself uses no model.
@@ -38,7 +39,7 @@ export function canSummarize(): boolean {
 
 /** One model call that writes a short summary of each project from the facts of the scan (never from files the scan did not already read). */
 export async function summarizeScan(scan: ScanResult): Promise<ScanResult> {
-  if (!canSummarize()) throw new Error('nenhum provedor de modelo está pronto: configure a chave antes de pedir o resumo');
+  if (!canSummarize()) throw new Error(t('main.agentPrep.noProvider'));
   const projects = scan.projects.filter((p) => p.exists).slice(0, SUMMARY_MAX);
   if (!projects.length) return scan;
   const facts = projects.map((p) => ({ id: p.id, name: p.name, stack: p.stack, purpose: p.purpose, claudeMd: !!p.claudeMd, skills: p.skills?.count ?? 0, rules: p.rules?.count ?? 0, agents: p.agents?.count ?? 0, knowledge: p.knowledge?.count ?? 0 }));

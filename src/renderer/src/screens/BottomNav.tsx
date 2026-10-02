@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import type { Screen } from '../App';
 import { bottomNavActive, type NavKey } from '../dashboard';
-import { tv, useVoiceEnabled } from '../i18n';
+import { useT, useTv, useVoiceEnabled } from '../i18n';
 import { useIsPhone } from '../useIsPhone';
 import { ActionsIcon, CallIcon, ChatIcon, HistoryIcon, HomeIcon, MoreIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
@@ -17,24 +17,25 @@ interface Props {
 }
 
 function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => void }) {
+  const t = useT();
   const badge = useSaudeBadge();
   const open = (s: Screen) => {
     onClose();
     go(s);
   };
   const rows: { label: string; screen: Screen; badge?: number; badgeLabel?: string }[] = [
-    { label: 'Configurações', screen: { name: 'settings' } },
-    { label: 'Custo', screen: { name: 'custo' } },
-    { label: 'Radar', screen: { name: 'radar' } },
-    { label: 'Saúde', screen: { name: 'saude' }, badge: badge.total, badgeLabel: badgeTitle(badge) },
-    { label: 'Auditoria', screen: { name: 'auditoria' } },
-    { label: 'Ajuda', screen: { name: 'help' } },
+    { label: t('ui.nav.settings'), screen: { name: 'settings' } },
+    { label: t('ui.nav.cost'), screen: { name: 'custo' } },
+    { label: t('ui.nav.radar'), screen: { name: 'radar' } },
+    { label: t('ui.nav.health'), screen: { name: 'saude' }, badge: badge.total, badgeLabel: badgeTitle(badge) },
+    { label: t('ui.nav.audit'), screen: { name: 'auditoria' } },
+    { label: t('ui.nav.help'), screen: { name: 'help' } },
   ];
   return (
-    <Sheet label="Mais" onClose={onClose}>
-      <div className="sheet-list" onClick={(e) => (e.target as HTMLElement).closest('.sheet-slot button, .sheet-slot a') && onClose()}>
+    <Sheet label={t('ui.nav.more')} onClose={onClose}>
+      <div className="sheet-list" onClick={(e) => (e.target as HTMLElement).closest('.sheet-slot button, .sheet-slot a') && onClose()} /* i18n-ignore */>
         {rows.map((r) => (
-          <button key={r.label} type="button" className="sheet-row" onClick={() => open(r.screen)}>
+          <button key={r.screen.name} type="button" className="sheet-row" onClick={() => open(r.screen)}>
             <span>{r.label}</span>
             {r.badge ? <span className="badge badge-block" aria-label={r.badgeLabel}>{r.badge}</span> : null}
           </button>
@@ -49,6 +50,8 @@ function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => vo
 
 // Phone only: where there is no floating composer. Conversations (call, deep dive, gate, QA...) keep the whole screen.
 export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Props) {
+  const t = useT();
+  const tv = useTv();
   const phone = useIsPhone();
   const voiceOn = useVoiceEnabled();
   const [more, setMore] = useState(false);
@@ -77,12 +80,12 @@ export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Pr
 
   return (
     <>
-      <nav className="bnav" aria-label="Navegação principal">
-        {item('today', 'Hoje', <HomeIcon />, () => go({ name: 'today' }))}
+      <nav className="bnav" aria-label={t('ui.nav.mainLabel')}>
+        {item('today', t('ui.nav.today'), <HomeIcon />, () => go({ name: 'today' }))}
         {item('call', tv('nav.call'), voiceOn ? <CallIcon /> : <ChatIcon />, () => go({ name: 'call' }), { disabled: !hasCards, live: callLive, ariaLabel: callLive ? tv('nav.call.live') : tv('nav.call') })}
-        {item('actions', 'Ações', <ActionsIcon />, () => go({ name: 'actions' }), { badge: pendingActions, ariaLabel: pendingActions ? `Ações, ${pendingActions} pendentes` : 'Ações' })}
-        {item('history', 'Histórico', <HistoryIcon />, () => go({ name: 'history' }))}
-        {item('more', 'Mais', <MoreIcon />, () => setMore(true))}
+        {item('actions', t('ui.nav.actions'), <ActionsIcon />, () => go({ name: 'actions' }), { badge: pendingActions, ariaLabel: pendingActions ? t('ui.nav.actionsPending', { count: pendingActions }) : t('ui.nav.actions') })}
+        {item('history', t('ui.nav.history'), <HistoryIcon />, () => go({ name: 'history' }))}
+        {item('more', t('ui.nav.more'), <MoreIcon />, () => setMore(true))}
       </nav>
       {more && <MoreSheet go={go} onClose={() => setMore(false)} />}
     </>

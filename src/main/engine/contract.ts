@@ -1,5 +1,6 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { LlmRole } from '../../shared/config/types';
+import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 
 // The contract between the ceremonies (main/agents.ts `run`) and an agent engine.
@@ -23,6 +24,7 @@ export class MaxTurnsError extends Error {
     readonly sessionId: string,
     readonly sources: string[],
   ) {
+    // i18n-ignore: error text the engine compares
     super('agent ended with error_max_turns');
   }
 }
@@ -51,6 +53,8 @@ export interface EngineRequest {
   shell: ShellPolicy;
   /** Per-call options of the Claude Agent SDK: resume, maxTurns, tools. Other engines read maxTurns and resume and may ignore the rest. */
   extra: Partial<Options>;
+  /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
+  activity?: RunActivity;
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;

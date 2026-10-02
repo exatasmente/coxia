@@ -3,7 +3,10 @@ import en from './en.json';
 import minutesEn from './minutes.en.json';
 import minutesPtBR from './minutes.pt-BR.json';
 import ptBR from './pt-BR.json';
+import mainEn from './main.en.json';
+import mainPtBR from './main.pt-BR.json';
 import wizardEn from './wizard.en.json';
+import { UI_EN, UI_PT_BR } from './ui';
 import wizardPtBR from './wizard.pt-BR.json';
 
 // A tiny translator, shared by the renderer and the main process: no dependency, flat dotted keys, {name} placeholders.
@@ -21,8 +24,14 @@ export const NOVOICE_SUFFIX = '.novoice';
 
 export const FALLBACK_LANGUAGE: Language = 'pt-BR';
 
-// The setup wizard's and the minutes versions' strings live in their own files (wizard.*.json, minutes.*.json) so the catalogs other work adds to do not collide with them.
-export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR, ...minutesPtBR }, en: { ...en, ...wizardEn, ...minutesEn } };
+// The setup wizard's and the minutes versions' strings live in their own files (wizard.*.json, minutes.*.json) so the catalogs other work
+// adds to do not collide with them; the strings of the main process and the shared modules (errors, notifications, tray, health, files
+// written for people, agent prompts added after the cycle templates) live in main.*.json, and the renderer's screens in the ui-*.json
+// files gathered by ./ui.
+export const CATALOGS: Record<Language, Catalog> = {
+  'pt-BR': { ...ptBR, ...wizardPtBR, ...minutesPtBR, ...mainPtBR, ...UI_PT_BR },
+  en: { ...en, ...wizardEn, ...minutesEn, ...mainEn, ...UI_EN },
+};
 
 export function normalizeLanguage(value: unknown): Language {
   if (value === 'pt-BR' || value === 'en') return value;
@@ -80,6 +89,11 @@ export function getLanguage(): Language {
   return current;
 }
 
+/** The BCP 47 tag Intl and toLocale*String use for the language in force: dates, times and numbers follow the workspace language. */
+export function intlLocale(): string {
+  return current === 'en' ? 'en-US' : 'pt-BR';
+}
+
 /** Voice on or off: `tv` follows it. */
 export function setVoiceEnabled(on: boolean): void {
   if (on === voice) return;
@@ -95,6 +109,16 @@ export const t: Translate = (key, params) => translate(key, params);
 
 /** Translate a string that says "call" while voice is on and "conversa"/"chat" while it is off (key + `.novoice`). */
 export const tv: Translate = (key, params) => voiceTranslate(key, params);
+
+/**
+ * A record whose values are translated each time they are read: for the tables of labels that used to be constants
+ * (`LABEL[kind]` keeps working, in the language the process runs in at that moment).
+ */
+export function lazyLabels<K extends string>(keys: readonly K[], prefix: string): Record<K, string> {
+  const out = {} as Record<K, string>;
+  for (const key of keys) Object.defineProperty(out, key, { enumerable: true, get: () => t(`${prefix}.${key}`) });
+  return out;
+}
 
 /** For useSyncExternalStore: re-render when the language or the voice mode changes. */
 export function subscribeLanguage(fn: () => void): () => void {

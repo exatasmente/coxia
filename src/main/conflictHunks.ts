@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 // Pure text handling for merge conflicts: parse the markers git leaves in a file (merge or diff3 style) and put
 // the chosen text back in their place.
 
@@ -60,12 +61,12 @@ export function parseConflicts(text: string): Segment[] {
       });
       region = null;
     } else if (OPEN.test(b) && region.where !== 'theirs') {
-      throw new Error(`marcador de conflito aninhado no trecho ${n}`);
+      throw new Error(t('main.conflict.nestedMarker', { n }));
     } else if (region.where === 'ours') region.ours.push(line);
     else if (region.where === 'base') region.base?.push(line);
     else region.theirs.push(line);
   }
-  if (region) throw new Error(`o trecho ${n} não fecha: faltou o marcador >>>>>>>`);
+  if (region) throw new Error(t('main.conflict.unclosedHunk', { n }));
   if (plain.length) out.push({ text: plain.join('') });
   return out;
 }

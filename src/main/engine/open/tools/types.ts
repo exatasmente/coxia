@@ -1,4 +1,5 @@
 import type { Json } from '../types';
+import { t } from '../../../../shared/i18n';
 
 export interface ToolContext {
   cwd: string;
@@ -36,7 +37,7 @@ export interface ToolImpl {
 export class ToolError extends Error {}
 
 export function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}\n… (cortado em ${max} de ${text.length} caracteres)` : text;
+  return text.length > max ? `${text.slice(0, max)}\n${t('main.engine.text.clipped', { max, total: text.length })}` : text;
 }
 
 export function asText(response: unknown): string {

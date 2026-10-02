@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Registry, WorkspaceInfo } from '../shared/workspaces';
+import { t } from '../shared/i18n';
 
 export type { Registry, WorkspaceInfo };
 
@@ -47,7 +48,7 @@ const withDeps = (deps?: Partial<Deps>): Deps => ({ ...defaults, ...deps });
 export const registryPath = (root: string): string => join(root, REGISTRY_FILE);
 export const workspacesDir = (root: string): string => join(root, WORKSPACES_DIR);
 export const workspaceDir = (root: string, id: string): string => {
-  if (!ID.test(id)) throw new Error(`workspace inválido: ${id}`);
+  if (!ID.test(id)) throw new Error(t('main.workspaces.invalid', { id }));
   return join(workspacesDir(root), id);
 };
 
@@ -102,9 +103,11 @@ function extractWeb(root: string, deps: Deps): void {
     const web = (JSON.parse(readFileSync(config, 'utf8')) as { web?: unknown }).web;
     if (web && typeof web === 'object') {
       atomicWrite(join(root, WEB_FILE), JSON.stringify(web, null, 2), 0o600);
+      // i18n-ignore: registry log written for developers
       note(root, deps, `web settings copied from config.json to ${WEB_FILE}`);
     }
   } catch (e) {
+    // i18n-ignore: registry log written for developers
     note(root, deps, `config.json unreadable, web settings not extracted (${String(e)})`);
   }
 }
@@ -117,6 +120,7 @@ function migrate(root: string, id: string, name: string, test: boolean, deps: De
   for (const entry of workspaceEntries(root)) {
     const to = join(dir, entry);
     if (existsSync(to)) {
+      // i18n-ignore: registry log written for developers
       note(root, deps, `kept ${entry} in the root: ${id}/${entry} already exists`);
       continue;
     }
@@ -129,6 +133,7 @@ function migrate(root: string, id: string, name: string, test: boolean, deps: De
   }
   const reg: Registry = { current: id, list: [{ id, name, createdAt: deps.now().toISOString(), test }] };
   writeRegistry(root, reg);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `registry created, current workspace: ${id}`);
   return reg;
 }
@@ -146,6 +151,7 @@ function rebuild(root: string, deps: Deps): Registry {
     list: found.map((id) => ({ id, name: id === MIGRATED_ID ? 'Testes' : id, createdAt: at, test: true })),
   };
   writeRegistry(root, reg);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `registry unreadable: rebuilt from folders ${found.join(', ')} (all marked as test)`);
   return reg;
 }
@@ -187,22 +193,22 @@ export function slugify(name: string): string {
 }
 
 export function validName(name: unknown, list: WorkspaceInfo[], exceptId?: string): string {
-  if (typeof name !== 'string' || !name.trim()) throw new Error('dê um nome ao workspace');
+  if (typeof name !== 'string' || !name.trim()) throw new Error(t('main.workspaces.needName'));
   const clean = name.trim().replace(/\s+/g, ' ');
-  if (clean.length > NAME_MAX) throw new Error(`o nome deve ter até ${NAME_MAX} caracteres`);
-  if (list.some((w) => w.id !== exceptId && w.name.toLowerCase() === clean.toLowerCase())) throw new Error(`já existe um workspace chamado "${clean}"`);
+  if (clean.length > NAME_MAX) throw new Error(t('main.workspaces.nameMax', { max: NAME_MAX }));
+  if (list.some((w) => w.id !== exceptId && w.name.toLowerCase() === clean.toLowerCase())) throw new Error(t('main.workspaces.nameTaken', { name: clean }));
   return clean;
 }
 
 function must(reg: Registry, id: string): WorkspaceInfo {
   const w = reg.list.find((x) => x.id === id);
-  if (!w) throw new Error(`workspace ${id} não existe`);
+  if (!w) throw new Error(t('main.workspaces.missing', { id }));
   return w;
 }
 
 function load(root: string): Registry {
   const reg = readRegistry(root);
-  if (!reg) throw new Error('o registro de workspaces está ilegível');
+  if (!reg) throw new Error(t('main.workspaces.registryUnreadable'));
   return reg;
 }
 
@@ -260,8 +266,8 @@ export function deleteWorkspace(root: string, id: string, typedName: string, par
   const deps = withDeps(partial);
   const reg = load(root);
   const w = must(reg, id);
-  if (reg.current === id) throw new Error('não dá para excluir o workspace em uso: troque para outro antes');
-  if (typeof typedName !== 'string' || typedName.trim() !== w.name) throw new Error('o nome digitado não confere com o do workspace');
+  if (reg.current === id) throw new Error(t('main.workspaces.deleteCurrent'));
+  if (typeof typedName !== 'string' || typedName.trim() !== w.name) throw new Error(t('main.workspaces.nameMismatch'));
   const next = { ...reg, list: reg.list.filter((x) => x.id !== id) };
   // Registry first: a crash in between leaves an unlisted folder, never a listed one that is gone.
   writeRegistry(root, next);
@@ -270,6 +276,7 @@ export function deleteWorkspace(root: string, id: string, typedName: string, par
   const trashed = join(trash, `${id}-${deps.now().toISOString().replace(/[:.]/g, '-')}`);
   const dir = workspaceDir(root, id);
   if (existsSync(dir)) deps.rename(dir, trashed);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `workspace ${id} moved to ${trashed}`);
   return { registry: next, trashed };
 }
@@ -277,5 +284,5 @@ export function deleteWorkspace(root: string, id: string, typedName: string, par
 export function externalWriteRefusal(reg: Registry | null, what: string): string | null {
   const current = reg?.list.find((w) => w.id === reg.current);
   if (current && !current.test) return null;
-  return `Workspace de testes: ${what} não é feito aqui. Troque para um workspace real em Configurações › Workspaces, ou desligue a marca de testes.`;
+  return t('main.workspaces.testRefusal', { what });
 }

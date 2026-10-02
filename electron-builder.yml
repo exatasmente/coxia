@@ -1,5 +1,7 @@
-appId: br.com.fortics.cerimonias
-productName: Cerimônias
+appId: io.github.exatasmente.coxia
+productName: Coxia
+# The executable, and so the desktop file and window class (syncDesktopName), keep their original name on purpose: a launcher or an autostart entry
+# made by an earlier version points at it. The runtime app name and the data folders stay `cerimonias` too (src/main/index.ts pins them).
 executableName: cerimonias
 directories:
   output: dist
@@ -22,17 +24,18 @@ extraResources:
 linux:
   icon: resources/icon.png
   category: Office
-  maintainer: Luiz Neto <luiz.neto@fortics.com.br>
+  maintainer: Luiz Neto <22161417+exatasmente@users.noreply.github.com>
   synopsis: Cerimônias por voz com agentes por atividade
   syncDesktopName: true
   target:
     - AppImage
     - deb
 deb:
+  packageName: coxia
+  artifactName: coxia_${version}_amd64.${ext}
   depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0]
 appImage:
-  # The AppImage runtime cannot create its mount dir from a name with accents.
-  artifactName: cerimonias-${version}.${ext}
+  artifactName: coxia-${version}.${ext}
 # Where a published build looks for updates: electron-builder writes this into the app as resources/app-update.yml and electron-updater
 # reads it. `npm run dist` never uploads anything; the release workflow does (RELEASING.md). Another repository (a fork): change owner and
 # repo here, or pass -c.publish.owner=... -c.publish.repo=... to electron-builder.

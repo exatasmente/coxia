@@ -25,11 +25,11 @@ describe('a fresh install', () => {
     expect(() => cfg.issueProjectRef()).toThrow(/projeto de issues/);
     expect(cfg.issueWebUrl(1)).toBeNull();
     expect(cfg.qaNoteMarker()).toBeNull();
-    expect(cfg.isIssueRef('15499')).toBe(false);
+    expect(cfg.isIssueRef('101')).toBe(false);
   });
 
   it('finds no spec folder and ranks no stage', () => {
-    expect(specInfo('15499')).toBeNull();
+    expect(specInfo('101')).toBeNull();
     expect(stageWeight('STAGE:: Code Review OK')).toBe(0);
   });
 
@@ -46,39 +46,39 @@ describe('a fresh install', () => {
     expect(saved.notifications).toBe(false);
     expect(cfg.getConfig().language).toBe('en');
     expect(cfg.getConfig().llm.roles.deep).toEqual({ provider: 'anthropic', model: 'opus' });
-    expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/modelo inválido/);
-    expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/configuração inválida: language/);
+    expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/invalid model/);
+    expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/invalid configuration: language/);
   });
 });
 
 describe('after the previous app profile is applied', () => {
   it('returns the constants env.ts used to hold', async () => {
     await installLegacyConfig();
-    expect(cfg.rc().vcsHost).toBe('dark.smartzap.com.br');
-    expect(cfg.vcsCliEnv().GITLAB_HOST).toBe('dark.smartzap.com.br');
-    expect(cfg.requireVcsHost()).toBe('dark.smartzap.com.br');
+    expect(cfg.rc().vcsHost).toBe('git.acme.test');
+    expect(cfg.vcsCliEnv().GITLAB_HOST).toBe('git.acme.test');
+    expect(cfg.requireVcsHost()).toBe('git.acme.test');
     expect(cfg.issueProjectRef()).toBe('1');
-    expect(cfg.issueProjectPath()).toBe('sz4%2Fsz4');
-    expect(cfg.issueWebUrl(15499)).toBe('https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499');
-    expect(cfg.qaNoteMarker()?.test('@qa.interno\nBranch de release')).toBe(true);
+    expect(cfg.issueProjectPath()).toBe('acme%2Fweb');
+    expect(cfg.issueWebUrl(101)).toBe('https://git.acme.test/acme/web/-/work_items/101');
+    expect(cfg.qaNoteMarker()?.test('@qa.acme\nBranch de release')).toBe(true);
     expect(cfg.qaNoteMarker()?.test('@qaXinterno')).toBe(false);
-    expect(cfg.qaUser()).toBe('qa.interno');
-    expect(cfg.isIssueRef('sz4#15499')).toBe(true);
-    expect(cfg.isIssueRef('sz4!15499')).toBe(false);
+    expect(cfg.qaUser()).toBe('qa.acme');
+    expect(cfg.isIssueRef('web#101')).toBe(true);
+    expect(cfg.isIssueRef('web!101')).toBe(false);
     expect(cfg.rc().projectsRoot).toBe(join(HOME, 'projects'));
-    expect(cfg.rc().cardSource?.command).toBe(join(HOME, '.local/bin/daily-report'));
+    expect(cfg.rc().cardSource?.command).toBe(join(HOME, '.local/bin/cardtool'));
     expect(stageWeight('STAGE:: Code Review OK')).toBe(5);
     expect(stageWeight('Test Fail')).toBe(6);
   });
 
   it('finds the spec folder and the phase of an issue through the configured layout', () => {
     const specs = cfg.rc().specsDir as string;
-    mkdirSync(join(specs, '#15499-filtro/bug'), { recursive: true });
-    writeFileSync(join(specs, '#15499-filtro/bug/1_INVESTIGATION.md'), '#');
-    writeFileSync(join(specs, '#15499-filtro/bug/2_PLAN.md'), '#');
-    const info = specInfo('15499');
+    mkdirSync(join(specs, '#101-filtro/bug'), { recursive: true });
+    writeFileSync(join(specs, '#101-filtro/bug/1_INVESTIGATION.md'), '#');
+    writeFileSync(join(specs, '#101-filtro/bug/2_PLAN.md'), '#');
+    const info = specInfo('101');
     expect(info?.phase).toBe('Plan escrito');
-    expect(info?.planFile).toBe(join(specs, '#15499-filtro/bug/2_PLAN.md'));
+    expect(info?.planFile).toBe(join(specs, '#101-filtro/bug/2_PLAN.md'));
     expect(specInfo('99999')).toBeNull();
   });
 

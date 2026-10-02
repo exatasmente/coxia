@@ -24,6 +24,7 @@ import { readTool } from './tools/read';
 import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, Json, ToolCall, ToolChoice, ToolDef } from './types';
+import { t } from '../../../shared/i18n';
 
 export type StructuredStrategy = 'auto' | 'response_format' | 'tool' | 'prompt';
 
@@ -41,6 +42,8 @@ export interface RunEvents {
   onToolResult?: (name: string, isError: boolean) => void;
   onUsage?: (u: UsageRecord & { sessionId: string; role: string; model: string }) => void;
   onText?: (text: string) => void;
+  // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
+  onInterim?: (text: string) => void;
 }
 
 export interface OpenRunParams {
@@ -97,13 +100,13 @@ export class OpenMaxTurnsError extends Error {
     readonly sessionId: string,
     readonly sources: string[],
   ) {
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     super('agent ended with error_max_turns');
   }
 }
 
 const FINAL = 'final_answer';
-const FINALIZE_PROMPT =
-  'Agora responda somente com o JSON final, no formato pedido, com o que você já sabe e leu nesta sessão. Sem texto fora do JSON, sem cercas de markdown.';
+const finalizePrompt = (): string => t('main.engine.text.finalize');
 
 function defaultDescribe(name: string, input: Json): string {
   const detail = input.command ?? input.file_path ?? input.pattern ?? input.skill ?? input.iid ?? input.issue_iid ?? input.mr_iid ?? input.merge_request_iid ?? '';
@@ -144,14 +147,18 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
     tools.push({
       name: 'Agent',
       description:
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
       parameters: {
         type: 'object',
         properties: {
+          // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
           description: { type: 'string', description: 'Three to five words' },
           prompt: { type: 'string', description: 'The complete task for the sub-agent' },
           subagent_type: { type: 'string', description: 'Optional agent definition name' },
+          // i18n-ignore-end
         },
         required: ['prompt'],
       },
@@ -171,7 +178,7 @@ function compact(messages: ChatMessage[], keepLast = 2, limit = 1200): boolean {
   for (const i of toolIdx.slice(0, Math.max(0, toolIdx.length - keepLast))) {
     const c = messages[i].content;
     if (typeof c === 'string' && c.length > limit) {
-      messages[i] = { ...messages[i], content: `${c.slice(0, limit)}\n… (resultado antigo reduzido para caber no contexto)` };
+      messages[i] = { ...messages[i], content: `${c.slice(0, limit)}\n${t('main.engine.text.oldResult')}` };
       changed = true;
     }
   }
@@ -186,7 +193,7 @@ interface Extracted {
 
 function extractAnswer(text: string, schema: Json): Extracted {
   const raw = repairJson(text.replace(/<think>[\s\S]*?<\/think>/g, ''));
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, errors: ['a resposta não é um objeto JSON'] };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, errors: [t('main.engine.text.notObject')] };
   const value = prune(raw, schema) as Json;
   const errors = validate(value, schema);
   return errors.length ? { ok: false, errors } : { ok: true, value, errors };
@@ -194,7 +201,7 @@ function extractAnswer(text: string, schema: Json): Extracted {
 
 export class StructuredOutputError extends EngineError {
   constructor(detail: string) {
-    super(`A resposta do modelo não segue o formato pedido: ${detail}`, 'invalid_response');
+    super(t('main.engine.text.badFormat', { detail }), 'invalid_response');
   }
 }
 
@@ -272,14 +279,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   }
   const finalDef: ToolDef | null =
     strategy === 'tool' && p.schema
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       ? { type: 'function', function: { name: FINAL, description: 'Returns the final answer. Call it exactly once, when you have everything you need, with the complete result.', parameters: p.schema } }
       : null;
   const schemaText = p.schema ? JSON.stringify(p.schema) : '';
   const structuredNote =
     strategy === 'tool'
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       ? `When you are done, call the ${FINAL} tool with the complete answer. Do not write the answer as plain text.`
       : strategy === 'text'
         ? ''
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         : `Your final message must be ONLY one JSON object that follows this JSON Schema, with no text around it and no markdown fences:\n${schemaText}`;
 
   const apiTools = (): ToolDef[] => [
@@ -350,11 +360,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     events.onToolUse?.(name, input);
     const fail = (text: string): string => {
       events.onToolResult?.(name, true);
-      return `[erro da ferramenta] ${text}`;
+      return t('main.engine.text.toolError', { text });
     };
-    if (!impl) return fail(`Ferramenta desconhecida: ${name}. Disponíveis: ${[...byApi.values()].map((t) => t.name).join(', ')}`);
+    if (!impl) return fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') }));
     const argErrors = validate(input, impl.parameters);
-    if (argErrors.length) return fail(`Argumentos inválidos: ${describeErrors(argErrors)}`);
+    if (argErrors.length) return fail(t('main.engine.text.badArgs', { errors: describeErrors(argErrors) }));
     const denied = await policy.pre(impl.name, input, p.cwd);
     if (denied) return fail(denied);
     try {
@@ -398,14 +408,15 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         const value = prune(raw, p.schema) as Json;
         const errors = validate(value, p.schema);
         if (!errors.length) {
-          for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? 'ok' : 'ignorada: a resposta final já foi enviada'));
+          for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? 'ok' : t('main.engine.text.ignored')));
           return done(value, turns);
         }
-        for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? `Argumentos inválidos: ${describeErrors(errors)}. Corrija e chame ${FINAL} de novo.` : 'ignorada'));
+        for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? t('main.engine.text.fixFinal', { errors: describeErrors(errors), tool: FINAL }) : t('main.engine.text.ignoredShort')));
         if (repairs++ >= 2) throw new StructuredOutputError(describeErrors(errors));
         forceFinal = true;
         continue;
       }
+      if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
       c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
       continue;
@@ -417,7 +428,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     if (strategy === 'tool' && nudges < 2) {
       nudges++;
       turns--;
-      write({ role: 'user', content: `Você não chamou ${FINAL}. Chame ${FINAL} agora com a resposta completa, sem texto fora da chamada.` });
+      write({ role: 'user', content: t('main.engine.text.callFinal', { tool: FINAL }) });
       forceFinal = true;
       continue;
     }
@@ -425,11 +436,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
 
     // response_format and prompt strategies: a closing call that asks for the JSON (with response_format when the server has it),
     // then one correction round with the validation errors.
-    write({ role: 'user', content: strategy === 'response_format' ? FINALIZE_PROMPT : `${FINALIZE_PROMPT} Problemas na resposta anterior: ${describeErrors(first.errors)}.` });
+    write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(first.errors) })}` });
     let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
     let parsed = extractAnswer(last.text, p.schema);
     if (!parsed.ok) {
-      write({ role: 'user', content: `Resposta inválida: ${describeErrors(parsed.errors)}. Responda de novo somente com o JSON do formato pedido.` });
+      write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
       last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
       parsed = extractAnswer(last.text, p.schema);
     }

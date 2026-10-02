@@ -1,16 +1,26 @@
 import { useEffect, useState } from 'react';
 import type { TempoDay, TempoKind } from '../../../shared/tempo';
-import { TEMPO_LABEL } from '../../../shared/tempo';
 import { api, errorText } from '../api';
 import { tempoSegments } from '../dashboard';
+import { useT } from '../i18n';
 import { ChevronIcon } from './dashIcons';
 
 function hm(min: number): string {
-  return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`;
+  return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`; // i18n-ignore
 }
 
-// "Tempo de hoje por issue": the blocks come from the files the app already keeps and are written for clockify-log.
+const KIND_LABEL: Record<TempoKind, string> = {
+  'pre-daily': 'ui.today.tempo.preDaily',
+  desbloqueio: 'ui.today.tempo.unblock',
+  gate: 'ui.today.tempo.gate',
+  qa: 'ui.today.tempo.qa',
+  retro: 'ui.today.tempo.retro',
+  daily: 'ui.today.tempo.daily',
+};
+
+// "Tempo de hoje por issue": the blocks come from the files the app already keeps and are written as time entries.
 export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; colorFor: (issue: string | null) => string | undefined }) {
+  const t = useT();
   const [day, setDay] = useState<TempoDay | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -19,11 +29,11 @@ export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; color
   useEffect(() => {
     const load = () => api.invoke<TempoDay>('tempo:day').then((d) => { setDay(d); setError(null); }, (e) => setError(errorText(e)));
     void load();
-    const t = setInterval(() => void load(), 60_000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 60_000);
+    return () => clearInterval(timer);
   }, [refreshKey]);
 
-  if (error) return <div className="error">Não consegui somar o tempo de hoje: {error}</div>;
+  if (error) return <div className="error">{t('ui.today.tempo.error', { error })}</div>;
   if (!day || !day.issues.length) return null;
 
   const copy = async () => {
@@ -36,7 +46,7 @@ export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; color
     <section className="dash-card tempo" aria-labelledby="tempo-h">
       <h2 id="tempo-h" className="dash-h tempo-h">
         <button type="button" className="tempo-toggle" aria-expanded={open} aria-controls="tempo-detail" onClick={() => setOpen((v) => !v)}>
-          <span>Tempo de hoje</span>
+          <span>{t('ui.today.tempo.title')}</span>
           <strong className="tempo-total">{hm(day.totalMinutes)}</strong>
           <span className={`chev ${open ? 'open' : ''}`}><ChevronIcon /></span>
         </button>
@@ -55,13 +65,13 @@ export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; color
               <span className="tempo-title">{i.title}</span>
               <span className="tempo-min">{hm(i.minutes)}</span>
               <span className="small faint tempo-by">
-                {(Object.entries(i.byCeremony) as [TempoKind, number][]).map(([k, m]) => `${TEMPO_LABEL[k]} ${m}`).join(' · ')}
+                {(Object.entries(i.byCeremony) as [TempoKind, number][]).map(([k, m]) => `${t(KIND_LABEL[k])} ${m}`).join(' · ')}
               </span>
             </div>
           ))}
-          <p className="small faint">Medido nas cerimônias do app; sem sobreposição, pronto para o clockify-log.</p>
+          <p className="small faint">{t('ui.today.tempo.note')}</p>
           <button type="button" className="btn" title={day.file} onClick={() => void copy()}>
-            {copied ? 'Caminho copiado' : 'Copiar caminho do arquivo'}
+            {copied ? t('ui.today.tempo.copied') : t('ui.today.tempo.copy')}
           </button>
         </div>
       )}

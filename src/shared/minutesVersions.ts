@@ -11,7 +11,7 @@ export interface Covered {
   iid: string;
   title: string;
   status: CoverStatus;
-  // What the Teams text of a version or of the day is written from.
+  // What the team chat text of a version or of the day is written from.
   url: string;
   stage: string | null;
   blockers: string[];
@@ -45,7 +45,7 @@ export interface DayIndex {
   versions: MinutesVersion[];
   // What the app wrote itself after a meeting (a decision in a spec, a card note): the next meeting does not count it as news.
   selfWrites?: { files: Record<string, number>; notes: Record<string, string> };
-  // The Teams text of the whole day, with what it was written from.
+  // The team chat text of the whole day, with what it was written from.
   dayTeams: { key: string; text: string; at: string } | null;
 }
 
@@ -174,7 +174,7 @@ export function mergeDay(versions: MinutesVersion[]): MergedDay {
   };
 }
 
-/** The whole day as the Minutes the Teams text is written from. */
+/** The whole day as the Minutes the team chat text is written from. */
 export function dayMinutes(day: MergedDay): Minutes {
   const iso = (ms: number | null) => new Date(ms ?? Date.now()).toISOString();
   return {
@@ -187,18 +187,18 @@ export function dayMinutes(day: MergedDay): Minutes {
   };
 }
 
-/** The cards a Teams text lists, from what the version or the day covered. */
+/** The cards a team chat text lists, from what the version or the day covered. */
 export function coveredCards(covered: Covered[]): Card[] {
   return covered.map((c) => ({ ref: c.ref, iid: c.iid, title: c.title, stage: c.stage, spec: null, mrs: [], mrPaths: [], blockers: c.blockers, pending: [], changes: c.changes, note: null, url: c.url }));
 }
 
-/** One version as the Minutes the Teams text is written from. */
+/** One version as the Minutes the team chat text is written from. */
 export function versionMinutes(v: MinutesVersion): Minutes {
   const iso = (ms: number | null) => new Date(ms ?? Date.now()).toISOString();
   return { startedAt: iso(v.startedAt), endedAt: iso(v.endedAt), decisions: v.snapshot.decisions, effects: v.snapshot.effects, unanswered: v.snapshot.unanswered, transcript: [] };
 }
 
-/** What the day's Teams text is written from; it is written again only when this changes. */
+/** What the day's team chat text is written from; it is written again only when this changes. */
 export function dayKey(day: MergedDay): string {
   return JSON.stringify({ d: day.decisions.map((d) => [d.ref, d.text]), e: day.effects.map((e) => [e.ref, e.text]), c: day.covered.map((c) => [c.ref, c.status]), u: day.unanswered.map((u) => [u.ref, u.question]) });
 }

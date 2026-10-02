@@ -100,7 +100,7 @@ describe('applying and managing templates', () => {
     const bad = { id: 'broken', name: 'Broken', devCycle: { stageMapping: [{ provider: 'any', source: 'state', pattern: 'x', stage: 'ghost' }] } };
     expect(core.checkTemplateText(JSON.stringify(bad)).errors.map((e) => e.path)).toContain('template.devCycle.stageMapping[0].stage');
     expect(() => core.saveTemplateText(JSON.stringify(bad))).toThrow(/stageMapping\[0\]\.stage/);
-    expect(core.checkTemplateText('not json').errors[0].message).toMatch(/not valid JSON/);
+    expect(core.checkTemplateText('not json').errors[0].message).toMatch(/not valid JSON|não é um JSON válido/);
   });
 
   it('exports the current cycle, imports it back as a template of its own, applies it and removes it', () => {
@@ -204,7 +204,7 @@ describe('recognising the prompts the app sends', () => {
       ['qa-ask', 'passagem para o QA'],
       ['retro', 'retro'],
       ['retro-ask', 'retro'],
-      ['teams', 'texto do Teams'],
+      ['teams', 'texto do resumo'],
       ['release-comment', 'sincronização com a release'],
       ['conflict-ask', 'sincronização com a release'],
       ['reentry', 'reentrada'],
@@ -216,9 +216,9 @@ describe('recognising the prompts the app sends', () => {
   });
 
   it('ties a session to its card by the ref in the first line, in either language', () => {
-    expect(entryOf('s1', 'turn', first('turn')).ref).toBe('sz4#15499');
-    expect(entryOf('s2', 'deep', first('gate-start')).ref).toBe('sz4#15499');
-    expect(entryOf('s3', 'deep', first('reentry')).ref).toBe('sz4#15499');
+    expect(entryOf('s1', 'turn', first('turn')).ref).toBe('web#101');
+    expect(entryOf('s2', 'deep', first('gate-start')).ref).toBe('web#101');
+    expect(entryOf('s3', 'deep', first('reentry')).ref).toBe('web#101');
     expect(entryOf('s4', 'turn', 'You are the agent of activity api#7 in the voice standup.')).toMatchObject({ kind: 'turn', ref: 'api#7' });
     expect(entryOf('s5', 'deep', first('retro')).ref).toBeNull();
   });

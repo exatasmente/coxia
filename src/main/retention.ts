@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import {
-  RETENTION_LABEL,
+  retentionLabel,
   RETENTION_MAX_DAYS,
   RETENTION_MIN_DAYS,
   type RetentionGroup,
@@ -30,6 +30,7 @@ import {
   fileName,
   selectRetention,
 } from './retention-core';
+import { t } from '../shared/i18n';
 
 const sessionsDir = (): string => rc().transcriptsDir;
 const DATA_GROUPS: RetentionKind[] = ['historico', 'gates', 'qa', 'retros', 'atividade', 'feedback'];
@@ -111,7 +112,7 @@ function actionRefs(base = ATAS): RetentionRef[] | null {
     return (store.actions ?? []).flatMap((a) => {
       if (!a.sessionId) return [];
       const times = [a.createdAt, a.finishedAt, ...(a.msgs ?? []).map((m) => m.at)].map((t) => (t ? Date.parse(t) : 0));
-      return [{ sessionId: a.sessionId, at: Math.max(0, ...times.filter(Number.isFinite)), keep: false, from: `ação ${a.id ?? ''}`.trim() }];
+      return [{ sessionId: a.sessionId, at: Math.max(0, ...times.filter(Number.isFinite)), keep: false, from: t('main.retention.fromAction', { id: a.id ?? '' }).trim() }];
     });
   } catch {
     return null;
@@ -139,7 +140,7 @@ export function scan(days: number, now = Date.now()): Selection {
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {
     const sessions = selection.remove.filter((v) => v.file.kind === 'sessoes');
-    selection.keep.push(...sessions.map((v) => ({ ...v, remove: false, reason: 'acoes.json ilegível: não dá para saber o que ele usa' })));
+    selection.keep.push(...sessions.map((v) => ({ ...v, remove: false, reason: t('main.retention.actionsUnreadable') })));
     selection.remove = selection.remove.filter((v) => v.file.kind !== 'sessoes');
   }
   return selection;
@@ -147,7 +148,7 @@ export function scan(days: number, now = Date.now()): Selection {
 
 function checkDays(days: number): number {
   if (!Number.isInteger(days) || days < RETENTION_MIN_DAYS || days > RETENTION_MAX_DAYS) {
-    throw new Error(`o prazo deve ficar entre ${RETENTION_MIN_DAYS} e ${RETENTION_MAX_DAYS} dias`);
+    throw new Error(t('main.retention.daysRange', { min: RETENTION_MIN_DAYS, max: RETENTION_MAX_DAYS }));
   }
   return days;
 }
@@ -164,7 +165,7 @@ export function previewRetention(days: number, now = Date.now()): RetentionPrevi
   const groups = new Map<RetentionKind, RetentionGroup>();
   const items: RetentionItem[] = [];
   for (const v of selection.remove) {
-    const g = groups.get(v.file.kind) ?? { kind: v.file.kind, label: RETENTION_LABEL[v.file.kind], count: 0, bytes: 0 };
+    const g = groups.get(v.file.kind) ?? { kind: v.file.kind, label: retentionLabel(v.file.kind), count: 0, bytes: 0 };
     g.count += 1;
     g.bytes += v.file.size;
     groups.set(v.file.kind, g);
@@ -193,10 +194,10 @@ function inside(path: string, root: string): boolean {
 
 function removeOne(file: RetentionFile): void {
   const st = lstatSync(file.path);
-  if (!st.isFile()) throw new Error('não é um arquivo comum');
-  if (st.mtimeMs !== file.mtimeMs) throw new Error('foi alterado depois da prévia');
+  if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
+  if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
   const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
-  if (!inside(file.path, root)) throw new Error('fora da pasta esperada');
+  if (!inside(file.path, root)) throw new Error(t('main.retention.outside'));
   unlinkSync(file.path);
   if (file.kind === 'sessoes' && file.sessionId) {
     const companion = join(sessionsDir(), file.sessionId);
@@ -207,7 +208,7 @@ function removeOne(file: RetentionFile): void {
 export function applyRetention(days: number, expected: string | null, now = Date.now()): RetentionResult {
   checkDays(days);
   const selection = scan(days, now);
-  if (expected !== null && fingerprint(selection) !== expected) throw new Error('A lista mudou desde a prévia. Veja o que seria apagado de novo.');
+  if (expected !== null && fingerprint(selection) !== expected) throw new Error(t('main.retention.listChanged'));
   const result: RetentionResult = { deleted: 0, bytes: 0, failed: [] };
   for (const v of selection.remove) {
     try {
@@ -219,7 +220,7 @@ export function applyRetention(days: number, expected: string | null, now = Date
     }
   }
   mkdirSync(ATAS, { recursive: true });
-  appendFileSync(LOG, `${new Date(now).toISOString()} apagados=${result.deleted} bytes=${result.bytes} falhas=${result.failed.length} prazo=${days}d${expected === null ? ' (diário)' : ''}\n`);
+  appendFileSync(LOG, `${new Date(now).toISOString()} deleted=${result.deleted} bytes=${result.bytes} failed=${result.failed.length} days=${days}d${expected === null ? ' (daily)' : ''}\n`);
   return result;
 }
 

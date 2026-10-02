@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { DATA_ROOT } from './env';
 import { rc } from './workspaceConfig';
 import type { Module } from './module';
+import { t } from '../shared/i18n';
 
 // Per project ("<group>/<project>") shell command that checks a conflict resolution in its worktree. Empty: none.
 const FILE = join(DATA_ROOT, 'conflict-verify.json');
@@ -32,9 +33,9 @@ export function verifyCommandFor(project: string): string | null {
 export function validateVerify(commands: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [project, command] of Object.entries(commands)) {
-    if (!PROJECT.test(project) || project.includes('..')) throw new Error(`projeto inválido: ${project} (use grupo/projeto)`);
-    if (typeof command !== 'string' || command.includes('\0')) throw new Error(`comando inválido para ${project}`);
-    if (command.length > MAX) throw new Error(`comando de ${project} passa de ${MAX} caracteres`);
+    if (!PROJECT.test(project) || project.includes('..')) throw new Error(t('main.conflictVerify.project', { project }));
+    if (typeof command !== 'string' || command.includes('\0')) throw new Error(t('main.conflictVerify.command', { project }));
+    if (command.length > MAX) throw new Error(t('main.conflictVerify.tooLong', { project, max: MAX }));
     if (command.trim()) out[project] = command.trim();
   }
   return out;

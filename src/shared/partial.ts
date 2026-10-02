@@ -1,1 +1,4 @@
-export const PARTIAL_HINT = 'resposta parcial: o agente parou antes de terminar a investigação';
+import { t } from './i18n';
+
+/** What a screen says under a partial agent answer, in the language of the process. */
+export const partialHint = (): string => t('main.partial.hint');

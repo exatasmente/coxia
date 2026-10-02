@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { isBinary, confine } from './read';
 import { type ToolContext, type ToolImpl, ToolError, clip } from './types';
+import { t } from '../../../../shared/i18n';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', 'dist', 'out', '__pycache__', 'vendor']);
 const MAX_WALK_FILES = 30_000;
@@ -81,19 +82,22 @@ function walk(base: string, ctx: ToolContext, limit = MAX_WALK_FILES): Walked[] 
 
 export const globTool: ToolImpl = {
   name: 'Glob',
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
   description: 'Finds files by glob pattern (for example "**/*.ts" or "src/**/*.{js,ts}"), newest first. Searches the working directory unless path is given.',
   parameters: {
     type: 'object',
     properties: {
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       pattern: { type: 'string', description: 'Glob pattern' },
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       path: { type: 'string', description: 'Directory to search (default: the working directory)' },
     },
     required: ['pattern'],
   },
   async run(input, ctx) {
-    if (typeof input.pattern !== 'string' || !input.pattern) throw new ToolError('Padrão ausente.');
+    if (typeof input.pattern !== 'string' || !input.pattern) throw new ToolError(t('main.engine.text.search.noPattern'));
     const base = input.path ? confine(input.path, ctx) : confine(ctx.cwd, ctx);
-    if (!statSafe(base)?.isDirectory()) throw new ToolError(`Diretório não existe: ${String(input.path ?? ctx.cwd)}`);
+    if (!statSafe(base)?.isDirectory()) throw new ToolError(t('main.engine.text.search.noDir', { path: String(input.path ?? ctx.cwd) }));
     const match = globMatcher(input.pattern.startsWith('/') ? relative(base, input.pattern) : input.pattern);
     const hits = walk(base, ctx)
       .filter((w) => match(w.rel))
@@ -118,8 +122,8 @@ function statSafe(p: string) {
 function renderFiles(response: unknown, max: number): string {
   const r = response as { filenames?: unknown[]; truncated?: boolean };
   const names = (r.filenames ?? []).map(String);
-  if (!names.length) return 'Nenhum arquivo encontrado.';
-  return clip(names.join('\n') + (r.truncated ? '\n… (resultado cortado em 100 arquivos; refine o padrão)' : ''), max);
+  if (!names.length) return t('main.engine.text.search.noFiles');
+  return clip(names.join('\n') + (r.truncated ? `\n${t('main.engine.text.search.cut')}` : ''), max);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -139,7 +143,7 @@ interface GrepInput {
 }
 
 function parseInput(input: Record<string, unknown>): GrepInput {
-  if (typeof input.pattern !== 'string' || !input.pattern) throw new ToolError('Padrão ausente.');
+  if (typeof input.pattern !== 'string' || !input.pattern) throw new ToolError(t('main.engine.text.search.noPattern'));
   const mode = (['content', 'files_with_matches', 'count'] as const).find((m) => m === input.output_mode) ?? 'files_with_matches';
   const ctxN = Number(input['-C'] ?? input.context) || 0;
   return {
@@ -169,7 +173,7 @@ function runRg(args: string[], cwd: string, signal?: AbortSignal): Promise<{ std
   return new Promise((resolve, reject) => {
     execFile('rg', args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 30_000, signal }, (err, stdout, stderr) => {
       const code = err ? ((err as { code?: number }).code ?? 2) : 0;
-      if (err && code !== 1) return reject(new ToolError(`ripgrep falhou: ${String(stderr || err.message).slice(0, 300)}`));
+      if (err && code !== 1) return reject(new ToolError(t('main.engine.text.search.rgFailed', { detail: String(stderr || err.message).slice(0, 300) })));
       resolve({ stdout, code });
     });
   });
@@ -214,7 +218,7 @@ async function grepWithJs(g: GrepInput, base: string, ctx: ToolContext): Promise
   try {
     re = new RegExp(g.pattern, g.ignoreCase ? 'i' : '');
   } catch (e) {
-    throw new ToolError(`Expressão regular inválida: ${(e as Error).message}`);
+    throw new ToolError(t('main.engine.text.search.badRegex', { detail: (e as Error).message }));
   }
   const globOk = g.glob ? globMatcher(g.glob) : () => true;
   const files = statSafe(base)?.isFile() ? [{ path: base, rel: base }] : walk(base, ctx);
@@ -249,11 +253,14 @@ async function grepWithJs(g: GrepInput, base: string, ctx: ToolContext): Promise
 export const grepTool: ToolImpl = {
   name: 'Grep',
   description:
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Searches file contents with a regular expression (ripgrep syntax). output_mode: "files_with_matches" (default, file names), "content" (matching lines with path:line:text) ' +
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'or "count". Narrow with path and glob (for example "*.ts"). -i ignores case, -A/-B/-C add context lines, head_limit caps the lines returned.',
   parameters: {
     type: 'object',
     properties: {
+      // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
       pattern: { type: 'string', description: 'Regular expression' },
       path: { type: 'string', description: 'File or directory to search (default: the working directory)' },
       glob: { type: 'string', description: 'Only files matching this glob' },
@@ -264,13 +271,14 @@ export const grepTool: ToolImpl = {
       '-B': { type: 'integer', description: 'Lines before each match' },
       '-C': { type: 'integer', description: 'Lines around each match' },
       head_limit: { type: 'integer', description: 'Maximum lines (default 250)' },
+      // i18n-ignore-end
     },
     required: ['pattern'],
   },
   async run(input, ctx) {
     const g = parseInput(input);
     const base = confine(g.path ?? ctx.cwd, ctx);
-    if (!statSafe(base)) throw new ToolError(`Caminho não existe: ${g.path}`);
+    if (!statSafe(base)) throw new ToolError(t('main.engine.text.search.noPath', { path: String(g.path) }));
     const useRg = ctx.ripgrep === 'auto' && (await hasRipgrep());
     const response = useRg ? await grepWithRg(g, base, ctx) : await grepWithJs(g, base, ctx);
     return { response, render: (r) => renderGrep(r, g.output_mode, ctx.outputMax) };
@@ -280,6 +288,6 @@ export const grepTool: ToolImpl = {
 function renderGrep(response: unknown, mode: Mode, max: number): string {
   const r = response as { filenames?: unknown[]; content?: unknown; appliedLimit?: number };
   const body = mode === 'files_with_matches' ? (r.filenames ?? []).map(String).join('\n') : typeof r.content === 'string' ? r.content : '';
-  if (!body) return 'Nenhuma ocorrência.';
-  return clip(body + (r.appliedLimit ? `\n… (limitado a ${r.appliedLimit} linhas; refine a busca)` : ''), max);
+  if (!body) return t('main.engine.text.search.noMatch');
+  return clip(body + (r.appliedLimit ? `\n${t('main.engine.text.search.limited', { count: r.appliedLimit })}` : ''), max);
 }
