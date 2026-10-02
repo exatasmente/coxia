@@ -113,8 +113,8 @@ export function kokoroDir(dirs: string[]): string | null {
 export function engines(paths: VoicePaths): VoiceEngineInfo[] {
   const dir = kokoroDir(paths.kokoroDirs);
   return [
-    { id: 'edge', local: false, sendsTextTo: 'Microsoft', available: true, modelDir: null },
-    { id: 'kokoro', local: true, sendsTextTo: null, available: dir !== null, modelDir: dir },
+    { id: 'edge', local: false, sendsTextTo: 'Microsoft', available: true, modelDir: null, expectedDir: null },
+    { id: 'kokoro', local: true, sendsTextTo: null, available: dir !== null, modelDir: dir, expectedDir: join(paths.models, 'kokoro') },
   ];
 }
 
@@ -138,7 +138,7 @@ export async function checkVoice(ctx: SetupContext, wanted: SttModel = 'small'):
     python,
     uv: { found: uvPath !== null, path: uvPath, installable: uvPath === null && python.ok },
     disk: { dir: ctx.paths.venv, freeBytes: free, neededBytes: needed, enough },
-    installed: { venv: venv !== null, kind: venv?.kind ?? null, dir: venv?.dir ?? null, models },
+    installed: { venv: venv !== null, kind: venv?.kind ?? null, dir: venv?.dir ?? null, models, removableBytes: [ctx.paths.venv, ctx.paths.models, ctx.paths.tools].reduce((n, d) => n + dirSize(d), 0) },
     engines: engines(ctx.paths),
     problems,
     canInstall: problems.length === 0,

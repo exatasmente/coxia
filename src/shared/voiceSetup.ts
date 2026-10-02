@@ -57,6 +57,8 @@ export interface VoiceEngineInfo {
   available: boolean;
   /** Folder of the model files, when found. */
   modelDir: string | null;
+  /** Where to put the model files when they are missing (the app data folder). null for an engine with no files. */
+  expectedDir: string | null;
 }
 
 export interface VoiceCheck {
@@ -65,7 +67,7 @@ export interface VoiceCheck {
   uv: { found: boolean; path: string | null; installable: boolean };
   disk: { dir: string; freeBytes: number | null; neededBytes: number; enough: boolean };
   /** The environment the sidecar would run from. kind "legacy" is the repository's own sidecar/.venv (a development checkout). */
-  installed: { venv: boolean; kind: 'data' | 'legacy' | null; dir: string | null; models: Record<SttModel, boolean> };
+  installed: { venv: boolean; kind: 'data' | 'legacy' | null; dir: string | null; models: Record<SttModel, boolean>; /** What voice:uninstall would free: the app's own environment, models and tools. */ removableBytes: number };
   engines: VoiceEngineInfo[];
   problems: VoiceProblem[];
   /** python3 or uv is available and the disk has room: voice:install can start. */

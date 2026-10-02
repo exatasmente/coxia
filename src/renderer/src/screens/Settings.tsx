@@ -9,6 +9,7 @@ import { applyLanguage, applyVoiceMode, tv, useT } from '../i18n';
 import { applyTheme } from '../theme';
 import { jobs, useJobs } from '../useJobs';
 import { FalaCostByModel } from './FalasCusto';
+import { VoiceControls } from './VoiceControls';
 import { BackIcon } from './icons';
 import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
@@ -175,8 +176,10 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.voice.title')}</h2>
-            <p className="small muted" style={{ marginTop: 4 }}>O espaço continua enviando a fala antes da hora. Vale a partir da próxima gravação.</p>
           </div>
+          <VoiceControls s={s} set={set} />
+          {s.voice.enabled && (
+            <>
           <div className="settings-row">
             <label htmlFor="engine" style={{ fontWeight: 600 }}>Voz dos agentes</label>
             <div>
@@ -233,6 +236,8 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
               <span className="small muted">ms (de 500 a 5000)</span>
             </div>
           </div>
+            </>
+          )}
         </section>
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
