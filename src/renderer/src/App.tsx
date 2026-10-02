@@ -194,7 +194,7 @@ export function App() {
       <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
-      <UpdatePrompt />
+      <UpdatePrompt hidden={screen.name === 'settings'} />
     </>
   );
 }

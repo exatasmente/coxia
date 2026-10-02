@@ -5,12 +5,13 @@ import { updateApi, useUpdatesStatus } from './updateApi';
 import './update.css';
 
 // A downloaded release waits for "Reiniciar para atualizar". It is only a prompt: nothing restarts by itself, and while a ceremony, a call or
-// a job is running it stays out of the way (the badge in Hoje and Configurações › Atualizações still say it is ready).
-export function UpdatePrompt() {
+// a job is running it stays out of the way (the badge in Hoje and Configurações › Atualizações still say it is ready), and in
+// Configurações, which already shows the same button.
+export function UpdatePrompt({ hidden }: { hidden: boolean }) {
   const t = useT();
   const [status] = useUpdatesStatus();
   const [dismissed, setDismissed] = useState<string | null>(null);
-  if (isWeb() || !status || status.mode.mode !== 'release') return null;
+  if (hidden || isWeb() || !status || status.mode.mode !== 'release') return null;
   const { phase, version } = status.release;
   if (phase !== 'downloaded' || !version || dismissed === version || status.busy) return null;
   return (

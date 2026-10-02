@@ -254,7 +254,12 @@ export function relaunchArgs(argv: readonly string[]): string[] {
 
 // The helper runs detached: it waits until the old instance (and its AppImage mount) is gone, so the single-instance lock is free, and starts
 // the installed AppImage. A new instance started by the installer while the old one still holds the lock would just quit.
-export const RELAUNCH_SCRIPT = `pid="$1"; app="$2"; shift 2
+// It first closes every descriptor it inherited from the app (like scripts/update.sh does): files inside the old AppImage mount would keep
+// that mount busy, and the old debugging port or listening socket would stay bound to a process that is gone.
+export const RELAUNCH_SCRIPT = `for fd in /proc/$$/fd/*; do
+  case "\${fd##*/}" in 0|1|2|255) ;; *) eval "exec \${fd##*/}>&-" 2>/dev/null || true ;; esac
+done
+pid="$1"; app="$2"; shift 2
 i=0
 while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 200 ]; do sleep 0.3; i=$((i+1)); done
 exec nohup "$app" "$@" >/dev/null 2>&1 </dev/null`;
