@@ -365,8 +365,65 @@ select.text-input { background: var(--surface); }
 html:has(.hero) { scroll-padding-top: 140px; }
 html:has(.composer) { scroll-padding-bottom: 96px; }
 html:has(.composer-panel) { scroll-padding-bottom: 300px; }
-/* A narrow window stacks the hero into 200 to 700 px: stuck, it would hide the page */
-@media (max-width: 760px) { .hero { position: static; } html:has(.hero) { scroll-padding-top: 0; } }
+
+/* Phones (browser, PWA) and landscape phones: one column, a compact sticky bar, touch-sized controls.
+   The PWA shell sets viewport-fit=cover (safe-area insets) and interactive-widget=resizes-content (composer above the keyboard). */
+@media (max-width: 760px), (max-height: 500px) {
+  .page { padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
+  .wrap { gap: 14px !important; }
+  html:has(.hero) { scroll-padding-top: 84px; }
+  html:has(.composer-panel) { scroll-padding-bottom: 260px; }
+  /* sticky bars: header with back, a 2-line title and the mic as an icon; other buttons scroll sideways in the same row */
+  .hero { top: calc(6px + env(safe-area-inset-top)); }
+  header.hero { flex-wrap: nowrap !important; gap: 8px !important; padding: 8px 10px !important; border-radius: 14px !important; overflow-x: auto; scrollbar-width: none; }
+  header.hero::-webkit-scrollbar { display: none; }
+  header.hero > * { flex: 0 0 auto !important; }
+  header.hero > div:not(.chip) { flex: 1 0 150px !important; min-width: 150px; }
+  header.hero > div > div { overflow: hidden; text-overflow: ellipsis; }
+  header.hero > div > div:first-child { white-space: nowrap; font-size: 12px; }
+  header.hero > div > div:last-child { font-size: 15px !important; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  header.hero > .chip, header.hero > .presence { display: none; }
+  header.hero > button.btn:has(> svg):not(.icon-btn) { font-size: 0; gap: 0; width: 44px; padding: 0; }
+  .hero .quad { gap: 8px; }
+  .quad > div { padding: 10px 12px; }
+  section.hero .chip-lg { width: 48px; height: 48px; font-size: 18px; }
+  section.hero [style*="font-size: 21px"] { font-size: 17px !important; }
+  .panel, .item { min-width: 0; overflow-wrap: anywhere; }
+  .row[style*="nowrap"]:has(> [style*="flex: 0 0 "]):not(.composer) { flex-wrap: wrap !important; }
+  .hero .presence { min-width: 0; flex: 0 1 auto; }
+  .hero .row { flex-wrap: wrap !important; }
+  .composer, .composer-panel { bottom: calc(6px + env(safe-area-inset-bottom)); }
+  .composer { padding: 8px; }
+  .composer > .btn { padding: 0 12px; }
+  /* the call stage is taller than a compact bar: it scrolls with the page, the controls stay floating */
+  section.hero { position: static; }
+  .call-layout > .call-main { order: -1; }
+  /* columns collapse in reading order */
+  .cols { flex-direction: column; align-items: stretch; }
+  .cols > * { flex: none !important; max-width: none !important; min-width: 0 !important; width: 100%; }
+  .deep-main { order: -1; }
+  .ceremonies { grid-template-columns: minmax(0, 1fr); }
+  /* the header strip of Today scrolls sideways instead of wrapping into six rows */
+  .wrap > header.row.spread { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; }
+  .wrap > header.row.spread > .row:last-child { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .wrap > header.row.spread > .row:last-child > * { flex: 0 0 auto; }
+  .diagram-overlay { padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); }
+  .diagram-svg-full { width: 100%; height: 100%; }
+  .diagram-stage { touch-action: none; }
+}
+@media (max-height: 500px) { .hero .quad { display: none; } header.hero > div > div:last-child { -webkit-line-clamp: 1; } }
+/* touch: 44 px targets, 16 px inputs (no iOS zoom), and the replay button needs no hover */
+@media (pointer: coarse), (max-width: 760px) {
+  .btn { min-height: 44px !important; min-width: 44px; }
+  a.badge, .list-row a { display: inline-flex; align-items: center; min-height: 44px; }
+  .text-input, input:not([type="checkbox"]):not([type="radio"]), textarea, select { min-height: 44px !important; }
+  .filter { min-height: 44px; }
+  .text-input, textarea, select, input:not([type="checkbox"]):not([type="radio"]) { font-size: 16px !important; }
+  button.bubble-replay { width: 44px; height: 44px; margin: -12px -14px -12px 0; opacity: 1; }
+  .log-line button.bubble-replay { flex-basis: 44px; margin: -10px -10px; }
+  .diagram-expand { width: 44px; min-height: 44px; }
+  summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+}
 .glossary { display: flex; flex-direction: column; gap: 8px; }
 .glossary-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(130px, 1.2fr) minmax(160px, 2fr) 124px; gap: 8px; align-items: center; }
 .glossary-row > .text-input { min-width: 0; }
