@@ -14,7 +14,7 @@ const INTENDED: Record<string, (text: string) => string> = {
   'release-comment': (text) => text.replace('${qaMention()}', '@qa.interno'),
 };
 
-export function parity(title: string, goldenName: string, options: { voice: boolean }): void {
+export function parity(title: string, goldenName: string, options: { voice: boolean; setup?: () => Promise<void>; registro?: string }): void {
   const golden = join(import.meta.dirname, '..', 'golden', goldenName);
   let scenario: Scenario;
 
@@ -23,20 +23,25 @@ export function parity(title: string, goldenName: string, options: { voice: bool
     vi.setSystemTime(new Date('2026-10-02T12:00:00'));
     // The quiz shuffles the options of each question; a fixed value makes the shuffle, and so the letter of the right answer, repeatable.
     vi.spyOn(Math, 'random').mockReturnValue(0.42);
-    await installLegacyConfig();
-    // The migrated profile points at the author's daily-report files; the test uses its own so nothing real is read.
-    const dir = mkdtempSync(join(tmpdir(), 'cycle-parity-'));
-    const history = join(dir, 'history.jsonl');
-    writeFileSync(history, `${JSON.stringify({ at: '2026-09-30T10:00:00Z', ref: 'sz4#15499', type: 'change', field: 'stage', from: 'Doing', to: 'Test Fail' })}\n`);
-    const { updateConfig } = await import('../../src/main/workspaceConfig');
-    updateConfig((c) => {
-      c.externalTools.cardSource.historyFile = history;
-      c.externalTools.cardSource.stateFile = join(dir, 'state.json');
-      c.voice.enabled = options.voice;
-      return c;
-    });
+    if (options.setup) {
+      // Not the migrated profile: a configuration of its own (another language, another name), set up by the test.
+      await options.setup();
+    } else {
+      await installLegacyConfig();
+      // The migrated profile points at the author's daily-report files; the test uses its own so nothing real is read.
+      const dir = mkdtempSync(join(tmpdir(), 'cycle-parity-'));
+      const history = join(dir, 'history.jsonl');
+      writeFileSync(history, `${JSON.stringify({ at: '2026-09-30T10:00:00Z', ref: 'sz4#15499', type: 'change', field: 'stage', from: 'Doing', to: 'Test Fail' })}\n`);
+      const { updateConfig } = await import('../../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.externalTools.cardSource.historyFile = history;
+        c.externalTools.cardSource.stateFile = join(dir, 'state.json');
+        c.voice.enabled = options.voice;
+        return c;
+      });
+    }
     await installFakeEngine();
-    scenario = await runScenario(process.env.CERIMONIAS_SPECS_DIR as string);
+    scenario = await runScenario(process.env.CERIMONIAS_SPECS_DIR as string, options.registro ? { registro: options.registro } : {});
     calls.length = 0;
   });
 

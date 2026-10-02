@@ -1,0 +1,496 @@
+{
+ "prompts": {
+  "turn": {
+   "role": "turn",
+   "prompt": "You are the agent of activity sz4#15499 in the pre-daily, in text.\nActivity card: {\"ref\":\"sz4#15499\",\"iid\":\"15499\",\"title\":\"Corrigir filtro do relatório\",\"stage\":\"Code Review OK\",\"mrs\":[\"sz4!797\"],\"mrPaths\":[{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}],\"blockers\":[\"sz4!797: MR com conflitos\"],\"pending\":[\"pipeline vermelha\"],\"changes\":[\"stage: Doing → Code Review\"],\"note\":null,\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\"}\nSpec in <SPECS>/#15499-corrigir-filtro (Plan escrito).\nIf you need to, read the spec (at most 3 reads).\nBuild your turn: \"fala\" (speech) of up to 60 words, saying what changed since yesterday, the next step and the blocker.\nIf there is a decision only Ana can make, end the speech with ONE objective question and repeat it in \"pergunta\" (question); otherwise \"pergunta\" is null.\nIn this team: A blocker is anything that keeps the activity from moving today: an MR with a conflict, a red pipeline, a review or QA that sent it back, a dependency on another activity or a pending decision. Ready for QA is an activity whose code review is approved (or that QA sent back) and that has a spec: QA gets what changed, what to test and where.\n\"opcoes\" (options): 0 to 3 ready-made replies, short (up to 12 words), written the way Ana would answer, each one a concrete way out (e.g. \"Go ahead with the merge\", \"Ask QA for help today\", \"Leave it for tomorrow\"). An empty list when there is nothing to decide. Offer options when there is a question or a blocker.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": null,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "andou",
+    "proximo",
+    "bloqueio",
+    "pergunta",
+    "opcoes"
+   ]
+  },
+  "turn-without-spec": {
+   "role": "turn",
+   "prompt": "You are the agent of activity sz4#15500 in the pre-daily, in text.\nActivity card: {\"ref\":\"sz4#15500\",\"iid\":\"15500\",\"title\":\"Corrigir filtro do relatório\",\"stage\":\"Code Review OK\",\"mrs\":[\"sz4!797\"],\"mrPaths\":[{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}],\"blockers\":[],\"pending\":[],\"changes\":[],\"note\":null,\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\"}\nNo spec folder.\nIf you need to, read the spec (at most 3 reads).\nBuild your turn: \"fala\" (speech) of up to 60 words, saying what changed since yesterday, the next step and the blocker.\nIf there is a decision only Ana can make, end the speech with ONE objective question and repeat it in \"pergunta\" (question); otherwise \"pergunta\" is null.\nIn this team: A blocker is anything that keeps the activity from moving today: an MR with a conflict, a red pipeline, a review or QA that sent it back, a dependency on another activity or a pending decision. Ready for QA is an activity whose code review is approved (or that QA sent back) and that has a spec: QA gets what changed, what to test and where.\n\"opcoes\" (options): 0 to 3 ready-made replies, short (up to 12 words), written the way Ana would answer, each one a concrete way out (e.g. \"Go ahead with the merge\", \"Ask QA for help today\", \"Leave it for tomorrow\"). An empty list when there is nothing to decide. Offer options when there is a question or a blocker.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": null,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "andou",
+    "proximo",
+    "bloqueio",
+    "pergunta",
+    "opcoes"
+   ]
+  },
+  "reply": {
+   "role": "reply",
+   "prompt": "Activity card: {\"ref\":\"sz4#15499\",\"iid\":\"15499\",\"title\":\"Corrigir filtro do relatório\",\"stage\":\"Code Review OK\",\"mrs\":[\"sz4!797\"],\"mrPaths\":[{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}],\"blockers\":[\"sz4!797: MR com conflitos\"],\"pending\":[\"pipeline vermelha\"],\"changes\":[\"stage: Doing → Code Review\"],\"note\":null,\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\"}\nSpec in <SPECS>/#15499-corrigir-filtro (Plan escrito).\nYour speech was: Falei sobre o filtro.\nAna answered in writing: «pode seguir com o merge»\n\"ack\": up to 25 words confirming what you understood.\n\"decisao\" (decision): what was decided, or null. \"alvo\" (target): \"spec\" if it changes the scope or the plan of the issue and it has a spec; \"ata\" (minutes) for everything else.\n\"efeito\" (effect): an external action that Ana will have to run later with confirmation (push, MR, status, comment, pipeline, reviewer, new issue), or null.\n\"desbloqueio\" (unblock): true if they asked to go deeper or if the answer calls for an investigation.\n\"opcoes\" (options): 0 to 3 ready-made replies, short (up to 12 words), written the way Ana would answer, each one a concrete way out (e.g. \"Go ahead with the merge\", \"Ask QA for help today\", \"Leave it for tomorrow\"). An empty list when there is nothing to decide. Here, possible next steps after this answer.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 3,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "ack",
+    "decisao",
+    "efeito",
+    "desbloqueio",
+    "opcoes"
+   ]
+  },
+  "reply-resumed": {
+   "role": "reply",
+   "prompt": "\nAna answered in writing: «pode seguir com o merge»\n\"ack\": up to 25 words confirming what you understood.\n\"decisao\" (decision): what was decided, or null. \"alvo\" (target): \"spec\" if it changes the scope or the plan of the issue and it has a spec; \"ata\" (minutes) for everything else.\n\"efeito\" (effect): an external action that Ana will have to run later with confirmation (push, MR, status, comment, pipeline, reviewer, new issue), or null.\n\"desbloqueio\" (unblock): true if they asked to go deeper or if the answer calls for an investigation.\n\"opcoes\" (options): 0 to 3 ready-made replies, short (up to 12 words), written the way Ana would answer, each one a concrete way out (e.g. \"Go ahead with the merge\", \"Ask QA for help today\", \"Leave it for tomorrow\"). An empty list when there is nothing to decide. Here, possible next steps after this answer.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 3,
+   "resume": "sess-live",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "ack",
+    "decisao",
+    "efeito",
+    "desbloqueio",
+    "opcoes"
+   ]
+  },
+  "deep": {
+   "role": "deep",
+   "prompt": "Unblock of activity sz4#15499, in text. Investigate by reading spec (read-only) before answering.\nActivity card: {\"ref\":\"sz4#15499\",\"iid\":\"15499\",\"title\":\"Corrigir filtro do relatório\",\"stage\":\"Code Review OK\",\"mrs\":[\"sz4!797\"],\"mrPaths\":[{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}],\"blockers\":[\"sz4!797: MR com conflitos\"],\"pending\":[\"pipeline vermelha\"],\"changes\":[\"stage: Doing → Code Review\"],\"note\":null,\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\"}\nSpec in <SPECS>/#15499-corrigir-filtro (Plan escrito).\nAna's question (typed text): «por que a pipeline falha?»\n\"fala\" (speech): an answer of up to 80 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 20,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "deep-resumed": {
+   "role": "deep",
+   "prompt": "\nAna's question (typed text): «e o rollback?»\n\"fala\" (speech): an answer of up to 80 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 20,
+   "resume": "sess-deep",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "deep-options": {
+   "role": "deep",
+   "prompt": "Based on what you investigated about sz4#15499, propose 2 or 3 ways out of the blocker.\nEach one: a short \"titulo\" (title), \"consequencia\" (what happens if Ana chooses it), \"efeito\" (an external action that will need confirmation, or null), \"decisao\" (a ready sentence for the Decision log section of the plan) and \"recomendada\" (recommended; only one true).",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 4,
+   "resume": "sess-deep",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "opcoes"
+   ]
+  },
+  "teams": {
+   "role": "teams",
+   "prompt": "Write the text that Ana will paste into the team chat for the team daily, from the pre-daily below.\nStyle: \"Good morning, everyone!\", then paragraphs \"Yesterday:\", \"Today:\" and \"Blockers:\", short sentences, links to the issues when they help, no tables, no markdown besides line breaks.\nActivities: [{\"ref\":\"sz4#15499\",\"title\":\"Corrigir filtro do relatório\",\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\",\"stage\":\"Code Review OK\",\"blockers\":[\"sz4!797: MR com conflitos\"],\"changed\":[\"stage: Doing → Code Review\"]},{\"ref\":\"sz4#15500\",\"title\":\"Corrigir filtro do relatório\",\"url\":\"https://dark.smartzap.com.br/sz4/sz4/-/work_items/15499\",\"stage\":\"Code Review OK\",\"blockers\":[],\"changed\":[]}]\nDecisions: [{\"ref\":\"sz4#15499\",\"text\":\"Seguir com o merge hoje\",\"target\":\"spec\",\"dest\":\"<SPECS>/#15499-corrigir-filtro/bug/2_PLAN.md › Registro\"}]\nPending effects: [{\"ref\":\"sz4#15499\",\"text\":\"Abrir MR\",\"repo\":\"sz4\"}]",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 2,
+   "resume": null,
+   "allowedTools": [],
+   "extraDirs": [],
+   "schemaKeys": [
+    "texto"
+   ]
+  },
+  "release-comment": {
+   "role": "deep",
+   "prompt": "Issue 15499 was synced with main after a release. Rewrite the QA pipelines comment below, which will be edited in place.\nRules: keep the text, the mention the QA user and the format;\nreplace the pipeline link with the PUSH pipeline of the merge commit;\nadd a line saying the branch was synced with main and whether it needs a retest, naming the overlapping files when there are any.\nDo not invent a pipeline: if you cannot find the push one of the merge commit, keep the current one and say so in the summary.\nSync output:\nsaída do sync\nTool unit: {\"issue\":15499}\nCurrent comment:\ncomentário atual\n\"body\": the complete comment, ready to replace the current one. \"resumo\" (summary): one sentence saying what changed.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 12,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "body",
+    "resumo"
+   ]
+  },
+  "conflict-ask": {
+   "role": "deep",
+   "prompt": "Chat about a conflict syncing with main after a release. You explain; you resolve nothing here.\nRead both sides in the tool's mirror (git -C <repo> merge-tree/diff/show/log, read-only).\nExplain: what each side changed, why it conflicts and the resolution you propose (which side stays in each hunk and what to test afterwards).\nBe economical: start with the merge-tree of the conflicting files and the diff of each side only on those files; about 10 reads at most before answering. When in doubt, answer with what you already know and say what is left to check.\nThe adjustment will be made later in Claude Code, in a temporary worktree, with Ana's confirmation.\ncontexto do conflito\nAna's question (typed text): «qual lado fica?»\n\"fala\" (speech): an answer of up to 90 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 40,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent",
+    "Bash(git -C:*)"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "conflict-ask-resumed": {
+   "role": "deep",
+   "prompt": "\nAna's question (typed text): «e o outro?»\n\"fala\" (speech): an answer of up to 90 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 40,
+   "resume": "sess-c",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent",
+    "Bash(git -C:*)"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "conflict-propose": {
+   "role": "deep",
+   "prompt": "Conflict syncing with main after a release: issue 15499 (Corrigir filtro do relatório), sz4!797, branch release/bugfix/15499.\n\nFor each conflicting hunk below, propose the final text (without conflict markers). BRANCH is what the MR wrote; MAIN is what the release brought; BASE is the common ancestor (when there is one).\n\nThe typical post-release conflict is COMPLEMENTARY: both sides added different things in the same place, and the resolution is to combine them. Keep what each side did; adjust only what is needed for both to live together (order, commas, imports).\n\nNever invent code beyond combining or adapting the two sides. If the sides are incompatible and combining would require inventing, choose one whole side, say which, and mark confianca (confidence) \"baixa\" (low).\n\nThe files with markers are in the worktree /tmp/wt. Read a file only if a hunk below was cut or if the surrounding context is essential: at most 3 reads.\n\n\"resolucao\" (resolution): the exact text that takes the place of the hunk, with the indentation and line breaks of the file, no code fence, no markers.\n\n\"explicacao\" (explanation): a short paragraph in English saying what each side did and why the resolution is this one. \"confianca\": alta (high), media (medium) or baixa (low). \"testar\" (test): what to test afterwards (one sentence).\n\n\"resumo\" (summary): one or two sentences about the conflict as a whole. Return one item for each id, with the id exactly as it is.\n\n### hunk h1\nfile: a.ts\n--- BRANCH (ours) ---\nx\n--- BASE ---\n(no common ancestor)\n--- MAIN (theirs) ---\ny",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 12,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "resumo",
+    "trechos"
+   ]
+  },
+  "gate-start": {
+   "role": "deep",
+   "prompt": "Gate 1 of issue sz4#15499 (Corrigir filtro do relatório), in text. Read the artifact <SPECS>/#15499-corrigir-filtro/bug/1_INVESTIGATION.md in full (and what it cites, if you need to).\n\"resumo\" (summary): the gate summary to be heard, up to 150 words: what the artifact concludes or proposes, the risks and what Ana is approving.\n\"perguntas\" (questions): the quiz.\nQuiz rules: up to 3 CONSEQUENCE questions (prediction, counterfactual, boundary, side effect, rollback, regression), never a fact that a search could find;\neach with 4 plausible options and one correct; the distractors come from real wrong readings of the artifact; never \"all of the above\", never an absurd one on purpose;\nwith more than 3 risk points, pick the 3 of highest consequence. In \"secao\" (section) cite file + exact heading where the answer lives; in \"explicacao\" (explanation), why the correct one is correct (2 sentences).\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 16,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "resumo",
+    "perguntas"
+   ]
+  },
+  "gate-answer-free": {
+   "role": "reply",
+   "prompt": "Evaluate a free answer to a gate quiz question. It is only correct if it reaches the same conclusion as the correct option, for the same reason.\nQuestion: x\nOptions: A) x · B) x · C) x · D) x\nCorrect: B) x. Why: x\nAna's answer (typed text): «o cache é invalidado»\n\"comentario\" (comment): one sentence saying what was right or what was missing, without revealing the correct option.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 2,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "certa",
+    "comentario"
+   ]
+  },
+  "gate-explain": {
+   "role": "deep",
+   "prompt": "Assisted reading of the consolidation cycle: read with Ana only the section where the point that slipped lives, step by step, answering whatever they ask. Do not present the whole artifact again.\nPoints that slipped: «x» → x\nAna's question: «me explica a seção»\n\"fala\" (speech): up to 90 words, to be heard.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 8,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "gate-visual": {
+   "role": "deep",
+   "prompt": "Produce the visual aid of the consolidation cycle for <SPECS>/#15499-corrigir-filtro/bug/1_INVESTIGATION.md, aimed at the point that slipped: «x» (correct: x; section x).\nMermaid (flowchart or sequenceDiagram) by default; only the code, no ``` fences.\n\"heading\": the EXACT text of a heading of the artifact (without the #), where the diagram will go, at the end of the section. \"descricao\" (description): one sentence saying what the diagram shows.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 8,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "mermaid",
+    "heading",
+    "descricao"
+   ]
+  },
+  "gate-round": {
+   "role": "deep",
+   "prompt": "New round of the Gate 1 quiz of sz4#15499 on the same point that slipped, with NEW questions (not the same ones reshuffled), plus whatever is still pending.\nPoints: «x» (x)\nAlready asked: «x»\nRe-read <SPECS>/#15499-corrigir-filtro/bug/1_INVESTIGATION.md: the section may have changed.\nQuiz rules: up to 3 CONSEQUENCE questions (prediction, counterfactual, boundary, side effect, rollback, regression), never a fact that a search could find;\neach with 4 plausible options and one correct; the distractors come from real wrong readings of the artifact; never \"all of the above\", never an absurd one on purpose;\nwith more than 3 risk points, pick the 3 of highest consequence. In \"secao\" (section) cite file + exact heading where the answer lives; in \"explicacao\" (explanation), why the correct one is correct (2 sentences).",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 10,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "perguntas"
+   ]
+  },
+  "qa-prepare": {
+   "role": "deep",
+   "prompt": "QA hand-off of issue sz4#15499 (Corrigir filtro do relatório), in text. You explain to QA what changed and what to test.\nRead in <SPECS>/#15499-corrigir-filtro: ISSUE_COMPLETION.md (Developer tests and impact checklist), the test plan (3_TEST_PLAN.md or 4_TEST_PLAN.md), the plan and whatever else you need.\nMRs: [{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}]. Read the diff and the issue comments with , looking for the note \"the QA user\" (release branch and pipelines).\n\"fala\" (speech): up to 150 words for QA to hear: what changed for the user, where to test, what else could break.\n\"mudou\" (changed): one paragraph in product language, no class names.\n\"checklist\": sections (e.g. \"Main scenarios (happy path)\", \"Regression\", \"Edges\") with verifiable items, each with an action and an expected result.\n\"riscos\" (risks): what could break beyond the fixed flow. \"ambiente\" (environment): release branch, pipeline and deploy jobs from the QA note; if there is no note, say the release branch has not been created yet.\n\"nota_qa\": the id of the most recent the QA user note, or null. \"teams\": \"\".\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 24,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "mudou",
+    "checklist",
+    "riscos",
+    "ambiente",
+    "nota_qa",
+    "teams"
+   ]
+  },
+  "qa-ask": {
+   "role": "deep",
+   "prompt": "Ana's or QA's question in the hand-off of sz4#15499 (typed text): «onde testo?»\n\"fala\" (speech): up to 90 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 12,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "retro": {
+   "role": "deep",
+   "prompt": "Ana's weekly retro, in text, from 9/25/2026 to 10/2/2026. You lead it.\nBase: the summary below (ceremonies, decisions, release actions and gate quizzes). You may read specs and the project documentation to understand a point; do not invent a fact that is not in the summary or in what you read.\nLook at process, not people: rejections in review and in QA, blockers that lasted, post-release conflicts, gates with more than one round (the material did not teach), questions left unanswered.\n\"fala\" (speech): an opening of up to 150 words. \"numeros\" (numbers): 3 to 6 counts for the week; \"valor\" (value) is just the number (e.g. \"2\", \"4\") and the context goes in \"rotulo\" (label, up to 8 words). Each item of \"funcionou\" (worked), \"travou\" (stuck) and \"retrabalho\" (rework) with concrete evidence (issue, date).\n\"melhorias\" (improvements): proposals to improve the process (title, dimension, today's problem, what it would be), only the ones the evidence supports.\nSummary of the week: {\"ceremonies\":[],\"release_actions\":[],\"gates\":[{\"issue\":\"sz4#15499\",\"gate\":1,\"rounds\":2,\"mistakes\":[\"x\"]}],\"host_changes\":[]}\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 16,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "numeros",
+    "funcionou",
+    "travou",
+    "retrabalho",
+    "melhorias"
+   ]
+  },
+  "retro-ask": {
+   "role": "deep",
+   "prompt": "In the retro, Ana said (typed text): «o que travou?»\nAnswer, go deeper or propose; \"fala\" (speech) up to 90 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 10,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "reentry": {
+   "role": "deep",
+   "prompt": "Chat: re-entry of issue sz4#15499 (Corrigir filtro do relatório), in text. QA or the review sent the activity back. You explain to Ana what came back and where it re-enters the pipeline.\nCurrent stage: Code Review OK. Spec in <SPECS>/#15499-corrigir-filtro (Plan escrito); read the Plan, the investigation or the technical spec and the ISSUE_COMPLETION, at most 5 reads.\nMRs: [{\"ref\":\"sz4!797\",\"project\":\"sz4/sz4\",\"iid\":797}].\nThere is no note from the QA user on the issue or on the MRs. Say so and do not invent a QA finding.\nClassify the return:\n- \"defeito-novo\" (new defect): QA exposed a defect that the fix created or let show, outside what the issue dealt with. Re-enters at F1 (new cycle, new investigation, new Gate 1).\n- \"causa-diferente\" (different cause): the symptom is the same, but the cause is not the one investigated. Re-enters at F1.\n- \"so-plano\" (plan only): the fix does not do what the Plan already described, or a detail inside the Plan is missing. Re-enters at F4 with the same Plan; F3 only if the correction touches a file outside the Plan.\n- \"ambiente\" (environment): QA's evidence is invalid (blocked login, skip, someone else in the environment, different version). \"fase\" (phase) is \"nenhuma\" (none): it does not become a task; the environment is fixed and QA retests.\nIf the comment is not enough to classify, pick the most likely one and say the doubt in \"duvida\" (doubt); otherwise \"duvida\" is null.\n\"fala\" (speech): up to 130 words, to be heard: what QA found, the classification, which phase it re-enters and the first step.\n\"achou\" (found): what QA found, in a paragraph, with the scenarios that failed. \"motivo\" (reason): why this classification, in one or two sentences.\n\"passos\" (steps): 2 to 4 steps of what the agent does on re-entry, from the \"What the agent does\" column of the table, applied to this issue (include the delta quiz when there is one).\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 16,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "achou",
+    "classificacao",
+    "motivo",
+    "fase",
+    "passos",
+    "duvida"
+   ]
+  },
+  "reentry-ask": {
+   "role": "deep",
+   "prompt": "Ana's question in the re-entry of sz4#15499 (typed text): «e agora?»\n\"fala\" (speech): up to 90 words.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 12,
+   "resume": "sess-1",
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto"
+   ]
+  },
+  "discussion": {
+   "role": "deep",
+   "prompt": "Review of MR sz4!797 (issue sz4#15499, Corrigir filtro do relatório). Explain to Ana ONE open discussion from the reviewer and propose a draft of their reply. Do not publish anything.\nSpec in <SPECS>/#15499-corrigir-filtro (Plan escrito); consult the Plan if the point touches the scope.\nLocation: app/Report.php:42.\nDiscussion abcdef12, oldest to newest:\n--- revisor, 2026-09-30T10:00:00Z\nEsse trecho ignora o grupo.\nTo see the change, use glab api projects/sz4%2Fsz4/merge_requests/797/changes or the GitLab MCP (get_merge_request_details_and_changes); the local checkout may be on another branch.\n\"ponto\" (point): what the reviewer is asking or questioning, in one sentence. \"precisa_codigo\" (needs code): true if meeting it requires changing the code.\n\"fala\" (speech): up to 90 words, to be heard: the point, whether the reviewer is right from what you read and what Ana needs to decide.\n\"rascunho\" (draft): Ana's reply to the reviewer, in English, direct and courteous, up to 80 words, in the first person. Do not claim that something was fixed, tested or committed if you did not see it; if it requires a change, write the intention (\"I will adjust X\"). If information is missing, leave the part in [brackets] for them to fill in.\n\"texto\" (text) explains the point; the draft reply goes only in \"rascunho\", without repeating it in the text.\n\"texto\" (the chat text): the same answer to be read in the chat, complete: it may have short lists, `file:line`, commands and the details that do not fit in the short message. When a flow, a sequence between services or the relation between parts is clearer drawn, include a diagram in a ```mermaid block (flowchart or sequenceDiagram, short labels in quotes when they have symbols, no styles or colors). No diagram when it does not help. \"fala\" (the short message): a short summary of the text, also shown in the chat (voice is off: nobody will hear it), which follows the rules below and does not repeat the diagram.\nVoice is off: nobody will hear the answer, they will only read it on the screen. \"fala\" (speech) is the short message that shows on the screen: direct English, short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Write only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "system": "You take part in a ceremony of Ana's, run in text (voice is off), as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
+   "maxTurns": 20,
+   "resume": null,
+   "allowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Agent"
+   ],
+   "extraDirs": [],
+   "schemaKeys": [
+    "fala",
+    "texto",
+    "ponto",
+    "precisa_codigo",
+    "rascunho"
+   ]
+  },
+  "save-result": {
+   "role": "store",
+   "prompt": "[{\"ref\":\"sz4#15499\",\"dest\":\"<SPECS>/#15499-corrigir-filtro/bug/2_PLAN.md › Registro\",\"ok\":true,\"detail\":\"<SPECS>/#15499-corrigir-filtro/bug/2_PLAN.md\"}]",
+   "system": "",
+   "maxTurns": null,
+   "resume": null,
+   "allowedTools": [],
+   "extraDirs": [],
+   "schemaKeys": []
+  }
+ },
+ "files": {
+  "bug/GATE_QUIZ.md": "# Gate quiz — #15499 Corrigir filtro do relatório\n\n## Gate 1 — Investigation (DATE)\n\n**Verdict:** in progress — 2 round(s) so far · run in text in the ceremonies app\n\n### Round 1\n\n| # | Question (kind) | Options | Chosen | Correct? |\n|---|---|---|---|---|\n| 1 | x (prediction) | A) x · B) x · C) x · D) x | Other: \"o cache é invalidado\" | **no** |\n\n**Gap and how it was closed:** «x» — the answer lives in x. Assisted reading in text.\n\n**Visual aid produced:** mermaid — mostra o fluxo (inserted in 1_INVESTIGATION.md › Causa)\n\n### Round 2\n\n| # | Question (kind) | Options | Chosen | Correct? |\n|---|---|---|---|---|\n| 1 | x (prediction) | A) x · B) x · C) x · D) x | — | — |\n\n**Visual aid produced:** —\n",
+  "bug/1_INVESTIGATION.md": "# Investigation\n\n## Causa\n\ntexto\n\n<!-- visual aid of the gate quiz (DATE): mostra o fluxo -->\n```mermaid\nflowchart TD\nA-->B\n```\n",
+  "QA_CHECKLIST.md": "# QA Checklist — #15499 Corrigir filtro do relatório\n\n> x\n>\n> **Environment:** x\n> Generated in the QA hand-off, in text (DATE).\n\n---\n\n## 1. x\n\n",
+  "plan-after-registro": "# Plan\n\n## Passos\n\n- um\n\n## Decision log\n\n- 2026-09-01: anterior\n- 2026-10-02 (pre-daily, in text): Seguir com o merge hoje\n\n## Rollback\n\nnada\n"
+ }
+}
