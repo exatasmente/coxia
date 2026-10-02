@@ -4,6 +4,7 @@ import type { CeremonyId, DevCycleConfig, Language } from '../shared/config/type
 import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, cycleText, exportTemplateText, parseTemplate, templateFromConfig, buildCycleView, ceremonyAvailable, type ApplyOptions, type CycleTemplate, type CycleView, type TemplateCheck, type TemplateSummary, type ViewContext } from '../shared/cycles';
 import { DATA_ROOT } from './env';
 import { getConfig, rc, saveConfig } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 // The development-cycle templates of this machine: the ones that ship with the app, and the ones a person imported (one JSON file each in
 // <data>/cycle-templates). Applying one rewrites the `devCycle` section of the running workspace's config and nothing else.
@@ -92,8 +93,8 @@ export function checkTemplateText(text: string): TemplateCheck {
 /** Stores an imported template so it shows in the list. A template cannot take the id of a built-in one. */
 export function saveTemplateText(text: string): TemplateSummary {
   const check = checkTemplateText(text);
-  if (!check.template) throw new Error(`modelo inválido: ${check.errors.map((e) => `${e.path || '(raiz)'}: ${e.message}`).join('; ')}`);
-  if (builtInTemplate(check.template.id)) throw new Error(`o id "${check.template.id}" é de um modelo que já vem com o app; escolha outro`);
+  if (!check.template) throw new Error(t('main.cycle.invalidTemplate', { errors: check.errors.map((e) => `${e.path || t('main.cycle.root')}: ${e.message}`).join('; ') }));
+  if (builtInTemplate(check.template.id)) throw new Error(t('main.cycle.builtInId', { id: check.template.id }));
   mkdirSync(TEMPLATES_DIR, { recursive: true });
   const file = join(TEMPLATES_DIR, `${check.template.id}.json`);
   writeFileSync(`${file}.tmp`, exportTemplateText(check.template, new Date()));
@@ -102,7 +103,7 @@ export function saveTemplateText(text: string): TemplateSummary {
 }
 
 export function removeTemplate(id: string): void {
-  if (builtInTemplate(id)) throw new Error('os modelos que vêm com o app não podem ser removidos');
-  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(id)) throw new Error('id inválido');
+  if (builtInTemplate(id)) throw new Error(t('main.cycle.builtInRemove'));
+  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(id)) throw new Error(t('main.cycle.invalidId'));
   rmSync(join(TEMPLATES_DIR, `${id}.json`), { force: true });
 }

@@ -1,5 +1,6 @@
 import { rpcContext } from './errorlog-core';
 import { logError } from './errorlog';
+import { t } from '../shared/i18n';
 
 type Handler = (...args: never[]) => unknown;
 type Binder = (channel: string, fn: Handler) => void;
@@ -52,7 +53,7 @@ export function channels(): string[] {
 export async function invoke(channel: string, args: unknown[], deviceId?: string): Promise<unknown> {
   const dev = deviceTable.get(channel);
   if (dev) {
-    if (!deviceId) throw new Error(`canal ${channel} só funciona pelo navegador`);
+    if (!deviceId) throw new Error(t('main.rpc.browserOnly', { channel }));
     return guarded(channel, 'web', ((...a: never[]) => (dev as (d: string, ...a: unknown[]) => unknown)(deviceId, ...a)) as Handler, args as never[]);
   }
   const fn = table.get(channel);

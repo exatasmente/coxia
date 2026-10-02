@@ -5,7 +5,7 @@ import { t } from '../shared/i18n';
 import { detectRelease } from './actions';
 import { loadCards } from './cards';
 import { getSettings } from './config';
-import { ceremonyLabel } from './cyclePrompts';
+import { ceremonyLabel, formatTime } from './cyclePrompts';
 import { cycleOn } from './cycle-core';
 import { ATAS } from './env';
 import type { Job } from './module';
@@ -68,7 +68,7 @@ export function registerJob(job: Job): void {
 let running = false;
 
 export async function checkStatus(manual: boolean): Promise<string> {
-  if (running) return 'Já estou conferindo o status.';
+  if (running) return t('main.status.already');
   running = true;
   try {
     const snap = read();
@@ -82,7 +82,7 @@ export async function checkStatus(manual: boolean): Promise<string> {
       for (const b of card.blockers) if (!prev?.blockers.includes(b)) fresh.push({ card, blocker: b });
       if (prev && prev.stage !== card.stage) moved.push({ card, from: prev.stage });
     }
-    const since = snap.checkedAt ? new Date(snap.checkedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+    const since = snap.checkedAt ? formatTime(new Date(snap.checkedAt)) : null;
     write({
       ...snap,
       checkedAt: new Date().toISOString(),
@@ -93,21 +93,21 @@ export async function checkStatus(manual: boolean): Promise<string> {
     const notify = getSettings().notifications ? deps?.notify : undefined;
     if (fresh.length === 1) {
       const { card, blocker } = fresh[0];
-      notify?.({ title: `Bloqueio novo na #${card.iid}`, body: `${blocker}\nClique para abrir um desbloqueio.`, onClick: { type: 'deep', card } });
-      return `Bloqueio novo na #${card.iid}: ${blocker}`;
+      notify?.({ title: t('main.status.newBlockerTitle', { iid: card.iid }), body: `${blocker}\n${t('main.status.clickUnblock')}`, onClick: { type: 'deep', card } });
+      return t('main.status.newBlocker', { iid: card.iid, blocker });
     }
     if (fresh.length > 1) {
       const refs = [...new Set(fresh.map((f) => `#${f.card.iid}`))].join(', ');
-      notify?.({ title: `${fresh.length} bloqueios novos`, body: `${refs}\nClique para ver as atividades.`, onClick: { type: 'navigate', to: 'today' } });
-      return `${fresh.length} bloqueios novos: ${refs}`;
+      notify?.({ title: t('main.status.newBlockers', { count: fresh.length }), body: `${refs}\n${t('main.status.clickActivities')}`, onClick: { type: 'navigate', to: 'today' } });
+      return t('main.status.newBlockersList', { count: fresh.length, refs });
     }
     if (moved.length) {
-      const body = moved.map((m) => `#${m.card.iid}: ${m.from ?? 'sem estágio'} → ${m.card.stage ?? 'sem estágio'}`).join('\n');
-      notify?.({ title: 'Status das atividades mudou', body, onClick: { type: 'navigate', to: 'today' } });
+      const body = moved.map((m) => `#${m.card.iid}: ${m.from ?? t('main.status.noStage')} → ${m.card.stage ?? t('main.status.noStage')}`).join('\n');
+      notify?.({ title: t('main.status.changedTitle'), body, onClick: { type: 'navigate', to: 'today' } });
       return body;
     }
-    const summary = firstRun ? `Status registrado: ${result.total} atividades acompanhadas.` : `Nada mudou${since ? ` desde ${since}` : ''}.`;
-    if (manual) notify?.({ title: 'Status das atividades', body: summary, onClick: { type: 'navigate', to: 'today' } });
+    const summary = firstRun ? t('main.status.registered', { count: result.total }) : since ? t('main.status.unchangedSince', { since }) : t('main.status.unchanged');
+    if (manual) notify?.({ title: t('main.status.title'), body: summary, onClick: { type: 'navigate', to: 'today' } });
     return summary;
   } finally {
     running = false;

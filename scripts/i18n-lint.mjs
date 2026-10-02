@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const SCAN = ['src/renderer/src', 'src/main'];
+const SCAN = ['src/renderer/src', 'src/main', 'src/shared'];
 const SKIP_FILE = /\.(test|spec)\.|\.d\.ts$|\/node_modules\//;
 const ATTR = /\b(?:title|aria-label|placeholder|alt|label)=(?:"([^"]*\p{L}[^"]*)"|'([^']*\p{L}[^']*)')/gu;
 const JSX_TEXT = />\s*([^<>{}\n]*\p{L}[^<>{}\n]*?)\s*</gu;
@@ -73,8 +73,8 @@ for (const dir of SCAN) {
 
 if (flag('--keys')) {
   const load = (...names) => names.flatMap((n) => Object.keys(JSON.parse(readFileSync(join(ROOT, `src/shared/i18n/${n}.json`), 'utf8'))));
-  const pt = new Set(load('pt-BR', 'wizard.pt-BR'));
-  const en = new Set(load('en', 'wizard.en'));
+  const pt = new Set(load('pt-BR', 'wizard.pt-BR', 'main.pt-BR'));
+  const en = new Set(load('en', 'wizard.en', 'main.en'));
   const missingEn = [...pt].filter((k) => !en.has(k));
   const missingPt = [...en].filter((k) => !pt.has(k));
   if (missingEn.length || missingPt.length) {

@@ -46,7 +46,7 @@ describe('a fresh install', () => {
     expect(saved.notifications).toBe(false);
     expect(cfg.getConfig().language).toBe('en');
     expect(cfg.getConfig().llm.roles.deep).toEqual({ provider: 'anthropic', model: 'opus' });
-    expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/modelo inválido/);
+    expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/invalid model/);
     expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/configuração inválida: language/);
   });
 });

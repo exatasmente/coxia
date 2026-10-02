@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { ResolvedRole } from './config-resolve';
+import { t } from '../shared/i18n';
 
 // The environment a Claude Agent SDK child gets for a provider. Pure: the secret, the profile file and the process environment come in.
 
@@ -70,7 +71,7 @@ export function sdkEnv(input: SdkEnvInput): Record<string, string> {
       if (secret) out.ANTHROPIC_FOUNDRY_API_KEY = secret;
       break;
     case 'openai-compatible':
-      throw new Error('o Claude Agent SDK não atende um provedor openai-compatible; use o motor aberto');
+      throw new Error(t('main.llm.sdkNoOpenai'));
   }
   // Outside a git checkout glab falls back to gitlab.com.
   if (input.vcsHost) out.GITLAB_HOST = input.vcsHost;

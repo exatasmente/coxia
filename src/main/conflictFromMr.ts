@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 export interface MrRef {
   // Full "group/project" when the ref carries it; the last segment otherwise.
   project: string;
@@ -10,9 +11,9 @@ const PROJECT = /^[\w.-]+(\/[\w.-]+)*$/;
 // Accepts "group/sub/project!797" and "project!797" (the card's short form); a bare "!797" is refused.
 export function parseMrRef(ref: string): MrRef {
   const m = /^\s*(.+?)!(\d+)\s*$/.exec(ref);
-  if (!m || !PROJECT.test(m[1]) || m[1].split('/').some((s) => /^\.+$/.test(s))) throw new Error(`referência de MR inválida: ${ref}`);
+  if (!m || !PROJECT.test(m[1]) || m[1].split('/').some((s) => /^\.+$/.test(s))) throw new Error(t('main.conflictMr.invalidRef', { ref }));
   const iid = Number(m[2]);
-  if (!Number.isSafeInteger(iid) || iid <= 0) throw new Error(`número de MR inválido: ${ref}`);
+  if (!Number.isSafeInteger(iid) || iid <= 0) throw new Error(t('main.conflictMr.invalidNumber', { ref }));
   return { project: m[1], full: m[1].includes('/'), iid };
 }
 
@@ -21,7 +22,7 @@ export function resolveMr(ref: string, known: { ref: string; project: string; ii
   const p = parseMrRef(ref);
   if (p.full) return { project: p.project, iid: p.iid };
   const hits = known.filter((k) => k.iid === p.iid && (k.ref === ref.trim() || k.project.split('/').pop() === p.project));
-  if (hits.length !== 1) throw new Error(hits.length ? `a referência ${ref} é ambígua nesta atividade` : `${ref} não é um MR desta atividade`);
+  if (hits.length !== 1) throw new Error(hits.length ? t('main.conflictMr.ambiguous', { ref }) : t('main.conflictMr.notOfActivity', { ref }));
   return { project: hits[0].project, iid: hits[0].iid };
 }
 
@@ -42,8 +43,8 @@ export interface MrChecks {
 
 // Throws the pt-BR reason when this MR is not one the app resolves.
 export function assertResolvable(ref: string, mr: MrRead, c: MrChecks): void {
-  if (mr.state !== 'open') throw new Error(`${ref} não está aberto (${mr.state}).`);
-  if (mr.targetBranch !== c.defaultBranch) throw new Error(`${ref} aponta para ${mr.targetBranch}, não para a ${c.defaultBranch}: só resolvo conflito com a branch principal.`);
-  if (mr.author !== c.me) throw new Error(`${ref} é de @${mr.author}: só resolvo conflito de MR seu.`);
+  if (mr.state !== 'open') throw new Error(t('main.conflictMr.notOpen', { ref, state: mr.state }));
+  if (mr.targetBranch !== c.defaultBranch) throw new Error(t('main.conflictMr.notMain', { ref, target: mr.targetBranch, main: c.defaultBranch }));
+  if (mr.author !== c.me) throw new Error(t('main.conflictMr.notYours', { ref, author: mr.author }));
   // The conflict flag is computed lazily by the host and is often stale (post-release-sync skill): the local merge in Preparar decides.
 }

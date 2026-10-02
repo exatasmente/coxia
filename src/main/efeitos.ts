@@ -3,12 +3,13 @@ import { join } from 'node:path';
 import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type EfeitosView, WINDOW_DAYS, effectKey } from '../shared/efeitos';
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
-import { baseParams } from './cyclePrompts';
+import { prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 import { vcsProvider, vcsReady } from './vcs';
+import { t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'efeitos.json');
 const DAY_MS = 86_400_000;
@@ -114,35 +115,18 @@ function fresh(e: Effect, key: string, ceremonyId: string | null, since: string)
 
 // ---------------------------------------------------------------- classification (one agent call per effect)
 
-const KIND_HELP: Record<CheckKind, string> = {
-  mr_ready: 'o MR deixou de ser draft (project + iid do MR)',
-  mr_reviewer: 'o MR tem reviewer definido (valor opcional: username esperado)',
-  mr_merged: 'o MR foi mergeado',
-  mr_created: 'um MR novo foi aberto no projeto (valor: palavras do título; iid null)',
-  mr_synced_with_main: 'a branch do MR está atualizada com a main, sem commits de divergência',
-  mr_new_commit: 'o MR recebeu commit novo (push) depois da cerimônia',
-  mr_pipeline: 'uma pipeline do MR rodou depois da cerimônia (valor opcional: status esperado, como success)',
-  mr_job: 'um job com esse nome rodou numa pipeline do MR depois da cerimônia (valor: nome do job)',
-  mr_comment: '{theUser} comentou no MR depois da cerimônia',
-  issue_comment: '{theUser} comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
-  issue_label: 'a issue ganhou a label (valor: a label, como STAGE::Ready to test)',
-  issue_label_removed: 'a issue deixou de ter a label (valor: a label)',
-  issue_closed: 'a issue foi fechada',
-  issue_created: 'uma issue nova foi criada no projeto (valor: palavras do título; iid null)',
-};
-
 function classifyPrompt(entry: EffectEntry, card: Card | undefined): string {
   const issueIid = /#(\d+)$/.exec(entry.ref)?.[1] ?? null;
-  return [
-    'Classifique UMA ação pendente da pré-daily numa verificação objetiva, que o app fará depois só com GET no GitLab. Não use ferramentas.',
-    `Ação: «${entry.text}»`,
-    `Atividade: ${entry.ref} (repositório citado: ${entry.repo}). A issue ${issueIid ? `#${issueIid}` : ''} vive no projeto ${rc().issues.project ?? 'não configurado'}.`,
-    `MRs da atividade (project e iid para usar): ${JSON.stringify(card?.mrPaths ?? [])}. Estágio: ${card?.stage ?? 'desconhecido'}.`,
-    'Tipos de verificação disponíveis:',
-    ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k].replace('{theUser}', String(baseParams().theUser))}`),
-    'Regras: escolha um tipo só se o estado do GitLab provar que a ação foi feita. Se ela for vaga, pessoal, local (git, worktree, spec), mudança de status de work item (não é label) ou exigir julgamento, responda tipo "nenhum" e verificavel false.',
-    'Quando o MR citado não está na lista de MRs acima, use "nenhum". "projeto" é o caminho do projeto (grupo/repo), "iid" o número do MR ou da issue (null nos tipos que criam coisa), "valor" o parâmetro do tipo ou null, "motivo" uma frase curta.',
-  ].join('\n');
+  return cp('effects.classify', {
+    text: entry.text,
+    ref: entry.ref,
+    repo: String(entry.repo),
+    issue: issueIid ? `#${issueIid}` : '',
+    project: rc().issues.project ?? cp('effects.unconfigured'),
+    mrs: JSON.stringify(card?.mrPaths ?? []),
+    stage: card?.stage ?? cp('effects.unknownStage'),
+    kinds: CHECK_KINDS.map((k) => `- ${k}: ${cp(`effects.kind.${k}`)}`).join('\n'),
+  });
 }
 
 export function toSpec(o: { verificavel: boolean; tipo: string; projeto: string; iid: number | null; valor: string | null }): CheckSpec | null {
@@ -198,65 +182,65 @@ export async function verify(c: CheckSpec, since: string): Promise<Verdict> {
   switch (c.kind) {
     case 'mr_ready': {
       const m = await prov.getMr(project, iid);
-      return { done: !m.draft && m.state !== 'closed', evidence: `!${c.iid} ${m.draft ? 'ainda é draft' : 'não é mais draft'}` };
+      return { done: !m.draft && m.state !== 'closed', evidence: t(m.draft ? 'main.efeitos.stillDraft' : 'main.efeitos.notDraft', { iid }) };
     }
     case 'mr_reviewer': {
       const m = await prov.getMr(project, iid);
       const names = m.reviewers.map((r) => r.username);
       const done = v ? names.some((n) => n.toLowerCase() === v.toLowerCase().replace(/^@/, '')) : names.length > 0;
-      return { done, evidence: names.length ? `reviewers de !${c.iid}: ${names.join(', ')}` : `!${c.iid} sem reviewer` };
+      return { done, evidence: names.length ? t('main.efeitos.reviewers', { iid, names: names.join(', ') }) : t('main.efeitos.noReviewer', { iid }) };
     }
     case 'mr_merged': {
       const m = await prov.getMr(project, iid);
-      return { done: m.state === 'merged', at: m.mergedAt, evidence: `!${c.iid} está ${m.state}` };
+      return { done: m.state === 'merged', at: m.mergedAt, evidence: t('main.efeitos.mrState', { iid, state: m.state }) };
     }
     case 'mr_synced_with_main': {
       const n = (await prov.getMr(project, iid, { behind: true })).behind;
-      return { done: n === 0, evidence: n == null ? `!${c.iid}: o host não informou a divergência` : `!${c.iid} está ${n} commit(s) atrás da main` };
+      return { done: n === 0, evidence: n == null ? t('main.efeitos.behindUnknown', { iid }) : t('main.efeitos.behind', { iid, count: n }) };
     }
     case 'mr_new_commit': {
       const commits = await prov.listMrCommits(project, iid);
       const hit = commits.find((x) => after(x.date, since));
-      return { done: !!hit, at: hit?.date, evidence: hit ? `commit ${hit.sha.slice(0, 8)} em !${c.iid}` : `nenhum commit novo em !${c.iid}` };
+      return { done: !!hit, at: hit?.date, evidence: hit ? t('main.efeitos.commit', { sha: hit.sha.slice(0, 8), iid }) : t('main.efeitos.noCommit', { iid }) };
     }
     case 'mr_pipeline': {
       const list = (await prov.listMrCi(project, iid)).filter((x) => after(x.createdAt, since) && (v ? x.status === v : x.status !== 'skipped'));
       const hit = list.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `pipeline ${hit.id} (${hit.status}) em !${c.iid}` : `nenhuma pipeline nova em !${c.iid}` };
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.pipeline', { id: hit.id, status: hit.status, iid }) : t('main.efeitos.noPipeline', { iid }) };
     }
     case 'mr_job': {
       const pipes = (await prov.listMrCi(project, iid)).filter((x) => after(x.createdAt, since)).slice(0, 5);
       for (const pipe of pipes) {
         const jobs = await prov.listCiJobs(project, pipe.id);
         const job = jobs.find((j) => j.name.toLowerCase().includes(v.toLowerCase()) && RAN.includes(j.status));
-        if (job) return { done: true, at: job.startedAt ?? job.createdAt, evidence: `job ${job.name} (${job.status}) na pipeline ${pipe.id}` };
+        if (job) return { done: true, at: job.startedAt ?? job.createdAt, evidence: t('main.efeitos.job', { name: job.name, status: job.status, id: pipe.id }) };
       }
-      return { done: false, evidence: `job ${v} não rodou em !${c.iid}` };
+      return { done: false, evidence: t('main.efeitos.noJob', { name: v, iid }) };
     }
     case 'mr_comment':
     case 'issue_comment': {
       const notes = c.kind === 'mr_comment' ? await prov.listMrComments(project, iid) : await prov.listIssueComments(project, iid);
       const user = (await prov.currentUser()).username;
       const hit = notes.find((n) => !n.system && n.author === user && after(n.createdAt, since));
-      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `comentário seu em ${c.kind === 'mr_comment' ? '!' : '#'}${c.iid}` : 'nenhum comentário seu desde a cerimônia' };
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.comment', { target: `${c.kind === 'mr_comment' ? '!' : '#'}${c.iid}` }) : t('main.efeitos.noComment') };
     }
     case 'issue_label':
     case 'issue_label_removed': {
       const i = await prov.getIssue(project, iid);
       const has = i.labels.some((l) => l.toLowerCase() === v.toLowerCase());
-      return { done: c.kind === 'issue_label' ? has : !has, evidence: `#${c.iid} ${has ? 'tem' : 'não tem'} a label ${v}` };
+      return { done: c.kind === 'issue_label' ? has : !has, evidence: t(has ? 'main.efeitos.hasLabel' : 'main.efeitos.noLabel', { iid, label: v }) };
     }
     case 'issue_closed': {
       const i = await prov.getIssue(project, iid);
-      return { done: i.state === 'closed', at: i.closedAt, evidence: `#${c.iid} está ${i.state}` };
+      return { done: i.state === 'closed', at: i.closedAt, evidence: t('main.efeitos.issueState', { iid, state: i.state }) };
     }
     case 'issue_created': {
       const hit = (await prov.searchIssues(project, { text: v, createdAfter: since }))[0];
-      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `issue #${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhuma issue nova com «${v}»` };
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.issueFound', { iid: hit.iid, title: hit.title.slice(0, 60) }) : t('main.efeitos.noIssue', { value: v }) };
     }
     case 'mr_created': {
       const hit = (await prov.searchMrs(project, { text: v, createdAfter: since }))[0];
-      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `MR !${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhum MR novo com «${v}»` };
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.mrFound', { iid: hit.iid, title: hit.title.slice(0, 60) }) : t('main.efeitos.noMr', { value: v }) };
     }
   }
 }
@@ -310,7 +294,7 @@ export function mark(effect: Effect, ceremonyId: string | null, done: boolean): 
   s.entries[key] ??= fresh(effect, key, ceremonyId, new Date(started ?? Date.now()).toISOString());
   const e = s.entries[key];
   s.entries[key] = done
-    ? { ...e, state: 'done', doneAt: new Date().toISOString(), evidence: 'marcado como feito por você', manual: true }
+    ? { ...e, state: 'done', doneAt: new Date().toISOString(), evidence: t('main.efeitos.markedDone'), manual: true }
     : { ...e, state: e.check === null ? 'unverifiable' : 'waiting', doneAt: null, evidence: null, manual: false };
   write(s);
   emitView();

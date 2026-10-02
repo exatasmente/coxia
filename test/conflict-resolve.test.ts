@@ -390,7 +390,7 @@ describe('publish', () => {
     git(f.seed, 'push', '-q', 'origin', f.branch);
     const moved = originSha(f, f.branch);
 
-    await expect(approveAction(push.id)).rejects.toThrow(/mudou no GitLab/);
+    await expect(approveAction(push.id)).rejects.toThrow(/mudou no /);
     expect(originSha(f, f.branch)).toBe(moved);
     expect(moved).not.toBe(r?.commit);
     expect(listActions().find((x) => x.id === push.id)?.state).toBe('pending');

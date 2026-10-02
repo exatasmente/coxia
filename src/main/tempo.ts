@@ -6,6 +6,7 @@ import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 import { rc } from './workspaceConfig';
 import { type GateFile, type QaFile, type RetroFile, type Span, type Timed, buildDay, ceremonySpans, deepSpans, gateSpan, localDate, qaSpan, retroSpan } from './tempo-core';
+import { t } from '../shared/i18n';
 
 const OUT = join(ATAS, 'atividade');
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,7 +44,7 @@ export function spansOf(date: string): Span[] {
 
 // Written again on every call: the file is a snapshot of the day, not an append log.
 export function exportDay(date = localDate(Date.now())): TempoDay {
-  if (!DATE.test(date)) throw new Error(`data inválida: ${date}`);
+  if (!DATE.test(date)) throw new Error(t('main.tempo.invalidDate', { date }));
   const file = join(OUT, `${date}.json`);
   const day = buildDay(date, spansOf(date), file);
   mkdirSync(OUT, { recursive: true });

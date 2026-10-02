@@ -24,6 +24,9 @@ export function cycleText(value: string, language: Language, params?: Params): s
 
 const upper = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+/** "pré-daily" -> "Pré-daily". */
+export const upperFirst = upper;
+
 /**
  * The words that stand for the person in a prompt. pt-BR needs an article and a contraction ("o Luiz", "do Luiz", "ao Luiz"), which depend on
  * the name's gender, so the config says it (`userArticle`); with no article the name stands alone ("Luiz", "de Luiz", "a Luiz").

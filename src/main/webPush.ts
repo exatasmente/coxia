@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { MAX_BODY, MAX_TITLE, noticeTarget, type PushPayload, type PushStatus, type PushTarget } from '../shared/push';
 import type { AppEvent } from '../shared/types';
 import { encryptPayload, generateVapidKeys, type PushKeys, validPushKeys, type VapidKeys, vapidAuthorization, vapidJwt } from './webPushCrypto';
+import { t } from '../shared/i18n';
 
 export interface PushNotice {
   title: string;
@@ -261,7 +262,7 @@ export function createPush(deps: PushDeps): PushService {
     const jobs: Array<() => Promise<number>> = [];
     if (batch.length > BURST) {
       const names = batch.map((n) => n.title).join(' · ');
-      jobs.push(() => fanOut(payloadFor(`${batch.length} notificações novas`, names, { to: 'today' }), 'normal', 3600));
+      jobs.push(() => fanOut(payloadFor(t('main.push.burst', { count: batch.length }), names, { to: 'today' }), 'normal', 3600));
     } else {
       for (const n of batch) {
         const target = noticeTarget(n.onClick);
@@ -281,9 +282,9 @@ export function createPush(deps: PushDeps): PushService {
     subscribe(deviceId, sub, oldEndpoint) {
       const s = sub as Partial<PushSubscription> | null;
       const url = allowedEndpoint(s?.endpoint, extra);
-      if (!s || !url) throw new PushError('Este navegador usa um serviço de push que o app não aceita.');
+      if (!s || !url) throw new PushError(t('main.push.badService'));
       const k = s.keys as PushKeys | undefined;
-      if (!k || typeof k.p256dh !== 'string' || typeof k.auth !== 'string' || !validPushKeys(k)) throw new PushError('Assinatura de push inválida.');
+      if (!k || typeof k.p256dh !== 'string' || typeof k.auth !== 'string' || !validPushKeys(k)) throw new PushError(t('main.push.badSubscription'));
       subs = subs.filter((x) => x.deviceId !== deviceId && x.endpoint !== s.endpoint && x.endpoint !== oldEndpoint);
       subs.push({ deviceId, endpoint: url.href, keys: { p256dh: k.p256dh, auth: k.auth }, createdAt: new Date(now()).toISOString() });
       subs = subs.slice(-MAX_SUBSCRIPTIONS);
@@ -300,12 +301,12 @@ export function createPush(deps: PushDeps): PushService {
 
     async test(deviceId) {
       const mine = subs.find((s) => s.deviceId === deviceId);
-      if (!mine) throw new PushError('Este aparelho ainda não está inscrito.');
-      if (now() - (lastTest.get(deviceId) ?? 0) < TEST_EVERY_MS) throw new PushError('Espere alguns segundos antes de testar de novo.');
+      if (!mine) throw new PushError(t('main.push.notSubscribed'));
+      if (now() - (lastTest.get(deviceId) ?? 0) < TEST_EVERY_MS) throw new PushError(t('main.push.testWait'));
       lastTest.set(deviceId, now());
-      const payload = payloadFor('Coxia: teste', 'Se você está lendo isto, as notificações deste aparelho funcionam.', { to: 'settings' });
+      const payload = payloadFor(t('main.push.testTitle'), t('main.push.testBody'), { to: 'settings' });
       const sent = await fanOut({ ...payload, tag: 'n-test' }, 'high', 60, deviceId);
-      if (!sent) throw new PushError('O serviço de push não aceitou a notificação de teste. Tente ativar de novo.');
+      if (!sent) throw new PushError(t('main.push.testRejected'));
     },
 
     notify(n) {

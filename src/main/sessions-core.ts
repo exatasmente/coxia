@@ -4,6 +4,7 @@ import type { CustoKind } from '../shared/custo';
 import { refOpenersOf } from '../shared/cycles/prompts';
 import { classify } from './custo-core';
 import { type Registry, workspaceDir } from './workspaces-core';
+import { t } from '../shared/i18n';
 
 export const SESSIONS_FILE = 'sessions.jsonl';
 
@@ -88,5 +89,5 @@ export function sessionOwners(root: string, reg: Registry): Map<string, string> 
 export function sessionRefs(root: string, reg: Registry, exceptId: string): { sessionId: string; at: number; keep: boolean; from: string }[] {
   return reg.list
     .filter((w) => w.id !== exceptId)
-    .flatMap((w) => readIndex(workspaceDir(root, w.id)).map((e) => ({ sessionId: e.id, at: Date.parse(e.at), keep: false, from: `sessão do workspace ${w.name}` })));
+    .flatMap((w) => readIndex(workspaceDir(root, w.id)).map((e) => ({ sessionId: e.id, at: Date.parse(e.at), keep: false, from: t('main.retention.fromWorkspace', { name: w.name }) })));
 }

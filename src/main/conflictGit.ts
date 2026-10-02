@@ -5,6 +5,8 @@ import { promisify } from 'node:util';
 import type { ConflictFile, ConflictHunk } from '../shared/conflict';
 import { hunkReady, hunkText } from '../shared/conflict';
 import { hasMarkers, parseConflicts, regions, resolveSegments, withTerminator } from './conflictHunks';
+import { vcsName } from './cyclePrompts';
+import { t } from '../shared/i18n';
 
 const run = promisify(execFile);
 
@@ -18,7 +20,7 @@ const ENV = { GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no', GIT_EDITOR: 't
 const REF = /^[\w][\w./-]*$/;
 
 function checkRef(ref: string, what: string): string {
-  if (!REF.test(ref) || ref.includes('..') || ref.endsWith('.lock') || ref.endsWith('/') || ref.includes('//')) throw new Error(`${what} inválido: ${ref}`);
+  if (!REF.test(ref) || ref.includes('..') || ref.endsWith('.lock') || ref.endsWith('/') || ref.includes('//')) throw new Error(t('main.conflictGit.invalidRef', { what, ref }));
   return ref;
 }
 
@@ -80,7 +82,7 @@ export async function findClone(projectPath: string, roots: string[], host: stri
 
 function insideDir(dir: string, file: string): string {
   const abs = resolve(dir, file);
-  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(`caminho fora da worktree: ${file}`);
+  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(t('main.conflictGit.outside', { file }));
   return abs;
 }
 
@@ -109,7 +111,7 @@ const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8000).includes(0);
 async function stage(wt: string, n: 1 | 2 | 3, path: string): Promise<string | null> {
   const r = await run('git', ['-C', wt, 'show', `:${n}:${path}`], { env: { ...process.env, ...ENV }, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }).catch(() => null);
   if (!r) return null;
-  if (isBinary(r.stdout)) throw new Error(`${path} é binário: resolva fora do app`);
+  if (isBinary(r.stdout)) throw new Error(t('main.conflictGit.binary', { path }));
   return r.stdout.toString('utf8');
 }
 
@@ -123,7 +125,7 @@ export async function readConflicts(wt: string): Promise<ConflictFile[]> {
   for (const path of await unmergedPaths(wt)) {
     const abs = insideDir(wt, path);
     const buf = existsSync(abs) ? readFileSync(abs) : null;
-    if (buf && isBinary(buf)) throw new Error(`${path} é binário: resolva fora do app`);
+    if (buf && isBinary(buf)) throw new Error(t('main.conflictGit.binary', { path }));
     const found = buf ? regions(parseConflicts(buf.toString('utf8'))) : [];
     if (found.length) {
       files.push({
@@ -134,7 +136,7 @@ export async function readConflicts(wt: string): Promise<ConflictFile[]> {
     }
     const ours = await stage(wt, 2, path);
     const theirs = await stage(wt, 3, path);
-    if (ours === null && theirs === null) throw new Error(`${path}: conflito sem os dois lados (renomeação?): resolva fora do app`);
+    if (ours === null && theirs === null) throw new Error(t('main.conflictGit.oneSided', { path }));
     files.push({
       path,
       hunks: [{ ...emptyHunk(path, 0), whole: true, ours: ours ?? '', oursGone: ours === null, base: await stage(wt, 1, path), theirs: theirs ?? '', theirsGone: theirs === null }],
@@ -152,15 +154,15 @@ export interface Prepared {
 }
 
 export async function prepareWorktree(p: { clone: string; branch: string; target: string; iid: number; dest: string }): Promise<Prepared> {
-  const branch = checkRef(p.branch, 'branch');
-  const target = checkRef(p.target, 'branch de destino');
+  const branch = checkRef(p.branch, t('main.conflictGit.branch'));
+  const target = checkRef(p.target, t('main.conflictGit.targetBranch'));
   const syncBranch = `sync/${Number(p.iid)}`;
-  if (!Number.isInteger(p.iid) || p.iid <= 0) throw new Error(`número de MR inválido: ${p.iid}`);
+  if (!Number.isInteger(p.iid) || p.iid <= 0) throw new Error(t('main.conflictGit.badIid', { iid: p.iid }));
   const top = await git(p.clone, ['rev-parse', '--is-bare-repository']);
-  if (top.stdout.trim() !== 'false') throw new Error(`${p.clone} não é um clone com árvore de trabalho`);
-  if (existsSync(p.dest)) throw new Error(`já existe ${p.dest}: descarte o preparo anterior`);
+  if (top.stdout.trim() !== 'false') throw new Error(t('main.conflictGit.noWorkTree', { clone: p.clone }));
+  if (existsSync(p.dest)) throw new Error(t('main.conflictGit.destExists', { dest: p.dest }));
   if ((await git(p.clone, ['show-ref', '--verify', '--quiet', `refs/heads/${syncBranch}`], { fail: false })).code === 0) {
-    throw new Error(`o clone já tem a branch ${syncBranch}, que não é deste app: remova-a antes de preparar`);
+    throw new Error(t('main.conflictGit.foreignBranch', { branch: syncBranch }));
   }
 
   await git(p.clone, ['fetch', 'origin', `+refs/heads/${target}:refs/remotes/origin/${target}`, `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
@@ -172,7 +174,7 @@ export async function prepareWorktree(p: { clone: string; branch: string; target
   try {
     await git(p.dest, ['-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
     const merging = (await git(p.dest, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { fail: false })).code === 0;
-    if (!merging) throw new Error(`o merge de ${target} em ${branch} não começou: a branch já contém a ${target}, ou o git recusou. Veja o MR no GitLab.`);
+    if (!merging) throw new Error(t('main.conflictGit.mergeNotStarted', { target, branch, vcs: vcsName() }));
     const files = await readConflicts(p.dest);
     snapshotMarkers(p.dest, files);
     return { worktree: p.dest, syncBranch, originSha, mainSha, files };
@@ -207,18 +209,18 @@ export function buildResolutions(wt: string, files: ConflictFile[]): Resolution[
   const out: Resolution[] = [];
   for (const f of files) {
     const open = f.hunks.filter((h) => !hunkReady(h));
-    if (open.length) throw new Error(`${f.path}: falta decidir ${open.length} trecho(s)`);
+    if (open.length) throw new Error(t('main.conflictGit.undecided', { path: f.path, count: open.length }));
     if (f.hunks[0]?.whole) {
       const text = hunkText(f.hunks[0]);
-      if (text !== null && hasMarkers(text)) throw new Error(`${f.path}: o texto escolhido ainda tem marcador de conflito`);
+      if (text !== null && hasMarkers(text)) throw new Error(t('main.conflictGit.chosenMarkers', { path: f.path }));
       out.push({ path: f.path, content: text });
       continue;
     }
     const segments = parseConflicts(readFileSync(insideDir(wt, f.path), 'utf8'));
-    if (regions(segments).length !== f.hunks.length) throw new Error(`${f.path} mudou na worktree desde o preparo: descarte e prepare de novo`);
+    if (regions(segments).length !== f.hunks.length) throw new Error(t('main.conflictGit.changedSince', { path: f.path }));
     const like = f.hunks[0].ours + f.hunks[0].theirs;
     const content = resolveSegments(segments, (i) => withTerminator(hunkText(f.hunks[i]) ?? '', like));
-    if (hasMarkers(content)) throw new Error(`${f.path}: ainda sobrou marcador de conflito (<<<<<<< ou >>>>>>>)`);
+    if (hasMarkers(content)) throw new Error(t('main.conflictGit.leftMarkers', { path: f.path }));
     out.push({ path: f.path, content });
   }
   return out;
@@ -235,9 +237,9 @@ export async function applyResolutions(wt: string, files: ConflictFile[]): Promi
     }
   }
   const left = await unmergedPaths(wt);
-  if (left.length) throw new Error(`ainda há conflito não resolvido: ${left.join(', ')}`);
+  if (left.length) throw new Error(t('main.conflictGit.unresolvedList', { files: left.join(', ') }));
   for (const r of resolutions) {
-    if (r.content !== null && hasMarkers(readFileSync(insideDir(wt, r.path), 'utf8'))) throw new Error(`${r.path}: sobrou marcador de conflito`);
+    if (r.content !== null && hasMarkers(readFileSync(insideDir(wt, r.path), 'utf8'))) throw new Error(t('main.conflictGit.leftMarker', { path: r.path }));
   }
   return resolutions.map((r) => r.path);
 }
@@ -259,7 +261,7 @@ export async function reopenResolutions(wt: string, files: ConflictFile[]): Prom
   }
   if (whole.length) await git(wt, ['update-index', '--unresolve', '--', ...whole]);
   const left = await unmergedPaths(wt);
-  if (left.length !== files.length) throw new Error('não consegui reabrir os conflitos: descarte e prepare de novo');
+  if (left.length !== files.length) throw new Error(t('main.conflictGit.cannotReopen'));
 }
 
 export interface Verification {
@@ -304,21 +306,21 @@ export function mergeMessage(branch: string): string {
 export async function commitMerge(wt: string, branch: string, mainSha: string): Promise<string> {
   const ident = await git(wt, ['var', 'GIT_COMMITTER_IDENT'], { fail: false });
   if (ident.code !== 0) {
-    throw new Error('O clone não tem identidade git (user.name e user.email) e eu não gravo config. Configure no clone e tente de novo.');
+    throw new Error(t('main.conflictGit.noIdentity'));
   }
-  if ((await unmergedPaths(wt)).length) throw new Error('ainda há conflito não resolvido');
+  if ((await unmergedPaths(wt)).length) throw new Error(t('main.conflictGit.unresolved'));
   await git(wt, ['commit', '--no-verify', '-m', mergeMessage(branch)]);
   const sha = (await git(wt, ['rev-parse', 'HEAD'])).stdout.trim();
   const parents = (await git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD'])).stdout.trim().split(' ').slice(1);
-  if (parents.length !== 2 || parents[1] !== mainSha) throw new Error('o commit não é o merge esperado (dois pais, o segundo na main)');
+  if (parents.length !== 2 || parents[1] !== mainSha) throw new Error(t('main.conflictGit.notMerge'));
   return sha;
 }
 
 // A push here may only add commits on top of the branch: no force flag, no "+" or ":" refspec, nothing but the one ref.
 export function assertPlainPush(args: string[]): void {
   for (const a of args) {
-    if (/^-/.test(a) && a !== '--no-verify') throw new Error(`opção de push recusada: ${a}`);
-    if (/^[+:]/.test(a)) throw new Error(`refspec recusado: ${a}`);
+    if (/^-/.test(a) && a !== '--no-verify') throw new Error(t('main.conflictGit.pushOption', { arg: a }));
+    if (/^[+:]/.test(a)) throw new Error(t('main.conflictGit.refspec', { arg: a }));
   }
 }
 
@@ -329,17 +331,17 @@ export async function remoteSha(wt: string, branch: string): Promise<string> {
 }
 
 export async function assertPublishable(p: { wt: string; branch: string; originSha: string; commit: string }): Promise<void> {
-  if (!existsSync(p.wt)) throw new Error('a worktree do conflito não existe mais: prepare de novo');
+  if (!existsSync(p.wt)) throw new Error(t('main.conflictGit.worktreeGone'));
   const now = await remoteSha(p.wt, p.branch);
   if (now !== p.originSha) {
-    throw new Error(`A branch ${p.branch} mudou no GitLab desde o preparo (${p.originSha.slice(0, 9)} → ${now.slice(0, 9)}). Descarte e prepare de novo; nada foi enviado.`);
+    throw new Error(t('main.conflictGit.branchMoved', { branch: p.branch, vcs: vcsName(), from: p.originSha.slice(0, 9), to: now.slice(0, 9) }));
   }
   const head = (await git(p.wt, ['rev-parse', 'HEAD'])).stdout.trim();
-  if (head !== p.commit) throw new Error('o HEAD da worktree não é mais o commit de merge verificado: nada foi enviado');
+  if (head !== p.commit) throw new Error(t('main.conflictGit.headMoved'));
   if ((await git(p.wt, ['merge-base', '--is-ancestor', p.originSha, head], { fail: false })).code !== 0) {
-    throw new Error('o commit não é fast-forward sobre a branch: nada foi enviado');
+    throw new Error(t('main.conflictGit.notFastForward'));
   }
-  if ((await git(p.wt, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error('a worktree tem alterações não commitadas: nada foi enviado');
+  if ((await git(p.wt, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
 }
 
 export async function pushBranch(wt: string, branch: string): Promise<string> {
@@ -352,7 +354,7 @@ export async function pushBranch(wt: string, branch: string): Promise<string> {
 
 export async function removeWorktree(clone: string, wt: string, syncBranch: string, dir: string): Promise<void> {
   const abs = resolve(wt);
-  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(`recuso remover fora de ${dir}: ${wt}`);
+  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(t('main.conflictGit.removeOutside', { dir, wt }));
   if (existsSync(abs)) {
     await git(abs, ['merge', '--abort'], { fail: false });
     await git(clone, ['worktree', 'remove', '--force', abs]);

@@ -19,12 +19,16 @@ import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
+import { upperFirst } from '../shared/cycles/text';
+import { ceremonyLabel } from './cyclePrompts';
+import { onConfigChange } from './workspaceConfig';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { glossary } from './glossary';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
+import { t } from '../shared/i18n';
 
 installProcessHandlers();
 
@@ -115,33 +119,38 @@ function createWindow(): void {
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
 }
 
+const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
+  show();
+  emit({ type: 'navigate', to });
+};
+
+function trayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: t('main.tray.open'), click: show },
+    { label: t('main.tray.ceremonyNow', { ceremony: upperFirst(ceremonyLabel()) }), click: go('call') },
+    { label: t('main.tray.statusNow'), click: () => void checkStatus(true).catch((e) => fail('[status]', 'tray:status', e)) },
+    { label: t('main.tray.releaseActions'), click: go('actions') },
+    { label: t('main.tray.releaseNow'), click: () => void detectRelease(true).catch((e) => fail('[release]', 'tray:release', e)) },
+    { label: t('main.tray.retro'), click: go('retro') },
+    { label: t('main.tray.history'), click: go('history') },
+    { label: t('main.tray.settings'), click: go('settings') },
+    { type: 'separator' },
+    {
+      label: t('main.tray.quit'),
+      click: () => {
+        quitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
   tray.setToolTip('Coxia');
-  const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
-    show();
-    emit({ type: 'navigate', to });
-  };
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Abrir', click: show },
-      { label: 'Pré-daily agora', click: go('call') },
-      { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => fail('[status]', 'tray:status', e)) },
-      { label: 'Ações de release', click: go('actions') },
-      { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => fail('[release]', 'tray:release', e)) },
-      { label: 'Retro da semana', click: go('retro') },
-      { label: 'Histórico', click: go('history') },
-      { label: 'Configurações', click: go('settings') },
-      { type: 'separator' },
-      {
-        label: 'Sair',
-        click: () => {
-          quitting = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
+  tray.setContextMenu(trayMenu());
+  // The labels follow the language of the workspace: rebuild when the configuration changes.
+  onConfigChange(() => tray?.setContextMenu(trayMenu()));
   tray.on('click', show);
 }
 

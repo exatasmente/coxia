@@ -5,12 +5,13 @@ import { DATA_ROOT, WORKSPACE_ID } from './env';
 import type { Module } from './module';
 import { stopWebAccess } from './webAccess';
 import { createWorkspace, deleteWorkspace, readRegistry, renameWorkspace, setTestFlag, switchWorkspace } from './workspaces-core';
+import { t } from '../shared/i18n';
 
 const RESTART_DELAY_MS = 700;
 
 function view(): WorkspacesView {
   const reg = readRegistry(DATA_ROOT);
-  if (!reg) throw new Error('o registro de workspaces está ilegível');
+  if (!reg) throw new Error(t('main.workspaces.registryUnreadable'));
   return { ...reg, running: WORKSPACE_ID };
 }
 
@@ -50,7 +51,7 @@ export const workspaces: Module = (ctx) => {
     return { restarting: true };
   });
   ctx.handle('workspace:delete', (id: string, typedName: string) => {
-    if (id === WORKSPACE_ID) throw new Error('não dá para excluir o workspace em uso: troque para outro antes');
+    if (id === WORKSPACE_ID) throw new Error(t('main.workspaces.deleteCurrent'));
     deleteWorkspace(DATA_ROOT, id, typedName);
     return announce();
   });

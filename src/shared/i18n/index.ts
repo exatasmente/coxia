@@ -1,6 +1,8 @@
 import type { Language } from '../config/types';
 import en from './en.json';
 import ptBR from './pt-BR.json';
+import mainEn from './main.en.json';
+import mainPtBR from './main.pt-BR.json';
 import wizardEn from './wizard.en.json';
 import wizardPtBR from './wizard.pt-BR.json';
 
@@ -19,8 +21,10 @@ export const NOVOICE_SUFFIX = '.novoice';
 
 export const FALLBACK_LANGUAGE: Language = 'pt-BR';
 
-// The setup wizard's strings live in their own files (wizard.*.json) so the catalogs other work adds to do not collide with them.
-export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR }, en: { ...en, ...wizardEn } };
+// The setup wizard's strings live in their own files (wizard.*.json) so the catalogs other work adds to do not collide with them; the
+// strings of the main process and the shared modules (errors, notifications, tray, health, files written for people, agent prompts added
+// after the cycle templates) live in main.*.json.
+export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR, ...mainPtBR }, en: { ...en, ...wizardEn, ...mainEn } };
 
 export function normalizeLanguage(value: unknown): Language {
   if (value === 'pt-BR' || value === 'en') return value;

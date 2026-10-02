@@ -8,6 +8,7 @@ import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
+import { t } from '../shared/i18n';
 
 const DIR = join(ATAS, 'retros');
 const ID = /^\d{4}-\d{2}-\d{2}$/;
@@ -157,7 +158,7 @@ export async function prepareRetro(): Promise<Retro> {
 
 export async function askRetro(id: string, question: string): Promise<Retro> {
   const retro = read(id);
-  if (!retro) throw new Error('retro não encontrada');
+  if (!retro) throw new Error(t('main.retro.notFound'));
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     cp('retro.ask', { question }),
