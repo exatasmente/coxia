@@ -15,6 +15,9 @@ const FILE = join(ATAS, 'acoes.json');
 const ISSUE_PROJECT = 1;
 const QA_NOTE = /^@qa\.interno\b/;
 const PIPELINE_WAIT_MS = 30_000;
+// The only GraphQL write the app may propose: a work item status change (authorized by the user on 2026-10-02).
+const STATUS_MUTATION =
+  /^mutation \{ workItemUpdate\(input: \{ id: "gid:\/\/gitlab\/WorkItem\/\d+", statusWidget: \{ status: "gid:\/\/gitlab\/WorkItems::Statuses::Custom::Status\/\d+" \} \}\) \{ errors \} \}$/;
 
 interface Store {
   releaseSeen: string | null;
@@ -124,7 +127,15 @@ export function proposeGitlabAction(input: {
   command: GitlabCommand;
   notify?: { title: string; body: string };
 }): ReleaseAction | null {
-  if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(input.command.endpoint)) throw new Error(`endpoint inválido: ${input.command.endpoint}`);
+  if (input.command.endpoint === 'graphql') {
+    const c = input.command;
+    const keys = Object.keys(c.fields);
+    if (c.via !== 'glab' || c.method !== 'POST' || keys.length !== 1 || !STATUS_MUTATION.test(c.fields.query ?? '')) {
+      throw new Error('GraphQL só para a mudança de status do work item (workItemUpdate com statusWidget)');
+    }
+  } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(input.command.endpoint)) {
+    throw new Error(`endpoint inválido: ${input.command.endpoint}`);
+  }
   const store = read();
   if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
   const action = blank({
@@ -155,7 +166,14 @@ async function runGitlab(c: GitlabCommand): Promise<string> {
       } else args.push('-f', `${k}=${v}`);
     }
     try {
-      return (await glab(args)).slice(0, 2000);
+      const out = await glab(args);
+      // GraphQL answers 200 even when the mutation fails; the errors come in the body.
+      if (c.endpoint === 'graphql') {
+        const body = JSON.parse(out) as { errors?: unknown[]; data?: { workItemUpdate?: { errors?: string[] } } };
+        const errors = [...(body.errors ?? []), ...(body.data?.workItemUpdate?.errors ?? [])];
+        if (errors.length) throw new Error(`GitLab recusou: ${JSON.stringify(errors).slice(0, 500)}`);
+      }
+      return out.slice(0, 2000);
     } finally {
       for (const f of files) unlinkSync(f);
     }

@@ -8,7 +8,7 @@ import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS, GITLAB } from './env';
 import type { Module, ModuleContext } from './module';
-import { worktreeHealth } from './worktrees';
+import { fetchRepos, worktreeHealth } from './worktrees';
 
 const exec = promisify(execFile);
 const FILE = join(ATAS, 'radar.json');
@@ -348,8 +348,14 @@ export const register: Module = (ctx) => {
     announce(ctx, fresh, first);
     return result;
   };
-  ctx.handle('radar:run', check);
+  ctx.handle('radar:run', async () => {
+    await fetchRepos();
+    return check();
+  });
   ctx.handle('radar:latest', () => readRadar());
   ctx.handle('worktrees:health', () => worktreeHealth());
-  ctx.job({ name: 'radar', everyMin: 120, workHoursOnly: true, run: async () => void (await check()) });
+  ctx.job({ name: 'radar', everyMin: 120, workHoursOnly: true, run: async () => {
+    await fetchRepos();
+    await check();
+  } });
 };

@@ -114,7 +114,8 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
     // The remote branch was deleted (merged): what is left locally is not waiting for a push.
     if (ref?.track.includes('gone')) return { n: 0, own: true };
     const own = !!ref?.upstream && ref.upstream.replace(/^[^/]+\//, '') === branch;
-    if (own) return { n: Number(ref.track.match(/ahead (\d+)/)?.[1] ?? 0), own };
+    // Not "ahead of upstream": after merging main into the branch that counts every main commit already on the
+    // remote (a branch showed 210 ahead with a single unpushed merge commit). Only commits on no remote ref count.
     const out = await git(repo, ['rev-list', '--count', branch, '--not', '--remotes']);
     return { n: Number(out.trim()), own };
   };
@@ -163,6 +164,16 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
     });
   });
   return items.filter((i) => !SCRATCH.test(i.branch) && (i.dirty > 0 || i.unpushed > 0 || i.conventionNote));
+}
+
+// Updates only the remote-tracking refs (authorized by the user on 2026-10-02), so "sem push" compares against
+// the real remote instead of the last fetch someone happened to run.
+export async function fetchRepos(): Promise<void> {
+  await Promise.all(
+    REPOS.map((r) => join(WORKSPACE, r))
+      .filter((repo) => existsSync(join(repo, '.git')))
+      .map((repo) => exec('git', ['-C', repo, 'fetch', '--quiet', 'origin'], { timeout: 120_000 }).catch((e) => console.error('[fetch]', repo, String(e).slice(0, 200)))),
+  );
 }
 
 export async function worktreeHealth(): Promise<WorktreeHealth> {

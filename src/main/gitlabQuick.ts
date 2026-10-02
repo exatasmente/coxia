@@ -15,6 +15,8 @@ const REPORT_TTL_MS = 2 * 60_000;
 const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|wip:)\s*/i;
 // Build, release prep and deploy belong to the QA flow (qa-release-branch skill): the app never plays them.
 const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
+// The AI review job is left to the reviewers' flow: proposing it on every MR was noise.
+const SKIPPED_JOBS = /ai_code_review/i;
 
 // agent-pipeline §8 (what the dev moves) with the closed label sets of qa-release-branch §5. Review and QA exits
 // (In code review, Approved/Rejected, In testing, Failed testing, Approved in testing, Done...) are never offered.
@@ -103,7 +105,7 @@ function checkPath(path: string): string {
 const day = () => new Date().toLocaleDateString('sv-SE');
 
 function manualJobs(jobs: ApiJob[]): QuickJob[] {
-  return jobs.filter((j) => j.status === 'manual' && !QA_OWNED.test(j.stage) && !QA_OWNED.test(j.name)).map((j) => ({ id: j.id, name: j.name, stage: j.stage }));
+  return jobs.filter((j) => j.status === 'manual' && !QA_OWNED.test(j.stage) && !QA_OWNED.test(j.name) && !SKIPPED_JOBS.test(j.name)).map((j) => ({ id: j.id, name: j.name, stage: j.stage }));
 }
 
 function undrafted(title: string): string {
@@ -210,25 +212,42 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     const t = issue.transitions.find((x) => x.to === req.to);
     if (!t?.allowed) throw new Error(t?.reason ?? 'transição não permitida');
     const title = (await get<{ title: string }>(`projects/${ISSUE_PROJECT}/issues/${req.issue}`)).title;
-    const statusNote = issue.gid
-      ? `Status "${t.to}": o app ainda não executa status (só a API GraphQL altera). Aplique à parte, conforme a skill issue-status:\nglab api graphql -f query='mutation { workItemUpdate(input: { id: "${issue.gid}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/${rule.id}" } }) { errors } }'`
-      : `Status "${t.to}": aplique à parte (GraphQL), conforme a skill issue-status.`;
-    if (!t.addLabel && !t.removeLabels.length) throw new Error('A label já está certa: só falta o status, aplicado à parte.');
+    if (issue.gid) {
+      propose(
+        {
+          key: `quick:status:${req.issue}:${t.to}:${day()}`,
+          issue: req.issue,
+          issueTitle: title,
+          stage: issue.stageLabels.join(', '),
+          summary: `Status da #${req.issue}: ${issue.status} → ${t.to}`,
+          detail: 'Muda o status do work item (skill issue-status). A label vai numa proposta separada.',
+          command: {
+            via: 'glab',
+            method: 'POST',
+            endpoint: 'graphql',
+            fields: { query: `mutation { workItemUpdate(input: { id: "${issue.gid}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/${rule.id}" } }) { errors } }` },
+          },
+        },
+        out,
+      );
+    }
     const fields: Record<string, string> = {};
     if (t.addLabel) fields.add_labels = t.addLabel;
     if (t.removeLabels.length) fields.remove_labels = t.removeLabels.join(',');
-    propose(
-      {
-        key: `quick:label:${req.issue}:${t.to}:${day()}`,
-        issue: req.issue,
-        issueTitle: title,
-        stage: issue.stageLabels.join(', '),
-        summary: `Label da #${req.issue}: ${t.removeLabels.length ? `${t.removeLabels.join(', ')} → ` : ''}${t.addLabel ?? ''} (${issue.status} → ${t.to})`,
-        detail: statusNote,
-        command: { via: 'glab', method: 'PUT', endpoint: `projects/${ISSUE_PROJECT}/issues/${req.issue}`, fields },
-      },
-      out,
-    );
+    if (Object.keys(fields).length) {
+      propose(
+        {
+          key: `quick:label:${req.issue}:${t.to}:${day()}`,
+          issue: req.issue,
+          issueTitle: title,
+          stage: issue.stageLabels.join(', '),
+          summary: `Label da #${req.issue}: ${t.removeLabels.length ? `${t.removeLabels.join(', ')} → ` : ''}${t.addLabel ?? ''} (${issue.status} → ${t.to})`,
+          command: { via: 'glab', method: 'PUT', endpoint: `projects/${ISSUE_PROJECT}/issues/${req.issue}`, fields },
+        },
+        out,
+      );
+    }
+    if (!issue.gid && !Object.keys(fields).length) throw new Error('Nada a mudar: a label já está certa e o status não pôde ser lido.');
     return out;
   }
 
