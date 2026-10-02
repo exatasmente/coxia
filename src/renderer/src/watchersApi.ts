@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react';
 import type { WatcherAlert } from '../../shared/watchers';
 import { api, moduleEvents } from './api';
 
@@ -11,3 +12,13 @@ export const watchersApi = {
     return () => moduleEvents.removeEventListener('watchers:changed', h);
   },
 };
+
+export function useWatcherAlerts(): { alerts: WatcherAlert[]; dismiss: (id: string) => void } {
+  const [alerts, setAlerts] = useState<WatcherAlert[]>([]);
+  useEffect(() => {
+    void watchersApi.list().then(setAlerts, () => undefined);
+    return watchersApi.onChanged(setAlerts);
+  }, []);
+  const dismiss = useCallback((id: string) => void watchersApi.dismiss(id).then(setAlerts), []);
+  return { alerts, dismiss };
+}

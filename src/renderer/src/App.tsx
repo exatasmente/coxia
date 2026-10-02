@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { parseTarget, targetFromSearch, type PushTarget } from '../../shared/push';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
@@ -23,6 +23,7 @@ import { Radar } from './screens/Radar';
 import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
+import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { targetToScreen } from './pushTarget';
 
@@ -116,9 +117,9 @@ export function App() {
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
-  switch (screen.name) {
+  const view = ((): ReactElement => { switch (screen.name) {
     case 'today':
-      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
+      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':
@@ -158,5 +159,12 @@ export function App() {
       return <Glossario go={go} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
-  }
+  } })();
+
+  return (
+    <>
+      {view}
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
+    </>
+  );
 }
