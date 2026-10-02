@@ -12,6 +12,7 @@ import { Deep } from './screens/Deep';
 import { Gate } from './screens/Gate';
 import { History } from './screens/History';
 import { QaHandoff } from './screens/QaHandoff';
+import { QuickActions } from './screens/QuickActions';
 import { RetroScreen } from './screens/RetroScreen';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
@@ -28,8 +29,10 @@ export type Screen =
   | { name: 'gate'; ref: string; card?: Card }
   | { name: 'qa'; ref: string; card?: Card }
   | { name: 'retro' }
-  | { name: 'custo' };
-// slot: screens of feature modules (one union member each)
+  | { name: 'custo' }
+  | { name: 'quick'; ref: string; card?: Card }
+  // slot: screens of feature modules (one union member each, above this line)
+  ;
 
 export function App() {
   const ceremony = useCeremony();
@@ -89,6 +92,8 @@ export function App() {
       return <RetroScreen ceremony={ceremony} player={player} go={go} />;
     case 'custo':
       return <Custo go={go} />;
+    case 'quick':
+      return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
     // slot: routes of feature modules
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
