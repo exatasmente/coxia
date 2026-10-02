@@ -41,6 +41,8 @@ export interface RunEvents {
   onToolResult?: (name: string, isError: boolean) => void;
   onUsage?: (u: UsageRecord & { sessionId: string; role: string; model: string }) => void;
   onText?: (text: string) => void;
+  // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
+  onInterim?: (text: string) => void;
 }
 
 export interface OpenRunParams {
@@ -406,6 +408,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         forceFinal = true;
         continue;
       }
+      if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
       c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
       continue;

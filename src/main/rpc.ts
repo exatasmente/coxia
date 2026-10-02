@@ -1,3 +1,5 @@
+import { takeContext } from '../shared/activity';
+import { withActivityContext } from './activity';
 import { rpcContext } from './errorlog-core';
 import { logError } from './errorlog';
 
@@ -11,13 +13,16 @@ const deviceTable = new Map<string, (deviceId: string, ...args: never[]) => unkn
 let bind: Binder | null = null;
 
 // Every failure of a channel call lands in the error log, whichever door it came through. The arguments never do.
-function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) => unknown, args: never[]): unknown {
+function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) => unknown, raw: never[]): unknown {
+  // A call made for a renderer job carries the job id as a trailing marker; the handler never sees it.
+  const { args: given, jobId } = takeContext(raw);
+  const args = given as never[];
   const fail = (e: unknown): never => {
     logError(`rpc:${channel}`, e, rpcContext(channel, args, via));
     throw e;
   };
   try {
-    const result = run(...args);
+    const result = withActivityContext(jobId, () => run(...args));
     return result instanceof Promise ? result.catch(fail) : result;
   } catch (e) {
     return fail(e);
