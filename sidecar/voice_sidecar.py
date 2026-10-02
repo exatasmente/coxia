@@ -64,7 +64,7 @@ def reply(obj):
 
 
 def stt(req):
-    segments, _ = model().transcribe(req["path"], language="pt", initial_prompt=PROMPT, vad_filter=True, beam_size=1)
+    segments, _ = model().transcribe(req["path"], language="pt", initial_prompt=req.get("prompt") or PROMPT, vad_filter=True, beam_size=1)
     return {"text": " ".join(s.text.strip() for s in segments).strip()}
 
 

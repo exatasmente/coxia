@@ -4,6 +4,7 @@ import { register as auditoria } from './auditoria';
 import { register as efeitos } from './efeitos';
 import { register as feedback } from './feedback';
 import { register as gitlabQuick } from './gitlabQuick';
+import { register as glossary } from './glossary';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
@@ -18,6 +19,7 @@ export const MODULES: Module[] = [
   efeitos,
   feedback,
   gitlabQuick,
+  glossary,
   radar,
   retention,
   saude,

@@ -184,6 +184,13 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
               <span className="small muted">Desligado, tudo continua na tela (transcrição, perguntas, respostas) e nenhum texto é sintetizado. O microfone segue funcionando.</span>
             </span>
           </label>
+          <div className="settings-row">
+            <span style={{ fontWeight: 600 }}>Dicionário de termos</span>
+            <div>
+              <button type="button" className="btn" onClick={() => go({ name: 'glossario' })}>Editar dicionário</button>
+              <p className="small muted" style={{ marginTop: 6 }}>Como a voz pronuncia termos como sz4, QA e hub-whatsapp, e como corrigir o que a transcrição ouve errado.</p>
+            </div>
+          </div>
           <label className="check-row">
             <input type="checkbox" checked={s.voice.prosody} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, prosody: !p.voice.prosody } }))} />
             <span>

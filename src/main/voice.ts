@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { type Term, corrected, spoken, whisperHint } from '../shared/glossary';
 import type { Voice, VoiceEngine } from '../shared/types';
 import { PACKAGED, SIDECAR_DIR, VENV_DIR } from './paths';
 import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
@@ -132,9 +133,10 @@ export function stopVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
 }
 
-export async function speak(text: string, wanted: Voice, engine: VoiceEngine, prosody = true): Promise<string> {
+export async function speak(text: string, wanted: Voice, engine: VoiceEngine, opts: { prosody: boolean; glossary: Term[] }): Promise<string> {
   const voice = resolveVoice(wanted, engine);
-  const plan = prosody ? prosodyPlan(text) : [];
+  // the tone is read from the written terms, the voice gets their pronunciation
+  const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary) }));
   if (needsJoin(plan)) {
     const out = join(AUDIO, `tts-${Date.now()}-${nextId}.wav`);
     const segments = plan.map((s) => ({
@@ -148,17 +150,17 @@ export async function speak(text: string, wanted: Voice, engine: VoiceEngine, pr
     return r.path ?? out;
   }
   const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${engine === 'kokoro' ? 'wav' : 'mp3'}`);
-  const spoken = plan[0]?.text ?? speakable(text);
-  const r = await call({ cmd: 'tts', engine, text: spoken, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
+  const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary);
+  const r = await call({ cmd: 'tts', engine, text: said, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
   return r.path ?? out;
 }
 
-export async function transcribe(audio: ArrayBuffer): Promise<string> {
+export async function transcribe(audio: ArrayBuffer, glossary: Term[]): Promise<string> {
   const path = join(AUDIO, `stt-${Date.now()}.webm`);
   writeFileSync(path, Buffer.from(audio));
   try {
-    const r = await call({ cmd: 'stt', path });
-    return r.text ?? '';
+    const r = await call({ cmd: 'stt', path, prompt: whisperHint(glossary) });
+    return corrected(r.text ?? '', glossary);
   } finally {
     unlinkSync(path);
   }

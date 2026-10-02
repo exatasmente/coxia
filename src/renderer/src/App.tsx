@@ -5,6 +5,7 @@ import { setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
+import { Glossario } from './screens/Glossario';
 import { Ata } from './screens/Ata';
 import { Auditoria } from './screens/Auditoria';
 import { Call } from './screens/Call';
@@ -43,6 +44,7 @@ export type Screen =
   | { name: 'saude' }
   | { name: 'auditoria' }
   | { name: 'help' }
+  | { name: 'glossario' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -122,6 +124,8 @@ export function App() {
       return <Radar go={go} />;
     case 'saude':
       return <Saude go={go} />;
+    case 'glossario':
+      return <Glossario go={go} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }
