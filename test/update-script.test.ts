@@ -132,6 +132,36 @@ describe('update.sh preconditions', () => {
     expect(existsSync(w.app)).toBe(false);
   });
 
+  it('--check only looks: refuses a dirty src/, passes a clean one, and never writes the update log', () => {
+    const w = world();
+    const clean = update(w, '--check');
+    expect(clean.status, clean.stdout + clean.stderr).toBe(0);
+    writeFileSync(join(w.root, 'repo/src/a.ts'), 'export const a = 2;\n');
+    const dirty = update(w, '--check');
+    expect(dirty.status).toBe(1);
+    expect(dirty.stdout).toContain('M src/a.ts');
+    expect(existsSync(join(w.root, 'xdg-state/cerimonias/update.log'))).toBe(false);
+    expect(update(w, '--check', '--force-dirty').status).toBe(0);
+  });
+
+  it('--check reports an update in progress without touching its log', () => {
+    const w = world();
+    mkdirSync(join(w.root, 'xdg-state/cerimonias'), { recursive: true });
+    const log = join(w.root, 'xdg-state/cerimonias/update.log');
+    writeFileSync(log, 'the running update\n');
+    const holder = spawn('flock', ['-n', join(w.root, 'xdg-state/cerimonias/update.lock'), 'sleep', '30'], { stdio: 'ignore' });
+    try {
+      const deadline = Date.now() + 3000;
+      let out = update(w, '--check');
+      while (out.status !== 5 && Date.now() < deadline) out = update(w, '--check');
+      expect(out.status).toBe(5);
+      expect(out.stderr).toContain('Já existe uma atualização em andamento');
+      expect(readFileSync(log, 'utf8')).toBe('the running update\n');
+    } finally {
+      holder.kill();
+    }
+  });
+
   it('aborts with the tail of the build log and leaves the installed app alone when the build fails', async () => {
     const w = world();
     install(w.app, FAKE_APP(true));

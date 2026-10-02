@@ -80,7 +80,7 @@ Passos, nesta ordem (cada um é impresso e vai para `~/.local/state/cerimonias/u
 4. **Instala** com `scripts/install-local.sh`, sem mexer no autostart: ligado continua ligado, desligado continua desligado.
 5. **Abre o app novo**, separado do terminal (`setsid`/`nohup`), com a saída em `~/.local/state/cerimonias/app.log`, e imprime a versão e o commit que ele informou (`<dados>/run.json`).
 
-Outras opções: `--no-build` reaproveita o `dist/*.AppImage` mais novo, `--hidden` abre só na bandeja, `--no-start` instala sem abrir. Duas atualizações ao mesmo tempo não rodam (a segunda recusa).
+Outras opções: `--no-build` reaproveita o `dist/*.AppImage` mais novo, `--hidden` abre só na bandeja, `--no-start` instala sem abrir, `--check` só confere se dá para atualizar (é o que o botão do app roda antes de começar). Duas atualizações ao mesmo tempo não rodam (a segunda recusa).
 
 **Pelo app:** Configurações → "Atualizar o app" mostra a versão instalada (versão, commit e data da compilação, gravados no build), o último commit da `main` em `~/projects/cerimonias` (só leitura) e o botão "Atualizar agora", que pede confirmação e roda `scripts/update.sh` separado do app. O app fecha sozinho no fim da compilação e, na primeira abertura depois, avisa uma vez "Atualizado para &lt;commit&gt;". A seção só existe na janela do app, não no navegador, e em desenvolvimento (`npx electron .`) o botão apenas explica que só vale no app instalado.
 

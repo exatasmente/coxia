@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuilds Cerimônias from this source tree and replaces the installed app, in one step.
 #
-#   scripts/update.sh [--no-build] [--force-dirty] [--kill] [--timeout <s>] [--hidden] [--no-start]
+#   scripts/update.sh [--no-build] [--force-dirty] [--kill] [--timeout <s>] [--hidden] [--no-start] [--check]
 #
 #   --no-build      reuse the newest dist/*.AppImage instead of running npm run dist
 #   --force-dirty   build even with uncommitted changes in src/ (the build is stamped +dirty)
@@ -9,6 +9,7 @@
 #   --timeout <s>   how long to wait for the running app to quit (default 45)
 #   --hidden        start the new app in the tray only
 #   --no-start      install but do not start it
+#   --check         only check that an update may start (src/ committed, none running) and exit
 #
 # Order: check the tree, build (the installed app is untouched if this fails), ask the running app to quit
 # (it saves its state first), wait for it to be gone, install, start the new one detached.
@@ -41,9 +42,10 @@ FORCE_DIRTY=0
 KILL=0
 HIDDEN=0
 START=1
+CHECK=0
 TIMEOUT=45
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,6 +54,7 @@ while [ $# -gt 0 ]; do
     --kill) KILL=1 ;;
     --hidden) HIDDEN=1 ;;
     --no-start) START=0 ;;
+    --check) CHECK=1 ;;
     --timeout) TIMEOUT="${2:?--timeout precisa de um número de segundos}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "opção desconhecida: $1 (veja --help)" >&2; exit 2 ;;
@@ -63,7 +66,12 @@ case "$TIMEOUT" in ''|*[!0-9]*) echo "--timeout precisa de um número de segundo
 mkdir -p "$STATE"
 exec 9>"$STATE/update.lock"
 if ! flock -n 9; then
-  echo "Já existe uma atualização em andamento (acompanhe em $LOG)." | tee -a "$LOG" >&2
+  # A --check must not write to the log of the update that is running.
+  if [ "$CHECK" = 1 ]; then
+    echo "Já existe uma atualização em andamento (acompanhe em $LOG)." >&2
+  else
+    echo "Já existe uma atualização em andamento (acompanhe em $LOG)." | tee -a "$LOG" >&2
+  fi
   exit 5
 fi
 
@@ -123,17 +131,12 @@ cleanup() {
   fi
 }
 
-run_update() {
-  local t0=$SECONDS
-  trap cleanup EXIT
-  log "atualizando a partir de $ROOT"
-
-  # 1. The source tree
+# The tree must be a checkout and src/ must be committed (unless --force-dirty); with --no-build nothing is built from it.
+check_tree() {
   git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "$ROOT não é um repositório git."
-  local commit branch dirty
-  commit="$(git -C "$ROOT" rev-parse --short HEAD)"
+  local branch dirty
   branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
-  log "árvore: $branch @ $commit"
+  log "árvore: $branch @ $(git -C "$ROOT" rev-parse --short HEAD)"
   [ "$branch" = "main" ] || log "aviso: a árvore está em '$branch', não na main."
   if [ "$BUILD" = 1 ]; then
     dirty="$(git -C "$ROOT" status --porcelain -- src)"
@@ -142,8 +145,19 @@ run_update() {
       printf '%s\n' "$dirty"
       die "commite ou guarde as alterações, ou rode com --force-dirty (o build sai marcado +dirty)."
     fi
-    [ -n "$dirty" ] && log "aviso: compilando com alterações não commitadas em src/ (--force-dirty)."
+    [ -z "$dirty" ] || log "aviso: compilando com alterações não commitadas em src/ (--force-dirty)."
   fi
+}
+
+run_update() {
+  local t0=$SECONDS
+  trap cleanup EXIT
+  log "atualizando a partir de $ROOT"
+
+  # 1. The source tree
+  check_tree
+  local commit
+  commit="$(git -C "$ROOT" rev-parse --short HEAD)"
 
   # 2. Build: a failure here leaves the installed app untouched.
   local artifact started_at=$(date +%s)
@@ -220,6 +234,11 @@ run_update() {
   STARTED=1
   die "o app novo foi instalado, mas não confirmou que abriu em 40s; veja $APP_LOG." 4
 }
+
+if [ "$CHECK" = 1 ]; then
+  check_tree
+  exit 0
+fi
 
 # A pipeline runs run_update in a subshell: its state and its EXIT trap live there.
 run_update 2>&1 | tee "$LOG"

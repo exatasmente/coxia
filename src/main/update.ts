@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readSync, openSync, closeSync, fstatSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
@@ -67,22 +67,6 @@ function readMarker(): { commit: string | null } | null {
   }
 }
 
-function tail(file: string, bytes = 1200): string {
-  try {
-    const fd = openSync(file, 'r');
-    try {
-      const size = fstatSync(fd).size;
-      const buf = Buffer.alloc(Math.min(size, bytes));
-      readSync(fd, buf, 0, buf.length, size - buf.length);
-      return buf.toString('utf8').trim();
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return '';
-  }
-}
-
 async function info(): Promise<UpdateInfo> {
   const found = await latest();
   return {
@@ -101,21 +85,17 @@ async function run(): Promise<{ logPath: string }> {
   const script = join(SOURCE_DIR, 'scripts/update.sh');
   if (!existsSync(script)) throw new Error(`não achei ${script}`);
   mkdirSync(STATE, { recursive: true });
-  const child = spawn('bash', [script], { cwd: SOURCE_DIR, detached: true, stdio: 'ignore', env: updateEnv(process.env) });
-  child.unref();
-  // A refusal (uncommitted changes, another update running) comes back within a moment; a real update keeps going.
-  const early = await new Promise<number | null>((resolve) => {
-    const timer = setTimeout(() => resolve(null), 1500);
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      resolve(code ?? 1);
-    });
-    child.once('error', () => {
-      clearTimeout(timer);
-      resolve(1);
-    });
-  });
-  if (early !== null && early !== 0) throw new Error(tail(LOG) || `scripts/update.sh terminou com código ${early}`);
+  const env = updateEnv(process.env);
+  // The refusals (uncommitted changes in src/, another update running) come back here, where the screen can show them.
+  try {
+    await exec('bash', [script, '--check'], { cwd: SOURCE_DIR, env, timeout: 15_000 });
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; message: string };
+    throw new Error(`${err.stdout ?? ''}${err.stderr ?? ''}`.trim() || err.message);
+  }
+  // `setsid -f` hands the script to init: a child of this process would hold the app open at quit, and the script is
+  // the one asking it to quit.
+  spawn('setsid', ['-f', 'bash', script], { cwd: SOURCE_DIR, stdio: 'ignore', env }).unref();
   return { logPath: LOG };
 }
 
