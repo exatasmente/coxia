@@ -6,7 +6,9 @@ import type { WebSettings } from '../shared/settings';
 import type { AppEvent } from '../shared/types';
 import { decodeWire, encodeWire } from '../shared/wire';
 import { AuthError, createAuth, type Auth, SESSION_TTL_MS } from './webAuth';
+import { createIdempotency, IdempotencyConflict, type Idempotency } from './webIdempotency';
 import { webRefusal } from './webPolicy';
+import { IDEMPOTENCY_KEY, isQueueable } from '../shared/outbox';
 
 const COOKIE = 'cer_session';
 const MAX_BODY = 15 * 1024 * 1024;
@@ -50,8 +52,11 @@ export interface WebDeps {
   settings(): WebSettings;
   rendererDir: string;
   auth: Auth;
-  invoke(channel: string, args: unknown[]): Promise<unknown>;
+  invoke(channel: string, args: unknown[], deviceId?: string): Promise<unknown>;
   hasChannel(channel: string): boolean;
+  // Called when a device logs out or is revoked (push subscriptions go with it).
+  onDeviceGone?(id: string): void;
+  idempotency?: Idempotency;
 }
 
 /**
@@ -184,6 +189,7 @@ export interface WebApp {
 
 export function createWebApp(deps: WebDeps): WebApp {
   const sse = new Set<SseClient>();
+  const idem = deps.idempotency ?? createIdempotency();
   const sockets = new Set<Socket>();
 
   const heartbeat = setInterval(() => {
@@ -242,6 +248,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       if (method !== 'POST') throw new HttpError(405, 'Método não permitido.');
       guardWrite(req);
       deps.auth.revoke(device.id);
+      deps.onDeviceGone?.(device.id);
       dropDevice(device.id);
       json(res, 200, { ok: true }, { 'Set-Cookie': cookieHeader('', req, 0) });
       return;
@@ -272,10 +279,14 @@ export function createWebApp(deps: WebDeps): WebApp {
         throw new HttpError(400, 'JSON inválido.');
       }
       if (!Array.isArray(args)) throw new HttpError(400, 'O corpo deve ser a lista de argumentos.');
+      const key = req.headers['x-idempotency-key'];
+      if (key !== undefined && (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key))) throw new HttpError(400, 'Chave de idempotência inválida.');
       let result: unknown;
       try {
-        result = await deps.invoke(channel, args);
+        const run = () => deps.invoke(channel, args, device.id);
+        result = typeof key === 'string' && isQueueable(channel) ? await idem.run(device.id, channel, key, run) : await run();
       } catch (e) {
+        if (e instanceof IdempotencyConflict) throw new HttpError(409, e.message);
         console.error('[web]', channel, e instanceof Error ? e.message : e);
         throw new HttpError(500, e instanceof Error ? e.message : String(e));
       }

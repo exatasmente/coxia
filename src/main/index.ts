@@ -18,7 +18,7 @@ import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { glossary } from './glossary';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
-import { broadcast, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
+import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
 
 // Autostart launches with --hidden: the app starts in the tray only.
 const HIDDEN = process.argv.includes('--hidden');
@@ -40,6 +40,7 @@ function emit(ev: AppEvent): void {
 }
 
 function notify(n: Notice): void {
+  pushNotice(n);
   if (!Notification.isSupported()) return;
   const note = new Notification({ title: n.title, body: n.body, icon: join(RESOURCES, 'icon.png') });
   note.on('click', () => {
