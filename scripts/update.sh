@@ -23,6 +23,12 @@ set -euo pipefail
 # instance look like part of this process, and the new one would inherit a mount that is going away.
 unset APPIMAGE APPDIR ARGV0 OWD
 
+# It also inherits open files of the app (some live inside the AppImage mount). One left open here keeps the
+# mount busy, and the AppImage cannot unmount and exit until this script ends: the update would wait on itself.
+for fd in /proc/$$/fd/*; do
+  case "${fd##*/}" in 0|1|2|255) ;; *) eval "exec ${fd##*/}>&-" 2>/dev/null || true ;; esac
+done
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${CERIMONIAS_PREFIX:-$HOME/.local/opt/cerimonias}"
 APP="$PREFIX/cerimonias.AppImage"

@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -19,6 +19,7 @@ if [ "$1" = "--quit-for-update" ]; then
 fi
 export APPIMAGE="$0"
 echo $$ > "$CERIMONIAS_DATA_DIR/fake.pid"
+ls "/proc/$$/fd" > "$CERIMONIAS_DATA_DIR/fake.fds"
 printf '{\\n "pid": %s,\\n "version": "9.9.9",\\n "commit": "abc1234",\\n "builtAt": "2026-01-01T00:00:00.000Z"\\n}\\n' $$ > "$RUN"
 exec sleep 300
 `;
@@ -232,6 +233,23 @@ describe('update.sh against a running app', () => {
     expect(out.stdout).toContain('SIGTERM');
     expect(alive(old)).toBe(false);
     expect(readFileSync(w.app, 'utf8')).toContain('# new build');
+  }, 60_000);
+
+  it('does not hand the files it inherited from the app to the new instance', () => {
+    const w = world();
+    install(join(w.root, 'repo/dist/cerimonias-9.9.9.AppImage'), FAKE_APP(true));
+    const held = openSync(join(w.root, 'held-by-the-app'), 'w');
+    const out = spawnSync('bash', [join(w.root, 'repo/scripts/update.sh'), '--no-build'], {
+      env: w.env,
+      encoding: 'utf8',
+      timeout: 60_000,
+      stdio: ['ignore', 'pipe', 'pipe', 'ignore', 'ignore', 'ignore', 'ignore', held],
+    });
+    closeSync(held);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    const fds = readFileSync(join(w.root, 'data/fake.fds'), 'utf8').split('\n').filter(Boolean);
+    for (const inherited of ['3', '4', '5', '6', '7']) expect(fds).not.toContain(inherited);
+    expect(fds).toContain('1');
   }, 60_000);
 
   it('just installs and starts when the app is not running, leaving autostart alone', () => {
