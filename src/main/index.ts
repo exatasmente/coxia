@@ -208,6 +208,12 @@ function handlers(): void {
   handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));
 }
 
+// The runtime app name, and so Electron's userData folder (browser profile, single-instance lock, voice environment), are pinned to what an
+// install made by an earlier version already uses: the public product name (productName, appId) is free to differ without moving anyone's data.
+// An explicit --user-data-dir (a scratch run of a release build) still wins.
+app.setName('cerimonias');
+if (!process.env.CERIMONIAS_DATA_DIR && !app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', join(app.getPath('appData'), 'cerimonias'));
+
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
 if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CERIMONIAS_DATA_DIR, 'userData'));
 

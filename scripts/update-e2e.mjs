@@ -80,7 +80,7 @@ cpSync(join(NEW, newImage), join(dir('feed'), newImage));
 const newVersion = /^version: (.+)$/m.exec(yml)?.[1];
 if (SCENARIO === 'main' || SCENARIO === 'onquit') yml += 'releaseNotes: |\n  - Faster start\n  - Fixes for the <b>voice</b> panel\n';
 if (SCENARIO === 'tamper') yml = yml.replace(/sha512: .+/g, `sha512: ${Buffer.alloc(64, 7).toString('base64')}`);
-if (SCENARIO === 'older') yml = yml.replace(/^version: .+$/m, 'version: 0.0.9').replace(/cerimonias-[\d.]+\.AppImage/g, 'cerimonias-0.0.9.AppImage');
+if (SCENARIO === 'older') yml = yml.replace(/^version: .+$/m, 'version: 0.0.9').replace(/coxia-[\d.]+\.AppImage/g, 'coxia-0.0.9.AppImage');
 writeFileSync(join(dir('feed'), SCENARIO === 'beta' ? 'beta-linux.yml' : 'latest-linux.yml'), yml);
 say(`scenario ${SCENARIO}: old ${OLD} (${statSync(OLD).size} bytes) -> feed ${newImage} (${statSync(join(NEW, newImage)).size} bytes, version ${newVersion})`);
 

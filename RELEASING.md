@@ -73,7 +73,7 @@ git push origin v0.2.0
 The tag triggers **Release** (`.github/workflows/release.yml`):
 
 1. **Check the version.** The tag must equal `v` + `package.json` version, or the run fails before building anything.
-2. **Linux job.** `npm ci`, then `npm run dist:public -- --publish always` with `GITHUB_TOKEN`: builds `cerimonias-<version>.AppImage` and `cerimonias_<version>_amd64.deb` without the SDK, writes `latest-linux.yml`, and creates a **draft** release named after the tag, with the `CHANGELOG.md` section as its body, attaching the files. It then runs `scripts/verify-release-files.sh` (names, version and sha512 of the AppImage against the feed) and checks that the draft holds the three files.
+2. **Linux job.** `npm ci`, then `npm run dist:public -- --publish always` with `GITHUB_TOKEN`: builds `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb` without the SDK, writes `latest-linux.yml`, and creates a **draft** release named after the tag, with the `CHANGELOG.md` section as its body, attaching the files. It then runs `scripts/verify-release-files.sh` (names, version and sha512 of the AppImage against the feed) and checks that the draft holds the three files.
 3. Nothing else. Windows and macOS are off unless you ask for them ([below](#dry-runs-and-experimental-platforms)).
 
 A final release **needs** a `CHANGELOG.md` entry for its version (the job fails without it); a pre-release falls back to a one-line note.
@@ -97,7 +97,7 @@ When the beta is good, release the final version (`0.2.0`) from the same line of
 On the release page (visible to you only, while it is a draft) check:
 
 - the name is the tag, the notes read well, *pre-release* is ticked exactly when the tag has a suffix;
-- the assets are `cerimonias-<version>.AppImage`, `cerimonias_<version>_amd64.deb` and `latest-linux.yml` (`beta-linux.yml` for a beta). The AppImage carries its block map inside, so there is no separate `.blockmap` on Linux (Windows would add `.exe.blockmap`). `builder-debug.yml` and `linux-unpacked` must **not** be there;
+- the assets are `coxia-<version>.AppImage`, `coxia_<version>_amd64.deb` and `latest-linux.yml` (`beta-linux.yml` for a beta). The AppImage carries its block map inside, so there is no separate `.blockmap` on Linux (Windows would add `.exe.blockmap`). `builder-debug.yml` and `linux-unpacked` must **not** be there;
 - download the assets and run the same check the workflow ran:
 
   ```bash
@@ -109,10 +109,10 @@ On the release page (visible to you only, while it is a draft) check:
 - start the AppImage **with a scratch data directory**, so your real data is untouched:
 
   ```bash
-  chmod +x cerimonias-<version>.AppImage
+  chmod +x coxia-<version>.AppImage
   mkdir -p /tmp/coxia-scratch/{home,data,ud}
   HOME=/tmp/coxia-scratch/home CERIMONIAS_DATA_DIR=/tmp/coxia-scratch/data \
-    ./cerimonias-<version>.AppImage --user-data-dir=/tmp/coxia-scratch/ud
+    ./coxia-<version>.AppImage --user-data-dir=/tmp/coxia-scratch/ud
   ```
 
   It must open the setup wizard, and the "Claude Agent SDK" step must show the Anthropic terms and the **Install** button (not "already ships with this app").

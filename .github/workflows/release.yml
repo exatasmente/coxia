@@ -175,7 +175,7 @@ jobs:
           feed="$CHANNEL-linux.yml"
           assets="$(gh api "repos/$REPOSITORY/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .assets[].name")"
           echo "$assets"
-          for want in "cerimonias-$VERSION.AppImage" "cerimonias_${VERSION}_amd64.deb" "$feed"; do
+          for want in "coxia-$VERSION.AppImage" "coxia_${VERSION}_amd64.deb" "$feed"; do
             echo "$assets" | grep -qxF "$want" || { echo "::error::the draft release is missing $want"; exit 1; }
           done
 

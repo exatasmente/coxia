@@ -17,8 +17,8 @@ dir="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dist}"
 fail=0
 bad() { echo "verify: $*" >&2; fail=1; }
 
-appimage="cerimonias-$version.AppImage"
-deb="cerimonias_${version}_amd64.deb"
+appimage="coxia-$version.AppImage"
+deb="coxia_${version}_amd64.deb"
 feed="latest-linux.yml"
 if [[ "$version" == *-* ]]; then pre="${version#*-}"; feed="${pre%%.*}-linux.yml"; fi
 
