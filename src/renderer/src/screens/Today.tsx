@@ -211,6 +211,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                   </div>
                   <div className="row" style={{ gap: 8 }}>
                     {/* slot: per-activity buttons of feature modules */}
+                    <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>GitLab</button>
                     {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
                     <button type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
                   </div>
