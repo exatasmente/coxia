@@ -84,7 +84,7 @@ function createWindow(): void {
     height: 940,
     minWidth: 760,
     minHeight: 560,
-    title: 'Cerimônias',
+    title: 'Coxia',
     icon: join(RESOURCES, 'icon.png'),
     autoHideMenuBar: true,
     show: !HIDDEN,
@@ -115,7 +115,7 @@ function createWindow(): void {
 
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
-  tray.setToolTip('Cerimônias');
+  tray.setToolTip('Coxia');
   const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
     show();
     emit({ type: 'navigate', to });

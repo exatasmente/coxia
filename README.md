@@ -1,6 +1,6 @@
-# Cerimônias
+# Coxia
 
-Rotina pessoal: pré-daily por voz com um agente por atividade aberta. Não faz parte do sz-playbook; usa o playbook como o Claude Code usa.
+Rotina pessoal: cerimônias por voz com um agente por atividade aberta (pré-daily, desbloqueio, gate, passagem para o QA, retro e conflitos de release), no desktop e no celular (PWA). Não faz parte do sz-playbook; usa o playbook como o Claude Code usa.
 
 - **Agentes:** Claude Agent SDK com `cwd` em `~/projects`, então CLAUDE.md, skills, agentes, hooks e MCP do playbook valem como no Claude Code. Modelo `deepseek/deepseek-v4.1-flash` pelo OpenRouter (chave via `~/.local/bin/openrouter-key`). Só ferramentas de leitura (`permissionMode: dontAsk`).
 - **Cartões:** `~/.local/bin/daily-report report --format json --dry-run` + fase do spec em `sz-playbook/.specs`.

@@ -80,7 +80,7 @@ const STACK_LINES = 8;
 
 // Compact text for pasting into a Claude Code session: messages, counts, sources and the top of each stack.
 export function errorReport(view: Pick<ErrorsView, 'groups' | 'file'>, max = 10): string {
-  const lines = ['Erros recentes registrados pelo app Cerimônias (do mais novo para o mais antigo). Investigue a causa provável e proponha a correção.', `Log completo: ${view.file}`, ''];
+  const lines = ['Erros recentes registrados pelo app Coxia (do mais novo para o mais antigo). Investigue a causa provável e proponha a correção.', `Log completo: ${view.file}`, ''];
   view.groups.slice(0, max).forEach((g, i) => {
     lines.push(`${i + 1}. ${g.message}`);
     lines.push(`   ${g.count}x, de ${stamp(g.firstAt)} a ${stamp(g.lastAt)}, origem ${g.sources.join(', ')}, workspace ${g.workspaces.join(', ')}`);

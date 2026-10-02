@@ -18,8 +18,8 @@ export function desktopEntry(command: string[]): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Cerimônias',
-    'Comment=Cerimônias por voz, começa só na bandeja',
+    'Name=Coxia',
+    'Comment=Coxia: cerimônias por voz, começa só na bandeja',
     `Exec=${command.map(execArg).join(' ')}`,
     'Icon=cerimonias',
     'Terminal=false',

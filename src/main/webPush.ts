@@ -303,7 +303,7 @@ export function createPush(deps: PushDeps): PushService {
       if (!mine) throw new PushError('Este aparelho ainda não está inscrito.');
       if (now() - (lastTest.get(deviceId) ?? 0) < TEST_EVERY_MS) throw new PushError('Espere alguns segundos antes de testar de novo.');
       lastTest.set(deviceId, now());
-      const payload = payloadFor('Cerimônias: teste', 'Se você está lendo isto, as notificações deste aparelho funcionam.', { to: 'settings' });
+      const payload = payloadFor('Coxia: teste', 'Se você está lendo isto, as notificações deste aparelho funcionam.', { to: 'settings' });
       const sent = await fanOut({ ...payload, tag: 'n-test' }, 'high', 60, deviceId);
       if (!sent) throw new PushError('O serviço de push não aceitou a notificação de teste. Tente ativar de novo.');
     },

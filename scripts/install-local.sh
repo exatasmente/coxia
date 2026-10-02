@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs (or updates) the built Cerimônias AppImage for the current user only.
+# Installs (or updates) the built Coxia AppImage for the current user only.
 #
 #   npm run dist && scripts/install-local.sh [--autostart] [--artifact <file.AppImage>]
 #
@@ -78,7 +78,7 @@ fi
 write_if_changed "$LAUNCHER" 644 <<EOF
 [Desktop Entry]
 Type=Application
-Name=Cerimônias
+Name=Coxia
 Comment=Cerimônias por voz com agentes por atividade
 Exec=$APP
 Icon=cerimonias
@@ -95,8 +95,8 @@ if [ "$AUTOSTART" = 1 ]; then
   write_if_changed "$AUTOSTART_FILE" 644 <<EOF
 [Desktop Entry]
 Type=Application
-Name=Cerimônias
-Comment=Cerimônias por voz, começa só na bandeja
+Name=Coxia
+Comment=Coxia: cerimônias por voz, começa só na bandeja
 Exec=$APP --hidden
 Icon=cerimonias
 Terminal=false
@@ -114,7 +114,7 @@ fi
 
 # 5. Heads-up about instances (dev and installed share userData, so only one runs at a time).
 if pgrep -f "$APP" >/dev/null 2>&1; then
-  say "note       the installed Cerimônias is running; close it and open it again to use the new version."
+  say "note       the installed Coxia is running; close it and open it again to use the new version."
 fi
 if pgrep -f "node_modules/electron/dist/electron.*cerimonias" >/dev/null 2>&1; then
   say "note       the dev tree is running; it shares data and the single-instance lock, so close it before opening the installed one."

@@ -42,7 +42,7 @@ function Login({ notice, onDone }: { notice: string | null; onDone: () => void }
     <div className="web-center">
       <form className="panel web-card" onSubmit={(e) => void submit(e)}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700 }}>Cerimônias</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700 }}>Coxia</h1>
           <p className="muted" style={{ marginTop: 6 }}>
             Escaneie o QR code do app do computador (Configurações › Acesso pelo navegador) ou digite o código de pareamento.
           </p>

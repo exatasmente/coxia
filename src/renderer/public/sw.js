@@ -76,7 +76,7 @@ self.addEventListener('push', (event) => {
   } catch {
     data = {};
   }
-  const title = typeof data.title === 'string' && data.title ? data.title : 'Cerimônias';
+  const title = typeof data.title === 'string' && data.title ? data.title : 'Coxia';
   const target = data.target && typeof data.target.to === 'string' ? data.target : { to: 'today' };
   event.waitUntil(
     self.registration.showNotification(title, {

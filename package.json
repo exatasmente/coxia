@@ -1,7 +1,7 @@
 {
   "name": "cerimonias",
   "version": "0.1.0",
-  "description": "Cerimônias por voz com agentes por atividade (rotina pessoal)",
+  "description": "Coxia: cerimônias por voz com agentes por atividade (rotina pessoal)",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

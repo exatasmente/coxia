@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuilds Cerimônias from this source tree and replaces the installed app, in one step.
+# Rebuilds Coxia from this source tree and replaces the installed app, in one step.
 #
 #   scripts/update.sh [--no-build] [--force-dirty] [--kill] [--timeout <s>] [--hidden] [--no-start] [--check]
 #

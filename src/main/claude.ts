@@ -21,7 +21,7 @@ export function continueInClaude(sessionId: string, prompt?: string): { ok: bool
   const text = prompt?.trim();
   if (!SESSION_ID.test(sessionId) || (text && text.length > MAX_PROMPT)) return { ok: false, command: '' };
   const shell = terminalArgv(sessionId, text ? writePromptFile(text) : null);
-  const terminal = spawn('gnome-terminal', ['--title', 'Cerimônias · Claude Code', '--', ...shell], { detached: true, stdio: 'ignore' });
+  const terminal = spawn('gnome-terminal', ['--title', 'Coxia · Claude Code', '--', ...shell], { detached: true, stdio: 'ignore' });
   terminal.on('error', () => {
     spawn('x-terminal-emulator', ['-e', ...shell], { detached: true, stdio: 'ignore' }).on('error', () => undefined).unref();
   });
