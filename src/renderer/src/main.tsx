@@ -18,9 +18,10 @@ initTheme();
 
 // Mobile browsers keep the AudioContext suspended until a gesture.
 if (isWeb()) {
+  // not once: iOS suspends the context again when the app goes to the background
   const unlock = () => unlockAudio();
-  window.addEventListener('pointerdown', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
+  window.addEventListener('pointerdown', unlock);
+  window.addEventListener('keydown', unlock);
 }
 
 // No context menu anywhere in the app.
