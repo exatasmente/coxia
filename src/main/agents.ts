@@ -7,7 +7,7 @@ import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget,
 import type { ModelRole } from '../shared/settings';
 import { getLanguage } from '../shared/i18n';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
-import type { ResolvedRole } from './config-resolve';
+import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
@@ -15,15 +15,13 @@ import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
 import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
+import { cardContext, cycle, decisionLogRef, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
+import { GITLAB_HINT, GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { vcsProvider } from './vcs';
 
-const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
-
-// The read-only glab shell applies to a GitLab integration whose CLI is on.
-function glabOn(): boolean {
-  const v = rc().primaryVcs;
-  return getConfig().agents.tools.vcsCli && v?.kind === 'gitlab' && v.cli === 'glab';
-}
+export { GLAB_READ };
 
 function trackerMcpTools(): string[] {
   const server = getConfig().agents.tools.trackerMcpServer.trim();
@@ -38,17 +36,10 @@ function allowedFor(role: ModelRole): string[] {
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
     ...(t.trackerMcp ? trackerMcpTools() : []),
-    ...(glabOn() ? GLAB_RULES : []),
+    ...vcsReadPolicy().rules,
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
 }
-
-// The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
-export const GLAB_READ = [
-  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes|pipelines))?(\?[\w=&]+)?"?( --paginate)?$/,
-  /^glab api "?projects\/[\w%.-]+\/pipelines(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
-  /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
-];
 
 // Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
 export const GIT_MIRROR_READ = [
@@ -74,7 +65,7 @@ export function stripOutputSuffix(command: string): string {
   return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
 }
 
-export function shellAllowlist(patterns: RegExp[]): HookCallback {
+export function shellAllowlist(patterns: RegExp[], usage = GITLAB_HINT): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
@@ -85,7 +76,7 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: `Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Use: ${GITLAB_HINT}${patterns.length > GLAB_READ.length ? ` ${GIT_HINT}` : ''}`,
+        permissionDecisionReason: cp('system.shellDenied', { hints: `${usage}${patterns.some((re) => re.source.startsWith('^git -C')) ? ` ${cp('system.hintGitplumbing')}` : ''}` }),
       },
     };
   };
@@ -191,7 +182,7 @@ export const noSecrets: HookCallback = async (input) => {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'Arquivo de configuração ou segredo: fora do alcance da cerimônia.',
+      permissionDecisionReason: cp('system.secretDenied'),
     },
   };
 };
@@ -229,26 +220,21 @@ export const redactSecretResults: HookCallback = async (input) => {
 };
 
 export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks']> {
+  // The shell allow-list follows the configured provider (gh for GitHub); anything else keeps the glab one, which no tool rule enables.
+  const policy = vcsReadPolicy();
+  const cli = policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...GLAB_READ, ...patterns])] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : GITLAB_HINT)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
   };
 }
 
-const GIT_HINT =
-  'No conflito: `git -C <repo do mirror> merge-tree --write-tree --name-only <src_sha> <tgt_sha>`, `git -C <repo> merge-base <src_sha> <tgt_sha>`, `git -C <repo> diff <base> <src_sha> -- <arquivo>` e `git -C <repo> diff <base> <tgt_sha> -- <arquivo>`.';
-
-const GITLAB_HINT =
-  '`glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), ' +
-  '`glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou ' +
-  '`glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.';
-
-// What the agents are told about the issue tracker; empty when the workspace has no GitLab with its CLI on.
+// What the agents are told about the code host; empty when the workspace has none they may read.
 function vcsHint(): string {
-  return glabOn() ? `Para ler o GitLab: ${GITLAB_HINT}` : '';
+  return vcsReadPolicy().hint;
 }
 
 /** "sz4#15499" for a workspace whose cards carry a prefix, "15499" for one that does not. */
@@ -256,39 +242,9 @@ export function issueRef(iid: string | number): string {
   return `${rc().issues.refPrefix}${iid}`;
 }
 
-/** "@qa.interno" for a workspace with a QA user, plain words otherwise. */
-export function qaMention(): string {
-  const user = rc().qaUser;
-  return user ? `@${user}` : 'o usuário de QA';
-}
-
-const SPEECH_RULES =
-  'Português do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. ' +
-  'Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp"). ' +
-  'Fale só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.';
-
-// The chat is read, not heard: it completes the speech instead of repeating it.
-const CHAT_RULES =
-  '"texto": a mesma resposta para ler no chat, completa: pode ter listas curtas, `arquivo:linha`, comandos e os detalhes que não cabem na fala. ' +
-  'Quando um fluxo, uma sequência entre serviços ou a relação entre partes ficar mais clara desenhada, inclua um diagrama em bloco ```mermaid ' +
-  '(flowchart ou sequenceDiagram, rótulos curtos e entre aspas quando tiverem símbolos, sem estilos nem cores). Sem diagrama quando não ajudar. ' +
-  '"fala": a versão para ser ouvida, que segue as regras de fala abaixo e não lê o diagrama.';
-
-const ROLE =
-  'Você participa de uma cerimônia por voz do Luiz como agente de uma atividade. ' +
-  'A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. ' +
-  'Toda ação com efeito externo vira item da ata para o Luiz executar depois, com confirmação.';
-
-const WRAP_UP =
-  'Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, ' +
-  'com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.';
-
 const str = { type: 'string' };
 // Up to three ready-made replies: in the call the person may tap one instead of speaking.
 const OPTIONS = { type: 'array', items: { type: 'string' }, maxItems: 3 };
-const OPTIONS_RULE =
-  '"opcoes": de 0 a 3 respostas prontas, curtas (até 12 palavras), escritas como o Luiz responderia, cada uma uma saída concreta ' +
-  '(ex.: "Pode seguir com o merge", "Pede ajuda ao QA hoje", "Deixa para amanhã"). Lista vazia quando não há nada a decidir.';
 
 function options(list: unknown): string[] {
   return Array.isArray(list) ? list.filter((o): o is string => typeof o === 'string' && !!o.trim()).map((o) => o.trim().slice(0, 120)).slice(0, 3) : [];
@@ -305,16 +261,31 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-// The prompt of an agent call: the role preamble (or the workspace's override), the VCS hints and the extra instructions of the config.
+// The prompt of an agent call: the role preamble (or the workspace's override), the persona, the VCS hints and the extra instructions of the config.
 function systemPrompt(role: ModelRole): string {
   const agents = getConfig().agents;
-  const preamble = agents.roles[role].promptOverride.trim() || ROLE;
-  return [preamble, vcsHint(), agents.extraInstructions.trim(), agents.roles[role].extraInstructions.trim()].filter(Boolean).join('\n');
+  const preamble = agents.roles[role].promptOverride.trim() || cp('system.role');
+  return [preamble, agents.persona.trim(), agents.roles[role].persona.trim(), vcsHint(), agents.extraInstructions.trim(), agents.roles[role].extraInstructions.trim()].filter(Boolean).join('\n');
+}
+
+// Which documentation sources of the config a role may read (agents.roles[role].docs): all of them unless the workspace narrowed it.
+function docsFor(role: ModelRole): ResolvedDocs {
+  const d = docsSources();
+  const pick = getConfig().agents.roles[role].docs;
+  return {
+    ...d,
+    claudeMdRoots: pick.claudeMd ? d.claudeMdRoots : [],
+    skillsDirs: pick.skills ? d.skillsDirs : [],
+    rulesDirs: pick.rules ? d.rulesDirs : [],
+    agentsDirs: pick.agents ? d.agentsDirs : [],
+    knowledgeDirs: pick.knowledge ? d.knowledgeDirs : [],
+    mcpConfigFiles: pick.mcp ? d.mcpConfigFiles : [],
+  };
 }
 
 // Folders the config lists as documentation but that sit outside the working directory: the agent may read them too.
-function extraDirs(cwd: string): string[] {
-  const d = docsSources();
+function extraDirs(cwd: string, role: ModelRole): string[] {
+  const d = docsFor(role);
   const listed = [...d.claudeMdRoots, ...d.skillsDirs, ...d.rulesDirs, ...d.agentsDirs, ...d.knowledgeDirs].filter((p) => !d.detected.includes(p));
   return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
 }
@@ -328,7 +299,7 @@ function sdkOptions(req: EngineRequest): Options {
     systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
     allowedTools: req.allowedTools,
     disallowedTools: [
-      ...(glabOn() || req.shell.rules.length ? [] : ['Bash']),
+      ...(vcsReadPolicy().via === 'cli' || req.shell.rules.length ? [] : ['Bash']),
       'Edit',
       'Write',
       'NotebookEdit',
@@ -345,8 +316,8 @@ function sdkOptions(req: EngineRequest): Options {
 }
 
 // Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist.
-function openDocs(cwd: string): DocSources {
-  const d = docsSources();
+function openDocs(cwd: string, role: ModelRole): DocSources {
+  const d = docsFor(role);
   const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
   return Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
@@ -367,20 +338,28 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
     },
     ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}) } } : {}),
     structured: t.structured,
-    docs: openDocs(cwd),
+    docs: openDocs(cwd, t.role),
   };
+}
+
+// Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
+function wantsVcsTool(req: EngineRequest): boolean {
+  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  return vcsReadPolicy().via === 'tool';
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
+  const tool = wantsVcsTool(req);
   return runOpenOnce<T>({
     selection,
     prompt: req.prompt,
-    options: { ...sdkOptions(req), model: req.target.model },
+    options: { ...sdkOptions(tool ? { ...req, allowedTools: [...req.allowedTools, VCS_READ_TOOL_NAME] } : req), model: req.target.model },
+    extraTools: tool ? [vcsReadToolImpl(() => vcsProvider())] : undefined,
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
-    shellEnv: rc().vcsHost ? { GITLAB_HOST: rc().vcsHost as string } : undefined,
+    shellEnv: vcsShellEnv(),
     describeTool: source,
     events: { onSession: (id) => noteSession(id, req.role, req.prompt) },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
@@ -392,10 +371,13 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   let sessionId = '';
   const query = await loadClaudeQuery();
   const exe = claudeExecutable();
+  // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
+  const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions(req),
+      ...sdkOptions(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req),
+      ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env: claudeSdkEnv(req.target),
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
@@ -440,7 +422,7 @@ async function runOnce<T>(
   // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
   const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
   const cwd = rc().projectsRoot;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd), shell, extra });
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -452,19 +434,21 @@ async function run<T>(
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
 ): Promise<Run<T>> {
+  // A role may have its own turn limit in the config; the one-turn wrap-up below is never raised by it.
+  const cap = getConfig().agents.roles[role].maxTurns;
   try {
-    return await runOnce<T>(role, prompt, schema, extra, shell);
+    return await runOnce<T>(role, prompt, schema, cap ? { ...extra, maxTurns: cap } : extra, shell);
   } catch (e) {
     if (!(e instanceof MaxTurnsError)) throw e;
-    const stopped = `O agente parou antes de terminar (limite de passos) e não deu uma resposta final${e.sessionId ? '' : ' nem deixou sessão para retomar'}.`;
+    const stopped = cp('system.stopped', { noSession: e.sessionId ? '' : cp('system.noSession') });
     if (!e.sessionId) throw new Error(stopped);
     console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
     try {
-      const r = await runOnce<T>(role, WRAP_UP, schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns });
+      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns });
       return { ...r, sources: [...e.sources, ...r.sources], partial: true };
     } catch (again) {
       console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
-      throw new Error(`${stopped} A tentativa de resposta parcial também falhou (${again instanceof Error ? again.message : String(again)}).`);
+      throw new Error(cp('system.partialFailed', { stopped, reason: again instanceof Error ? again.message : String(again) }));
     }
   }
 }
@@ -475,25 +459,20 @@ export function nullish(value: string | null): string | null {
   return !v || /^(null|none|nenhum|nenhuma|n\/a|-)\.?$/i.test(v) ? null : v;
 }
 
-function cardContext(card: Card): string {
-  const { spec, ...rest } = card;
-  const where = spec ? `Spec em ${spec.folder} (${spec.phase}).` : 'Sem pasta de spec.';
-  return `Cartão da atividade (GitLab via daily-report): ${JSON.stringify(rest)}\n${where}`;
-}
-
 export async function prepareTurn(card: Card): Promise<AgentTurn> {
   const same = reusableTurn(card);
   if (same) return same;
   const fp = cardFingerprint(card);
-  const prompt = [
-    `Você é o agente da atividade ${card.ref} na pré-daily por voz.`,
-    cardContext(card),
-    'Se precisar, leia o spec (no máximo 3 leituras).',
-    'Monte a sua vez: "fala" com até 60 palavras, dizendo o que mudou desde ontem, o próximo passo e o bloqueio.',
-    'Se houver uma decisão que só o Luiz pode tomar, termine a fala com UMA pergunta objetiva e repita-a em "pergunta"; senão, "pergunta" é null.',
-    `${OPTIONS_RULE} Ofereça opções quando houver pergunta ou bloqueio.`,
-    SPEECH_RULES,
-  ].join('\n');
+  const c = cycle();
+  const pre = c.ceremonyParams.preDaily;
+  const prompt = cp('turn.main', {
+    ref: card.ref,
+    card: cardContext(card),
+    specHint: pre.specReads > 0 && c.enrichment.specFolder ? cp('turn.specHint', { reads: pre.specReads }) : '',
+    words: pre.speechWords,
+    questionLine: c.meanings.question.enabled ? cp('turn.questionOn', { question: cycleWord(c.meanings.question.text) }) : cp('turn.questionOff'),
+    meanings: meaningsLine(),
+  });
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
     'turn',
@@ -515,16 +494,18 @@ export async function prepareTurn(card: Card): Promise<AgentTurn> {
 }
 
 export async function reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult> {
-  const prompt = [
-    turn.sessionId ? '' : `${cardContext(card)}\nSua fala foi: ${turn.speech}`,
-    `O Luiz respondeu por voz (a transcrição pode ter erros): «${text}»`,
-    '"ack": até 25 palavras confirmando o que você entendeu.',
-    '"decisao": o que ficou decidido, ou null. "alvo": "spec" se muda escopo ou plano da issue e ela tem spec; "daily-report" se é lembrete pessoal sobre a atividade; "ata" no resto.',
-    '"efeito": ação externa que o Luiz terá de executar depois com confirmação (push, MR, status, comentário, pipeline, reviewer, issue nova), ou null.',
-    '"desbloqueio": true se ele pediu para aprofundar ou se a resposta pede investigação.',
-    `${OPTIONS_RULE} Aqui, próximos passos possíveis depois desta resposta.`,
-    SPEECH_RULES,
-  ].join('\n');
+  const targets = [
+    cycle().specLayout.decisionLog.heading && cycle().enrichment.specFolder ? cp('reply.targetSpec') : '',
+    rc().cardSource?.noteArgs.length ? cp('reply.targetNote') : '',
+    cp('reply.targetLog'),
+  ]
+    .filter(Boolean)
+    .join('; ');
+  const prompt = cp(
+    'reply.main',
+    { intro: turn.sessionId ? '' : cp('reply.intro', { card: cardContext(card), speech: turn.speech }), text, targets },
+    { keepEmpty: ['intro'] },
+  );
   const schema = obj({
     ack: str,
     decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'daily-report', 'ata'] } })] },
@@ -542,7 +523,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
   const r = await run<Out>('reply', prompt, schema, { maxTurns: 3, ...(turn.sessionId ? { resume: turn.sessionId } : {}) });
   const target = r.data.decisao?.alvo === 'spec' && !card.spec ? 'ata' : r.data.decisao?.alvo;
   const decision: Decision | null =
-    r.data.decisao && target ? { ref: card.ref, text: r.data.decisao.texto, target, dest: destination(card, target) } : null;
+    r.data.decisao && target ? { ref: card.ref, text: r.data.decisao.texto, target, dest: destination(card, target, destinationLabels()) } : null;
   return {
     ack: r.data.ack,
     decision,
@@ -553,15 +534,15 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
 }
 
 export async function deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer> {
-  const prompt = [
-    sessionId
-      ? ''
-      : `Desbloqueio por voz da atividade ${card.ref}. Investigue lendo spec, rules e GitLab (só leitura) antes de responder.\n${cardContext(card)}`,
-    `Pergunta do Luiz (transcrição por voz): «${question}»`,
-    '"fala": resposta em até 80 palavras, para ser ouvida.',
-    CHAT_RULES,
-    SPEECH_RULES,
-  ].join('\n');
+  const prompt = cp(
+    'deep.main',
+    {
+      intro: sessionId ? '' : cp('deep.intro', { ref: card.ref, sources: investigationSources(), card: cardContext(card) }),
+      question,
+      words: cycle().ceremonyParams.unblock.speechWords,
+    },
+    { keepEmpty: ['intro'] },
+  );
   const r = await run<{ fala: string; texto: string }>('deep', prompt, obj({ fala: str, texto: str }), {
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
@@ -570,10 +551,7 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {
-  const prompt = [
-    `Com base no que você investigou sobre ${card.ref}, proponha de 2 a 3 saídas para o bloqueio.`,
-    'Cada uma: "titulo" curto, "consequencia" (o que acontece se o Luiz escolher), "efeito" (ação externa que exigirá confirmação, ou null), "decisao" (frase pronta para o Registro do Plan) e "recomendada" (só uma true).',
-  ].join('\n');
+  const prompt = cp('deep.options', { ref: card.ref, decisionLog: decisionLogRef() });
   const option = obj({ titulo: str, consequencia: str, efeito: strOrNull, decisao: str, recomendada: { type: 'boolean' } });
   const r = await run<{ opcoes: { titulo: string; consequencia: string; efeito: string | null; decisao: string; recomendada: boolean }[] }>(
     'deep',
@@ -591,50 +569,45 @@ export async function deepOptions(card: Card, sessionId: string): Promise<DeepOp
 }
 
 export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string> {
-  const prompt = [
-    'Escreva o texto que o Luiz vai colar no Teams na daily do time, a partir da pré-daily abaixo.',
-    'Estilo dele: "Bom dia, pessoal!", depois parágrafos "Ontem:", "Hoje:" e "Bloqueios:", frases curtas, links das issues quando ajudar, sem tabela, sem markdown além das quebras de linha.',
-    `Atividades: ${JSON.stringify(cards.map((c) => ({ ref: c.ref, titulo: c.title, url: c.url, estagio: c.stage, bloqueios: c.blockers, mudou: c.changes })))}`,
-    `Decisões: ${JSON.stringify(minutes.decisions)}`,
-    `Efeitos pendentes: ${JSON.stringify(minutes.effects)}`,
-  ].join('\n');
+  const pre = cycle().ceremonyParams.preDaily;
+  const prompt = cp('teams.main', {
+    target: pre.summaryTarget ? cycleWord(pre.summaryTarget) : cycleWord('cycle.summary.chat'),
+    style: cycleWord(pre.summaryStyle),
+    activities: JSON.stringify(cards.map((c) => ({ ref: c.ref, titulo: c.title, url: c.url, estagio: c.stage, bloqueios: c.blockers, mudou: c.changes }))),
+    decisions: JSON.stringify(minutes.decisions),
+    effects: JSON.stringify(minutes.effects),
+  });
   const r = await run<{ texto: string }>('teams', prompt, obj({ texto: str }), { maxTurns: 2 });
   return r.data.texto;
 }
 
 export async function rewriteQaComment(issue: number, current: string, syncOutput: string, unit: Record<string, unknown> | null): Promise<{ body: string; summary: string }> {
-  const prompt = [
-    `A issue ${issueRef(issue)} foi sincronizada com a main depois de uma release. Reescreva o comentário de pipelines do QA abaixo, que vai ser editado no lugar.`,
-    'Regras (skill post-release-sync, "Convivência com o comentário do qa-release-branch"): mantenha o texto, a menção ${qaMention()} e o formato;',
-    'troque o link da pipeline pela pipeline de PUSH do commit de merge (consulte com glab api projects/<grupo%2Frepo>/pipelines?ref=<branch>);',
-    'acrescente uma linha dizendo que a branch foi sincronizada com a main e se precisa de reteste, citando os arquivos sobrepostos quando houver.',
-    'Não invente pipeline: se não achar a de push do commit de merge, mantenha a atual e diga isso no resumo.',
-    `Saída do sync:\n${syncOutput.slice(-4000)}`,
-    `Unidade da ferramenta: ${JSON.stringify(unit ?? {}).slice(0, 4000)}`,
-    `Comentário atual:\n${current}`,
-    '"body": o comentário completo, pronto para substituir o atual. "resumo": uma frase dizendo o que mudou.',
-  ].join('\n');
+  const prompt = cp(
+    'conflict.comment',
+    {
+      ref: issueRef(issue),
+      rulesRef: cp('conflict.comment.rulesRef'),
+      pipelinesHint: vcsReadPolicy().via === 'cli' && vcsReadPolicy().kind === 'gitlab' ? cp('conflict.comment.pipelinesHint') : '',
+      sync: syncOutput.slice(-4000),
+      unit: JSON.stringify(unit ?? {}).slice(0, 4000),
+      current,
+    },
+    { keepEmpty: ['sync', 'current'] },
+  );
   const r = await run<{ body: string; resumo: string }>('deep', prompt, obj({ body: str, resumo: str }), { maxTurns: 12 });
   return { body: r.data.body, summary: r.data.resumo };
 }
 
 export async function conflictAsk(context: string, question: string, sessionId: string | null): Promise<DeepAnswer> {
-  const prompt = [
-    sessionId
-      ? ''
-      : [
-          'Call sobre um conflito de sincronização com a main depois de uma release. Você explica; não resolve nada aqui.',
-          'Leia os dois lados no mirror da ferramenta (git -C <repo> merge-tree/diff/show/log, só leitura) e a skill post-release-sync, seção "Conflito: resolução manual".',
-          'Explique: o que cada lado mudou, por que conflita e a resolução que você propõe (qual lado fica em cada trecho e o que testar depois).',
-          'Seja econômico: comece pelo merge-tree dos arquivos em conflito e pelo diff de cada lado só nesses arquivos; no máximo umas 10 leituras antes de responder. Na dúvida, responda com o que já sabe e diga o que falta conferir.',
-          'O ajuste será feito depois no Claude Code, numa worktree temporária, com confirmação do Luiz.',
-          context,
-        ].join('\n'),
-    `Pergunta do Luiz (transcrição por voz): «${question}»`,
-    '"fala": resposta em até 90 palavras, para ser ouvida.',
-    CHAT_RULES,
-    SPEECH_RULES,
-  ].join('\n');
+  const prompt = cp(
+    'conflict.ask',
+    {
+      intro: sessionId ? '' : cp('conflict.ask.intro', { skillRef: cp('conflict.ask.skillRef'), context }),
+      question,
+      words: cycle().ceremonyParams.releaseConflicts.speechWords,
+    },
+    { keepEmpty: ['intro'] },
+  );
   const r = await run<{ fala: string; texto: string }>(
     'deep',
     prompt,
@@ -667,10 +640,10 @@ const BATCH_PARALLEL = 3;
 const PROMPT_MAX = 40_000;
 
 function clip(text: string | null, left: { n: number }): string {
-  if (text === null) return '(sem ancestral comum)';
+  if (text === null) return cp('conflict.noBase');
   const max = Math.min(SIDE_MAX, Math.max(left.n, 400));
   left.n -= Math.min(text.length, max);
-  return text.length > max ? `${text.slice(0, max)}\n… (cortado em ${max} de ${text.length} caracteres: leia o arquivo na worktree)` : text;
+  return text.length > max ? `${text.slice(0, max)}\n${cp('conflict.clipped', { max, total: text.length })}` : text;
 }
 
 type ProposeInput = { issue: number; title: string; mr: string; branch: string; worktree: string; hunks: ProposeHunk[] };
@@ -728,19 +701,9 @@ export async function conflictPropose(p: ProposeInput): Promise<Proposal & { fai
 async function proposeBatch(p: ProposeInput): Promise<Proposal> {
   const left = { n: PROMPT_MAX };
   const blocks = p.hunks.map((h) =>
-    [`### trecho ${h.id}`, `arquivo: ${h.file}`, '--- BRANCH (ours) ---', clip(h.ours, left), '--- BASE ---', clip(h.base, left), '--- MAIN (theirs) ---', clip(h.theirs, left)].join('\n'),
+    cp('conflict.hunk', { id: h.id, file: h.file, ours: clip(h.ours, left), base: clip(h.base, left), theirs: clip(h.theirs, left) }, { keepEmpty: ['ours', 'base', 'theirs'] }),
   );
-  const prompt = [
-    `Conflito de sincronização com a main depois de uma release: issue ${issueRef(p.issue)} (${p.title}), ${p.mr}, branch ${p.branch}.`,
-    'Para cada trecho em conflito abaixo, proponha o texto final (sem marcadores de conflito). BRANCH é o que o MR escreveu; MAIN é o que a release trouxe; BASE é o ancestral comum (quando houver).',
-    'O conflito típico pós-release é COMPLEMENTAR: os dois lados acrescentaram coisas diferentes no mesmo trecho, e a resolução é combinar os dois. Mantenha o que cada lado fez; ajuste só o necessário para os dois conviverem (ordem, vírgulas, imports).',
-    'Nunca invente código além de combinar ou adaptar os dois lados. Se os lados são incompatíveis e a combinação exigiria inventar, escolha um lado inteiro, diga qual e marque confianca "baixa".',
-    `Os arquivos com marcadores estão na worktree ${p.worktree}. Leia um arquivo só se um trecho abaixo estiver cortado ou se o contexto ao redor for indispensável: no máximo 3 leituras.`,
-    '"resolucao": o texto exato que fica no lugar do trecho, com a indentação e as quebras de linha do arquivo, sem cerca de código, sem marcadores.',
-    '"explicacao": um parágrafo curto em português dizendo o que cada lado fez e por que a resolução é essa. "confianca": alta, media ou baixa. "testar": o que testar depois (uma frase).',
-    '"resumo": uma ou duas frases sobre o conflito como um todo. Devolva um item para cada id, com o id exatamente como está.',
-    ...blocks,
-  ].join('\n\n');
+  const prompt = cp('conflict.propose', { ref: issueRef(p.issue), title: p.title, mr: p.mr, branch: p.branch, worktree: p.worktree, blocks: blocks.join('\n\n') });
   const item = obj({ id: str, resolucao: str, explicacao: str, confianca: { enum: ['alta', 'media', 'baixa'] }, testar: str });
   const r = await run<{ resumo: string; trechos: { id: string; resolucao: string; explicacao: string; confianca: 'alta' | 'media' | 'baixa'; testar: string }[] }>(
     'deep',
@@ -756,4 +719,4 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
-export { run as askAgent, obj, str, strOrNull, SPEECH_RULES, CHAT_RULES };
+export { run as askAgent, obj, str, strOrNull };

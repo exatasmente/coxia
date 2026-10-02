@@ -1,3 +1,4 @@
+import type { VcsProbeResult } from '../shared/vcs';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -318,7 +319,9 @@ export function normalizeVcsProbe(raw: unknown): VcsTestResult {
   const userRaw = r.user ?? r.login ?? r.username;
   const user = typeof userRaw === 'string' ? userRaw : typeof (userRaw as { login?: unknown; username?: unknown } | undefined)?.username === 'string' ? ((userRaw as { username: string }).username) : typeof (userRaw as { login?: unknown } | undefined)?.login === 'string' ? ((userRaw as { login: string }).login) : null;
   const message = [r.message, r.error, r.detail].find((x) => typeof x === 'string') as string | undefined;
-  return { ok, user, source: 'vcs', status: typeof r.status === 'number' ? r.status : null, message: message ?? (ok ? 'ok' : 'failed') };
+  // probeVcs of src/main/vcs answers with the whole probe (checks, scopes, samples): keep it for the screen.
+  const probe = Array.isArray(r.checks) && typeof r.kind === 'string' && typeof r.host === 'string' ? (raw as VcsProbeResult) : undefined;
+  return { ok, user, source: 'vcs', status: typeof r.status === 'number' ? r.status : null, message: message ?? (ok ? 'ok' : 'failed'), ...(probe ? { probe } : {}) };
 }
 
 // ---- cycle templates ----------------------------------------------------------------------------------------------------------------------
@@ -346,6 +349,7 @@ export function normalizeTemplates(raw: unknown): CycleTemplateInfo[] {
       patch,
       ceremonies,
       stages: stagesRaw.filter(isRecord).map((s) => ({ id: String(s.id ?? ''), label: String(s.label ?? s.id ?? '') })).filter((s) => s.id),
+      ...(Array.isArray(item.needs) ? { needs: item.needs.filter((n): n is string => typeof n === 'string') } : {}),
     });
   }
   return out;

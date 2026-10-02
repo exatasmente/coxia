@@ -1,14 +1,18 @@
+import type { StageDef } from '../../shared/config/types';
+import { stageDisplay, stageUrgency } from '../../shared/cycles/stages';
+import { t } from '../../shared/i18n';
 import type { AgentTurn, Card, ReleaseAction } from '../../shared/types';
 import type { TempoIssue } from '../../shared/tempo';
 import type { WatcherAlert } from '../../shared/watchers';
+import { tv } from '../../shared/i18n';
 
 // Pure rules behind the Hoje dashboard: what the main card offers, what needs the person, how activities are ordered.
 
 export function greeting(hour: number): string {
-  if (hour < 5) return 'Boa noite';
-  if (hour < 12) return 'Bom dia';
-  if (hour < 18) return 'Boa tarde';
-  return 'Boa noite';
+  if (hour < 5) return t('today.greeting.night');
+  if (hour < 12) return t('today.greeting.morning');
+  if (hour < 18) return t('today.greeting.afternoon');
+  return t('today.greeting.night');
 }
 
 function minutesOf(time: string): number {
@@ -35,6 +39,8 @@ export interface AgoraInput {
   decisions: number;
   effects: number;
   retroDue: boolean;
+  /** How the cycle calls the daily preparation; absent: "pré-daily". */
+  label?: string;
 }
 
 export interface AgoraButton {
@@ -52,11 +58,15 @@ export interface AgoraPlan {
   secondary: AgoraButton[];
 }
 
-export function resumeNote(startedAt: number | null, saved: boolean): string {
-  if (saved) return 'A pré-daily de hoje já foi encerrada e a ata está gravada.';
+/** What the team calls the daily preparation; the cycle says it ("pré-daily", "daily scrum", "standup"). */
+const DEFAULT_LABEL = 'pré-daily';
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function resumeNote(startedAt: number | null, saved: boolean, label = DEFAULT_LABEL): string {
+  if (saved) return `A ${label} de hoje já foi encerrada e a ata está gravada.`;
   if (startedAt) {
     const at = new Date(startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `Retomando a pré-daily de hoje, começada às ${at}: os agentes já preparados não são chamados de novo.`;
+    return `Retomando a ${label} de hoje, começada às ${at}: os agentes já preparados não são chamados de novo.`;
   }
   return 'Cartões e agentes de hoje recuperados do disco, sem chamar o GitLab nem os agentes de novo.';
 }
@@ -68,48 +78,49 @@ function ataHint(i: AgoraInput): string | null {
 
 /** The one primary action of the "Agora" card, by the moment of the pre-daily. */
 export function agoraPlan(i: AgoraInput): AgoraPlan {
+  const label = i.label ?? DEFAULT_LABEL;
   const ended = i.callEnded || i.saved;
   const retro: AgoraButton[] = i.retroDue ? [{ action: 'retro', label: 'Abrir a retro' }] : [];
-  const note = i.resumed ? resumeNote(i.startedAt, i.saved) : null;
+  const note = i.resumed ? resumeNote(i.startedAt, i.saved, label) : null;
   const ata: AgoraButton = { action: 'ata', label: 'Ver ata' };
 
   if (ended) {
     return {
       phase: 'ended',
-      title: 'Pré-daily encerrada',
+      title: `${capital(label)} encerrada`,
       hint: ataHint(i) ?? note,
       progress: null,
       primary: ata,
-      secondary: [{ action: 'reset', label: 'Nova pré-daily', disabled: i.loadingCards }, ...retro],
+      secondary: [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards }, ...retro],
     };
   }
   if (i.startedAt) {
     return {
       phase: 'live',
-      title: 'Call em andamento',
+      title: tv('call.inProgress'),
       hint: ataHint(i) ?? note,
       progress: null,
-      primary: { action: 'call', label: 'Voltar à call' },
+      primary: { action: 'call', label: tv('call.back') },
       secondary: [ata],
     };
   }
   if (!i.hasCards) {
     return {
       phase: 'loading',
-      title: 'Pré-daily',
+      title: capital(label),
       hint: 'Lendo o GitLab pelo daily-report (~30 s).',
       progress: 'Montando cartões…',
-      primary: { action: 'call', label: 'Começar a pré-daily', disabled: true },
+      primary: { action: 'call', label: `Começar a ${label}`, disabled: true },
       secondary: retro,
     };
   }
   return {
     phase: 'ready',
-    title: 'Pré-daily',
+    title: capital(label),
     hint: note ?? `${i.total} ${i.total === 1 ? 'atividade' : 'atividades'}, bloqueadas primeiro. ~30 s por atividade.`,
     progress: i.ready < i.total ? `Agentes prontos ${i.ready} de ${i.total}` : null,
-    primary: { action: 'call', label: 'Começar a pré-daily' },
-    secondary: [...(i.resumed ? [{ action: 'reset', label: 'Nova pré-daily', disabled: i.loadingCards } as AgoraButton] : []), ...retro],
+    primary: { action: 'call', label: `Começar a ${label}` },
+    secondary: [...(i.resumed ? [{ action: 'reset', label: `Nova ${label}`, disabled: i.loadingCards } as AgoraButton] : []), ...retro],
   };
 }
 
@@ -229,19 +240,17 @@ export function needsYou(i: NeedsInput): NeedItem[] {
   return items;
 }
 
-/** Lower is more urgent: blocked, then waiting for an answer, then back from QA, then close to QA, then the rest. */
-export function urgencyRank(card: Card, turn: AgentTurn | undefined, answered: boolean): number {
+/** Lower is more urgent: blocked, then waiting for an answer, then back from QA, then close to QA, then the rest. The stages come from the cycle. */
+export function urgencyRank(card: Card, turn: AgentTurn | undefined, answered: boolean, stages: StageDef[]): number {
   if (card.blockers.length) return 0;
   if (turn?.question && !answered) return 1;
-  if (/Test Fail/i.test(card.stage ?? '')) return 2;
-  if (/Code Review OK|Ready To Test/i.test(card.stage ?? '')) return 3;
-  return 4;
+  return stageUrgency({ stages }, card.stage);
 }
 
 /** Stable: equal ranks keep the order the cards came in. */
-export function sortByUrgency(cards: Card[], turns: Record<string, AgentTurn>, answered: Record<string, boolean>): Card[] {
+export function sortByUrgency(cards: Card[], turns: Record<string, AgentTurn>, answered: Record<string, boolean>, stages: StageDef[]): Card[] {
   return cards
-    .map((card, index) => ({ card, index, rank: urgencyRank(card, turns[card.ref], !!answered[card.ref]) }))
+    .map((card, index) => ({ card, index, rank: urgencyRank(card, turns[card.ref], !!answered[card.ref], stages) }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((x) => x.card);
 }
@@ -251,7 +260,7 @@ export function mrLabel(n: number): string {
 }
 
 export function stageLabel(card: Card): string {
-  return (card.stage ?? '').replace(/^STAGE::\s*/, '') || 'sem estágio';
+  return stageDisplay(card.stage, t('today.noStage'));
 }
 
 export interface TempoSegment {

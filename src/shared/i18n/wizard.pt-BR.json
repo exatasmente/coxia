@@ -343,7 +343,7 @@
   "wizard.voice.working": "Trabalhando…",
   "wizard.voice.resultOk": "Tudo certo.",
   "wizard.voice.resultFail": "Falhou.",
-  "wizard.voice.lazy": "Se pular, o app prepara o ambiente de voz sozinho na primeira fala (precisa de rede e do uv).",
+  "wizard.voice.lazy": "Se pular, a voz fica desligada e as cerimônias funcionam por texto. Dá para instalar depois, em Configurações › Voz (precisa de rede).",
   "wizard.review.edit": "Editar",
   "wizard.review.editStep": "Editar: {step}",
   "wizard.review.status.ok": "configurado",
@@ -405,5 +405,14 @@
   "wizard.settings.newName": "Nome do novo workspace",
   "wizard.settings.newSubmit": "Criar e configurar",
   "wizard.settings.exportTitle": "Exportar a configuração",
-  "wizard.settings.importTitle": "Importar uma configuração"
+  "wizard.settings.importTitle": "Importar uma configuração",
+  "wizard.docs.projects": "O que achei em cada projeto",
+  "wizard.docs.useSpecs": "Usar como pasta de specs",
+  "wizard.cycle.needs": "Para aproveitar este modelo você ainda informa: {list}.",
+  "wizard.cycle.need.specsDir": "a pasta de specs",
+  "wizard.cycle.need.qaUser": "o usuário de QA",
+  "wizard.cycle.need.issueProject": "o projeto de issues",
+  "wizard.cycle.need.releaseSync": "a ferramenta de sincronização de release",
+  "wizard.cycle.need.cardSource": "a fonte de cartões",
+  "wizard.stageKind.blocked": "bloqueada"
 }

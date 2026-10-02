@@ -1,0 +1,58 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { installLegacyConfig } from './config';
+import { calls, installFakeEngine, runScenario, type Scenario } from './promptCapture';
+
+// The legacy parity run: the ceremonies of the migrated install against a fake engine, compared with a golden file that was captured from
+// the code as it was before the prompts moved into the cycle templates (see docs/cycles.md). The same run, with voice off, has its own golden.
+
+// The one place the new prompt differs from the original on purpose: the release comment prompt printed the text "${qaMention()}" because the
+// template was written in single quotes. It now says the QA mention it meant to say.
+const INTENDED: Record<string, (text: string) => string> = {
+  'release-comment': (text) => text.replace('${qaMention()}', '@qa.interno'),
+};
+
+export function parity(title: string, goldenName: string, options: { voice: boolean }): void {
+  const golden = join(import.meta.dirname, '..', 'golden', goldenName);
+  let scenario: Scenario;
+
+  beforeAll(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-02T12:00:00'));
+    // The quiz shuffles the options of each question; a fixed value makes the shuffle, and so the letter of the right answer, repeatable.
+    vi.spyOn(Math, 'random').mockReturnValue(0.42);
+    await installLegacyConfig();
+    // The migrated profile points at the author's daily-report files; the test uses its own so nothing real is read.
+    const dir = mkdtempSync(join(tmpdir(), 'cycle-parity-'));
+    const history = join(dir, 'history.jsonl');
+    writeFileSync(history, `${JSON.stringify({ at: '2026-09-30T10:00:00Z', ref: 'sz4#15499', type: 'change', field: 'stage', from: 'Doing', to: 'Test Fail' })}\n`);
+    const { updateConfig } = await import('../../src/main/workspaceConfig');
+    updateConfig((c) => {
+      c.externalTools.cardSource.historyFile = history;
+      c.externalTools.cardSource.stateFile = join(dir, 'state.json');
+      c.voice.enabled = options.voice;
+      return c;
+    });
+    await installFakeEngine();
+    scenario = await runScenario(process.env.CERIMONIAS_SPECS_DIR as string);
+    calls.length = 0;
+  });
+
+  describe(title, () => {
+    it('matches the golden captured from the original code', () => {
+      if (process.env.UPDATE_GOLDEN === '1' || !existsSync(golden)) {
+        mkdirSync(join(import.meta.dirname, '..', 'golden'), { recursive: true });
+        writeFileSync(golden, `${JSON.stringify(scenario, null, 1)}\n`);
+      }
+      const want = JSON.parse(readFileSync(golden, 'utf8')) as Scenario;
+      expect(Object.keys(scenario.prompts)).toEqual(Object.keys(want.prompts));
+      for (const [name, expected] of Object.entries(want.prompts)) {
+        const fix = INTENDED[name];
+        expect(scenario.prompts[name], name).toEqual(fix ? { ...expected, prompt: fix(expected.prompt) } : expected);
+      }
+      expect(scenario.files).toEqual(want.files);
+    });
+  });
+}

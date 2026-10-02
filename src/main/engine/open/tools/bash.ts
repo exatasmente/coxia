@@ -52,7 +52,7 @@ export function prefixAllows(prefixes: string[], command: string): boolean {
 export const bashTool: ToolImpl = {
   name: 'Bash',
   description:
-    'Runs one read-only shell command. Only GitLab reads (glab api / glab mr view / glab issue view) and, in conflict calls, plumbing git reads are accepted: ' +
+    'Runs one read-only shell command. Only code host reads (glab api / glab mr view / glab issue view, gh api / gh pr view / gh issue view) and, in conflict calls, plumbing git reads are accepted: ' +
     'one command at a time, no pipes, no ; or &&. A trailing "2>&1" and "| head -n N" are allowed.',
   parameters: {
     type: 'object',

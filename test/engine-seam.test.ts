@@ -105,6 +105,7 @@ describe('a role mapped to an anthropic provider', () => {
     cfg.updateConfig((c) => {
       c.agents.extraInstructions = 'Sempre cite o arquivo.';
       c.agents.roles.turn.extraInstructions = 'Seja breve.';
+      c.voice.enabled = true;
       return c;
     });
     await agents.askAgent('turn', 'Pergunta', schema());

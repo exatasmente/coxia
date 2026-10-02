@@ -1,23 +1,25 @@
 import { CUSTO_LABEL, type CustoFalas, type CustoKey, type CustoKind, type CustoRow, type CustoScope, type CustoSummary, type CustoWorkspaceRow } from '../shared/custo';
+import { openersOf } from '../shared/cycles/prompts';
 import type { WorkspaceInfo } from '../shared/workspaces';
 
 export const DEFAULT_GOAL = 20;
 
-// A session belongs to the app when its first prompt starts like one of the prompts the app sends.
-const FIRST_PROMPTS: [RegExp, CustoKind][] = [
-  [/^Você é o agente da atividade /, 'turn'],
-  [/^Desbloqueio por voz da atividade /, 'deep'],
-  [/^Gate \d da issue /, 'gate'],
-  [/^Passagem para o QA da issue /, 'qa'],
-  [/^Retro semanal do Luiz/, 'retro'],
-  [/^Escreva o texto que o Luiz vai colar no Teams/, 'teams'],
-  [/^A issue \S*\d+ foi sincronizada com a main/, 'release'],
-  [/^Call sobre um conflito de sincronização/, 'release'],
-  [/^Conflito de sincronização com a main depois de uma release/, 'release'],
+// A session belongs to the app when its first prompt starts like one of the prompts the app sends. The openings are read from the prompt
+// catalogs (every language and family), so a translated or reworded prompt is still recognised.
+const FIRST_PROMPTS: [string, CustoKind][] = [
+  ['turn.main', 'turn'],
+  ['deep.intro', 'deep'],
+  ['gate.start', 'gate'],
+  ['qa.prepare', 'qa'],
+  ['retro.main', 'retro'],
+  ['teams.main', 'teams'],
+  ['conflict.comment', 'release'],
+  ['conflict.ask.intro', 'release'],
+  ['conflict.propose', 'release'],
 ];
 
 export function classify(firstPrompt: string): CustoKind | null {
-  return FIRST_PROMPTS.find(([re]) => re.test(firstPrompt))?.[1] ?? null;
+  return FIRST_PROMPTS.find(([id]) => openersOf(id).some((re) => re.test(firstPrompt)))?.[1] ?? null;
 }
 
 export interface GenStat {

@@ -1,26 +1,26 @@
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
+import { isStageKind, returnedFromQa } from '../shared/cycles/stages';
 import type { Card } from '../shared/types';
 import type { WatcherAlert } from '../shared/watchers';
 import { loadCards, specInfo } from './cards';
+import { cycle } from './cyclePrompts';
+import { cycleOn } from './cycle-core';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
+import { issueProjectKey, rc } from './workspaceConfig';
 import { logError } from './errorlog';
 import { gateOptions } from './gate';
 import type { Module, ModuleContext } from './module';
 import type { Notice } from './scheduler';
-
-const run = promisify(execFile);
+import { vcsProvider, vcsReady } from './vcs';
 
 const FILE = join(ATAS, 'watchers.json');
 const EVERY_MIN = 15;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
-// Past implementation the gate quiz has nothing left to gate.
-const PAST_GATES = /code review|ready to test|in testing|test |done/i;
+// Past implementation (in review or later) the gate quiz has nothing left to gate.
+const pastGates = (stage: string | null): boolean => isStageKind(cycle(), stage, ['review', 'reviewApproved', 'qa', 'qaApproved', 'done']) || returnedFromQa(cycle(), stage);
 const GATE_MAX_AGE_DAYS = 14;
 const POSTMORTEM_MAX_AGE_DAYS = 30;
 const NOT_PROD_RECHECK_MS = 3 * HOUR_MS;
@@ -76,7 +76,7 @@ function hasQuizSection(quizFile: string, gate: number): boolean {
 export function gateAlerts(cards: Card[], now = Date.now()): WatcherAlert[] {
   const out: WatcherAlert[] = [];
   for (const card of cards) {
-    if (!card.spec || PAST_GATES.test(card.stage ?? '')) continue;
+    if (!card.spec || pastGates(card.stage)) continue;
     for (const o of gateOptions(card)) {
       const mtime = Math.floor(statSync(o.file).mtimeMs);
       if (now - mtime > GATE_MAX_AGE_DAYS * DAY_MS) continue;
@@ -127,15 +127,16 @@ function readHistory(): HistoryRow[] {
 
 const STOP = 'Pare: decida com o revisor e registre no Plan. Não rode uma terceira rodada.';
 
-// history.jsonl only records the days the daily-report ran, so a Test Fail the card shows but the history has not seen yet counts too.
+// history.jsonl only records the days the card source ran, so a return from QA the card shows but the history has not seen yet counts too.
 export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAlert[] {
   const out: WatcherAlert[] = [];
   const changes = history.filter((r) => r.type === 'change').sort((a, b) => a.at.localeCompare(b.at));
   for (const card of cards) {
     const stages = changes.filter((r) => r.ref === card.ref && r.field === 'stage');
-    let fails = stages.filter((r) => r.to === 'Test Fail').length;
-    if (card.stage === 'Test Fail' && stages[stages.length - 1]?.to !== 'Test Fail') fails++;
-    if (fails >= 2 && !/test ok|done/i.test(card.stage ?? '')) {
+    const failed = (stage: unknown) => returnedFromQa(cycle(), typeof stage === 'string' ? stage : null);
+    let fails = stages.filter((r) => failed(r.to)).length;
+    if (failed(card.stage) && !failed(stages[stages.length - 1]?.to)) fails++;
+    if (fails >= 2 && !isStageKind(cycle(), card.stage, ['qaApproved', 'done'])) {
       out.push({
         id: `rej:${card.ref}:qa:${fails}`,
         kind: 'rejections',
@@ -145,7 +146,7 @@ export function rejectionAlerts(cards: Card[], history: HistoryRow[]): WatcherAl
         message: `#${card.iid} reprovada ${fails} vezes no QA`,
         detail: STOP,
         card: null,
-        since: stages.filter((r) => r.to === 'Test Fail').pop()?.at ?? new Date().toISOString(),
+        since: stages.filter((r) => failed(r.to)).pop()?.at ?? new Date().toISOString(),
       });
     }
     for (const mr of card.mrs) {
@@ -176,7 +177,8 @@ interface ReportIssue {
   kind: string;
   ref: string;
   iid: number;
-  project_id: number;
+  /** The issue project as the provider takes it: the numeric id in a daily-report state file, the path otherwise. */
+  project_id: number | string;
   title: string;
   labels?: string[];
 }
@@ -204,38 +206,21 @@ export function severityOf(bugReport: string | null, labels: string[]): Severity
   return null;
 }
 
-// Only GET: the watchers never write to GitLab.
-async function glabGet<T>(path: string): Promise<T> {
-  const { stdout } = await run('glab', ['api', path], { env: vcsCliEnv(), timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
-  return JSON.parse(stdout) as T;
-}
-
-interface GlIssue {
-  state: string;
-  closed_at: string | null;
-  labels: string[];
-}
-interface GlMr {
-  iid: number;
-  project_id: number;
-  state: string;
-  target_branch: string;
-  merged_at: string | null;
-}
-
 // A closed issue alone is not enough (superseded or duplicate issues close without shipping): it needs a version label (devCycle.releaseLabelPattern).
-async function inProduction(projectId: number, iid: number): Promise<{ at: string | null; reason: string } | null> {
-  const issue = await glabGet<GlIssue>(`projects/${projectId}/issues/${iid}`);
-  // related_merge_requests also lists other repositories' MRs that merely mention the issue (the playbook's, for one).
-  const mrs = (await glabGet<GlMr[]>(`projects/${projectId}/issues/${iid}/related_merge_requests`)).filter((m) => m.project_id === projectId);
+// Reads only: the watchers never write to the code host.
+async function inProduction(project: string, iid: number): Promise<{ at: string | null; reason: string } | null> {
+  const prov = vcsProvider();
+  const issue = await prov.getIssue(project, iid);
+  // The related list also holds other repositories' MRs that merely mention the issue (the playbook's, for one).
+  const mrs = (await prov.linkedMrs(project, iid)).filter((m) => m.project === issue.project);
   const shipped = mrs
-    .filter((m) => m.state === 'merged' && /^(main|release\/\d[\w.]*)$/.test(m.target_branch))
-    .sort((a, b) => (b.merged_at ?? '').localeCompare(a.merged_at ?? ''))[0];
-  if (shipped) return { at: shipped.merged_at, reason: `!${shipped.iid} mergeada em ${shipped.target_branch}` };
+    .filter((m) => m.state === 'merged' && /^(main|release\/\d[\w.]*)$/.test(m.targetBranch))
+    .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+  if (shipped) return { at: shipped.mergedAt, reason: `!${shipped.iid} mergeada em ${shipped.targetBranch}` };
   const pattern = rc().releaseLabelPattern;
   const label = issue.labels.find((l) => pattern.test(l));
   const version = label ? (pattern.exec(label)?.[1] ?? label) : null;
-  if (issue.state === 'closed' && version) return { at: issue.closed_at, reason: `issue fechada na versão ${version}` };
+  if (issue.state === 'closed' && version) return { at: issue.closedAt, reason: `issue fechada na versão ${version}` };
   return null;
 }
 
@@ -251,8 +236,14 @@ function reportIssues(): ReportIssue[] {
 export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()): Promise<WatcherAlert[]> {
   const known = new Map<string, ReportIssue>();
   for (const i of reportIssues()) known.set(String(i.iid), i);
+  let issueProject: string | null = null;
+  try {
+    issueProject = issueProjectKey();
+  } catch {
+    // no issue project configured: only the issues the card source reported can be checked
+  }
   for (const c of cards) {
-    if (!known.has(c.iid)) known.set(c.iid, { kind: 'issue', ref: c.ref, iid: Number(c.iid), project_id: 1, title: c.title });
+    if (!known.has(c.iid) && issueProject) known.set(c.iid, { kind: 'issue', ref: c.ref, iid: Number(c.iid), project_id: issueProject, title: c.title });
   }
   const out: WatcherAlert[] = [];
   for (const [iid, issue] of known) {
@@ -267,7 +258,7 @@ export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()
     let check = s.prod[iid];
     if (!check || (!check.prod && now - new Date(check.at).getTime() > NOT_PROD_RECHECK_MS)) {
       try {
-        const hit = await inProduction(issue.project_id, Number(iid));
+        const hit = await inProduction(String(issue.project_id), Number(iid));
         check = { at: new Date(now).toISOString(), prod: !!hit, when: hit?.at ?? null, reason: hit?.reason ?? null };
         s.prod[iid] = check;
       } catch (e) {
@@ -319,7 +310,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
         logError('job:watchers', e, { job: 'watchers', phase: name });
       }
     };
-    await attempt('gate', () => gateAlerts(cards));
+    if (cycleOn('gate')) await attempt('gate', () => gateAlerts(cards));
     await attempt('rejections', () => rejectionAlerts(cards, readHistory()));
     await attempt('postmortem', () => postmortemAlerts(cards, s));
 
@@ -349,7 +340,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
 
 export const register: Module = (ctx) => {
   const enabled = () => getSettings().notifications;
-  ctx.job({ name: 'watchers', everyMin: EVERY_MIN, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await checkWatchers(ctx, enabled())) });
+  ctx.job({ name: 'watchers', everyMin: EVERY_MIN, workHoursOnly: true, enabled: vcsReady, run: async () => void (await checkWatchers(ctx, enabled())) });
   ctx.handle('watchers:list', () => active(read()));
   ctx.handle('watchers:check', () => checkWatchers(ctx, false));
   ctx.handle('watchers:dismiss', (id: string) => {

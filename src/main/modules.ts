@@ -1,8 +1,10 @@
+import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { configModule } from './configModule';
 import { register as conflictVerify } from './conflictVerify';
+import { cycleModule } from './cycle';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
 import { errorlog } from './errorlog';
@@ -15,16 +17,20 @@ import { retention } from './retention';
 import { saude } from './saude';
 import { update } from './update';
 import { updates } from './updates';
+import { vcsModule } from './vcs/module';
+import { voiceModule } from './voiceModule';
 import { wizard } from './wizard';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
 
 // Feature modules register here, one per line. Keep this list sorted.
 export const MODULES: Module[] = [
+  agentPrep,
   auditoria,
   autostart,
   configModule,
   conflictVerify,
+  cycleModule,
   custoTempo,
   diagramFix,
   efeitos,
@@ -37,6 +43,8 @@ export const MODULES: Module[] = [
   saude,
   update,
   updates,
+  vcsModule,
+  voiceModule,
   watchers,
   wizard,
   workspaces,

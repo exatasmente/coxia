@@ -1,5 +1,6 @@
 import type { SavedCeremony } from '../shared/types';
 import { TEMPO_LABEL, type TempoBlock, type TempoDay, type TempoEntry, type TempoIssue, type TempoKind } from '../shared/tempo';
+import { tv } from '../shared/i18n';
 
 const MIN = 60_000;
 // A gap longer than this inside a pre-daily item means the call was paused, not that the agent was still talking.
@@ -114,14 +115,14 @@ export function ceremonySpans(s: SavedCeremony, fileMtime: number, refPrefix = '
   };
 
   if (!runs.length) {
-    push('daily', null, started, end, 'call sem atividades');
+    push('daily', null, started, end, tv('time.call.empty'));
     return spans;
   }
   push('daily', null, started, runs[0].from, 'abertura');
   runs.forEach((run, i) => {
     const next = runs[i + 1]?.from ?? end;
     const to = next - run.last > PAUSE_MS ? run.last + TAIL_MS : next;
-    push('pre-daily', run.iid, run.from, to, 'call');
+    push('pre-daily', run.iid, run.from, to, tv('time.call'));
   });
   return spans;
 }

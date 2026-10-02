@@ -1,5 +1,5 @@
 export interface QuickPerson {
-  id: number;
+  id: number | string;
   username: string;
   name: string;
 }
@@ -54,7 +54,7 @@ export interface QuickMember extends QuickPerson {
 }
 
 export type QuickRequest =
-  | { kind: 'reviewer'; projectPath: string; mrIid: number; userId: number; issue?: number }
+  | { kind: 'reviewer'; projectPath: string; mrIid: number; userId: number | string; issue?: number }
   | { kind: 'undraft'; projectPath: string; mrIid: number; issue?: number }
   | { kind: 'play'; projectPath: string; jobId: number }
   | { kind: 'transition'; issue: number; to: string };

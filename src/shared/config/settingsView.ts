@@ -13,7 +13,7 @@ export function settingsFromConfig(c: WorkspaceConfig, web: WebSettings): Settin
     modelOptions: options,
     tools: { files: c.agents.tools.files, skills: c.agents.tools.skills, gitlabMcp: c.agents.tools.trackerMcp, glab: c.agents.tools.vcsCli, subagents: c.agents.tools.subagents },
     schedule: { ...c.schedule },
-    voice: { autoStop: c.voice.autoStop, silenceMs: c.voice.silenceMs, speak: c.voice.speak, engine: c.voice.engine, prosody: c.voice.prosody, bargeIn: c.voice.bargeIn },
+    voice: { enabled: c.voice.enabled, depsInstalled: c.voice.depsInstalled, sttModel: c.voice.sttModel, autoStop: c.voice.autoStop, silenceMs: c.voice.silenceMs, speak: c.voice.speak, engine: c.voice.engine, prosody: c.voice.prosody, bargeIn: c.voice.bargeIn },
     notifications: c.notifications,
     closeToTray: c.closeToTray,
     retention: { ...c.retention },

@@ -145,10 +145,13 @@ describe('hints', () => {
   it.each([
     ['agent ended with error_max_turns', 'rpc:conflict:propose', 'agente parou antes de terminar'],
     ['connect ECONNREFUSED 10.1.1.1:443', 'job:radar', 'Sem rede ou VPN'],
-    ['getaddrinfo ENOTFOUND dark.smartzap.com.br', 'rpc:cards:load', 'Sem rede ou VPN'],
+    ['getaddrinfo ENOTFOUND git.example.test', 'rpc:cards:load', 'Sem rede ou VPN'],
+    ['Sem conexão com git.example.test: ENOTFOUND', 'job:feedback', 'Sem rede ou VPN'],
     ['Request failed with status code 401: user not found (OpenRouter)', 'rpc:agent:reply', 'chave ou saldo da OpenRouter'],
     ['API Error: 402 Payment Required', 'rpc:deep:ask', 'chave ou saldo da OpenRouter'],
-    ['glab: You are not logged in to dark.smartzap.com.br', 'job:status', 'glab não está autenticado'],
+    ['glab: You are not logged in to git.example.test', 'job:status', 'acesso ao host de código foi recusado'],
+    ['git.example.test recusou a credencial (HTTP 401). Confira o token ou refaça o login do CLI.', 'job:feedback', 'acesso ao host de código foi recusado'],
+    ['spawn gh ENOENT', 'rpc:cards:load', 'CLI do host de código'],
     ['voice sidecar exited (code 1, signal none)', 'sidecar:voice', 'sidecar de voz caiu'],
   ])('%s', (message, source, hint) => {
     expect(errorHint(message, source)?.toLowerCase()).toContain(hint.toLowerCase());

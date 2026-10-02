@@ -1,16 +1,14 @@
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type EfeitosView, WINDOW_DAYS, effectKey } from '../shared/efeitos';
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
+import { baseParams } from './cyclePrompts';
 import { ATAS } from './env';
-import { gitlabCliReady, rc, vcsCliEnv } from './workspaceConfig';
+import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
-
-const run = promisify(execFile);
+import { vcsProvider, vcsReady } from './vcs';
 
 const FILE = join(ATAS, 'efeitos.json');
 const DAY_MS = 86_400_000;
@@ -125,8 +123,8 @@ const KIND_HELP: Record<CheckKind, string> = {
   mr_new_commit: 'o MR recebeu commit novo (push) depois da cerimônia',
   mr_pipeline: 'uma pipeline do MR rodou depois da cerimônia (valor opcional: status esperado, como success)',
   mr_job: 'um job com esse nome rodou numa pipeline do MR depois da cerimônia (valor: nome do job)',
-  mr_comment: 'o Luiz comentou no MR depois da cerimônia',
-  issue_comment: 'o Luiz comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
+  mr_comment: '{theUser} comentou no MR depois da cerimônia',
+  issue_comment: '{theUser} comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
   issue_label: 'a issue ganhou a label (valor: a label, como STAGE::Ready to test)',
   issue_label_removed: 'a issue deixou de ter a label (valor: a label)',
   issue_closed: 'a issue foi fechada',
@@ -141,7 +139,7 @@ function classifyPrompt(entry: EffectEntry, card: Card | undefined): string {
     `Atividade: ${entry.ref} (repositório citado: ${entry.repo}). A issue ${issueIid ? `#${issueIid}` : ''} vive no projeto ${rc().issues.project ?? 'não configurado'}.`,
     `MRs da atividade (project e iid para usar): ${JSON.stringify(card?.mrPaths ?? [])}. Estágio: ${card?.stage ?? 'desconhecido'}.`,
     'Tipos de verificação disponíveis:',
-    ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k]}`),
+    ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k].replace('{theUser}', String(baseParams().theUser))}`),
     'Regras: escolha um tipo só se o estado do GitLab provar que a ação foi feita. Se ela for vaga, pessoal, local (git, worktree, spec), mudança de status de work item (não é label) ou exigir julgamento, responda tipo "nenhum" e verificavel false.',
     'Quando o MR citado não está na lista de MRs acima, use "nenhum". "projeto" é o caminho do projeto (grupo/repo), "iid" o número do MR ou da issue (null nos tipos que criam coisa), "valor" o parâmetro do tipo ou null, "motivo" uma frase curta.',
   ].join('\n');
@@ -187,124 +185,78 @@ async function classify(entry: EffectEntry, cards: Card[]): Promise<void> {
 
 // ---------------------------------------------------------------- verification (GET only)
 
-async function get<T>(path: string): Promise<T> {
-  const { stdout } = await run('glab', ['api', path], { env: vcsCliEnv(), timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
-  return JSON.parse(stdout) as T;
-}
-
-let me: string | null = null;
-async function myUsername(): Promise<string> {
-  me ??= (await get<{ username: string }>('user')).username;
-  return me;
-}
-
-const enc = encodeURIComponent;
 const after = (iso: string | null | undefined, since: string) => !!iso && new Date(iso).getTime() >= new Date(since).getTime();
 
-interface GlMr {
-  state: string;
-  draft?: boolean;
-  work_in_progress?: boolean;
-  merged_at: string | null;
-  reviewers?: { username: string }[];
-  diverged_commits_count?: number | null;
-  web_url?: string;
-}
-interface GlIssue {
-  iid: number;
-  title: string;
-  state: string;
-  closed_at: string | null;
-  labels: string[];
-  created_at: string;
-}
-interface GlNote {
-  system: boolean;
-  created_at: string;
-  author: { username: string };
-}
-interface GlPipeline {
-  id: number;
-  status: string;
-  created_at: string;
-}
-interface GlJob {
-  name: string;
-  status: string;
-  started_at: string | null;
-  created_at: string;
-}
+// Statuses of a CI job that mean it actually ran (GitLab words and GitHub conclusions).
+const RAN = ['success', 'failed', 'failure', 'running', 'in_progress', 'canceled', 'cancelled'];
 
 export async function verify(c: CheckSpec, since: string): Promise<Verdict> {
-  const p = `projects/${enc(c.project)}`;
-  const mr = `${p}/merge_requests/${c.iid}`;
-  const issue = `${p}/issues/${c.iid}`;
+  const prov = vcsProvider();
+  const project = c.project;
+  const iid = c.iid as number;
   const v = c.value ?? '';
   switch (c.kind) {
     case 'mr_ready': {
-      const m = await get<GlMr>(mr);
-      return { done: !(m.draft ?? m.work_in_progress) && m.state !== 'closed', evidence: `!${c.iid} ${m.draft ?? m.work_in_progress ? 'ainda é draft' : 'não é mais draft'}` };
+      const m = await prov.getMr(project, iid);
+      return { done: !m.draft && m.state !== 'closed', evidence: `!${c.iid} ${m.draft ? 'ainda é draft' : 'não é mais draft'}` };
     }
     case 'mr_reviewer': {
-      const m = await get<GlMr>(mr);
-      const names = (m.reviewers ?? []).map((r) => r.username);
+      const m = await prov.getMr(project, iid);
+      const names = m.reviewers.map((r) => r.username);
       const done = v ? names.some((n) => n.toLowerCase() === v.toLowerCase().replace(/^@/, '')) : names.length > 0;
       return { done, evidence: names.length ? `reviewers de !${c.iid}: ${names.join(', ')}` : `!${c.iid} sem reviewer` };
     }
     case 'mr_merged': {
-      const m = await get<GlMr>(mr);
-      return { done: m.state === 'merged', at: m.merged_at, evidence: `!${c.iid} está ${m.state}` };
+      const m = await prov.getMr(project, iid);
+      return { done: m.state === 'merged', at: m.mergedAt, evidence: `!${c.iid} está ${m.state}` };
     }
     case 'mr_synced_with_main': {
-      const m = await get<GlMr>(`${mr}?include_diverged_commits_count=true`);
-      const n = m.diverged_commits_count;
-      return { done: n === 0, evidence: n == null ? `!${c.iid}: GitLab não informou a divergência` : `!${c.iid} está ${n} commit(s) atrás da main` };
+      const n = (await prov.getMr(project, iid, { behind: true })).behind;
+      return { done: n === 0, evidence: n == null ? `!${c.iid}: o host não informou a divergência` : `!${c.iid} está ${n} commit(s) atrás da main` };
     }
     case 'mr_new_commit': {
-      const commits = await get<{ id: string; committed_date: string }[]>(`${mr}/commits?per_page=50`);
-      const hit = commits.find((x) => after(x.committed_date, since));
-      return { done: !!hit, at: hit?.committed_date, evidence: hit ? `commit ${hit.id.slice(0, 8)} em !${c.iid}` : `nenhum commit novo em !${c.iid}` };
+      const commits = await prov.listMrCommits(project, iid);
+      const hit = commits.find((x) => after(x.date, since));
+      return { done: !!hit, at: hit?.date, evidence: hit ? `commit ${hit.sha.slice(0, 8)} em !${c.iid}` : `nenhum commit novo em !${c.iid}` };
     }
     case 'mr_pipeline': {
-      const list = (await get<GlPipeline[]>(`${mr}/pipelines`)).filter((x) => after(x.created_at, since) && (v ? x.status === v : x.status !== 'skipped'));
-      const hit = list.sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
-      return { done: !!hit, at: hit?.created_at, evidence: hit ? `pipeline ${hit.id} (${hit.status}) em !${c.iid}` : `nenhuma pipeline nova em !${c.iid}` };
+      const list = (await prov.listMrCi(project, iid)).filter((x) => after(x.createdAt, since) && (v ? x.status === v : x.status !== 'skipped'));
+      const hit = list.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `pipeline ${hit.id} (${hit.status}) em !${c.iid}` : `nenhuma pipeline nova em !${c.iid}` };
     }
     case 'mr_job': {
-      const pipes = (await get<GlPipeline[]>(`${mr}/pipelines`)).filter((x) => after(x.created_at, since)).slice(0, 5);
+      const pipes = (await prov.listMrCi(project, iid)).filter((x) => after(x.createdAt, since)).slice(0, 5);
       for (const pipe of pipes) {
-        const jobs = await get<GlJob[]>(`${p}/pipelines/${pipe.id}/jobs?per_page=100`);
-        const job = jobs.find((j) => j.name.toLowerCase().includes(v.toLowerCase()) && ['success', 'failed', 'running', 'canceled'].includes(j.status));
-        if (job) return { done: true, at: job.started_at ?? job.created_at, evidence: `job ${job.name} (${job.status}) na pipeline ${pipe.id}` };
+        const jobs = await prov.listCiJobs(project, pipe.id);
+        const job = jobs.find((j) => j.name.toLowerCase().includes(v.toLowerCase()) && RAN.includes(j.status));
+        if (job) return { done: true, at: job.startedAt ?? job.createdAt, evidence: `job ${job.name} (${job.status}) na pipeline ${pipe.id}` };
       }
       return { done: false, evidence: `job ${v} não rodou em !${c.iid}` };
     }
     case 'mr_comment':
     case 'issue_comment': {
-      const notes = await get<GlNote[]>(`${c.kind === 'mr_comment' ? mr : issue}/notes?sort=desc&order_by=created_at&per_page=50`);
-      const user = await myUsername();
-      const hit = notes.find((n) => !n.system && n.author.username === user && after(n.created_at, since));
-      return { done: !!hit, at: hit?.created_at, evidence: hit ? `comentário seu em ${c.kind === 'mr_comment' ? '!' : '#'}${c.iid}` : 'nenhum comentário seu desde a cerimônia' };
+      const notes = c.kind === 'mr_comment' ? await prov.listMrComments(project, iid) : await prov.listIssueComments(project, iid);
+      const user = (await prov.currentUser()).username;
+      const hit = notes.find((n) => !n.system && n.author === user && after(n.createdAt, since));
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `comentário seu em ${c.kind === 'mr_comment' ? '!' : '#'}${c.iid}` : 'nenhum comentário seu desde a cerimônia' };
     }
     case 'issue_label':
     case 'issue_label_removed': {
-      const i = await get<GlIssue>(issue);
+      const i = await prov.getIssue(project, iid);
       const has = i.labels.some((l) => l.toLowerCase() === v.toLowerCase());
       return { done: c.kind === 'issue_label' ? has : !has, evidence: `#${c.iid} ${has ? 'tem' : 'não tem'} a label ${v}` };
     }
     case 'issue_closed': {
-      const i = await get<GlIssue>(issue);
-      return { done: i.state === 'closed', at: i.closed_at, evidence: `#${c.iid} está ${i.state}` };
+      const i = await prov.getIssue(project, iid);
+      return { done: i.state === 'closed', at: i.closedAt, evidence: `#${c.iid} está ${i.state}` };
     }
     case 'issue_created': {
-      const list = await get<GlIssue[]>(`${p}/issues?search=${enc(v)}&in=title&scope=all&created_after=${enc(since)}&per_page=20`);
-      const hit = list[0];
-      return { done: !!hit, at: hit?.created_at, evidence: hit ? `issue #${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhuma issue nova com «${v}»` };
+      const hit = (await prov.searchIssues(project, { text: v, createdAfter: since }))[0];
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `issue #${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhuma issue nova com «${v}»` };
     }
     case 'mr_created': {
-      const list = await get<(GlIssue & { created_at: string })[]>(`${p}/merge_requests?search=${enc(v)}&in=title&scope=all&created_after=${enc(since)}&per_page=20`);
-      const hit = list[0];
-      return { done: !!hit, at: hit?.created_at, evidence: hit ? `MR !${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhum MR novo com «${v}»` };
+      const hit = (await prov.searchMrs(project, { text: v, createdAfter: since }))[0];
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? `MR !${hit.iid} «${hit.title.slice(0, 60)}»` : `nenhum MR novo com «${v}»` };
     }
   }
 }
@@ -367,7 +319,7 @@ export function mark(effect: Effect, ceremonyId: string | null, done: boolean): 
 
 export const register: Module = (ctx) => {
   deps = ctx;
-  ctx.job({ name: 'efeitos', everyMin: 30, workHoursOnly: true, enabled: gitlabCliReady, run: async () => void (await runCycle()) });
+  ctx.job({ name: 'efeitos', everyMin: 30, workHoursOnly: true, enabled: vcsReady, run: async () => void (await runCycle()) });
   ctx.handle('efeitos:status', () => {
     syncFromHistory();
     return view();

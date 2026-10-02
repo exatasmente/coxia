@@ -1,5 +1,5 @@
 import type { JsonSchema } from './jsonSchema';
-import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
 // The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -118,8 +118,72 @@ const agentRole = object(
     modelRole: enumOf('The llm.roles entry this agent role calls.', LLM_ROLES),
     extraInstructions: string('Text appended to the system prompt.', { maxLength: 20_000 }),
     promptOverride: string('Replaces the built-in role preamble when not empty.', { maxLength: 20_000 }),
+    persona: string('Persona or tone of this agent, appended after the shared one.', { maxLength: 2000 }),
+    maxTurns: { type: ['integer', 'null'], description: 'Turn limit of every call of this role; null: each call keeps its own limit.', minimum: 1, maximum: 200 },
+    docs: object('Which documentation sources of docs this role may read.', {
+      claudeMd: boolean('CLAUDE.md files.'),
+      skills: boolean('Skills folders.'),
+      rules: boolean('Rules folders.'),
+      agents: boolean('Agents folders.'),
+      knowledge: boolean('Knowledge base folders.'),
+      mcp: boolean('MCP config files.'),
+    }),
   },
 );
+
+const stageRule = object(
+  'Maps what a provider reports to a stage.',
+  {
+    provider: enumOf('Provider kind the rule is for; "any" applies to all.', [...VCS_KINDS, 'any']),
+    source: enumOf('Where the provider carries the stage: label, status, field (board field), state or column.', STAGE_SOURCES),
+    name: string('For source "field": the field name (e.g. "Status").'),
+    pattern: string('Case-insensitive regular expression tested against the value.', { minLength: 1, maxLength: 400 }),
+    stage: string('The id of the stage it maps to.', { pattern: ID }),
+  },
+  ['provider', 'source', 'pattern', 'stage'],
+);
+
+const words = (description: string): JsonSchema => integer(description, 5, 1000);
+const text = (description: string): JsonSchema => string(description, { maxLength: 4000 });
+
+const ceremonyParams = object('Parameters of each ceremony. A text is a catalog key or a literal in the language of the team.', {
+  preDaily: object('The daily preparation.', {
+    label: text('How the team calls it.'),
+    speechWords: words('Words of the spoken turn of each agent.'),
+    specReads: integer('Reads of the spec an agent may do while preparing; 0 tells it not to read.', 0, 20),
+    summaryTarget: text('Where the summary is pasted; empty: a generic team chat.'),
+    summaryStyle: text('How the summary is written.'),
+  }),
+  unblock: object('The unblock conversation.', { speechWords: words('Words of a spoken answer.') }),
+  gate: object('The gate quiz.', {
+    maxQuestions: integer('Most questions of one round.', 1, 10),
+    questionKinds: list('Kinds of consequence question.', { type: 'string', maxLength: 200, pattern: NO_NUL }, { maxItems: 20 }),
+    summaryWords: words('Words of the gate summary.'),
+  }),
+  qaHandoff: object('The QA hand-off.', { speechWords: words('Words of the spoken hand-off.') }),
+  retro: object('The retrospective.', { windowDays: integer('Days it looks back over.', 1, 90), speechWords: words('Words of the opening.') }),
+  releaseConflicts: object('Release sync and conflict resolution.', { speechWords: words('Words of a spoken answer.') }),
+});
+
+const meanings = object('What the team means by the words the agents use.', {
+  blocker: object('A blocker.', {
+    stageKinds: list('A card in a stage of one of these kinds counts as blocked.', enumOf('Stage kind.', STAGE_KINDS), { maxItems: 20, uniqueItems: true }),
+    text: text('What a blocker is, handed to the agent; empty: nothing is said.'),
+  }),
+  question: object('A question for the user.', { enabled: boolean('Agents may end their turn with a question.'), text: text('What the agent may ask about.') }),
+  readyForQa: object('Ready for QA.', {
+    stageKinds: list('A card in a stage of one of these kinds is ready for the QA hand-off.', enumOf('Stage kind.', STAGE_KINDS), { maxItems: 20, uniqueItems: true }),
+    requiresSpec: boolean('Only a card with a spec folder can be handed to QA.'),
+    text: text('What ready for QA means; empty: nothing is said.'),
+  }),
+});
+
+const promptOverride = {
+  type: 'object',
+  description: 'The text that replaces a prompt, per language.',
+  properties: { 'pt-BR': string('Portuguese text.', { maxLength: 20_000 }), en: string('English text.', { maxLength: 20_000 }) },
+  additionalProperties: false,
+} as JsonSchema;
 
 const command = { enabled: boolean('The integration is on.'), command: string('Executable ("~/" expands); never run through a shell.') };
 
@@ -134,6 +198,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       setupComplete: boolean('The setup wizard finished (or the config came from an existing install).'),
       language: enumOf('Interface and agent language.', LANGUAGES),
       userName: string('How the agents address the user; empty: no name.', { maxLength: 80 }),
+      userArticle: enumOf('Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone.', USER_ARTICLES),
       appearance: object('Look.', { theme: enumOf('Color theme.', THEMES) }),
       notifications: boolean('Desktop and push notifications.'),
       closeToTray: boolean('Closing the window keeps the app in the tray.'),
@@ -176,13 +241,25 @@ export const CONFIG_SCHEMA: JsonSchema = {
       devCycle: object('The development cycle the ceremonies follow.', {
         templateId: string('Template this section came from.', { pattern: '^[a-z0-9][a-z0-9_.-]{0,47}$' }),
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
+        ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
+        stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
+        meanings,
+        enrichment: object('What the agent is given about each card.', {
+          specFolder: boolean('Look the issue folder up in docs.specsDir and describe it on the card.'),
+          cardFields: list('Fields of the card the agent sees.', enumOf('Card field.', CARD_FIELDS), { maxItems: 20, uniqueItems: true }),
+          extraFiles: strings('Documents the card names when they exist (relative to the spec folder, or "./" for the projects root).'),
+        }),
+        prompts: object('Which prompt family each role uses.', Object.fromEntries(PROMPT_ROLES.map((r) => [r, string(`Prompt family of the ${r} prompts.`, { pattern: '^[a-z][a-z0-9-]{0,31}$' })]))),
+        promptOverrides: { type: 'object', description: 'Replaces single prompt texts, by prompt id (e.g. "turn.main"), per language.', additionalProperties: promptOverride },
+        pipelineSkill: string('Name of the skill that describes the team pipeline; empty: none.', { maxLength: 100 }),
         releaseLabelPattern: string('Regular expression for the label that says an issue shipped; group 1 is the version shown.', { maxLength: 200 }),
         specLayout: object('How an issue folder is laid out.', {
           folderPrefix: string('The spec folder starts with this; "{iid}" is the issue number.', { minLength: 1, maxLength: 100 }),
           phaseFiles: list('From the most advanced phase to the first.', phaseFile, { maxItems: 60 }),
           planFiles: strings('Files that hold the plan.'),
           gateFiles: list('Artifacts of each gate.', gateFiles, { maxItems: 30 }),
+          decisionLog: object('Where the decisions of the ceremonies are recorded in the plan.', { heading: text('Heading text (catalog key or literal); empty: decisions stay in the minutes.') }),
           documents: object('Names of the documents the app writes.', { gateQuiz: string('Gate quiz record.', { minLength: 1 }), completion: string('Issue completion record.', { minLength: 1 }), qaChecklist: string('QA checklist.', { minLength: 1 }) }),
         }),
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
@@ -197,6 +274,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           subagents: boolean('Subagents in the unblock ceremony.'),
         }),
         extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
+        persona: string('Persona or tone shared by every agent.', { maxLength: 2000 }),
         roles: byRole('Per agent role.', agentRole),
       }),
       voice: object('Speech.', {
@@ -204,6 +282,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         engine: enumOf('Text-to-speech engine.', VOICE_ENGINES),
         sttModel: string('faster-whisper model name.', { minLength: 1, maxLength: 60 }),
         depsInstalled: boolean('The sidecar dependencies are installed on this machine.'),
+        kokoroDir: nullableString('Folder with the Kokoro model files, outside the app data folder. null: only the app folders.'),
         autoStop: boolean('Send when the speaker stops.'),
         silenceMs: integer('Silence that ends an utterance (ms).', 500, 5000),
         speak: boolean('Agents speak aloud.'),

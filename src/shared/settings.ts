@@ -30,7 +30,20 @@ export interface Settings {
     retroDay: number;
     retroTime: string;
   };
-  voice: { autoStop: boolean; silenceMs: number; speak: boolean; engine: 'edge' | 'kokoro'; prosody: boolean; bargeIn: boolean };
+  voice: {
+    /** Voice is on. Read-only here: only the voice:enable channel flips it (it installs or starts the sidecar), a save keeps what the config has. */
+    enabled: boolean;
+    /** The sidecar dependencies are installed on this machine. Read-only here too. */
+    depsInstalled: boolean;
+    /** faster-whisper model name. Read-only here: voice:install sets it. */
+    sttModel: string;
+    autoStop: boolean;
+    silenceMs: number;
+    speak: boolean;
+    engine: 'edge' | 'kokoro';
+    prosody: boolean;
+    bargeIn: boolean;
+  };
   notifications: boolean;
   closeToTray: boolean;
   retention: { enabled: boolean; days: number };

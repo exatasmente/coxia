@@ -1,18 +1,16 @@
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { basename, join } from 'node:path';
 import type { RadarFinding, RadarKind, RadarRegion, RadarResult, RadarSide } from '../shared/radar';
 import { stageRank } from '../shared/config/stages';
 import type { Card } from '../shared/types';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { rc, vcsCliEnv } from './workspaceConfig';
+import { rc } from './workspaceConfig';
+import { vcsProvider } from './vcs';
 import type { Module, ModuleContext } from './module';
 import { fetchRepos, worktreeHealth } from './worktrees';
 
-const exec = promisify(execFile);
 const FILE = join(ATAS, 'radar.json');
 // related-work-radar collide uses 40 lines (about one method) as "same place".
 const WINDOW = 40;
@@ -59,7 +57,12 @@ const GENERIC_DIR = new Set([
   'Exceptions', 'API', 'V1', 'V2', 'V4', 'admin', 'agent', 'Agent', 'Client', 'master', 'presentation', 'application',
 ]);
 
-const isNoise = (file: string) => NOISE.some((r) => r.test(file));
+// The folder of issue specs is in the repo it lives in (".specs/" at the root, for the SDD layout): a collision there is mechanical too.
+const specsNoise = (): RegExp | null => {
+  const dir = rc().specsDir;
+  return dir ? new RegExp(`^${basename(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`) : null;
+};
+const isNoise = (file: string) => NOISE.some((r) => r.test(file)) || !!specsNoise()?.test(file);
 
 // "Same module": the first two meaningful directory names ("Reports/V2" is dropped to "Reports" by GENERIC_DIR).
 function scopeOf(file: string): string | null {
@@ -232,24 +235,15 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
   return findings.sort((p, q) => order[p.kind] - order[q.kind] || p.key.localeCompare(q.key));
 }
 
-async function glabGet(path: string): Promise<string> {
-  const { stdout } = await exec('glab', ['api', path], { env: vcsCliEnv(), timeout: 90_000, maxBuffer: 64 * 1024 * 1024 });
-  return stdout;
-}
-
 async function fetchChanges(project: string, iid: number): Promise<MrChanges | null> {
-  const d = JSON.parse(await glabGet(`projects/${encodeURIComponent(project)}/merge_requests/${iid}/changes`)) as {
-    state: string;
-    source_branch: string;
-    target_branch: string;
-    web_url: string;
-    changes?: { new_path: string; diff?: string }[];
-  };
-  if (d.state !== 'opened') return null;
+  const prov = vcsProvider();
+  const mr = await prov.getMr(project, iid);
+  if (mr.state !== 'open') return null;
+  const changes = await prov.listMrChanges(project, iid);
   const files = new Map<string, FileChange>();
   // A collapsed (too large) diff arrives empty: the file still counts, only the region is unknown.
-  for (const c of d.changes ?? []) files.set(c.new_path, parseDiff(c.diff ?? ''));
-  return { project, iid, branch: d.source_branch, target: d.target_branch, url: d.web_url, state: d.state, files };
+  for (const c of changes) files.set(c.path, parseDiff(c.diff));
+  return { project, iid, branch: mr.sourceBranch, target: mr.targetBranch, url: mr.webUrl, state: 'opened', files };
 }
 
 async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {

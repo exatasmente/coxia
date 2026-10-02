@@ -25,6 +25,7 @@ import {
 import { locateSdk, loadClaudeQuery, claudeExecutable } from './claudeSdk';
 import { probeOpenAIProvider } from './engine/open';
 import { ATAS, DATA_ROOT, HOME } from './env';
+import { listCycleTemplates, prepareAgents } from './cycles';
 import { providerSecret } from './llm';
 import { readProfileEnv, sdkEnv } from './llm-core';
 import type { Module } from './module';
@@ -64,7 +65,6 @@ const SDK_DIR = join(DATA_ROOT, 'claude-sdk');
 // ---- optional modules ---------------------------------------------------------------------------------------------------------------------
 // import.meta.glob resolves at build time to whatever of these files exist, so the wizard compiles and works with or without them.
 const vcsModules = import.meta.glob(['./vcs/index.ts', './vcs.ts']);
-const cycleModules = import.meta.glob(['../shared/cycles/index.ts', './cycles/index.ts', './cycles.ts']);
 
 type Anything = Record<string, unknown>;
 
@@ -90,18 +90,14 @@ function pickValue(mods: Anything[], names: string[]): unknown {
   return undefined;
 }
 
-const TEMPLATE_FNS = ['listCycleTemplates', 'getCycleTemplates', 'listTemplates', 'cycleTemplates'];
-const TEMPLATE_VALUES = ['CYCLE_TEMPLATES', 'cycleTemplates', 'TEMPLATES', 'templates'];
-const SCANNER_FNS = ['prepareAgents', 'scanAgentDocs', 'scanAgents', 'scanDocs', 'prepareAgentsScan'];
-
 async function availability(): Promise<WizardAvailability> {
   const vcs = await load(vcsModules);
-  const cycles = await load(cycleModules);
   return {
     desktop: true,
     vcsProbe: !!pickFn(vcs, ['probeVcs']),
-    docsScanner: !!pickFn(cycles, SCANNER_FNS),
-    cycleTemplates: !!pickFn(cycles, TEMPLATE_FNS) || pickValue(cycles, TEMPLATE_VALUES) !== undefined,
+    // The cycle templates and the "prepare agents" scan are part of the build (src/main/cycles.ts).
+    docsScanner: true,
+    cycleTemplates: true,
     voiceCheck: hasChannel('voice:check'),
     voiceInstall: hasChannel('voice:install'),
     voiceTest: hasChannel('voice:test'),
@@ -244,14 +240,20 @@ function readDocsFound(raw: unknown): DocsFound | null {
 
 async function scanDocs(): Promise<DocsScanResult> {
   const cfg = getConfig();
-  const scanner = pickFn(await load(cycleModules), SCANNER_FNS);
-  if (scanner) {
-    try {
-      const found = readDocsFound(await (scanner as (...a: unknown[]) => unknown)(cfg, { home: HOME }));
-      if (found) return { source: 'scanner', found };
-    } catch (e) {
-      console.error('[wizard] the agent scanner failed; using the built-in scan', e instanceof Error ? e.message : e);
+  try {
+    const prepared = prepareAgents(cfg, { home: HOME });
+    const found = readDocsFound(prepared);
+    if (found) {
+      return {
+        source: 'scanner',
+        found,
+        specsDir: prepared.docs.specsDir,
+        projects: prepared.projects.filter((p) => p.exists).map((p) => ({ id: p.id, path: shrinkHome(p.path, HOME), summary: p.summary })),
+        notes: prepared.notes,
+      };
     }
+  } catch (e) {
+    console.error('[wizard] the agent scanner failed; using the built-in scan', e instanceof Error ? e.message : e);
   }
   const d = fsScanDeps(HOME);
   const bases = [...cfg.projects.roots, ...cfg.projects.repos.map((r) => r.path)];
@@ -260,11 +262,8 @@ async function scanDocs(): Promise<DocsScanResult> {
 }
 
 async function cycleTemplates(): Promise<CycleTemplatesResult> {
-  const mods = await load(cycleModules);
   try {
-    const fn = pickFn(mods, TEMPLATE_FNS);
-    const raw = fn ? await (fn as () => unknown)() : pickValue(mods, TEMPLATE_VALUES);
-    const templates = normalizeTemplates(raw);
+    const templates = normalizeTemplates(listCycleTemplates(getConfig().language));
     if (templates.length) return { source: 'templates', templates };
   } catch (e) {
     console.error('[wizard] cycle templates failed to load', e instanceof Error ? e.message : e);

@@ -343,7 +343,7 @@
   "wizard.voice.working": "Working…",
   "wizard.voice.resultOk": "All good.",
   "wizard.voice.resultFail": "Failed.",
-  "wizard.voice.lazy": "If you skip, the app prepares the voice environment by itself at the first utterance (needs network and uv).",
+  "wizard.voice.lazy": "If you skip, voice stays off and the ceremonies work by text. You can install it later in Settings › Voice (needs the network).",
   "wizard.review.edit": "Edit",
   "wizard.review.editStep": "Edit: {step}",
   "wizard.review.status.ok": "configured",
@@ -405,5 +405,14 @@
   "wizard.settings.newName": "New workspace name",
   "wizard.settings.newSubmit": "Create and set up",
   "wizard.settings.exportTitle": "Export the configuration",
-  "wizard.settings.importTitle": "Import a configuration"
+  "wizard.settings.importTitle": "Import a configuration",
+  "wizard.docs.projects": "What I found in each project",
+  "wizard.docs.useSpecs": "Use as the specs folder",
+  "wizard.cycle.needs": "To get the most from this template you still provide: {list}.",
+  "wizard.cycle.need.specsDir": "the specs folder",
+  "wizard.cycle.need.qaUser": "the QA user",
+  "wizard.cycle.need.issueProject": "the issue project",
+  "wizard.cycle.need.releaseSync": "the release sync tool",
+  "wizard.cycle.need.cardSource": "the card source",
+  "wizard.stageKind.blocked": "blocked"
 }

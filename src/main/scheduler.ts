@@ -1,13 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppEvent, Card } from '../shared/types';
+import { t } from '../shared/i18n';
 import { detectRelease } from './actions';
 import { loadCards } from './cards';
 import { getSettings } from './config';
+import { ceremonyLabel } from './cyclePrompts';
+import { cycleOn } from './cycle-core';
 import { ATAS } from './env';
 import type { Job } from './module';
 import { knownTask, track } from './saude';
 import { rc } from './workspaceConfig';
+import { tv } from '../shared/i18n';
 
 interface Snapshot {
   checkedAt: string | null;
@@ -118,15 +122,15 @@ function tick(): void {
   const snap = read();
 
   const pre = minutes(s.schedule.preDaily);
-  if (workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
+  if (cycleOn('preDaily') && workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
     write({ ...snap, preDailyNotified: today() });
-    deps?.notify({ title: 'Hora da pré-daily', body: 'Os agentes estão prontos para a call. Clique para entrar.', onClick: { type: 'navigate', to: 'call' } });
+    deps?.notify({ title: t('cycle.notice.preDailyTitle', { ceremony: ceremonyLabel() }), body: tv('notify.preDaily.body'), onClick: { type: 'navigate', to: 'call' } });
   }
 
   const retro = minutes(s.schedule.retroTime);
-  if (s.notifications && now.getDay() === s.schedule.retroDay && snap.retroNotified !== today() && nowMin >= retro && nowMin < retro + PRE_DAILY_WINDOW_MIN) {
+  if (cycleOn('retro') && s.notifications && now.getDay() === s.schedule.retroDay && snap.retroNotified !== today() && nowMin >= retro && nowMin < retro + PRE_DAILY_WINDOW_MIN) {
     write({ ...read(), retroNotified: today() });
-    deps?.notify({ title: 'Retro da semana', body: 'O resumo da semana está pronto para conversar. Clique para abrir.', onClick: { type: 'navigate', to: 'retro' } });
+    deps?.notify({ title: t('cycle.notice.retroTitle'), body: t('cycle.notice.retroBody'), onClick: { type: 'navigate', to: 'retro' } });
   }
 
   const inWindow = nowMin >= minutes(s.schedule.from) && nowMin <= minutes(s.schedule.to);
@@ -141,7 +145,7 @@ function tick(): void {
 
   if (workday && inWindow && due) {
     if (rc().cardSource) void track('status', () => checkStatus(false)).catch((e) => console.error('[scheduler]', e));
-    if (rc().releaseSync) void track('release', () => detectRelease(false)).catch((e) => console.error('[release]', e));
+    if (rc().releaseSync && cycleOn('releaseConflicts')) void track('release', () => detectRelease(false)).catch((e) => console.error('[release]', e));
   }
 }
 

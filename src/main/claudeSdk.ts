@@ -63,10 +63,11 @@ export function locateSdk(cfg: ClaudeSdkConfig, home: string, deps: LocateDeps =
 }
 
 type Query = typeof query;
-let loaded: { key: string; module: Promise<{ query: Query }> } | null = null;
+type SdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
+let loaded: { key: string; module: Promise<SdkModule> } | null = null;
 
-/** The SDK's `query`, from the local install when configured, else from the copy bundled with the app. */
-export async function loadClaudeQuery(): Promise<Query> {
+/** The whole SDK module, from the local install when configured, else from the copy bundled with the app. */
+export async function loadClaudeSdkModule(): Promise<SdkModule> {
   const where = locateSdk(getConfig().claudeSdk, HOME);
   if (where.mode === 'missing') throw new Error(where.reason);
   const key = where.mode === 'local' ? where.entry : 'bundled';
@@ -74,11 +75,16 @@ export async function loadClaudeQuery(): Promise<Query> {
     loaded = { key, module: where.mode === 'local' ? import(/* @vite-ignore */ pathToFileURL(where.entry).href) : import('@anthropic-ai/claude-agent-sdk') };
   }
   try {
-    return (await loaded.module).query;
+    return await loaded.module;
   } catch (e) {
     loaded = null;
     throw e;
   }
+}
+
+/** The SDK's `query`. */
+export async function loadClaudeQuery(): Promise<Query> {
+  return (await loadClaudeSdkModule()).query;
 }
 
 /** The packaged app ships the SDK native binary unpacked next to app.asar; a local install resolves its own. */

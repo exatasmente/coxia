@@ -1,6 +1,7 @@
 import { PARTIAL_HINT } from '../../../shared/partial';
 import type { Talk, Voice } from '../../../shared/types';
 import type { usePlayer } from '../audio';
+import { useVoiceEnabled } from '../i18n';
 import { RichText } from './Diagram';
 import { FixHeard } from './FixHeard';
 
@@ -11,6 +12,8 @@ export const SpeakerIcon = () => (
 );
 
 export function ReplayButton({ playing, label, onPlay, onStop }: { playing: boolean; label: string; onPlay: () => void; onStop: () => void }) {
+  // Voice off: there is nothing to hear again.
+  if (!useVoiceEnabled()) return null;
   return (
     <button
       type="button"

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { VcsIntegration, VcsKind } from '../../../../shared/config/types';
 import { VCS_KINDS } from '../../../../shared/config/types';
+import type { VcsProbeResult } from '../../../../shared/vcs';
 import { type SecretDraft, type VcsTestResult, emptySecretDraft, secretInputFrom, vcsSecretRef } from '../../../../shared/wizard';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
@@ -29,6 +30,29 @@ function testMessageKey(r: VcsTestResult): string {
   if (http === '403') return 'wizard.vcs.test.403';
   if (http === '404') return 'wizard.vcs.test.404';
   return '';
+}
+
+/** What the probe found beyond "connected": the checks, the permissions warnings and a few of my issues and merge requests. */
+function ProbeDetails({ probe }: { probe: VcsProbeResult }) {
+  const t = useT();
+  const samples = [
+    { id: 'issues', title: t('vcs.probe.sampleIssues'), list: probe.issues?.sample ?? [] },
+    { id: 'mrs', title: t('vcs.probe.sampleMrs'), list: probe.mrs?.sample ?? [] },
+  ];
+  return (
+    <div className="wz-stack small" data-testid="vcs-probe-details">
+      <ul>
+        {probe.checks.filter((c) => c.id !== 'auth').map((c) => <li key={c.id} style={{ color: c.ok ? undefined : 'var(--red)' }}>{c.ok ? '✓' : '✗'} {c.detail}</li>)}
+        {probe.warnings.map((w) => <li key={w} className="muted">{w}</li>)}
+      </ul>
+      {samples.filter((s) => s.list.length > 0).map((s) => (
+        <div key={s.id}>
+          <div className="wz-label">{s.title}</div>
+          <ul>{s.list.map((x) => <li key={x.ref}><span className="mono">{x.ref}</span> {x.title}{x.status ? <span className="muted"> · {x.status}</span> : null}</li>)}</ul>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function IntegrationsStep({ cfg, setCfg, view, refreshView }: StepProps) {
@@ -151,6 +175,7 @@ export function IntegrationsStep({ cfg, setCfg, view, refreshView }: StepProps) 
                 )}
               </div>
               {typeof state === 'object' && state.source === 'fallback' && <p className="small muted">{t('wizard.vcs.fallbackNote')}</p>}
+              {typeof state === 'object' && state.probe && <ProbeDetails probe={state.probe} />}
             </li>
           );
         })}

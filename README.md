@@ -27,7 +27,7 @@ curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-fil
 curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 ```
 
-Sem `sidecar/models`, o sidecar também procura em `~/projects/hermes-poc/vendor/kokoro`.
+Sem `sidecar/models`, o app procura em `<userData>/voice-models/kokoro` e na pasta de `voice.kokoroDir` do config do workspace. O Kokoro só aparece como opção na instalação da voz quando esses arquivos existem.
 ## Instalar como app (Linux)
 
 ```bash
@@ -44,7 +44,7 @@ Instalar (manual):
 sudo apt install ./dist/cerimonias_0.1.0_amd64.deb   # ou: chmod +x dist/*.AppImage && ./dist/cerimonias-0.1.0.AppImage
 ```
 
-Na primeira vez que o app instalado abre, ele cria o venv da voz em `~/.config/cerimonias/voice-venv` com o `uv` (`~/.local/bin/uv`) a partir de `sidecar/requirements.txt`. Precisa de rede e leva alguns minutos; a voz só responde depois disso. Se falhar, o erro aparece na tela e a próxima tentativa refaz tudo. Em dev (`npm run dev`, `npx electron .`) continua valendo `sidecar/.venv`.
+A voz é opcional e não é criada sozinha. Ao ligá-la (assistente de configuração, ou Configurações → Voz), o app confere a máquina (python3, uv, espaço em disco), cria o venv em `~/.config/cerimonias/voice-venv` com o `uv` a partir de `sidecar/requirements.txt` e baixa o modelo de fala escolhido (tiny, base ou small) em `~/.config/cerimonias/voice-models`. Precisa de rede e leva alguns minutos; se for cancelada ou falhar, a próxima tentativa continua de onde parou, e o erro vai para o registro de erros. Desligada, nenhum processo de voz é iniciado e o app funciona por texto. Em dev (`npm run dev`, `npx electron .`) o `sidecar/.venv` continua valendo, sem reinstalar. Detalhes em `docs/voice.md`.
 
 **Abrir ao entrar no sistema:** Configurações → Início → "Abrir ao entrar no sistema". Cria `~/.config/autostart/cerimonias.desktop` (desmarcar remove) apontando para o AppImage que está rodando, para o binário instalado pelo `.deb` ou, em dev, para o `electron` deste repositório. O entry usa `--hidden`: o app começa só na bandeja, sem janela. Se mover ou apagar o AppImage, marque a opção de novo.
 
@@ -64,7 +64,7 @@ Para atualizar o app instalado, veja [Atualizar](#atualizar).
 
 **Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: workspaces com atas, histórico e configurações; acesso pelo navegador, aparelhos pareados e glossário na raiz) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
 
-O pacote não leva os modelos do Kokoro; a voz local continua lendo `CERIMONIAS_KOKORO_DIR` ou `~/projects/hermes-poc/vendor/kokoro`.
+O pacote não leva os modelos do Kokoro; a voz local lê `CERIMONIAS_KOKORO_DIR`, `<userData>/voice-models/kokoro` ou `voice.kokoroDir`.
 
 ## Atualizar
 

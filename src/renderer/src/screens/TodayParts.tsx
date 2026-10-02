@@ -2,7 +2,9 @@ import { useState } from 'react';
 import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
+import { useCycle } from '../cycleApi';
 import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
+import { returnedFromQa } from '../../../shared/cycles/stages';
 import type { Card } from '../../../shared/types';
 import { ChevronIcon } from './dashIcons';
 import { ResolveConflict } from './ResolveConflict';
@@ -118,6 +120,8 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
 }
 
 export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ceremony; go: (s: Screen) => void; open: boolean; onToggle: () => void }) {
+  const cycle = useCycle();
+  const on = cycle?.ceremonies;
   const turn = c.turns[card.ref];
   const failed = c.turnErrors[card.ref];
   const blocked = card.blockers.length > 0;
@@ -184,10 +188,10 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
             <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>GitLab</button>
-            {card.stage === 'Test Fail' && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>Retorno do QA</button>}
+            {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>Retorno do QA</button>}
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>Discussões</button>}
-            {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
-            {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>QA</button>}
+            {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
+            {card.spec && on?.qaHandoff !== false && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>QA</button>}
             <ResolveConflict card={card} go={go} place="act" />
             <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
           </div>

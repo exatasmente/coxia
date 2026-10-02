@@ -2,17 +2,18 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { join } from 'node:path';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
+import { askAgent, obj, str } from './agents';
+import { cycle, formatDate, formatTime, language, prompt as cp } from './cyclePrompts';
+import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 
 const DIR = join(ATAS, 'retros');
-const DAYS = 7;
 const ID = /^\d{4}-\d{2}-\d{2}$/;
 
 function now(): string {
-  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return formatTime(new Date());
 }
 
 function write(r: Retro): Retro {
@@ -89,9 +90,23 @@ function weekDigest(since: Date): Record<string, unknown> {
   return { cerimonias: ceremonies, acoes_de_release: actions, gates, mudancas_gitlab: changes.slice(-200) };
 }
 
+// What the retro is based on, in words: only what this cycle has (release actions, gate quizzes, the card source's change history).
+function baseOf(): string {
+  const c = cycle().ceremonies;
+  const parts = [
+    cp('retro.base.ceremonies'),
+    cp('retro.base.decisions'),
+    c.releaseConflicts ? cp('retro.base.release') : '',
+    c.gate ? cp('retro.base.gates') : '',
+    rc().cardSource?.historyFile ? cp('retro.base.changes') : '',
+  ];
+  return joinList(parts, language());
+}
+
 export async function prepareRetro(): Promise<Retro> {
   const to = new Date();
-  const from = new Date(to.getTime() - DAYS * 86_400_000);
+  const params = cycle().ceremonyParams.retro;
+  const from = new Date(to.getTime() - params.windowDays * 86_400_000);
   const digest = weekDigest(from);
   const item = obj({ titulo: str, evidencia: str });
   const r = await askAgent<{
@@ -103,15 +118,16 @@ export async function prepareRetro(): Promise<Retro> {
     melhorias: { titulo: string; dimensao: string; problema: string; proposta: string }[];
   }>(
     'deep',
-    [
-      `Retro semanal do Luiz, por voz, de ${from.toLocaleDateString('pt-BR')} a ${to.toLocaleDateString('pt-BR')}. Você conduz.`,
-      'Base: o resumo abaixo (cerimônias, decisões, ações de release, quizzes de gate e mudanças no GitLab). Pode ler specs e o playbook para entender um ponto; não invente fato que não esteja no resumo ou no que você ler.',
-      'Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.',
-      '"fala": abertura de até 150 palavras. "numeros": de 3 a 6 contagens da semana; "valor" é só o número (ex.: "2", "4") e o contexto vai em "rotulo" (até 8 palavras). Cada item de "funcionou", "travou" e "retrabalho" com a evidência concreta (issue, data).',
-      '"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.',
-      `Resumo da semana: ${JSON.stringify(digest).slice(0, 24000)}`,
-      SPEECH_RULES,
-    ].join('\n'),
+    cp('retro.main', {
+      from: formatDate(from),
+      to: formatDate(to),
+      base: baseOf(),
+      docsRef: cp('retro.docsRef'),
+      focus: cp('retro.focus'),
+      words: params.speechWords,
+      improvements: cp('retro.improvementsFormat'),
+      digest: JSON.stringify(digest).slice(0, 24000),
+    }),
     obj({
       fala: str,
       numeros: { type: 'array', items: obj({ rotulo: str, valor: str }) },
@@ -144,7 +160,7 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
   if (!retro) throw new Error('retro não encontrada');
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Na retro, o Luiz disse (transcrição por voz): «${question}»`, 'Responda, aprofunde ou proponha; "fala" até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    cp('retro.ask', { question }),
     obj({ fala: str, texto: str }),
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );

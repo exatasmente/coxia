@@ -1,0 +1,15 @@
+/* Settings → Voz: the setup panel (status, install progress, test). Tokens only. */
+.voice-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 14px; }
+.voice-facts dt { color: var(--muted); }
+.voice-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.voice-progress { width: 100%; height: 8px; border-radius: 4px; overflow: hidden; appearance: none; border: 0; background: var(--line-2); accent-color: var(--teal); }
+.voice-progress::-webkit-progress-bar { background: var(--line-2); }
+.voice-progress::-webkit-progress-value { background: var(--teal); }
+.voice-progress::-moz-progress-bar { background: var(--teal); }
+.voice-detail { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.voice-choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 12px; border: 1px solid var(--line); cursor: pointer; min-width: 0; }
+.voice-choice input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--teal); flex: 0 0 auto; }
+.voice-choice[aria-disabled='true'] { opacity: 0.6; cursor: not-allowed; }
+.voice-choice:has(input:checked) { border-color: var(--teal-line); background: var(--teal-soft); }
+.voice-choice:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.voice-install { border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }

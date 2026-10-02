@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
+import { isBlockedStage } from '../shared/cycles/stages';
+import { cycle, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
 import { rc } from './workspaceConfig';
 
@@ -13,7 +15,7 @@ function walk(dir: string): string[] {
 
 export function specInfo(iid: string): SpecInfo | null {
   const specs = rc().specsDir;
-  if (!specs || !existsSync(specs)) return null;
+  if (!cycle().enrichment.specFolder || !specs || !existsSync(specs)) return null;
   const layout = rc().specLayout;
   const prefix = layout.folderPrefix.replace('{iid}', iid);
   const name = readdirSync(specs).filter((n) => n.startsWith(prefix)).sort()[0];
@@ -21,8 +23,13 @@ export function specInfo(iid: string): SpecInfo | null {
   const folder = join(specs, name);
   const files = walk(folder);
   const has = (base: string) => files.find((f) => f.endsWith(`/${base}`)) ?? null;
-  const phase = layout.phaseFiles.find(({ file }) => has(file))?.label ?? 'pasta de spec sem artefato';
+  const phase = cycleWord(layout.phaseFiles.find(({ file }) => has(file))?.label ?? 'cycle.sdd.phase.none');
   return { folder, phase, planFile: layout.planFiles.map(has).find((f) => f !== null) ?? null };
+}
+
+// A card in a stage the cycle counts as blocked (a "Blocked" column) is blocked even when the source reports no reason.
+export function withStageBlocker(stage: string | null, blockers: string[]): string[] {
+  return !blockers.length && stage && isBlockedStage(cycle(), stage) ? [cycleWord('cycle.blocker.stage', { stage })] : blockers;
 }
 
 function describe(c: { field: string; from: unknown; to: unknown }, prefix = ''): string {
@@ -58,7 +65,7 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
         spec: /^\d+$/.test(iid) ? specInfo(iid) : null,
         mrs: mrs.map((m) => m.ref),
         mrPaths: mrs.map((m) => ({ ref: m.ref, project: m.project, iid: m.iid })),
-        blockers: [...it.blockers, ...mrs.flatMap((m) => m.blockers.map((b) => `${m.ref}: ${b}`))],
+        blockers: withStageBlocker(it.stage, [...it.blockers, ...mrs.flatMap((m) => m.blockers.map((b) => `${m.ref}: ${b}`))]),
         pending: [...it.pending, ...mrs.flatMap((m) => m.pending.map((p) => `${m.ref}: ${p}`))],
         changes: [...it.changes.map((c) => describe(c)), ...mrs.flatMap((m) => m.changes.map((c) => describe(c, `${m.ref} `)))],
         note: it.manual_note,

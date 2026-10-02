@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { askAgent, obj, str } from './agents';
+import { prompt as cp } from './cyclePrompts';
 import type { Module } from './module';
 
 export const MAX_CODE = 6000;
@@ -14,13 +15,7 @@ function fence(code: string): string {
 async function ask(code: string, error: string): Promise<string> {
   const r = await askAgent<{ code: string }>(
     'fix',
-    [
-      'O diagrama mermaid abaixo não renderiza (mermaid 12). Corrija somente a sintaxe, mantendo o significado, os rótulos e a estrutura.',
-      'Dicas: rótulos com símbolos ou parênteses vão entre aspas; sem estilos, cores nem diretivas; flowchart e sequenceDiagram.',
-      `Erro do mermaid:\n${error.slice(0, MAX_ERROR)}`,
-      `Código:\n${code}`,
-      '"code": o diagrama corrigido completo, sem cerca de ``` e sem comentários.',
-    ].join('\n\n'),
+    cp('fix.diagram', { error: error.slice(0, MAX_ERROR), code }),
     obj({ code: str }),
     { maxTurns: 1, tools: [] },
   );

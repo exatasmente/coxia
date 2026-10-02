@@ -10,6 +10,9 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
+import { tv } from '../i18n';
+import { useVoiceEnabled } from '../i18n';
+import { voiceEnabled } from '../../../shared/i18n';
 
 const OPENING = 'Explique o conflito: o que cada lado mudou, por que conflita e a resolução que você propõe, com o que testar depois.';
 
@@ -22,6 +25,7 @@ export function Conflict({
   const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const voiceOn = useVoiceEnabled();
   const rec = useRecorder(() => void talkRef.current());
   const opened = useRef(false);
   const voice = c.voices?.agents[2] ?? null;
@@ -78,7 +82,7 @@ export function Conflict({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -107,9 +111,11 @@ export function Conflict({
             <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
           </div>
           <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
-          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
-            <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
-          </button>
+          {voiceOn && (
+            <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
+              <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
+            </button>
+          )}
         </header>
 
         <ConflictResolver action={action} />
@@ -146,7 +152,7 @@ export function Conflict({
 
           <aside className="deep-side" style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <section className="panel">
-              <h2 className="section-title">Depois da call</h2>
+              <h2 className="section-title">{tv('call.after')}</h2>
               <p className="small" style={{ lineHeight: 1.5 }}>
                 Concordou com a resolução? Resolva acima, na worktree temporária (merge, nunca rebase; push sem force só com o seu “sim”), ou continue no Claude Code, nesta mesma sessão.
               </p>

@@ -5,6 +5,7 @@ import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
+import { destinationLabels, useCycle } from '../cycleApi';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -12,6 +13,8 @@ import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { ResolveConflict } from './ResolveConflict';
 import { conflictMrs } from '../dashboard';
+import { useVoiceEnabled } from '../i18n';
+import { voiceEnabled } from '../../../shared/i18n';
 
 const OPENING = 'Explique o bloqueio desta atividade, o que você leu para chegar nisso e o que precisa de mim para destravar.';
 
@@ -35,12 +38,14 @@ export function Deep({
   passedCard?: Card;
 }) {
   const card = c.cards?.cards.find((x) => x.ref === refName) ?? passedCard;
+  const cycle = useCycle();
   const { sessionId, msgs, sources, options, pick, saved } = c.deep[refName] ?? EMPTY_DEEP;
   const { updateDeep } = c;
   const update = useCallback((change: (d: DeepState) => DeepState) => updateDeep(refName, change), [updateDeep, refName]);
   const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const voiceOn = useVoiceEnabled();
   const rec = useRecorder(() => void talkRef.current());
   const opened = useRef(false);
   const session = useRef(sessionId);
@@ -111,7 +116,7 @@ export function Deep({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -145,7 +150,7 @@ export function Deep({
 
   const keep = () => {
     if (!chosen) return;
-    c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target) });
+    c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target, destinationLabels(cycle)) });
     if (chosen.effect) c.addEffect({ ref: card.ref, text: chosen.effect, repo: card.mrs[0]?.split('!')[0] ?? card.ref.split('#')[0] });
     c.markAnswered(card.ref);
     update((d) => ({ ...d, saved: true }));
@@ -164,9 +169,11 @@ export function Deep({
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={rec.recording} thinking={!!busy} on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} level={rec.level} small />
-          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
-            <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
-          </button>
+          {voiceOn && (
+            <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
+              <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
+            </button>
+          )}
           <ContinueInClaude sessionId={sessionId} dark />
           <button type="button" className="btn btn-red" onClick={() => go({ name: back })}>Encerrar</button>
         </header>
@@ -249,7 +256,7 @@ export function Deep({
               <section className="panel" style={{ border: saved ? '2px solid var(--teal)' : undefined }}>
                 <h2 className="section-title">Vai para a ata</h2>
                 <div className="small" style={{ lineHeight: 1.5 }}>{chosen.decision}</div>
-                <div className="dest">→ {destination(card, target)}</div>
+                <div className="dest">→ {destination(card, target, destinationLabels(cycle))}</div>
                 <button type="button" className={`btn ${saved ? 'btn-on' : 'btn-dark'}`} disabled={saved} onClick={keep}>
                   {saved ? 'Na ata' : 'Levar para a ata'}
                 </button>

@@ -6,6 +6,8 @@ import { BackIcon } from './icons';
 
 const KIND: Record<AuditEntry['kind'], string> = {
   gitlab: 'GitLab',
+  github: 'GitHub',
+  bitbucket: 'Bitbucket',
   graphql: 'GraphQL',
   sync: 'Sincronização',
   publish: 'Publicação',

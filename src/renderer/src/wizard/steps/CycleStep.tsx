@@ -12,7 +12,9 @@ import { wizardApi } from '../wizardApi';
 export function applyTemplate(c: WorkspaceConfig, tpl: Pick<CycleTemplateInfo, 'id' | 'patch'>): WorkspaceConfig {
   const base: WorkspaceConfig = { ...c, devCycle: neutralConfig().devCycle };
   const next = tpl.patch ? mergeDeep(base, tpl.patch) : base;
-  return { ...next, devCycle: { ...next.devCycle, templateId: tpl.id } };
+  // The QA account belongs to the team, not to the template: choosing another template keeps it.
+  const qa = next.devCycle.qa.user || !c.devCycle.qa.user ? next.devCycle.qa : { ...next.devCycle.qa, user: c.devCycle.qa.user };
+  return { ...next, devCycle: { ...next.devCycle, templateId: tpl.id, qa } };
 }
 
 export function CycleStep({ cfg, setCfg }: StepProps) {
@@ -47,6 +49,9 @@ export function CycleStep({ cfg, setCfg }: StepProps) {
                 <span>
                   <span className="wz-card-title">{name} {!tpl.available && <span className="badge badge-quiet">{t('wizard.soon')}</span>}</span>
                   {desc && <span className="small muted wz-block">{desc}</span>}
+                  {tpl.needs && tpl.needs.length > 0 && (
+                    <span className="small muted wz-block">{t('wizard.cycle.needs', { list: tpl.needs.map((n) => t(`wizard.cycle.need.${n}`)).join(', ') })}</span>
+                  )}
                 </span>
               </label>
             );

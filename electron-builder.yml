@@ -17,6 +17,7 @@ extraResources:
     to: sidecar
     filter:
       - voice_sidecar.py
+      - voice_fetch.py
       - requirements.txt
 linux:
   icon: resources/icon.png

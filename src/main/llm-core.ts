@@ -15,6 +15,8 @@ export interface SdkEnvInput {
   /** Non-secret variables from the provider's env file. */
   profile: Record<string, string>;
   vcsHost: string | null;
+  /** Extra variables for the code host CLIs (GH_HOST for GitHub Enterprise); GitLab uses vcsHost. */
+  extraEnv?: Record<string, string>;
 }
 
 /** The variables of a Claude-settings-style JSON file's "env" block, without anything that looks like a key or token. */
@@ -72,5 +74,6 @@ export function sdkEnv(input: SdkEnvInput): Record<string, string> {
   }
   // Outside a git checkout glab falls back to gitlab.com.
   if (input.vcsHost) out.GITLAB_HOST = input.vcsHost;
+  if (input.extraEnv) Object.assign(out, input.extraEnv);
   return out;
 }

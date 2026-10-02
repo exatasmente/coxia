@@ -76,37 +76,49 @@ Every company-specific or machine-specific assumption the app carried when it wa
 
 ### Git host behavior (`vcs`)
 
+Phase 1 replaced the call sites with the providers of `src/main/vcs/` (see [`vcs-providers.md`](vcs-providers.md)). What is left:
+
 | Where (now) | What | Phase |
 |---|---|---|
-| `src/main/gitlabQuick.ts:22-37` | `RULES`: status transitions with GitLab custom status ids (`75`, `77`, `6`) and `STAGE::` labels | vcs + devcycle: from `devCycle.stages` and per-provider status mapping |
-| `src/main/gitlabQuick.ts:150`, `feedback.ts:128` | GitLab work-item GraphQL | vcs (GitHub issues/Projects, Bitbucket equivalents) |
-| `src/main/actions.ts:104,208-211` | `glab` and `glab config get token` + curl with `PRIVATE-TOKEN` | vcs: API client keyed by `vcs[].secretRef` |
-| `src/main/agents.ts:34-38` | `GLAB_READ` shell allow-list regexes (glab only) | vcs: per-provider read allow-list |
-| `src/main/conflictFromMr.ts`, `conflictGit.ts:61` | MR shape, "clone whose origin is that project" | vcs |
-| `src/main/actions.ts:513` | strips `/post-release-sync/` from a mirror path | vcs / release tool contract |
-| `src/main/efeitos.ts:120-130`, `src/shared/efeitos.ts:25` | verification kinds described in GitLab terms and `STAGE::Ready to test` | vcs |
+| `src/main/gitlabQuick.ts` `RULES` | status transitions with the GitLab custom status ids (`75`, `77`, `6`) and `STAGE::` labels: kept for GitLab + the `sz-sdd` template, empty for every other workspace (no quick status change) | devcycle: ids per instance and per template |
+| `src/main/actions.ts` `previewAction`, `detectRelease`, `projectOf` | the release tool contract: `/post-release-sync/` stripped from a mirror path, `post-release-sync` commands | vcs / release tool contract |
+| `src/main/efeitos.ts` prompt, `src/shared/efeitos.ts:25` | the classification prompt and the verification kinds are worded for GitLab and `STAGE::Ready to test` (the checks themselves run on any provider) | devcycle + i18n |
+| `src/main/agents.ts`, `feedback.ts`, `qa.ts` prompts | prompts that cite `glab` or the GitLab MCP when the provider is GitLab (the hints follow the provider: `vcs/readPolicy.ts`) | devcycle + i18n |
+| `src/renderer/src/screens/Settings.tsx:32` | the tools switch is still labelled "GitLab pelo glab" | wizard + i18n |
+
+### Replaced in phase 1 (vcs)
+
+| Where (base) | What it was | Replaced by |
+|---|---|---|
+| `gitlabQuick.ts`, `feedback.ts`, `actions.ts`, `efeitos.ts`, `watchers.ts`, `radar.ts` | each spawned `glab api` itself, with its own `user` cache and its own GitLab field names | `vcsProvider()` (`src/main/vcs/index.ts`): GitLab, GitHub and Bitbucket Cloud behind one interface; GitLab keeps `glab` when `cliPreference` says so |
+| `actions.ts:104,208-211` | `glab` and `glab config get token` + curl with `PRIVATE-TOKEN` | the executors in `vcs/exec.ts` (`glab`, `curl` for the array field of the migrated user, `api` with the token of `vcs[].secretRef`), reached only by `approveAction` |
+| `actions.ts` `proposeGitlabAction`, `GitlabCommand` | one GitLab-shaped write | `proposeVcsAction` and `VcsCommand` (`vcs`, `json`), validators per provider, audit kinds `gitlab`, `github`, `bitbucket`, `graphql` |
+| `gitlabQuick.ts:150`, `feedback.ts:128` | GitLab work-item GraphQL | `provider.getIssue(..., { status: true })` and `provider.issueStatuses`; GitHub and Bitbucket have no separate status (labels, state) |
+| `agents.ts:34-38` | `GLAB_READ` (glab only) | `vcs/readPolicy.ts`: `GLAB_READ`, `GH_READ`, or the `VcsRead` app tool (Bitbucket, API-only integrations) |
+| `conflictFromMr.ts`, `actions.ts` | the GitLab MR shape and `conflictHooks.gitlabGet` | the neutral `VcsMr`; the hook is gone (tests inject a runtime with `setVcsRuntimeForTests`) |
+| `report.ts` | the only card source was `daily-report` | `externalTools.cardSource` when set, else `vcs/cardSource.ts` (my issues + their MRs, stages from `devCycle.stages` or the host defaults) |
+| `src/shared/errorlog.ts` | hints that named `dark.smartzap` and `glab auth login --hostname dark.smartzap.com.br` | hints for any host and for `gh` |
 
 ### Cycle, stages and documents (`devcycle`)
 
+Done in the development-cycle phase (see [`cycles.md`](cycles.md)): the stage regexes of the dashboard, Today, the watchers, the feedback job and the post-release sync (now `devCycle.stages`, `stageMapping`, `meanings`); the ceremony switches (Today cards, the scheduler's notifications and release job, the gate watcher, the conflict buttons); the decision targets and the "Registro" heading (`specLayout.decisionLog`, `destination()` with labels); every agent prompt and every document the ceremonies write (catalogs, `prompt()`); "o Luiz" (`userName`, `userArticle`); the classifiers that matched prompt wording (`openersOf`); the radar's `.specs/` noise rule. What is still open in this table is marked below.
+
 | Where (now) | What | Phase |
 |---|---|---|
-| `src/main/radar.ts:52` | noise rule `^\.specs\/` | devcycle (from `docs.specsDir`) |
-| `src/renderer/src/dashboard.ts:237,254`, `screens/Today.tsx:37`, `Actions.tsx:82` | stage regexes (`Test Fail`, `Code Review OK`, `Ready To Test`) and `STAGE::` stripping | devcycle: use `devCycle.stages` in the renderer |
-| `src/main/feedback.ts:213,232` | `Test Fail` / `Failed testing` (the returned-from-QA signal) | devcycle (`kind: 'returned'`) |
-| `src/main/feedback.ts:347-360`, `gate.ts:148,230`, `retro.ts:108-111`, `qa.ts:47` | prompts that cite agent-pipeline sections, `ISSUE_COMPLETION`, `Plan`, `IMPROVEMENTS.md`, `qa-release-branch`, `testar-atividade-gitlab` | devcycle + i18n: prompt templates per dev-cycle template |
-| `src/main/gate.ts:341` | the text written at the top of a new `GATE_QUIZ.md` (cites `@skills/agent-pipeline`) | devcycle |
-| `src/main/store.ts:41-56`, `src/shared/destination.ts:5`, `src/shared/types.ts:66` | the `spec` / `daily-report` / `ata` decision targets and "Registro" heading | devcycle |
-| `src/renderer/src/screens/Gate.tsx:183,200,298,300`, `QaHandoff.tsx:99,141,143,150,169`, `Deep.tsx:184` | `.specs`, `GATE_QUIZ.md`, `ISSUE_COMPLETION`, `@qa.interno`, `Teams` in UI text | i18n + devcycle |
+| `src/renderer/src/screens/Gate.tsx`, `QaHandoff.tsx`, `Deep.tsx`, `Actions.tsx`, `Retro*.tsx` | text on the ceremony screens (`.specs`, `GATE_QUIZ.md`, `ISSUE_COMPLETION`, `@qa.interno`, `Teams`) is still literal Portuguese | i18n |
+| `src/shared/types.ts` `DecisionTarget` | the stored value `'daily-report'` stands for "a note on the card" in saved ceremonies; the prompts describe it neutrally, but renaming the value needs a migration of `historico/*.json` | devcycle (follow-up) |
+| `src/main/efeitos.ts` `classifyPrompt`, `KIND_HELP` | the effect classifier's prompt is Portuguese and written in GitLab terms (only "o Luiz" was made a placeholder) | vcs |
+| the Gate, QA hand-off, Retro and Actions screens | hidden by removing their entry points; a screen opened from an old notification still renders | devcycle (follow-up) |
 
 ### Personal and company wording (`i18n`, `wizard`)
 
 | Where (now) | What | Phase |
 |---|---|---|
-| `src/main/agents.ts:278-290,493,520-523,560,575,595,630-633`, `feedback.ts:347-480`, `gate.ts:148-232`, `qa.ts:103`, `retro.ts:107-147` | prompts address "o Luiz" and describe Teams, GitLab, the playbook | i18n: user name from config, per-language prompt files; `agents.*.promptOverride` already replaces the preamble |
-| `src/main/custo-core.ts:12-13`, `retention-core.ts:19-28` | regexes that classify the app's own prompts by their first words ("Retro semanal do Luiz", "Escreva o texto que o Luiz vai colar no Teams") | i18n: classify by an explicit tag the prompt carries, not by wording |
-| `src/renderer/src/screens/Today.tsx:96` | greeting `..., Luiz` | wizard: `user.displayName` |
+| ~~`agents.ts`, `feedback.ts`, `gate.ts`, `qa.ts`, `retro.ts` prompts~~ | done: every prompt is in the catalogs (pt-BR and en), addressed to `userName`; the company wording is in `legacyCycle().promptOverrides` | [`cycles.md`](cycles.md) |
+| ~~`custo-core.ts`, `retention-core.ts`, `sessions-core.ts`~~ | done: the openings are read from the prompt catalogs (`openersOf`, `refOpenersOf`) | [`cycles.md`](cycles.md) |
+| ~~`Today.tsx` greeting~~ | done: `userName` | wizard |
 | `src/renderer/src/screens/Ajuda.tsx:85-132`, `Today.tsx:189`, `Settings.tsx:23-30,204,240`, `WorkspacesSection.tsx:80` | help and hints naming `daily-report`, GitLab, the playbook, `~/projects/sz-playbook/.specs/`, Teams | i18n |
-| `src/renderer/src/screens/Ata.tsx:37,110,181,194,197`, `QaHandoff.tsx:150-154`, `src/shared/custo.ts:12`, `minutes.ts:19` | the "Teams text" feature (a daily message for a chat product) | devcycle: make the summary target configurable (Teams, Slack, plain text) |
+| `src/renderer/src/screens/Ata.tsx`, `QaHandoff.tsx`, `src/shared/custo.ts`, `minutes.ts` | the screens still say "Teams"; the prompt already follows `ceremonyParams.preDaily.summaryTarget` (a neutral "team chat" by default) | i18n |
 | `src/shared/glossary.ts:17-32,46,74`, `Glossario.tsx:30`, `Settings.tsx:204` | default pronunciations for `sz4`, `sz-playbook`, `Teams`, `hub-whatsapp` | voice + wizard: glossary seeded from the repos and stages of the config |
 | `src/shared/errorlog.ts:52-63` | error hints that name `dark.smartzap`, `glab`, `openrouter-key`, OpenRouter | i18n + vcs/engine |
 | `src/renderer/src/conflictVerifyDefaults.ts:4-7` | per-project verification commands for `sz4/sz4`, `sz4/sz4-backend`, `sz4/reports-consumer`, `sz4/agent-socket-manager` (docker, nvm 18) | wizard: suggestions from the configured repos, no company defaults |
@@ -123,10 +135,10 @@ Every company-specific or machine-specific assumption the app carried when it wa
 
 | Where (now) | What | Phase |
 |---|---|---|
-| `sidecar/voice_sidecar.py:26` | recognition prompt biased to `hub-whatsapp, new-agent, sz4` | voice (from the glossary/config) |
-| `sidecar/voice_sidecar.py:29-30` | `~/projects/hermes-poc/vendor/kokoro` as a Kokoro model location | voice |
-| `src/main/venv.ts:14-15` | looks in `~/.local/bin` first | packaging |
-| `config.voice.enabled` | stored, but **nothing reads it yet**: the sidecar still starts and the screens still say "call" | voice |
+| `sidecar/voice_sidecar.py` | recognition prompt: the app sends the glossary; the built-in fallback is generic. Done in the voice phase | voice (done) |
+| `sidecar/voice_sidecar.py` | the Kokoro folder of the author's machine now lives in the legacy profile (`voice.kokoroDir`), not in the code. Done | voice (done) |
+| `src/main/venv.ts` | looks in `~/.local/bin` first (a desktop session often lacks it in PATH), then in PATH | packaging |
+| `config.voice.enabled` | read: off means no sidecar, no microphone, no synthesis, and the screens say "conversa"/"chat" instead of "call". Done | voice (done) |
 | `src/main/update.ts:38,94-107`, `scripts/update.sh`, `scripts/install-local.sh` | updates by `git pull` + rebuild of `~/projects/cerimonias`, AppImage in `~/.local/opt/cerimonias`, `cerimonias.desktop` autostart | packaging |
 | `electron-builder.yml:1,24`, `package.json:42-43` | `appId br.com.fortics.cerimonias`, maintainer, homepage `dark.smartzap.com.br` | packaging |
 | `README.md` | the whole README describes the personal setup (paths, daily-report, Clockify, OpenRouter) | wizard + packaging: rewritten for open source |

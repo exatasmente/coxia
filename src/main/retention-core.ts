@@ -1,3 +1,4 @@
+import { openersOf } from '../shared/cycles/prompts';
 import { RETENTION_LABEL, type RetentionKind } from '../shared/retention';
 
 export const DAY = 86_400_000;
@@ -5,32 +6,32 @@ export const DAY = 86_400_000;
 export const RECENT_MS = DAY;
 export const APP_ENTRYPOINT = 'sdk-ts';
 
-// A session belongs to the app only when its first prompt starts like one the app sends (src/main/{agents,gate,qa,retro,feedback}.ts).
-// Anything else, including sessions that look similar, is the user's own work and is never listed.
-const APP_PROMPTS: [RegExp, string][] = [
-  [/^Você é o agente da atividade /, 'fala do agente'],
-  [/^Desbloqueio por voz da atividade /, 'desbloqueio'],
-  [/^Gate [12] da issue /, 'gate'],
-  [/^Avalie uma resposta livre a uma pergunta de quiz de gate/, 'gate'],
-  [/^Leitura assistida do ciclo de consolidação/, 'gate'],
-  [/^Produza o recurso visual do ciclo de consolidação/, 'gate'],
-  [/^Nova rodada do quiz do Gate /, 'gate'],
-  [/^Passagem para o QA da issue /, 'passagem para o QA'],
-  [/^Pergunta do QA ou do Luiz na passagem /, 'passagem para o QA'],
-  [/^Retro semanal do Luiz, por voz/, 'retro'],
-  [/^Na retro, o Luiz disse /, 'retro'],
-  [/^Escreva o texto que o Luiz vai colar no Teams/, 'texto do Teams'],
-  [/^A issue \S*\d+ foi sincronizada com a main depois de uma release/, 'sincronização com a release'],
-  [/^Call sobre um conflito de sincronização com a main/, 'sincronização com a release'],
-  [/^Call de reentrada da issue /, 'reentrada'],
-  [/^Revisão do MR \S+ \(issue /, 'revisão de MR'],
-  [/^Com base no que você investigou sobre /, 'desbloqueio'],
-  [/^O Luiz respondeu por voz /, 'fala do agente'],
+// A session belongs to the app only when its first prompt starts like one the app sends (the prompt catalogs, src/shared/i18n: every language
+// and family). Anything else, including sessions that look similar, is the user's own work and is never listed.
+const APP_PROMPTS: [string, string][] = [
+  ['turn.main', 'fala do agente'],
+  ['deep.intro', 'desbloqueio'],
+  ['gate.start', 'gate'],
+  ['gate.answer', 'gate'],
+  ['gate.explain', 'gate'],
+  ['gate.visual', 'gate'],
+  ['gate.round', 'gate'],
+  ['qa.prepare', 'passagem para o QA'],
+  ['qa.ask', 'passagem para o QA'],
+  ['retro.main', 'retro'],
+  ['retro.ask', 'retro'],
+  ['teams.main', 'texto do Teams'],
+  ['conflict.comment', 'sincronização com a release'],
+  ['conflict.ask.intro', 'sincronização com a release'],
+  ['reentry.main', 'reentrada'],
+  ['discussion.main', 'revisão de MR'],
+  ['deep.options', 'desbloqueio'],
+  ['reply.main', 'fala do agente'],
 ];
 
 export function appPromptKind(firstPrompt: string | null | undefined): string | null {
   if (!firstPrompt) return null;
-  return APP_PROMPTS.find(([re]) => re.test(firstPrompt))?.[1] ?? null;
+  return APP_PROMPTS.find(([id]) => openersOf(id).some((re) => re.test(firstPrompt)))?.[1] ?? null;
 }
 
 export interface RetentionRef {

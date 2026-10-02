@@ -3,6 +3,7 @@
 // idempotency id, so a replay never runs an agent call twice. The service worker (public/sw.js) shares the same store.
 import { IDEMPOTENCY_HEADER, OUTBOX_CHANNEL, OUTBOX_DB, OUTBOX_MAX_AGE_MS, OUTBOX_STORE, OUTBOX_TAG, QUEUEABLE, type OutboxItem } from '../../shared/outbox';
 import { decodeWire } from '../../shared/wire';
+import { tv } from '../../shared/i18n';
 
 // Same event name as webApi's UNAUTHORIZED (not imported: webApi imports this module).
 const UNAUTHORIZED = 'cerimonias:unauthorized';
@@ -77,6 +78,7 @@ export function isTransientFailure(e: unknown): boolean {
 }
 
 export function queuedLabel(channelName: string): string {
+  if (channelName === 'agent:reply') return tv('outbox.reply');
   return QUEUEABLE[channelName] ?? channelName;
 }
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
+import { LEGACY_STAGES } from '../src/shared/config/legacy';
+import { builtInTemplate, cycleOf, type CycleTemplate } from '../src/shared/cycles';
+import { setLanguage } from '../src/shared/i18n';
 import type { WatcherAlert } from '../src/shared/watchers';
 import {
   agoraPlan,
@@ -12,6 +15,7 @@ import {
   retroDue,
   sortByUrgency,
   stageLabel,
+  urgencyRank,
   tempoSegments,
   type AgoraInput,
 } from '../src/renderer/src/dashboard';
@@ -148,13 +152,13 @@ describe('sortByUrgency', () => {
     const ready = card('5', { stage: 'Ready To Test' });
     const block = card('6', { blockers: ['x'] });
     const turns = { [ask.ref]: turn(ask.ref, { question: '?' }), [ask2.ref]: turn(ask2.ref, { question: '?' }) };
-    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true });
+    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true }, LEGACY_STAGES);
     expect(sorted.map((c) => c.iid)).toEqual(['6', '3', '4', '5', '1', '2', '9']);
   });
 
   it('does not mutate the input', () => {
     const input = [card('1'), card('2', { blockers: ['x'] })];
-    sortByUrgency(input, {}, {});
+    sortByUrgency(input, {}, {}, LEGACY_STAGES);
     expect(input.map((c) => c.iid)).toEqual(['1', '2']);
   });
 });
@@ -207,5 +211,43 @@ describe('MR conflicts', () => {
     expect(b).toMatchObject({ kind: 'blocked', title: 'hub-whatsapp!797: MR com conflitos', conflictCard: conflicted });
     const [other] = needsYou({ cards: [card('23', { blockers: ['Depende do MR !42'] })], turns: {}, answered: {}, actions: [], alerts: [] });
     expect(other.conflictCard).toBeUndefined();
+  });
+});
+
+describe('the dashboard follows the cycle', () => {
+  const scrum = cycleOf(builtInTemplate('scrum') as CycleTemplate).stages;
+  const kanban = cycleOf(builtInTemplate('kanban') as CycleTemplate).stages;
+  const flow = cycleOf(builtInTemplate('github-flow') as CycleTemplate).stages;
+
+  it('calls the daily preparation what the cycle calls it', () => {
+    const p = agoraPlan({ ...base, label: 'daily scrum' });
+    expect(p.title).toBe('Daily scrum');
+    expect(p.primary.label).toBe('Começar a daily scrum');
+    expect(agoraPlan({ ...base, callEnded: true, label: 'standup' }).title).toBe('Standup encerrada');
+    expect(agoraPlan({ ...base, callEnded: true, saved: true, resumed: true, label: 'standup' }).hint).toBe('A standup de hoje já foi encerrada e a ata está gravada.');
+    // Without a label it is what it always was.
+    expect(agoraPlan(base).title).toBe('Pré-daily');
+  });
+
+  it('ranks the urgency by the stages of the cycle: a blocked card first, then the rest in the order they came', () => {
+    const blocked = card('1', { blockers: ['x'] });
+    const doing = card('2', { stage: 'In Progress' });
+    const fresh = card('3', { stage: 'Backlog' });
+    expect(sortByUrgency([fresh, doing, blocked], {}, {}, scrum).map((c) => c.iid)).toEqual(['1', '3', '2']);
+    // A cycle with no QA stages has nothing "back from QA": the stage is just a stage.
+    expect(urgencyRank(card('4', { stage: 'Test Fail' }), undefined, false, kanban)).toBe(4);
+  });
+
+  it('gives each cycle its own meaning to a stage, instead of the words of one company', () => {
+    expect(urgencyRank(card('5', { stage: 'Test Fail' }), undefined, false, LEGACY_STAGES)).toBe(2);
+    expect(urgencyRank(card('5', { stage: 'Changes requested' }), undefined, false, flow)).toBe(2);
+    expect(urgencyRank(card('6', { stage: 'Approved' }), undefined, false, flow)).toBe(3);
+  });
+
+  it('greets in the language of the screen', () => {
+    setLanguage('en');
+    expect([3, 9, 14, 20].map(greeting)).toEqual(['Good evening', 'Good morning', 'Good afternoon', 'Good evening']);
+    expect(stageLabel(card('7', { stage: null }))).toBe('no stage');
+    setLanguage('pt-BR');
   });
 });

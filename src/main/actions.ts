@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
+import { t } from '../shared/i18n';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
-import type { AppEvent, Card, GitlabCommand, ReleaseAction } from '../shared/types';
+import { isStageKind } from '../shared/cycles/stages';
+import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { getSettings } from './config';
@@ -21,20 +23,25 @@ import {
   reopenResolutions,
   runVerify,
 } from './conflictGit';
-import { assertResolvable, resolveMr, type MrRead } from './conflictFromMr';
+import { assertResolvable, resolveMr } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
+import { cycle } from './cyclePrompts';
 import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
-import { issueProjectRef, qaNoteMarker, rc, requireVcsHost, vcsCliEnv } from './workspaceConfig';
+import { VcsError } from './vcs/errors';
+import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
+import { STATUS_MUTATION } from './vcs/gitlab';
+import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
+import { issueProjectKey, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
+import { tv } from '../shared/i18n';
 
 const exec = promisify(execFile);
 const FILE = join(ATAS, 'acoes.json');
 const PIPELINE_WAIT_MS = 30_000;
-// The only GraphQL write the app may propose: a work item status change (authorized by the user on 2026-10-02).
-export const STATUS_MUTATION =
-  /^mutation \{ workItemUpdate\(input: \{ id: "gid:\/\/gitlab\/WorkItem\/\d+", statusWidget: \{ status: "gid:\/\/gitlab\/WorkItems::Statuses::Custom::Status\/\d+" \} \}\) \{ errors \} \}$/;
+// The GitLab status mutation lives with its provider; re-exported for the callers and tests that knew it here.
+export { STATUS_MUTATION };
 
 interface Store {
   releaseSeen: string | null;
@@ -100,11 +107,6 @@ async function cli(args: string[]): Promise<string> {
   }
 }
 
-async function glab(args: string[]): Promise<string> {
-  const { stdout } = await exec('glab', args, { env: vcsCliEnv(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
-  return stdout;
-}
-
 function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'kind' | 'issue'>): ReleaseAction {
   return {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -131,42 +133,37 @@ function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'ki
   };
 }
 
-function describe(c: GitlabCommand): string {
+function describe(c: VcsCommand): string {
   const fields = Object.entries(c.fields).map(([k, v]) => `  ${k} = ${v.length > 300 ? `${v.slice(0, 300)}… (${v.length} caracteres)` : v}`);
+  if (c.json !== undefined) fields.push(`  body = ${c.json.length > 600 ? `${c.json.slice(0, 600)}… (${c.json.length} caracteres)` : c.json}`);
   return [`${c.method} ${c.endpoint}  (via ${c.via})`, ...fields].join('\n');
 }
 
-export function validateGitlabCommand(command: GitlabCommand): void {
-  if (command.endpoint === 'graphql') {
-    const keys = Object.keys(command.fields);
-    if (command.via !== 'glab' || command.method !== 'POST' || keys.length !== 1 || !STATUS_MUTATION.test(command.fields.query ?? '')) {
-      throw new Error('GraphQL só para a mudança de status do work item (workItemUpdate com statusWidget)');
-    }
-  } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(command.endpoint) || /\.\.|%2e/i.test(command.endpoint)) {
-    throw new Error(`endpoint inválido: ${command.endpoint}`);
-  }
-}
+/** Throws the reason when a write command has a shape the app may not run. Routes by the command's provider (GitLab when it names none). */
+export const validateGitlabCommand = validateVcsCommand;
+export { validateVcsCommand };
 
 /**
- * Any module proposes a GitLab write here. Nothing runs until the user says "seguir" and confirms in the Actions
- * screen. `key` deduplicates: the same proposal is not created (nor notified) twice.
+ * Any module proposes a write to the code host here (GitLab, GitHub or Bitbucket). Nothing runs until the user says "seguir" and
+ * confirms in the Actions screen. `key` deduplicates: the same proposal is not created (nor notified) twice.
  */
-export function proposeGitlabAction(input: {
+export function proposeVcsAction(input: {
   key: string;
   issue: number;
   issueTitle?: string;
   stage?: string;
   summary: string;
   detail?: string;
-  command: GitlabCommand;
+  command: VcsCommand;
   notify?: { title: string; body: string };
 }): ReleaseAction | null {
-  validateGitlabCommand(input.command);
+  validateVcsCommand(input.command);
   const store = read();
   if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
   const action = blank({
     key: input.key,
-    kind: 'gitlab',
+    // Actions saved before providers existed are 'gitlab'; GitLab proposals keep that kind so nothing about them changes.
+    kind: commandKind(input.command) === 'gitlab' ? 'gitlab' : 'vcs',
     issue: input.issue,
     issueTitle: input.issueTitle ?? '',
     stage: input.stage ?? '',
@@ -179,43 +176,30 @@ export function proposeGitlabAction(input: {
   return action;
 }
 
-async function runGitlab(c: GitlabCommand, meta: { code?: number } = {}): Promise<string> {
-  if (c.via === 'glab') {
-    const args = ['api', '--method', c.method, c.endpoint];
-    const files: string[] = [];
-    for (const [k, v] of Object.entries(c.fields)) {
-      if (v.length > 200 || v.includes('\n')) {
-        const file = join(tmpdir(), `gitlab-field-${Date.now()}-${files.length}.txt`);
-        writeFileSync(file, v);
-        files.push(file);
-        args.push('-F', `${k}=@${file}`);
-      } else args.push('-f', `${k}=${v}`);
-    }
-    try {
-      const out = await glab(args);
-      // GraphQL answers 200 even when the mutation fails; the errors come in the body.
-      if (c.endpoint === 'graphql') {
-        const body = JSON.parse(out) as { errors?: unknown[]; data?: { workItemUpdate?: { errors?: string[] } } };
-        const errors = [...(body.errors ?? []), ...(body.data?.workItemUpdate?.errors ?? [])];
-        if (errors.length) throw new Error(`GitLab recusou: ${JSON.stringify(errors).slice(0, 500)}`);
-      }
-      return out.slice(0, 2000);
-    } finally {
-      for (const f of files) unlinkSync(f);
-    }
-  }
-  // curl path: array fields such as reviewer_ids[] are rejected by glab (it sends a JSON body).
-  const host = requireVcsHost();
-  const token = (await exec('glab', ['config', 'get', 'token', '--host', host])).stdout.trim();
-  const args = ['-sS', '-w', '\nHTTP %{http_code}', '-X', c.method, '-H', `PRIVATE-TOKEN: ${token}`];
-  for (const [k, v] of Object.entries(c.fields)) args.push('--data-urlencode', `${k}=${v}`);
-  args.push(`https://${host}/api/v4/${c.endpoint}`);
-  const { stdout } = await exec('curl', args, { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
-  const code = /HTTP (\d+)\s*$/.exec(stdout)?.[1];
-  if (code) meta.code = Number(code);
-  if (!code || Number(code) >= 400) throw new Error(`GitLab respondeu ${code ?? '?'}: ${stdout.slice(0, 500)}`);
-  return stdout.slice(0, 2000);
+/** The name the function had when GitLab was the only host. */
+export const proposeGitlabAction = proposeVcsAction;
+
+/** One proposal per command of a planned write (a label change on GitHub is several calls); the first keeps the key, the rest get a suffix. */
+export function proposeVcsCommands(input: Omit<Parameters<typeof proposeVcsAction>[0], 'command'>, commands: VcsCommand[]): (ReleaseAction | null)[] {
+  return commands.map((command, i) => proposeVcsAction({ ...input, key: i === 0 ? input.key : `${input.key}#${i + 1}`, notify: i === 0 ? input.notify : undefined, command }));
 }
+
+/** The runtime that serves a command: the primary integration when it is of the command's kind, else the first one that is. */
+function runtimeFor(c: VcsCommand): VcsRuntime {
+  const kind = commandKind(c);
+  const primary = vcsRuntime();
+  if (primary?.settings.kind === kind) return primary;
+  const other = rc().vcs.find((v) => v.kind === kind);
+  const found = other ? vcsRuntime(other.id) : null;
+  if (!found) throw new VcsError('not_configured', { kind });
+  return found;
+}
+
+async function runVcs(c: VcsCommand, meta: { code?: number } = {}): Promise<string> {
+  return runtimeFor(c).exec.run(c, meta);
+}
+
+const isVcsAction = (a: ReleaseAction): boolean => (a.kind === 'gitlab' || a.kind === 'vcs') && !!a.command;
 
 export function listActions(): ReleaseAction[] {
   return read().actions;
@@ -305,7 +289,7 @@ export async function detectRelease(manual: boolean): Promise<string> {
 export async function previewAction(id: string): Promise<string> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
-  if (a.kind === 'gitlab' && a.command) return describe(a.command);
+  if (isVcsAction(a)) return describe(a.command as VcsCommand);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
   if (a.kind === 'conflict-push') return a.output ?? '';
@@ -313,19 +297,16 @@ export async function previewAction(id: string): Promise<string> {
 }
 
 async function qaNote(issue: number): Promise<{ id: number; body: string } | null> {
-  const notes = JSON.parse(await glab(['api', `projects/${issueProjectRef()}/issues/${issue}/notes?sort=desc&order_by=created_at&per_page=100`])) as {
-    id: number;
-    body: string;
-    system: boolean;
-  }[];
+  const notes = await vcsProvider().listIssueComments(issueProjectKey(), issue);
   const marker = qaNoteMarker();
   const note = marker ? notes.find((n) => !n.system && marker.test(n.body.trim())) : undefined;
-  return note ? { id: note.id, body: note.body } : null;
+  return note ? { id: Number(note.id), body: note.body } : null;
 }
 
 // After a sync, the QA comment is a separate action: authorization does not carry over (post-release-sync skill).
 async function proposeQaComment(sync: ReleaseAction): Promise<void> {
-  if (/Code Review/i.test(sync.stage) && !/Code Review OK/i.test(sync.stage)) return;
+  // An issue still in code review has nothing to retest yet.
+  if (isStageKind(cycle(), sync.stage, ['review'])) return;
   const base = { key: `qa-comment:${sync.issue}:${sync.id}`, kind: 'qa-comment' as const, issue: sync.issue, issueTitle: sync.issueTitle, stage: sync.stage, release: sync.release, mrs: sync.mrs, files: sync.files, retest: sync.retest, unit: sync.unit };
   const note = await qaNote(sync.issue);
   let action: ReleaseAction;
@@ -350,7 +331,7 @@ type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
 
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
 async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?: number }) => Promise<string>): Promise<string> {
-  assertExternalWrite('escrever no GitLab, enviar branch ou publicar comentário');
+  assertExternalWrite(t('vcs.write.guard'));
   const meta: { code?: number } = {};
   const entry = { ...base, issue: a.issue, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary } };
   try {
@@ -359,18 +340,18 @@ async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?:
     return out;
   } catch (e) {
     const message = String((e as Error).message);
-    const code = meta.code ?? Number(/(?:respondeu|HTTP(?: error)?:?)\s*(\d{3})/i.exec(message)?.[1] ?? NaN);
+    const code = meta.code ?? (e instanceof VcsError && e.status ? e.status : Number(/(?:respondeu|responded|HTTP(?: error)?:?)\s*(\d{3})/i.exec(message)?.[1] ?? NaN));
     recordWrite({ ...entry, ok: false, code: Number.isNaN(code) ? null : code, result: message });
     throw e;
   }
 }
 
 export async function approveAction(id: string): Promise<ReleaseAction> {
-  assertExternalWrite('escrever no GitLab, enviar branch ou publicar comentário');
+  assertExternalWrite(t('vcs.write.guard'));
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error('esta ação já foi tratada');
-  if (a.kind === 'conflict') throw new Error('o conflito se resolve na tela dele: abra a call');
+  if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   update(id, (x) => ({ ...x, state: 'running' }));
@@ -378,25 +359,19 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     let output: string;
     if (a.kind === 'conflict-push') {
       output = await publishConflict(a);
-    } else if (a.kind === 'gitlab' && a.command) {
-      const c = a.command;
-      output = await audited(a, { kind: c.endpoint === 'graphql' ? 'graphql' : 'gitlab', target: `${c.method} ${c.endpoint}`, via: c.via, fields: c.fields }, (meta) => runGitlab(c, meta));
+    } else if (isVcsAction(a)) {
+      const c = a.command as VcsCommand;
+      output = await audited(a, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, (meta) => runVcs(c, meta));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
       output = await audited(a, { kind: 'sync', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
-      const file = join(tmpdir(), `qa-note-${a.issue}-${Date.now()}.md`);
-      writeFileSync(file, a.proposedBody);
-      const endpoint = `projects/${issueProjectRef()}/issues/${a.issue}/notes/${a.noteId}`;
       const body = a.proposedBody;
-      try {
-        output = await audited(a, { kind: 'note-edit', target: `PUT ${endpoint}`, via: 'glab', fields: { body } }, async () => {
-          await glab(['api', '--method', 'PUT', endpoint, '-F', `body=@${file}`]);
-          return `Comentário ${a.noteId} da #${a.issue} editado.`;
-        });
-      } finally {
-        unlinkSync(file);
-      }
+      const [cmd] = await vcsProvider().planWrite({ op: 'editIssueNote', project: issueProjectKey(), iid: a.issue, noteId: a.noteId, body });
+      output = await audited(a, { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
+        await runVcs(cmd, meta);
+        return `Comentário ${a.noteId} da #${a.issue} editado.`;
+      });
     } else {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
       output = await audited(a, { kind: 'publish', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
@@ -462,8 +437,6 @@ let cloneRootsOverride: string[] | null = null;
 export const conflictHooks: {
   cloneRoots: string[];
   scheduleQaComment: (sync: ReleaseAction) => void;
-  // GET only: the GitLab reads that conflict:fromMr makes.
-  gitlabGet: (endpoint: string) => Promise<unknown>;
 } = {
   get cloneRoots() {
     return cloneRootsOverride ?? rc().cloneRoots;
@@ -471,7 +444,6 @@ export const conflictHooks: {
   set cloneRoots(roots: string[]) {
     cloneRootsOverride = roots;
   },
-  gitlabGet: async (endpoint) => JSON.parse(await glab(['api', endpoint])),
   scheduleQaComment: (sync) => {
     // The push pipeline takes a moment to appear; the comment draft waits for it.
     setTimeout(() => void proposeQaComment(sync).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
@@ -522,12 +494,10 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   if (!Number.isInteger(issue) || issue <= 0) throw new Error(`atividade sem número de issue: ${card.iid}`);
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
   const ref = `${project}!${iid}`;
-  const enc = encodeURIComponent(project);
-  const get = conflictHooks.gitlabGet;
-  const [mr, proj, user] = (await Promise.all([get(`projects/${enc}/merge_requests/${iid}`), get(`projects/${enc}`), get('user')])) as [MrRead, { default_branch: string }, { username: string }];
-  assertResolvable(ref, mr, { me: user.username, defaultBranch: proj.default_branch });
-  const target = (await get(`projects/${enc}/repository/branches/${encodeURIComponent(mr.target_branch)}`)) as { commit: { id: string } };
-  const tgtSha = target.commit.id;
+  const prov = vcsProvider();
+  const [mr, repo, user] = await Promise.all([prov.getMr(project, iid), prov.getRepo(project), prov.currentUser()]);
+  assertResolvable(ref, mr, { me: user.username, defaultBranch: repo.defaultBranch });
+  const tgtSha = await prov.getBranchSha(project, mr.targetBranch);
 
   const key = `conflict:${ref}:${tgtSha}`;
   const store = read();
@@ -540,8 +510,8 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     issue_title: card.title,
     stage: card.stage ?? '',
     mr_ref: ref,
-    mr_url: mr.web_url,
-    source_branch: mr.source_branch,
+    mr_url: mr.webUrl,
+    source_branch: mr.sourceBranch,
     atras: 0,
     mine: true,
     bloqueado: false,
@@ -552,7 +522,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     src_sha: mr.sha,
     project_path: project,
     mr_iid: iid,
-    target_branch: mr.target_branch,
+    target_branch: mr.targetBranch,
   };
   const action = blank({
     key,
@@ -561,7 +531,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     issueTitle: card.title,
     stage: card.stage ?? '',
     release: 'MR em conflito com a main',
-    mrs: [{ ref, url: mr.web_url, branch: mr.source_branch, behind: 0 }],
+    mrs: [{ ref, url: mr.webUrl, branch: mr.sourceBranch, behind: 0 }],
     files: [],
     unit: unit as unknown as Record<string, unknown>,
   });

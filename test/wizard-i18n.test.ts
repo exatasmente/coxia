@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOGS } from '../src/shared/i18n';
 import { CEREMONY_IDS, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, VCS_KINDS, VOICE_ENGINES } from '../src/shared/config/types';
 import { SECRET_SOURCE_TYPES } from '../src/shared/secrets';
+import { TEMPLATE_NEEDS } from '../src/shared/cycles/types';
 import { DOCS_KEYS, OPEN_PRESETS, WIZARD_STEPS } from '../src/shared/wizard';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -20,6 +21,7 @@ const FILES = [...walk(join(ROOT, 'src/renderer/src/wizard')), join(ROOT, 'src/r
 // The values a ${...} can take in each dynamic key family.
 const FAMILIES: [string, string[]][] = [
   ['wizard.cer.', [...CEREMONY_IDS]],
+  ['wizard.cycle.need.', [...TEMPLATE_NEEDS]],
   ['wizard.cycle.tpl.', ['none', 'scrum', 'kanban', 'sdd']],
   ['wizard.docs.', [...DOCS_KEYS]],
   ['wizard.kind.', [...PROVIDER_KINDS]],
