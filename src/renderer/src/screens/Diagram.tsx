@@ -1,5 +1,6 @@
 import mermaid from 'mermaid';
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { diagramApi } from '../diagramApi';
 import { parseBlocks, parseInline, splitDiagrams } from '../richText';
 
 function darkTheme(): boolean {
@@ -25,6 +26,9 @@ export function Diagram({ code, title }: { code: string; title?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [full, setFull] = useState(false);
   const [themeTick, setThemeTick] = useState(0);
+  const [fixing, setFixing] = useState(false);
+  const [repaired, setRepaired] = useState(false);
+  const fixedRef = useRef<{ from: string; to: string } | null>(null);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeTick((t) => t + 1));
@@ -34,11 +38,42 @@ export function Diagram({ code, title }: { code: string; title?: string }) {
 
   useEffect(() => {
     let alive = true;
+    const src = cleanCode(code);
+    const known = fixedRef.current?.from === src ? fixedRef.current.to : null;
+    const short = (e: unknown) => (e instanceof Error ? e.message.split('\n')[0] : String(e));
     setError(null);
-    renderSvg(`${id}-${themeTick}`, cleanCode(code)).then(
-      (s) => alive && setSvg(s),
-      (e) => alive && setError(e instanceof Error ? e.message.split('\n')[0] : String(e)),
-    );
+    (async () => {
+      let first: unknown;
+      try {
+        const s = await renderSvg(`${id}-${themeTick}`, known ?? src);
+        if (alive) {
+          setSvg(s);
+          setRepaired(known !== null);
+        }
+        return;
+      } catch (e) {
+        first = e;
+      }
+      if (known !== null || !alive) {
+        if (alive) setError(short(first));
+        return;
+      }
+      setSvg(null);
+      setFixing(true);
+      try {
+        const to = await diagramApi.fix(src, first instanceof Error ? first.message : String(first));
+        const s = await renderSvg(`${id}-${themeTick}-fix`, to);
+        fixedRef.current = { from: src, to };
+        if (alive) {
+          setSvg(s);
+          setRepaired(true);
+        }
+      } catch {
+        if (alive) setError(short(first));
+      } finally {
+        if (alive) setFixing(false);
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -64,9 +99,9 @@ export function Diagram({ code, title }: { code: string; title?: string }) {
         {svg ? (
           <div className="diagram-svg" dangerouslySetInnerHTML={{ __html: svg }} onDoubleClick={() => setFull(true)} />
         ) : (
-          <div className="row faint"><span className="spinner" /> Desenhando…</div>
+          <div className="row faint"><span className="spinner" /> {fixing ? 'Corrigindo o diagrama…' : 'Desenhando…'}</div>
         )}
-        {title && <figcaption className="small muted">{title}</figcaption>}
+        {(title || repaired) && <figcaption className="small muted">{[title, repaired && 'diagrama corrigido automaticamente'].filter(Boolean).join(' · ')}</figcaption>}
       </figure>
       {full && svg && <DiagramViewer svg={svg} title={title} onClose={() => setFull(false)} />}
     </>

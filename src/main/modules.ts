@@ -1,6 +1,7 @@
 import { autostart } from './autostart';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
+import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
 import { register as feedback } from './feedback';
 import { register as gitlabQuick } from './gitlabQuick';
@@ -16,6 +17,7 @@ export const MODULES: Module[] = [
   auditoria,
   autostart,
   custoTempo,
+  diagramFix,
   efeitos,
   feedback,
   gitlabQuick,
