@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { Voice } from '../shared/types';
+import type { Voice, VoiceEngine } from '../shared/types';
 
 const ROOT = join(import.meta.dirname, '../..');
 const PYTHON = join(ROOT, 'sidecar/.venv/bin/python');
@@ -23,6 +23,33 @@ export const AGENT_VOICES: Voice[] = [
   { voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+5%', pitch: '-5Hz', label: 'Thalita grave' },
   { voice: 'pt-BR-AntonioNeural', rate: '-5%', pitch: '+3Hz', label: 'Antonio calmo' },
 ];
+
+// Kokoro has three pt-BR voices and no pitch: speed tells the agents apart. Same length as the Edge list so a slot keeps its index.
+const KOKORO_MODERATOR: Voice = { voice: 'pf_dora', rate: '+0%', pitch: '+0Hz', label: 'Dora', engine: 'kokoro', speed: 1 };
+
+const KOKORO_AGENTS: Voice[] = [
+  { voice: 'pm_alex', speed: 1.05, label: 'Alex' },
+  { voice: 'pm_santa', speed: 1.05, label: 'Santa' },
+  { voice: 'pf_dora', speed: 1.15, label: 'Dora rápida' },
+  { voice: 'pm_alex', speed: 0.92, label: 'Alex calmo' },
+  { voice: 'pm_santa', speed: 0.9, label: 'Santa calmo' },
+  { voice: 'pm_alex', speed: 1.2, label: 'Alex rápido' },
+  { voice: 'pf_dora', speed: 0.88, label: 'Dora calma' },
+  { voice: 'pm_santa', speed: 1.18, label: 'Santa rápido' },
+].map((v) => ({ ...v, rate: '+0%', pitch: '+0Hz', engine: 'kokoro' as const }));
+
+export function voicesFor(engine: VoiceEngine): { moderator: Voice; agents: Voice[] } {
+  return engine === 'kokoro' ? { moderator: KOKORO_MODERATOR, agents: KOKORO_AGENTS } : { moderator: MODERATOR, agents: AGENT_VOICES };
+}
+
+// A screen may still hold voices of the engine that was active when it loaded: map them to the same slot of the current one.
+function resolveVoice(voice: Voice, engine: VoiceEngine): Voice {
+  if ((voice.engine ?? 'edge') === engine) return voice;
+  const from = voicesFor(voice.engine ?? 'edge');
+  const to = voicesFor(engine);
+  const slot = from.agents.findIndex((v) => v.label === voice.label);
+  return slot < 0 ? to.moderator : to.agents[slot];
+}
 
 type Reply = { id: number; text?: string; path?: string; error?: string; ready?: boolean };
 
@@ -66,9 +93,10 @@ export function stopVoice(): void {
   rmSync(AUDIO, { recursive: true, force: true });
 }
 
-export async function speak(text: string, voice: Voice): Promise<string> {
-  const out = join(AUDIO, `tts-${Date.now()}-${nextId}.mp3`);
-  const r = await call({ cmd: 'tts', text, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, out });
+export async function speak(text: string, wanted: Voice, engine: VoiceEngine): Promise<string> {
+  const voice = resolveVoice(wanted, engine);
+  const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${engine === 'kokoro' ? 'wav' : 'mp3'}`);
+  const r = await call({ cmd: 'tts', engine, text, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
   return r.path ?? out;
 }
 

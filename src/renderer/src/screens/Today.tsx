@@ -4,6 +4,7 @@ import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
 import { TempoHoje } from './TempoHoje';
+import { SpeakPill } from './SpeakPill';
 import { VoiceToggle } from './VoiceToggle';
 import { RadarButton, WorktreeBadge } from './radarSlots';
 import { WatchersBanner } from './WatchersBanner';
@@ -43,7 +44,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
           </div>
           <div className="row" style={{ gap: 8 }}>
             <span className="pill"><span className="dot" />Ouvir: whisper local</span>
-            <span className="pill"><span className="dot" style={{ background: '#B45309' }} />Falar: Edge (nuvem)</span>
+            <SpeakPill />
             <span className="pill"><span className="dot" />Agentes: DeepSeek + playbook</span>
             <span className="pill" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)', color: 'var(--amber-ink)', fontWeight: 500 }}>
               Só leitura · efeitos vão para a ata

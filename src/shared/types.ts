@@ -25,11 +25,16 @@ export interface CardsResult {
   cards: Card[];
 }
 
+export type VoiceEngine = 'edge' | 'kokoro';
+
 export interface Voice {
   voice: string;
   rate: string;
   pitch: string;
   label: string;
+  // Absent means 'edge'. Kokoro has no pitch, so agents differ by voice and speed.
+  engine?: VoiceEngine;
+  speed?: number;
 }
 
 export interface AgentTurn {

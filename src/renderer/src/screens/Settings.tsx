@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MODEL_OPTIONS, type ModelRole, type Settings } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
-import { setSpeechEnabled } from '../audio';
+import { clearSpeechCache, setSpeechEnabled } from '../audio';
 import { BackIcon } from './icons';
 
 const ROLES: [ModelRole, string, string][] = [
@@ -46,6 +46,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       const saved = await api.saveSettings(s);
       setS(saved);
       setSpeechEnabled(saved.voice.speak);
+      clearSpeechCache();
       setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (e) {
       setError(errorText(e));
@@ -139,11 +140,25 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Voz</h2>
             <p className="small muted" style={{ marginTop: 4 }}>O espaço continua enviando a fala antes da hora. Vale a partir da próxima gravação.</p>
           </div>
+          <div className="settings-row">
+            <label htmlFor="engine" style={{ fontWeight: 600 }}>Voz dos agentes</label>
+            <div>
+              <select id="engine" className="text-input" value={s.voice.engine} onChange={(e) => set((p) => ({ ...p, voice: { ...p.voice, engine: e.target.value as 'edge' | 'kokoro' } }))}>
+                <option value="edge">Edge (nuvem)</option>
+                <option value="kokoro">Kokoro (local)</option>
+              </select>
+              <p className="small muted" style={{ marginTop: 6 }}>
+                {s.voice.engine === 'kokoro'
+                  ? 'Roda na sua máquina: nada sai dela. Soa um pouco mais robótico, e a primeira fala demora mais porque carrega o modelo.'
+                  : 'Soa mais natural, mas o texto falado vai para a Microsoft. Para nada sair da máquina, use o Kokoro.'}
+              </p>
+            </div>
+          </div>
           <label className="check-row">
             <input type="checkbox" checked={s.voice.speak} onChange={() => set((p) => ({ ...p, voice: { ...p.voice, speak: !p.voice.speak } }))} />
             <span>
               <span style={{ fontWeight: 600, display: 'block' }}>Agentes falam em voz alta</span>
-              <span className="small muted">Desligado, tudo continua na tela (transcrição, perguntas, respostas) e nenhum texto vai para o Edge. O microfone segue funcionando.</span>
+              <span className="small muted">Desligado, tudo continua na tela (transcrição, perguntas, respostas) e nenhum texto é sintetizado. O microfone segue funcionando.</span>
             </span>
           </label>
           <label className="check-row">

@@ -4,7 +4,7 @@ Rotina pessoal: pré-daily por voz com um agente por atividade aberta. Não faz 
 
 - **Agentes:** Claude Agent SDK com `cwd` em `~/projects`, então CLAUDE.md, skills, agentes, hooks e MCP do playbook valem como no Claude Code. Modelo `deepseek/deepseek-v4.1-flash` pelo OpenRouter (chave via `~/.local/bin/openrouter-key`). Só ferramentas de leitura (`permissionMode: dontAsk`).
 - **Cartões:** `~/.local/bin/daily-report report --format json --dry-run` + fase do spec em `sz-playbook/.specs`.
-- **Voz:** `sidecar/voice_sidecar.py` — faster-whisper local para ouvir, Edge TTS (nuvem da Microsoft: o texto falado sai da máquina) para falar.
+- **Voz:** `sidecar/voice_sidecar.py` — faster-whisper local para ouvir; para falar, Edge TTS (padrão: nuvem da Microsoft, o texto falado sai da máquina) ou Kokoro (local, nada sai da máquina), escolhido em Configurações → Voz.
 - **Escrita:** só ao clicar em "Gravar" na Ata — ata em `~/.local/share/cerimonias/`, nota no `daily-report`, linha no Registro do Plan. Efeitos (push, MR, comentário) não rodam aqui: são copiados para o Claude Code.
 
 ## Rodar
@@ -16,6 +16,18 @@ npm run build && npx electron .
 ```
 
 `npm run dev` sobe com recarga automática.
+
+### Voz local (Kokoro)
+
+Os modelos (~350 MB) ficam em `sidecar/models/` (fora do git) ou onde `CERIMONIAS_KOKORO_DIR` apontar:
+
+```bash
+mkdir -p sidecar/models && cd sidecar/models
+curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+```
+
+Sem `sidecar/models`, o sidecar também procura em `~/projects/hermes-poc/vendor/kokoro`.
 
 ## Tempo por issue (Clockify)
 
