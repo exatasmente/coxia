@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
-import type { CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderKind, SpecLayout, StageDef, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import type { CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
 
 // Turns a WorkspaceConfig into what the rest of the main process needs: absolute paths, the optional integrations that are on, the
 // values the app used to hardcode. Pure: everything machine-specific comes in through the context, so a test can resolve the same
@@ -59,6 +59,12 @@ export interface ResolvedRole {
   secretRef: string | null;
   envFile: string | null;
   options: Record<string, string>;
+  capabilities: ProviderCapabilities | null;
+  structured: StructuredMode;
+  headers: Record<string, string>;
+  maxOutputTokens: number | null;
+  temperature: number | null;
+  timeoutMs: number | null;
   legacyCustomEndpoint: boolean;
 }
 
@@ -153,6 +159,12 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
         secretRef: p.secretRef,
         envFile: xn(p.envFile),
         options: p.options,
+        capabilities: p.capabilities,
+        structured: p.structured,
+        headers: p.headers,
+        maxOutputTokens: p.maxOutputTokens,
+        temperature: p.temperature,
+        timeoutMs: p.timeoutMs,
         legacyCustomEndpoint: p.legacyCustomEndpoint,
       };
     },

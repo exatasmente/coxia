@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONFIG_SCHEMA, LEGACY_STAGES, collectSecretRequirements, legacyProfile, mergeDeep, neutralConfig, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { CONFIG_SCHEMA, LEGACY_STAGES, collectSecretRequirements, legacyProfile, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
 import type { JsonSchema } from '../src/shared/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
 
@@ -95,7 +95,7 @@ describe('config schema', () => {
   it('lists the secrets a config needs, one entry per ref', () => {
     const c = neutralConfig();
     c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: 'ana', secretRef: 'vcs.gh', cliPreference: 'auto', cliCommand: null }];
-    c.llm.providers.push({ id: 'second', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:1234/v1', models: [], secretRef: 'llm.anthropic', envFile: null, options: {}, legacyCustomEndpoint: false });
+    c.llm.providers.push(newProvider({ id: 'second', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1', secretRef: 'llm.anthropic' }));
     const reqs = collectSecretRequirements(c);
     expect(reqs.map((r) => r.ref).sort()).toEqual(['llm.anthropic', 'vcs.gh']);
     expect(reqs.find((r) => r.ref === 'llm.anthropic')?.usedBy).toEqual(['llm.providers.anthropic', 'llm.providers.second']);

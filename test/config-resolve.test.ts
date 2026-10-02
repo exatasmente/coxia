@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { neutralConfig } from '../src/shared/config/defaults';
+import { neutralConfig, newProvider } from '../src/shared/config/defaults';
 import { applySettings, settingsFromConfig } from '../src/shared/config/settingsView';
 import { NEUTRAL_WEB } from '../src/shared/settings';
 import { locateSdk } from '../src/main/claudeSdk';
@@ -98,7 +98,7 @@ describe('getters for a fresh install: neutral, nothing from a company or a mach
 
   it('a role can point at another provider, and agents.roles can borrow another role\'s model', () => {
     const c = neutralConfig();
-    c.llm.providers.push({ id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1', models: ['llama3'], secretRef: null, envFile: null, options: {}, legacyCustomEndpoint: false });
+    c.llm.providers.push(newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', models: ['llama3'] }));
     c.llm.roles.deep = { provider: 'local', model: 'llama3' };
     c.agents.roles.teams.modelRole = 'deep';
     const x = resolveConfig(c, ctx);
@@ -164,7 +164,7 @@ describe('the environment of an SDK child, per provider kind', () => {
     const c = neutralConfig();
     const mk = (kind: 'bedrock' | 'vertex' | 'foundry', options: Record<string, string>, secretRef: string | null = null) => {
       const x = neutralConfig();
-      x.llm.providers = [{ id: 'cloud', kind, engine: 'claude-sdk', baseUrl: '', models: [], secretRef, envFile: null, options, legacyCustomEndpoint: false }];
+      x.llm.providers = [newProvider({ id: 'cloud', kind, secretRef, options })];
       for (const k of Object.keys(x.llm.roles) as (keyof typeof x.llm.roles)[]) x.llm.roles[k] = { provider: 'cloud', model: 'm' };
       return resolveConfig(x, ctx).role('turn');
     };
@@ -176,7 +176,7 @@ describe('the environment of an SDK child, per provider kind', () => {
 
   it('refuses an openai-compatible provider: that is the open engine\'s job', () => {
     const x = neutralConfig();
-    x.llm.providers = [{ id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:1/v1', models: [], secretRef: null, envFile: null, options: {}, legacyCustomEndpoint: false }];
+    x.llm.providers = [newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: 'http://localhost:1/v1' })];
     for (const k of Object.keys(x.llm.roles) as (keyof typeof x.llm.roles)[]) x.llm.roles[k] = { provider: 'local', model: 'm' };
     expect(() => sdkEnv({ target: resolveConfig(x, ctx).role('turn'), base, secret: null, profile: {}, vcsHost: null })).toThrow(/motor aberto/);
   });

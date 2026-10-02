@@ -28,6 +28,20 @@ export function defaultEngine(kind: ProviderKind): EngineId {
   return kind === 'openai-compatible' ? 'open' : 'claude-sdk';
 }
 
+export const STRUCTURED_MODES = ['auto', 'response_format', 'tool', 'prompt'] as const;
+export type StructuredMode = (typeof STRUCTURED_MODES)[number];
+
+/** What the wizard's "test connection" found out about an open-engine provider; the engine adapts to it. null when never tested. */
+export interface ProviderCapabilities {
+  chat: boolean;
+  tools: boolean;
+  jsonSchema: boolean;
+  streaming: boolean;
+  reasoning: boolean;
+  /** Context window in tokens, when the server reports it. */
+  contextWindow: number | null;
+}
+
 export interface LlmProvider {
   /** Stable id, referenced by llm.roles. Lowercase letters, digits, "-" and "_". */
   id: string;
@@ -47,6 +61,18 @@ export interface LlmProvider {
   envFile: string | null;
   /** Kind-specific, non-secret settings. bedrock: region, profile. vertex: project, region. foundry: resource. */
   options: Record<string, string>;
+  /** Open engine: result of the connection test. null: untested (the engine tries tools and structured output and learns what the server rejects). */
+  capabilities: ProviderCapabilities | null;
+  /** Open engine: how the JSON answer is obtained. auto: response_format when the probe confirmed it, else a final_answer tool, else prompt + repair. */
+  structured: StructuredMode;
+  /** Open engine: extra headers some gateways want (OpenRouter's HTTP-Referer and X-Title). Never put a key here. */
+  headers: Record<string, string>;
+  /** Open engine: cap on one call's output; null: the server's own default. */
+  maxOutputTokens: number | null;
+  /** Open engine: sampling temperature; null: the server's own default. */
+  temperature: number | null;
+  /** Open engine: limit of one whole call in ms (a local model may need minutes to load); null: the engine's default. */
+  timeoutMs: number | null;
   /**
    * The Claude Agent SDK is pointed at a non-Anthropic endpoint (non-Claude models). Anthropic does not support that; it exists so an
    * install made before the configuration keeps working. Never set by the wizard, never offered to a fresh install.

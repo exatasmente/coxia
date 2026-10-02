@@ -1,5 +1,5 @@
 import type { JsonSchema } from './jsonSchema';
-import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
 // The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -36,6 +36,26 @@ const provider = object(
     secretRef: nullableString("Reference into the secrets store (API key). null: no key is sent (local server, or the machine's own cloud credentials)."),
     envFile: nullableString('Claude-settings-style JSON file whose "env" block (minus KEY/TOKEN variables) joins the agent environment.'),
     options: { type: 'object', description: 'Kind-specific, non-secret settings (bedrock: region, profile; vertex: project, region; foundry: resource).', additionalProperties: { type: 'string', maxLength: 400 } },
+    capabilities: {
+      ...object(
+        'Result of the connection test of an open-engine provider; null when never tested.',
+        {
+          chat: boolean('A plain completion works.'),
+          tools: boolean('Tool calls work.'),
+          jsonSchema: boolean('response_format json_schema works.'),
+          streaming: boolean('Server-sent events work.'),
+          reasoning: boolean('The model returns its reasoning separately.'),
+          contextWindow: { type: ['integer', 'null'], description: 'Context window in tokens, when the server reports it.', minimum: 256 },
+        },
+        ['chat', 'tools', 'jsonSchema'],
+      ),
+      type: ['object', 'null'],
+    },
+    structured: enumOf('How the JSON answer is obtained (open engine).', STRUCTURED_MODES),
+    headers: { type: 'object', description: 'Extra headers some gateways want (open engine). Never put a key here.', additionalProperties: { type: 'string', maxLength: 400 } },
+    maxOutputTokens: { type: ['integer', 'null'], description: "Cap on one call's output (open engine); null: the server's default.", minimum: 1 },
+    temperature: { type: ['number', 'null'], description: "Sampling temperature (open engine); null: the server's default.", minimum: 0, maximum: 2 },
+    timeoutMs: { type: ['integer', 'null'], description: "Limit of one whole call in ms (open engine); null: the engine's default.", minimum: 1000 },
     legacyCustomEndpoint: boolean('The Claude Agent SDK is pointed at a non-Anthropic endpoint; kept only for installs that predate the configuration.'),
   },
   ['id', 'kind'],

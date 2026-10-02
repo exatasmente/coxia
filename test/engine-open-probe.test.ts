@@ -1,0 +1,129 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { probeOpenAIProvider } from '../src/main/engine/open/probe';
+import { type Fake, type FakeRequest, closedPort, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
+
+let fake: Fake | null = null;
+afterEach(async () => {
+  await fake?.close();
+  fake = null;
+});
+
+// A capable server: plain text, tool calls, response_format.
+const capable = (req: FakeRequest) => {
+  if (req.body?.tools) return toolStep([{ name: 'echo', args: { text: 'ola' } }]);
+  if (req.body?.response_format) return textStep('{"answer":"ok","n":1}');
+  return textStep('ok');
+};
+
+describe('probeOpenAIProvider', () => {
+  it('reports every capability of a capable server, with the key sent as bearer', async () => {
+    fake = await fakeOpenAI(capable, { models: [{ id: 'fake-model', context_length: 32768 }, { id: 'other' }], auth: 'sk-test' });
+    const r = await probeOpenAIProvider(fake.url, 'sk-test', 'fake-model');
+    expect(r.reachable).toBe(true);
+    expect(r.ok).toBe(true);
+    expect(r.models).toMatchObject({ ok: true, ids: ['fake-model', 'other'], modelListed: true });
+    expect(r.capabilities).toEqual({ chat: true, tools: true, jsonSchema: true, streaming: true, reasoning: false, contextWindow: 32768 });
+    expect(r.chat.ok && r.tools.ok && r.jsonSchema.ok).toBe(true);
+    expect(r.messages.join('\n')).toContain('2 modelo(s) listado(s)');
+    expect(r.messages.join('\n')).toContain('Chamada de ferramenta ok');
+    expect(fake.chats()).toHaveLength(3);
+  });
+
+  it('accepts the bare origin a user types for a local server', async () => {
+    fake = await fakeOpenAI(capable);
+    const r = await probeOpenAIProvider(fake.url.replace(/\/v1$/, ''), '', 'fake-model');
+    expect(r.baseUrl).toBe(fake.url);
+    expect(r.ok).toBe(true);
+    expect(fake.requests[0].headers.authorization).toBeUndefined();
+  });
+
+  it('tells apart a model that answers but does not call tools', async () => {
+    fake = await fakeOpenAI((req) => (req.body?.tools ? textStep('eu uso texto mesmo') : capable(req)));
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.ok).toBe(true);
+    expect(r.capabilities.tools).toBe(false);
+    expect(r.tools.detail).toContain('não chamou a ferramenta');
+  });
+
+  it('tells apart a model the server says cannot use tools', async () => {
+    fake = await fakeOpenAI((req) => (req.body?.tools ? errorStep(400, 'gemma:2b does not support tools') : capable(req)));
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.capabilities).toMatchObject({ chat: true, tools: false, jsonSchema: true });
+    expect(r.tools.detail).toContain('não suporta chamada de ferramentas');
+  });
+
+  it('flags a server that rejects response_format, or ignores it', async () => {
+    fake = await fakeOpenAI((req) => (req.body?.response_format ? errorStep(400, "Unknown parameter: 'response_format'") : capable(req)));
+    const rejected = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(rejected.capabilities.jsonSchema).toBe(false);
+    expect(rejected.jsonSchema.detail).toContain('response_format');
+    await fake.close();
+
+    fake = await fakeOpenAI((req) => (req.body?.response_format ? textStep('Claro! Aqui vai a resposta.') : capable(req)));
+    const ignored = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(ignored.capabilities.jsonSchema).toBe(false);
+    expect(ignored.jsonSchema.detail).toContain('fora do esquema');
+  });
+
+  it('notes reasoning models, missing models and small context windows', async () => {
+    fake = await fakeOpenAI((req) => (req.body?.tools || req.body?.response_format ? capable(req) : textStep('ok', { reasoning: 'pensando', reasoningField: 'reasoning' })), {
+      models: [{ id: 'qwen3:8b', max_model_len: 4096 }],
+    });
+    const r = await probeOpenAIProvider(fake.url, '', 'qwen3:9b');
+    expect(r.capabilities.reasoning).toBe(true);
+    expect(r.models.modelListed).toBe(false);
+    const text = r.messages.join('\n');
+    expect(text).toContain('não aparece na lista');
+    expect(text).toContain('qwen3:8b');
+    // no match for the requested model id, so no context is claimed
+    expect(r.capabilities.contextWindow).toBeUndefined();
+
+    const small = await probeOpenAIProvider(fake.url, '', 'qwen3:8b');
+    expect(small.capabilities.contextWindow).toBe(4096);
+    expect(small.messages.join('\n')).toContain('é pequena');
+  });
+
+  it('a server without /models still gets tested', async () => {
+    fake = await fakeOpenAI(capable, { modelsStatus: 404 });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.models.ok).toBe(false);
+    expect(r.ok).toBe(true);
+    expect(r.messages[0]).toContain('Não foi possível listar os modelos');
+  });
+
+  it('reports a wrong key without running the other tests', async () => {
+    fake = await fakeOpenAI(capable, { auth: 'right', modelsStatus: undefined });
+    const r = await probeOpenAIProvider(fake.url, 'wrong', 'fake-model');
+    expect(r.reachable).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.messages.join('\n')).toContain('recusou a chave');
+    expect(fake.chats()).toHaveLength(0);
+  });
+
+  it('reports a server that is not running, in either language', async () => {
+    const url = await closedPort();
+    const pt = await probeOpenAIProvider(url, '', 'm');
+    expect(pt.reachable).toBe(false);
+    expect(pt.ok).toBe(false);
+    expect(pt.messages[0]).toContain('Servidor inacessível');
+    expect(pt.messages[0]).toContain('servidor local não está rodando');
+    const en = await probeOpenAIProvider(url, '', 'm', { lang: 'en' });
+    expect(en.messages[0]).toContain('Server unreachable');
+  });
+
+  it('a failing plain completion is the headline problem', async () => {
+    fake = await fakeOpenAI((req) => errorStep(404, `model '${req.body?.model}' not found, try pulling it first`));
+    const r = await probeOpenAIProvider(fake.url, '', 'ghost');
+    expect(r.ok).toBe(false);
+    expect(r.chat.detail).toContain('"ghost"');
+    expect(r.capabilities.chat).toBe(false);
+    expect(fake.chats()).toHaveLength(1);
+  });
+
+  it('falls back to a non-streaming completion for a server that breaks SSE', async () => {
+    fake = await fakeOpenAI((req) => (req.body?.stream ? { chunks: ['{not json'], done: false, cutAfter: 1 } : { completion: { choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] } }), {});
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.chat.ok).toBe(true);
+    expect(r.capabilities.streaming).toBe(false);
+  });
+});

@@ -1,16 +1,20 @@
 import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
+import { getLanguage } from '../shared/i18n';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
+import type { ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
+import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
-import { claudeSdkEnv } from './llm';
+import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
+import { ATAS } from './env';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 
 const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
@@ -315,6 +319,74 @@ function extraDirs(cwd: string): string[] {
   return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
 }
 
+// The call as SDK options, which is also the shape the open engine takes: the permissions, hooks and limits are one policy for both engines.
+function sdkOptions(req: EngineRequest): Options {
+  return {
+    cwd: req.cwd,
+    // dontAsk denies every tool that allowedTools does not pre-approve.
+    permissionMode: 'dontAsk',
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
+    allowedTools: req.allowedTools,
+    disallowedTools: [
+      ...(glabOn() || req.shell.rules.length ? [] : ['Bash']),
+      'Edit',
+      'Write',
+      'NotebookEdit',
+      'WebFetch',
+      'WebSearch',
+      ...SECRET_READ_DENY,
+    ],
+    hooks: agentHooks(req.shell.patterns),
+    outputFormat: { type: 'json_schema', schema: req.schema },
+    maxTurns: 8,
+    ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
+    ...req.extra,
+  };
+}
+
+// Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist.
+function openDocs(cwd: string): DocSources {
+  const d = docsSources();
+  const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
+  return Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
+}
+
+/** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
+export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection {
+  const c = t.capabilities;
+  return {
+    provider: {
+      baseUrl: t.baseUrl,
+      model: t.model,
+      apiKey: providerSecret(t.secretRef) ?? undefined,
+      lang: getLanguage(),
+      ...(Object.keys(t.headers).length ? { headers: t.headers } : {}),
+      ...(t.maxOutputTokens !== null ? { maxOutputTokens: t.maxOutputTokens } : {}),
+      ...(t.temperature !== null ? { temperature: t.temperature } : {}),
+      ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
+    },
+    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}) } } : {}),
+    structured: t.structured,
+    docs: openDocs(cwd),
+  };
+}
+
+async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
+  // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
+  const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
+  return runOpenOnce<T>({
+    selection,
+    prompt: req.prompt,
+    options: { ...sdkOptions(req), model: req.target.model },
+    sessionsDir: join(ATAS, 'open-sessions'),
+    secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
+    shellEnv: rc().vcsHost ? { GITLAB_HOST: rc().vcsHost as string } : undefined,
+    describeTool: source,
+    events: { onSession: (id) => noteSession(id, req.role, req.prompt) },
+    makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
+  });
+}
+
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
@@ -323,28 +395,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      cwd: req.cwd,
+      ...sdkOptions(req),
       model: req.target.model,
       env: claudeSdkEnv(req.target),
-      // dontAsk denies every tool that allowedTools does not pre-approve.
-      permissionMode: 'dontAsk',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
-      allowedTools: req.allowedTools,
-      disallowedTools: [
-        ...(glabOn() || req.shell.rules.length ? [] : ['Bash']),
-        'Edit',
-        'Write',
-        'NotebookEdit',
-        'WebFetch',
-        'WebSearch',
-        ...SECRET_READ_DENY,
-      ],
-      hooks: agentHooks(req.shell.patterns),
-      outputFormat: { type: 'json_schema', schema: req.schema },
-      maxTurns: 8,
-      ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
-      ...req.extra,
     },
   });
   for await (const m of q) {
@@ -373,6 +427,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
 }
 
 registerEngine('claude-sdk', runClaudeSdk);
+registerEngine('open', runOpenEngine);
 
 // One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
 async function runOnce<T>(
@@ -382,7 +437,8 @@ async function runOnce<T>(
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
 ): Promise<Run<T>> {
-  const target = engineFor(role);
+  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
+  const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
   const cwd = rc().projectsRoot;
   return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd), shell, extra });
 }
