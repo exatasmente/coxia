@@ -3,7 +3,7 @@
 // newer one that a local HTTP server serves with a latest-linux.yml, restarts into it and says so.
 //
 //   node scripts/update-e2e.mjs --old <old.AppImage> --new <folder with the new .AppImage and latest-linux.yml> --work <scratch folder> \
-//                               [--scenario main|tamper|older|beta|source] [--commit <build commit>] [--port 9326] [--debug-port 9325]
+//                               [--scenario main|tamper|older|beta|onquit|source] [--commit <build commit>] [--port 9326] [--debug-port 9325]
 //
 // Both AppImages must have been built with `publish: {provider: generic, url: http://127.0.0.1:<port>/}` (see docs/updates.md, "Testing an
 // update locally"). Nothing real is touched: the app runs with its own HOME, XDG_* and CERIMONIAS_DATA_DIR inside --work, a PATH without
@@ -14,6 +14,7 @@
 //   tamper  the served latest-linux.yml carries a wrong sha512: the download must fail and nothing is installed
 //   older   the feed offers an older version: no update is offered (no downgrade)
 //   beta    only beta-linux.yml is served: the stable channel finds nothing, the beta channel finds the update
+//   onquit  a downloaded update is installed by a normal quit, but not while something is running
 //   source  installed by scripts/install-local.sh from a throwaway clone whose main is two commits ahead of the build (needs --commit,
 //           the commit the old AppImage was built from): the badge, the commit list, the override, a read-only check, the update button
 import { createHash } from 'node:crypto';
@@ -77,7 +78,7 @@ if (!newImage) throw new Error(`no .AppImage in ${NEW}`);
 let yml = readFileSync(join(NEW, 'latest-linux.yml'), 'utf8');
 cpSync(join(NEW, newImage), join(dir('feed'), newImage));
 const newVersion = /^version: (.+)$/m.exec(yml)?.[1];
-if (SCENARIO === 'main') yml += 'releaseNotes: |\n  - Faster start\n  - Fixes for the <b>voice</b> panel\n';
+if (SCENARIO === 'main' || SCENARIO === 'onquit') yml += 'releaseNotes: |\n  - Faster start\n  - Fixes for the <b>voice</b> panel\n';
 if (SCENARIO === 'tamper') yml = yml.replace(/sha512: .+/g, `sha512: ${Buffer.alloc(64, 7).toString('base64')}`);
 if (SCENARIO === 'older') yml = yml.replace(/^version: .+$/m, 'version: 0.0.9').replace(/cerimonias-[\d.]+\.AppImage/g, 'cerimonias-0.0.9.AppImage');
 writeFileSync(join(dir('feed'), SCENARIO === 'beta' ? 'beta-linux.yml' : 'latest-linux.yml'), yml);
@@ -287,6 +288,30 @@ async function main() {
   check('the download was differential (ranges, far less than the full file)', parts > 0 && bytes < full * 0.5, `${bytes} of ${full} bytes`);
   const cached = join(dir('cache'));
   say(`checked at ${new Date(checkedAt).toISOString().slice(11, 19)}`);
+
+  if (SCENARIO === 'onquit') {
+    // A quit while something runs is just a quit: the downloaded update waits for the next one.
+    await invoke(page, 'update:busy', true);
+    const pid = runPid().pid;
+    page.close();
+    await quit();
+    check('the old instance quit', !alive(pid));
+    check('a quit while busy did not install the update', sha512(APP) === sha512(OLD));
+    launch();
+    await waitFor(() => runPid() && runPid().pid !== pid && alive(runPid().pid), 60_000, 'the instance to start again');
+    page = await cdp();
+    status = await invoke(page, 'update:check');
+    status = await waitStatus(page, (x) => x.release.phase === 'downloaded', 60_000, 'the cached update');
+    check('the next start finds the update again (already downloaded)', status.release.version === newVersion);
+    const again = runPid().pid;
+    page.close();
+    await quit();
+    check('the second instance quit', !alive(again));
+    check('a normal quit with nothing running installed it', sha512(APP) === sha512(join(dir('feed'), newImage)));
+    await sleep(3000);
+    check('and did not start the app again', !runPid() || !alive(runPid().pid));
+    return;
+  }
 
   // what the person sees: the badge and the prompt in Hoje, then the section in Configurações
   await sleep(1500);

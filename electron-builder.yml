@@ -39,7 +39,7 @@ publish:
   provider: github
   owner: OWNER
   repo: REPO
-  releaseType: release
+  releaseType: draft
 # Windows and macOS are wired for updates but are not part of `npm run dist` and are not code signed yet: automatic updates there only
 # work with signed builds (docs/updates.md).
 win:
