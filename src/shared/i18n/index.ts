@@ -79,6 +79,11 @@ export function getLanguage(): Language {
   return current;
 }
 
+/** The BCP 47 tag Intl and toLocale*String use for the language in force: dates, times and numbers follow the workspace language. */
+export function intlLocale(): string {
+  return current === 'en' ? 'en-US' : 'pt-BR';
+}
+
 /** Voice on or off: `tv` follows it. */
 export function setVoiceEnabled(on: boolean): void {
   if (on === voice) return;

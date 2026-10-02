@@ -1,17 +1,12 @@
 import { createElement, Fragment, type ReactNode, useSyncExternalStore } from 'react';
 import type { Language } from '../../shared/config/types';
-import { getLanguage, i18nSnapshot, normalizeLanguage, type Params, setLanguage, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import { i18nSnapshot, intlLocale, normalizeLanguage, type Params, setLanguage, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
 import { api } from './api';
 
 const KEY = 'cerimonias.language';
 const VOICE_KEY = 'cerimonias.voice';
 
-export { t, tv };
-
-/** The BCP 47 tag Intl and toLocale*String use for the language in force: dates, times and numbers follow the workspace language. */
-export function intlLocale(): string {
-  return getLanguage() === 'en' ? 'en-US' : 'pt-BR';
-}
+export { intlLocale, t, tv };
 
 export function applyLanguage(language: Language): void {
   setLanguage(language);
@@ -55,10 +50,10 @@ export function initLanguage(): void {
 /** Splits translated text on its `{name}` placeholders and puts the matching React node in each: a sentence with a <code> or a <button> inside. */
 export function withNodes(text: string, nodes: Record<string, ReactNode>): ReactNode {
   const parts = text.split(/\{(\w+)\}/);
-  return createElement(Fragment, null, ...parts.map((part, i) => (i % 2 === 1 && part in nodes ? createElement(Fragment, { key: i }, nodes[part]) : part)));
+  return createElement(Fragment, null, ...parts.map((part, i) => (i % 2 === 0 ? part : part in nodes ? createElement(Fragment, { key: i }, nodes[part]) : `{${part}}`)));
 }
 
-/** `t` for a sentence that holds elements: `tNodes('ui.x.hint', { key: <kbd>F1</kbd> })` with "Press {key} to open". Plain params go in the third argument. */
+/** `t` for a sentence that holds elements: `tNodes('area.hint', { key: <kbd>F1</kbd> })` with "Press {key} to open". Plain params go in the third argument. */
 export function tNodes(key: string, nodes: Record<string, ReactNode>, params?: Params): ReactNode {
   return withNodes(t(key, params), nodes);
 }
