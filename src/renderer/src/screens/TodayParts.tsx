@@ -2,9 +2,10 @@ import { useState } from 'react';
 import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
-import { type AgoraPlan, type NeedItem, type NeedTarget, mrLabel, stageLabel } from '../dashboard';
+import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
 import type { Card } from '../../../shared/types';
 import { ChevronIcon } from './dashIcons';
+import { ResolveConflict } from './ResolveConflict';
 import { WorktreeBadge } from './radarSlots';
 
 export function needTargetToScreen(t: NeedTarget): Screen {
@@ -97,6 +98,11 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
                 {n.alertId && (
                   <button type="button" className="btn need-dismiss" aria-label={`Dispensar: ${n.title}`} onClick={() => dismiss(n.alertId!)}>Dispensar</button>
                 )}
+                {n.conflictCard && (
+                  <div className="need-extra">
+                    <ResolveConflict card={n.conflictCard} go={go} place="need" only={conflictMrs(n.conflictCard).find((m) => n.title.startsWith(`${m.ref}:`))?.ref} />
+                  </div>
+                )}
               </li>
             );
           })}
@@ -182,6 +188,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>Discussões</button>}
             {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
             {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>QA</button>}
+            <ResolveConflict card={card} go={go} place="act" />
             <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
           </div>
         </div>

@@ -10,6 +10,8 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
+import { ResolveConflict } from './ResolveConflict';
+import { conflictMrs } from '../dashboard';
 
 const OPENING = 'Explique o bloqueio desta atividade, o que você leu para chegar nisso e o que precisa de mim para destravar.';
 
@@ -216,6 +218,13 @@ export function Deep({
           </main>
 
           <aside className="deep-side" style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {conflictMrs(card).length > 0 && (
+              <section className="panel">
+                <h2 className="section-title">MR com conflito</h2>
+                <p className="small faint">Prepara a resolução com a main numa cópia de trabalho e abre a tela do conflito. Nada é enviado sem o seu “sim”.</p>
+                <ResolveConflict card={card} go={go} place="deep" />
+              </section>
+            )}
             <section className="panel">
               <h2 className="section-title">Saídas possíveis</h2>
               {!options && (

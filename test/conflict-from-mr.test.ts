@@ -1,6 +1,7 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_CHANNELS } from '../src/shared/apiChannels';
 import { parseMrRef, resolveMr } from '../src/main/conflictFromMr';
 import { webAccess, webRefusal } from '../src/main/webPolicy';
@@ -12,6 +13,10 @@ vi.mock('../src/main/agents', async (importOriginal) => ({
   conflictAsk: vi.fn(),
   rewriteQaComment: vi.fn(),
 }));
+
+// Own data dir: the other conflict suite resets the shared one while files run in parallel.
+const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-from-mr-data-'));
+process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { conflictDiscard, conflictFromMr, conflictHooks, conflictPrepare, listActions } = await import('../src/main/actions');
 const { ATAS } = await import('../src/main/env');
@@ -54,6 +59,10 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(f.root, { recursive: true, force: true });
+});
+
+afterAll(() => {
+  rmSync(DATA, { recursive: true, force: true });
 });
 
 describe('MR reference parsing', () => {

@@ -3,6 +3,7 @@ import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import type { WatcherAlert } from '../src/shared/watchers';
 import {
   agoraPlan,
+  conflictMrs,
   bottomNavActive,
   greeting,
   mrLabel,
@@ -187,5 +188,24 @@ describe('small helpers', () => {
     expect(bottomNavActive('call')).toBeNull();
     expect(bottomNavActive('deep')).toBeNull();
     expect(bottomNavActive('gate')).toBeNull();
+  });
+});
+
+describe('MR conflicts', () => {
+  const sz4 = { ref: 'sz4!9302', project: 'sz4/sz4', iid: 9302 };
+  const hub = { ref: 'hub-whatsapp!797', project: 'broker-whatsapp/hub-whatsapp', iid: 797 };
+  const conflicted = card('20', { mrs: [sz4.ref, hub.ref], mrPaths: [sz4, hub], blockers: [`${hub.ref}: MR com conflitos`, 'outro bloqueio'] });
+
+  it('picks only the MRs the report blocks for conflicts', () => {
+    expect(conflictMrs(conflicted)).toEqual([hub]);
+    expect(conflictMrs(card('21', { mrPaths: [sz4], blockers: ['sz4!9302: pipeline falhou'] }))).toEqual([]);
+    expect(conflictMrs(card('22', { mrPaths: [sz4], blockers: ['sz4!9302: MR com conflitos'] }))).toEqual([sz4]);
+  });
+
+  it('marks the blocked row so it can offer to resolve the conflict', () => {
+    const [b] = needsYou({ cards: [conflicted], turns: {}, answered: {}, actions: [], alerts: [] });
+    expect(b).toMatchObject({ kind: 'blocked', title: 'hub-whatsapp!797: MR com conflitos', conflictCard: conflicted });
+    const [other] = needsYou({ cards: [card('23', { blockers: ['Depende do MR !42'] })], turns: {}, answered: {}, actions: [], alerts: [] });
+    expect(other.conflictCard).toBeUndefined();
   });
 });

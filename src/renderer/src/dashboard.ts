@@ -113,6 +113,14 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   };
 }
 
+const MR_CONFLICT = /^(.+): MR com conflitos$/;
+
+/** The MRs of the card that the report blocks for conflicts ("<mr>: MR com conflitos"), in the card's order. */
+export function conflictMrs(card: Card): Card['mrPaths'] {
+  const refs = new Set(card.blockers.map((b) => MR_CONFLICT.exec(b)?.[1]).filter((r): r is string => !!r));
+  return card.mrPaths.filter((m) => refs.has(m.ref));
+}
+
 export function isPendingAction(a: ReleaseAction): boolean {
   return a.state === 'pending' || a.state === 'failed';
 }
@@ -133,6 +141,8 @@ export interface NeedItem {
   to: NeedTarget | null;
   // Only watcher rows can be dismissed.
   alertId?: string;
+  // Blocked rows whose first reason is an MR with conflicts: the card, so the row can offer to resolve it.
+  conflictCard?: Card;
 }
 
 export interface NeedsInput {
@@ -186,6 +196,7 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       detail: `#${c.iid} · ${c.title}`,
       cta: 'Aprofundar',
       to: { to: 'deep', ref: c.ref },
+      ...(MR_CONFLICT.test(c.blockers[0]) && conflictMrs(c).length ? { conflictCard: c } : {}),
     });
   }
 
