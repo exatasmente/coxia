@@ -9,10 +9,12 @@ import { Call } from './screens/Call';
 import { Conflict } from './screens/Conflict';
 import { Custo } from './screens/Custo';
 import { Deep } from './screens/Deep';
+import { Discussions } from './screens/Discussions';
 import { Gate } from './screens/Gate';
 import { History } from './screens/History';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
+import { Reentry } from './screens/Reentry';
 import { RetroScreen } from './screens/RetroScreen';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
@@ -31,6 +33,8 @@ export type Screen =
   | { name: 'retro' }
   | { name: 'custo' }
   | { name: 'quick'; ref: string; card?: Card }
+  | { name: 'reentry'; ref: string; card?: Card }
+  | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -94,6 +98,10 @@ export function App() {
       return <Custo go={go} />;
     case 'quick':
       return <QuickActions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} go={go} />;
+    case 'reentry':
+      return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
+    case 'discussions':
+      return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
     // slot: routes of feature modules
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
