@@ -9,6 +9,7 @@ import type { Module } from './module';
 import { sessionOwners } from './sessions-core';
 import { readRegistry } from './workspaces-core';
 import { rc } from './workspaceConfig';
+import { t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'custo.json');
 const API = 'https://openrouter.ai/api/v1';
@@ -154,7 +155,7 @@ export const custo: Module = (ctx) => {
   ctx.handle('custo:summary', (scope?: CustoScope) => view(read(), scopeOf(scope)));
   ctx.handle('custo:refresh', (scope?: CustoScope) => refreshCusto((done, total) => ctx.emit({ type: 'module', name: 'custo-progress', payload: { done, total } }), scopeOf(scope)));
   ctx.handle('custo:goal', (goal: number, scope?: CustoScope) => {
-    if (!(goal >= 1 && goal <= 10_000)) throw new Error('a meta deve ficar entre US$ 1 e US$ 10.000');
+    if (!(goal >= 1 && goal <= 10_000)) throw new Error(t('main.custo.goalRange'));
     const c = read();
     c.goal = Math.round(goal * 100) / 100;
     write(c);

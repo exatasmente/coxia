@@ -1,13 +1,8 @@
+import { lazyLabels } from './i18n';
+
 export type TempoKind = 'pre-daily' | 'desbloqueio' | 'gate' | 'qa' | 'retro' | 'daily';
 
-export const TEMPO_LABEL: Record<TempoKind, string> = {
-  'pre-daily': 'pré-daily',
-  desbloqueio: 'desbloqueio',
-  gate: 'gate',
-  qa: 'passagem ao QA',
-  retro: 'retro',
-  daily: 'daily',
-};
+export const TEMPO_LABEL: Record<TempoKind, string> = lazyLabels<TempoKind>(['pre-daily', 'desbloqueio', 'gate', 'qa', 'retro', 'daily'], 'main.tempo.label');
 
 // Same shape as a block of `clockify-log activity`, plus the fields the app knows for sure.
 export interface TempoBlock {

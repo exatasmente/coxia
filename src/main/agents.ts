@@ -5,7 +5,7 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
-import { getLanguage } from '../shared/i18n';
+import { getLanguage, t } from '../shared/i18n';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
@@ -672,7 +672,7 @@ export function proposeBatches(hunks: ProposeHunk[]): ProposeHunk[][] {
 // Many conflicts in one call made the agent read files to recover clipped text and run out of turns:
 // each batch goes alone, a few at a time, and a failed batch only leaves its own hunks without a proposal.
 export async function conflictPropose(p: ProposeInput): Promise<Proposal & { failed: string[]; partialIds: string[] }> {
-  if (!p.hunks.length) return { summary: 'Nenhum trecho em conflito.', items: [], failed: [], partialIds: [] };
+  if (!p.hunks.length) return { summary: t('main.agents.noHunks'), items: [], failed: [], partialIds: [] };
   const batches = proposeBatches(p.hunks);
   const results: (Proposal | null)[] = new Array(batches.length).fill(null);
   let next = 0;
@@ -688,10 +688,10 @@ export async function conflictPropose(p: ProposeInput): Promise<Proposal & { fai
   };
   await Promise.all(Array.from({ length: Math.min(BATCH_PARALLEL, batches.length) }, worker));
   const failed = batches.flatMap((b, i) => (results[i] ? [] : b.map((h) => h.id)));
-  if (failed.length === p.hunks.length) throw new Error('o agente não conseguiu propor nenhum trecho; tente de novo');
+  if (failed.length === p.hunks.length) throw new Error(t('main.agents.noProposal'));
   const summaries = results.filter((r): r is Proposal => !!r).map((r) => r.summary.trim()).filter(Boolean);
   return {
-    summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? `${failed.length} trecho(s) ficaram sem proposta: peça de novo.` : ''].filter(Boolean).join(' '),
+    summary: [summaries.length > 1 ? summaries.map((x, i) => `${i + 1}. ${x}`).join(' ') : summaries[0] ?? '', failed.length ? t('main.agents.someFailed', { count: failed.length }) : ''].filter(Boolean).join(' '),
     items: results.flatMap((r) => r?.items ?? []),
     failed,
     partialIds: batches.flatMap((b, i) => (results[i]?.partial ? b.map((h) => h.id) : [])),

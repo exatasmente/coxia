@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 // What a browser session may call. The desktop window has no such limits (IPC does not go through here).
 export type WebAccess = 'allow' | 'deny' | 'external';
 
@@ -42,6 +43,6 @@ export function webRefusal(channel: string, allowExternal: boolean): string | nu
   if (access === 'allow') return null;
   if (access === 'external' && allowExternal) return null;
   return access === 'external'
-    ? 'Ação com efeito externo bloqueada pelo navegador. Aprove na janela do app ou habilite em Configurações › Acesso pelo navegador.'
-    : 'Este comando só funciona na janela do app, não pelo navegador.';
+    ? t('main.web.externalBlocked')
+    : t('main.web.appOnly');
 }

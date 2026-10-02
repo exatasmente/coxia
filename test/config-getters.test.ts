@@ -47,7 +47,7 @@ describe('a fresh install', () => {
     expect(cfg.getConfig().language).toBe('en');
     expect(cfg.getConfig().llm.roles.deep).toEqual({ provider: 'anthropic', model: 'opus' });
     expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/invalid model/);
-    expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/configuração inválida: language/);
+    expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/invalid configuration: language/);
   });
 });
 

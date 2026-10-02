@@ -35,7 +35,7 @@ export function validateVerify(commands: Record<string, string>): Record<string,
   for (const [project, command] of Object.entries(commands)) {
     if (!PROJECT.test(project) || project.includes('..')) throw new Error(t('main.conflictVerify.project', { project }));
     if (typeof command !== 'string' || command.includes('\0')) throw new Error(t('main.conflictVerify.command', { project }));
-    if (command.length > MAX) throw new Error(`comando de ${project} passa de ${MAX} caracteres`);
+    if (command.length > MAX) throw new Error(t('main.conflictVerify.tooLong', { project, max: MAX }));
     if (command.trim()) out[project] = command.trim();
   }
   return out;

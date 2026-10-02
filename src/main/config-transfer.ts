@@ -9,6 +9,7 @@ import type { ImportApply, ImportPreview, ImportResult, ImportSource, ImportTarg
 import { CONFIG_FILE, readConfigFile, writeConfigFile } from './config-bootstrap';
 import type { SecretsStore } from './secrets-core';
 import { createWorkspace, readRegistry, workspaceDir } from './workspaces-core';
+import { t } from '../shared/i18n';
 
 // Export and import of a workspace configuration, on the disk only (no Electron): the config file moves, never history, never a secret value.
 
@@ -24,10 +25,10 @@ export interface TransferDeps {
 
 export function readSource(source: ImportSource): string {
   if ('text' in source) {
-    if (source.text.length > MAX_IMPORT_BYTES) throw new Error('o arquivo de configuração passa de 1 MB');
+    if (source.text.length > MAX_IMPORT_BYTES) throw new Error(t('main.config.tooBig'));
     return source.text;
   }
-  if (statSync(source.path).size > MAX_IMPORT_BYTES) throw new Error('o arquivo de configuração passa de 1 MB');
+  if (statSync(source.path).size > MAX_IMPORT_BYTES) throw new Error(t('main.config.tooBig'));
   return readFileSync(source.path, 'utf8');
 }
 
@@ -43,7 +44,7 @@ function currentOf(deps: TransferDeps, target: ImportTarget): WorkspaceConfig {
 }
 
 function assertTarget(deps: TransferDeps, target: ImportTarget): void {
-  if (target.mode === 'existing' && !readRegistry(deps.root)?.list.some((w) => w.id === target.id)) throw new Error(`workspace ${target.id} não existe`);
+  if (target.mode === 'existing' && !readRegistry(deps.root)?.list.some((w) => w.id === target.id)) throw new Error(t('main.workspaces.missing', { id: target.id }));
 }
 
 /** Validates the file and shows what importing it would do. Writes nothing. */
@@ -70,11 +71,11 @@ export function previewImport(deps: TransferDeps, source: ImportSource, target: 
 export function applyImport(deps: TransferDeps, req: ImportApply, running: string | null): ImportResult {
   assertTarget(deps, req.target);
   const parsed = parseImport(readSource(req.source));
-  if (!parsed.ok || !parsed.config) throw new Error(`configuração inválida: ${summarizeIssues(parsed.errors)}`);
+  if (!parsed.ok || !parsed.config) throw new Error(t('main.config.invalid', { issues: summarizeIssues(parsed.errors) }));
   const config = parsed.config;
   const needed = new Set(collectSecretRequirements(config).map((r) => r.ref));
   for (const input of req.secrets) {
-    if (!needed.has(input.ref)) throw new Error(`o arquivo não usa o segredo "${input.ref}"`);
+    if (!needed.has(input.ref)) throw new Error(t('main.config.unusedSecret', { ref: input.ref }));
   }
   for (const input of req.secrets) deps.secrets.set(input);
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { type ConflictHunk, type ConflictStep, type HunkChoice, conflictProgress, conflictStep, hunkReady } from '../../../shared/conflict';
-import { PARTIAL_HINT } from '../../../shared/partial';
+import { partialHint } from '../../../shared/partial';
 import type { ReleaseAction } from '../../../shared/types';
 import { api, errorText, plural } from '../api';
 import { conflictApi } from '../conflictApi';
@@ -87,7 +87,7 @@ function Hunk({ h, index, total, locked, onChoose }: { h: ConflictHunk; index: n
         </Side>
       </div>
 
-      {h.partial && <p className="cr-note" style={{ color: 'var(--amber-ink)' }}>{PARTIAL_HINT}</p>}
+      {h.partial && <p className="cr-note" style={{ color: 'var(--amber-ink)' }}>{partialHint()}</p>}
       {h.explanation && <p className="cr-note">{h.explanation}</p>}
       {h.test && <p className="cr-note muted"><strong>Testar:</strong> {h.test}</p>}
 

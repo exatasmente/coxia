@@ -74,7 +74,7 @@ export function gensOf(lines: Iterable<string>, kind: CustoKind, session: string
 
 export function parseKey(body: unknown): CustoKey {
   const d = (body as { data?: Record<string, unknown> }).data;
-  if (!d || typeof d.usage !== 'number') throw new Error('resposta inesperada da OpenRouter');
+  if (!d || typeof d.usage !== 'number') throw new Error(t('main.custo.unexpected'));
   const num = (v: unknown) => (typeof v === 'number' ? v : 0);
   return {
     limit: typeof d.limit === 'number' ? d.limit : null,

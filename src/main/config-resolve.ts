@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
 import type { CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import { t } from '../shared/i18n';
 
 // Turns a WorkspaceConfig into what the rest of the main process needs: absolute paths, the optional integrations that are on, the
 // values the app used to hardcode. Pure: everything machine-specific comes in through the context, so a test can resolve the same
@@ -147,7 +148,7 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
       const modelRole = c.agents.roles[role]?.modelRole ?? role;
       const rm = c.llm.roles[modelRole] ?? c.llm.roles[role];
       const p = c.llm.providers.find((q) => q.id === rm.provider);
-      if (!p) throw new Error(`o provedor "${rm.provider}" do papel ${role} não existe na configuração`);
+      if (!p) throw new Error(t('main.config.noProvider', { provider: rm.provider, role }));
       return {
         role,
         modelRole,

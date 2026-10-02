@@ -293,7 +293,7 @@ export function runVerify(p: { wt: string; clone: string; command: string; logFi
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
-      log.end(() => done({ exitCode: code ?? (signal ? 137 : 1), tail: signal ? `${tail}\n[interrompido: ${signal}]` : tail }));
+      log.end(() => done({ exitCode: code ?? (signal ? 137 : 1), tail: signal ? `${tail}\n${t('main.conflictGit.interrupted', { signal })}` : tail }));
     });
   });
 }

@@ -98,6 +98,16 @@ export const t: Translate = (key, params) => translate(key, params);
 /** Translate a string that says "call" while voice is on and "conversa"/"chat" while it is off (key + `.novoice`). */
 export const tv: Translate = (key, params) => voiceTranslate(key, params);
 
+/**
+ * A record whose values are translated each time they are read: for the tables of labels that used to be constants
+ * (`LABEL[kind]` keeps working, in the language the process runs in at that moment).
+ */
+export function lazyLabels<K extends string>(keys: readonly K[], prefix: string): Record<K, string> {
+  const out = {} as Record<K, string>;
+  for (const key of keys) Object.defineProperty(out, key, { enumerable: true, get: () => t(`${prefix}.${key}`) });
+  return out;
+}
+
 /** For useSyncExternalStore: re-render when the language or the voice mode changes. */
 export function subscribeLanguage(fn: () => void): () => void {
   listeners.add(fn);

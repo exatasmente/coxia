@@ -57,6 +57,6 @@ export async function invoke(channel: string, args: unknown[], deviceId?: string
     return guarded(channel, 'web', ((...a: never[]) => (dev as (d: string, ...a: unknown[]) => unknown)(deviceId, ...a)) as Handler, args as never[]);
   }
   const fn = table.get(channel);
-  if (!fn) throw new Error(`canal desconhecido: ${channel}`);
+  if (!fn) throw new Error(t('main.rpc.unknownChannel', { channel }));
   return guarded(channel, 'web', fn, args as never[]);
 }

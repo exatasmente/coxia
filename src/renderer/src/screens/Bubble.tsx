@@ -1,4 +1,4 @@
-import { PARTIAL_HINT } from '../../../shared/partial';
+import { partialHint } from '../../../shared/partial';
 import type { Talk, Voice } from '../../../shared/types';
 import type { usePlayer } from '../audio';
 import { useVoiceEnabled } from '../i18n';
@@ -62,7 +62,7 @@ export function Bubble({
           )}
         </div>
         <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
-        {m.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{PARTIAL_HINT}</p>}
+        {m.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{partialHint()}</p>}
         {m.me && <FixHeard text={m.text} />}
       </div>
     </div>

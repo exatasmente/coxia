@@ -1,4 +1,5 @@
 import type { ReleaseAction } from './types';
+import { t } from './i18n';
 
 export type HunkChoice = 'proposal' | 'ours' | 'theirs' | 'edit';
 export type Confidence = 'alta' | 'media' | 'baixa';
@@ -72,21 +73,13 @@ export function conflictStep(a: Pick<ReleaseAction, 'resolve'>): ConflictStep {
   return 'prepared';
 }
 
-const STEP_LABEL: Record<ConflictStep, string> = {
-  none: 'sem preparo',
-  prepared: 'preparado',
-  proposed: 'proposta pronta',
-  applied: 'aplicado e verificado',
-  'verify-failed': 'verificação falhou',
-  'push-waiting': 'aguardando “sim” para publicar',
-  published: 'publicado',
-};
+const stepLabel = (step: ConflictStep): string => t(`main.conflict.step.${step}`);
 
 export function conflictProgress(a: Pick<ReleaseAction, 'resolve'>): string {
   const step = conflictStep(a);
   if (a.resolve?.busy) return a.resolve.busy;
-  if (step === 'applied' && a.resolve?.verify?.skipped) return 'aplicado sem testes';
-  return STEP_LABEL[step];
+  if (step === 'applied' && a.resolve?.verify?.skipped) return t('main.conflict.step.appliedNoTests');
+  return stepLabel(step);
 }
 
 // What a choice writes for the hunk; null means the side deleted the file (whole-file hunks) or nothing was chosen.

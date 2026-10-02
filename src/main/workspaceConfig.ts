@@ -60,7 +60,7 @@ export function docsSources(): ResolvedDocs {
 /** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
 export function saveConfig(next: unknown): WorkspaceConfig {
   const checked = validateConfig(next);
-  if (!checked.ok || !checked.config) throw new Error(`configuração inválida: ${summarizeIssues(checked.errors)}`);
+  if (!checked.ok || !checked.config) throw new Error(t('main.config.invalid', { issues: summarizeIssues(checked.errors) }));
   writeConfigFile(ATAS, checked.config);
   state = { config: checked.config, resolved: resolveConfig(checked.config, context()) };
   setLanguage(checked.config.language);
@@ -102,7 +102,7 @@ export function issueProjectRef(): string {
   const { projectId, project } = rc().issues;
   if (projectId !== null) return String(projectId);
   if (project) return encodeURIComponent(project);
-  throw new Error('Este workspace não tem um projeto de issues configurado.');
+  throw new Error(t('main.config.noIssueProject'));
 }
 
 /** The VCS host, or an error naming what is missing: for the calls that cannot work without one. */
@@ -120,7 +120,7 @@ export function issueProjectKey(): string {
   const { projectId, project } = rc().issues;
   if (rc().primaryVcs?.kind === 'gitlab' && projectId !== null) return String(projectId);
   if (project) return project;
-  throw new Error('Este workspace não tem um projeto de issues configurado.');
+  throw new Error(t('main.config.noIssueProject'));
 }
 
 /** Matches a note that opens with the QA user mention (the release hand-off comment), or null when the workspace has no QA user. */

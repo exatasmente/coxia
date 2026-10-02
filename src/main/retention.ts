@@ -147,7 +147,7 @@ export function scan(days: number, now = Date.now()): Selection {
 
 function checkDays(days: number): number {
   if (!Number.isInteger(days) || days < RETENTION_MIN_DAYS || days > RETENTION_MAX_DAYS) {
-    throw new Error(`o prazo deve ficar entre ${RETENTION_MIN_DAYS} e ${RETENTION_MAX_DAYS} dias`);
+    throw new Error(t('main.retention.daysRange', { min: RETENTION_MIN_DAYS, max: RETENTION_MAX_DAYS }));
   }
   return days;
 }
@@ -196,7 +196,7 @@ function removeOne(file: RetentionFile): void {
   if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
   if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
   const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
-  if (!inside(file.path, root)) throw new Error('fora da pasta esperada');
+  if (!inside(file.path, root)) throw new Error(t('main.retention.outside'));
   unlinkSync(file.path);
   if (file.kind === 'sessoes' && file.sessionId) {
     const companion = join(sessionsDir(), file.sessionId);

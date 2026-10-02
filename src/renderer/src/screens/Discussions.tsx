@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PARTIAL_HINT } from '../../../shared/partial';
+import { partialHint } from '../../../shared/partial';
 import type { Card } from '../../../shared/types';
 import type { DiscussionView, DiscussionsResult, MrPath, ProposalView } from '../../../shared/feedback';
 import type { Screen } from '../App';
@@ -207,7 +207,7 @@ export function Discussions({
                 <>
                   <p style={{ fontWeight: 600, lineHeight: 1.5 }}>{current.explanation.point}</p>
                   <div className="small" style={{ lineHeight: 1.55 }}><RichText text={current.explanation.text || current.explanation.speech} /></div>
-                  {current.explanation.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{PARTIAL_HINT}</p>}
+                  {current.explanation.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{partialHint()}</p>}
                   {current.stale && <p className="small" style={{ color: 'var(--amber-ink)' }}>A discussão teve respostas novas depois desta explicação.</p>}
                   <div className="row" style={{ gap: 8 }}>
                     <button type="button" className="btn" disabled={!!explaining} onClick={() => explain(current)}>Explicar de novo</button>
