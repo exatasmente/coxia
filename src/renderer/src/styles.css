@@ -411,12 +411,14 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   .diagram-overlay { padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); }
   .diagram-svg-full { width: 100%; height: 100%; }
   .diagram-stage { touch-action: none; }
+  .diagram-toolbar { flex-wrap: wrap; }
+  .diagram-toolbar > span:first-child { flex: 1 0 100% !important; }
 }
 @media (max-height: 500px) { .hero .quad { display: none; } header.hero > div > div:last-child { -webkit-line-clamp: 1; } }
 /* touch: 44 px targets, 16 px inputs (no iOS zoom), and the replay button needs no hover */
 @media (pointer: coarse), (max-width: 760px) {
   .btn { min-height: 44px !important; min-width: 44px; }
-  a.badge, .list-row a { display: inline-flex; align-items: center; min-height: 44px; }
+  a.badge, a.item, .list-row a { display: inline-flex; align-items: center; min-height: 44px; }
   .text-input, input:not([type="checkbox"]):not([type="radio"]), textarea, select { min-height: 44px !important; }
   .filter { min-height: 44px; }
   .text-input, textarea, select, input:not([type="checkbox"]):not([type="radio"]) { font-size: 16px !important; }

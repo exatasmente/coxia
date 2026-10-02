@@ -119,6 +119,8 @@ function DiagramViewer({ svg, title, onClose }: { svg: string; title?: string; o
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<number | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const zoom = useCallback((f: number) => setScale((s) => Math.min(6, Math.max(0.3, s * f))), []);
@@ -155,22 +157,38 @@ function DiagramViewer({ svg, title, onClose }: { svg: string; title?: string; o
       <div
         className="diagram-stage"
         onWheel={(e) => zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1)}
-        onMouseDown={(e) => {
-          drag.current = { x: e.clientX, y: e.clientY, px: pos.x, py: pos.y };
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          drag.current = touches.current.size === 1 ? { x: e.clientX, y: e.clientY, px: pos.x, py: pos.y } : null;
+          pinch.current = null;
         }}
-        onMouseMove={(e) => {
-          if (drag.current) setPos({ x: drag.current.px + e.clientX - drag.current.x, y: drag.current.py + e.clientY - drag.current.y });
+        onPointerMove={(e) => {
+          if (!touches.current.has(e.pointerId)) return;
+          touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (touches.current.size === 2) {
+            const [a, b] = [...touches.current.values()];
+            const d = Math.hypot(a.x - b.x, a.y - b.y);
+            if (pinch.current) zoom(d / pinch.current);
+            pinch.current = d;
+          } else if (drag.current) {
+            setPos({ x: drag.current.px + e.clientX - drag.current.x, y: drag.current.py + e.clientY - drag.current.y });
+          }
         }}
-        onMouseUp={() => {
+        onPointerUp={(e) => {
+          touches.current.delete(e.pointerId);
           drag.current = null;
+          pinch.current = null;
         }}
-        onMouseLeave={() => {
+        onPointerCancel={(e) => {
+          touches.current.delete(e.pointerId);
           drag.current = null;
+          pinch.current = null;
         }}
       >
         <div className="diagram-svg diagram-svg-full" style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})` }} dangerouslySetInnerHTML={{ __html: svg }} />
       </div>
-      <p className="small diagram-hint">Arraste para mover · roda do mouse ou + e − para o zoom · 0 ajusta · Esc fecha</p>
+      <p className="small diagram-hint">Arraste para mover · pinça, roda do mouse ou + e − para o zoom · 0 ajusta · Esc fecha</p>
     </div>
   );
 }
