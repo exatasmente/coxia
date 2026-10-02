@@ -14,6 +14,7 @@ import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { saude } from './saude';
 import { update } from './update';
+import { wizard } from './wizard';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
 
@@ -35,5 +36,6 @@ export const MODULES: Module[] = [
   saude,
   update,
   watchers,
+  wizard,
   workspaces,
 ];

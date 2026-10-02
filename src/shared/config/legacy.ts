@@ -40,6 +40,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
   return {
     setupComplete: true,
     language: 'pt-BR',
+    userName: 'Luiz',
     llm: {
       roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: LEGACY_PROVIDER_ID, model: LEGACY_DEFAULT_MODEL }])) as Record<LlmRole, RoleModel>,
       providers: [
