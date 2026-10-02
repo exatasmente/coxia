@@ -28,7 +28,10 @@ import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { JobsDock } from './JobsDock';
+import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
+import { useReportUpdateBusy } from './updateApi';
+import { useJobsSnapshot } from './useJobs';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
@@ -146,6 +149,11 @@ export function App() {
     // go only touches the player and the screen state
   }, []);
 
+  // Something is running that an update restart would cut: the call, the speech, an agent job.
+  const callLive = !!ceremony.startedAt && !ceremony.callEnded;
+  const jobsRunning = useJobsSnapshot().some((j) => j.status === 'running');
+  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning);
+
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
   const view = ((): ReactElement => { switch (screen.name) {
@@ -201,9 +209,10 @@ export function App() {
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
       {view}
-      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
+      <UpdatePrompt hidden={screen.name === 'settings'} />
     </>
   );
 }

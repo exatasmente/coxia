@@ -17,6 +17,7 @@ import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
+import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
@@ -98,6 +99,7 @@ function createWindow(): void {
   });
   trackWindow(() => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());
   win.on('show', () => win?.webContents.send('app:event', { type: 'module', name: SHOWN_EVENT, payload: null } satisfies AppEvent));
+  win.on('focus', onWindowFocus);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
@@ -211,17 +213,24 @@ if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CE
 
 let quitRequested = false;
 
+// The window saves what it holds (the ceremony) before the app quits for an update, whichever way the update comes.
+async function flushWindow(): Promise<void> {
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    const started = Date.now();
+    await flushRenderer((ev) => win?.webContents.send('app:event', ev), 3000);
+    console.log(`[update] window state saved in ${Date.now() - started} ms`);
+  }
+}
+
+setUpdateHooks({ flush: flushWindow });
+
 // scripts/update.sh asks the running app to quit: save what the window holds, then leave the normal way,
 // so the AppImage unmounts after the process is gone and not under it.
 async function quitForUpdate(): Promise<void> {
   if (quitRequested) return;
   quitRequested = true;
   console.log('[update] quit requested');
-  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
-    const started = Date.now();
-    await flushRenderer((ev) => win?.webContents.send('app:event', ev), 3000);
-    console.log(`[update] window state saved in ${Date.now() - started} ms`);
-  }
+  await flushWindow();
   console.log(`[update] stopped ${terminateChildren()} child process(es)`);
   quitting = true;
   app.quit();
@@ -259,6 +268,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('quit', (_e, code) => console.log(`[app] quit with exit code ${code}`));
   app.on('before-quit', () => {
     quitting = true;
+    updatesBeforeQuit();
     forgetRunning();
     stopVoice();
     void stopWebAccess();

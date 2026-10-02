@@ -14,6 +14,7 @@ import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { saude } from './saude';
 import { update } from './update';
+import { updates } from './updates';
 import { voiceModule } from './voiceModule';
 import { wizard } from './wizard';
 import { workspaces } from './workspaces';
@@ -36,6 +37,7 @@ export const MODULES: Module[] = [
   retention,
   saude,
   update,
+  updates,
   voiceModule,
   watchers,
   wizard,
