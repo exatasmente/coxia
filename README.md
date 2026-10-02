@@ -29,8 +29,7 @@ O app grava, a cada 20 min no horário de trabalho e ao abrir a tela Hoje, o tem
 Para lançar, sem mexer no `clockify-log`:
 
 ```bash
-python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["entries"]))' ~/.local/share/cerimonias/atividade/2026-10-02.json \
-  | ~/.local/bin/clockify-log add --entries - --dry-run
+jq '.entries' ~/.local/share/cerimonias/atividade/2026-10-02.json | ~/.local/bin/clockify-log add --entries - --dry-run
 ```
 
 Tire o `--dry-run` para criar. O `add` recusa o que se sobrepõe ao que já está lançado, então a ordem importa: lance o arquivo do app antes dos blocos do `activity`. As sessões dos agentes também aparecem no `activity` (projeto `home`), e esses blocos cobrem o mesmo tempo; ao integrar de vez, o `activity` deve descartar os blocos que o app já cobre e usar `entries` no lugar. Só vale trabalho da Fortics: confira antes de lançar.
