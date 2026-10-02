@@ -71,3 +71,10 @@ export function sessionOwners(root: string, reg: Registry): Map<string, string> 
   }
   return new Map([...owners].map(([id, o]) => [id, o.ws]));
 }
+
+// The sessions another workspace started count as uses of their transcripts for retention.
+export function sessionRefs(root: string, reg: Registry, exceptId: string): { sessionId: string; at: number; keep: boolean; from: string }[] {
+  return reg.list
+    .filter((w) => w.id !== exceptId)
+    .flatMap((w) => readIndex(workspaceDir(root, w.id)).map((e) => ({ sessionId: e.id, at: Date.parse(e.at), keep: false, from: `sessão do workspace ${w.name}` })));
+}

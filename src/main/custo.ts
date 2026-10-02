@@ -1,10 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CustoKey, CustoKind, CustoSummary } from '../shared/custo';
-import { DEFAULT_GOAL, type GenRef, type GenStat, classify, firstPromptOf, gensOf, parseGeneration, parseKey, summarize } from './custo-core';
-import { ATAS, HOME, WORKSPACE, openRouterKey } from './env';
+import type { CustoKey, CustoKind, CustoScope, CustoSummary } from '../shared/custo';
+import { DEFAULT_GOAL, type GenRef, type GenStat, classify, firstPromptOf, gensOf, inScope, parseGeneration, parseKey, summarize } from './custo-core';
+import { ATAS, DATA_ROOT, HOME, WORKSPACE, WORKSPACE_ID, openRouterKey } from './env';
 import { reuseTimes } from './falas';
 import type { Module } from './module';
+import { sessionOwners } from './sessions-core';
+import { readRegistry } from './workspaces-core';
 
 const FILE = join(ATAS, 'custo.json');
 const API = 'https://openrouter.ai/api/v1';
@@ -47,13 +49,19 @@ function write(c: Cache): void {
   renameSync(`${FILE}.tmp`, FILE);
 }
 
-function view(c: Cache, keyError: string | null = null): CustoSummary {
+function view(c: Cache, scope: CustoScope = 'current', keyError: string | null = null): CustoSummary {
   const modelOf = new Map(Object.values(c.files).flatMap((f) => f.gens.flatMap((g) => (g.model ? [[g.id, g.model] as const] : []))));
   const stats = Object.entries(c.gens).flatMap(([id, g]) => ('gone' in g ? [] : [g.model || !modelOf.has(id) ? g : { ...g, model: modelOf.get(id) }]));
   const known = new Set(Object.keys(c.gens));
-  const pending = Object.values(c.files).flatMap((f) => f.gens).filter((g) => !known.has(g.id)).length;
-  return summarize({ gens: stats, pending, goal: c.goal, key: c.key, keyError, refreshedAt: c.refreshedAt, reuses: reuseTimes() });
+  const reg = readRegistry(DATA_ROOT);
+  const owners = reg ? sessionOwners(DATA_ROOT, reg) : new Map<string, string>();
+  const mine = inScope(scope, WORKSPACE_ID, owners);
+  const pending = Object.values(c.files).flatMap((f) => f.gens).filter((g) => !known.has(g.id) && mine(g.session)).length;
+  const current = reg?.list.find((w) => w.id === WORKSPACE_ID) ?? { id: WORKSPACE_ID, name: WORKSPACE_ID, createdAt: '', test: false };
+  return summarize({ gens: stats, pending, goal: c.goal, key: c.key, keyError, refreshedAt: c.refreshedAt, reuses: reuseTimes(), scope, owners, workspaces: reg?.list ?? [current], current });
 }
+
+const scopeOf = (v: unknown): CustoScope => (v === 'all' ? 'all' : 'current');
 
 // Month start or the last 7 days, whichever reaches further back.
 function since(now = Date.now()): number {
@@ -106,9 +114,10 @@ async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>)
   );
 }
 
-let running: Promise<CustoSummary> | null = null;
+// One refresh runs at a time and every caller waits for it; each gets the summary in its own scope.
+let running: Promise<{ c: Cache; keyError: string | null }> | null = null;
 
-export function refreshCusto(progress?: (done: number, total: number) => void): Promise<CustoSummary> {
+export async function refreshCusto(progress?: (done: number, total: number) => void, scope: CustoScope = 'current'): Promise<CustoSummary> {
   running ??= (async () => {
     const c = read();
     const refs = scan(c, since()).filter((g) => !(g.id in c.gens));
@@ -131,21 +140,22 @@ export function refreshCusto(progress?: (done: number, total: number) => void): 
     }
     c.refreshedAt = new Date().toISOString();
     write(c);
-    return view(c, keyError);
+    return { c, keyError };
   })().finally(() => {
     running = null;
   });
-  return running;
+  const done = await running;
+  return view(done.c, scope, done.keyError);
 }
 
 export const custo: Module = (ctx) => {
-  ctx.handle('custo:summary', () => view(read()));
-  ctx.handle('custo:refresh', () => refreshCusto((done, total) => ctx.emit({ type: 'module', name: 'custo-progress', payload: { done, total } })));
-  ctx.handle('custo:goal', (goal: number) => {
+  ctx.handle('custo:summary', (scope?: CustoScope) => view(read(), scopeOf(scope)));
+  ctx.handle('custo:refresh', (scope?: CustoScope) => refreshCusto((done, total) => ctx.emit({ type: 'module', name: 'custo-progress', payload: { done, total } }), scopeOf(scope)));
+  ctx.handle('custo:goal', (goal: number, scope?: CustoScope) => {
     if (!(goal >= 1 && goal <= 10_000)) throw new Error('a meta deve ficar entre US$ 1 e US$ 10.000');
     const c = read();
     c.goal = Math.round(goal * 100) / 100;
     write(c);
-    return view(c);
+    return view(c, scopeOf(scope));
   });
 };

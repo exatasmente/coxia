@@ -1,4 +1,5 @@
-import { CUSTO_LABEL, type CustoFalas, type CustoKey, type CustoKind, type CustoRow, type CustoSummary } from '../shared/custo';
+import { CUSTO_LABEL, type CustoFalas, type CustoKey, type CustoKind, type CustoRow, type CustoScope, type CustoSummary, type CustoWorkspaceRow } from '../shared/custo';
+import type { WorkspaceInfo } from '../shared/workspaces';
 
 export const DEFAULT_GOAL = 20;
 
@@ -137,6 +138,40 @@ export function falasOf(gens: GenStat[], reuses: number[], now: number): CustoFa
   };
 }
 
+export const NO_WORKSPACE = 'sem workspace';
+
+// The workspace that started a session, or null when none did (sessions from before the index existed).
+export type Owners = ReadonlyMap<string, string>;
+
+export function inScope(scope: CustoScope, current: string, owners: Owners): (session: string) => boolean {
+  return (session) => scope === 'all' || owners.get(session) === current;
+}
+
+export function byWorkspaceOf(gens: GenStat[], owners: Owners, workspaces: WorkspaceInfo[], now: number): CustoWorkspaceRow[] {
+  const today = day(now);
+  const weekFrom = now - 7 * 86_400_000;
+  const month = today.slice(0, 7);
+  const known = new Set(workspaces.map((w) => w.id));
+  const owner = (g: GenStat) => {
+    const id = owners.get(g.session);
+    return id && known.has(id) ? id : null;
+  };
+  const rows: CustoWorkspaceRow[] = [...workspaces.map((w) => ({ id: w.id as string | null, name: w.name, test: w.test })), { id: null, name: NO_WORKSPACE, test: false }].map((w) => {
+    const mine = gens.filter((g) => owner(g) === w.id);
+    const sum = (list: GenStat[]) => list.reduce((n, g) => n + g.cost, 0);
+    return {
+      ...w,
+      today: sum(mine.filter((g) => day(g.at) === today)),
+      week: sum(mine.filter((g) => g.at >= weekFrom)),
+      month: sum(mine.filter((g) => day(g.at).startsWith(month))),
+      calls: mine.length,
+      sessions: new Set(mine.map((g) => g.session)).size,
+    };
+  });
+  // "sem workspace" is listed only when there is something in it.
+  return rows.filter((r) => r.id !== null || r.calls > 0).sort((a, b) => b.month - a.month || b.calls - a.calls);
+}
+
 export function summarize(args: {
   gens: GenStat[];
   pending: number;
@@ -146,15 +181,26 @@ export function summarize(args: {
   refreshedAt: string | null;
   reuses?: number[];
   now?: number;
+  scope?: CustoScope;
+  owners?: Owners;
+  workspaces?: WorkspaceInfo[];
+  current?: WorkspaceInfo;
 }): CustoSummary {
   const now = args.now ?? Date.now();
+  const scope = args.scope ?? 'all';
+  const owners = args.owners ?? new Map<string, string>();
+  const workspaces = args.workspaces ?? [];
+  const current = args.current ?? { id: '', name: '', createdAt: '', test: false };
+  const everything = args.gens;
+  const mine = inScope(scope, current.id, owners);
+  const gens = everything.filter((g) => mine(g.session));
   const today = day(now);
   const weekFrom = now - 7 * 86_400_000;
   const month = today.slice(0, 7);
   const byDay = new Map<string, GenStat[]>();
-  for (const g of args.gens) byDay.set(day(g.at), [...(byDay.get(day(g.at)) ?? []), g]);
+  for (const g of gens) byDay.set(day(g.at), [...(byDay.get(day(g.at)) ?? []), g]);
 
-  const week = args.gens.filter((g) => g.at >= weekFrom);
+  const week = gens.filter((g) => g.at >= weekFrom);
   const kinds = (Object.keys(CUSTO_LABEL) as CustoKind[])
     .map((k) => row(k, CUSTO_LABEL[k], week.filter((g) => g.kind === k)))
     .filter((r) => r.calls > 0)
@@ -170,12 +216,17 @@ export function summarize(args: {
     pending: args.pending,
     today: row('today', 'Hoje', byDay.get(today) ?? []),
     week: row('week', 'Últimos 7 dias', week),
-    month: row('month', 'Este mês', args.gens.filter((g) => day(g.at).startsWith(month))),
+    month: row('month', 'Este mês', gens.filter((g) => day(g.at).startsWith(month))),
     // Spent so far plus the pace of the last 7 days for the days left; the month alone is too noisy in its first days.
     projected: args.key ? args.key.usageMonthly + (args.key.usageWeekly / 7) * (daysInMonth - d.getDate()) : null,
     days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, g]) => row(date, date, g)),
     kinds,
-    sessions: new Set(args.gens.map((g) => g.session)).size,
-    falas: falasOf(args.gens, args.reuses ?? [], now),
+    sessions: new Set(gens.map((g) => g.session)).size,
+    // The price of a speech is a property of the model, so it comes from every workspace; only the reuses are this workspace's.
+    falas: falasOf(everything, args.reuses ?? [], now),
+    scope,
+    workspace: { id: current.id, name: current.name, test: current.test },
+    byWorkspace: byWorkspaceOf(everything, owners, workspaces, now),
+    unassigned: new Set(everything.filter((g) => !owners.has(g.session)).map((g) => g.session)).size,
   };
 }

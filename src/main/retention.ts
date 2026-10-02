@@ -15,6 +15,7 @@ import { getSettings } from './config';
 import { firstPromptOf } from './custo-core';
 import { ATAS, DATA_ROOT, HOME, WORKSPACE, WORKSPACE_ID } from './env';
 import type { Module } from './module';
+import { sessionRefs } from './sessions-core';
 import { readRegistry, workspaceDir } from './workspaces-core';
 import {
   DAY,
@@ -118,12 +119,14 @@ function actionRefs(base = ATAS): RetentionRef[] | null {
 // Transcripts are shared by every workspace: one that another workspace still uses is not unreferenced here.
 function otherWorkspaceRefs(): RetentionRef[] {
   const refs: RetentionRef[] = [];
-  for (const w of readRegistry(DATA_ROOT)?.list ?? []) {
+  const reg = readRegistry(DATA_ROOT);
+  for (const w of reg?.list ?? []) {
     if (w.id === WORKSPACE_ID) continue;
     const base = workspaceDir(DATA_ROOT, w.id);
     refs.push(...(actionRefs(base) ?? []));
     dataFiles(refs, base);
   }
+  if (reg) refs.push(...sessionRefs(DATA_ROOT, reg, WORKSPACE_ID));
   return refs;
 }
 

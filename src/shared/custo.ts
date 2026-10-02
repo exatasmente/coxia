@@ -1,5 +1,8 @@
 export type CustoKind = 'turn' | 'deep' | 'gate' | 'qa' | 'retro' | 'teams' | 'release';
 
+// 'current' sums only the sessions the running workspace started; 'all' sums every session found, including the ones no workspace claimed.
+export type CustoScope = 'current' | 'all';
+
 export const CUSTO_LABEL: Record<CustoKind, string> = {
   turn: 'Pré-daily (agentes)',
   deep: 'Desbloqueio',
@@ -44,6 +47,23 @@ export interface CustoSummary {
   kinds: CustoRow[];
   sessions: number;
   falas: CustoFalas;
+  scope: CustoScope;
+  workspace: { id: string; name: string; test: boolean };
+  // Every workspace plus "sem workspace" (id null) for sessions that predate the index; the biggest month first.
+  byWorkspace: CustoWorkspaceRow[];
+  // App sessions no workspace claimed: they only show in the 'all' scope.
+  unassigned: number;
+}
+
+export interface CustoWorkspaceRow {
+  id: string | null;
+  name: string;
+  test: boolean;
+  today: number;
+  week: number;
+  month: number;
+  calls: number;
+  sessions: number;
 }
 
 export interface CustoModelRow {
