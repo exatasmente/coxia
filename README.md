@@ -1,125 +1,189 @@
 # Coxia
 
-Rotina pessoal: cerimônias por voz com um agente por atividade aberta (pré-daily, desbloqueio, gate, passagem para o QA, retro e conflitos de release), no desktop e no celular (PWA). Não faz parte do sz-playbook; usa o playbook como o Claude Code usa.
+[Português (Brasil)](README.pt-BR.md) | English
 
-- **Agentes:** Claude Agent SDK com `cwd` em `~/projects`, então CLAUDE.md, skills, agentes, hooks e MCP do playbook valem como no Claude Code. Modelo `deepseek/deepseek-v4.1-flash` pelo OpenRouter (chave via `~/.local/bin/openrouter-key`). Só ferramentas de leitura (`permissionMode: dontAsk`).
-- **Cartões:** `~/.local/bin/daily-report report --format json --dry-run` + fase do spec em `sz-playbook/.specs`.
-- **Voz:** `sidecar/voice_sidecar.py` — faster-whisper local para ouvir; para falar, Edge TTS (padrão: nuvem da Microsoft, o texto falado sai da máquina) ou Kokoro (local, nada sai da máquina), escolhido em Configurações → Voz.
-- **Escrita:** só ao clicar em "Gravar" na Ata — ata em `~/.local/share/cerimonias/workspaces/<nome>/`, nota no `daily-report`, linha no Registro do Plan. Efeitos (push, MR, comentário) não rodam aqui: são copiados para o Claude Code.
+**Walk into stand-up already prepared, and leave with the follow-ups done.** Coxia is a desktop app (with a phone companion) that gets a developer through the recurring rituals of a team, by voice or by text: one AI agent per open task reads the repository, the specs and the documentation you point it at before it says a word, helps you unblock the thing you are stuck on, and hands you the minutes. It never changes anything outside your machine without your explicit yes.
 
-## Rodar
+> **Status: 0.1, first public version.** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below.
 
-```bash
-uv venv --python 3.12 sidecar/.venv && uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
-npm install
-npm run build && npx electron .
-```
+<!-- TODO(screenshots): take these with demo data (a throwaway repository and fictitious tasks), never real company or personal data. See docs/images/README.md. -->
 
-`npm run dev` sobe com recarga automática.
+| Screenshot (TODO) | What it shows |
+|---|---|
+| `docs/images/today.png` | The Today screen: cards of your open tasks with their stage |
+| `docs/images/call.png` | A ceremony in progress, by voice or text, with the agent's sources |
+| `docs/images/actions.png` | The actions queue: the exact command, waiting for your confirmation |
+| `docs/images/wizard.png` | The first-run setup wizard |
+| `docs/images/phone.png` | The phone companion (PWA) |
 
-### Voz local (Kokoro)
+## Contents
 
-Os modelos (~350 MB) ficam em `sidecar/models/` (fora do git) ou onde `CERIMONIAS_KOKORO_DIR` apontar:
+- [What it does](#what-it-does)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Model providers](#model-providers)
+- [Code hosts and token scopes](#code-hosts-and-token-scopes)
+- [Privacy: what leaves your machine](#privacy-what-leaves-your-machine)
+- [Security model](#security-model)
+- [What is verified](#what-is-verified)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License and trademarks](#license-and-trademarks)
 
-```bash
-mkdir -p sidecar/models && cd sidecar/models
-curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
-curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
-```
+## What it does
 
-Sem `sidecar/models`, o app procura em `<userData>/voice-models/kokoro` e na pasta de `voice.kokoroDir` do config do workspace. O Kokoro só aparece como opção na instalação da voz quando esses arquivos existem.
-## Instalar como app (Linux)
+- **Pre-stand-up.** Before the daily, one agent per open task checks the issue, its merge or pull requests, the pipeline, the review threads and the spec, and tells you what changed and what is stuck. You answer by voice or text; the app produces the minutes.
+- **Unblock and deep dive.** Talk a problem through with an agent that has already read the code, the specs and your team's rules, and that can look things up on the code host. It is read-only: it explains and proposes, it does not edit your repository.
+- **Gate quiz.** Before a task moves on, a short quiz generated from the spec checks that you understand what you are about to ship.
+- **Hand-off to QA.** Prepares a checklist from the spec and the change, ready for the tester.
+- **Retro.** Collects what happened over the period from your own records.
+- **Release conflicts.** When a branch conflicts with the release, an agent proposes a resolution hunk by hunk; you review it, and only then does anything get written.
+- **Time per issue.** The time measured in the ceremonies, ready to copy into a time tracker.
+- **Your process, not ours.** The ceremonies, the stage vocabulary and the documents the agents look for come from a *development-cycle template*: SDD with gates, Scrum, Kanban, GitHub Flow or Minimal, all editable and exportable.
+- **Voice is optional.** Everything works by text. When you turn voice on, listening is local (Whisper) and speaking is either Edge TTS (cloud) or Kokoro (local).
+- **Phone companion.** A PWA you pair with a QR code, with push notifications and an offline queue, so you can answer the standup from the couch.
+- **Two languages.** The interface and the agents' prompts exist in English and Brazilian Portuguese, with light and dark themes.
 
-```bash
-npm run dist
-```
+## How it works
 
-Gera em `dist/` (fora do git) o `cerimonias-<versão>.AppImage` e o `cerimonias_<versão>_amd64.deb`, com ícone e categoria Escritório. O binário nativo do Claude Code usado pelo SDK vai desempacotado do `app.asar`, e `sidecar/` e `resources/` vão ao lado dele (`extraResources`). O venv Python **não** vai no pacote.
+### Agents
 
-`npm run dist` é o build pessoal (leva o SDK). `npm run dist:public` gera o pacote público, **sem** o Claude Agent SDK (a instalação é feita pelo assistente de configuração na primeira execução), e é o que o GitHub Actions publica; veja [`RELEASING.md`](RELEASING.md).
+Each activity opens its own agent. Before it speaks it reads what you configured as context: `CLAUDE.md` files, skills, agent definitions, rules and knowledge bases, MCP servers, and the spec folder of the task. It works in your project folders and cannot leave them. Its answer is a structured result that the screens render and that you can accept, edit or discard.
 
-Instalar (manual):
+### Two engines
 
-```bash
-sudo apt install ./dist/cerimonias_0.1.0_amd64.deb   # ou: chmod +x dist/*.AppImage && ./dist/cerimonias-0.1.0.AppImage
-```
+| Engine | Runs on | Providers |
+|---|---|---|
+| **Claude** | The Claude Agent SDK (the Claude Code runtime) | Anthropic API, Amazon Bedrock, Google Vertex AI, Microsoft Foundry (Claude models) |
+| **Open** | Coxia's own agent loop over OpenAI Chat Completions | Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, vLLM, OpenAI, Groq, DeepSeek, OpenRouter (non-Claude models) and similar |
 
-A voz é opcional e não é criada sozinha. Ao ligá-la (assistente de configuração, ou Configurações → Voz), o app confere a máquina (python3, uv, espaço em disco), cria o venv em `~/.config/cerimonias/voice-venv` com o `uv` a partir de `sidecar/requirements.txt` e baixa o modelo de fala escolhido (tiny, base ou small) em `~/.config/cerimonias/voice-models`. Precisa de rede e leva alguns minutos; se for cancelada ou falhar, a próxima tentativa continua de onde parou, e o erro vai para o registro de erros. Desligada, nenhum processo de voz é iniciado e o app funciona por texto. Em dev (`npm run dev`, `npx electron .`) o `sidecar/.venv` continua valendo, sem reinstalar. Detalhes em `docs/voice.md`.
+The Claude Agent SDK is proprietary and is **not bundled** in the public packages: the setup wizard shows Anthropic's terms and installs it into a folder of yours the first time. Both engines apply the same safety policy to the tools. Details: [`docs/llm-providers.md`](docs/llm-providers.md).
 
-**Abrir ao entrar no sistema:** Configurações → Início → "Abrir ao entrar no sistema". Cria `~/.config/autostart/cerimonias.desktop` (desmarcar remove) apontando para o AppImage que está rodando, para o binário instalado pelo `.deb` ou, em dev, para o `electron` deste repositório. O entry usa `--hidden`: o app começa só na bandeja, sem janela. Se mover ou apagar o AppImage, marque a opção de novo.
+### Safety model in one paragraph
 
-## Instalar para uso diário
+Agents are read-only. Anything with an effect outside the app (a comment, a label, a push, a merge-request update, a note in the plan) becomes a *proposed action* showing the exact command; it runs only after you confirm it, and every executed action is recorded in an audit log. A workspace can be marked as a "test" workspace, in which every external effect is refused. More in [Security model](#security-model).
 
-Para usar o app instalado e deixar o `npx electron .` só para desenvolver:
+## Quick start
 
-```bash
-npm run dist                       # gera dist/cerimonias-<versão>.AppImage (leva alguns minutos)
-scripts/install-local.sh           # instala só no seu usuário
-scripts/install-local.sh --autostart   # idem, e abre ao entrar no sistema (opcional)
-```
+### Download (Linux)
 
-O script copia o AppImage mais novo de `dist/` para `~/.local/opt/cerimonias/cerimonias.AppImage`, o ícone para `~/.local/share/icons/hicolor/256x256/apps/` e cria `~/.local/share/applications/cerimonias.desktop` (aparece no menu de aplicativos). Com `--autostart` escreve `~/.config/autostart/cerimonias.desktop` apontando para o AppImage instalado, com `--hidden`; sem a flag, não mexe nisso e avisa se o entry existente aponta para outro lugar (por exemplo, a árvore de desenvolvimento). Rodar de novo é seguro: o que não mudou é deixado como está e o AppImage novo troca o antigo por renomeação. Cada passo é impresso. Precisa de `libfuse2` (`sudo apt install libfuse2t64`) para o AppImage abrir.
+1. Open the [Releases page](https://github.com/exatasmente/coxia/releases) and download the `.AppImage` (any distribution; needs `libfuse2`) or the `.deb` (Debian and Ubuntu).
+2. `chmod +x` the AppImage and run it, or `sudo apt install ./<file>.deb`.
+3. Follow the first-run wizard: language and name, models, the Claude Agent SDK (only if you use Claude models), your projects, your code host, the documentation the agents read, your development cycle, voice (optional).
 
-Para atualizar o app instalado, veja [Atualizar](#atualizar).
+> Release files are named `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb`. The installed executable, the data folders (`~/.local/share/cerimonias`) and the desktop entry keep the project's original name `cerimonias`, so an install made by an earlier version is replaced in place and keeps its data. AppImages update themselves from GitHub Releases ([`docs/updates.md`](docs/updates.md)); the `.deb` is updated by your package manager. Windows and macOS builds are wired up but unsigned and untested: treat them as experimental.
 
-**Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: workspaces com atas, histórico e configurações; acesso pelo navegador, aparelhos pareados e glossário na raiz) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
+### From source
 
-O pacote não leva os modelos do Kokoro; a voz local lê `CERIMONIAS_KOKORO_DIR`, `<userData>/voice-models/kokoro` ou `voice.kokoroDir`.
-
-## Atualizar
-
-Depois de `git pull` (ou de commitar uma mudança), um comando só recompila, fecha o app em uso, instala a versão nova e abre de novo:
-
-```bash
-scripts/update.sh
-```
-
-Passos, nesta ordem (cada um é impresso e vai para `~/.local/state/cerimonias/update.log`):
-
-1. **Confere a árvore.** Recusa e lista os arquivos se houver mudança não commitada em `src/` (`--force-dirty` ignora, e o build sai marcado `+dirty`).
-2. **Compila** com `npm run dist` (log em `~/.local/state/cerimonias/build.log`, leva alguns minutos). Se falhar, mostra o final do log e **sai sem tocar no app instalado**.
-3. **Pede ao app em uso que feche.** O script abre o binário instalado com `--quit-for-update`: a instância que está rodando recebe o pedido (instância única), manda a janela salvar a cerimônia do dia e sai pelo caminho normal; a instância nova que fez o pedido sai na hora. Ele espera o processo sumir (até 45 s, `--timeout <s>`). Se não sumir, para com uma mensagem clara, sem instalar nada e sem matar o app; `--kill` envia SIGTERM (e SIGKILL só depois de 10 s). Fechar assim, e não matando o AppImage, evita o "Erro no barramento" (SIGBUS) que acontece quando o ponto de montagem some debaixo de um app vivo. Antes de sair, o app também encerra os processos que ele mesmo abriu (`git fetch`, `glab`, `daily-report`, a voz): cada um segura arquivos do ponto de montagem do AppImage, e um que continuasse rodando impediria o AppImage de desmontar e terminar. Ações de release e resoluções de conflito já são gravadas em disco a cada passo; o que não sobrevive é uma chamada de agente ou de voz no meio da execução. O script também fecha os arquivos que herda do app, pelo mesmo motivo.
-4. **Instala** com `scripts/install-local.sh`, sem mexer no autostart: ligado continua ligado, desligado continua desligado.
-5. **Abre o app novo**, separado do terminal (`setsid`/`nohup`), com a saída em `~/.local/state/cerimonias/app.log`, e imprime a versão e o commit que ele informou (`<dados>/run.json`).
-
-Outras opções: `--no-build` reaproveita o `dist/*.AppImage` mais novo, `--hidden` abre só na bandeja, `--no-start` instala sem abrir, `--check` só confere se dá para atualizar (é o que o botão do app roda antes de começar). Duas atualizações ao mesmo tempo não rodam (a segunda recusa).
-
-**Pelo app:** Configurações → Atualizações mostra a versão instalada (versão, commit e data da compilação, gravados no build) e, numa instalação feita por `scripts/install-local.sh` (é o caso de quem usa este script), quantos commits a `main` da árvore de código tem além do commit instalado, com a lista deles (só leitura; `git fetch` só se você ligar). Há um aviso "Atualização disponível" na barra de cima do Hoje e o botão "Atualizar agora", que pede confirmação e roda `scripts/update.sh` separado do app. O app fecha sozinho no fim da compilação e, na primeira abertura depois, avisa uma vez "Atualizado para &lt;commit&gt;". A seção só existe na janela do app, não no navegador, e em desenvolvimento (`npx electron .`) o botão apenas explica que só vale no app instalado. O `install-local.sh` grava em `~/.local/state/cerimonias/install-source.json` qual árvore gerou a instalação. Versões publicadas (AppImage baixado de um release) se atualizam sozinhas: veja [`docs/updates.md`](docs/updates.md).
-
-**Primeira vez:** o app instalado antes desta versão ainda não entende `--quit-for-update`. Na primeira atualização o script espera, avisa e, se o app não fechar, feche-o com "Sair" na bandeja e rode `scripts/update.sh --no-build` para continuar sem recompilar.
-
-**Variáveis** (para testar sem tocar na instalação real): `CERIMONIAS_PREFIX`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `CERIMONIAS_DATA_DIR` e `CERIMONIAS_APP_ARGS` (argumentos extras em toda abertura do app, por exemplo `--user-data-dir=...`); `CERIMONIAS_SOURCE_DIR` aponta a árvore que a tela consulta e atualiza, no lugar da registrada por `install-local.sh`.
-
-## Workspaces
-
-Histórico, ações e configurações vivem em workspaces: `<dados>/workspaces/<id>/`, listados em `<dados>/workspaces.json` (`current` e a lista com nome, data e a marca de testes). Na primeira abertura depois da atualização, o que já existia é movido, sem apagar nada, para o workspace **Testes** (marca de testes ligada), que passa a ser o atual; o que moveu fica em `workspaces/migration.log`. Se a migração for interrompida, a próxima abertura termina o que faltou.
-
-- **Por workspace:** `config.json` (sem o bloco `web`), ata, `historico/`, `acoes.json`, `conflicts/`, `custo.json`, `falas.json`, `status.json`, `radar.json`, `watchers.json`, `efeitos.json`, `feedback.json` e `feedback/`, `auditoria.jsonl`, `retencao.log`, `atividade/`, `gates/`, `qa/`, `retros/`.
-- **Na raiz, valem para todos:** `web.json` (acesso pelo navegador), `web-sessions.json` (aparelhos pareados), `web-push-vapid.json` e `web-push.json`, `glossario.json`, `conflict-verify.json`, `saude.json` e `userData/` (instância de teste).
-- **Marca de testes:** com ela ligada, nada sai da máquina: aprovar ação (GitLab, push, comentário), gravar no Plan, na nota do daily-report, no QA_CHECKLIST e no GATE_QUIZ é recusado. Se o registro não puder ser lido, vale como testes.
-- **Trocar** (Configurações › Workspaces › Usar este) grava o registro e reinicia o app; pelo navegador a página recarrega sozinha. Excluir move a pasta para `workspaces/.trash/<id>-<data>`; nunca apaga.
-
-## Tempo por issue (Clockify)
-
-O app grava, a cada 20 min no horário de trabalho e ao abrir a tela Hoje, o tempo medido nas cerimônias do dia em `~/.local/share/cerimonias/workspaces/<nome>/atividade/<AAAA-MM-DD>.json`. É um retrato do dia, reescrito a cada vez; o app **não** chama o Clockify.
-
-- **De onde vem:** pré-daily (da primeira fala de cada atividade até a primeira da próxima; pausa de mais de 10 min na call não conta), desbloqueios (mensagens da conversa), gates, passagem para o QA e retro (da criação até a última gravação do arquivo da cerimônia). Retro e call sem atividade entram como `Cerimônias - Retro semanal` e `Cerimônias - Daily`.
-- `blocks`: no formato dos blocos do `clockify-log activity` (`start`, `end`, `minutes`, `projects`, `gitlab_ids`, `events`), mais `ceremony`, `ref`, `sessionId` e `description`. Podem se sobrepor (um desbloqueio acontece dentro da call).
-- `entries`: o mesmo tempo cortado em pedaços sem sobreposição (o desbloqueio fica com o seu trecho, a call com o resto), com `start`, `end` e `description` (uma linha, até 60 caracteres, começando por `#<issue> -`), prontos para o `add`.
-- `issues`: minutos por issue e por cerimônia (é o que o cartão "Tempo de hoje por issue" mostra).
-
-Para lançar, sem mexer no `clockify-log`:
+Requirements: the Node.js version in [`.nvmrc`](.nvmrc), and, only if you want voice, Python 3 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-jq '.entries' ~/.local/share/cerimonias/atividade/2026-10-02.json | ~/.local/bin/clockify-log add --entries - --dry-run
+nvm use                     # the version in .nvmrc
+npm ci
+npm run dev                 # development, with hot reload
+# or a production build: npm run build && npx electron .
 ```
 
-Tire o `--dry-run` para criar. O `add` recusa o que se sobrepõe ao que já está lançado, então a ordem importa: lance o arquivo do app antes dos blocos do `activity`. As sessões dos agentes também aparecem no `activity` (projeto `home`), e esses blocos cobrem o mesmo tempo; ao integrar de vez, o `activity` deve descartar os blocos que o app já cobre e usar `entries` no lugar. Só vale trabalho da Fortics: confira antes de lançar.
+Optional voice from source:
 
-## Custo (OpenRouter)
+```bash
+uv venv --python 3.12 sidecar/.venv
+uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
+```
 
-A tela **Custo** (botão no topo da Hoje) lê o uso da chave (`GET /api/v1/key`) e, de cada chamada das sessões do app em `~/.claude/projects/-home-luiz-neto-projects/*.jsonl`, o preço real (`GET /api/v1/generation?id=gen-…`). As sessões são reconhecidas pelo primeiro prompt (pré-daily, desbloqueio, gate, passagem para o QA, retro, texto do Teams, release). O preço de cada chamada é guardado em `~/.local/share/cerimonias/workspaces/<nome>/custo.json`: depois da primeira leitura só o que é novo é consultado. A meta mensal (padrão US$ 20) fica no mesmo arquivo. A chave só é lida no processo principal e nunca é registrada.
+Packaged apps do this from Settings, Voice. To build the same packages the releases contain: `npm run dist:public` (see [`RELEASING.md`](RELEASING.md)). Everything else about development is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## Continuar no Claude Code com o pedido
+## Model providers
 
-`claude --resume <sessão> "<prompt>"` abre a sessão já com o pedido (o `claude-or` repassa os argumentos). O app grava o prompt num arquivo temporário privado e o terminal o lê por `"$(cat "$2")"`; nada do texto passa por interpolação de shell. Na Ata, cada efeito da fila tem "Executar no Claude Code" (sem sessão de agente, "Copiar pedido").
+| Provider | Engine | Notes |
+|---|---|---|
+| Anthropic API | Claude | API key. The default for a fresh install. |
+| Amazon Bedrock, Google Vertex AI, Microsoft Foundry | Claude | Your cloud credentials. Written from Anthropic's documentation; not tested against a live account. |
+| Ollama, LM Studio, llama.cpp, vLLM | Open | Local or self-hosted. See the requirements below. |
+| OpenAI, Groq, DeepSeek, OpenRouter (non-Claude models) | Open | Any OpenAI-compatible endpoint with an API key. |
+
+Honest notes:
+
+- **A claude.ai subscription login is not offered.** Use an API key or your cloud's credentials.
+- **Local and small models need two things:** real *tool calling*, and a context window of **at least 10k tokens** (16k or more is comfortable). The agent prompt (rules, skills, tool definitions) is already over 10k tokens. Ollama defaults to 4096: raise `num_ctx`. Small models of a few billion parameters often fumble tool arguments; use the connection test in the wizard and prefer models trained for tools.
+- **The open engine has only been tested against a scripted fake server**, not against a real Ollama or hosted model yet. Please report what you find.
+- The two engines keep separate sessions, and the open engine does not compute dollar costs, only tokens.
+
+Full table of what was tested and the known limitations: [`docs/llm-providers.md`](docs/llm-providers.md).
+
+## Code hosts and token scopes
+
+GitLab (gitlab.com and self-managed), GitHub (github.com and Enterprise Server) and Bitbucket Cloud, behind one neutral interface. A host is optional: without one, Coxia still works from your local repositories and documents.
+
+The app **reads** by default. Writes happen only after a confirmed proposal, and need more permission:
+
+| Host | Read | Write (after your confirmation) |
+|---|---|---|
+| GitLab | `read_api` | `api` |
+| GitHub, classic token | `repo` | `repo` |
+| GitHub, fine-grained token | Metadata, Contents, Issues, Pull requests and Actions: read-only | Issues and Pull requests: read and write |
+| Bitbucket Cloud | `account`, `repository`, `pullrequest`, `issue` | `pullrequest:write`, `issue:write` |
+
+Start with the read-only scope; add write only if you want the app to propose and run actions. You can also use the host's CLI login (`glab` or `gh`) instead of a token. Details: [`docs/vcs-providers.md`](docs/vcs-providers.md).
+
+## Privacy: what leaves your machine
+
+Coxia has no account system, no analytics and no server of its own. What can leave your machine:
+
+| What | Where to | When |
+|---|---|---|
+| Prompts, the files and command output the agent reads, and your messages | The model provider you chose (Anthropic, your cloud, OpenAI, OpenRouter, ...), or **nowhere** with a local model | Every agent call |
+| Requests for issues, merge requests, comments, pipelines | The code host you configured (GitLab, GitHub, Bitbucket) | When a host is configured |
+| The text to be spoken | Microsoft's online voice service | Only if the Edge TTS engine is on. With Kokoro (local) nothing leaves. |
+| Whatever the Claude Agent SDK itself reports | Anthropic, under [Anthropic's policies](https://code.claude.com/docs/en/legal-and-compliance) | Only if you use the Claude engine and install the SDK. Coxia adds no telemetry of its own. |
+| Update checks | GitHub Releases (the project's own repository) | Published AppImages only; can be turned off in Settings, Updates |
+| Voice setup downloads | PyPI and Hugging Face (and the Kokoro model files, if you choose them) | Only when you turn voice on |
+
+Nothing else. Speech recognition is always local. Secrets (API keys, tokens) are stored encrypted with your operating system's keychain (Electron `safeStorage`); where no keychain exists the app refuses to store them unless you explicitly accept an insecure file. They never go into a configuration export. Your minutes, history and audit log stay in the app's data folder on your disk.
+
+## Security model
+
+- **Read-only agents.** Tools are `Read`, `Grep`, `Glob`, an allowlisted `Bash`, `Skill`, a read-only sub-agent and the MCP tools you allow. No `Edit`, no `Write`, no web fetch or search.
+- **Allowlists.** Shell commands are matched against strict patterns (one command, no `;`, `&&` or pipes beyond `head`); the open engine runs commands with no shell at all. Host CLIs are limited to read endpoints (`glab api` and `gh api` with no write flags).
+- **Secret files are out of reach.** `.env` files, keys, `~/.ssh`, `.mcp.json`, anything named like a secret or credential is blocked before reading and while searching, and tool results are redacted.
+- **Confirmation for every write.** External effects are proposals with the literal command, validated against a per-provider shape before they are stored and again before they run. One code path executes them.
+- **Audit log.** Every executed action is appended to `auditoria.jsonl` in the workspace, with the body and without the token.
+- **Test workspaces.** A "test" mark keeps every effect on the machine.
+- **Phone companion (PWA).** Off by default and bound to loopback. Pairing uses a short-lived one-time code (12 characters, valid 10 minutes) shown on the desktop; sessions are device-bound, expire, and failed attempts are rate-limited. Anything that changes the machine (configuration, files, updates, installing software, secrets) is desktop-only, and approving external effects from a phone is off unless you turn it on.
+- **Updates.** HTTPS feed only, sha512 checked on the downloaded AppImage, no downgrade, install only on your decision. On Linux the AppImage is not code-signed: trust follows the repository's release process.
+
+To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
+
+## What is verified
+
+Said plainly, so you can judge the risk:
+
+- The test suite covers the engines, policies, providers and screens' logic against fake servers. It does not call real models.
+- GitHub and Bitbucket support was tested against fake servers modelled on their documentation. **Writes** to any host have not run against a real host; reads on GitLab are the only real-world use so far.
+- Bedrock, Vertex and Foundry, local models and macOS and Windows are untested.
+
+## Documentation
+
+Index: [`docs/README.md`](docs/README.md). The main ones: [configuration](docs/configuration.md), [model providers](docs/llm-providers.md), [code hosts](docs/vcs-providers.md), [development cycles](docs/cycles.md), [voice](docs/voice.md), [updates](docs/updates.md) and [releasing](RELEASING.md).
+
+## Roadmap
+
+Intentions, not promises:
+
+- Try the open engine against real local models and publish which ones work well.
+- Exercise GitHub and Bitbucket writes against real accounts; GitHub Projects board fields in the cycle's stage mapping.
+- More interface strings and prompts reviewed in English; contributed translations.
+- Code-signed Windows and macOS builds, and a verified Linux signing story.
+- Provider-neutral cost and usage screen (today it reads OpenRouter's endpoints).
+- A friendlier way to share and discover cycle templates.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md); how the project is run is in [`GOVERNANCE.md`](GOVERNANCE.md).
+
+## License and trademarks
+
+Coxia is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Luiz Neto. Third-party components and their licenses: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`NOTICE`](NOTICE).
+
+Coxia is an independent project and is **not affiliated with, endorsed by or sponsored by Anthropic**. "Claude" and "Claude Code" are trademarks of Anthropic, PBC. Coxia can run Claude models through the Claude Agent SDK, which you install yourself under Anthropic's terms. GitHub, GitLab, Bitbucket, Microsoft, OpenAI and the other product names mentioned belong to their owners and are used only to say what Coxia works with.

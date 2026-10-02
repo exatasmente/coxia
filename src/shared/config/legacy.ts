@@ -1,194 +1,39 @@
-// i18n-lint: allow-file the migrated profile of the original author: data in the language its owner wrote it in
-import { sameFamily } from '../cycles/neutral';
-import { CARD_FIELDS, LLM_ROLES, type DeepPartial, type DevCycleConfig, type LlmRole, type PromptOverride, type RoleModel, type StageDef, type UserArticle, type WorkspaceConfig } from './types';
+import type { DeepPartial, WorkspaceConfig } from './types';
+import type { WebSettings } from '../settings';
 
-// The one place where the original author's company and machine live: what the app hardcoded before the configuration existed.
-// It reaches a workspace only through the v1 migration (migrations.ts), so an existing install keeps working unchanged.
-// A fresh install never sees any of this. Everything here has a field in WorkspaceConfig that replaces the hardcoded value.
+// Migration of an install that predates the configuration (a v1 `config.json`, or a workspace folder with no config at all).
+// The app ships no profile of its own: whatever such an install used to hardcode (host, repositories, tools, prompts) is read from an
+// optional JSON file the person keeps outside the repository (env COXIA_LEGACY_PROFILE, read by src/main/legacy-profile.ts).
+// Without that file the install migrates to the neutral defaults with `setupComplete: false`, and the setup assistant runs.
+// An annotated, fictional example lives in docs/examples/legacy-profile.example.json.
 
-export const LEGACY_PROVIDER_ID = 'openrouter';
-export const LEGACY_SECRET_REF = 'llm.openrouter';
-// Secret source of the OpenRouter key: the script the app used to run. Seeded into the secrets store of an existing install.
-export const LEGACY_OPENROUTER_KEY_COMMAND = '~/.local/bin/openrouter-key';
-
-export const LEGACY_MODEL_OPTIONS = ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-pro-0813', 'qwen/qwen3.7-flash'];
-export const LEGACY_DEFAULT_MODEL = 'deepseek/deepseek-v4.1-flash';
-
-export const LEGACY_REPOS = ['sz4', 'sz4-frontend', 'sz4-backend', 'new-agent', 'hub-whatsapp', 'agent-socket-manager', 'sz-playbook'];
-
-// Browser access defaults of the old app (host of the docker bridge, the public tunnel). Written to web.json of an existing install when absent.
-export const LEGACY_WEB_SETTINGS = {
-  enabled: false,
-  host: '172.18.0.1',
-  port: 4330,
-  basePath: '/cerimonias/',
-  publicUrl: 'https://koala.fortics.dev/cerimonias/',
-  trustedProxy: '172.18.0.0/16',
-  allowExternalEffects: false,
-};
-
-export const LEGACY_STAGES: StageDef[] = [
-  { id: 'test-ok', label: 'Test OK', match: ['Test OK', 'Approved in testing'], kind: 'qaApproved', rank: 7 },
-  { id: 'in-testing', label: 'Ready To Test', match: ['Ready To Test', 'In Testing', 'Blocked in testing'], kind: 'qa', rank: 6 },
-  { id: 'test-failed', label: 'Test Fail', match: ['Test Fail', 'Failed testing'], kind: 'returned', rank: 6 },
-  { id: 'review-ok', label: 'Code Review OK', match: ['Code Review OK', 'Approved in code review'], kind: 'reviewApproved', rank: 5 },
-  { id: 'in-review', label: 'Code Review', match: ['Code Review', 'Ready for code review', 'In code review'], kind: 'review', rank: 4 },
-  { id: 'rejected', label: 'Rejected', match: ['Rejected'], kind: 'returned', rank: 3 },
-  { id: 'doing', label: 'Doing', match: ['Doing', 'In development', 'Blocked in development'], kind: 'development', rank: 2 },
-];
-
-export const LEGACY_USER: { userName: string; userArticle: UserArticle } = { userName: 'Luiz', userArticle: 'o' };
-
-const pt = (text: string): PromptOverride => ({ 'pt-BR': text });
-
-// The wording of the original prompts that points at the author's own playbook, skills and tools. The generic text of the SDD template
-// leaves these out; this is how the migrated profile keeps saying exactly what it said before templates existed.
-export const LEGACY_PROMPT_OVERRIDES: Record<string, PromptOverride> = {
-  'rules.speechExamples': pt('Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp").'),
-  'gate.rulesRef': pt(' (agent-pipeline §2.1)'),
-  'gate.doc.note': pt('<!-- Registro do quiz de gate. Mecânica em @skills/agent-pipeline/SKILL.md §2.1. -->'),
-  'conflict.comment.rulesRef': pt(' (skill post-release-sync, "Convivência com o comentário do qa-release-branch")'),
-  'conflict.ask.skillRef': pt(' e a skill post-release-sync, seção "Conflito: resolução manual"'),
-  'qa.readHint': pt('Leia o diff pelo MCP do GitLab e os comentários da issue com {notesHint}'),
-  'qa.skillsLine': pt('Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).'),
-  'qa.releaseSkillRef': pt(' (skill qa-release-branch)'),
-  'retro.docsRef': pt(' e o playbook'),
-  'retro.focus': pt('Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.'),
-  'retro.improvementsFormat': pt('"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.'),
-  'reentry.pipelineLine': pt('Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de {skill}.'),
-};
-
-/** The development cycle of the existing install: the SDD template with the author's specifics. Also what a v2 file that predates the cycle templates is completed with. */
-export function legacyCycle(): DevCycleConfig {
-  return {
-    templateId: 'sz-sdd',
-    ceremonies: { preDaily: true, unblock: true, gate: true, qaHandoff: true, retro: true, releaseConflicts: true },
-    ceremonyParams: {
-      preDaily: {
-        label: 'pré-daily',
-        speechWords: 60,
-        specReads: 3,
-        summaryTarget: 'Teams',
-        summaryStyle: 'Estilo dele: "Bom dia, pessoal!", depois parágrafos "Ontem:", "Hoje:" e "Bloqueios:", frases curtas, links das issues quando ajudar, sem tabela, sem markdown além das quebras de linha.',
-      },
-      unblock: { speechWords: 80 },
-      gate: { maxQuestions: 3, questionKinds: ['previsão', 'contrafactual', 'fronteira', 'side effect', 'rollback', 'regressão'], summaryWords: 150 },
-      qaHandoff: { speechWords: 150 },
-      retro: { windowDays: 7, speechWords: 150 },
-      releaseConflicts: { speechWords: 90 },
-    },
-    stages: LEGACY_STAGES,
-    stageMapping: [],
-    meanings: {
-      blocker: { stageKinds: ['blocked'], text: '' },
-      question: { enabled: true, text: 'cycle.meaning.question' },
-      readyForQa: { stageKinds: ['reviewApproved', 'returned', 'qa'], requiresSpec: true, text: '' },
-    },
-    enrichment: { specFolder: true, cardFields: [...CARD_FIELDS], extraFiles: [] },
-    prompts: sameFamily('sdd'),
-    promptOverrides: LEGACY_PROMPT_OVERRIDES,
-    pipelineSkill: 'agent-pipeline',
-    releaseLabelPattern: '^sz4-(\\d+\\.\\d+\\.\\d+)$',
-    specLayout: {
-      folderPrefix: '#{iid}-',
-      phaseFiles: [
-        { file: 'ISSUE_COMPLETION.md', label: 'ISSUE_COMPLETION escrito' },
-        { file: '3_TEST_PLAN.md', label: 'test plan escrito' },
-        { file: '4_TEST_PLAN.md', label: 'test plan escrito' },
-        { file: '2_PLAN.md', label: 'Plan escrito' },
-        { file: '3_PLAN.md', label: 'Plan escrito' },
-        { file: '2_SPEC_TECNICO.md', label: 'spec técnico escrito' },
-        { file: '1_SPEC_FUNCIONAL.md', label: 'spec funcional escrito' },
-        { file: '1_INVESTIGATION.md', label: 'investigação escrita' },
-        { file: '1_FINDINGS.md', label: 'findings escritos' },
-        { file: '0_RFC.md', label: 'RFC escrita' },
-        { file: '0_BUG_REPORT.md', label: 'bug report escrito' },
-      ],
-      planFiles: ['2_PLAN.md', '3_PLAN.md'],
-      gateFiles: [
-        { sub: 'bug', gate: 1, files: [['1_INVESTIGATION.md', 'Investigation']] },
-        { sub: 'bug', gate: 2, files: [['2_PLAN.md', 'Plan']] },
-        { sub: 'feat', gate: 1, files: [['1_SPEC_FUNCIONAL.md', 'Spec Funcional'], ['0_RFC.md', 'RFC']] },
-        { sub: 'feat', gate: 2, files: [['3_PLAN.md', 'Plan']] },
-        { sub: 'investigation', gate: 1, files: [['1_FINDINGS.md', 'Findings']] },
-      ],
-      decisionLog: { heading: 'Registro' },
-      documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
-    },
-    qa: { user: 'qa.interno' },
-  };
+/** A secret whose source is a command the person already runs; seeded into the secrets store of a migrated install. */
+export interface LegacySecretSeed {
+  ref: string;
+  command: string;
+  args: string[];
 }
 
-/** The company profile as a patch over the neutral defaults. Models come from the old settings (migrations.ts), not from here. */
-export function legacyProfile(): DeepPartial<WorkspaceConfig> {
-  return {
-    setupComplete: true,
-    language: 'pt-BR',
-    userName: LEGACY_USER.userName,
-    userArticle: LEGACY_USER.userArticle,
-    llm: {
-      roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: LEGACY_PROVIDER_ID, model: LEGACY_DEFAULT_MODEL }])) as Record<LlmRole, RoleModel>,
-      providers: [
-        {
-          id: LEGACY_PROVIDER_ID,
-          kind: 'anthropic',
-          engine: 'claude-sdk',
-          baseUrl: 'https://openrouter.ai/api',
-          models: [...LEGACY_MODEL_OPTIONS],
-          secretRef: LEGACY_SECRET_REF,
-          envFile: '~/.claude/openrouter.settings.json',
-          options: {},
-          capabilities: null,
-          structured: 'auto',
-          headers: {},
-          maxOutputTokens: null,
-          temperature: null,
-          timeoutMs: null,
-          legacyCustomEndpoint: true,
-        },
-      ],
-    },
-    projects: {
-      roots: ['~/projects'],
-      repos: LEGACY_REPOS.map((id) => ({
-        id,
-        path: `~/projects/${id}`,
-        remoteUrl: id === 'sz4' ? 'https://dark.smartzap.com.br/sz4/sz4.git' : null,
-        vcsId: 'gitlab',
-        projectPath: id === 'sz4' ? 'sz4/sz4' : null,
-      })),
-      autoDiscover: false,
-      issues: { vcsId: 'gitlab', project: 'sz4/sz4', projectId: 1, refPrefix: 'sz4#' },
-    },
-    vcs: [{ id: 'gitlab', kind: 'gitlab', host: 'dark.smartzap.com.br', apiUrl: 'https://dark.smartzap.com.br/api/v4', user: '', secretRef: null, cliPreference: 'cli', cliCommand: 'glab' }],
-    docs: {
-      autoDetect: true,
-      claudeMdRoots: ['~/projects', '~/projects/sz-playbook'],
-      skillsDirs: ['~/projects/sz-playbook/.claude/skills'],
-      rulesDirs: ['~/projects/sz-playbook/.claude/rules'],
-      agentsDirs: ['~/projects/sz-playbook/.claude/agents'],
-      knowledgeDirs: ['~/projects/sz-playbook/.claude/knowledge-base'],
-      mcpConfigFiles: [],
-      specsDir: '~/projects/sz-playbook/.specs',
-    },
-    devCycle: legacyCycle(),
-    agents: { tools: { trackerMcpServer: 'gitlab-issue-analysis' } },
-    voice: { enabled: true, depsInstalled: true, kokoroDir: '~/projects/hermes-poc/vendor/kokoro' },
-    claudeSdk: { installed: true, version: null, path: null },
-    externalTools: {
-      cardSource: {
-        enabled: true,
-        command: '~/.local/bin/daily-report',
-        reportArgs: ['report', '--format', 'json', '--dry-run'],
-        noteArgs: ['note', '{ref}', '{note}'],
-        stateFile: '~/.local/share/daily-report/state.json',
-        historyFile: '~/.local/share/daily-report/history.jsonl',
-        timeoutMs: 150_000,
-      },
-      releaseSync: { enabled: true, command: '~/projects/sz-playbook/.claude/bin/post-release-sync', cwd: '~/projects/sz-playbook', mirrorsDir: '~/.cache/post-release-sync' },
-      timeExport: { enabled: true, command: '~/.local/bin/clockify-log', format: 'clockify-log' },
-      terminal: { command: 'gnome-terminal', args: ['--title', 'Coxia · Claude Code', '--'] },
-      claudeCli: { command: 'claude-or', cwd: '~/projects' },
-    },
-  };
+export interface LegacyProfile {
+  /** A patch over the neutral defaults: every field of WorkspaceConfig is allowed. */
+  config: DeepPartial<WorkspaceConfig>;
+  /** Written to web.json of the install when that file is absent. */
+  web: Partial<WebSettings> | null;
+  secrets: LegacySecretSeed[];
+  /** The v1 `models` of the old settings name models of this provider; without it they are not carried over. */
+  migratedModels: { provider: string; defaultModel: string } | null;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** Reads the profile file's document; null when it is not one (the caller then behaves as if there were no profile). */
+export function parseLegacyProfile(raw: unknown): LegacyProfile | null {
+  if (!isObject(raw) || !isObject(raw.config)) return null;
+  const secrets = (Array.isArray(raw.secrets) ? raw.secrets : [])
+    .filter(isObject)
+    .map((s) => ({ ref: text(s.ref), command: text(s.command), args: Array.isArray(s.args) ? s.args.filter((a): a is string => typeof a === 'string') : [] }))
+    .filter((s) => s.ref && s.command);
+  const mm = isObject(raw.migratedModels) && text(raw.migratedModels.provider) && text(raw.migratedModels.defaultModel) ? { provider: text(raw.migratedModels.provider), defaultModel: text(raw.migratedModels.defaultModel) } : null;
+  return { config: raw.config as DeepPartial<WorkspaceConfig>, web: isObject(raw.web) ? (raw.web as Partial<WebSettings>) : null, secrets, migratedModels: mm };
 }

@@ -15,8 +15,8 @@ let agents: typeof import('../src/main/agents');
 let env: typeof import('../src/main/env');
 
 const card: Card = {
-  ref: '#15499',
-  iid: '15499',
+  ref: '#101',
+  iid: '101',
   title: 'Corrigir filtro',
   stage: 'In Progress',
   spec: null,
@@ -26,7 +26,7 @@ const card: Card = {
   pending: [],
   changes: [],
   note: null,
-  url: 'https://gitlab.example/issues/15499',
+  url: 'https://gitlab.example/issues/101',
 };
 
 const deepAnswer = { fala: 'Li a nota: o filtro está no arquivo.', texto: 'O filtro vive em `note.txt:1`.' };
@@ -88,7 +88,7 @@ describe('deepAsk on the open engine', () => {
     const tools = first.tools.map((t: any) => t.function.name);
     expect(tools).toEqual(expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash', 'Agent', 'final_answer']));
     expect(first.messages[1].content).toContain('Onde está o filtro de grupo de usuários?');
-    expect(first.messages[1].content).toContain('Desbloqueio por voz da atividade #15499');
+    expect(first.messages[1].content).toContain('Desbloqueio por voz da atividade #101');
     expect(first.messages[1].content).toContain('Cartão da atividade');
 
     // the secret file stayed out of the model context, the note did not

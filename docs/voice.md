@@ -59,4 +59,4 @@ Install steps, each skipped when its result is already there, so a cancel or a f
 
 - `<userData>/voice-venv`, `voice-models` (the sidecar gets `HF_HOME` pointing here only when it holds the chosen model; otherwise the user's own Hugging Face cache is used, so a migrated user's "small" is found without a download), `voice-tools`. With `CERIMONIAS_DATA_DIR` set, `userData` is inside it.
 - Uninstall removes only those three. The checkout's `sidecar/.venv` and the shared `~/.cache/huggingface` stay.
-- Kokoro files: `CERIMONIAS_KOKORO_DIR`, `sidecar/models`, `<userData>/voice-models/kokoro`, or `voice.kokoroDir` (the legacy profile points it at the author's folder; nothing in the code does).
+- Kokoro files: `CERIMONIAS_KOKORO_DIR`, `sidecar/models`, `<userData>/voice-models/kokoro`, or `voice.kokoroDir` (a legacy profile can point it at your own folder; nothing in the code does).

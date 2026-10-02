@@ -4,6 +4,7 @@ import ptBR from './pt-BR.json';
 import mainEn from './main.en.json';
 import mainPtBR from './main.pt-BR.json';
 import wizardEn from './wizard.en.json';
+import { UI_EN, UI_PT_BR } from './ui';
 import wizardPtBR from './wizard.pt-BR.json';
 
 // A tiny translator, shared by the renderer and the main process: no dependency, flat dotted keys, {name} placeholders.
@@ -23,8 +24,11 @@ export const FALLBACK_LANGUAGE: Language = 'pt-BR';
 
 // The setup wizard's strings live in their own files (wizard.*.json) so the catalogs other work adds to do not collide with them; the
 // strings of the main process and the shared modules (errors, notifications, tray, health, files written for people, agent prompts added
-// after the cycle templates) live in main.*.json.
-export const CATALOGS: Record<Language, Catalog> = { 'pt-BR': { ...ptBR, ...wizardPtBR, ...mainPtBR }, en: { ...en, ...wizardEn, ...mainEn } };
+// after the cycle templates) live in main.*.json, and the renderer's screens in the ui-*.json files gathered by ./ui.
+export const CATALOGS: Record<Language, Catalog> = {
+  'pt-BR': { ...ptBR, ...wizardPtBR, ...mainPtBR, ...UI_PT_BR },
+  en: { ...en, ...wizardEn, ...mainEn, ...UI_EN },
+};
 
 export function normalizeLanguage(value: unknown): Language {
   if (value === 'pt-BR' || value === 'en') return value;
@@ -80,6 +84,11 @@ export function setLanguage(language: Language): void {
 
 export function getLanguage(): Language {
   return current;
+}
+
+/** The BCP 47 tag Intl and toLocale*String use for the language in force: dates, times and numbers follow the workspace language. */
+export function intlLocale(): string {
+  return current === 'en' ? 'en-US' : 'pt-BR';
 }
 
 /** Voice on or off: `tv` follows it. */

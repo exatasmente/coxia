@@ -18,33 +18,33 @@ describe('getters for a migrated install: the constants env.ts used to hold', ()
 
   it('paths', () => {
     expect(r.projectsRoot).toBe('/home/ana/projects');
-    expect(r.specsDir).toBe('/home/ana/projects/sz-playbook/.specs');
-    expect(r.cardSource?.command).toBe('/home/ana/.local/bin/daily-report');
+    expect(r.specsDir).toBe('/home/ana/projects/playbook/.specs');
+    expect(r.cardSource?.command).toBe('/home/ana/.local/bin/cardtool');
     expect(r.cardSource?.reportArgs).toEqual(['report', '--format', 'json', '--dry-run']);
     expect(r.cardSource?.noteArgs).toEqual(['note', '{ref}', '{note}']);
-    expect(r.cardSource?.stateFile).toBe('/home/ana/.local/share/daily-report/state.json');
-    expect(r.cardSource?.historyFile).toBe('/home/ana/.local/share/daily-report/history.jsonl');
+    expect(r.cardSource?.stateFile).toBe('/home/ana/.local/share/cardtool/state.json');
+    expect(r.cardSource?.historyFile).toBe('/home/ana/.local/share/cardtool/history.jsonl');
     expect(r.cardSource?.timeoutMs).toBe(150_000);
-    expect(r.releaseSync).toEqual({ command: '/home/ana/projects/sz-playbook/.claude/bin/post-release-sync', cwd: '/home/ana/projects/sz-playbook', mirrorsDir: '/home/ana/.cache/post-release-sync' });
+    expect(r.releaseSync).toEqual({ command: '/home/ana/projects/playbook/.claude/bin/release-sync', cwd: '/home/ana/projects/playbook', mirrorsDir: '/home/ana/.cache/release-sync' });
     expect(r.transcriptsDir).toBe('/home/ana/.claude/projects/-home-ana-projects');
     expect(r.cloneRoots).toEqual(['/home/ana/projects']);
-    expect(r.claudeCli).toEqual({ command: 'claude-or', cwd: '/home/ana/projects' });
+    expect(r.claudeCli).toEqual({ command: 'claude-alt', cwd: '/home/ana/projects' });
     expect(r.terminal).toEqual({ command: 'gnome-terminal', args: ['--title', 'Coxia · Claude Code', '--'] });
-    expect(r.timeExport?.command).toBe('/home/ana/.local/bin/clockify-log');
+    expect(r.timeExport?.command).toBe('/home/ana/.local/bin/timelog');
   });
 
   it('the seven repositories, in order', () => {
     expect(r.repos.map((x) => [x.id, x.path])).toEqual(
-      ['sz4', 'sz4-frontend', 'sz4-backend', 'new-agent', 'hub-whatsapp', 'agent-socket-manager', 'sz-playbook'].map((n) => [n, `/home/ana/projects/${n}`]),
+      ['web', 'web-ui', 'api', 'agent-ui', 'gateway', 'socket-hub', 'playbook'].map((n) => [n, `/home/ana/projects/${n}`]),
     );
   });
 
   it('host, issue project, QA user, refs and the release label', () => {
-    expect(r.vcsHost).toBe('dark.smartzap.com.br');
-    expect(r.primaryVcs).toMatchObject({ kind: 'gitlab', cli: 'glab', apiUrl: 'https://dark.smartzap.com.br/api/v4' });
-    expect(r.issues).toEqual({ vcsId: 'gitlab', project: 'sz4/sz4', projectId: 1, refPrefix: 'sz4#' });
-    expect(r.qaUser).toBe('qa.interno');
-    const m = r.releaseLabelPattern.exec('sz4-51.22.0');
+    expect(r.vcsHost).toBe('git.acme.test');
+    expect(r.primaryVcs).toMatchObject({ kind: 'gitlab', cli: 'glab', apiUrl: 'https://git.acme.test/api/v4' });
+    expect(r.issues).toEqual({ vcsId: 'gitlab', project: 'acme/web', projectId: 1, refPrefix: 'web#' });
+    expect(r.qaUser).toBe('qa.acme');
+    const m = r.releaseLabelPattern.exec('web-51.22.0');
     expect(m?.[1]).toBe('51.22.0');
     expect(r.releaseLabelPattern.test('other-1.0.0')).toBe(false);
   });
@@ -132,7 +132,7 @@ describe('the Settings view is derived from the config and applied back', () => 
     expect(back.notifications).toBe(false);
     expect(back.language).toBe('en');
     expect(back.vcs).toEqual(c.vcs);
-    expect(back.agents.tools.trackerMcpServer).toBe('gitlab-issue-analysis');
+    expect(back.agents.tools.trackerMcpServer).toBe('tracker-issues');
     expect(back.voice.sttModel).toBe(c.voice.sttModel);
   });
 });
@@ -142,8 +142,8 @@ describe('the environment of an SDK child, per provider kind', () => {
   const role = (c = legacyConfigFixture()) => resolveConfig(c, ctx).role('turn');
 
   it('legacy: exactly what agentEnv built (bearer token, empty API key, GITLAB_HOST, inherited Claude variables dropped)', () => {
-    const env = sdkEnv({ target: role(), base, secret: 'KEY', profile: { FOO: 'bar' }, vcsHost: 'dark.smartzap.com.br' });
-    expect(env).toEqual({ PATH: '/bin', HOME, FOO: 'bar', ANTHROPIC_BASE_URL: 'https://openrouter.ai/api', ANTHROPIC_AUTH_TOKEN: 'KEY', ANTHROPIC_API_KEY: '', GITLAB_HOST: 'dark.smartzap.com.br' });
+    const env = sdkEnv({ target: role(), base, secret: 'KEY', profile: { FOO: 'bar' }, vcsHost: 'git.acme.test' });
+    expect(env).toEqual({ PATH: '/bin', HOME, FOO: 'bar', ANTHROPIC_BASE_URL: 'https://openrouter.ai/api', ANTHROPIC_AUTH_TOKEN: 'KEY', ANTHROPIC_API_KEY: '', GITLAB_HOST: 'git.acme.test' });
   });
 
   it('anthropic: the key goes in ANTHROPIC_API_KEY, nothing is inherited, no GITLAB_HOST without an integration', () => {

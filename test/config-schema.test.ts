@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CONFIG_SCHEMA, LEGACY_STAGES, collectSecretRequirements, legacyProfile, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
 import type { JsonSchema } from '../src/shared/config';
+import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
 
 // Keys of every object the schema describes, as dotted paths ("llm.providers[].id"): what a config can hold.
@@ -30,14 +31,14 @@ describe('config schema', () => {
     expect(r.ok).toBe(true);
   });
 
-  it('accepts the legacy profile merged over the defaults', () => {
-    const merged = mergeDeep(neutralConfig(), legacyProfile());
+  it('accepts the example legacy profile merged over the defaults', () => {
+    const merged = mergeDeep(neutralConfig(), exampleProfile().config);
     expect(validateConfig(merged).errors).toEqual([]);
   });
 
   it('describes exactly the keys the defaults and the legacy profile can hold (types, schema and defaults cannot drift apart)', () => {
     const declared = new Set(schemaKeys(CONFIG_SCHEMA));
-    const holds = new Set([...valueKeys(neutralConfig()), ...valueKeys(mergeDeep(neutralConfig(), legacyProfile()))]);
+    const holds = new Set([...valueKeys(neutralConfig()), ...valueKeys(mergeDeep(neutralConfig(), exampleProfile().config))]);
     // promptOverrides is a map keyed by prompt id: its keys are data, not fields.
     expect([...holds].filter((k) => !declared.has(k) && !k.startsWith('devCycle.promptOverrides.'))).toEqual([]);
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
@@ -103,7 +104,7 @@ describe('config schema', () => {
   });
 
   it('ranks stages by the first matching pattern, as the radar did', () => {
-    const rank = (s: string | null) => stageRank(LEGACY_STAGES, s);
+    const rank = (s: string | null) => stageRank(TEST_STAGES, s);
     expect(rank('Test OK')).toBe(7);
     expect(rank('Ready To Test')).toBe(6);
     expect(rank('Test Fail')).toBe(6);

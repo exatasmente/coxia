@@ -206,7 +206,7 @@ describe('a migrated install', () => {
     expect(config.voice.enabled).toBe(true);
     expect(config.voice.depsInstalled).toBe(true);
     expect(config.voice.sttModel).toBe('small');
-    expect(config.voice.kokoroDir).toBe('~/projects/hermes-poc/vendor/kokoro');
+    expect(config.voice.kokoroDir).toBe('~/models/kokoro');
     const { getSettings } = await import('../src/main/config');
     expect(getSettings().voice).toMatchObject({ enabled: true, depsInstalled: true, engine: 'edge', speak: true, bargeIn: true });
     const { tv } = await import('../src/shared/i18n');

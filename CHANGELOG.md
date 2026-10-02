@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The whole interface is translated: every screen, toast, tooltip and the browser (PWA) gate follow the workspace language, with dates and numbers formatted for it. Strings live in `src/shared/i18n/ui-*.json`; `npm run i18n:lint` now blocks untranslated text in the renderer. Glossary and rules in `docs/i18n.md`.
 - The main process, the shared modules and the agent prompts follow the workspace language (Portuguese or English): errors, notifications, tray, health messages, the minutes, the gate quiz, the QA checklist and the retro digest. The Portuguese texts are unchanged; English has golden tests of its own.
 
 ## [0.1.0] - 2026-10-02
@@ -22,7 +23,7 @@ First public version.
 - The Claude Agent SDK is not bundled in published packages: the wizard installs it into a folder of the user's, after showing Anthropic's terms.
 - Workspaces with a "test" mark that keeps every effect (push, merge request, comment, notes) on the machine.
 - Write-only-on-request flow: minutes, notes and the Plan log are written only when the user confirms; side effects are queued and copied to Claude Code instead of running in the app.
-- Time per issue measured from the ceremonies, ready to log in Clockify, and a cost screen for OpenRouter usage.
+- Time per issue measured from the ceremonies, ready to export to a time tracker, and a cost screen for OpenRouter usage.
 - Desktop app for Linux (AppImage and `.deb`), with a tray, optional autostart, and a paired-browser access (PWA) for the phone.
 - Automatic updates for published AppImages through GitHub Releases (stable and beta channels, differential download, checksum verified), and an update flow for installs made from source.
 - Interface in Portuguese (Brazil) and English, with light and dark themes.

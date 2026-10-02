@@ -52,7 +52,7 @@ describe('the main process catalogs (main.*.json)', () => {
       'main.radar.recommendation': ['same-fix', 'dependency', 'file', 'scope'],
       'main.conflict.step': ['none', 'prepared', 'proposed', 'applied', 'verify-failed', 'push-waiting', 'published', 'appliedNoTests'],
       'main.saude.task': ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps'],
-      'main.saude.dep': ['glab', 'openrouter-key', 'voice', 'model'],
+      'main.saude.dep': ['vcs', 'llm-key', 'card-source', 'voice', 'model'],
       'main.retention.kind': ['sessoes', 'historico', 'gates', 'qa', 'retros', 'atividade', 'feedback'],
       'main.retention.app': ['turn', 'unblock', 'gate', 'qa', 'retro', 'teams', 'sync', 'reentry', 'review'],
       'main.tempo.label': ['pre-daily', 'desbloqueio', 'gate', 'qa', 'retro', 'daily'],

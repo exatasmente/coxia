@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react';
 import type { Screen } from '../App';
-import { tv, useTv, useVoiceEnabled } from '../i18n';
+import { tNodes, tvNodes, useT, useTv, useVoiceEnabled } from '../i18n';
 import { BackIcon } from './icons';
 
 // F1 opens the help from any screen and closes it when it is already open.
@@ -17,6 +17,8 @@ export function useHelpShortcut(current: Screen['name'], go: (s: Screen) => void
 }
 
 const Key = ({ children }: { children: ReactNode }) => <kbd className="kbd">{children}</kbd>;
+const KEYCAP = { enter: 'Enter', tab: 'Tab', shift: 'Shift' }; // i18n-ignore: key names
+const Mono = ({ children }: { children: ReactNode }) => <span className="mono">{children}</span>;
 
 function Item({ term, children }: { term: ReactNode; children: ReactNode }) {
   return (
@@ -39,111 +41,82 @@ function Block({ title, intro, children }: { title: string; intro?: string; chil
   );
 }
 
-// Splits a catalog text at {key} so the key can be shown as a keycap.
-function withKey(text: string, key: ReactNode): ReactNode {
-  const [before, after] = text.split('{key}');
-  return <>{before}{key}{after}</>;
-}
-
 export function Ajuda({ go }: { go: (s: Screen) => void }) {
-  useTv();
+  const t = useT();
+  const tv = useTv();
   const voiceOn = useVoiceEnabled();
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
-            <h1 style={{ fontSize: 26, fontWeight: 700 }}>Ajuda</h1>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.help.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.help.title')}</h1>
           </div>
-          <span className="small muted">Aperte <Key>F1</Key> em qualquer tela para abrir ou fechar.</span>
+          <span className="small muted">{tNodes('ui.help.f1', { key: <Key>{'F1'}</Key> })}</span>
         </header>
 
         <Block title={tv('help.shortcuts.title')} intro={tv('help.shortcuts.intro')}>
           {voiceOn && (
             <>
-              <Item term={<Key>Espaço</Key>}>
-                Começa a gravar. Apertando de novo, a fala é enviada. Não vale com o foco num campo de texto, botão, lista ou link: aí o espaço faz o que o controle faz.
-              </Item>
-              <Item term="Envio pelo silêncio">
-                Com a opção ligada, depois que você começa a falar, uma pausa longa envia a fala sozinha. Cada fala tem no máximo 30 segundos. A pausa padrão é de 1200 ms e muda em Configurações › Voz.
-              </Item>
+              <Item term={<Key>{t('ui.help.key.space')}</Key>}>{t('ui.help.space.text')}</Item>
+              <Item term={t('ui.help.silence.term')}>{t('ui.help.silence.text')}</Item>
             </>
           )}
-          <Item term="Digitar">{withKey(tv('help.type.text'), <Key>Enter</Key>)}</Item>
-          <Item term={<><Key>Tab</Key> e <Key>Shift</Key>+<Key>Tab</Key></>}>
-            Passam de controle em controle; <Key>Enter</Key> ou <Key>Espaço</Key> ativa o botão em foco. O contorno do foco aparece só no teclado.
+          <Item term={t('ui.help.type.term')}>{tvNodes('help.type.text', { key: <Key>{KEYCAP.enter}</Key> })}</Item>
+          <Item term={tNodes('ui.help.tab.term', { tab: <Key>{KEYCAP.tab}</Key>, shift: <Key>{KEYCAP.shift}</Key> })}>
+            {tNodes('ui.help.tab.text', { enter: <Key>{KEYCAP.enter}</Key>, space: <Key>{t('ui.help.key.space')}</Key> })}
           </Item>
           {voiceOn ? (
-            <Item term="Voz dos agentes">
-              O botão “Voz ligada/desligada” no alto de Hoje (e Configurações › Voz) liga ou desliga a fala dos agentes. Desligada, tudo continua na tela e nada vai para o Edge.
-            </Item>
+            <Item term={t('ui.help.agentVoice.term')}>{t('ui.help.agentVoice.text')}</Item>
           ) : (
             <Item term={tv('help.voice.off.term')}>{tv('help.voice.off.text')}</Item>
           )}
         </Block>
 
         <Block title={tv('help.commands.title')} intro={tv('help.commands.intro')}>
-          <Item term="“próximo”, “pula”, “passa”, “segue”">
-            Passa para o próximo agente. Na última atividade, fecha a pauta. Precisa estar no começo da frase.
-          </Item>
-          <Item term="“aprofunda”, “desbloqueio”">
-            Abre o Desbloqueio da atividade atual: uma conversa a fundo com o agente dela. Em qualquer parte da frase.
-          </Item>
-          <Item term="“encerra”, “termina”">{tv('help.cmd.end')}</Item>
+          <Item term={t('ui.help.cmd.next.term')}>{t('ui.help.cmd.next.text')}</Item>
+          <Item term={t('ui.help.cmd.deepen.term')}>{t('ui.help.cmd.deepen.text')}</Item>
+          <Item term={t('ui.help.cmd.end.term')}>{tv('help.cmd.end')}</Item>
         </Block>
 
-        <Block title="O que cada cerimônia faz">
-          <Item term="Pré-daily">{tv('help.preDaily')}</Item>
-          <Item term="Desbloqueio">
-            Conversa a fundo sobre uma atividade travada. O agente lê spec, GitLab e playbook, e quando há contexto você pede de 2 a 3 saídas, cada uma com a sua consequência.
-          </Item>
-          <Item term="Passagem para o QA">
-            O agente explica ao QA o que mudou e o que testar. Saem o checklist e o texto do aviso para o Teams.
-          </Item>
-          <Item term="Retro">
-            Semanal. Junta os últimos 7 dias (reprovações, bloqueios, conflitos, quizzes errados e retrabalho) e conversa com o moderador sobre o que melhorar.
-          </Item>
-          <Item term="Gate">
-            O agente lê o artefato da fase (Investigation, RFC, Spec Funcional, Findings ou Plan), faz o resumo do gate e até 3 perguntas de consequência. A aprovação continua sendo a sua frase no chat do Claude Code.
-          </Item>
-          <Item term="Retorno do QA, Discussões, GitLab">
-            Retorno do QA explica uma atividade que voltou do teste. Discussões percorre as discussões abertas de uma MR. GitLab monta propostas (label, reviewer e afins) para você confirmar em Ações.
-          </Item>
-          <Item term="Radar">
-            Só lê: cruza os arquivos das suas MRs abertas, de atividades diferentes, e avisa de colisão.
-          </Item>
+        <Block title={t('ui.help.ceremonies.title')}>
+          <Item term={t('ui.help.ceremonies.preDaily')}>{tv('help.preDaily')}</Item>
+          <Item term={t('ui.help.ceremonies.unblock')}>{t('ui.help.ceremonies.unblock.text')}</Item>
+          <Item term={t('ui.help.ceremonies.qaHandoff')}>{t('ui.help.ceremonies.qaHandoff.text')}</Item>
+          <Item term={t('ui.help.ceremonies.retro')}>{t('ui.help.ceremonies.retro.text')}</Item>
+          <Item term={t('ui.help.ceremonies.gate')}>{t('ui.help.ceremonies.gate.text')}</Item>
+          <Item term={t('ui.help.ceremonies.others')}>{t('ui.help.ceremonies.others.text')}</Item>
+          <Item term={t('ui.help.ceremonies.radar')}>{t('ui.help.ceremonies.radar.text')}</Item>
         </Block>
 
-        <Block title="O que o app nunca faz sozinho">
-          <Item term="Escrever no GitLab">
-            Nunca por conta própria. Tudo que escreve (comentário, label, reviewer, merge da main numa branch e push) vira uma ação na tela Ações e só roda depois do seu “Seguir” e de uma confirmação. O push é sem force-push.
-          </Item>
-          <Item term="Publicar no Teams">
-            Nunca. O texto é gerado e você copia e cola.
-          </Item>
-          <Item term={tv('help.effects.term')}>
-            A fila de efeitos não roda nada: cada item vai para o Claude Code, onde espera o seu “sim”.
-          </Item>
-          <Item term="Os agentes">
-            Só leem (arquivos, skills do playbook, GitLab). Editar arquivos, acessar a web, ler arquivos de segredo e escrever no GitLab ficam sempre bloqueados, seja qual for a configuração.
-          </Item>
-          <Item term="Escritas locais, com o seu clique">
-            “Gravar ata e decisões” grava a ata do dia e leva só as decisões marcadas para o Registro do Plan ou para a nota do daily-report. “Gravar no .specs” cria o QA_CHECKLIST.md e “Inserir no artefato” põe o diagrama no documento do gate; os dois pedem confirmação.
-          </Item>
+        <Block title={t('ui.help.never.title')}>
+          <Item term={t('ui.help.never.gitlab.term')}>{t('ui.help.never.gitlab.text')}</Item>
+          <Item term={t('ui.help.never.teams.term')}>{t('ui.help.never.teams.text')}</Item>
+          <Item term={tv('help.effects.term')}>{t('ui.help.never.effects.text')}</Item>
+          <Item term={t('ui.help.never.agents.term')}>{t('ui.help.never.agents.text')}</Item>
+          <Item term={t('ui.help.never.local.term')}>{t('ui.help.never.local.text')}</Item>
         </Block>
 
-        <Block title="Onde ficam os dados" intro="Tudo é arquivo local; nada vai para um servidor próprio.">
-          <Item term={<span className="mono">~/.local/share/cerimonias/workspaces/&lt;nome&gt;/</span>}>
-            Cada workspace guarda a sua cópia de: ata do dia (<span className="mono">AAAA-MM-DD-pre-daily.md</span>), <span className="mono">historico/</span> (cada cerimônia), <span className="mono">gates/</span>, <span className="mono">qa/</span>, <span className="mono">retros/</span>, <span className="mono">atividade/</span>, <span className="mono">config.json</span> (Configurações), <span className="mono">acoes.json</span> (Ações), <span className="mono">custo.json</span>, <span className="mono">radar.json</span> e <span className="mono">status.json</span>.
+        <Block title={t('ui.help.data.title')} intro={t('ui.help.data.intro')}>
+          <Item term={<Mono>{t('ui.help.data.workspaces.term')}</Mono>}>
+            {tNodes('ui.help.data.workspaces.text', {
+              minutes: <Mono>{t('ui.help.data.minutesFile')}</Mono>,
+              history: <Mono>{'historico/'}</Mono>,
+              gates: <Mono>{'gates/'}</Mono>,
+              qa: <Mono>{'qa/'}</Mono>,
+              retros: <Mono>{'retros/'}</Mono>,
+              activity: <Mono>{'atividade/'}</Mono>,
+              config: <Mono>{'config.json'}</Mono>,
+              actions: <Mono>{'acoes.json'}</Mono>,
+              cost: <Mono>{'custo.json'}</Mono>,
+              radar: <Mono>{'radar.json'}</Mono>,
+              status: <Mono>{'status.json'}</Mono>,
+            })}
           </Item>
-          <Item term={<span className="mono">~/.local/share/cerimonias/</span>}>
-            O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados, glossário e comandos de verificação de conflito. Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (GitLab, Plan das specs, daily-report).
-          </Item>
-          <Item term={<span className="mono">~/projects/sz-playbook/.specs/</span>}>
-            Specs que o app lê e, nas escritas acima, onde grava o Registro do Plan, o QA_CHECKLIST.md e o diagrama do gate.
-          </Item>
-          <Item term="Tema">{tv('help.theme')}</Item>
+          <Item term={<Mono>{'~/.local/share/cerimonias/'}</Mono>}>{t('ui.help.data.shared.text')}</Item>
+          <Item term={<Mono>{t('ui.help.data.specs.term')}</Mono>}>{t('ui.help.data.specs.text')}</Item>
+          <Item term={t('ui.help.data.theme.term')}>{tv('help.theme')}</Item>
         </Block>
       </div>
     </div>

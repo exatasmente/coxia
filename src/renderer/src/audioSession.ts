@@ -16,5 +16,6 @@ export function setAudioSession(type: SessionType): void {
 }
 
 export function isIos(): boolean {
+  // i18n-ignore-next-line: user agent token
   return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1);
 }

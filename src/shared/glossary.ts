@@ -15,10 +15,6 @@ export interface Term {
 }
 
 export const DEFAULT_GLOSSARY: Term[] = [
-  { term: 'sz4', say: 'ésse zê quatro', sayKokoro: 'esse zeta quatro', heard: ['SZ 4', 'esse zê quatro', 'esse z quatro', 'SC-4', 'SC4', 'SC-Z4'] },
-  { term: 'sz-playbook', say: '', heard: ['SZ playbook', 'esse zê playbook', 'szplaybook'] },
-  { term: 'hub-whatsapp', say: 'hub uótsap', heard: ['hub WhatsApp', 'hub whats app', 'rub WhatsApp', 'Rubio WhatsApp', 'Rubio-whatsapp', 'Ruby WhatsApp'] },
-  { term: 'new-agent', say: 'niú agent', sayKokoro: 'niú êidjent', heard: ['new agent', 'niu agent', 'New Age', 'Neu Agente'] },
   { term: 'QA', say: 'quiu ei', heard: ['Q&A', 'Q.A.', 'kiu ei', 'quiu ei'] },
   { term: 'MR', say: '', heard: ['M.R.', 'emerre', 'eme erre'] },
   { term: 'merge', say: '', heard: ['merdi', 'mérgi', 'mergi', 'merdj'] },
@@ -30,7 +26,6 @@ export const DEFAULT_GLOSSARY: Term[] = [
   { term: 'pré-daily', say: '', heard: ['pre daily', 'pré deili', 'pré-deili', 'predale'] },
   { term: 'daily', say: '', heard: ['deili', 'Daili'] },
   { term: 'GitLab', say: '', heard: ['git lab', 'guitlab', 'JitLab', 'githlab'] },
-  { term: 'Teams', say: '', heard: ['tíms', 'TAMS', 'Tiamz'] },
   { term: 'Claude Code', say: '', heard: ['cloud code', 'clod code', 'clode code', 'cloud codi'] },
 ];
 
@@ -44,7 +39,7 @@ function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Whole-term match: "sz4" does not match inside "sz4x", "MR" not inside "MRs" nor "SMR".
+// Whole-term match: "api" does not match inside "apix", "MR" not inside "MRs" nor "SMR".
 function termRegex(s: string): RegExp {
   return new RegExp(`(?<!${WORD})${escape(s)}(?!${WORD})`, 'giu');
 }
@@ -72,7 +67,7 @@ export function pronunciation(t: Term, engine: VoiceEngine): string {
 
 export function spoken(text: string, terms: Term[], engine: VoiceEngine): string {
   const refs = text
-    // "sz4!9302" reads as "sz4, MR 9302"; "#15499" as "15499"
+    // "web!202" reads as "web, MR 202"; "#101" as "101"
     .replace(/(\S)!(\d+)/g, '$1, MR $2')
     .replace(/(^|\s)!(\d+)/g, '$1MR $2')
     .replace(/#(\d+)/g, '$1');

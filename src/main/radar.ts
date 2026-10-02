@@ -13,7 +13,7 @@ import { fetchRepos, worktreeHealth } from './worktrees';
 import { t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'radar.json');
-// related-work-radar collide uses 40 lines (about one method) as "same place".
+// The collision check treats 40 lines (about one method) as "same place".
 const WINDOW = 40;
 
 interface MrChanges {
@@ -37,7 +37,7 @@ interface Unit {
   mrs: MrChanges[];
 }
 
-// The daily-report stage is coarse; the weights follow PESO_ETAPA in related-work-radar (more advanced = costlier to touch).
+// The stage of a card is coarse; the weight follows its rank (more advanced = costlier to touch).
 export function stageWeight(stage: string | null): number {
   return stageRank(rc().stages, stage);
 }
@@ -206,6 +206,7 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
       const mA = mrOf(first);
       const mB = mrOf(second);
       const repo = mA.project === mB.project ? repoName(mA.project) : null;
+      const repoPath = repo ? rc().repos.find((r) => r.id === repo)?.path : undefined;
       findings.push({
         key,
         kind,
@@ -218,11 +219,7 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
         silent: kind === 'same-fix' && !ev.overlap,
         summary: describe(kind, ev, ahead, behind),
         recommendation: recommendation(kind),
-        collideCommand:
-          kind === 'same-fix' && repo
-            // i18n-ignore: a command line
-            ? `related-work-radar collide --repo ~/projects/${repo} --branches origin/${mA.branch} origin/${mB.branch} --base origin/${mA.target}`
-            : null,
+        collideCommand: kind === 'same-fix' && repoPath ? `git -C ${repoPath} merge-tree --write-tree origin/${mA.branch} origin/${mB.branch}` : null,
         firstSeen: seen.get(key) ?? now,
       });
     }

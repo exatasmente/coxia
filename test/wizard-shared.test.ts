@@ -110,7 +110,7 @@ describe('userName', () => {
   it('is empty on a fresh install and kept as the name the app always used for a migrated one', async () => {
     const { legacyConfigFixture } = await import('./helpers/config');
     expect(neutralConfig().userName).toBe('');
-    expect(legacyConfigFixture().userName).toBe('Luiz');
+    expect(legacyConfigFixture().userName).toBe('Bruno');
     expect(validateConfig({ schemaVersion: 2, userName: 'Ana' }).config?.userName).toBe('Ana');
   });
 });

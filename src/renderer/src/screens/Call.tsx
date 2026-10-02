@@ -1,7 +1,8 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import type { Voice } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api, clock, errorText, plural, shortRef } from '../api';
+import { AgentActivity } from '../AgentActivity';
+import { api, clock, errorText, shortRef } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ReplayButton } from './Bubble';
@@ -9,19 +10,30 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { FixHeard } from './FixHeard';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
-import { tv, useVoiceEnabled } from '../i18n';
-import { voiceEnabled } from '../../../shared/i18n';
+import { tv, useT, useVoiceEnabled } from '../i18n';
+import { CATALOGS, voiceEnabled } from '../../../shared/i18n';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
 
 const MODERATOR_COLOR = 'var(--ink)';
 const ME_COLOR = 'var(--blue)';
+// The id the player and Gate use for the moderator's voice; never shown (NowPlaying names it).
+const MODERATOR = 'Moderador'; // i18n-ignore: speaker id
+const PANEL_STYLE = { display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 4px' } as const; // i18n-ignore: CSS value
+const EFFECT_BORDER = '1px solid var(--line-2)'; // i18n-ignore: CSS value
+const GLOW = '0 0 0 6px var(--glow)'; // i18n-ignore: CSS value
+
+// The log keeps the speaker's name as it was written when the line was said, so a line is recognized in either language.
+const WHO_MODERATOR = 'ui.call.who.moderator';
+const WHO_ME = 'ui.call.who.me';
+const isWho = (who: string, key: string): boolean => who === CATALOGS['pt-BR'][key] || who === CATALOGS.en[key];
 
 function normalize(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, '').trim();
 }
 
 export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+  const t = useT();
   const cards = c.cards?.cards ?? [];
   const idx = c.callIdx;
   const card = idx >= 0 ? cards[idx] : null;
@@ -41,8 +53,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   latest.current = c;
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
   // Moderator opening, once per ceremony.
@@ -55,8 +67,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     void (async () => {
       await new Promise((r) => setTimeout(r, 50));
       if (runId.current !== id) return;
-      latest.current.addLog('Moderador', text, MODERATOR_COLOR);
-      if (latest.current.voices) await player.say(text, latest.current.voices.moderator, 'Moderador').catch(() => undefined);
+      latest.current.addLog(t(WHO_MODERATOR), text, MODERATOR_COLOR);
+      if (latest.current.voices) await player.say(text, latest.current.voices.moderator, MODERATOR).catch(() => undefined);
       if (runId.current === id) latest.current.setCallIdx(0);
     })();
   }, []);
@@ -74,12 +86,12 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     setTurnStart(Date.now());
     setPhase('preparing');
     void (async () => {
-      let t: Awaited<ReturnType<Ceremony['getTurn']>>;
+      let got: Awaited<ReturnType<Ceremony['getTurn']>>;
       try {
-        t = await latest.current.getTurn(card);
+        got = await latest.current.getTurn(card);
       } catch (e) {
         if (runId.current === id) {
-          setError(`O agente da #${card.iid} falhou: ${errorText(e)}`);
+          setError(t('ui.call.agentFailed', { iid: card.iid, error: errorText(e) }));
           setPhase('idle');
         }
         return;
@@ -87,11 +99,11 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       if (runId.current !== id) return;
       const cc = latest.current;
       cc.markSpoken(card.ref);
-      cc.addLog(`#${card.iid}`, t.speech, cc.colorOf(card.ref));
+      cc.addLog(`#${card.iid}`, got.speech, cc.colorOf(card.ref));
       setTurnStart(Date.now());
       setPhase('speaking');
       const voice = cc.voiceOf(card.ref);
-      if (voice) await player.say(t.speech, voice, card.ref).catch(() => undefined);
+      if (voice) await player.say(got.speech, voice, card.ref).catch(() => undefined);
       if (runId.current === id) setPhase('idle');
     })();
   }, [card?.ref]);
@@ -102,10 +114,10 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     const cc = latest.current;
     cc.end();
     setPhase('ended');
-    const text = `Fim da pauta. Ficaram ${plural(cc.decisions.length, 'decisão', 'decisões')} e ${plural(cc.effects.length, 'ação', 'ações')} na fila. Vou montar a ata.`;
-    cc.addLog('Moderador', text, MODERATOR_COLOR);
-    if (cc.voices) await player.say(text, cc.voices.moderator, 'Moderador').catch(() => undefined);
-  }, [player]);
+    const text = t('ui.call.closing', { decisions: t('ui.call.count.decision', { count: cc.decisions.length }), actions: t('ui.call.count.action', { count: cc.effects.length }) });
+    cc.addLog(t(WHO_MODERATOR), text, MODERATOR_COLOR);
+    if (cc.voices) await player.say(text, cc.voices.moderator, MODERATOR).catch(() => undefined);
+  }, [player, t]);
 
   const next = useCallback(() => {
     runId.current++;
@@ -123,7 +135,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
         await rec.start();
         setPhase('listening');
       } catch (e) {
-        setError(`Microfone indisponível: ${errorText(e)}`);
+        setError(t('ui.voice.micUnavailable', { error: errorText(e) }));
       }
       return;
     }
@@ -134,17 +146,17 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     try {
       text = await transcribeAudio(audio);
     } catch (e) {
-      setError(`Falha na transcrição: ${errorText(e)}`);
+      setError(t('ui.voice.transcribeFailed', { error: errorText(e) }));
       setPhase('idle');
       return;
     }
     if (!text) {
-      setHint('Não entendi. Aperte espaço e fale de novo, ou digite a resposta.');
+      setHint(t('ui.call.notUnderstood'));
       setPhase('idle');
       return;
     }
     await sendRef.current(text);
-  }, [rec, player]);
+  }, [rec, player, t]);
 
   // Spoken, typed or tapped: every answer takes the same way.
   const send = useCallback(async (text: string) => {
@@ -152,11 +164,11 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     setError(null);
     if (player.speaking) player.stop();
     const cc = latest.current;
-    cc.addLog('Você', text, ME_COLOR);
+    cc.addLog(t(WHO_ME), text, ME_COLOR);
     const cmd = normalize(text);
-    if (/^(proximo|pula|passa|segue)\b/.test(cmd)) return next();
-    if (/\b(encerra|encerrar|termina|terminar)\b/.test(cmd)) return void finish();
-    if (card && /\b(aprofunda|aprofundar|desbloqueio|desbloquear)\b/.test(cmd)) return go({ name: 'deep', ref: card.ref, back: 'call' });
+    if (/^(proximo|pula|passa|segue|next|skip)\b/.test(cmd)) return next();
+    if (/\b(encerra|encerrar|termina|terminar|finish|wrap up)\b|^end\b/.test(cmd)) return void finish();
+    if (card && /\b(aprofunda|aprofundar|desbloqueio|desbloquear|deepen|unblock)\b/.test(cmd)) return go({ name: 'deep', ref: card.ref, back: 'call' });
     if (!card || !turn) {
       setPhase('idle');
       return;
@@ -169,15 +181,15 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       if (r.effect) cc.addEffect(r.effect);
       cc.markAnswered(card.ref);
       setFollowUps((f) => ({ ...f, [card.ref]: r.options ?? [] }));
-      if (r.needsDeepDive) setHint('O agente sugere aprofundar esta atividade. Diga "aprofunda" ou use o botão.');
+      if (r.needsDeepDive) setHint(t('ui.call.deepenHint'));
       setPhase('speaking');
       const voice = cc.voiceOf(card.ref);
       if (voice) await player.say(r.ack, voice, card.ref).catch(() => undefined);
     } catch (e) {
-      setError(`O agente não conseguiu responder: ${errorText(e)}`);
+      setError(t('ui.call.replyFailed', { error: errorText(e) }));
     }
     setPhase('idle');
-  }, [card, turn, player, next, finish, go]);
+  }, [card, turn, player, next, finish, go, t]);
   const sendRef = useRef(send);
   sendRef.current = send;
 
@@ -193,7 +205,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return; // i18n-ignore: CSS selector
       e.preventDefault();
       void talkRef.current();
     };
@@ -210,33 +222,34 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     .filter((x) => c.turns[x.ref]?.question && !c.answered[x.ref])
     .map((x) => ({ ref: x.ref, iid: x.iid, question: c.turns[x.ref]?.question as string }));
   const speakerLabel =
-    phase === 'listening' ? 'Você está falando' :
-    phase === 'transcribing' ? 'Transcrevendo…' :
-    phase === 'thinking' ? 'Agente pensando…' :
-    phase === 'preparing' ? 'Agente lendo o cartão…' :
-    speakingWho === 'Moderador' ? 'Moderador falando' :
-    speakingWho ? `Agente #${cards.find((x) => x.ref === speakingWho)?.iid ?? card?.iid} falando` : 'Aguardando você';
+    phase === 'listening' ? t('ui.call.speaker.listening') :
+    phase === 'transcribing' ? t('ui.voice.transcribing') :
+    phase === 'thinking' ? t('ui.call.speaker.thinking') :
+    phase === 'preparing' ? t('ui.call.speaker.preparing') :
+    speakingWho === MODERATOR ? t('ui.call.speaker.moderator') :
+    speakingWho ? t('ui.call.speaker.agent', { iid: cards.find((x) => x.ref === speakingWho)?.iid ?? card?.iid ?? '' }) : t('ui.call.speaker.waiting');
+  const whoLabel = (who: string) => (isWho(who, WHO_MODERATOR) ? t(WHO_MODERATOR) : isWho(who, WHO_ME) ? t(WHO_ME) : who);
 
   return (
     <div className="page">
       <div className="wrap" style={{ gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
-            <h1 style={{ fontSize: 22, fontWeight: 700 }}>Pré-daily</h1>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.call.backToToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('ui.call.title')}</h1>
             <span className="pill" style={{ background: 'var(--chip-teal-bg)', color: 'var(--chip-teal-ink)', borderColor: 'var(--chip-teal-bg)', fontWeight: 600 }}>
-              <span className="live-dot" />{phase === 'ended' ? 'Encerrada' : 'Ao vivo'} · {clock(c.startedAt ?? now, now)}
+              <span className="live-dot" />{phase === 'ended' ? t('ui.call.ended') : t('ui.call.live')} · {clock(c.startedAt ?? now, now)}
             </span>
-            <span className="muted small">{phase === 'ended' ? 'Pauta concluída' : idx >= 0 ? `Atividade ${idx + 1} de ${cards.length}` : 'Abertura'}</span>
+            <span className="muted small">{phase === 'ended' ? t('ui.call.agendaDone') : idx >= 0 ? t('ui.call.progress', { n: idx + 1, total: cards.length }) : t('ui.call.opening')}</span>
           </div>
           <button type="button" className="btn btn-red" onClick={() => { if (phase !== 'ended') c.end(); go({ name: 'ata' }); }}>
-            <StopIcon /> Encerrar e gerar ata
+            <StopIcon /> {t('ui.call.endAndMinutes')}
           </button>
         </header>
 
         <div className="cols call-layout">
           <aside className="panel call-queue" style={{ flex: '1 1 240px', maxWidth: 300, minWidth: 240, gap: 6 }}>
-            <h2 className="section-title" style={{ marginBottom: 8 }}>Pauta</h2>
+            <h2 className="section-title" style={{ marginBottom: 8 }}>{t('ui.call.agenda')}</h2>
             {cards.map((x, i) => {
               const done = i < idx || phase === 'ended';
               const nowItem = i === idx && phase !== 'ended';
@@ -249,7 +262,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                     <div className="t">{x.title}</div>
                   </div>
                   <span className={`badge ${nowItem ? 'badge-now' : q && !done ? 'badge-ask' : 'badge-quiet'}`} style={{ fontSize: 11 }}>
-                    {nowItem ? 'agora' : done ? 'feito' : q ? 'pergunta' : 'na fila'}
+                    {nowItem ? t('ui.call.queue.now') : done ? t('ui.call.queue.done') : q ? t('ui.call.queue.question') : t('ui.call.queue.queued')}
                   </span>
                 </div>
               );
@@ -259,19 +272,19 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
           <main className="call-main" style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <section className="panel-dark hero">
               {phase === 'ended' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 4px' }}>
-                  <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fim da pauta</div>
+                <div style={PANEL_STYLE}>
+                  <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t('ui.call.endOfAgenda')}</div>
                   <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.3 }}>
-                    {plural(c.decisions.length, 'decisão', 'decisões')}, {plural(c.effects.length, 'efeito', 'efeitos')} na fila e {plural(c.minutes.unanswered.length, 'pergunta', 'perguntas')} sem resposta.
+                    {t('ui.call.endedSummary', { decisions: t('ui.call.count.decision', { count: c.decisions.length }), effects: t('ui.call.count.effect', { count: c.effects.length }), questions: t('ui.call.count.question', { count: c.minutes.unanswered.length }) })}
                   </div>
-                  <div><button type="button" className="btn btn-accent" onClick={() => go({ name: 'ata' })}>Gerar ata</button></div>
+                  <div><button type="button" className="btn btn-accent" onClick={() => go({ name: 'ata' })}>{t('ui.call.generateMinutes')}</button></div>
                 </div>
               ) : (
                 <>
                   <div className="row spread" style={{ alignItems: 'center' }}>
                     {card ? (
                       <div className="row" style={{ gap: 16, flexWrap: 'nowrap', minWidth: 0 }}>
-                        <div className="chip chip-lg" style={{ background: c.colorOf(card.ref), boxShadow: speakingWho === card.ref ? '0 0 0 6px var(--glow)' : 'none' }}>
+                        <div className="chip chip-lg" style={{ background: c.colorOf(card.ref), boxShadow: speakingWho === card.ref ? GLOW : 'none' }}>
                           {shortRef(card.ref)}
                         </div>
                         <div style={{ minWidth: 0 }}>
@@ -281,16 +294,16 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                           </div>
                           <div style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25 }}>{card.title}</div>
                           <div className="small" style={{ color: 'var(--on-night-muted)', marginTop: 4 }}>
-                            {card.mrs.join(' · ') || 'sem MR'}{voiceOn && ` · voz ${c.voiceOf(card.ref)?.label}`}
+                            {[card.mrs.join(' · ') || t('ui.call.noMr'), voiceOn && t('ui.call.voiceName', { label: c.voiceOf(card.ref)?.label ?? '' })].filter(Boolean).join(' · ')}
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="row" style={{ gap: 16 }}>
-                        <div className="chip chip-lg" style={{ background: 'var(--night-line)' }}>M</div>
+                        <div className="chip chip-lg" style={{ background: 'var(--night-line)' }}>{t(WHO_MODERATOR).charAt(0)}</div>
                         <div>
-                          <div className="small" style={{ color: 'var(--on-night-muted)' }}>Moderador{voiceOn && ` · voz ${c.voices?.moderator.label}`}</div>
-                          <div style={{ fontSize: 21, fontWeight: 600 }}>Abertura da pré-daily</div>
+                          <div className="small" style={{ color: 'var(--on-night-muted)' }}>{[t(WHO_MODERATOR), voiceOn && t('ui.call.voiceName', { label: c.voices?.moderator.label ?? '' })].filter(Boolean).join(' · ')}</div>
+                          <div style={{ fontSize: 21, fontWeight: 600 }}>{t('ui.call.moderatorOpening')}</div>
                         </div>
                       </div>
                     )}
@@ -310,23 +323,24 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   {card && (
                     <div className="quad">
                       <div>
-                        <div className="lbl">Andou</div>
+                        <div className="lbl">{t('ui.call.did')}</div>
                         <div>{turn?.did ?? <span className="spinner" />}</div>
                       </div>
                       <div>
-                        <div className="lbl">Próximo</div>
+                        <div className="lbl">{t('ui.call.next')}</div>
                         <div>{turn?.next ?? <span className="spinner" />}</div>
                       </div>
                       <div className={turn?.blocker ? 'block' : ''}>
-                        <div className="lbl">Bloqueio</div>
-                        <div>{turn ? turn.blocker ?? 'Sem bloqueio.' : <span className="spinner" />}</div>
+                        <div className="lbl">{t('ui.call.blocker')}</div>
+                        <div>{turn ? turn.blocker ?? t('ui.call.noBlocker') : <span className="spinner" />}</div>
                       </div>
                       <div className={turn?.question && !c.answered[card.ref] ? 'ask' : ''}>
-                        <div className="lbl">Para você</div>
-                        <div>{turn ? (turn.question ? (c.answered[card.ref] ? `Respondida: ${turn.question}` : turn.question) : 'Nada para decidir.') : <span className="spinner" />}</div>
+                        <div className="lbl">{t('ui.call.forYou')}</div>
+                        <div>{turn ? (turn.question ? (c.answered[card.ref] ? t('ui.call.answered', { question: turn.question }) : turn.question) : t('ui.call.nothingToDecide')) : <span className="spinner" />}</div>
                       </div>
                     </div>
                   )}
+                  {card && !turn && <AgentActivity jobId={`prep:${card.ref}`} />}
                 </>
               )}
             </section>
@@ -336,23 +350,23 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
 
             <section className="panel" aria-live="polite" style={{ gap: 4 }}>
               <div className="row spread" style={{ marginBottom: 6 }}>
-                <h2 className="section-title">Transcrição</h2>
+                <h2 className="section-title">{t('ui.call.transcript')}</h2>
                 <span className="faint">{tv('call.transcript.note')}</span>
               </div>
               {c.log.slice(-8).map((l, i) => {
-                const spoken = l.who === 'Moderador' ? { who: 'Moderador', voice: c.voices?.moderator } : (() => {
+                const spoken = isWho(l.who, WHO_MODERATOR) ? { who: MODERATOR, voice: c.voices?.moderator } : (() => {
                   const x = cards.find((k) => `#${k.iid}` === l.who);
                   return x ? { who: x.ref, voice: c.voiceOf(x.ref) } : null;
                 })();
                 return (
                   <div key={`${l.at}-${i}`} className="log-line">
                     <span className="at">{l.at}</span>
-                    <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
-                    <span className="text">{l.text}{l.who === 'Você' && <FixHeard text={l.text} />}</span>
+                    <span className="who" style={{ '--c': l.color } as CSSProperties}>{whoLabel(l.who)}</span>
+                    <span className="text">{l.text}{isWho(l.who, WHO_ME) && <FixHeard text={l.text} />}</span>
                     {voiceOn && spoken?.voice && (
                       <ReplayButton
                         playing={player.speaking === spoken.who && player.current === l}
-                        label={`Ouvir de novo a fala de ${l.who}`}
+                        label={t('ui.call.replay', { who: whoLabel(l.who) })}
                         onPlay={() => void player.say(l.text, spoken.voice as Voice, spoken.who, { force: true, item: l }).catch(() => undefined)}
                         onStop={() => player.stop()}
                       />
@@ -365,8 +379,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             {phase !== 'ended' && (
               <div className="row composer call-controls" style={{ flexWrap: 'wrap' }} role="group" aria-label={tv('call.controls')}>
                 {card && offers.length > 0 && (
-                  <div className="call-offers" role="group" aria-label="Respostas sugeridas pelo agente">
-                    <span className="small muted">Responder com um toque:</span>
+                  <div className="call-offers" role="group" aria-label={t('ui.call.offersLabel')}>
+                    <span className="small muted">{t('ui.call.offersTitle')}</span>
                     {offers.map((o) => (
                       <button key={o} type="button" className="btn call-offer" disabled={busy || rec.recording || phase === 'intro'} onClick={() => void send(o)}>
                         {o}
@@ -384,13 +398,13 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <input
                     className="text-input"
                     placeholder={card ? tv('call.input.placeholder') : tv('call.input.placeholder.intro')}
-                    aria-label="Resposta por texto"
+                    aria-label={t('ui.call.textAnswer')}
                     value={draft}
                     disabled={phase === 'intro'}
                     onChange={(e) => setDraft(e.target.value)}
                   />
-                  <button type="submit" className="btn btn-dark" aria-label="Enviar" disabled={!draft.trim() || busy || rec.recording || phase === 'intro'}>
-                    <span className="lbl">Enviar</span>
+                  <button type="submit" className="btn btn-dark" aria-label={t('ui.call.send')} disabled={!draft.trim() || busy || rec.recording || phase === 'intro'}>
+                    <span className="lbl">{t('ui.call.send')}</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="send-icon"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
                   </button>
                 </form>
@@ -398,16 +412,16 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <>
                     <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
                       <MicIcon />
-                      <span className="lbl">{rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}</span>
+                      <span className="lbl">{rec.recording ? t('ui.call.sendSpeechSpace') : phase === 'transcribing' ? t('ui.voice.transcribing') : phase === 'thinking' ? t('ui.call.thinking') : t('ui.voice.speakSpace')}</span>
                     </button>
-                    <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>Interromper</button>
+                    <button type="button" className="btn" disabled={!speakingWho} onClick={() => player.stop()}>{t('ui.call.interrupt')}</button>
                   </>
                 )}
-                <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>Aprofundar</button>
+                <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>{t('ui.call.deepen')}</button>
                 <ContinueInClaude sessionId={turn?.sessionId} />
                 <span className="grow" />
                 <button type="button" className="btn btn-dark" disabled={phase === 'intro' || busy || rec.recording} onClick={next}>
-                  {idx >= cards.length - 1 ? 'Fechar pauta' : 'Próximo agente'} <NextIcon />
+                  {idx >= cards.length - 1 ? t('ui.call.closeAgenda') : t('ui.call.nextAgent')} <NextIcon />
                 </button>
               </div>
             )}
@@ -415,8 +429,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
 
           <aside className="call-side" style={{ flex: '1 1 300px', maxWidth: 360, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <section className="panel">
-              <h2 className="section-title">Pendente de você · {pending.length}</h2>
-              {!pending.length && <p className="small faint">Nenhuma pergunta em aberto.</p>}
+              <h2 className="section-title">{t('ui.call.pending', { n: pending.length })}</h2>
+              {!pending.length && <p className="small faint">{t('ui.call.noPending')}</p>}
               {pending.map((p) => (
                 <div key={p.ref} className="item ask">
                   <div className="mono" style={{ fontSize: 12, color: 'var(--blue-ink)' }}>#{p.iid}</div>
@@ -425,8 +439,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
               ))}
             </section>
             <section className="panel">
-              <h2 className="section-title">Decisões · {c.decisions.length}</h2>
-              {!c.decisions.length && <p className="small faint">Responda a um agente e a decisão aparece aqui, com o lugar onde vai ser gravada.</p>}
+              <h2 className="section-title">{t('ui.call.decisions', { n: c.decisions.length })}</h2>
+              {!c.decisions.length && <p className="small faint">{t('ui.call.decisionsEmpty')}</p>}
               {c.decisions.map((d, i) => (
                 <div key={`${d.ref}-${i}`} className="item">
                   <div className="small">{d.text}</div>
@@ -436,11 +450,12 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
             <section className="panel">
               <div className="row spread">
-                <h2 className="section-title">Fila de efeitos · {c.effects.length}</h2>
+                <h2 className="section-title">{t('ui.call.effectsQueue', { n: c.effects.length })}</h2>
+                {/* i18n-ignore-next-line: effect level code */}
                 <span className="badge-e3">E3</span>
               </div>
               {c.effects.map((e, i) => (
-                <div key={`${e.ref}-${i}`} className="row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap', padding: '10px 0', borderTop: '1px solid var(--line-2)' }}>
+                <div key={`${e.ref}-${i}`} className="row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap', padding: '10px 0', borderTop: EFFECT_BORDER }}>
                   <ClockIcon />
                   <div>
                     <div className="small">{e.text}</div>

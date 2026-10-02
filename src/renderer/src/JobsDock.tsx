@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Screen } from './App';
 import { api } from './api';
+import type { ActivityEntry } from '../../shared/activity';
+import { ActivityTimeline } from './AgentActivity';
+import { latestStep } from './activity';
+import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
+import { useActivity, useStrayActivity } from './useActivity';
 import { jobs, useJobsSnapshot } from './useJobs';
 import './jobs.css';
 
@@ -11,7 +16,7 @@ const SHOW_AFTER_MS = 700;
 const TOAST_MS = 10_000;
 const FAB = 52;
 const GAP = 12;
-const AVOID = '.composer, .composer-panel, .outbox-item';
+const AVOID = '.composer, .composer-panel, .outbox-item'; // i18n-ignore: CSS selector
 export const JOBS_OPEN = 'cerimonias:jobs-open';
 
 interface Toast {
@@ -73,15 +78,39 @@ function Icon({ kind }: { kind: 'check' | 'alert' | 'close' }) {
 }
 
 function status(j: Job<Screen>, now: number): string {
-  if (j.status === 'running') return `em andamento · ${formatElapsed(now - j.startedAt)}`;
+  if (j.status === 'running') return t('ui.jobs.status.running', { elapsed: formatElapsed(now - j.startedAt) });
   const took = formatElapsed((j.finishedAt ?? now) - j.startedAt);
   const ago = Math.max(0, Math.floor((now - (j.finishedAt ?? now)) / 60_000));
-  const when = ago < 1 ? 'agora' : `há ${ago} min`;
-  return j.status === 'done' ? `pronto ${when} · levou ${took}` : `falhou ${when} · levou ${took}`;
+  const when = ago < 1 ? t('ui.jobs.status.now') : t('ui.jobs.status.minutesAgo', { minutes: ago });
+  return t(j.status === 'done' ? 'ui.jobs.status.done' : 'ui.jobs.status.failed', { when, took });
+}
+
+// The step a running job is on, under its title; it opens into the whole live timeline.
+function Steps({ entries, name }: { entries: readonly ActivityEntry[]; name: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const step = latestStep(entries);
+  return (
+    <div className="jobs-steps">
+      <button type="button" className="jobs-steps-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <svg className={`act-chevron ${open ? 'act-chevron-open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+        <span className="jobs-steps-now">{step ? step.label : t('activity.waiting')}</span>
+        <span className="sr-only">{open ? t('activity.dock.hide', { name }) : t('activity.dock.show', { name })}</span>
+      </button>
+      {open && <ActivityTimeline entries={entries} />}
+    </div>
+  );
+}
+
+function JobSteps({ job }: { job: Job<Screen> }) {
+  return <Steps entries={useActivity(job.key)} name={job.label} />;
 }
 
 // Floating button with the agent jobs still running or not yet looked at, a panel to jump to them, and the completion notices.
 export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => void }) {
+  const t = useT();
   const snap = useJobsSnapshot();
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now);
@@ -98,9 +127,12 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   // Finished jobs on the screen that is open are picked up by that screen at once; they are not news.
   const clock = Date.now();
   const shown = snap.filter((j) => (j.status === 'running' ? clock - j.startedAt >= SHOW_AFTER_MS : !sameScreen(j.screen as Screen, screen)));
-  const running = shown.filter((j) => j.status === 'running').length;
+  // Agent runs that no job on the list owns (the scheduler's, a call that is not a job) show as one "agent" entry while they last.
+  const stray = useStrayActivity(snap.filter((j) => j.status === 'running').map((j) => j.key));
+  const total = shown.length + (stray.length ? 1 : 0);
+  const running = shown.filter((j) => j.status === 'running').length + (stray.length ? 1 : 0);
   const failed = shown.filter((j) => j.status === 'failed').length;
-  const lift = useFabLift(shown.length > 0);
+  const lift = useFabLift(total > 0);
 
   // A young running job shows up once it has lasted; the clock also ticks while the panel is open.
   const young = snap.filter((j) => j.status === 'running' && clock - j.startedAt < SHOW_AFTER_MS);
@@ -135,7 +167,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     };
     const onPointer = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
-      if (!layer.current?.contains(target) && !target.closest('[aria-label="Execuções"]')) setOpen(false);
+      if (!layer.current?.contains(target) && target.closest('[aria-label]')?.getAttribute('aria-label') !== t('ui.today.jobs')) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointer);
@@ -186,31 +218,47 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     go(target);
   };
 
-  const label = shown.length
-    ? `Tarefas do agente: ${running ? `${running} em andamento` : ''}${running && shown.length > running ? ', ' : ''}${shown.length > running ? `${shown.length - running} para ver` : ''}`
+  const label = total
+    ? t('ui.jobs.fab', {
+        parts: [running ? t('ui.jobs.fab.running', { count: running }) : '', total > running ? t('ui.jobs.fab.toSee', { count: total - running }) : ''].filter(Boolean).join(', '),
+      })
     : '';
 
   return (
-    <div className="jobs-layer" ref={layer} style={{ bottom: `calc(var(--bottom-nav-h, env(safe-area-inset-bottom, 0px)) + 16px + ${lift}px)` }}>
+    <div
+      className="jobs-layer"
+      ref={layer}
+      style={{ bottom: `calc(var(--bottom-nav-h, env(safe-area-inset-bottom, 0px)) + 16px + ${lift}px)` }} // i18n-ignore: CSS calc()
+    >
       <div className="sr-only" role="status" aria-live="polite">{announce}</div>
       <div className="jobs-toasts">
-        {toasts.map((t) => (
-          <div key={t.id} className={`jobs-toast ${t.failed ? 'jobs-toast-fail' : ''}`}>
-            <span className="jobs-toast-text">{t.title} — <button type="button" className="jobs-link" onClick={() => openJob(t.screen)}>abrir</button></span>
-            <button type="button" className="jobs-x" aria-label="Dispensar aviso" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}><Icon kind="close" /></button>
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`jobs-toast ${toast.failed ? 'jobs-toast-fail' : ''}`}>
+            <span className="jobs-toast-text">
+              {tNodes('ui.jobs.toast', { open: <button type="button" className="jobs-link" onClick={() => openJob(toast.screen)}>{t('ui.jobs.open')}</button> }, { title: toast.title })}
+            </span>
+            <button type="button" className="jobs-x" aria-label={t('ui.jobs.dismissNotice')} onClick={() => setToasts((all) => all.filter((x) => x.id !== toast.id))}><Icon kind="close" /></button>
           </div>
         ))}
       </div>
       {open && (
-        <section id="jobs-panel" className="jobs-panel" aria-label="Tarefas do agente" style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 96) }}>
+        <section id="jobs-panel" className="jobs-panel" aria-label={t('ui.jobs.panel')} style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 96) }}>
           <header className="jobs-panel-head">
-            <h2>Tarefas do agente</h2>
+            <h2>{t('ui.jobs.panel')}</h2>
             {shown.some((j) => j.status !== 'running') && (
-              <button type="button" className="jobs-link" onClick={() => jobs.clearFinished()}>Limpar concluídas</button>
+              <button type="button" className="jobs-link" onClick={() => jobs.clearFinished()}>{t('ui.jobs.clearFinished')}</button>
             )}
           </header>
-          {!shown.length && <p className="jobs-empty">Nenhuma execução em andamento nem para ver.</p>}
+          {!total && <p className="jobs-empty">{t('ui.jobs.empty')}</p>}
           <ul>
+            {stray.length > 0 && (
+              <li className="jobs-item jobs-running">
+                <div className="jobs-item-main jobs-item-static">
+                  <span className="jobs-item-label"><span className="spinner" aria-hidden="true" />{t('activity.generic')}</span>
+                </div>
+                <Steps entries={stray} name={t('activity.generic')} />
+              </li>
+            )}
             {shown.map((j) => (
               <li key={j.key} className={`jobs-item jobs-${j.status}`}>
                 <button type="button" className="jobs-item-main" onClick={() => openJob(j.screen)}>
@@ -222,14 +270,15 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
                   {j.status === 'failed' && j.error && <span className="jobs-item-error">{j.error}</span>}
                 </button>
                 {j.status !== 'running' && (
-                  <button type="button" className="jobs-x" aria-label={`Limpar ${j.label}`} onClick={() => jobs.dismiss(j.key)}><Icon kind="close" /></button>
+                  <button type="button" className="jobs-x" aria-label={t('ui.jobs.clear', { label: j.label })} onClick={() => jobs.dismiss(j.key)}><Icon kind="close" /></button>
                 )}
+                {j.status === 'running' && <JobSteps job={j} />}
               </li>
             ))}
           </ul>
         </section>
       )}
-      {shown.length > 0 && (
+      {total > 0 && (
         <button
           ref={fab}
           type="button"
@@ -243,7 +292,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
           }}
         >
           {running ? <span className="spinner" aria-hidden="true" /> : <Icon kind={failed ? 'alert' : 'check'} />}
-          <span className="jobs-badge" aria-hidden="true">{shown.length}</span>
+          <span className="jobs-badge" aria-hidden="true">{total}</span>
         </button>
       )}
     </div>

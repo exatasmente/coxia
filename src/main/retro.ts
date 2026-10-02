@@ -43,7 +43,7 @@ export function latestRetro(): Retro | null {
 // The names of the digest's fields, in the language the agent answers in (the digest is JSON the prompt carries).
 const k = (name: string): string => t(`main.retro.digest.${name}`);
 
-// What happened in the last days, from the files the app and daily-report already keep. No model involved.
+// What happened in the last days, from the files the app and the card source already keep. No model involved.
 function weekDigest(since: Date): Record<string, unknown> {
   const inWeek = (iso: string | number | null | undefined) => !!iso && new Date(iso) >= since;
 

@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { MAX_PROMPT, SESSION_ID, resumeCommand as resume, shellQuote, terminalScript as script } from '../src/shared/claude-command';
 
 // The wrapper and the folder the author's install used; the commands take them from the workspace config.
-const CLI = { command: 'claude-or', cwd: '~/projects' };
+const CLI = { command: 'claude-alt', cwd: '~/projects' };
 const resumeCommand = (id: string, prompt?: string) => resume(id, prompt, CLI);
 const terminalScript = (withPrompt: boolean) => script(withPrompt, CLI);
 
@@ -18,7 +18,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 function argvOf(script: string, args: string[] = []): string[] {
   const stubs = [
     `cd() { :; }`,
-    `claude-or() { printf '%s\\0' "$@"; }`,
+    `claude-alt() { printf '%s\\0' "$@"; }`,
     `rm() { :; }`,
     `exec() { :; }`,
     `bash() { :; }`,
@@ -60,12 +60,12 @@ describe('session id', () => {
 
 describe('resumeCommand (what the user pastes in a terminal)', () => {
   it('resumes without a prompt', () => {
-    expect(resumeCommand(ID)).toBe(`cd ~/projects && claude-or --resume ${ID}`);
-    expect(resumeCommand(ID, '   ')).toBe(`cd ~/projects && claude-or --resume ${ID}`);
+    expect(resumeCommand(ID)).toBe(`cd ~/projects && claude-alt --resume ${ID}`);
+    expect(resumeCommand(ID, '   ')).toBe(`cd ~/projects && claude-alt --resume ${ID}`);
   });
 
   it('passes the prompt after --, as one quoted argument', () => {
-    expect(resumeCommand(ID, 'oi')).toBe(`cd ~/projects && claude-or --resume ${ID} -- 'oi'`);
+    expect(resumeCommand(ID, 'oi')).toBe(`cd ~/projects && claude-alt --resume ${ID} -- 'oi'`);
   });
 
   it.each(PAYLOADS)('delivers %j as a single argument, without running anything', (payload) => {

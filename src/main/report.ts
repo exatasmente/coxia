@@ -33,7 +33,7 @@ export interface ReportStatus {
   inFlight: boolean;
 }
 
-// One `daily-report` run takes ~30 s and hits GitLab: every module reads through here instead of spawning its own.
+// One run of the card source command takes ~30 s and hits GitLab: every module reads through here instead of spawning its own.
 export const REPORT_TTL_MS = 5 * 60_000;
 const TIMEOUT_MS = 150_000;
 // A forced refresh may join a run that started this recently; an older one is waited out and run again.
@@ -105,7 +105,7 @@ export async function readReport(opts: { refresh?: boolean } = {}): Promise<Repo
   return queued;
 }
 
-// A write through `daily-report note` makes the cached manual_note stale.
+// A write through the card source's note command makes the cached manual_note stale.
 export function invalidateReport(): void {
   cache = null;
 }

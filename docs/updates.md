@@ -88,7 +88,7 @@ npx electron-vite build
 npx electron-builder --config <teste.yml> --linux AppImage --publish never -c.directories.output=scratch/e2e/dist-a -c.extraMetadata.version=0.1.0
 npx electron-builder --config <teste.yml> --linux AppImage --publish never -c.directories.output=scratch/e2e/dist-b -c.extraMetadata.version=0.1.1
 
-node scripts/update-e2e.mjs --old scratch/e2e/dist-a/cerimonias-0.1.0.AppImage --new scratch/e2e/dist-b --work scratch/e2e/run-main --scenario main
+node scripts/update-e2e.mjs --old scratch/e2e/dist-a/coxia-0.1.0.AppImage --new scratch/e2e/dist-b --work scratch/e2e/run-main --scenario main
 ```
 
 Cenários: `main` (detecta, baixa de forma diferencial, recusa instalar ocupado, instala, reabre, avisa), `tamper` (sha512 errado: o download falha e nada é instalado), `older` (o feed oferece versão mais velha: nada é oferecido), `beta` (só `beta-linux.yml`), `onquit` (instala ao sair, só se nada estiver rodando) e `source` (precisa de `--commit <commit do build>`: instala por `install-local.sh` a partir de um clone com a `main` dois commits à frente). A janela do app abre na tela durante o teste.
@@ -179,7 +179,7 @@ npx electron-vite build
 npx electron-builder --config <test.yml> --linux AppImage --publish never -c.directories.output=scratch/e2e/dist-a -c.extraMetadata.version=0.1.0
 npx electron-builder --config <test.yml> --linux AppImage --publish never -c.directories.output=scratch/e2e/dist-b -c.extraMetadata.version=0.1.1
 
-node scripts/update-e2e.mjs --old scratch/e2e/dist-a/cerimonias-0.1.0.AppImage --new scratch/e2e/dist-b --work scratch/e2e/run-main --scenario main
+node scripts/update-e2e.mjs --old scratch/e2e/dist-a/coxia-0.1.0.AppImage --new scratch/e2e/dist-b --work scratch/e2e/run-main --scenario main
 ```
 
 Scenarios: `main` (detects, downloads differentially, refuses to install while busy, installs, reopens, announces), `tamper` (wrong sha512: the download fails and nothing is installed), `older` (the feed offers an older version: nothing is offered), `beta` (only `beta-linux.yml`), `onquit` (installs on quit, only when nothing is running) and `source` (needs `--commit <the build's commit>`: installs through `install-local.sh` from a clone whose `main` is two commits ahead). The app window opens on screen during the test.

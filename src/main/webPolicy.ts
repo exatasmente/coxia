@@ -14,7 +14,7 @@ export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autos
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
-// post-release-sync) waits there, so refusing it refuses all of them.
+// the release sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 
 // push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.

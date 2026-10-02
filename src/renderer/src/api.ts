@@ -1,6 +1,12 @@
+import { tagArgs } from '../../shared/activity';
+import { buildApi } from '../../shared/apiChannels';
 import type { Api } from '../../shared/types';
+import { currentJob } from './jobs';
 
-export const api = (window as unknown as { api: Api }).api;
+const bridge = (window as unknown as { api: Api }).api;
+
+// A call made for a job carries its id, so the main process can say which job an agent run belongs to.
+export const api: Api = buildApi((channel, ...args) => bridge.invoke(channel, ...tagArgs(args, currentJob())), bridge.onEvent, { copy: bridge.copy });
 
 export const AGENT_COLORS = ['#0F766E', '#6D28D9', '#C2410C', '#1D4ED8', '#9D174D', '#4D7C0F', '#374151', '#0E7490'];
 

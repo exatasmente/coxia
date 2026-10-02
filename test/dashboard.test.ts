@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
-import { LEGACY_STAGES } from '../src/shared/config/legacy';
+import { TEST_STAGES } from './helpers/config';
 import { builtInTemplate, cycleOf, type CycleTemplate } from '../src/shared/cycles';
 import { setLanguage } from '../src/shared/i18n';
 import type { WatcherAlert } from '../src/shared/watchers';
@@ -152,13 +152,13 @@ describe('sortByUrgency', () => {
     const ready = card('5', { stage: 'Ready To Test' });
     const block = card('6', { blockers: ['x'] });
     const turns = { [ask.ref]: turn(ask.ref, { question: '?' }), [ask2.ref]: turn(ask2.ref, { question: '?' }) };
-    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true }, LEGACY_STAGES);
+    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true }, TEST_STAGES);
     expect(sorted.map((c) => c.iid)).toEqual(['6', '3', '4', '5', '1', '2', '9']);
   });
 
   it('does not mutate the input', () => {
     const input = [card('1'), card('2', { blockers: ['x'] })];
-    sortByUrgency(input, {}, {}, LEGACY_STAGES);
+    sortByUrgency(input, {}, {}, TEST_STAGES);
     expect(input.map((c) => c.iid)).toEqual(['1', '2']);
   });
 });
@@ -196,19 +196,19 @@ describe('small helpers', () => {
 });
 
 describe('MR conflicts', () => {
-  const sz4 = { ref: 'sz4!9302', project: 'sz4/sz4', iid: 9302 };
-  const hub = { ref: 'hub-whatsapp!797', project: 'broker-whatsapp/hub-whatsapp', iid: 797 };
-  const conflicted = card('20', { mrs: [sz4.ref, hub.ref], mrPaths: [sz4, hub], blockers: [`${hub.ref}: MR com conflitos`, 'outro bloqueio'] });
+  const web = { ref: 'web!202', project: 'acme/web', iid: 202 };
+  const hub = { ref: 'gateway!303', project: 'acme/gateway', iid: 303 };
+  const conflicted = card('20', { mrs: [web.ref, hub.ref], mrPaths: [web, hub], blockers: [`${hub.ref}: MR com conflitos`, 'outro bloqueio'] });
 
   it('picks only the MRs the report blocks for conflicts', () => {
     expect(conflictMrs(conflicted)).toEqual([hub]);
-    expect(conflictMrs(card('21', { mrPaths: [sz4], blockers: ['sz4!9302: pipeline falhou'] }))).toEqual([]);
-    expect(conflictMrs(card('22', { mrPaths: [sz4], blockers: ['sz4!9302: MR com conflitos'] }))).toEqual([sz4]);
+    expect(conflictMrs(card('21', { mrPaths: [web], blockers: ['web!202: pipeline falhou'] }))).toEqual([]);
+    expect(conflictMrs(card('22', { mrPaths: [web], blockers: ['web!202: MR com conflitos'] }))).toEqual([web]);
   });
 
   it('marks the blocked row so it can offer to resolve the conflict', () => {
     const [b] = needsYou({ cards: [conflicted], turns: {}, answered: {}, actions: [], alerts: [] });
-    expect(b).toMatchObject({ kind: 'blocked', title: 'hub-whatsapp!797: MR com conflitos', conflictCard: conflicted });
+    expect(b).toMatchObject({ kind: 'blocked', title: 'gateway!303: MR com conflitos', conflictCard: conflicted });
     const [other] = needsYou({ cards: [card('23', { blockers: ['Depende do MR !42'] })], turns: {}, answered: {}, actions: [], alerts: [] });
     expect(other.conflictCard).toBeUndefined();
   });
@@ -239,7 +239,7 @@ describe('the dashboard follows the cycle', () => {
   });
 
   it('gives each cycle its own meaning to a stage, instead of the words of one company', () => {
-    expect(urgencyRank(card('5', { stage: 'Test Fail' }), undefined, false, LEGACY_STAGES)).toBe(2);
+    expect(urgencyRank(card('5', { stage: 'Test Fail' }), undefined, false, TEST_STAGES)).toBe(2);
     expect(urgencyRank(card('5', { stage: 'Changes requested' }), undefined, false, flow)).toBe(2);
     expect(urgencyRank(card('6', { stage: 'Approved' }), undefined, false, flow)).toBe(3);
   });

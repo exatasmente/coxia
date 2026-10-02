@@ -253,28 +253,28 @@ describe('the shared policy, same refusals as the Claude path', () => {
     const denied = [
       'ls -la',
       'cat /etc/passwd',
-      'glab api projects/sz%2Fsz4/issues/1/notes; rm -rf /',
-      'glab api projects/sz%2Fsz4/issues/1/notes && echo hi',
-      'glab api projects/sz%2Fsz4/issues/1/notes | sh',
-      'glab api -X POST projects/sz%2Fsz4/issues/1/notes',
+      'glab api projects/acme%2Fweb/issues/1/notes; rm -rf /',
+      'glab api projects/acme%2Fweb/issues/1/notes && echo hi',
+      'glab api projects/acme%2Fweb/issues/1/notes | sh',
+      'glab api -X POST projects/acme%2Fweb/issues/1/notes',
       'glab mr create',
       'git status',
-      'git -C /home/u/.cache/post-release-sync/sz4.git merge-tree --output=/tmp/x a b',
+      'git -C /home/u/.cache/release-sync/web.git merge-tree --output=/tmp/x a b',
       'curl http://evil.example',
     ];
     for (const command of denied) expect(await pre('Bash', { command }), command).toContain('só lê');
     const allowed = [
-      'glab api projects/sz%2Fsz4/merge_requests/797/discussions',
-      'glab api projects/sz%2Fsz4/issues/15499/notes 2>&1 | head -n 20',
-      'glab mr view 797 -R sz/sz4 --comments',
+      'glab api projects/acme%2Fweb/merge_requests/303/discussions',
+      'glab api projects/acme%2Fweb/issues/101/notes 2>&1 | head -n 20',
+      'glab mr view 303 -R acme/web --comments',
     ];
     for (const command of allowed) expect(await pre('Bash', { command }), command).toBeNull();
   });
 
   it('allows the git mirror reads only when the call opts in', async () => {
-    const git = policyFromHooks(agentHooks([/^git -C \/home\/[\w-]+\/\.cache\/post-release-sync\/[\w./-]+\.git merge-base( [\w./:^~-]+)+$/]), 's');
-    expect(await git.pre('Bash', { command: 'git -C /home/u/.cache/post-release-sync/sz4.git merge-base aaa bbb' }, root)).toBeNull();
-    expect(await policy.pre('Bash', { command: 'git -C /home/u/.cache/post-release-sync/sz4.git merge-base aaa bbb' }, root)).toContain('só lê');
+    const git = policyFromHooks(agentHooks([/^git -C \/home\/[\w-]+\/\.cache\/release-sync\/[\w./-]+\.git merge-base( [\w./:^~-]+)+$/]), 's');
+    expect(await git.pre('Bash', { command: 'git -C /home/u/.cache/release-sync/web.git merge-base aaa bbb' }, root)).toBeNull();
+    expect(await policy.pre('Bash', { command: 'git -C /home/u/.cache/release-sync/web.git merge-base aaa bbb' }, root)).toContain('só lê');
   });
 
   it('redacts secret file names that leak into Grep and Glob results', async () => {

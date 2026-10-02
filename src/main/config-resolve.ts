@@ -87,7 +87,7 @@ export interface ResolvedConfig {
   ceremonies: DevCycleConfig['ceremonies'];
   cardSource: ResolvedCardSource | null;
   releaseSync: ResolvedReleaseSync | null;
-  timeExport: { command: string; format: 'none' | 'clockify-log' } | null;
+  timeExport: { command: string; format: string } | null;
   terminal: TerminalConfig;
   claudeCli: ClaudeCliConfig & { cwd: string };
   transcriptsDir: string;

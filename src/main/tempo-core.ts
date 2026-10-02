@@ -43,7 +43,7 @@ export interface RetroFile {
   createdAt: string;
 }
 
-// mtime is the last time the app wrote the file, which is the last time Luiz touched that ceremony.
+// mtime is the last time the app wrote the file, which is the last time the person touched that ceremony.
 export interface Timed<T> {
   data: T;
   mtime: number;
@@ -59,7 +59,7 @@ function offset(d: Date): string {
   return `${m < 0 ? '-' : '+'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
 
-// Same text as Python's isoformat(timespec="minutes"), which is what clockify-log prints and parses.
+// Same text as Python's isoformat(timespec="minutes"), which time-export tools commonly read.
 export function iso(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -182,7 +182,7 @@ export function blocksOf(spans: Span[], date: string): TempoBlock[] {
     }));
 }
 
-// Clockify refuses overlapping entries, so the day is cut into pieces that never overlap.
+// Time trackers usually refuse overlapping entries, so the day is cut into pieces that never overlap.
 export function entriesOf(blocks: TempoBlock[]): TempoEntry[] {
   const ms = (s: string) => new Date(s).getTime();
   const taken: [number, number][] = [];

@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
+import { intlLocale, useT } from '../i18n';
 import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
 import { returnedFromQa } from '../../../shared/cycles/stages';
 import type { Card } from '../../../shared/types';
@@ -24,10 +25,11 @@ export function needTargetToScreen(t: NeedTarget): Screen {
 }
 
 export function AgoraCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
+  const t = useT();
   return (
     <section className="dash-agora" aria-labelledby="agora-h">
       <div className="row spread" style={{ gap: 8 }}>
-        <h2 id="agora-h" className="dash-agora-label">Agora</h2>
+        <h2 id="agora-h" className="dash-agora-label">{t('ui.today.now')}</h2>
         {plan.progress && (
           <span className="small agora-progress" aria-live="polite">
             {plan.phase === 'loading' && <span className="spinner" aria-hidden="true" />}
@@ -54,17 +56,18 @@ export function AgoraCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: A
 }
 
 export function Tiles({ blocked, asking, actions, onBlocked, onAsking, onActions }: { blocked: number; asking: number; actions: number; onBlocked: () => void; onAsking: () => void; onActions: () => void }) {
+  const t = useT();
   const tile = (n: number, label: string, tone: 'warn' | 'info', onClick: () => void, aria: string) => (
-    <button type="button" className={`tile ${n > 0 ? `tile-${tone}` : ''}`} aria-label={`${n} ${aria}`} onClick={onClick}>
+    <button type="button" className={`tile ${n > 0 ? `tile-${tone}` : ''}`} aria-label={aria} onClick={onClick}>
       <span className="tile-n">{n}</span>
       <span className="tile-l">{label}</span>
     </button>
   );
   return (
-    <div className="tiles" role="group" aria-label="Resumo do dia">
-      {tile(blocked, 'Bloqueios', 'warn', onBlocked, blocked === 1 ? 'bloqueio, ver atividades' : 'bloqueios, ver atividades')}
-      {tile(asking, 'Perguntas', 'info', onAsking, asking === 1 ? 'pergunta sem resposta, ver atividades' : 'perguntas sem resposta, ver atividades')}
-      {tile(actions, 'Ações', 'warn', onActions, actions === 1 ? 'ação aguardando, abrir ações' : 'ações aguardando, abrir ações')}
+    <div className="tiles" role="group" aria-label={t('ui.today.tiles.label')}>
+      {tile(blocked, t('ui.today.tiles.blockers'), 'warn', onBlocked, t('ui.today.tiles.blockersAria', { count: blocked }))}
+      {tile(asking, t('ui.today.tiles.questions'), 'info', onAsking, t('ui.today.tiles.questionsAria', { count: asking }))}
+      {tile(actions, t('ui.today.tiles.actions'), 'warn', onActions, t('ui.today.tiles.actionsAria', { count: actions }))}
     </div>
   );
 }
@@ -72,12 +75,13 @@ export function Tiles({ blocked, asking, actions, onBlocked, onAsking, onActions
 const NEEDS_SHOWN = 5;
 
 export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: Screen) => void; dismiss: (id: string) => void }) {
+  const t = useT();
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, NEEDS_SHOWN);
   return (
     <section className="dash-sec" aria-labelledby="needs-h">
-      <h2 id="needs-h" className="section-title">Precisa de você{items.length ? ` · ${items.length}` : ''}</h2>
-      {!items.length && <p className="dash-calm">Nada esperando por você agora.</p>}
+      <h2 id="needs-h" className="section-title">{items.length ? t('ui.today.needs.titleCount', { count: items.length }) : t('ui.today.needs.title')}</h2>
+      {!items.length && <p className="dash-calm">{t('ui.today.needs.empty')}</p>}
       {items.length > 0 && (
         <ul className="needs">
           {shown.map((n) => {
@@ -93,12 +97,12 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
             return (
               <li key={n.id} className={`need need-${n.tone}`}>
                 {n.to ? (
-                  <button type="button" className="need-main" aria-label={n.cta ? `${n.title}. ${n.cta}` : n.title} onClick={() => go(needTargetToScreen(n.to!))}>{body}</button>
+                  <button type="button" className="need-main" aria-label={n.cta ? t('ui.today.needs.ariaCta', { title: n.title, cta: n.cta }) : n.title} onClick={() => go(needTargetToScreen(n.to!))}>{body}</button>
                 ) : (
                   <div className="need-main">{body}</div>
                 )}
                 {n.alertId && (
-                  <button type="button" className="btn need-dismiss" aria-label={`Dispensar: ${n.title}`} onClick={() => dismiss(n.alertId!)}>Dispensar</button>
+                  <button type="button" className="btn need-dismiss" aria-label={t('ui.today.needs.dismissAria', { title: n.title })} onClick={() => dismiss(n.alertId!)}>{t('ui.today.needs.dismiss')}</button>
                 )}
                 {n.conflictCard && (
                   <div className="need-extra">
@@ -112,7 +116,7 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
       )}
       {items.length > NEEDS_SHOWN && (
         <button type="button" className="btn dash-more" aria-expanded={all} onClick={() => setAll((v) => !v)}>
-          {all ? 'Mostrar menos' : `Ver mais ${items.length - NEEDS_SHOWN}`}
+          {all ? t('ui.today.needs.showLess') : t('ui.today.needs.showMore', { count: items.length - NEEDS_SHOWN })}
         </button>
       )}
     </section>
@@ -120,6 +124,7 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
 }
 
 export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ceremony; go: (s: Screen) => void; open: boolean; onToggle: () => void }) {
+  const t = useT();
   const cycle = useCycle();
   const on = cycle?.ceremonies;
   const turn = c.turns[card.ref];
@@ -135,8 +140,8 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <span className="act-title">{card.title}</span>
           <span className="act-sub">{stageLabel(card)} · {mrLabel(card.mrs.length)}</span>
         </span>
-        {blocked && <span className="badge badge-block">bloqueio</span>}
-        {!blocked && asking && <span className="badge badge-ask">pergunta</span>}
+        {blocked && <span className="badge badge-block">{t('ui.today.row.blocker')}</span>}
+        {!blocked && asking && <span className="badge badge-ask">{t('ui.today.row.question')}</span>}
         <span className={`chev ${open ? 'open' : ''}`}><ChevronIcon /></span>
       </button>
       {open && (
@@ -145,41 +150,41 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             <a className="mono" href={card.url} target="_blank" rel="noreferrer">#{card.iid}</a> {card.title}
           </p>
           <dl className="act-facts">
-            <dt>Estágio</dt>
-            <dd>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ') || 'sem estágio'}</dd>
-            <dt>MRs</dt>
-            <dd>{card.mrs.join(' · ') || 'sem MR'}</dd>
+            <dt>{t('ui.today.row.stage')}</dt>
+            <dd>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ') || t('today.noStage')}</dd>
+            <dt /* i18n-ignore */>MRs</dt>
+            <dd>{card.mrs.join(' · ') || t('ui.today.noMr')}</dd>
             {blocked && (
               <>
-                <dt>Bloqueio</dt>
+                <dt>{t('ui.today.row.blockerLabel')}</dt>
                 <dd>{card.blockers.join(' · ')}</dd>
               </>
             )}
             {turn?.question && (
               <>
-                <dt>Pergunta</dt>
-                <dd>{turn.question}{c.answered[card.ref] ? ' (respondida)' : ''}</dd>
+                <dt>{t('ui.today.row.questionLabel')}</dt>
+                <dd>{c.answered[card.ref] ? t('ui.today.row.questionAnswered', { question: turn.question }) : turn.question}</dd>
               </>
             )}
             {turn?.did && (
               <>
-                <dt>Hoje</dt>
+                <dt>{t('ui.today.row.today')}</dt>
                 <dd>{turn.did}</dd>
               </>
             )}
             {turn?.next && (
               <>
-                <dt>Próximo</dt>
+                <dt>{t('ui.today.row.next')}</dt>
                 <dd>{turn.next}</dd>
               </>
             )}
-            <dt>Agente</dt>
+            <dt>{t('ui.today.row.agent')}</dt>
             <dd>
-              {failed ? <span style={{ color: 'var(--red)' }}>falhou: {failed}</span> : turn ? 'pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
-              {turn && !turn.question && !blocked && <span className="badge badge-quiet" style={{ marginLeft: 8 }}>Só informa</span>}
+              {failed ? <span style={{ color: 'var(--red)' }}>{t('ui.today.row.failed', { error: failed })}</span> : turn ? t('ui.today.row.ready') : <span className="row" style={{ gap: 6 }}><span className="spinner" />{t('ui.today.row.preparing')}</span>}
+              {turn && !turn.question && !blocked && <span className="badge badge-quiet" style={{ marginLeft: 8 }}>{t('ui.today.row.infoOnly')}</span>}
               {turn?.reused && (
-                <span className="badge badge-quiet" style={{ marginLeft: 8 }} title="Falei isto antes e o cartão não mudou.">
-                  Sem mudança desde {new Date(turn.reused.at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                <span className="badge badge-quiet" style={{ marginLeft: 8 }} title={t('ui.today.row.reusedHint')}>
+                  {t('ui.today.row.reusedSince', { date: new Date(turn.reused.at).toLocaleDateString(intlLocale(), { weekday: 'short', day: '2-digit', month: '2-digit' }) })}
                 </span>
               )}
             </dd>
@@ -187,13 +192,13 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <div className="act-actions">
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
-            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>GitLab</button>
-            {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>Retorno do QA</button>}
-            {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>Discussões</button>}
-            {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
-            {card.spec && on?.qaHandoff !== false && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>QA</button>}
+            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })} /* i18n-ignore */>GitLab</button>
+            {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>{t('ui.today.row.qaReturn')}</button>}
+            {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>{t('ui.today.row.discussions')}</button>}
+            {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}
+            {card.spec && on?.qaHandoff !== false && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })} /* i18n-ignore */>QA</button>}
             <ResolveConflict card={card} go={go} place="act" />
-            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
+            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>{t('ui.today.deepen')}</button>
           </div>
         </div>
       )}

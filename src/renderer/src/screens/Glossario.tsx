@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { errorText } from '../api';
 import { clearSpeechCache } from '../audio';
 import { glossaryApi } from '../glossaryApi';
+import { tNodes, useT } from '../i18n';
 import { BackIcon } from './icons';
 
 interface Row {
@@ -23,12 +24,13 @@ const toTerms = (rows: Row[]): Term[] =>
     .map(({ sayKokoro, ...t }) => (sayKokoro ? { ...t, sayKokoro } : t));
 
 export function Glossario({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [saved, setSaved] = useState<string>('');
   const [defaults, setDefaults] = useState<Term[]>([]);
   const [filter, setFilter] = useState('');
-  const [sample, setSample] = useState('O sz4!9302 está aprovado e o QA libera o merge no hub-whatsapp.');
-  const [heardSample, setHeardSample] = useState('o Q&A liberou o merdi no hub WhatsApp');
+  const [sample, setSample] = useState(() => t('ui.glossary.sample.spoken'));
+  const [heardSample, setHeardSample] = useState(() => t('ui.glossary.sample.heard'));
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
       setRows(toRows(next));
       setSaved(JSON.stringify(next));
       clearSpeechCache();
-      setNotice(`Dicionário salvo: ${next.length} termos. Vale para a próxima fala e a próxima gravação.`);
+      setNotice(t('ui.glossary.saved', { count: next.length }));
     } catch (e) {
       setError(errorText(e));
     }
@@ -88,48 +90,50 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label="Voltar para Configurações" onClick={() => go({ name: 'settings' })}><BackIcon /></button>
-            <h1 style={{ fontSize: 26, fontWeight: 700 }}>Dicionário de termos</h1>
-            {rows && <span className="faint">{terms.length} termos</span>}
+            <button type="button" className="btn icon-btn" aria-label={t('ui.glossary.back')} onClick={() => go({ name: 'settings' })}><BackIcon /></button>
+            <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.glossary.title')}</h1>
+            {rows && <span className="faint">{t('ui.glossary.count', { count: terms.length })}</span>}
           </div>
           <div className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn" disabled={!dirty || busy !== null} onClick={() => setRows(toRows(JSON.parse(saved) as Term[]))}>Descartar</button>
+            <button type="button" className="btn" disabled={!dirty || busy !== null} onClick={() => setRows(toRows(JSON.parse(saved) as Term[]))}>{t('ui.glossary.discard')}</button>
             <button type="button" className="btn btn-accent" disabled={!dirty || busy !== null} onClick={() => void save()}>
-              {busy === 'save' ? <span className="spinner" /> : null} Salvar
+              {busy === 'save' ? <span className="spinner" /> : null} {t('ui.glossary.save')}
             </button>
           </div>
         </header>
 
         <p className="muted" style={{ margin: 0 }}>
-          Cada termo vale para os dois lados da voz. <strong>Como falar</strong> é o que a voz pronuncia no lugar do termo; vazio, ela lê como está escrito. <strong>Kokoro</strong> é a pronúncia só para essa voz, que lê palavras em inglês pior que a Edge; vazio, ela usa o <strong>Como falar</strong>.{' '}
-          <strong>Como o reconhecimento ouve</strong> são as grafias erradas que a transcrição costuma produzir, separadas por vírgula: viram o termo. Os termos também
-          entram como dica de vocabulário para o reconhecimento. Na tela tudo continua escrito do jeito certo.
+          {tNodes('ui.glossary.intro', {
+            say: <strong>{t('ui.glossary.col.say')}</strong>,
+            kokoro: <strong>{t('ui.glossary.col.kokoro')}</strong>,
+            heard: <strong>{t('ui.glossary.col.heard')}</strong>,
+          })}
         </p>
 
         {error && <div className="error">{error}</div>}
         {notice && !dirty && <div className="small" role="status" style={{ color: 'var(--teal)' }}>{notice}</div>}
 
         <section className="panel" style={{ padding: 20, gap: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600 }}>Testar</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.glossary.test.title')}</h2>
           <div className="glossary-test">
-            <label htmlFor="g-sample" className="small" style={{ fontWeight: 600 }}>Frase falada</label>
+            <label htmlFor="g-sample" className="small" style={{ fontWeight: 600 }}>{t('ui.glossary.test.spoken')}</label>
             <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
               <input id="g-sample" className="text-input" style={{ flex: '1 1 auto', minWidth: 0 }} value={sample} onChange={(e) => setSample(e.target.value)} />
               <button type="button" className="btn" disabled={busy !== null} onClick={() => void hear(sample, 'sample')}>
-                {busy === 'sample' ? <span className="spinner" /> : null} Ouvir
+                {busy === 'sample' ? <span className="spinner" /> : null} {t('ui.glossary.listen')}
               </button>
             </div>
-            <span className="small muted">Edge lê: <span className="mono">{spoken(sample, terms, 'edge')}</span></span>
-            <span className="small muted">Kokoro lê: <span className="mono">{spoken(sample, terms, 'kokoro')}</span></span>
-            <label htmlFor="g-heard" className="small" style={{ fontWeight: 600, marginTop: 6 }}>Transcrição recebida</label>
+            <span className="small muted">{t('ui.glossary.test.edge')} <span className="mono">{spoken(sample, terms, 'edge')}</span></span>
+            <span className="small muted">{t('ui.glossary.test.kokoro')} <span className="mono">{spoken(sample, terms, 'kokoro')}</span></span>
+            <label htmlFor="g-heard" className="small" style={{ fontWeight: 600, marginTop: 6 }}>{t('ui.glossary.test.heard')}</label>
             <input id="g-heard" className="text-input" value={heardSample} onChange={(e) => setHeardSample(e.target.value)} />
-            <span className="small muted">Fica: <span className="mono">{corrected(heardSample, terms)}</span></span>
+            <span className="small muted">{t('ui.glossary.test.result')} <span className="mono">{corrected(heardSample, terms)}</span></span>
           </div>
         </section>
 
         <section className="panel" style={{ padding: 20, gap: 12 }}>
           <div className="row spread" style={{ gap: 8 }}>
-            <input className="text-input" aria-label="Filtrar termos" placeholder="Filtrar" style={{ flex: '1 1 200px', minWidth: 0 }} value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <input className="text-input" aria-label={t('ui.glossary.filter.aria')} placeholder={t('ui.glossary.filter.placeholder')} style={{ flex: '1 1 200px', minWidth: 0 }} value={filter} onChange={(e) => setFilter(e.target.value)} />
             <div className="row" style={{ gap: 8 }}>
               <button
                 type="button"
@@ -139,48 +143,48 @@ export function Glossario({ go }: { go: (s: Screen) => void }) {
                   setRows((rs) => [{ key: nextKey++, term: '', say: '', sayKokoro: '', heard: '' }, ...(rs ?? [])]);
                 }}
               >
-                Adicionar termo
+                {t('ui.glossary.add')}
               </button>
-              <button type="button" className="btn" disabled={busy !== null} onClick={() => setRows(toRows(defaults))}>Restaurar padrões</button>
+              <button type="button" className="btn" disabled={busy !== null} onClick={() => setRows(toRows(defaults))}>{t('ui.glossary.restore')}</button>
             </div>
           </div>
-          {!rows && <div className="row faint"><span className="spinner" /> Lendo…</div>}
+          {!rows && <div className="row faint"><span className="spinner" /> {t('ui.glossary.reading')}</div>}
           {rows && (
-            <div className="glossary" role="table" aria-label="Termos">
+            <div className="glossary" role="table" aria-label={t('ui.glossary.table.aria')}>
               <div className="glossary-row glossary-head small muted" role="row">
-                <span role="columnheader">Termo</span>
-                <span role="columnheader">Como falar</span>
-                <span role="columnheader">Kokoro</span>
-                <span role="columnheader">Como o reconhecimento ouve</span>
-                <span role="columnheader"><span className="sr-only">Ações</span></span>
+                <span role="columnheader">{t('ui.glossary.col.term')}</span>
+                <span role="columnheader">{t('ui.glossary.col.say')}</span>
+                <span role="columnheader">{t('ui.glossary.col.kokoro')}</span>
+                <span role="columnheader">{t('ui.glossary.col.heard')}</span>
+                <span role="columnheader"><span className="sr-only">{t('ui.glossary.col.actions')}</span></span>
               </div>
               {shown.map((r) => (
                 <div key={r.key} className="glossary-row" role="row">
                   <label className="glossary-cell">
-                    <span className="glossary-cap small muted">Termo</span>
-                    <input className="text-input" aria-label="Termo" value={r.term} placeholder="termo" onChange={(e) => edit(r.key, 'term', e.target.value)} />
+                    <span className="glossary-cap small muted">{t('ui.glossary.col.term')}</span>
+                    <input className="text-input" aria-label={t('ui.glossary.col.term')} value={r.term} placeholder={t('ui.glossary.placeholder.term')} onChange={(e) => edit(r.key, 'term', e.target.value)} />
                   </label>
                   <label className="glossary-cell">
-                    <span className="glossary-cap small muted">Como falar</span>
-                    <input className="text-input" aria-label={`Como falar ${r.term}`} value={r.say} placeholder="como está escrito" onChange={(e) => edit(r.key, 'say', e.target.value)} />
+                    <span className="glossary-cap small muted">{t('ui.glossary.col.say')}</span>
+                    <input className="text-input" aria-label={t('ui.glossary.say.aria', { term: r.term })} value={r.say} placeholder={t('ui.glossary.placeholder.say')} onChange={(e) => edit(r.key, 'say', e.target.value)} />
                   </label>
                   <label className="glossary-cell">
-                    <span className="glossary-cap small muted">Como falar no Kokoro</span>
-                    <input className="text-input" aria-label={`Como falar ${r.term} no Kokoro`} value={r.sayKokoro} placeholder="igual ao anterior" onChange={(e) => edit(r.key, 'sayKokoro', e.target.value)} />
+                    <span className="glossary-cap small muted">{t('ui.glossary.cap.kokoro')}</span>
+                    <input className="text-input" aria-label={t('ui.glossary.kokoro.aria', { term: r.term })} value={r.sayKokoro} placeholder={t('ui.glossary.placeholder.kokoro')} onChange={(e) => edit(r.key, 'sayKokoro', e.target.value)} />
                   </label>
                   <label className="glossary-cell">
-                    <span className="glossary-cap small muted">Como o reconhecimento ouve</span>
-                    <input className="text-input" aria-label={`Como o reconhecimento ouve ${r.term}`} value={r.heard} placeholder="grafias erradas, por vírgula" onChange={(e) => edit(r.key, 'heard', e.target.value)} />
+                    <span className="glossary-cap small muted">{t('ui.glossary.col.heard')}</span>
+                    <input className="text-input" aria-label={t('ui.glossary.heard.aria', { term: r.term })} value={r.heard} placeholder={t('ui.glossary.placeholder.heard')} onChange={(e) => edit(r.key, 'heard', e.target.value)} />
                   </label>
                   <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                    <button type="button" className="btn" disabled={busy !== null || !r.term.trim()} title="Ouvir a pronúncia" onClick={() => void hear(r.term, `row-${r.key}`)}>
-                      {busy === `row-${r.key}` ? <span className="spinner" /> : null} Ouvir
+                    <button type="button" className="btn" disabled={busy !== null || !r.term.trim()} title={t('ui.glossary.listen.title')} onClick={() => void hear(r.term, `row-${r.key}`)}>
+                      {busy === `row-${r.key}` ? <span className="spinner" /> : null} {t('ui.glossary.listen')}
                     </button>
-                    <button type="button" className="btn" aria-label={`Remover ${r.term || 'termo'}`} onClick={() => setRows((rs) => (rs ?? []).filter((x) => x.key !== r.key))}>×</button>
+                    <button type="button" className="btn" aria-label={t('ui.glossary.remove', { term: r.term || t('ui.glossary.placeholder.term') })} onClick={() => setRows((rs) => (rs ?? []).filter((x) => x.key !== r.key))}>×</button>
                   </div>
                 </div>
               ))}
-              {shown.length === 0 && <span className="faint small">Nenhum termo com esse filtro.</span>}
+              {shown.length === 0 && <span className="faint small">{t('ui.glossary.empty')}</span>}
             </div>
           )}
         </section>

@@ -303,7 +303,7 @@ async function qaNote(issue: number): Promise<{ id: number; body: string } | nul
   return note ? { id: Number(note.id), body: note.body } : null;
 }
 
-// After a sync, the QA comment is a separate action: authorization does not carry over (post-release-sync skill).
+// After a sync, the QA comment is a separate action: authorization does not carry over (the release tool's own rule).
 async function proposeQaComment(sync: ReleaseAction): Promise<void> {
   // An issue still in code review has nothing to retest yet.
   if (isStageKind(cycle(), sync.stage, ['review'])) return;
@@ -364,7 +364,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = await audited(a, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, (meta) => runVcs(c, meta));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'sync', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(a, { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
       const body = a.proposedBody;
       const [cmd] = await vcsProvider().planWrite({ op: 'editIssueNote', project: issueProjectKey(), iid: a.issue, noteId: a.noteId, body });
@@ -374,7 +374,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       });
     } else {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'publish', target: `post-release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(a, { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
@@ -482,7 +482,9 @@ async function withStep<T>(id: string, label: string, fn: () => Promise<T>): Pro
 }
 
 function projectOf(u: Partial<Unit>): string {
-  return u.project_path ?? (u.repo ?? '').replace(/^.*\/post-release-sync\//, '').replace(/\.git$/, '');
+  const mirrors = rc().releaseSync?.mirrorsDir?.replace(/\/+$/, '');
+  const repo = u.repo ?? '';
+  return u.project_path ?? (mirrors && repo.startsWith(`${mirrors}/`) ? repo.slice(mirrors.length + 1) : repo).replace(/\.git$/, '');
 }
 
 const OPEN_STATES = new Set(['pending', 'running', 'failed']);
@@ -669,7 +671,7 @@ async function writeAndVerify(id: string, skipTests: boolean): Promise<ReleaseAc
 export async function conflictApply(id: string, options: { skipTests: boolean }): Promise<ReleaseAction> {
   const done = await withStep(id, t('main.actions.stepApplying'), () => writeAndVerify(id, options.skipTests === true));
   const v = done.resolve?.verify;
-  // A failing run is the user's call (hub-whatsapp has failures on main): the commit waits for conflictCommit.
+  // A failing run is the user's call (a repository can have failures on main): the commit waits for conflictCommit.
   if (v && (v.skipped || v.exitCode === 0)) return conflictCommit(id);
   return done;
 }

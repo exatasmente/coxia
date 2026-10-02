@@ -3,6 +3,7 @@ import type { ErrorsSummary } from '../../../shared/errorlog';
 import type { SaudeSnapshot } from '../../../shared/saude';
 import type { Screen } from '../App';
 import { errorsApi } from '../errorsApi';
+import { t, useT } from '../i18n';
 import { saudeApi } from '../saudeApi';
 
 export interface SaudeBadge {
@@ -30,22 +31,23 @@ export function useSaudeBadge(): SaudeBadge {
 
 export function badgeTitle(b: SaudeBadge): string {
   const parts = [];
-  if (b.problems) parts.push(`${b.problems} problema(s) nas tarefas ou dependências`);
-  if (b.errors) parts.push(`${b.errors} erro(s) novo(s) nas últimas 24 h`);
+  if (b.problems) parts.push(t('ui.health.badge.problems', { count: b.problems }));
+  if (b.errors) parts.push(t('ui.health.badge.errors', { count: b.errors }));
   return parts.join('; ');
 }
 
 export function SaudeButton({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
   const badge = useSaudeBadge();
   return (
     <button
       type="button"
       className={`btn ${badge.total ? 'btn-amber' : ''}`}
       style={{ minHeight: 34 }}
-      title={badge.total ? badgeTitle(badge) : 'Erros, tarefas e dependências do app'}
+      title={badge.total ? badgeTitle(badge) : t('ui.health.button.title')}
       onClick={() => go({ name: 'saude' })}
     >
-      Saúde{badge.total ? ` · ${badge.total}` : ''}
+      {badge.total ? t('ui.nav.healthCount', { count: badge.total }) : t('ui.nav.health')}
     </button>
   );
 }

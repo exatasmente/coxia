@@ -7,7 +7,7 @@
 #   --author         identity of the commit and the tag; also read from RELEASE_AUTHOR. Passed to git with -c: git config is never written
 #   -m, --message    commit message (default "feat: release <version>"; the repository style is feat:/fix:, English, lowercase, no period)
 #   --date <date>    date written in the changelog heading (default: today, YYYY-MM-DD)
-#   --skip-checks    do not run tsc, tests, theme audit, i18n lint and the build
+#   --skip-checks    do not run tsc, tests, theme audit, i18n lint and the build (the public audit always runs)
 #   --allow-branch   allow releasing from a branch other than main
 #   --dry-run        validate and print the plan; change nothing
 #
@@ -74,6 +74,9 @@ fi
 echo "release: $TAG from $BRANCH ($(git rev-parse --short HEAD)); package.json is $CURRENT"
 echo "release: commit and tag as $NAME <$EMAIL>; message: $MESSAGE"
 if [[ "$VERSION" == *-* ]]; then echo "release: pre-release: published on the beta update channel"; fi
+# The public audit is a safety gate, not a check: it runs even with --skip-checks and in a dry run.
+node scripts/public-audit.mjs || die "the public audit failed: nothing of a company or a person may reach a release"
+
 if [ "$DRY" -eq 1 ]; then
   [ "$CURRENT" = "$VERSION" ] || echo "release: would bump package.json to $VERSION"
   [ "$HAS_SECTION" -eq 1 ] || echo "release: would move [Unreleased] under [$VERSION] - $DATE"

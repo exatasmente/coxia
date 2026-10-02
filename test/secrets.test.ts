@@ -48,7 +48,7 @@ beforeEach(() => {
   env = {};
   ran = [];
   commandOutput = 'cmd-secret-value\n';
-  executables = new Set(['/home/ana/.local/bin/openrouter-key']);
+  executables = new Set(['/home/ana/.local/bin/llm-key']);
 });
 
 const VALUE = 'sk-this-is-a-test-value';
@@ -117,19 +117,19 @@ describe('without a keychain', () => {
     const s = store(keychain(false));
     env.MY_KEY = 'from-env';
     s.set({ ref: 'e', source: 'env', name: 'MY_KEY' });
-    s.set({ ref: 'c', source: 'command', command: '~/.local/bin/openrouter-key' });
+    s.set({ ref: 'c', source: 'command', command: '~/.local/bin/llm-key' });
     expect(s.resolve('e')).toBe('from-env');
     expect(s.resolve('c')).toBe('cmd-secret-value');
   });
 });
 
-describe('command source (the author\'s openrouter-key script keeps working)', () => {
+describe('command source (the author\'s llm-key script keeps working)', () => {
   it('runs the expanded executable without a shell, trims the output and keeps it for the life of the process', () => {
     const s = store();
-    s.set({ ref: 'llm.openrouter', source: 'command', command: '~/.local/bin/openrouter-key', args: ['--print'] });
+    s.set({ ref: 'llm.openrouter', source: 'command', command: '~/.local/bin/llm-key', args: ['--print'] });
     expect(s.resolve('llm.openrouter')).toBe('cmd-secret-value');
     expect(s.resolve('llm.openrouter')).toBe('cmd-secret-value');
-    expect(ran).toEqual([{ command: '/home/ana/.local/bin/openrouter-key', args: ['--print'] }]);
+    expect(ran).toEqual([{ command: '/home/ana/.local/bin/llm-key', args: ['--print'] }]);
     s.forget('llm.openrouter');
     s.resolve('llm.openrouter');
     expect(ran).toHaveLength(2);
@@ -137,15 +137,15 @@ describe('command source (the author\'s openrouter-key script keeps working)', (
 
   it('shows the command, never its output', () => {
     const s = store();
-    s.set({ ref: 'llm.openrouter', source: 'command', command: '~/.local/bin/openrouter-key' });
+    s.set({ ref: 'llm.openrouter', source: 'command', command: '~/.local/bin/llm-key' });
     s.resolve('llm.openrouter');
-    expect(s.list()[0]).toMatchObject({ source: 'command', detail: '~/.local/bin/openrouter-key', available: true });
+    expect(s.list()[0]).toMatchObject({ source: 'command', detail: '~/.local/bin/llm-key', available: true });
     expect(readFileSync(join(root, SECRETS_FILE), 'utf8')).not.toContain('cmd-secret-value');
   });
 
   it('turns a failing or empty command into a clear error without leaking anything', () => {
     const s = store();
-    s.set({ ref: 'c', source: 'command', command: '~/.local/bin/openrouter-key' });
+    s.set({ ref: 'c', source: 'command', command: '~/.local/bin/llm-key' });
     commandOutput = Object.assign(new Error('Command failed: token=abc123'), { status: 2 });
     expect(() => s.resolve('c')).toThrow(/failed \(2\)/);
     expect(() => s.resolve('c')).not.toThrow(/abc123/);

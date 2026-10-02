@@ -5,14 +5,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installLegacyConfig } from './config';
 import { calls, installFakeEngine, runScenario, type Scenario } from './promptCapture';
 
-// The legacy parity run: the ceremonies of the migrated install against a fake engine, compared with a golden file that was captured from
-// the code as it was before the prompts moved into the cycle templates (see docs/cycles.md). The same run, with voice off, has its own golden.
-
-// The one place the new prompt differs from the original on purpose: the release comment prompt printed the text "${qaMention()}" because the
-// template was written in single quotes. It now says the QA mention it meant to say.
-const INTENDED: Record<string, (text: string) => string> = {
-  'release-comment': (text) => text.replace('${qaMention()}', '@qa.interno'),
-};
+// The parity run: the ceremonies of an install migrated from the example legacy profile (fictional org "acme") against a fake engine, compared
+// with a golden snapshot (see docs/cycles.md). The snapshot was first captured from the code as it was before the prompts moved into the cycle
+// templates, and carried over to the fictional fixtures by renaming; the same run with voice off has its own snapshot.
+// Regenerate with UPDATE_GOLDEN=1 after a deliberate change of a prompt, and review the diff.
 
 export function parity(title: string, goldenName: string, options: { voice: boolean; setup?: () => Promise<void>; registro?: string }): void {
   const golden = join(import.meta.dirname, '..', 'golden', goldenName);
@@ -28,10 +24,10 @@ export function parity(title: string, goldenName: string, options: { voice: bool
       await options.setup();
     } else {
       await installLegacyConfig();
-      // The migrated profile points at the author's daily-report files; the test uses its own so nothing real is read.
+      // The example profile points at card tool files in the home folder; the test uses its own so nothing real is read.
       const dir = mkdtempSync(join(tmpdir(), 'cycle-parity-'));
       const history = join(dir, 'history.jsonl');
-      writeFileSync(history, `${JSON.stringify({ at: '2026-09-30T10:00:00Z', ref: 'sz4#15499', type: 'change', field: 'stage', from: 'Doing', to: 'Test Fail' })}\n`);
+      writeFileSync(history, `${JSON.stringify({ at: '2026-09-30T10:00:00Z', ref: 'web#101', type: 'change', field: 'stage', from: 'Doing', to: 'Test Fail' })}\n`);
       const { updateConfig } = await import('../../src/main/workspaceConfig');
       updateConfig((c) => {
         c.externalTools.cardSource.historyFile = history;
@@ -46,7 +42,7 @@ export function parity(title: string, goldenName: string, options: { voice: bool
   });
 
   describe(title, () => {
-    it('matches the golden captured from the original code', () => {
+    it('matches the golden snapshot', () => {
       if (process.env.UPDATE_GOLDEN === '1' || !existsSync(golden)) {
         mkdirSync(join(import.meta.dirname, '..', 'golden'), { recursive: true });
         writeFileSync(golden, `${JSON.stringify(scenario, null, 1)}\n`);
@@ -54,8 +50,7 @@ export function parity(title: string, goldenName: string, options: { voice: bool
       const want = JSON.parse(readFileSync(golden, 'utf8')) as Scenario;
       expect(Object.keys(scenario.prompts)).toEqual(Object.keys(want.prompts));
       for (const [name, expected] of Object.entries(want.prompts)) {
-        const fix = INTENDED[name];
-        expect(scenario.prompts[name], name).toEqual(fix ? { ...expected, prompt: fix(expected.prompt) } : expected);
+        expect(scenario.prompts[name], name).toEqual(expected);
       }
       expect(scenario.files).toEqual(want.files);
     });

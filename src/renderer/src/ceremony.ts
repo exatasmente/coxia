@@ -15,6 +15,7 @@ import type {
 import { buildMinutes } from '../../shared/minutes';
 import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
+import { withJob } from './jobs';
 
 export type { LogLine };
 
@@ -163,7 +164,7 @@ export function useCeremony() {
   const getTurn = useCallback((card: Card): Promise<AgentTurn> => {
     const known = pending.current.get(card.ref);
     if (known) return known;
-    const p = api.prepareTurn(card).then(
+    const p = withJob(`prep:${card.ref}`, () => api.prepareTurn(card)).then(
       (turn) => {
         setTurns((t) => ({ ...t, [card.ref]: turn }));
         return turn;

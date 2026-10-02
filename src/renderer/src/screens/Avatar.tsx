@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { speechBands, speechProgress } from '../audio';
+import { useT } from '../i18n';
 
 export type Mood = 'talking' | 'listening' | 'thinking' | 'idle';
 
@@ -63,6 +64,7 @@ function frameBars(opts: {
 }
 
 export function SpectrumAvatar({ mood, color, small = false, level }: { mood: Mood; color: string; small?: boolean; level?: number }) {
+  const t = useT();
   const n = small ? 28 : 40;
   const H = small ? 36 : 56;
   const center = Math.floor(n / 2);
@@ -160,7 +162,9 @@ export function SpectrumAvatar({ mood, color, small = false, level }: { mood: Mo
     attentive,
     blink,
   });
-  const label = mood === 'talking' ? 'Agente falando' : mood === 'listening' ? 'Ouvindo você' : mood === 'thinking' ? 'Agente pensando' : 'Aguardando';
+  const label = t(mood === 'talking' ? 'ui.avatar.talking' : mood === 'listening' ? 'ui.avatar.listening' : mood === 'thinking' ? 'ui.avatar.thinking' : 'ui.avatar.idle');
+
+  const eyeColor = `color-mix(in srgb, ${color} 35%, var(--on-night))`; // i18n-ignore: CSS value
 
   return (
     <span className={`spectrum ${small ? 'spectrum-small' : ''}`} style={{ height: H }} role="img" aria-label={label}>
@@ -168,7 +172,7 @@ export function SpectrumAvatar({ mood, color, small = false, level }: { mood: Mo
         <span
           key={i}
           className={b.eye ? 'spectrum-eye' : undefined}
-          style={{ height: Math.max(2, b.h), transform: `translateY(${b.dy}px)`, opacity: b.o, background: b.eye ? `color-mix(in srgb, ${color} 35%, var(--on-night))` : color }}
+          style={{ height: Math.max(2, b.h), transform: `translateY(${b.dy}px)`, opacity: b.o, background: b.eye ? eyeColor : color }}
         />
       ))}
     </span>
@@ -183,11 +187,12 @@ export function Presence({
   recording = false,
   thinking = false,
 }: { on: boolean; color: string; small?: boolean; level?: number; recording?: boolean; thinking?: boolean }) {
+  const t = useT();
   const mood: Mood = recording ? 'listening' : thinking ? 'thinking' : on ? 'talking' : 'idle';
   return (
     <span className="presence" style={{ flex: small ? '0 1 200px' : '1 1 auto' }}>
       <SpectrumAvatar mood={mood} color={color} small={small} level={level} />
-      {!small && mood === 'thinking' && <span className="small presence-caption">pensando…</span>}
+      {!small && mood === 'thinking' && <span className="small presence-caption">{t('ui.avatar.thinkingCaption')}</span>}
     </span>
   );
 }

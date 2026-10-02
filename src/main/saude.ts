@@ -22,11 +22,11 @@ const DEPS_EVERY_MIN = 30;
 const STREAK_ALERT = 3;
 
 const TASK_LABELS = ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps'];
-const DEP_IDS: DepId[] = ['glab', 'openrouter-key', 'daily-report', 'voice', 'model'];
+const DEP_IDS: DepId[] = ['vcs', 'llm-key', 'card-source', 'voice', 'model'];
 
 // Labels follow the language of the moment, so they are looked up when shown and never stored.
 const taskLabel = (name: string): string => (TASK_LABELS.includes(name) ? t(`main.saude.task.${name}`) : name);
-const depLabel = (id: DepId): string => (id === 'daily-report' ? id : t(`main.saude.dep.${id}`));
+const depLabel = (id: DepId): string => t(`main.saude.dep.${id}`);
 
 interface Stored {
   tasks: Record<string, TaskHealth>;
@@ -131,7 +131,7 @@ export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
 
 type Result = { ok: boolean; message: string };
 
-async function glabCheck(): Promise<Result> {
+async function vcsCheck(): Promise<Result> {
   const vcs = rc().primaryVcs;
   if (!vcs) return { ok: true, message: t('main.saude.noVcs') };
   const cli = vcsCliFor();
@@ -218,9 +218,9 @@ async function modelCheck(): Promise<Result> {
 }
 
 const CHECKS: { id: DepId; run: () => Promise<Result>; costly?: boolean }[] = [
-  { id: 'glab', run: glabCheck },
-  { id: 'openrouter-key', run: keyCheck },
-  { id: 'daily-report', run: reportCheck },
+  { id: 'vcs', run: vcsCheck },
+  { id: 'llm-key', run: keyCheck },
+  { id: 'card-source', run: reportCheck },
   { id: 'voice', run: voiceCheck },
   { id: 'model', run: modelCheck, costly: true },
 ];

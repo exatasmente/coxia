@@ -20,10 +20,13 @@ import {
   secretInputFrom,
 } from '../../../../shared/wizard';
 import { errorText } from '../../api';
-import { useT } from '../../i18n';
+import { intlLocale, useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
 import { Chip, ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../ui';
 import { wizardApi } from '../wizardApi';
+
+const REGION_PLACEHOLDER = 'us-east-1'; // i18n-ignore: cloud region name
+const VERTEX_REGION_PLACEHOLDER = 'global'; // i18n-ignore: cloud region name
 
 const blankDraft = (kind: ProviderKind = 'anthropic'): ProviderDraft => ({ kind, preset: 'openai', baseUrl: kind === 'openai-compatible' ? presetById('openai').baseUrl : '', options: {}, model: '' });
 
@@ -48,7 +51,7 @@ function TestResultView({ p, state }: { p: LlmProvider; state: TestState }) {
           <Chip ok={r.capabilities.tools}>{t('wizard.cap.tools')}</Chip>
           <Chip ok={r.capabilities.jsonSchema}>{t('wizard.cap.jsonSchema')}</Chip>
           <Chip ok={r.capabilities.streaming}>{t('wizard.cap.streaming')}</Chip>
-          <Chip ok={null}>{r.capabilities.contextWindow ? t('wizard.cap.context', { tokens: r.capabilities.contextWindow.toLocaleString() }) : t('wizard.cap.contextUnknown')}</Chip>
+          <Chip ok={null}>{r.capabilities.contextWindow ? t('wizard.cap.context', { tokens: r.capabilities.contextWindow.toLocaleString(intlLocale()) }) : t('wizard.cap.contextUnknown')}</Chip>
         </div>
       )}
       {warnings.filter((w) => w !== 'untested').map((w) => <Notice key={w} tone="warn">{t(`wizard.warn.${w}`)}</Notice>)}
@@ -295,7 +298,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
             {draft.kind === 'bedrock' && (
               <>
                 <Field label={t('wizard.models.region')} htmlFor="wz-region" hint={t('wizard.models.bedrockRegionHint')}>
-                  <input id="wz-region" className="text-input mono" placeholder="us-east-1" spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
+                  <input id="wz-region" className="text-input mono" placeholder={REGION_PLACEHOLDER} spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
                 </Field>
                 <Field label={t('wizard.models.awsProfile')} htmlFor="wz-profile" hint={t('wizard.models.awsProfileHint')}>
                   <input id="wz-profile" className="text-input mono" spellCheck={false} value={draft.options.profile ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, profile: e.target.value } }))} />
@@ -309,7 +312,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
                   <input id="wz-gcp" className="text-input mono" spellCheck={false} value={draft.options.project ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, project: e.target.value } }))} />
                 </Field>
                 <Field label={t('wizard.models.region')} htmlFor="wz-vregion" hint={t('wizard.models.vertexRegionHint')}>
-                  <input id="wz-vregion" className="text-input mono" placeholder="global" spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
+                  <input id="wz-vregion" className="text-input mono" placeholder={VERTEX_REGION_PLACEHOLDER} spellCheck={false} value={draft.options.region ?? ''} onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, region: e.target.value } }))} />
                 </Field>
                 <Notice tone="info">{t('wizard.models.vertexCreds')} <ExternalLink href={DOC_LINKS.vertex}>{t('wizard.docs')}</ExternalLink></Notice>
               </>

@@ -22,7 +22,7 @@ describe('ownedDescendants', () => {
     { pid: 101, ppid: 100, cmd: '/tmp/.mount_x/cerimonias --type=zygote' },
     { pid: 102, ppid: 101, cmd: '/tmp/.mount_x/cerimonias --type=renderer' },
     { pid: 103, ppid: 100, cmd: '/tmp/.mount_x/cerimonias --type=gpu-process --ozone-platform=x11' },
-    { pid: 110, ppid: 100, cmd: 'python3 /home/u/.local/bin/daily-report report --format json --dry-run' },
+    { pid: 110, ppid: 100, cmd: 'python3 /home/u/.local/bin/cardtool report --format json --dry-run' },
     { pid: 111, ppid: 100, cmd: 'fetch --quiet origin' },
     { pid: 112, ppid: 111, cmd: 'remote-https origin https://example/x.git' },
     { pid: 120, ppid: 100, cmd: '/home/u/.config/cerimonias/voice-venv/bin/python /tmp/.mount_x/resources/sidecar/voice_sidecar.py' },

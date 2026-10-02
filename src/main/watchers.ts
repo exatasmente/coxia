@@ -178,7 +178,7 @@ interface ReportIssue {
   kind: string;
   ref: string;
   iid: number;
-  /** The issue project as the provider takes it: the numeric id in a daily-report state file, the path otherwise. */
+  /** The issue project as the provider takes it: the numeric id in the card source's state file, the path otherwise. */
   project_id: number | string;
   title: string;
   labels?: string[];

@@ -3,7 +3,9 @@ import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativ
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, Voice } from '../shared/types';
+import { ACTIVITY_EVENT, ACTIVITY_GET } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
+import { activityLog, setActivitySink } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
@@ -214,8 +216,15 @@ function handlers(): void {
   handle('retro:prepare', () => prepareRetro());
   handle('retro:latest', () => latestRetro());
   handle('retro:ask', (id: string, question: string) => askRetro(id, question));
+  handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
   handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));
 }
+
+// The runtime app name, and so Electron's userData folder (browser profile, single-instance lock, voice environment), are pinned to what an
+// install made by an earlier version already uses: the public product name (productName, appId) is free to differ without moving anyone's data.
+// An explicit --user-data-dir (a scratch run of a release build) still wins.
+app.setName('cerimonias');
+if (!process.env.CERIMONIAS_DATA_DIR && !app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', join(app.getPath('appData'), 'cerimonias'));
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
 if (process.env.CERIMONIAS_DATA_DIR) app.setPath('userData', join(process.env.CERIMONIAS_DATA_DIR, 'userData'));
@@ -262,6 +271,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
     handlers();
+    setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
     registerWebAccess(join(import.meta.dirname, '../renderer'));
     startVoice();
     createWindow();

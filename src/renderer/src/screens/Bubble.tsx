@@ -1,7 +1,6 @@
-import { partialHint } from '../../../shared/partial';
 import type { Talk, Voice } from '../../../shared/types';
 import type { usePlayer } from '../audio';
-import { useVoiceEnabled } from '../i18n';
+import { useT, useVoiceEnabled } from '../i18n';
 import { RichText } from './Diagram';
 import { FixHeard } from './FixHeard';
 
@@ -12,14 +11,15 @@ export const SpeakerIcon = () => (
 );
 
 export function ReplayButton({ playing, label, onPlay, onStop }: { playing: boolean; label: string; onPlay: () => void; onStop: () => void }) {
+  const t = useT();
   // Voice off: there is nothing to hear again.
   if (!useVoiceEnabled()) return null;
   return (
     <button
       type="button"
       className="bubble-replay"
-      aria-label={playing ? 'Parar a reprodução' : label}
-      title={playing ? 'Parar' : 'Ouvir de novo'}
+      aria-label={playing ? t('ui.bubble.stopPlayback') : label}
+      title={playing ? t('ui.bubble.stop') : t('ui.bubble.hearAgain')}
       aria-pressed={playing}
       onClick={playing ? onStop : onPlay}
     >
@@ -45,6 +45,7 @@ export function Bubble({
   player?: ReturnType<typeof usePlayer>;
   speaker?: string;
 }) {
+  const t = useT();
   const id = speaker ?? who;
   const playing = !!player && player.speaking === id && player.current === m;
   return (
@@ -55,14 +56,14 @@ export function Bubble({
           {!m.me && voice && player && (
             <ReplayButton
               playing={playing}
-              label="Ouvir esta mensagem"
+              label={t('ui.bubble.hearThis')}
               onPlay={() => void player.say(m.speech ?? m.text, voice, id, { force: true, item: m }).catch(() => undefined)}
               onStop={() => player.stop()}
             />
           )}
         </div>
         <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
-        {m.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{partialHint()}</p>}
+        {m.partial && <p className="small" style={{ color: 'var(--amber-ink)' }}>{t('ui.bubble.partial')}</p>}
         {m.me && <FixHeard text={m.text} />}
       </div>
     </div>
