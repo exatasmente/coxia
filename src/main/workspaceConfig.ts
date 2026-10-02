@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { LEGACY_SECRET_REF } from '../shared/config/legacy';
-import { setLanguage } from '../shared/i18n';
+import { setLanguage, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
 import type { WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
@@ -78,10 +78,13 @@ export function onConfigChange(fn: (config: WorkspaceConfig) => void): () => voi
   return () => listeners.delete(fn);
 }
 
-/** Environment for a child that talks to the VCS host through its CLI (glab). Without a configured host the CLI uses its own default. */
+/** Environment for a child that talks to the VCS host through its CLI (glab, gh). Without a configured host the CLI uses its own default. */
 export function vcsCliEnv(): NodeJS.ProcessEnv {
-  const host = rc().vcsHost;
-  return host ? { ...process.env, GITLAB_HOST: host } : { ...process.env };
+  const v = rc().primaryVcs;
+  if (!v?.host) return { ...process.env };
+  if (v.kind === 'github') return v.host === 'github.com' ? { ...process.env } : { ...process.env, GH_HOST: v.host };
+  if (v.kind === 'bitbucket') return { ...process.env };
+  return { ...process.env, GITLAB_HOST: v.host };
 }
 
 /** Whether a secretRef the config points at has a source on this machine. */
@@ -100,8 +103,19 @@ export function issueProjectRef(): string {
 /** The VCS host, or an error naming what is missing: for the calls that cannot work without one. */
 export function requireVcsHost(): string {
   const host = rc().vcsHost;
-  if (!host) throw new Error('Este workspace não tem uma integração com o GitLab configurada.');
+  if (!host) throw new Error(t('vcs.error.not_configured', { kind: 'VCS' }));
   return host;
+}
+
+/**
+ * The issue project as the provider takes it: GitLab keeps the numeric id when the config has one (what the app always sent),
+ * every other case the "group/name" path. Throws when the workspace has no issue project.
+ */
+export function issueProjectKey(): string {
+  const { projectId, project } = rc().issues;
+  if (rc().primaryVcs?.kind === 'gitlab' && projectId !== null) return String(projectId);
+  if (project) return project;
+  throw new Error('Este workspace não tem um projeto de issues configurado.');
 }
 
 /** Matches a note that opens with the QA user mention (the release hand-off comment), or null when the workspace has no QA user. */
@@ -119,8 +133,11 @@ export function issueProjectPath(): string {
 /** Web URL of an issue of the configured project, or null when the workspace has no host or issue project. */
 export function issueWebUrl(iid: string | number): string | null {
   const { project } = rc().issues;
-  const host = rc().vcsHost;
-  return host && project ? `https://${host}/${project}/-/work_items/${iid}` : null;
+  const v = rc().primaryVcs;
+  if (!v?.host || !project) return null;
+  if (v.kind === 'github') return `https://${v.host}/${project}/issues/${iid}`;
+  if (v.kind === 'bitbucket') return `https://bitbucket.org/${project}/issues/${iid}`;
+  return `https://${v.host}/${project}/-/work_items/${iid}`;
 }
 
 /** A card ref of an issue of the configured project ("sz4#15499" with the prefix, a bare number without one). */

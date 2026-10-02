@@ -63,6 +63,7 @@ export interface BridgeArgs {
   sessionsDir: string;
   secret: { isSecret: (path: string) => boolean; globs: string[] };
   shellEnv?: Record<string, string>;
+  extraTools?: OpenRunParams['extraTools'];
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
   makeMaxTurnsError: (sessionId: string, sources: string[]) => Error;
@@ -95,6 +96,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       resume: o.resume,
       sessionsDir: a.sessionsDir,
       shellEnv: a.shellEnv,
+      extraTools: a.extraTools,
       describeTool: a.describeTool,
       events: a.events,
     });

@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, qaMention, str } from './agents';
 import { ATAS } from './env';
-import { issueProjectPath, issueWebUrl, rc } from './workspaceConfig';
+import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
+import { issueNotesHint } from './vcs/readPolicy';
 import { assertExternalWrite } from './workspace';
 
 const DIR = join(ATAS, 'qa');
@@ -43,7 +44,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
   const prompt = [
     `Passagem para o QA da issue ${card.ref} (${card.title}), por voz. Você explica ao QA o que mudou e o que testar.`,
     `Leia em ${card.spec.folder}: ${layout.documents.completion} (Testes do Desenvolvedor e checklist de impacto)${testPlans.length ? `, o plano de testes (${testPlans.join(' ou ')})` : ''}, o Plan e o que precisar.`,
-    `MRs: ${JSON.stringify(card.mrPaths)}. Leia o diff pelo MCP do GitLab e os comentários da issue com glab api projects/${issueProjectPath()}/issues/${card.iid}/notes, procurando a nota "${qaMention()}" (branch de release e pipelines).`,
+    `MRs: ${JSON.stringify(card.mrPaths)}. Leia o diff pelo MCP do GitLab e os comentários da issue com ${issueNotesHint(rc().issues.project ?? issueProjectKey(), card.iid)}, procurando a nota "${qaMention()}" (branch de release e pipelines).`,
     'Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).',
     '"fala": até 150 palavras para o QA ouvir: o que mudou para o usuário, onde testar, o que mais pode quebrar.',
     '"mudou": um parágrafo em linguagem de produto, sem nome de classe.',

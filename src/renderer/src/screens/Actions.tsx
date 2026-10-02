@@ -3,6 +3,7 @@ import { conflictProgress } from '../../../shared/conflict';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
+import { t, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
@@ -15,7 +16,7 @@ const STATE_LABEL: Record<ReleaseAction['state'], string> = {
 };
 
 function title(a: ReleaseAction): string {
-  if (a.kind === 'gitlab') return a.summary ?? 'Ação no GitLab';
+  if (a.kind === 'gitlab' || a.kind === 'vcs') return a.summary ?? t('vcs.action.title');
   if (a.kind === 'sync') return `Sincronizar #${a.issue} com a main`;
   if (a.kind === 'qa-comment') return `Atualizar o comentário do QA na #${a.issue}`;
   if (a.kind === 'conflict-push') return a.summary ?? `Publicar a resolução do conflito da #${a.issue}`;
@@ -23,7 +24,7 @@ function title(a: ReleaseAction): string {
 }
 
 function what(a: ReleaseAction): string {
-  if (a.kind === 'gitlab') return 'Escreve no GitLab, visível ao time. Veja abaixo exatamente o que vai ser enviado.';
+  if (a.kind === 'gitlab' || a.kind === 'vcs') return t('vcs.action.what');
   if (a.kind === 'sync')
     return `Faz merge da main em ${a.mrs.map((m) => m.branch).join(', ')} e push (fast-forward, sem force-push). ${a.retest ? 'A release mexeu em arquivos do MR: o QA precisa retestar.' : 'A release não mexeu em arquivos do MR: sem reteste.'}`;
   if (a.kind === 'qa-comment')
@@ -33,6 +34,7 @@ function what(a: ReleaseAction): string {
 }
 
 function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
+  useT();
   const [preview, setPreview] = useState<string | null>(null);
   const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -125,12 +127,12 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (
                 <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', 'Simulação', () => api.previewAction(a.id))}>
-                  {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : a.kind === 'gitlab' || a.kind === 'conflict-push' ? 'Ver o envio' : 'Ver o comentário'}
+                  {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' ? 'Ver o envio' : 'Ver o comentário'}
                 </button>
               )}
               {confirming ? (
                 <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => { setConfirming(false); start('approve', 'Execução', () => api.approveAction(a.id)); }}>
-                  {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : a.kind === 'conflict-push' ? 'fazer push da resolução' : a.kind === 'gitlab' ? 'executar no GitLab' : 'publicar na issue'}
+                  {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : a.kind === 'conflict-push' ? 'fazer push da resolução' : a.kind === 'gitlab' || a.kind === 'vcs' ? t('vcs.action.confirm') : 'publicar na issue'}
                 </button>
               ) : (
                 <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>Seguir</button>

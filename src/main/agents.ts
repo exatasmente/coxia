@@ -16,14 +16,11 @@ import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
+import { GITLAB_HINT, GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { vcsProvider } from './vcs';
 
-const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
-
-// The read-only glab shell applies to a GitLab integration whose CLI is on.
-function glabOn(): boolean {
-  const v = rc().primaryVcs;
-  return getConfig().agents.tools.vcsCli && v?.kind === 'gitlab' && v.cli === 'glab';
-}
+export { GLAB_READ };
 
 function trackerMcpTools(): string[] {
   const server = getConfig().agents.tools.trackerMcpServer.trim();
@@ -38,17 +35,10 @@ function allowedFor(role: ModelRole): string[] {
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
     ...(t.trackerMcp ? trackerMcpTools() : []),
-    ...(glabOn() ? GLAB_RULES : []),
+    ...vcsReadPolicy().rules,
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
 }
-
-// The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
-export const GLAB_READ = [
-  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes|pipelines))?(\?[\w=&]+)?"?( --paginate)?$/,
-  /^glab api "?projects\/[\w%.-]+\/pipelines(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
-  /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
-];
 
 // Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
 export const GIT_MIRROR_READ = [
@@ -74,7 +64,7 @@ export function stripOutputSuffix(command: string): string {
   return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
 }
 
-export function shellAllowlist(patterns: RegExp[]): HookCallback {
+export function shellAllowlist(patterns: RegExp[], usage = GITLAB_HINT): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
@@ -85,7 +75,7 @@ export function shellAllowlist(patterns: RegExp[]): HookCallback {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: `Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Use: ${GITLAB_HINT}${patterns.length > GLAB_READ.length ? ` ${GIT_HINT}` : ''}`,
+        permissionDecisionReason: `Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Use: ${usage}${patterns.some((re) => re.source.startsWith('^git -C')) ? ` ${GIT_HINT}` : ''}`,
       },
     };
   };
@@ -229,9 +219,12 @@ export const redactSecretResults: HookCallback = async (input) => {
 };
 
 export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks']> {
+  // The shell allow-list follows the configured provider (gh for GitHub); anything else keeps the glab one, which no tool rule enables.
+  const policy = vcsReadPolicy();
+  const cli = policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...GLAB_READ, ...patterns])] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : GITLAB_HINT)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
@@ -241,14 +234,9 @@ export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks'
 const GIT_HINT =
   'No conflito: `git -C <repo do mirror> merge-tree --write-tree --name-only <src_sha> <tgt_sha>`, `git -C <repo> merge-base <src_sha> <tgt_sha>`, `git -C <repo> diff <base> <src_sha> -- <arquivo>` e `git -C <repo> diff <base> <tgt_sha> -- <arquivo>`.';
 
-const GITLAB_HINT =
-  '`glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), ' +
-  '`glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou ' +
-  '`glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.';
-
-// What the agents are told about the issue tracker; empty when the workspace has no GitLab with its CLI on.
+// What the agents are told about the code host; empty when the workspace has none they may read.
 function vcsHint(): string {
-  return glabOn() ? `Para ler o GitLab: ${GITLAB_HINT}` : '';
+  return vcsReadPolicy().hint;
 }
 
 /** "sz4#15499" for a workspace whose cards carry a prefix, "15499" for one that does not. */
@@ -328,7 +316,7 @@ function sdkOptions(req: EngineRequest): Options {
     systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
     allowedTools: req.allowedTools,
     disallowedTools: [
-      ...(glabOn() || req.shell.rules.length ? [] : ['Bash']),
+      ...(vcsReadPolicy().via === 'cli' || req.shell.rules.length ? [] : ['Bash']),
       'Edit',
       'Write',
       'NotebookEdit',
@@ -371,16 +359,24 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
   };
 }
 
+// Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
+function wantsVcsTool(req: EngineRequest): boolean {
+  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  return vcsReadPolicy().via === 'tool';
+}
+
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
+  const tool = wantsVcsTool(req);
   return runOpenOnce<T>({
     selection,
     prompt: req.prompt,
-    options: { ...sdkOptions(req), model: req.target.model },
+    options: { ...sdkOptions(tool ? { ...req, allowedTools: [...req.allowedTools, VCS_READ_TOOL_NAME] } : req), model: req.target.model },
+    extraTools: tool ? [vcsReadToolImpl(() => vcsProvider())] : undefined,
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
-    shellEnv: rc().vcsHost ? { GITLAB_HOST: rc().vcsHost as string } : undefined,
+    shellEnv: vcsShellEnv(),
     describeTool: source,
     events: { onSession: (id) => noteSession(id, req.role, req.prompt) },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
@@ -392,10 +388,13 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   let sessionId = '';
   const query = await loadClaudeQuery();
   const exe = claudeExecutable();
+  // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
+  const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions(req),
+      ...sdkOptions(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req),
+      ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env: claudeSdkEnv(req.target),
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),

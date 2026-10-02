@@ -8,7 +8,9 @@ import { logError } from './errorlog';
 import { DATA_ROOT } from './env';
 import { providerSecret } from './llm';
 import { secrets } from './secrets';
+import { t } from '../shared/i18n';
 import { getConfig, rc, vcsCliEnv } from './workspaceConfig';
+import { vcsCliFor, vcsProvider, vcsReady } from './vcs';
 import type { Module, ModuleContext } from './module';
 import { readReport, reportStatus } from './report';
 import { voiceStatus } from './voice';
@@ -143,14 +145,24 @@ type Result = { ok: boolean; message: string };
 
 async function glabCheck(): Promise<Result> {
   const vcs = rc().primaryVcs;
-  if (!vcs?.cli) return { ok: true, message: 'Sem integração de VCS por CLI configurada (opcional).' };
+  if (!vcs) return { ok: true, message: 'Sem integração de VCS configurada (opcional).' };
+  const cli = vcsCliFor();
+  if (cli) {
+    try {
+      const { stdout, stderr } = await run(cli.command, ['auth', 'status', '--hostname', vcs.host], { env: vcsCliEnv(), timeout: 20_000 });
+      const text = `${stdout}\n${stderr}`;
+      return { ok: true, message: short(text.split('\n').find((l) => /logged in/i.test(l)) ?? text) };
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string; message: string };
+      return { ok: false, message: short(`${err.stderr ?? ''}\n${err.stdout ?? ''}`) || short(err.message) };
+    }
+  }
+  if (!vcsReady()) return { ok: false, message: t('vcs.health.noToken', { id: vcs.id }) };
   try {
-    const { stdout, stderr } = await run(vcs.cli, ['auth', 'status', '--hostname', vcs.host], { env: vcsCliEnv(), timeout: 20_000 });
-    const text = `${stdout}\n${stderr}`;
-    return { ok: true, message: short(text.split('\n').find((l) => /logged in/i.test(l)) ?? text) };
+    const me = await vcsProvider().currentUser();
+    return { ok: true, message: t('vcs.health.api', { host: vcs.host, user: me.username }) };
   } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message: string };
-    return { ok: false, message: short(`${err.stderr ?? ''}\n${err.stdout ?? ''}`) || short(err.message) };
+    return { ok: false, message: short((e as Error).message) };
   }
 }
 

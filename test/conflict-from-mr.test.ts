@@ -20,6 +20,8 @@ process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { conflictDiscard, conflictFromMr, conflictHooks, conflictPrepare, listActions } = await import('../src/main/actions');
 const { ATAS } = await import('../src/main/env');
+const { setVcsRuntimeForTests } = await import('../src/main/vcs');
+const { fakeGitlabRuntime } = await import('./helpers/vcs');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 
@@ -33,15 +35,18 @@ function card(project: string) {
   return { iid: '15526', title: 'Fixture issue', stage: 'STAGE:: Code Review', mrPaths: [{ ref: 'proj!1234', project, iid: 1234 }] };
 }
 
+// The GitLab provider on a transport that answers from the fixtures: the same four reads, whatever the provider does around them.
 function stubGitlab(): void {
-  conflictHooks.gitlabGet = async (endpoint) => {
-    reads.push(endpoint);
-    if (endpoint === 'user') return { username: me };
-    if (endpoint.endsWith('/merge_requests/1234')) return mr;
-    if (endpoint.includes('/repository/branches/')) return { commit: { id: originSha(f, 'main') } };
-    if (/^projects\/[^/]+$/.test(endpoint)) return { default_branch: defaultBranch };
-    throw new Error(`unexpected GET ${endpoint}`);
-  };
+  setVcsRuntimeForTests(
+    fakeGitlabRuntime(async (endpoint) => {
+      reads.push(endpoint);
+      if (endpoint === 'user') return { username: me };
+      if (endpoint.endsWith('/merge_requests/1234')) return mr;
+      if (endpoint.includes('/repository/branches/')) return { commit: { id: originSha(f, 'main') } };
+      if (/^projects\/[^/]+$/.test(endpoint)) return { default_branch: defaultBranch };
+      throw new Error(`unexpected GET ${endpoint}`);
+    }),
+  );
 }
 
 beforeAll(() => {

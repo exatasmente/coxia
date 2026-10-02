@@ -3,6 +3,7 @@ import { readProfileEnv, sdkEnv } from './llm-core';
 import { SecretError } from './secrets-core';
 import { secrets } from './secrets';
 import { getConfig, rc } from './workspaceConfig';
+import { vcsShellEnv } from './vcs/readPolicy';
 
 /** The key of a provider, or null when it has none (local server, machine credentials). A configured ref with no source is an error, never a silent no-key call. */
 export function providerSecret(secretRef: string | null): string | null {
@@ -17,7 +18,7 @@ export function providerSecret(secretRef: string | null): string | null {
 
 /** The environment of a Claude Agent SDK child for the provider that serves this role. */
 export function claudeSdkEnv(target: ResolvedRole): Record<string, string> {
-  return sdkEnv({ target, base: process.env, secret: providerSecret(target.secretRef), profile: readProfileEnv(target.envFile), vcsHost: rc().vcsHost });
+  return sdkEnv({ target, base: process.env, secret: providerSecret(target.secretRef), profile: readProfileEnv(target.envFile), vcsHost: rc().primaryVcs?.kind === 'gitlab' ? rc().vcsHost : null, extraEnv: rc().primaryVcs?.kind === 'github' ? vcsShellEnv() : undefined });
 }
 
 const isOpenRouter = (baseUrl: string): boolean => {

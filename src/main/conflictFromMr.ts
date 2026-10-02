@@ -26,13 +26,13 @@ export function resolveMr(ref: string, known: { ref: string; project: string; ii
 }
 
 export interface MrRead {
-  state: string;
-  has_conflicts: boolean;
-  source_branch: string;
-  target_branch: string;
-  web_url: string;
+  state: 'open' | 'merged' | 'closed';
+  hasConflicts: boolean | null;
+  sourceBranch: string;
+  targetBranch: string;
+  webUrl: string;
   sha: string;
-  author: { username: string };
+  author: string;
 }
 
 export interface MrChecks {
@@ -42,8 +42,8 @@ export interface MrChecks {
 
 // Throws the pt-BR reason when this MR is not one the app resolves.
 export function assertResolvable(ref: string, mr: MrRead, c: MrChecks): void {
-  if (mr.state !== 'opened') throw new Error(`${ref} não está aberto (${mr.state}).`);
-  if (mr.target_branch !== c.defaultBranch) throw new Error(`${ref} aponta para ${mr.target_branch}, não para a ${c.defaultBranch}: só resolvo conflito com a branch principal.`);
-  if (mr.author.username !== c.me) throw new Error(`${ref} é de @${mr.author.username}: só resolvo conflito de MR seu.`);
-  // has_conflicts is computed lazily by GitLab and is often stale (post-release-sync skill): the local merge in Preparar decides.
+  if (mr.state !== 'open') throw new Error(`${ref} não está aberto (${mr.state}).`);
+  if (mr.targetBranch !== c.defaultBranch) throw new Error(`${ref} aponta para ${mr.targetBranch}, não para a ${c.defaultBranch}: só resolvo conflito com a branch principal.`);
+  if (mr.author !== c.me) throw new Error(`${ref} é de @${mr.author}: só resolvo conflito de MR seu.`);
+  // The conflict flag is computed lazily by the host and is often stale (post-release-sync skill): the local merge in Preparar decides.
 }
