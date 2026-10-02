@@ -125,7 +125,7 @@ function handlers(): void {
   ipcMain.handle('clipboard:copy', (_e, text: string) => clipboard.writeText(text));
   ipcMain.handle('settings:get', () => getSettings());
   ipcMain.handle('settings:save', (_e, s: Settings) => saveSettings(s));
-  ipcMain.handle('claude:continue', (_e, sessionId: string) => continueInClaude(sessionId));
+  ipcMain.handle('claude:continue', (_e, sessionId: string, prompt?: string) => continueInClaude(sessionId, prompt));
   ipcMain.handle('status:check', () => checkStatus(true));
   ipcMain.handle('actions:list', () => listActions());
   ipcMain.handle('actions:detect', () => detectRelease(true));

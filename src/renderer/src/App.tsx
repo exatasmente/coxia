@@ -7,6 +7,7 @@ import { Actions } from './screens/Actions';
 import { Ata } from './screens/Ata';
 import { Call } from './screens/Call';
 import { Conflict } from './screens/Conflict';
+import { Custo } from './screens/Custo';
 import { Deep } from './screens/Deep';
 import { Gate } from './screens/Gate';
 import { History } from './screens/History';
@@ -26,7 +27,8 @@ export type Screen =
   | { name: 'conflict'; id: string }
   | { name: 'gate'; ref: string; card?: Card }
   | { name: 'qa'; ref: string; card?: Card }
-  | { name: 'retro' };
+  | { name: 'retro' }
+  | { name: 'custo' };
 // slot: screens of feature modules (one union member each)
 
 export function App() {
@@ -85,6 +87,8 @@ export function App() {
       return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'retro':
       return <RetroScreen ceremony={ceremony} player={player} go={go} />;
+    case 'custo':
+      return <Custo go={go} />;
     // slot: routes of feature modules
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;

@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
+import { TempoHoje } from './TempoHoje';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -46,12 +47,14 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             </span>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
+            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
             {/* slot: header buttons of feature modules */}
           </div>
         </header>
 
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
 
+        <TempoHoje refreshKey={`${c.startedAt}-${c.callEnded}-${Object.values(c.deep).reduce((n, d) => n + d.msgs.length, 0)}`} />
         {/* slot: banners of feature modules */}
 
         {pendingActions > 0 && (
