@@ -3,6 +3,7 @@ import type { BranchHealth, RadarFinding, RadarKind, RadarResult, RadarSide } fr
 import type { Screen } from '../App';
 import { api, errorText, moduleEvents, plural } from '../api';
 import { BackIcon } from './icons';
+import { jobs, useJobs } from '../useJobs';
 import { describeBranch, refreshHealth, useWorktreeHealth } from './radarSlots';
 
 const KIND: Record<RadarKind, { label: string; badge: string }> = {
@@ -110,27 +111,28 @@ function BranchRow({ b }: { b: BranchHealth }) {
 
 export function Radar({ go }: { go: (s: Screen) => void }) {
   const [result, setResult] = useState<RadarResult | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const health = useWorktreeHealth();
 
   useEffect(() => {
-    void api.invoke<RadarResult | null>('radar:latest').then(setResult);
+    void api.invoke<RadarResult | null>('radar:latest').then((r) => setResult((prev) => prev ?? r));
     const on = (e: Event) => setResult((e as CustomEvent<RadarResult>).detail);
     moduleEvents.addEventListener('radar', on);
     return () => moduleEvents.removeEventListener('radar', on);
   }, []);
 
-  const run = async () => {
-    setBusy(true);
+  const running = useJobs<RadarResult>('radar:', {
+    done: (r) => setResult(r),
+    failed: (message) => setError(message),
+  });
+  const busy = running.length > 0;
+
+  const run = () => {
     setError(null);
-    try {
+    jobs.launch('radar:run', { label: 'Radar de colisões', busy: 'Conferindo as MRs abertas…', screen: { name: 'radar' } }, async () => {
       const [r] = await Promise.all([api.invoke<RadarResult>('radar:run'), refreshHealth()]);
-      setResult(r);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(false);
+      return r;
+    });
   };
 
   const issues = Object.entries(health?.byIssue ?? {}).sort(([a], [b]) => Number(b) - Number(a));
@@ -149,7 +151,7 @@ export function Radar({ go }: { go: (s: Screen) => void }) {
                 Conferido às {new Date(result.checkedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {plural(result.mrsChecked, 'MR', 'MRs')}
               </span>
             )}
-            <button type="button" className="btn" disabled={busy} onClick={() => void run()}>
+            <button type="button" className="btn" disabled={busy} onClick={() => run()}>
               {busy ? <span className="spinner" /> : null} Conferir agora
             </button>
           </div>

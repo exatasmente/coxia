@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { clearSpeechCache, setBargeIn, setSpeechEnabled } from '../audio';
 import { autostartApi } from '../autostartApi';
 import { applyTheme } from '../theme';
+import { jobs, useJobs } from '../useJobs';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
 import { RetentionSection } from './RetentionSection';
@@ -39,7 +40,6 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
   const [autostart, setAutostart] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -78,15 +78,15 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
     }
   };
 
-  const check = async () => {
-    setChecking(true);
+  const running = useJobs<string>('settings:', {
+    done: (text) => setStatus(text),
+    failed: (message) => setStatus(`Falhou: ${message}`),
+  });
+  const checking = running.length > 0;
+
+  const check = () => {
     setStatus(null);
-    try {
-      setStatus(await api.checkStatus());
-    } catch (e) {
-      setStatus(`Falhou: ${errorText(e)}`);
-    }
-    setChecking(false);
+    jobs.launch('settings:status', { label: 'Conferência de status', busy: 'Conferindo o status…', screen: { name: 'settings' } }, () => api.checkStatus());
   };
 
   return (
@@ -287,7 +287,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             </span>
           </label>
           <div className="row">
-            <button type="button" className="btn" disabled={checking} onClick={() => void check()}>
+            <button type="button" className="btn" disabled={checking} onClick={() => check()}>
               {checking ? <span className="spinner" /> : null} Conferir status agora
             </button>
             {status && <span className="small muted" style={{ whiteSpace: 'pre-line' }}>{status}</span>}

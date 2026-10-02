@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { QuickContext, QuickMember, QuickMr, QuickRequest, QuickTransition } from '../../../shared/gitlabQuick';
+import type { QuickContext, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../../../shared/gitlabQuick';
 import type { Card } from '../../../shared/types';
 import type { Screen } from '../App';
 import { errorText } from '../api';
 import { quickApi } from '../gitlabQuickApi';
+import { jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
 function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: QuickMember[] | undefined; busy: boolean; onPropose: (r: QuickRequest) => void }) {
@@ -82,39 +83,43 @@ function Transition({ t, status, busy, onPropose }: { t: QuickTransition; status
 export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Screen) => void }) {
   const [ctx, setCtx] = useState<QuickContext | null>(null);
   const [members, setMembers] = useState<Record<string, QuickMember[]>>({});
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string[]>([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     if (!card) return;
     setError(null);
-    try {
-      const c = await quickApi.context(card);
-      setCtx(c);
-      for (const path of new Set(c.mrs.filter((m) => m.mine).map((m) => m.projectPath))) {
-        quickApi.members(path).then((list) => setMembers((prev) => ({ ...prev, [path]: list }))).catch(() => setMembers((prev) => ({ ...prev, [path]: [] })));
-      }
-    } catch (e) {
-      setError(errorText(e));
-    }
+    jobs.launch(`quick:${card.ref}:context`, { label: `Leitura do GitLab da ${card.iid}`, busy: 'Lendo o GitLab…', screen: { name: 'quick', ref: card.ref, card } }, () => quickApi.context(card));
   }, [card]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (card && !jobs.get(`quick:${card.ref}:context`)) load();
+  }, [card, load]);
 
-  const propose = async (req: QuickRequest) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await quickApi.propose(req.kind === 'reviewer' || req.kind === 'undraft' ? { ...req, issue: card ? Number(card.iid) || undefined : undefined } : req);
+  const running = useJobs<QuickContext | QuickResult>(card ? `quick:${card.ref}:` : null, {
+    done: (value, job) => {
+      if (job.key.endsWith(':context')) {
+        const c = value as QuickContext;
+        setCtx(c);
+        for (const path of new Set(c.mrs.filter((m) => m.mine).map((m) => m.projectPath))) {
+          quickApi.members(path).then((list) => setMembers((prev) => ({ ...prev, [path]: list }))).catch(() => setMembers((prev) => ({ ...prev, [path]: [] })));
+        }
+        return;
+      }
+      const r = value as QuickResult;
       setDone((prev) => [...r.created, ...(r.duplicated ? ['Já existe uma proposta igual aguardando você.'] : []), ...prev]);
-      await load();
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(false);
+      load();
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = running.some((j) => j.key.endsWith(':propose'));
+
+  const propose = (req: QuickRequest) => {
+    if (!card) return;
+    setError(null);
+    jobs.launch(`quick:${card.ref}:propose`, { label: `Proposta no GitLab da ${card.iid}`, busy: 'Montando a proposta…', screen: { name: 'quick', ref: card.ref, card } }, () =>
+      quickApi.propose(req.kind === 'reviewer' || req.kind === 'undraft' ? { ...req, issue: Number(card.iid) || undefined } : req),
+    );
   };
 
   return (
@@ -149,7 +154,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
               Labels de etapa: {ctx.issue.stageLabels.join(', ') || 'nenhuma'}. Revisão e QA movem os demais status.
             </div>
             {ctx.issue.transitions.map((t) => (
-              <Transition key={t.to} t={t} status={ctx.issue?.status ?? null} busy={busy} onPropose={() => void propose({ kind: 'transition', issue: ctx.issue?.iid ?? 0, to: t.to })} />
+              <Transition key={t.to} t={t} status={ctx.issue?.status ?? null} busy={busy} onPropose={() => propose({ kind: 'transition', issue: ctx.issue?.iid ?? 0, to: t.to })} />
             ))}
             <p className="small faint">O app propõe só a label. O status é GraphQL e fica por sua conta: a proposta traz o comando.</p>
           </>
@@ -157,7 +162,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
 
         {ctx && <h2 className="section-title">Merge requests · {ctx.mrs.length}</h2>}
         {ctx && !ctx.mrs.length && <p className="small faint">Esta atividade não tem MR.</p>}
-        {ctx?.mrs.map((m) => <MrBlock key={m.ref} mr={m} members={members[m.projectPath]} busy={busy} onPropose={(r) => void propose(r)} />)}
+        {ctx?.mrs.map((m) => <MrBlock key={m.ref} mr={m} members={members[m.projectPath]} busy={busy} onPropose={(r) => propose(r)} />)}
       </div>
     </div>
   );

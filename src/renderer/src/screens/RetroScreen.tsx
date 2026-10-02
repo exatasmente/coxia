@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -31,7 +32,6 @@ function Items({ title, items, tone }: { title: string; items: RetroItem[]; tone
 export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const [retro, setRetro] = useState<Retro | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -40,10 +40,22 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
 
   useEffect(() => {
     api.latestRetro().then((r) => {
-      setRetro(r);
+      setRetro((prev) => prev ?? r);
       setLoaded(true);
     });
   }, []);
+
+  // Main keeps the retro; a job that finished while this screen was closed is applied as it would have been.
+  const running = useJobs<Retro>('retro:', {
+    done: (r, job, late) => {
+      setRetro(r);
+      setLoaded(true);
+      const last = r.talk[r.talk.length - 1];
+      if (!late && job.key === 'retro:ask' && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'retro').catch(() => undefined);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running);
 
   useEffect(() => {
     if (!retro || !voice || spoken.current === retro.createdAt) return;
@@ -51,23 +63,14 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
     void player.say(retro.speech, voice, 'retro').catch(() => undefined);
   }, [retro, voice, player]);
 
-  const act = async (label: string, fn: () => Promise<Retro>, speakLast = false) => {
-    setBusy(label);
+  const act = (op: string, label: string, busy: string, fn: () => Promise<Retro>) => {
     setError(null);
-    try {
-      const r = await fn();
-      setRetro(r);
-      const last = r.talk[r.talk.length - 1];
-      if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'retro').catch(() => undefined);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(null);
+    jobs.launch(`retro:${op}`, { label, busy, screen: { name: 'retro' } }, fn);
   };
 
   const ask = useCallback(
     async (text: string) => {
-      if (retro) await act('O moderador está pensando…', () => api.askRetro(retro.id, text), true);
+      if (retro) act('ask', 'Pergunta na retro', 'O moderador está pensando…', () => api.askRetro(retro.id, text));
     },
     [retro],
   );
@@ -96,7 +99,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
               <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}
             </button>
           )}
-          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!!busy} onClick={() => void act('O moderador está montando a retro da semana…', () => api.prepareRetro())}>
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!!busy} onClick={() => act('prepare', 'Retro da semana', 'O moderador está montando a retro da semana…', () => api.prepareRetro())}>
             {retro ? 'Montar de novo' : 'Montar a retro'}
           </button>
         </header>
@@ -147,7 +150,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
               {retro.talk.map((m, i) => (
                 <Bubble key={i} m={m} who={m.me ? 'Você' : 'Moderador'} voice={voice} player={player} speaker="retro" />
               ))}
-              <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
+              <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) ask(draft.trim()); setDraft(''); }}>
                 <input className="text-input" placeholder="Ou digite" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Fala na retro" />
                 <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Enviar</button>
               </form>

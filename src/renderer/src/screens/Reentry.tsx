@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Card } from '../../../shared/types';
 import type { Reentry as ReentryData, ReentryClass, ReentryPhase } from '../../../shared/feedback';
 import type { Screen } from '../App';
-import { errorText } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { feedbackApi } from '../feedbackApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -32,40 +32,46 @@ function when(iso: string): string {
 export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const [re, setRe] = useState<ReentryData | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const spoken = useRef<string | null>(null);
   const started = useRef(false);
+  const failedAtOpen = useRef(false);
+  const reRef = useRef<ReentryData | null>(null);
+  reRef.current = re;
   const voice = c.voices?.agents[3] ?? c.voices?.agents[0] ?? null;
 
-  const act = useCallback(
-    async (label: string, fn: () => Promise<ReentryData>, speakLast = false) => {
-      setBusy(label);
-      setError(null);
-      try {
-        const r = await fn();
-        setRe(r);
-        const last = r.talk[r.talk.length - 1];
-        if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'reentrada').catch(() => undefined);
-      } catch (e) {
-        setError(errorText(e));
-      }
-      setBusy(null);
+  const act = (op: string, label: string, busy: string, fn: () => Promise<ReentryData>) => {
+    if (!card) return;
+    setError(null);
+    jobs.launch(`reentry:${card.ref}:${op}`, { label: `${label} da ${card.iid}`, busy, screen: { name: 'reentry', ref: card.ref, card } }, fn);
+  };
+
+  // Main keeps the call; a job that finished while this screen was closed is applied as it would have been.
+  const running = useJobs<ReentryData>(card ? `reentry:${card.ref}:` : null, {
+    done: (r, job, late) => {
+      setRe(r);
+      setLoaded(true);
+      const last = r.talk[r.talk.length - 1];
+      if (!late && job.key.endsWith(':ask') && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'reentrada').catch(() => undefined);
     },
-    [voice, player],
-  );
+    failed: (message) => {
+      failedAtOpen.current = true;
+      setError(message);
+    },
+  });
+  const busy = busyText(running);
 
   // A saved call opens as it was; a new one starts by itself, since the notification already asked for it.
   useEffect(() => {
     if (!card || started.current) return;
     started.current = true;
     void feedbackApi.getReentry(card.iid).then((saved) => {
-      setRe(saved);
+      setRe((prev) => prev ?? saved);
       setLoaded(true);
-      if (!saved) void act('O agente está lendo o comentário do QA e o spec…', () => feedbackApi.prepareReentry(card));
+      if (!saved && !reRef.current && !failedAtOpen.current && !jobs.get(`reentry:${card.ref}:prepare`)) act('prepare', 'Retorno do QA', 'O agente está lendo o comentário do QA e o spec…', () => feedbackApi.prepareReentry(card));
     });
-  }, [card, act]);
+  }, [card]);
 
   useEffect(() => {
     if (!re || !voice || spoken.current === re.createdAt) return;
@@ -75,9 +81,9 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
 
   const ask = useCallback(
     async (text: string) => {
-      if (card) await act('O agente está respondendo…', () => feedbackApi.askReentry(card.iid, text), true);
+      if (card) act('ask', 'Pergunta no retorno', 'O agente está respondendo…', () => feedbackApi.askReentry(card.iid, text));
     },
-    [card, act],
+    [card],
   );
   const talk = useTalk(player, ask, setError);
 
@@ -104,7 +110,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
         {error && <div className="error">{error}</div>}
         {(busy && !re) && <div className="row faint"><span className="spinner" /> {busy}</div>}
         {loaded && !re && !busy && (
-          <div><button type="button" className="btn btn-dark" onClick={() => void act('O agente está lendo o comentário do QA e o spec…', () => feedbackApi.prepareReentry(card))}>Tentar de novo</button></div>
+          <div><button type="button" className="btn btn-dark" onClick={() => act('prepare', 'Retorno do QA', 'O agente está lendo o comentário do QA e o spec…', () => feedbackApi.prepareReentry(card))}>Tentar de novo</button></div>
         )}
 
         {re && (
@@ -145,7 +151,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
                   <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="reentrada" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
-                <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) void ask(draft.trim()); setDraft(''); }}>
+                <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) ask(draft.trim()); setDraft(''); }}>
                   <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
                   <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>
                 </form>
@@ -154,7 +160,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
                 <h2 className="section-title">Depois da call</h2>
                 <p className="small" style={{ lineHeight: 1.5 }}>Seguir a reentrada é no Claude Code, nesta mesma sessão do agente.</p>
                 <ContinueInClaude sessionId={re.sessionId} />
-                <button type="button" className="btn" disabled={!!busy} onClick={() => void act('O agente está relendo o retorno…', () => feedbackApi.prepareReentry(card))}>Preparar de novo</button>
+                <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', 'Retorno do QA', 'O agente está relendo o retorno…', () => feedbackApi.prepareReentry(card))}>Preparar de novo</button>
                 {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>Ver discussões dos MRs</button>}
               </section>
             </aside>

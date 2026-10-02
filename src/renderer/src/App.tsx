@@ -24,6 +24,7 @@ import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
+import { JobsDock } from './JobsDock';
 import { targetToScreen } from './pushTarget';
 
 export type Screen =
@@ -116,6 +117,7 @@ export function App() {
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
+  const view = (() => {
   switch (screen.name) {
     case 'today':
       return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
@@ -159,4 +161,12 @@ export function App() {
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }
+})();
+
+  return (
+    <>
+      {view}
+      <JobsDock screen={screen} go={go} />
+    </>
+  );
 }

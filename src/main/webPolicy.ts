@@ -1,8 +1,8 @@
 // What a browser session may call. The desktop window has no such limits (IPC does not go through here).
 export type WebAccess = 'allow' | 'deny' | 'external';
 
-// Acts on the desktop machine itself: terminal, clipboard, login items, local file deletion.
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply']);
+// Acts on the desktop machine itself: terminal, clipboard, login items, local file deletion, native notifications.
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify']);
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // post-release-sync) waits there, so refusing it refuses all of them.

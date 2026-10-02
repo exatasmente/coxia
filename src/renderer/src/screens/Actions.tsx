@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
@@ -30,7 +31,7 @@ function what(a: ReleaseAction): string {
 
 function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
   const [preview, setPreview] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const open = a.state === 'pending' || a.state === 'failed';
@@ -44,6 +45,22 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       setError(errorText(e));
     }
     setBusy(null);
+  };
+
+  // The release action itself is told to the app by main (actions event); the jobs keep the busy state and the preview text.
+  const running = useJobs<string>(`action:${a.id}:`, {
+    done: (text, job) => {
+      if (job.key.endsWith(':preview')) setPreview(text);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running, localBusy);
+  const start = (op: 'preview' | 'approve', label: string, fn: () => Promise<string | unknown>) => {
+    setError(null);
+    jobs.launch(`action:${a.id}:${op}`, { label: `${label}: ${title(a)}`, busy: op === 'preview' ? 'Simulando…' : 'Executando…', screen: { name: 'actions' } }, async () => {
+      const r = await fn();
+      return typeof r === 'string' ? r : '';
+    });
   };
 
   return (
@@ -102,12 +119,12 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           ) : (
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (
-                <button type="button" className="btn" disabled={!!busy} onClick={() => void run('Simulando…', async () => setPreview(await api.previewAction(a.id)))}>
+                <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', 'Simulação', () => api.previewAction(a.id))}>
                   {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : a.kind === 'gitlab' ? 'Ver o envio' : 'Ver o comentário'}
                 </button>
               )}
               {confirming ? (
-                <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => void run('Executando…', () => api.approveAction(a.id)).then(() => setConfirming(false))}>
+                <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => { setConfirming(false); start('approve', 'Execução', () => api.approveAction(a.id)); }}>
                   {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : a.kind === 'gitlab' ? 'executar no GitLab' : 'publicar na issue'}
                 </button>
               ) : (
@@ -132,14 +149,13 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
   const pending = actions.filter((a) => a.state === 'pending' || a.state === 'running' || a.state === 'failed');
   const past = actions.filter((a) => !pending.includes(a));
 
-  const detect = async () => {
-    setChecking('Conferindo a release…');
-    try {
-      setChecking(await api.detectRelease());
-    } catch (e) {
-      setChecking(`Falhou: ${errorText(e)}`);
-    }
-  };
+  const running = useJobs<string>('release:', {
+    done: (text) => setChecking(text),
+    failed: (message) => setChecking(`Falhou: ${message}`),
+  });
+  const detecting = running.length > 0;
+
+  const detect = () => jobs.launch('release:detect', { label: 'Conferência da release', busy: 'Conferindo a release…', screen: { name: 'actions' } }, () => api.detectRelease());
 
   return (
     <div className="page">
@@ -150,8 +166,8 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>Ações de release</h1>
           </div>
           <div className="row">
-            {checking && <span className="small muted">{checking}</span>}
-            <button type="button" className="btn" disabled={checking === 'Conferindo a release…'} onClick={() => void detect()}>Conferir release agora</button>
+            {detecting ? <span className="small muted">Conferindo a release…</span> : checking && <span className="small muted">{checking}</span>}
+            <button type="button" className="btn" disabled={detecting} onClick={() => detect()}>Conferir release agora</button>
           </div>
         </header>
         <p className="small muted">

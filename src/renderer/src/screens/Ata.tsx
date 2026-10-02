@@ -3,6 +3,7 @@ import { teamsKey } from '../../../shared/minutes';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
+import { jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
 
@@ -23,29 +24,34 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
   const { teams, setTeams, saveResult: result, setSaveResult: setResult } = c;
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'teams' | 'effects' | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const asked = useRef(false);
 
   const key = teamsKey(c.snapshot);
   const current = !!teams && c.teamsKey === key;
 
-  const loadTeams = useCallback(async () => {
+  // The jobs write the text and the saved result into the ceremony store themselves, so they land even if this screen is gone by then.
+  const loadTeams = useCallback(() => {
     setTeamsError(null);
     setTeams(null, null);
-    try {
-      setTeams(await api.teamsText(m, c.cards?.cards ?? []), key);
-    } catch (e) {
-      setTeamsError(errorText(e));
-    }
+    jobs.launch('ata:teams', { label: 'Texto do Teams da ata', busy: 'O agente está escrevendo no seu estilo…', screen: { name: 'ata' } }, async () => {
+      const text = await api.teamsText(m, c.cards?.cards ?? []);
+      setTeams(text, key);
+      return text;
+    });
   }, [m, c.cards, key]);
 
   // The text is written again only when decisions, effects or cards changed since it was written.
   useEffect(() => {
-    if (asked.current || current) return;
+    if (asked.current || current || jobs.get('ata:teams')) return;
     asked.current = true;
-    void loadTeams();
+    loadTeams();
   }, [loadTeams, current]);
+
+  const running = useJobs('ata:', {
+    failed: (message, job) => (job.key === 'ata:save' ? setSaveError(message) : setTeamsError(message)),
+  });
+  const saving = running.some((j) => j.key === 'ata:save');
 
   const copy = async (what: 'teams' | 'effects', text: string) => {
     await api.copy(text);
@@ -53,16 +59,14 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const save = async () => {
-    setSaving(true);
+  const save = () => {
     setSaveError(null);
-    try {
-      const idx = selected.flatMap((on, i) => (on ? [i] : []));
-      setResult(await api.saveMinutes(m, teams ?? '', idx));
-    } catch (e) {
-      setSaveError(errorText(e));
-    }
-    setSaving(false);
+    const idx = selected.flatMap((on, i) => (on ? [i] : []));
+    jobs.launch('ata:save', { label: 'Gravação da ata', busy: 'Gravando a ata…', screen: { name: 'ata' } }, async () => {
+      const saved = await api.saveMinutes(m, teams ?? '', idx);
+      setResult(saved);
+      return saved;
+    });
   };
 
   const fmt = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -105,7 +109,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <h2 style={{ fontSize: 18, fontWeight: 600 }}>Decisões</h2>
                   <p className="small muted" style={{ marginTop: 4 }}>Cada uma vai para a sua casa: Registro do Plan, nota do daily-report ou só a ata.</p>
                 </div>
-                <button type="button" className="btn btn-dark" disabled={saving || !!result} onClick={() => void save()}>
+                <button type="button" className="btn btn-dark" disabled={saving || !!result} onClick={() => save()}>
                   {saving ? <span className="spinner" /> : null} {result ? 'Gravado' : 'Gravar ata e decisões'}
                 </button>
               </div>
@@ -174,7 +178,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               <div className="row spread">
                 <h2 style={{ fontSize: 18, fontWeight: 600 }}>Para a daily do time</h2>
                 <div className="row" style={{ gap: 8 }}>
-                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!teams} onClick={() => void loadTeams()}>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!teams} onClick={() => loadTeams()}>
                     Reescrever
                   </button>
                   <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!teams} onClick={() => teams && void copy('teams', teams)}>
@@ -187,7 +191,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               {teamsError && (
                 <div className="row">
                   <span className="small" style={{ color: 'var(--night-red)' }}>{teamsError}</span>
-                  <button type="button" className="btn" onClick={() => void loadTeams()}>Tentar de novo</button>
+                  <button type="button" className="btn" onClick={() => loadTeams()}>Tentar de novo</button>
                 </div>
               )}
               <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>

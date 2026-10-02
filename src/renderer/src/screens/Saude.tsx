@@ -3,6 +3,7 @@ import type { SaudeSnapshot } from '../../../shared/saude';
 import type { Screen } from '../App';
 import { errorText } from '../api';
 import { saudeApi } from '../saudeApi';
+import { jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
 const when = (iso: string | null) =>
@@ -17,7 +18,6 @@ function Dot({ ok }: { ok: boolean | null }) {
 
 export function Saude({ go }: { go: (s: Screen) => void }) {
   const [snap, setSnap] = useState<SaudeSnapshot | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,15 +25,15 @@ export function Saude({ go }: { go: (s: Screen) => void }) {
     return saudeApi.onChanged(setSnap);
   }, []);
 
-  const check = async () => {
-    setBusy(true);
+  const running = useJobs<SaudeSnapshot>('saude:', {
+    done: (r) => setSnap(r),
+    failed: (message) => setError(message),
+  });
+  const busy = running.length > 0;
+
+  const check = () => {
     setError(null);
-    try {
-      setSnap(await saudeApi.check());
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(false);
+    jobs.launch('saude:check', { label: 'Verificação de saúde', busy: 'Verificando…', screen: { name: 'saude' } }, () => saudeApi.check());
   };
 
   return (
@@ -45,7 +45,7 @@ export function Saude({ go }: { go: (s: Screen) => void }) {
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>Saúde</h1>
             {snap && <span className="faint">{snap.problems ? `${snap.problems} problema(s)` : 'Tudo certo'}</span>}
           </div>
-          <button type="button" className="btn" disabled={busy} onClick={() => void check()}>
+          <button type="button" className="btn" disabled={busy} onClick={() => check()}>
             {busy ? <span className="spinner" /> : null} Verificar agora
           </button>
         </header>

@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -16,7 +17,6 @@ function checklistText(q: Qa): string {
 export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const [qa, setQa] = useState<Qa | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirmWrite, setConfirmWrite] = useState(false);
@@ -27,10 +27,22 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
   useEffect(() => {
     if (!card) return;
     api.getQa(card.iid).then((q) => {
-      setQa(q);
+      setQa((prev) => prev ?? q);
       setLoaded(true);
     });
   }, [card]);
+
+  // Main keeps the handoff; a job that finished while this screen was closed is applied as it would have been.
+  const running = useJobs<Qa>(card ? `qa:${card.ref}:` : null, {
+    done: (q, job, late) => {
+      setQa(q);
+      setLoaded(true);
+      const last = q.talk[q.talk.length - 1];
+      if (!late && job.key.endsWith(':ask') && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'qa').catch(() => undefined);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running);
 
   useEffect(() => {
     if (!qa || !voice || spoken.current === qa.createdAt) return;
@@ -38,23 +50,15 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
     void player.say(qa.speech, voice, 'qa').catch(() => undefined);
   }, [qa, voice, player]);
 
-  const act = async (label: string, fn: () => Promise<Qa>, speakLast = false) => {
-    setBusy(label);
+  const act = (op: string, name: string, label: string, fn: () => Promise<Qa>) => {
+    if (!card) return;
     setError(null);
-    try {
-      const q = await fn();
-      setQa(q);
-      const last = q.talk[q.talk.length - 1];
-      if (speakLast && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'qa').catch(() => undefined);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(null);
+    jobs.launch(`qa:${card.ref}:${op}`, { label: `${name} da ${card.iid}`, busy: label, screen: { name: 'qa', ref: card.ref, card } }, fn);
   };
 
   const ask = useCallback(
     async (text: string) => {
-      if (card) await act('O agente está respondendo…', () => api.askQa(card.iid, text), true);
+      if (card) act('ask', 'Pergunta do QA', 'O agente está respondendo…', () => api.askQa(card.iid, text));
     },
     [card],
   );
@@ -94,7 +98,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             <p className="small muted" style={{ lineHeight: 1.5 }}>
               O agente lê o ISSUE_COMPLETION, o TEST_PLAN, o Plan, o diff do MR e a nota do QA na issue, e explica por voz o que mudou e o que testar. Sai daqui o checklist e o texto do Teams. Criar a branch de release, o comentário e o status continuam na skill qa-release-branch, no Claude Code, com “sim”.
             </p>
-            <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => void act('O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
+            <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
           </section>
         )}
@@ -128,7 +132,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
                 <div className="row" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>
                   {confirmWrite ? (
                     <>
-                      <button type="button" className="btn btn-red" onClick={() => void act('Gravando…', () => api.writeQaChecklist(qa.iid)).then(() => setConfirmWrite(false))}>
+                      <button type="button" className="btn btn-red" onClick={() => { setConfirmWrite(false); act('write', 'Checklist do QA', 'Gravando…', () => api.writeQaChecklist(qa.iid)); }}>
                         Confirmar: {qa.checklistExists ? 'substituir' : 'criar'} QA_CHECKLIST.md
                       </button>
                       <button type="button" className="btn" onClick={() => setConfirmWrite(false)}>Cancelar</button>
@@ -155,7 +159,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
                   <Bubble key={i} m={m} who={m.me ? 'Pergunta' : 'Agente'} voice={voice} player={player} speaker="qa" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
-                <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
+                <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) ask(draft.trim()); setDraft(''); }}>
                   <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
                   <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>
                 </form>
@@ -164,7 +168,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
                 <h2 className="section-title">Levar ao QA</h2>
                 <p className="small" style={{ lineHeight: 1.5 }}>Branch de release, pipelines, comentário @qa.interno e status Ready for testing: skill qa-release-branch, no Claude Code, com “sim” por ação.</p>
                 <ContinueInClaude sessionId={qa.sessionId} />
-                <button type="button" className="btn" disabled={!!busy} onClick={() => void act('O agente está relendo a atividade…', () => api.prepareQa(card))}>Preparar de novo</button>
+                <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está relendo a atividade…', () => api.prepareQa(card))}>Preparar de novo</button>
               </section>
             </aside>
           </div>

@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -17,36 +18,37 @@ export function Conflict({
   player,
   go,
 }: { action: ReleaseAction | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const rec = useRecorder(() => void talkRef.current());
   const opened = useRef(false);
   const voice = c.voices?.agents[2] ?? null;
 
+  // The updated action reaches the app through the actions event; the job only carries the busy state and the spoken answer.
   const ask = useCallback(
-    async (question: string) => {
+    (question: string) => {
       if (!action) return;
       setError(null);
-      setBusy('O agente está lendo os dois lados do conflito…');
-      try {
-        const updated = await api.conflictAsk(action.id, question);
-        setBusy(null);
-        const last = updated.msgs[updated.msgs.length - 1];
-        if (voice && last && !last.me) await player.say(last.speech ?? last.text, voice, 'conflito').catch(() => undefined);
-      } catch (e) {
-        setError(errorText(e));
-        setBusy(null);
-      }
+      jobs.launch(`conflict:${action.id}:ask`, { label: `Conflito da ${action.issue}`, busy: 'O agente está lendo os dois lados do conflito…', screen: { name: 'conflict', id: action.id } }, () => api.conflictAsk(action.id, question));
     },
-    [action, voice, player],
+    [action],
   );
 
   useEffect(() => {
     if (opened.current || !action) return;
     opened.current = true;
-    if (!action.msgs.length && !action.sessionId) void ask(OPENING);
+    if (!action.msgs.length && !action.sessionId && !jobs.get(`conflict:${action.id}:ask`)) ask(OPENING);
   }, [action, ask]);
+
+  const running = useJobs<ReleaseAction>(action ? `conflict:${action.id}:` : null, {
+    done: (updated, _job, late) => {
+      const last = updated.msgs[updated.msgs.length - 1];
+      if (!late && voice && last && !last.me) void player.say(last.speech ?? last.text, voice, 'conflito').catch(() => undefined);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running, localBusy);
 
   const talk = useCallback(async () => {
     if (player.speaking) player.stop();
@@ -64,7 +66,7 @@ export function Conflict({
     try {
       const text = await transcribeAudio(audio);
       setBusy(null);
-      if (text) await ask(text);
+      if (text) ask(text);
     } catch (e) {
       setBusy(null);
       setError(`Falha na transcrição: ${errorText(e)}`);

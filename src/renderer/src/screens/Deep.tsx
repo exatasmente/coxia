@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { destination } from '../../../shared/destination';
-import type { Card, DeepState } from '../../../shared/types';
+import type { Card, DeepAnswer, DeepState } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -35,7 +36,7 @@ export function Deep({
   const { sessionId, msgs, sources, options, pick, saved } = c.deep[refName] ?? EMPTY_DEEP;
   const { updateDeep } = c;
   const update = useCallback((change: (d: DeepState) => DeepState) => updateDeep(refName, change), [updateDeep, refName]);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const rec = useRecorder(() => void talkRef.current());
@@ -43,13 +44,15 @@ export function Deep({
   const session = useRef(sessionId);
   session.current = sessionId;
 
+  // The answer is written into the ceremony store by the job itself, so it lands even if this screen is gone by then.
   const ask = useCallback(
-    async (question: string, shown = true) => {
+    (question: string, shown = true) => {
       if (!card) return;
+      const key = `deep:${card.ref}:ask`;
+      if (jobs.get(key)?.status === 'running') return;
       setError(null);
       if (shown) update((d) => ({ ...d, msgs: [...d.msgs, { me: true, text: question, at: now() }] }));
-      setBusy('O agente está lendo e investigando…');
-      try {
+      jobs.launch(key, { label: `Conversa da ${card.iid}`, busy: 'O agente está lendo e investigando…', screen: { name: 'deep', ref: card.ref, back, card } }, async () => {
         const r = await api.deepAsk(card, question, session.current);
         update((d) => ({
           ...d,
@@ -57,23 +60,27 @@ export function Deep({
           sources: [...new Set([...d.sources, ...r.sources])],
           msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now() }],
         }));
-        setBusy(null);
-        const voice = c.voiceOf(card.ref);
-        if (voice) await player.say(r.speech, voice, card.ref).catch(() => undefined);
-      } catch (e) {
-        setError(errorText(e));
-        setBusy(null);
-      }
+        return r;
+      });
     },
-    [card, update, c, player],
+    [card, update, back],
   );
 
   // A conversation already on disk is resumed as is; only a new one starts with the opening question.
   useEffect(() => {
     if (opened.current || !card) return;
     opened.current = true;
-    if (!msgs.length && !sessionId) void ask(OPENING, false);
+    if (!msgs.length && !sessionId && !jobs.get(`deep:${card.ref}:ask`)) ask(OPENING, false);
   }, [card, ask, msgs.length, sessionId]);
+
+  const running = useJobs<DeepAnswer>(`deep:${refName}:`, {
+    done: (r, job, late) => {
+      const voice = c.voiceOf(refName);
+      if (!late && job.key.endsWith(':ask') && voice) void player.say(r.speech, voice, refName).catch(() => undefined);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running, localBusy);
 
   const talk = useCallback(async () => {
     if (player.speaking) player.stop();
@@ -110,17 +117,14 @@ export function Deep({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const propose = async () => {
+  const propose = () => {
     if (!card || !sessionId) return;
-    setBusy('O agente está montando as saídas…');
     setError(null);
-    try {
+    jobs.launch(`deep:${card.ref}:options`, { label: `Saídas da ${card.iid}`, busy: 'O agente está montando as saídas…', screen: { name: 'deep', ref: card.ref, back, card } }, async () => {
       const opts = await api.deepOptions(card, sessionId);
       update((d) => ({ ...d, options: opts, pick: Math.max(0, opts.findIndex((o) => o.recommended)), saved: false }));
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(null);
+      return opts;
+    });
   };
 
   if (!card) {
@@ -202,7 +206,7 @@ export function Deep({
               style={{ flexWrap: 'nowrap' }}
               onSubmit={(e) => {
                 e.preventDefault();
-                if (draft.trim() && !busy) void ask(draft.trim());
+                if (draft.trim() && !busy) ask(draft.trim());
                 setDraft('');
               }}
             >
@@ -217,7 +221,7 @@ export function Deep({
               {!options && (
                 <>
                   <p className="small faint">Quando a conversa tiver contexto suficiente, peça ao agente de 2 a 3 saídas com as consequências.</p>
-                  <button type="button" className="btn btn-dark" disabled={!sessionId || !!busy} onClick={() => void propose()}>Propor saídas</button>
+                  <button type="button" className="btn btn-dark" disabled={!sessionId || !!busy} onClick={() => propose()}>Propor saídas</button>
                 </>
               )}
               {options?.map((o, i) => (
@@ -230,7 +234,7 @@ export function Deep({
                   <span className="mono" style={{ display: 'block', fontSize: 12, color: 'var(--red-ink)', marginTop: 6 }}>{o.effect ? `E3 · ${o.effect}` : 'sem efeito'}</span>
                 </button>
               ))}
-              {options && <button type="button" className="btn" disabled={!!busy} onClick={() => void propose()}>Propor de novo</button>}
+              {options && <button type="button" className="btn" disabled={!!busy} onClick={() => propose()}>Propor de novo</button>}
             </section>
             {chosen && (
               <section className="panel" style={{ border: saved ? '2px solid var(--teal)' : undefined }}>

@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { busyText, jobs, useJobs } from '../useJobs';
 import { Bubble } from './Bubble';
 import { FixHeard } from './FixHeard';
 import { ContinueInClaude } from './ContinueInClaude';
@@ -12,6 +13,26 @@ import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
+
+const RESUME_MS = 12 * 3600_000;
+const resumeKey = (ref: string): string => `cerimonias.gate.${ref}`;
+
+// A quiz in progress is picked up again when the screen is reopened; a recorded one is done.
+function rememberGate(ref: string, gate: GateView): void {
+  try {
+    if (gate.recorded) localStorage.removeItem(resumeKey(ref));
+    else localStorage.setItem(resumeKey(ref), JSON.stringify({ id: gate.id, at: Date.now() }));
+  } catch {}
+}
+
+function rememberedGate(ref: string): string | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(resumeKey(ref)) ?? 'null') as { id?: unknown; at?: unknown } | null;
+    return saved && typeof saved.id === 'string' && typeof saved.at === 'number' && Date.now() - saved.at < RESUME_MS ? saved.id : null;
+  } catch {
+    return null;
+  }
+}
 
 function spokenQuestion(n: number, text: string, options: string[]): string {
   return `Pergunta ${n}. ${text} ${options.map((o, i) => `${LETTERS[i]}: ${o}.`).join(' ')}`;
@@ -25,7 +46,7 @@ export function Gate({
 }: { card: Card | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const [options, setOptions] = useState<GateOption[] | null>(null);
   const [gate, setGate] = useState<GateView | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirmInsert, setConfirmInsert] = useState(false);
@@ -36,6 +57,21 @@ export function Gate({
   useEffect(() => {
     if (card) api.gateOptions(card).then(setOptions, (e) => setError(errorText(e)));
   }, [card]);
+
+  // The quiz lives in main: the finished job is applied as it would have been, and what main saved is read back for the rest.
+  const running = useJobs<GateView>(card ? `gate:${card.ref}:` : null, {
+    done: (view) => {
+      if (card) rememberGate(card.ref, view);
+      setGate(view);
+    },
+    failed: (message) => setError(message),
+  });
+  const busy = busyText(running, localBusy);
+  const ref = card?.ref;
+  useEffect(() => {
+    const id = ref ? rememberedGate(ref) : null;
+    if (id) void api.getGate(id).then((g) => g && setGate((prev) => prev ?? g), () => undefined);
+  }, [ref]);
 
   const round = gate ? gate.rounds[gate.rounds.length - 1] : null;
   const current = round ? round.questions.findIndex((q) => !q.answer) : -1;
@@ -54,24 +90,19 @@ export function Gate({
     void player.say(parts.join(' '), voice, 'Moderador').catch(() => undefined);
   }, [gate, round, current, voice, player]);
 
-  const act = async (label: string, fn: () => Promise<GateView>) => {
-    setBusy(label);
+  const act = (op: string, name: string, label: string, fn: () => Promise<GateView>) => {
+    if (!card) return;
     setError(null);
-    try {
-      setGate(await fn());
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(null);
+    jobs.launch(`gate:${card.ref}:${op}`, { label: `${name} da ${card.iid}`, busy: label, screen: { name: 'gate', ref: card.ref, card } }, fn);
   };
 
   const answer = useCallback(
     (input: { choice?: number; text?: string }) => {
       if (!gate || current < 0) return;
       player.stop();
-      void act(input.text ? 'Avaliando a resposta…' : 'Registrando…', () => api.answerGate(gate.id, current, input));
+      act(`answer:${gate.rounds.length}:${current}`, 'Resposta do gate', input.text ? 'Avaliando a resposta…' : 'Registrando…', () => api.answerGate(gate.id, current, input));
     },
-    [gate, current, player],
+    [gate, current, player, card],
   );
 
   const talk = useCallback(async () => {
@@ -92,7 +123,7 @@ export function Gate({
       setBusy(null);
       if (!text) return;
       if (!roundDone) answer({ text });
-      else await act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, text));
+      else act('explain', 'Leitura assistida do gate', 'O agente está lendo a seção com você…', () => api.explainGate(gate.id, text));
     } catch (e) {
       setBusy(null);
       setError(`Falha na transcrição: ${errorText(e)}`);
@@ -152,7 +183,7 @@ export function Gate({
             {options?.length === 0 && <p className="small faint">Esta atividade não tem Investigation, RFC, Spec Funcional, Findings nem Plan no .specs.</p>}
             <div className="row">
               {options?.map((o) => (
-                <button key={o.gate} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => void act('O agente está lendo o artefato e montando o quiz…', () => api.startGate(card, o.gate))}>
+                <button key={o.gate} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act(`start:${o.gate}`, `Gate ${o.gate}`, 'O agente está lendo o artefato e montando o quiz…', () => api.startGate(card, o.gate))}>
                   Gate {o.gate} — {o.label}
                 </button>
               ))}
@@ -232,7 +263,7 @@ export function Gate({
                     {gate.talk.map((m, i) => (
                       <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="gate" />
                     ))}
-                    <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void act('O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
+                    <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) act('explain', 'Leitura assistida do gate', 'O agente está lendo a seção com você…', () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
                       <input className="text-input" placeholder="Pergunte sobre o ponto que escapou" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta de leitura assistida" />
                       <button type="submit" className="btn" disabled={!draft.trim() || !!busy}>Perguntar</button>
                     </form>
@@ -244,7 +275,7 @@ export function Gate({
                           <span className="small" style={{ color: 'var(--teal-ink)' }}>Inserido no artefato.</span>
                         ) : confirmInsert ? (
                           <div className="row">
-                            <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => void act('Inserindo…', () => api.insertGateVisual(gate.id)).then(() => setConfirmInsert(false))}>Confirmar: escrever no {gate.label}</button>
+                            <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => { setConfirmInsert(false); act('insert', 'Visual inserido no gate', 'Inserindo…', () => api.insertGateVisual(gate.id)); }}>Confirmar: escrever no {gate.label}</button>
                             <button type="button" className="btn" onClick={() => setConfirmInsert(false)}>Cancelar</button>
                           </div>
                         ) : (
@@ -252,18 +283,18 @@ export function Gate({
                         )}
                       </div>
                     ) : (
-                      <button type="button" className="btn" disabled={!!busy} onClick={() => void act('O agente está desenhando o recurso visual…', () => api.visualGate(gate.id))}>Gerar recurso visual</button>
+                      <button type="button" className="btn" disabled={!!busy} onClick={() => act('visual', 'Recurso visual do gate', 'O agente está desenhando o recurso visual…', () => api.visualGate(gate.id))}>Gerar recurso visual</button>
                     )}
                     {lastAfterTwo && (
                       <div className="item" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
                         <span className="small">Duas rodadas erradas: o problema é o material. Reescreva a seção (no Claude Code) e recomece o quiz; se ainda falhar, você decide entre risco aceito no Registro do Plan ou voltar a F1/F2.</span>
                       </div>
                     )}
-                    <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => void act('O agente está montando a nova rodada…', () => api.newGateRound(gate.id))}>Nova rodada sobre o ponto</button>
+                    <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('round', 'Nova rodada do gate', 'O agente está montando a nova rodada…', () => api.newGateRound(gate.id))}>Nova rodada sobre o ponto</button>
                   </>
                 )}
                 <div className="row" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>
-                  <button type="button" className="btn" disabled={!!gate.recorded || !!busy} onClick={() => void act('Gravando…', () => api.recordGate(gate.id))}>
+                  <button type="button" className="btn" disabled={!!gate.recorded || !!busy} onClick={() => act('record', 'Gravação do gate', 'Gravando…', () => api.recordGate(gate.id))}>
                     {gate.recorded ? 'Gravado no GATE_QUIZ.md' : 'Gravar no GATE_QUIZ.md'}
                   </button>
                   <span className="mono faint" style={{ wordBreak: 'break-all' }}>{gate.quizFile.replace(/^.*\/\.specs\//, '.specs/')}</span>

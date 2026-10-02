@@ -5,6 +5,7 @@ import type { Screen } from '../App';
 import { errorText } from '../api';
 import type { usePlayer } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { jobs, useJobs } from '../useJobs';
 import { feedbackApi } from '../feedbackApi';
 import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
@@ -37,52 +38,67 @@ export function Discussions({
   const [result, setResult] = useState<DiscussionsResult | null>(null);
   const [idx, setIdx] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [explaining, setExplaining] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tried = useRef(new Set<string>());
   const spoken = useRef(new Set<string>());
   const voice = c.voices?.agents[4] ?? c.voices?.agents[0] ?? null;
 
-  const load = useCallback(async (target: MrPath) => {
-    setLoading(true);
-    setError(null);
-    try {
-      setResult(await feedbackApi.listDiscussions(target));
-      setIdx(0);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setLoading(false);
-  }, []);
+  const listKey = (target: MrPath) => `discussions:${card?.ref}:${target.ref}:list`;
+  const explainKey = (target: MrPath, id: string) => `discussions:${card?.ref}:${target.ref}:explain:${id}`;
+  // Explanations that came back before the list did; main keeps them too, so the list read afterwards already has them.
+  const explained = useRef(new Map<string, DiscussionView>());
 
+  const load = useCallback(
+    (target: MrPath) => {
+      if (!card) return;
+      setError(null);
+      jobs.launch(listKey(target), { label: `Discussões do ${target.ref}`, busy: 'Lendo as discussões no GitLab…', screen: { name: 'discussions', ref: card.ref, mr: target.ref, card } }, () => feedbackApi.listDiscussions(target));
+    },
+    [card],
+  );
+
+  // A list read that finished while this screen was closed is shown as it was; otherwise the list is read again.
   useEffect(() => {
-    if (mr) void load(mr);
+    if (mr && !jobs.get(listKey(mr))) load(mr);
   }, [mr, load]);
-
-  const list = result?.discussions ?? [];
-  const current: DiscussionView | undefined = list[Math.min(idx, list.length - 1)];
 
   const patch = (id: string, change: (d: DiscussionView) => DiscussionView) =>
     setResult((r) => (r ? { ...r, discussions: r.discussions.map((d) => (d.id === id ? change(d) : d)) } : r));
 
-  const explain = useCallback(
-    async (d: DiscussionView) => {
-      if (!card || !mr) return;
-      setExplaining(d.id);
-      setError(null);
-      try {
-        const next = await feedbackApi.explainDiscussion(card, mr, d.id);
-        patch(d.id, () => next);
-        setDrafts((x) => {
-          const { [d.id]: _gone, ...rest } = x;
-          return rest;
-        });
-      } catch (e) {
-        setError(errorText(e));
+  const clearDraft = (id: string) =>
+    setDrafts((x) => {
+      const { [id]: _gone, ...rest } = x;
+      return rest;
+    });
+
+  const running = useJobs<DiscussionsResult | DiscussionView>(card ? `discussions:${card.ref}:` : null, {
+    done: (value, job) => {
+      if (!mr || !job.key.includes(`:${mr.ref}:`)) return;
+      if (job.key.endsWith(':list')) {
+        const r = value as DiscussionsResult;
+        setResult({ ...r, discussions: r.discussions.map((d) => { const o = explained.current.get(d.id); return o && (o.explanation?.at ?? '') > (d.explanation?.at ?? '') ? o : d; }) });
+        setIdx(0);
+        return;
       }
-      setExplaining(null);
+      const view = value as DiscussionView;
+      explained.current.set(view.id, view);
+      patch(view.id, () => view);
+      clearDraft(view.id);
+    },
+    failed: (message) => setError(message),
+  });
+  const loading = !!mr && running.some((j) => j.key === listKey(mr));
+  const explaining = mr ? (running.find((j) => j.key.startsWith(explainKey(mr, '')))?.key.slice(explainKey(mr, '').length) ?? null) : null;
+
+  const list = result?.discussions ?? [];
+  const current: DiscussionView | undefined = list[Math.min(idx, list.length - 1)];
+
+  const explain = useCallback(
+    (d: DiscussionView) => {
+      if (!card || !mr) return;
+      setError(null);
+      jobs.launch(explainKey(mr, d.id), { label: `Explicação da discussão do ${mr.ref}`, busy: 'O agente está lendo o trecho e a discussão…', screen: { name: 'discussions', ref: card.ref, mr: mr.ref, card } }, () => feedbackApi.explainDiscussion(card, mr, d.id));
     },
     [card, mr],
   );
@@ -91,7 +107,7 @@ export function Discussions({
   useEffect(() => {
     if (!current || current.explanation || explaining || tried.current.has(current.id)) return;
     tried.current.add(current.id);
-    void explain(current);
+    explain(current);
   }, [current, explaining, explain]);
 
   useEffect(() => {
@@ -131,7 +147,7 @@ export function Discussions({
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={false} thinking={!!busy || loading} on={!!player.speaking} color="var(--night-violet)" small />
-          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && void load(mr)}>
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && load(mr)}>
             {loading ? <span className="spinner" /> : null} Atualizar
           </button>
         </header>
@@ -192,12 +208,12 @@ export function Discussions({
                   <div className="small" style={{ lineHeight: 1.55 }}><RichText text={current.explanation.text || current.explanation.speech} /></div>
                   {current.stale && <p className="small" style={{ color: 'var(--amber-ink)' }}>A discussão teve respostas novas depois desta explicação.</p>}
                   <div className="row" style={{ gap: 8 }}>
-                    <button type="button" className="btn" disabled={!!explaining} onClick={() => void explain(current)}>Explicar de novo</button>
+                    <button type="button" className="btn" disabled={!!explaining} onClick={() => explain(current)}>Explicar de novo</button>
                     <ContinueInClaude sessionId={current.explanation.sessionId} />
                   </div>
                 </>
               )}
-              {!current.explanation && !explaining && <button type="button" className="btn btn-dark" onClick={() => void explain(current)}>Explicar com o agente</button>}
+              {!current.explanation && !explaining && <button type="button" className="btn btn-dark" onClick={() => explain(current)}>Explicar com o agente</button>}
             </section>
 
             {current.explanation && (

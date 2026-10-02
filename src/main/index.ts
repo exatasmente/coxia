@@ -39,15 +39,31 @@ function emit(ev: AppEvent): void {
   broadcast(ev);
 }
 
-function notify(n: Notice): void {
-  pushNotice(n);
+function showNotice(n: Notice, send: (ev: AppEvent) => void): void {
   if (!Notification.isSupported()) return;
   const note = new Notification({ title: n.title, body: n.body, icon: join(RESOURCES, 'icon.png') });
   note.on('click', () => {
     show();
-    emit(n.onClick);
+    send(n.onClick);
   });
   note.show();
+}
+
+function notify(n: Notice): void {
+  pushNotice(n);
+  showNotice(n, emit);
+}
+
+const SCREEN_FIELDS = ['ref', 'id', 'mr', 'back'];
+
+// A finished agent job, announced by the renderer. Only this window is told on click: paired phones keep their own screen.
+function notifyJob(title: unknown, body: unknown, screen: unknown): void {
+  if (!getSettings().notifications || typeof title !== 'string' || typeof body !== 'string' || !screen || typeof screen !== 'object') return;
+  const raw = screen as Record<string, unknown>;
+  if (typeof raw.name !== 'string') return;
+  const target: { name: string; [key: string]: unknown } = { name: raw.name };
+  for (const key of SCREEN_FIELDS) if (typeof raw[key] === 'string') target[key] = raw[key];
+  showNotice({ title: title.slice(0, 80), body: body.slice(0, 240), onClick: { type: 'open', screen: target } }, (ev) => win?.webContents.send('app:event', ev));
 }
 
 function createWindow(): void {
@@ -160,6 +176,7 @@ function handlers(): void {
   handle('retro:prepare', () => prepareRetro());
   handle('retro:latest', () => latestRetro());
   handle('retro:ask', (id: string, question: string) => askRetro(id, question));
+  handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));
 }
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.

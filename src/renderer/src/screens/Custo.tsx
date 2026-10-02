@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CustoRow, CustoSummary } from '../../../shared/custo';
 import type { Screen } from '../App';
 import { api, errorText, moduleEvents } from '../api';
+import { jobs, useJobs } from '../useJobs';
 import { FalasEconomia } from './FalasCusto';
 import { BackIcon } from './icons';
 
@@ -32,33 +33,36 @@ function Tile({ title, row, hint }: { title: string; row: CustoRow; hint?: strin
 
 export function Custo({ go }: { go: (s: Screen) => void }) {
   const [data, setData] = useState<CustoSummary | null>(null);
-  const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [goal, setGoal] = useState('');
 
-  const refresh = useCallback(async () => {
-    setBusy(true);
+  const refresh = useCallback(() => {
     setError(null);
-    try {
-      const next = await api.invoke<CustoSummary>('custo:refresh');
+    jobs.launch('custo:refresh', { label: 'Atualização de custos', busy: 'Atualizando os preços…', screen: { name: 'custo' } }, () => api.invoke<CustoSummary>('custo:refresh'));
+  }, []);
+
+  const running = useJobs<CustoSummary>('custo:', {
+    done: (next) => {
       setData(next);
       setGoal(String(next.goal));
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(false);
-    setProgress(null);
-  }, []);
+      setProgress(null);
+    },
+    failed: (message) => {
+      setError(message);
+      setProgress(null);
+    },
+  });
+  const busy = running.some((j) => j.key === 'custo:refresh');
 
   useEffect(() => {
     const onProgress = (ev: Event) => setProgress((ev as CustomEvent<{ done: number; total: number }>).detail);
     moduleEvents.addEventListener('custo-progress', onProgress);
     void api.invoke<CustoSummary>('custo:summary').then((s) => {
-      setData(s);
-      setGoal(String(s.goal));
+      setData((prev) => prev ?? s);
+      setGoal((prev) => prev || String(s.goal));
       // Prices are final once fetched, so refreshing only asks for what is new; do it when the numbers are stale.
-      if (!s.refreshedAt || Date.now() - new Date(s.refreshedAt).getTime() > 30 * 60_000) void refresh();
+      if (!s.refreshedAt || Date.now() - new Date(s.refreshedAt).getTime() > 30 * 60_000) refresh();
     });
     return () => moduleEvents.removeEventListener('custo-progress', onProgress);
   }, [refresh]);
