@@ -106,7 +106,7 @@ export async function prepareRetro(): Promise<Retro> {
       `Retro semanal do Luiz, por voz, de ${from.toLocaleDateString('pt-BR')} a ${to.toLocaleDateString('pt-BR')}. Você conduz.`,
       'Base: o resumo abaixo (cerimônias, decisões, ações de release, quizzes de gate e mudanças no GitLab). Pode ler specs e o playbook para entender um ponto; não invente fato que não esteja no resumo ou no que você ler.',
       'Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.',
-      '"fala": abertura de até 150 palavras. "numeros": de 3 a 6 contagens da semana. Cada item de "funcionou", "travou" e "retrabalho" com a evidência concreta (issue, data).',
+      '"fala": abertura de até 150 palavras. "numeros": de 3 a 6 contagens da semana; "valor" é só o número (ex.: "2", "4") e o contexto vai em "rotulo" (até 8 palavras). Cada item de "funcionou", "travou" e "retrabalho" com a evidência concreta (issue, data).',
       '"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.',
       `Resumo da semana: ${JSON.stringify(digest).slice(0, 24000)}`,
       SPEECH_RULES,
