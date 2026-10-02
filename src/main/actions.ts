@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
-import type { AppEvent, GitlabCommand, ReleaseAction } from '../shared/types';
+import type { AppEvent, Card, GitlabCommand, ReleaseAction } from '../shared/types';
 import { conflictAsk, conflictPropose as askProposal, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { getSettings } from './config';
@@ -21,6 +21,7 @@ import {
   reopenResolutions,
   runVerify,
 } from './conflictGit';
+import { assertResolvable, resolveMr, type MrRead } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
 import { ATAS, GITLAB, PLAYBOOK, WORKSPACE } from './env';
@@ -454,8 +455,11 @@ const FENCE = /^```[\w-]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
 export const conflictHooks: {
   cloneRoots: string[];
   scheduleQaComment: (sync: ReleaseAction) => void;
+  // GET only: the GitLab reads that conflict:fromMr makes.
+  gitlabGet: (endpoint: string) => Promise<unknown>;
 } = {
   cloneRoots: [process.env.CERIMONIAS_CLONES_DIR ?? WORKSPACE],
+  gitlabGet: async (endpoint) => JSON.parse(await glab(['api', endpoint])),
   scheduleQaComment: (sync) => {
     // The push pipeline takes a moment to appear; the comment draft waits for it.
     setTimeout(() => void proposeQaComment(sync).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
@@ -495,6 +499,62 @@ async function withStep<T>(id: string, label: string, fn: () => Promise<T>): Pro
 
 function projectOf(u: Partial<Unit>): string {
   return u.project_path ?? (u.repo ?? '').replace(/^.*\/post-release-sync\//, '').replace(/\.git$/, '');
+}
+
+const OPEN_STATES = new Set(['pending', 'running', 'failed']);
+
+// Starts a resolution from an MR the card shows with conflicts, outside the post-release scan. Reads GitLab (GET only)
+// and writes the same conflict action the scan would, so Preparar needs nothing but a local clone.
+export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' | 'mrPaths'>, mrRef: string): Promise<ReleaseAction> {
+  const issue = Number(card.iid);
+  if (!Number.isInteger(issue) || issue <= 0) throw new Error(`atividade sem número de issue: ${card.iid}`);
+  const { project, iid } = resolveMr(mrRef, card.mrPaths);
+  const ref = `${project}!${iid}`;
+  const enc = encodeURIComponent(project);
+  const get = conflictHooks.gitlabGet;
+  const [mr, proj, user] = (await Promise.all([get(`projects/${enc}/merge_requests/${iid}`), get(`projects/${enc}`), get('user')])) as [MrRead, { default_branch: string }, { username: string }];
+  assertResolvable(ref, mr, { me: user.username, defaultBranch: proj.default_branch });
+  const target = (await get(`projects/${enc}/repository/branches/${encodeURIComponent(mr.target_branch)}`)) as { commit: { id: string } };
+  const tgtSha = target.commit.id;
+
+  const key = `conflict:${ref}:${tgtSha}`;
+  const store = read();
+  const open = store.actions.filter((a) => a.kind === 'conflict' && OPEN_STATES.has(a.state) && !a.resolve?.publishedAt && (a.key === key || (a.resolve && a.mrs[0]?.ref === ref)));
+  const reuse = open.find((a) => a.resolve) ?? open[0];
+  if (reuse) return reuse;
+
+  const unit: Unit = {
+    issue_iid: issue,
+    issue_title: card.title,
+    stage: card.stage ?? '',
+    mr_ref: ref,
+    mr_url: mr.web_url,
+    source_branch: mr.source_branch,
+    atras: 0,
+    mine: true,
+    bloqueado: false,
+    status: 'CONFLITO',
+    tgt_sha: tgtSha,
+    conflitos: [],
+    repo: '',
+    src_sha: mr.sha,
+    project_path: project,
+    mr_iid: iid,
+    target_branch: mr.target_branch,
+  };
+  const action = blank({
+    key,
+    kind: 'conflict',
+    issue,
+    issueTitle: card.title,
+    stage: card.stage ?? '',
+    release: 'MR em conflito com a main',
+    mrs: [{ ref, url: mr.web_url, branch: mr.source_branch, behind: 0 }],
+    files: [],
+    unit: unit as unknown as Record<string, unknown>,
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  return action;
 }
 
 export async function conflictPrepare(id: string): Promise<ReleaseAction> {

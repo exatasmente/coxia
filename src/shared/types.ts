@@ -341,6 +341,7 @@ export interface Api {
   approveAction(id: string): Promise<ReleaseAction>;
   skipAction(id: string): Promise<ReleaseAction>;
   conflictAsk(id: string, question: string): Promise<ReleaseAction>;
+  conflictFromMr(card: Card, ref: string): Promise<ReleaseAction>;
   conflictPrepare(id: string): Promise<ReleaseAction>;
   conflictPropose(id: string): Promise<ReleaseAction>;
   conflictChoose(id: string, hunkId: string, choice: import('./conflict').HunkChoice, edited?: string): Promise<ReleaseAction>;

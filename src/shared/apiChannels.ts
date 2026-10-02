@@ -29,6 +29,7 @@ export const API_CHANNELS = {
   approveAction: 'actions:approve',
   skipAction: 'actions:skip',
   conflictAsk: 'actions:conflict',
+  conflictFromMr: 'conflict:fromMr',
   conflictPrepare: 'conflict:prepare',
   conflictPropose: 'conflict:propose',
   conflictChoose: 'conflict:choose',

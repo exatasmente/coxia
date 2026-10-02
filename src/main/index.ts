@@ -3,7 +3,7 @@ import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativ
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, Voice } from '../shared/types';
-import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
+import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude } from './claude';
@@ -161,6 +161,7 @@ function handlers(): void {
   handle('actions:approve', (id: string) => approveAction(id));
   handle('actions:skip', (id: string) => skipAction(id));
   handle('actions:conflict', (id: string, question: string) => conflictTalk(id, question));
+  handle('conflict:fromMr', (card: Card, ref: string) => conflictFromMr(card, ref));
   handle('conflict:prepare', (id: string) => conflictPrepare(id));
   handle('conflict:propose', (id: string) => conflictPropose(id));
   handle('conflict:choose', (id: string, hunkId: string, choice: HunkChoice, edited?: string) => conflictChoose(id, hunkId, choice, edited));
