@@ -1,4 +1,4 @@
-export type AuditKind = 'gitlab' | 'graphql' | 'sync' | 'publish' | 'note-edit';
+export type AuditKind = 'gitlab' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push';
 
 export interface AuditEntry {
   at: string;

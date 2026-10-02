@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { conflictProgress } from '../../../shared/conflict';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
@@ -17,6 +18,7 @@ function title(a: ReleaseAction): string {
   if (a.kind === 'gitlab') return a.summary ?? 'Ação no GitLab';
   if (a.kind === 'sync') return `Sincronizar #${a.issue} com a main`;
   if (a.kind === 'qa-comment') return `Atualizar o comentário do QA na #${a.issue}`;
+  if (a.kind === 'conflict-push') return a.summary ?? `Publicar a resolução do conflito da #${a.issue}`;
   return `Conflito na #${a.issue} ao sincronizar com a main`;
 }
 
@@ -26,7 +28,8 @@ function what(a: ReleaseAction): string {
     return `Faz merge da main em ${a.mrs.map((m) => m.branch).join(', ')} e push (fast-forward, sem force-push). ${a.retest ? 'A release mexeu em arquivos do MR: o QA precisa retestar.' : 'A release não mexeu em arquivos do MR: sem reteste.'}`;
   if (a.kind === 'qa-comment')
     return a.noteId ? `Edita no lugar o comentário de pipelines do QA (nota ${a.noteId}), visível ao time na issue.` : 'Publica o comentário de sincronização da ferramenta na issue, visível ao time.';
-  return 'Nada é executado daqui. A call explica o conflito e a resolução; o ajuste é feito depois no Claude Code, com confirmação.';
+  if (a.kind === 'conflict-push') return 'Push da branch com o merge da main já resolvido e verificado na worktree local: fast-forward, sem force, visível ao time. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou.';
+  return 'A call explica o conflito; a resolução é feita na tela dele, numa worktree local. Nada vai para o GitLab sem o seu “sim” ao push.';
 }
 
 function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
@@ -73,6 +76,8 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             <span className={`badge ${a.state === 'done' ? 'badge-now' : a.state === 'failed' ? 'badge-block' : a.state === 'pending' ? 'badge-ask' : 'badge-quiet'}`}>
               {a.kind === 'conflict' && a.state === 'skipped' ? 'tratado fora' : STATE_LABEL[a.state]}
             </span>
+            {a.kind === 'conflict' && open && a.resolve && <span className="badge badge-ask">{conflictProgress(a)}</span>}
+            {a.kind === 'conflict' && a.state === 'done' && a.resolve?.publishedAt && <span className="badge badge-quiet">publicado</span>}
           </div>
           <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {a.stage.replace('STAGE:: ', '')}</div>
         </div>
@@ -90,7 +95,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       {a.files.length > 0 && (
         <details>
           <summary className="small muted" style={{ cursor: 'pointer' }}>
-            {a.kind === 'conflict' ? `${a.files.length} arquivo(s) em conflito` : `${a.files.length} arquivo(s) do MR que a release também mudou`}
+            {a.kind === 'conflict' ? `${a.files.length} arquivo(s) em conflito` : a.kind === 'conflict-push' ? `${a.files.length} arquivo(s) resolvido(s)` : `${a.files.length} arquivo(s) do MR que a release também mudou`}
           </summary>
           <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0' }}>{a.files.join('\n')}</pre>
         </details>
@@ -115,17 +120,17 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       {open && (
         <div className="row">
           {a.kind === 'conflict' ? (
-            <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>Abrir call sobre o conflito</button>
+            <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? 'Continuar a resolução' : 'Abrir call e resolver o conflito'}</button>
           ) : (
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (
                 <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', 'Simulação', () => api.previewAction(a.id))}>
-                  {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : a.kind === 'gitlab' ? 'Ver o envio' : 'Ver o comentário'}
+                  {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : a.kind === 'gitlab' || a.kind === 'conflict-push' ? 'Ver o envio' : 'Ver o comentário'}
                 </button>
               )}
               {confirming ? (
                 <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => { setConfirming(false); start('approve', 'Execução', () => api.approveAction(a.id)); }}>
-                  {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : a.kind === 'gitlab' ? 'executar no GitLab' : 'publicar na issue'}
+                  {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : a.kind === 'conflict-push' ? 'fazer push da resolução' : a.kind === 'gitlab' ? 'executar no GitLab' : 'publicar na issue'}
                 </button>
               ) : (
                 <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>Seguir</button>
@@ -135,7 +140,11 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           {confirming ? (
             <button type="button" className="btn" disabled={!!busy} onClick={() => setConfirming(false)}>Cancelar</button>
           ) : (
-            <button type="button" className="btn" disabled={!!busy} onClick={() => void run('', () => api.skipAction(a.id))}>{a.kind === 'conflict' ? 'Já tratei fora' : 'Agora não'}</button>
+            a.kind === 'conflict-push' ? (
+              <button type="button" className="btn" onClick={() => go({ name: 'conflict', id: String((a.unit ?? {}).conflictId ?? '') })}>Abrir o conflito</button>
+            ) : (
+              <button type="button" className="btn" disabled={!!busy} onClick={() => void run('', () => api.skipAction(a.id))}>{a.kind === 'conflict' ? 'Já tratei fora' : 'Agora não'}</button>
+            )
           )}
         </div>
       )}

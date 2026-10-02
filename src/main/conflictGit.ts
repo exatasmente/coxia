@@ -1,0 +1,339 @@
+import { execFile, spawn } from 'node:child_process';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
+import type { ConflictFile, ConflictHunk } from '../shared/conflict';
+import { hunkReady, hunkText } from '../shared/conflict';
+import { hasMarkers, parseConflicts, regions, resolveSegments, withTerminator } from './conflictHunks';
+
+const run = promisify(execFile);
+
+export interface GitResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+}
+
+const ENV = { GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no', GIT_EDITOR: 'true' };
+const REF = /^[\w][\w./-]*$/;
+
+function checkRef(ref: string, what: string): string {
+  if (!REF.test(ref) || ref.includes('..') || ref.endsWith('.lock') || ref.endsWith('/') || ref.includes('//')) throw new Error(`${what} inválido: ${ref}`);
+  return ref;
+}
+
+export async function git(cwd: string, args: string[], options: { fail?: boolean } = {}): Promise<GitResult> {
+  try {
+    const { stdout, stderr } = await run('git', ['-C', cwd, ...args], { env: { ...process.env, ...ENV }, timeout: 10 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    return { stdout, stderr, code: 0 };
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; code?: number | string; message: string };
+    const result = { stdout: err.stdout ?? '', stderr: err.stderr ?? err.message, code: typeof err.code === 'number' ? err.code : 1 };
+    if (options.fail === false) return result;
+    throw new Error(`git ${args.slice(0, 3).join(' ')}: ${(result.stderr || result.stdout).trim().slice(0, 600)}`);
+  }
+}
+
+export const conflictsDir = (dataDir: string): string => join(dataDir, 'conflicts');
+
+// A remote URL names the project when its path ends with "<group>/<project>" (host checked when the URL has one).
+export function remoteMatches(url: string, projectPath: string, host: string): boolean {
+  let u = url.trim();
+  const scp = /^[\w.-]+@([\w.-]+):(.+)$/.exec(u);
+  if (scp) u = `ssh://${scp[1]}/${scp[2]}`;
+  let path = u;
+  let remote = false;
+  if (/^[a-z+]+:\/\//i.test(u)) {
+    try {
+      const parsed = new URL(u);
+      if (parsed.hostname !== host) return false;
+      path = parsed.pathname;
+      remote = true;
+    } catch {
+      return false;
+    }
+  }
+  path = path.replace(/\/+$/, '').replace(/\.git$/, '').replace(/^\//, '');
+  // A local path (a clone of a clone, a fixture) only has to end with the project.
+  return path === projectPath || (!remote && path.endsWith(`/${projectPath}`));
+}
+
+// Local clone for the MR's project: a regular checkout (not a worktree) whose origin is that project.
+export async function findClone(projectPath: string, roots: string[], host: string): Promise<string | null> {
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    for (const name of readdirSync(root).sort()) {
+      const dir = join(root, name);
+      try {
+        if (!statSync(join(dir, '.git')).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      const r = await git(dir, ['remote', 'get-url', 'origin'], { fail: false });
+      if (r.code === 0 && remoteMatches(r.stdout, projectPath, host)) found.push(dir);
+    }
+  }
+  const leaf = basename(projectPath);
+  return found.find((d) => basename(d) === leaf) ?? found[0] ?? null;
+}
+
+function insideDir(dir: string, file: string): string {
+  const abs = resolve(dir, file);
+  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(`caminho fora da worktree: ${file}`);
+  return abs;
+}
+
+function emptyHunk(file: string, index: number): ConflictHunk {
+  return {
+    id: `${file}#${index}`,
+    file,
+    whole: false,
+    ours: '',
+    oursGone: false,
+    base: null,
+    theirs: '',
+    theirsGone: false,
+    sensitive: false,
+    proposal: null,
+    explanation: null,
+    confidence: null,
+    test: null,
+    choice: null,
+    edited: null,
+  };
+}
+
+const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8000).includes(0);
+
+async function stage(wt: string, n: 1 | 2 | 3, path: string): Promise<string | null> {
+  const r = await run('git', ['-C', wt, 'show', `:${n}:${path}`], { env: { ...process.env, ...ENV }, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }).catch(() => null);
+  if (!r) return null;
+  if (isBinary(r.stdout)) throw new Error(`${path} é binário: resolva fora do app`);
+  return r.stdout.toString('utf8');
+}
+
+export async function unmergedPaths(wt: string): Promise<string[]> {
+  const r = await git(wt, ['diff', '--name-only', '--diff-filter=U', '-z']);
+  return r.stdout.split('\0').filter(Boolean);
+}
+
+export async function readConflicts(wt: string): Promise<ConflictFile[]> {
+  const files: ConflictFile[] = [];
+  for (const path of await unmergedPaths(wt)) {
+    const abs = insideDir(wt, path);
+    const buf = existsSync(abs) ? readFileSync(abs) : null;
+    if (buf && isBinary(buf)) throw new Error(`${path} é binário: resolva fora do app`);
+    const found = buf ? regions(parseConflicts(buf.toString('utf8'))) : [];
+    if (found.length) {
+      files.push({
+        path,
+        hunks: found.map((r, i) => ({ ...emptyHunk(path, i), ours: r.ours, base: r.base, theirs: r.theirs })),
+      });
+      continue;
+    }
+    const ours = await stage(wt, 2, path);
+    const theirs = await stage(wt, 3, path);
+    if (ours === null && theirs === null) throw new Error(`${path}: conflito sem os dois lados (renomeação?): resolva fora do app`);
+    files.push({
+      path,
+      hunks: [{ ...emptyHunk(path, 0), whole: true, ours: ours ?? '', oursGone: ours === null, base: await stage(wt, 1, path), theirs: theirs ?? '', theirsGone: theirs === null }],
+    });
+  }
+  return files;
+}
+
+export interface Prepared {
+  worktree: string;
+  syncBranch: string;
+  originSha: string;
+  mainSha: string;
+  files: ConflictFile[];
+}
+
+export async function prepareWorktree(p: { clone: string; branch: string; target: string; iid: number; dest: string }): Promise<Prepared> {
+  const branch = checkRef(p.branch, 'branch');
+  const target = checkRef(p.target, 'branch de destino');
+  const syncBranch = `sync/${Number(p.iid)}`;
+  if (!Number.isInteger(p.iid) || p.iid <= 0) throw new Error(`número de MR inválido: ${p.iid}`);
+  const top = await git(p.clone, ['rev-parse', '--is-bare-repository']);
+  if (top.stdout.trim() !== 'false') throw new Error(`${p.clone} não é um clone com árvore de trabalho`);
+  if (existsSync(p.dest)) throw new Error(`já existe ${p.dest}: descarte o preparo anterior`);
+  if ((await git(p.clone, ['show-ref', '--verify', '--quiet', `refs/heads/${syncBranch}`], { fail: false })).code === 0) {
+    throw new Error(`o clone já tem a branch ${syncBranch}, que não é deste app: remova-a antes de preparar`);
+  }
+
+  await git(p.clone, ['fetch', 'origin', `+refs/heads/${target}:refs/remotes/origin/${target}`, `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+  const originSha = (await git(p.clone, ['rev-parse', `refs/remotes/origin/${branch}`])).stdout.trim();
+  const mainSha = (await git(p.clone, ['rev-parse', `refs/remotes/origin/${target}`])).stdout.trim();
+
+  mkdirSync(dirname(p.dest), { recursive: true });
+  await git(p.clone, ['worktree', 'add', '--no-track', '-B', syncBranch, p.dest, `refs/remotes/origin/${branch}`]);
+  try {
+    await git(p.dest, ['-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
+    const merging = (await git(p.dest, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { fail: false })).code === 0;
+    if (!merging) throw new Error(`o merge de ${target} em ${branch} não começou: a branch já contém a ${target}, ou o git recusou. Veja o MR no GitLab.`);
+    return { worktree: p.dest, syncBranch, originSha, mainSha, files: await readConflicts(p.dest) };
+  } catch (e) {
+    await removeWorktree(p.clone, p.dest, syncBranch, conflictsDirOf(p.dest)).catch(() => undefined);
+    throw e;
+  }
+}
+
+const conflictsDirOf = (wt: string): string => dirname(wt);
+
+export interface Resolution {
+  path: string;
+  // null removes the file (a whole-file conflict resolved by taking the side that deleted it).
+  content: string | null;
+}
+
+// Everything is decided in memory first: nothing is written while any hunk is unchosen, changed or carries markers.
+export function buildResolutions(wt: string, files: ConflictFile[]): Resolution[] {
+  const out: Resolution[] = [];
+  for (const f of files) {
+    const open = f.hunks.filter((h) => !hunkReady(h));
+    if (open.length) throw new Error(`${f.path}: falta decidir ${open.length} trecho(s)`);
+    if (f.hunks[0]?.whole) {
+      const text = hunkText(f.hunks[0]);
+      if (text !== null && hasMarkers(text)) throw new Error(`${f.path}: o texto escolhido ainda tem marcador de conflito`);
+      out.push({ path: f.path, content: text });
+      continue;
+    }
+    const segments = parseConflicts(readFileSync(insideDir(wt, f.path), 'utf8'));
+    if (regions(segments).length !== f.hunks.length) throw new Error(`${f.path} mudou na worktree desde o preparo: descarte e prepare de novo`);
+    const like = f.hunks[0].ours + f.hunks[0].theirs;
+    const content = resolveSegments(segments, (i) => withTerminator(hunkText(f.hunks[i]) ?? '', like));
+    if (hasMarkers(content)) throw new Error(`${f.path}: ainda sobrou marcador de conflito (<<<<<<< ou >>>>>>>)`);
+    out.push({ path: f.path, content });
+  }
+  return out;
+}
+
+export async function applyResolutions(wt: string, files: ConflictFile[]): Promise<string[]> {
+  const resolutions = buildResolutions(wt, files);
+  for (const r of resolutions) {
+    if (r.content === null) {
+      await git(wt, ['rm', '-q', '-f', '--', r.path]);
+    } else {
+      writeFileSync(insideDir(wt, r.path), r.content);
+      await git(wt, ['add', '--', r.path]);
+    }
+  }
+  const left = await unmergedPaths(wt);
+  if (left.length) throw new Error(`ainda há conflito não resolvido: ${left.join(', ')}`);
+  for (const r of resolutions) {
+    if (r.content !== null && hasMarkers(readFileSync(insideDir(wt, r.path), 'utf8'))) throw new Error(`${r.path}: sobrou marcador de conflito`);
+  }
+  return resolutions.map((r) => r.path);
+}
+
+// Puts the conflicts back from the index (resolve-undo), so the hunks can be reviewed again. Files with markers get
+// them back in the working tree; a whole-file conflict only needs its index stages (checkout -m cannot rebuild a deleted side).
+export async function reopenResolutions(wt: string, files: ConflictFile[]): Promise<void> {
+  const marked = files.filter((f) => !f.hunks[0]?.whole).map((f) => f.path);
+  const whole = files.filter((f) => f.hunks[0]?.whole).map((f) => f.path);
+  if (marked.length) await git(wt, ['-c', 'merge.conflictStyle=diff3', 'checkout', '-m', '--', ...marked]);
+  if (whole.length) await git(wt, ['update-index', '--unresolve', '--', ...whole]);
+  const left = await unmergedPaths(wt);
+  if (left.length !== files.length) throw new Error('não consegui reabrir os conflitos: descarte e prepare de novo');
+}
+
+export interface Verification {
+  exitCode: number;
+  tail: string;
+}
+
+const TAIL = 6000;
+const VERIFY_TIMEOUT_MS = 30 * 60_000;
+
+// The configured command runs in a login shell inside the worktree; the full output goes to `logFile`.
+export function runVerify(p: { wt: string; clone: string; command: string; logFile: string; timeoutMs?: number }): Promise<Verification> {
+  mkdirSync(dirname(p.logFile), { recursive: true });
+  const log = createWriteStream(p.logFile);
+  return new Promise((done, fail) => {
+    let tail = '';
+    const child = spawn('bash', ['-lc', p.command], { cwd: p.wt, env: { ...process.env, CLONE_DIR: p.clone, WORKTREE_DIR: p.wt, ...ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => child.kill('SIGKILL'), p.timeoutMs ?? VERIFY_TIMEOUT_MS);
+    const take = (chunk: Buffer): void => {
+      log.write(chunk);
+      tail = (tail + chunk.toString('utf8')).slice(-TAIL);
+    };
+    child.stdout.on('data', take);
+    child.stderr.on('data', take);
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      log.end();
+      fail(e);
+    });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      log.end(() => done({ exitCode: code ?? (signal ? 137 : 1), tail: signal ? `${tail}\n[interrompido: ${signal}]` : tail }));
+    });
+  });
+}
+
+export function mergeMessage(branch: string): string {
+  return `Merge branch 'main' into '${branch}'`;
+}
+
+// Commits the merge with the identity the clone already has. Nothing is written to any git config.
+export async function commitMerge(wt: string, branch: string, mainSha: string): Promise<string> {
+  const ident = await git(wt, ['var', 'GIT_COMMITTER_IDENT'], { fail: false });
+  if (ident.code !== 0) {
+    throw new Error('O clone não tem identidade git (user.name e user.email) e eu não gravo config. Configure no clone e tente de novo.');
+  }
+  if ((await unmergedPaths(wt)).length) throw new Error('ainda há conflito não resolvido');
+  await git(wt, ['commit', '--no-verify', '-m', mergeMessage(branch)]);
+  const sha = (await git(wt, ['rev-parse', 'HEAD'])).stdout.trim();
+  const parents = (await git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD'])).stdout.trim().split(' ').slice(1);
+  if (parents.length !== 2 || parents[1] !== mainSha) throw new Error('o commit não é o merge esperado (dois pais, o segundo na main)');
+  return sha;
+}
+
+// A push here may only add commits on top of the branch: no force flag, no "+" or ":" refspec, nothing but the one ref.
+export function assertPlainPush(args: string[]): void {
+  for (const a of args) {
+    if (/^-/.test(a) && a !== '--no-verify') throw new Error(`opção de push recusada: ${a}`);
+    if (/^[+:]/.test(a)) throw new Error(`refspec recusado: ${a}`);
+  }
+}
+
+export async function remoteSha(wt: string, branch: string): Promise<string> {
+  checkRef(branch, 'branch');
+  await git(wt, ['fetch', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+  return (await git(wt, ['rev-parse', `refs/remotes/origin/${branch}`])).stdout.trim();
+}
+
+export async function assertPublishable(p: { wt: string; branch: string; originSha: string; commit: string }): Promise<void> {
+  if (!existsSync(p.wt)) throw new Error('a worktree do conflito não existe mais: prepare de novo');
+  const now = await remoteSha(p.wt, p.branch);
+  if (now !== p.originSha) {
+    throw new Error(`A branch ${p.branch} mudou no GitLab desde o preparo (${p.originSha.slice(0, 9)} → ${now.slice(0, 9)}). Descarte e prepare de novo; nada foi enviado.`);
+  }
+  const head = (await git(p.wt, ['rev-parse', 'HEAD'])).stdout.trim();
+  if (head !== p.commit) throw new Error('o HEAD da worktree não é mais o commit de merge verificado: nada foi enviado');
+  if ((await git(p.wt, ['merge-base', '--is-ancestor', p.originSha, head], { fail: false })).code !== 0) {
+    throw new Error('o commit não é fast-forward sobre a branch: nada foi enviado');
+  }
+  if ((await git(p.wt, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error('a worktree tem alterações não commitadas: nada foi enviado');
+}
+
+export async function pushBranch(wt: string, branch: string): Promise<string> {
+  checkRef(branch, 'branch');
+  const args = ['push', '--no-verify', 'origin', `HEAD:refs/heads/${branch}`];
+  assertPlainPush(args.slice(1));
+  const r = await git(wt, args);
+  return `${r.stdout}${r.stderr}`.trim();
+}
+
+export async function removeWorktree(clone: string, wt: string, syncBranch: string, dir: string): Promise<void> {
+  const abs = resolve(wt);
+  if (!abs.startsWith(resolve(dir) + sep)) throw new Error(`recuso remover fora de ${dir}: ${wt}`);
+  if (existsSync(abs)) {
+    await git(abs, ['merge', '--abort'], { fail: false });
+    await git(clone, ['worktree', 'remove', '--force', abs]);
+  }
+  await git(clone, ['worktree', 'prune'], { fail: false });
+  await git(clone, ['branch', '-D', syncBranch], { fail: false });
+}

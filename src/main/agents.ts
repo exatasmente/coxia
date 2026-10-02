@@ -467,5 +467,58 @@ export async function conflictAsk(context: string, question: string, sessionId: 
   return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources };
 }
 
+export interface ProposeHunk {
+  id: string;
+  file: string;
+  ours: string;
+  base: string | null;
+  theirs: string;
+}
+
+export interface Proposal {
+  summary: string;
+  items: { id: string; resolution: string; explanation: string; confidence: 'alta' | 'media' | 'baixa'; test: string }[];
+}
+
+const SIDE_MAX = 6000;
+const PROMPT_MAX = 60_000;
+
+function clip(text: string | null, left: { n: number }): string {
+  if (text === null) return '(sem ancestral comum)';
+  const max = Math.min(SIDE_MAX, Math.max(left.n, 400));
+  left.n -= Math.min(text.length, max);
+  return text.length > max ? `${text.slice(0, max)}\n… (cortado em ${max} de ${text.length} caracteres: leia o arquivo na worktree)` : text;
+}
+
+// Read-only: the agent proposes the text for each conflicting hunk; nothing is written until the user reviews it.
+export async function conflictPropose(p: { issue: number; title: string; mr: string; branch: string; worktree: string; hunks: ProposeHunk[] }): Promise<Proposal> {
+  const left = { n: PROMPT_MAX };
+  const blocks = p.hunks.map((h) =>
+    [`### trecho ${h.id}`, `arquivo: ${h.file}`, '--- BRANCH (ours) ---', clip(h.ours, left), '--- BASE ---', clip(h.base, left), '--- MAIN (theirs) ---', clip(h.theirs, left)].join('\n'),
+  );
+  const prompt = [
+    `Conflito de sincronização com a main depois de uma release: issue sz4#${p.issue} (${p.title}), ${p.mr}, branch ${p.branch}.`,
+    'Para cada trecho em conflito abaixo, proponha o texto final (sem marcadores de conflito). BRANCH é o que o MR escreveu; MAIN é o que a release trouxe; BASE é o ancestral comum (quando houver).',
+    'O conflito típico pós-release é COMPLEMENTAR: os dois lados acrescentaram coisas diferentes no mesmo trecho, e a resolução é combinar os dois. Mantenha o que cada lado fez; ajuste só o necessário para os dois conviverem (ordem, vírgulas, imports).',
+    'Nunca invente código além de combinar ou adaptar os dois lados. Se os lados são incompatíveis e a combinação exigiria inventar, escolha um lado inteiro, diga qual e marque confianca "baixa".',
+    `Os arquivos com marcadores estão na worktree ${p.worktree} (pode ler com Read para ver o contexto ao redor); a skill post-release-sync tem a seção "Conflito: resolução manual".`,
+    '"resolucao": o texto exato que fica no lugar do trecho, com a indentação e as quebras de linha do arquivo, sem cerca de código, sem marcadores.',
+    '"explicacao": um parágrafo curto em português dizendo o que cada lado fez e por que a resolução é essa. "confianca": alta, media ou baixa. "testar": o que testar depois (uma frase).',
+    '"resumo": uma ou duas frases sobre o conflito como um todo. Devolva um item para cada id, com o id exatamente como está.',
+    ...blocks,
+  ].join('\n\n');
+  const item = obj({ id: str, resolucao: str, explicacao: str, confianca: { enum: ['alta', 'media', 'baixa'] }, testar: str });
+  const r = await run<{ resumo: string; trechos: { id: string; resolucao: string; explicacao: string; confianca: 'alta' | 'media' | 'baixa'; testar: string }[] }>(
+    'deep',
+    prompt,
+    obj({ resumo: str, trechos: { type: 'array', items: item } }),
+    { maxTurns: 12, additionalDirectories: [p.worktree] },
+  );
+  return {
+    summary: r.data.resumo,
+    items: r.data.trechos.map((t) => ({ id: t.id, resolution: t.resolucao, explanation: t.explicacao, confidence: t.confianca, test: t.testar })),
+  };
+}
+
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
 export { run as askAgent, obj, str, strOrNull, SPEECH_RULES, CHAT_RULES };

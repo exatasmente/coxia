@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { ConflictResolver } from './ConflictResolver';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -111,6 +112,8 @@ export function Conflict({
           </button>
         </header>
 
+        <ConflictResolver action={action} />
+
         <div className="cols deep-layout">
           <aside className="panel deep-sources" style={{ flex: '1 1 260px', maxWidth: 320, minWidth: 250, gap: 10 }}>
             <h2 className="section-title">Em conflito</h2>
@@ -145,11 +148,11 @@ export function Conflict({
             <section className="panel">
               <h2 className="section-title">Depois da call</h2>
               <p className="small" style={{ lineHeight: 1.5 }}>
-                Concordou com a resolução? O ajuste é feito no Claude Code, nesta mesma sessão: numa worktree temporária, com merge (nunca rebase), testes do módulo e push sem force, cada passo com o seu “sim”.
+                Concordou com a resolução? Resolva acima, na worktree temporária (merge, nunca rebase; push sem force só com o seu “sim”), ou continue no Claude Code, nesta mesma sessão.
               </p>
               <ContinueInClaude sessionId={action.sessionId} />
               <button type="button" className="btn" disabled={action.state !== 'pending'} onClick={() => void api.skipAction(action.id).then(() => go({ name: 'actions' }))}>
-                {action.state === 'pending' ? 'Marcar como tratado' : 'Tratado'}
+                {action.state === 'pending' ? (action.resolve ? 'Tratei fora (remove a worktree)' : 'Marcar como tratado') : 'Tratado'}
               </button>
             </section>
           </aside>

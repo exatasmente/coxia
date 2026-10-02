@@ -270,7 +270,7 @@ export interface GitlabCommand {
   fields: Record<string, string>;
 }
 
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'gitlab';
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {
@@ -296,6 +296,8 @@ export interface ReleaseAction {
   unit: Record<string, unknown> | null;
   summary: string | null;
   command: GitlabCommand | null;
+  // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
+  resolve?: import('./conflict').ConflictResolve | null;
 }
 
 export type AppEvent =
@@ -339,6 +341,13 @@ export interface Api {
   approveAction(id: string): Promise<ReleaseAction>;
   skipAction(id: string): Promise<ReleaseAction>;
   conflictAsk(id: string, question: string): Promise<ReleaseAction>;
+  conflictPrepare(id: string): Promise<ReleaseAction>;
+  conflictPropose(id: string): Promise<ReleaseAction>;
+  conflictChoose(id: string, hunkId: string, choice: import('./conflict').HunkChoice, edited?: string): Promise<ReleaseAction>;
+  conflictApply(id: string, options: { skipTests: boolean }): Promise<ReleaseAction>;
+  conflictCommit(id: string): Promise<ReleaseAction>;
+  conflictReopen(id: string): Promise<ReleaseAction>;
+  conflictDiscard(id: string): Promise<ReleaseAction>;
   gateOptions(card: Card): Promise<GateOption[]>;
   startGate(card: Card, gate: 1 | 2): Promise<GateView>;
   getGate(id: string): Promise<GateView | null>;
