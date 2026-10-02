@@ -9,6 +9,7 @@ import { vcsCliFor, vcsReady } from './index';
 //   Bitbucket, or an integration that uses the API only: no CLI, so the reads go through the app tool `VcsRead` (readTool.ts).
 // The regular expressions are the whole policy: a command that does not match one is denied by the hook (agents.ts shellAllowlist).
 
+// i18n-ignore: permission rules and commands of the code host CLI
 export const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
 
 // A path segment that is not "." or ".." (nor their percent-encoded forms): a repository named like a dot segment would climb out of repos/.
@@ -17,11 +18,14 @@ const GH_SEG = '(?!\\.{1,2}\\/)[\\w.-]+';
 
 /** The only glab commands a ceremony agent may run: GitLab reads, one command, no flags that write. */
 export const GLAB_READ = [
+  // i18n-ignore: permission rules and commands of the code host CLI
   new RegExp(`^glab api "?projects\\/${GL_SEG}\\/(merge_requests|issues)\\/\\d+(\\/(discussions|notes|approvals|changes|pipelines))?(\\?[\\w=&]+)?"?( --paginate)?$`),
+  // i18n-ignore: permission rules and commands of the code host CLI
   new RegExp(`^glab api "?projects\\/${GL_SEG}\\/pipelines(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
   /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
 ];
 
+// i18n-ignore: permission rules and commands of the code host CLI
 export const GH_RULES = ['Bash(gh api:*)', 'Bash(gh pr view:*)', 'Bash(gh issue view:*)'];
 
 /**
@@ -29,9 +33,11 @@ export const GH_RULES = ['Bash(gh api:*)', 'Bash(gh pr view:*)', 'Bash(gh issue 
  * only flag accepted is --paginate; graphql, search and every endpoint outside pulls, issues, commit checks and Actions runs are out.
  */
 export const GH_READ = [
+  // i18n-ignore-start: permission rules and commands of the code host CLI
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/(pulls|issues)\\/\\d+(\\/(comments|reviews|files|commits|timeline|requested_reviewers))?(\\?[\\w=&]+)?"?( --paginate)?$`),
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/commits\\/[0-9a-f]{7,40}\\/(check-runs|status)(\\?[\\w=&]+)?"?$`),
   new RegExp(`^gh api "?repos\\/${GH_SEG}\\/${GH_SEG}\\/actions\\/runs(\\/\\d+(\\/jobs)?)?(\\?[\\w=&%./-]+)?"?$`),
+  // i18n-ignore-end
   /^gh (pr|issue) view \d+ -R [\w.-]+\/[\w.-]+( --comments)?$/,
 ];
 
@@ -91,7 +97,9 @@ export function mrChangesHint(project: string, iid: number): string {
 /** How the agent reads the comments of an issue, for the prompts that ask it to look for a note. */
 export function issueNotesHint(project: string, iid: string | number): string {
   const policy = vcsReadPolicy();
+  // i18n-ignore: permission rules and commands of the code host CLI
   if (policy.via === 'cli' && policy.kind === 'github') return `gh api repos/${project}/issues/${iid}/comments`;
   if (policy.via === 'tool') return cp('vcs.notes.tool', { project, iid });
+  // i18n-ignore: permission rules and commands of the code host CLI
   return `glab api projects/${encodeURIComponent(project)}/issues/${iid}/notes`;
 }

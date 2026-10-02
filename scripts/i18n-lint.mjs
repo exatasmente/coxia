@@ -11,6 +11,7 @@
 // The .ts files are read with a small tokenizer (strings, templates and their ${} expressions, comments, regex literals), so only real
 // literals are judged. Text that is not for people goes in one of two ways, each with a reason in the code:
 //   // i18n-ignore: <why>          on the line, or the line above: this literal is code, an id, a protocol or a model-facing tool text
+//   // i18n-ignore-start: <why>    ... // i18n-ignore-end   the same for a block of lines
 //   // i18n-lint: allow-file <why> in the first lines of a file: the whole file is data in a fixed language (JSON Schema docs, templates)
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -143,7 +144,12 @@ function findings(file) {
   const out = [];
   const lineOf = (index) => text.slice(0, index).split('\n').length;
   const lines = text.split('\n');
-  const ignored = (n) => /i18n-ignore/.test(lines[n - 1] ?? '') || /i18n-ignore/.test(lines[n - 2] ?? '');
+  const blocks = [];
+  lines.forEach((l, i) => {
+    if (/i18n-ignore-start/.test(l)) blocks.push([i + 1, lines.length]);
+    else if (/i18n-ignore-end/.test(l) && blocks.length) blocks[blocks.length - 1][1] = i + 1;
+  });
+  const ignored = (n) => /i18n-ignore(?!-)/.test(lines[n - 1] ?? '') || /i18n-ignore(?!-)/.test(lines[n - 2] ?? '') || blocks.some(([a, b]) => n >= a && n <= b);
   const skippedLine = (n) => /^\s*(import|export .* from|\/\/|\*|\/\*)/.test(lines[n - 1]) || /console\.|logError\(/.test(lines[n - 1]) || ignored(n);
   if (/i18n-lint:\s*allow-file/.test(lines.slice(0, 6).join('\n'))) return [];
   const seen = new Set();

@@ -1,3 +1,4 @@
+// i18n-lint: allow-file English diagnostics that name a path inside a cycle template file
 import { mergeDeep, neutralConfig } from '../config/defaults';
 import type { DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';

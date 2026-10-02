@@ -675,5 +675,7 @@
   "prompt.sdd.vcs.changes.github": "To see the change, use gh api repos/{project}/pulls/{iid}/files",
   "prompt.sdd.vcs.changes.tool": "To see the change, use the VcsRead tool (op mr_changes, project {project}, iid {iid})",
   "prompt.sdd.vcs.changes.gitlab": "To see the change, use glab api projects/{project}/merge_requests/{iid}/changes or the GitLab MCP (get_merge_request_details_and_changes)",
-  "prompt.sdd.vcs.notes.tool": "the VcsRead tool (op issue_comments, project {project}, iid {iid})"
+  "prompt.sdd.vcs.notes.tool": "the VcsRead tool (op issue_comments, project {project}, iid {iid})",
+  "main.secrets.badRef": "invalid secret reference \"{ref}\"",
+  "main.cycle.notJson": "not valid JSON: {detail}"
 }

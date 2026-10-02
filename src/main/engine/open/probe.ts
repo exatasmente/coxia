@@ -50,6 +50,7 @@ const ECHO_TOOL = {
   type: 'function' as const,
   function: {
     name: 'echo',
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     description: 'Repeats the given text.',
     parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
   },
@@ -129,6 +130,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
   // 2. plain completion (streaming first, then plain JSON)
   const plain = async (c: ChatClient) => {
     const startedAt = Date.now();
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     const out = await c.complete({ messages: [{ role: 'user', content: 'Reply with the single word: ok' }], maxTokens: 256, signal: opts.signal });
     return { out, ms: Date.now() - startedAt };
   };
@@ -166,6 +168,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
   try {
     const startedAt = Date.now();
     const out = await client.complete({
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       messages: [{ role: 'user', content: 'Call the echo tool with the text "ola". Do not answer in text.' }],
       tools: [ECHO_TOOL],
       toolChoice: 'auto',
@@ -194,6 +197,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
   try {
     const startedAt = Date.now();
     const out = await client.complete({
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       messages: [{ role: 'user', content: 'Return a JSON object with answer "ok" and n 1.' }],
       responseFormat: { type: 'json_schema', json_schema: { name: 'probe', schema: PROBE_SCHEMA, strict: false } },
       maxTokens: 256,

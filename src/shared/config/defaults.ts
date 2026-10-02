@@ -1,3 +1,4 @@
+// i18n-lint: allow-file default values of the config: model names, commands and ids, not prose
 import { neutralDevCycle } from '../cycles/neutral';
 import { LEGACY_USER, legacyCycle } from './legacy';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';

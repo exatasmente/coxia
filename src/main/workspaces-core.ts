@@ -103,9 +103,11 @@ function extractWeb(root: string, deps: Deps): void {
     const web = (JSON.parse(readFileSync(config, 'utf8')) as { web?: unknown }).web;
     if (web && typeof web === 'object') {
       atomicWrite(join(root, WEB_FILE), JSON.stringify(web, null, 2), 0o600);
+      // i18n-ignore: registry log written for developers
       note(root, deps, `web settings copied from config.json to ${WEB_FILE}`);
     }
   } catch (e) {
+    // i18n-ignore: registry log written for developers
     note(root, deps, `config.json unreadable, web settings not extracted (${String(e)})`);
   }
 }
@@ -118,6 +120,7 @@ function migrate(root: string, id: string, name: string, test: boolean, deps: De
   for (const entry of workspaceEntries(root)) {
     const to = join(dir, entry);
     if (existsSync(to)) {
+      // i18n-ignore: registry log written for developers
       note(root, deps, `kept ${entry} in the root: ${id}/${entry} already exists`);
       continue;
     }
@@ -130,6 +133,7 @@ function migrate(root: string, id: string, name: string, test: boolean, deps: De
   }
   const reg: Registry = { current: id, list: [{ id, name, createdAt: deps.now().toISOString(), test }] };
   writeRegistry(root, reg);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `registry created, current workspace: ${id}`);
   return reg;
 }
@@ -147,6 +151,7 @@ function rebuild(root: string, deps: Deps): Registry {
     list: found.map((id) => ({ id, name: id === MIGRATED_ID ? 'Testes' : id, createdAt: at, test: true })),
   };
   writeRegistry(root, reg);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `registry unreadable: rebuilt from folders ${found.join(', ')} (all marked as test)`);
   return reg;
 }
@@ -271,6 +276,7 @@ export function deleteWorkspace(root: string, id: string, typedName: string, par
   const trashed = join(trash, `${id}-${deps.now().toISOString().replace(/[:.]/g, '-')}`);
   const dir = workspaceDir(root, id);
   if (existsSync(dir)) deps.rename(dir, trashed);
+  // i18n-ignore: registry log written for developers
   note(root, deps, `workspace ${id} moved to ${trashed}`);
   return { registry: next, trashed };
 }

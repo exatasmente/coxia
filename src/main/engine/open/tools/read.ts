@@ -53,14 +53,18 @@ const LINE_MAX = 2000;
 export const readTool: ToolImpl = {
   name: 'Read',
   description:
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Reads a text file from the local filesystem. file_path is absolute or relative to the working directory. Returns the lines numbered ("N<TAB>text"). ' +
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Use offset (first line, 1-based) and limit (number of lines, default 2000) to read part of a large file.',
   parameters: {
     type: 'object',
     properties: {
+      // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
       file_path: { type: 'string', description: 'Path of the file to read' },
       offset: { type: 'integer', description: 'First line to read (1-based)' },
       limit: { type: 'integer', description: 'Number of lines to read' },
+      // i18n-ignore-end
     },
     required: ['file_path'],
   },

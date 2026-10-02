@@ -1,3 +1,4 @@
+// i18n-lint: allow-file JSON Schema validation diagnostics, in English like the schema they report on
 // A small JSON Schema validator: the subset the config schema uses, no dependency.
 // Supported keywords: type (one name or a list), enum, const, properties, required, additionalProperties (false or a schema),
 // items, minItems, maxItems, uniqueItems (primitives), minLength, maxLength, minimum, maximum, pattern.

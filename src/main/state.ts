@@ -37,6 +37,7 @@ export function loadState(): SavedCeremony | null {
 }
 
 export function saveState(state: SavedCeremony): void {
+  // i18n-ignore: developer error
   if (!ID.test(state.id)) throw new Error(`invalid ceremony id ${state.id}`);
   mkdirSync(HISTORY, { recursive: true });
   const file = join(HISTORY, `${state.id}.json`);

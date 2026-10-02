@@ -17,6 +17,7 @@ function execArg(arg: string): string {
 
 export function desktopEntry(command: string[]): string {
   return [
+    // i18n-ignore: format of the .desktop file
     '[Desktop Entry]',
     'Type=Application',
     'Name=Coxia',

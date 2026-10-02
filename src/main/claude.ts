@@ -38,6 +38,7 @@ export function continueInClaude(sessionId: string, prompt?: string): { ok: bool
   const fallback = () => spawn('x-terminal-emulator', ['-e', ...shell], { detached: true, stdio: 'ignore' }).on('error', () => undefined).unref();
   const terminal = term.command
     ? spawn(term.command, [...term.args, ...shell], { detached: true, stdio: 'ignore' })
+    // i18n-ignore: terminal window title: the product name
     : spawn('gnome-terminal', ['--title', 'Coxia · Claude Code', '--', ...shell], { detached: true, stdio: 'ignore' });
   terminal.on('error', fallback);
   terminal.unref();

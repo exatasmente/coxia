@@ -98,6 +98,7 @@ export function mapHttpError(status: number, bodyText: string, headers: { get(na
   if (status === 429) return new EngineError(msg(ctx.lang, 'rateLimit', { detail }), 'rate_limit', status, true, wait);
   if ((status === 400 || status === 422) && NO_TOOLS_RE.test(lower)) return new EngineError(msg(ctx.lang, 'noTools', { model: ctx.model, detail }), 'no_tools', status);
   if (status === 404 || parsed.code === 'model_not_found' || ((status === 400 || status === 422) && MODEL_RE.test(lower))) {
+    // i18n-ignore: command the person is told to run
     const hint = isLocalHost(ctx.host) ? 'ollama list / GET /v1/models' : 'GET /v1/models';
     return new EngineError(msg(ctx.lang, 'modelNotFound', { model: ctx.model, detail, hint }), 'not_found', status);
   }

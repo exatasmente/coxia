@@ -299,6 +299,7 @@ export function runVerify(p: { wt: string; clone: string; command: string; logFi
 }
 
 export function mergeMessage(branch: string): string {
+  // i18n-ignore: the message of the git merge commit, as git writes it
   return `Merge branch 'main' into '${branch}'`;
 }
 

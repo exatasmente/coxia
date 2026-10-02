@@ -26,12 +26,14 @@ function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) =>
 }
 
 export function handle(channel: string, fn: Handler): void {
+  // i18n-ignore: developer error: a channel registered twice
   if (table.has(channel)) throw new Error(`canal duplicado: ${channel}`);
   table.set(channel, fn);
   bind?.(channel, fn);
 }
 
 export function handleDevice(channel: string, fn: (deviceId: string, ...args: never[]) => unknown): void {
+  // i18n-ignore: developer error: a channel registered twice
   if (table.has(channel) || deviceTable.has(channel)) throw new Error(`canal duplicado: ${channel}`);
   deviceTable.set(channel, fn);
 }

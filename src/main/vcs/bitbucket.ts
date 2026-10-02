@@ -26,8 +26,10 @@ import { checkIid, enc, iso, issueRefsOf, pool, splitUnifiedDiff, worstCi } from
 
 export const BITBUCKET_CAPS: VcsCaps = { issueStatus: true, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: false, issues: true };
 
+// i18n-ignore: query language of the code host
 const ISSUE_OPEN = '(state="new" OR state="open" OR state="on hold")';
 const UUID = /^\{[0-9a-fA-F-]{36}\}$/;
+// i18n-ignore: query language of the code host
 export const ISSUE_STATES = ['new', 'open', 'resolved', 'on hold', 'invalid', 'duplicate', 'wontfix', 'closed'];
 
 interface BbUser {
@@ -257,6 +259,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     },
 
     async searchIssues(project, q) {
+      // i18n-ignore: query language of the code host
       const query = `title ~ "${q.text.replace(/["\\]/g, '')}" AND created_on >= ${q.createdAfter}`;
       const rows = await c.values<BbIssue>(`${repo(project)}/issues`, { query: { q: query, pagelen: 20 }, maxPages: 1 });
       return rows.map((i) => issueOf(i, project));
@@ -279,6 +282,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       if (roles.includes('reviewer')) {
         for (const project of o.repos) {
           try {
+            // i18n-ignore: query language of the code host
             add(await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `reviewers.uuid="${who.id}" AND state="OPEN"` }, maxPages: 1 }), 'reviewer');
           } catch (e) {
             console.error(`[vcs:bitbucket] ${project}`, (e as Error).message);
@@ -299,12 +303,14 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
 
     async linkedMrs(project, iid) {
       checkIid(iid);
+      // i18n-ignore: query language of the code host
       const q = `(title ~ "#${iid}" OR source.branch.name ~ "${iid}") AND (state="OPEN" OR state="MERGED")`;
       const rows = await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q }, maxPages: 1 }).catch(() => [] as BbPr[]);
       return rows.map((r) => mrOf(r)).filter((m) => issueRefsOf(`${m.title}\n${m.description}`, m.sourceBranch).includes(iid)).map((m) => ({ ...m, project: m.project || project, issueRefs: [iid] }));
     },
 
     async searchMrs(project, q) {
+      // i18n-ignore: query language of the code host
       const query = `title ~ "${q.text.replace(/["\\]/g, '')}" AND created_on >= ${q.createdAfter}`;
       const rows = await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: query, state: 'OPEN', pagelen: 20 }, maxPages: 1 });
       return rows.map((r) => mrOf(r));

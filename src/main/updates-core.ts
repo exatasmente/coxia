@@ -256,6 +256,7 @@ export function relaunchArgs(argv: readonly string[]): string[] {
 // the installed AppImage. A new instance started by the installer while the old one still holds the lock would just quit.
 // It first closes every descriptor it inherited from the app (like scripts/update.sh does): files inside the old AppImage mount would keep
 // that mount busy, and the old debugging port or listening socket would stay bound to a process that is gone.
+// i18n-ignore: shell script
 export const RELAUNCH_SCRIPT = `for fd in /proc/$$/fd/*; do
   case "\${fd##*/}" in 0|1|2|255) ;; *) eval "exec \${fd##*/}>&-" 2>/dev/null || true ;; esac
 done

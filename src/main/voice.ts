@@ -139,6 +139,7 @@ function launch(python: string): ChildProcessWithoutNullStreams {
   });
   child.on('exit', (code, signal) => {
     if (!stopping && !stoppedOnPurpose.has(child)) {
+      // i18n-ignore: sidecar log for developers
       const error = new Error(`voice sidecar exited (code ${code ?? 'none'}, signal ${signal ?? 'none'})`);
       error.stack = stderrTail.join('\n');
       logError('sidecar:voice', error, { exitCode: code ?? -1, signal: signal ?? 'none' });
@@ -148,6 +149,7 @@ function launch(python: string): ChildProcessWithoutNullStreams {
       proc = null;
       ready = false;
     }
+    // i18n-ignore: sidecar log for developers
     for (const [, resolve] of waiting) resolve({ id: -1, error: 'voice sidecar exited' });
     waiting.clear();
   });
@@ -223,6 +225,7 @@ export function stopSidecar(): void {
   p.kill();
   proc = null;
   ready = false;
+  // i18n-ignore: sidecar log for developers
   for (const [, resolve] of waiting) resolve({ id: -1, error: 'voice sidecar stopped' });
   waiting.clear();
   rmSync(AUDIO, { recursive: true, force: true });

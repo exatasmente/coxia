@@ -21,6 +21,7 @@ export type SessionLine =
 export const SESSION_EXT = '.jsonl';
 
 export function sessionPath(dir: string, id: string): string {
+  // i18n-ignore: developer error
   if (!/^[\w-]{8,64}$/.test(id)) throw new Error('invalid session id');
   return join(dir, `${id}${SESSION_EXT}`);
 }

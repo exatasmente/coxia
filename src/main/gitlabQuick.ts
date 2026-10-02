@@ -27,6 +27,7 @@ const SKIPPED_JOBS = /ai_code_review/i;
 // The status ids are the custom statuses of one GitLab instance: only the SDD template on GitLab has them.
 const RULES = [
   {
+    // i18n-ignore-start: status and label names of the code host
     to: 'In development',
     id: 75,
     label: 'STAGE:: Doing',
@@ -40,6 +41,7 @@ const RULES = [
     label: 'STAGE:: Ready To Test',
     from: ['Approved in code review', 'Failed testing', 'In development'],
     removable: ['STAGE:: Code Review OK', 'STAGE:: Code Review', 'STAGE:: Test Fail', 'STAGE:: Doing'],
+    // i18n-ignore-end
   },
 ];
 

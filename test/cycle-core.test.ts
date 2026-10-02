@@ -100,7 +100,7 @@ describe('applying and managing templates', () => {
     const bad = { id: 'broken', name: 'Broken', devCycle: { stageMapping: [{ provider: 'any', source: 'state', pattern: 'x', stage: 'ghost' }] } };
     expect(core.checkTemplateText(JSON.stringify(bad)).errors.map((e) => e.path)).toContain('template.devCycle.stageMapping[0].stage');
     expect(() => core.saveTemplateText(JSON.stringify(bad))).toThrow(/stageMapping\[0\]\.stage/);
-    expect(core.checkTemplateText('not json').errors[0].message).toMatch(/not valid JSON/);
+    expect(core.checkTemplateText('not json').errors[0].message).toMatch(/not valid JSON|não é um JSON válido/);
   });
 
   it('exports the current cycle, imports it back as a template of its own, applies it and removes it', () => {

@@ -53,11 +53,13 @@ export function prefixAllows(prefixes: string[], command: string): boolean {
 export const bashTool: ToolImpl = {
   name: 'Bash',
   description:
+    // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
     'Runs one read-only shell command. Only code host reads (glab api / glab mr view / glab issue view, gh api / gh pr view / gh issue view) and, in conflict calls, plumbing git reads are accepted: ' +
     'one command at a time, no pipes, no ; or &&. A trailing "2>&1" and "| head -n N" are allowed.',
   parameters: {
     type: 'object',
     properties: { command: { type: 'string', description: 'The command' }, description: { type: 'string', description: 'What it does, in a few words' } },
+    // i18n-ignore-end
     required: ['command'],
   },
   async run(input, ctx) {

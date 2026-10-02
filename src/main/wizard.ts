@@ -113,6 +113,7 @@ function npmFound(): boolean {
 
 // ---- provider test ------------------------------------------------------------------------------------------------------------------------
 
+// i18n-ignore: connection test prompt for the model
 const TEST_PROMPT = 'Reply with the single word OK.';
 const TEST_TIMEOUT_MS = 90_000;
 

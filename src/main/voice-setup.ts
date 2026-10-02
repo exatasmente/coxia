@@ -177,6 +177,7 @@ class PhaseError extends Error {
   }
 }
 
+// i18n-ignore: python import check
 const IMPORTS = 'import faster_whisper, edge_tts, av, soundfile, kokoro_onnx';
 
 /** Gets uv: the one on the machine, else one installed from PyPI into the app's tools folder with python3. */

@@ -78,9 +78,11 @@ export function bootstrapConfigs(deps: BootstrapDeps): { migrated: string[]; mar
     marker = { version: 1, at: deps.now().toISOString(), existingInstall: deps.existingInstall, legacyWorkspaces: deps.existingInstall ? ids : [] };
     if (deps.existingInstall && !existsSync(join(deps.root, WEB_FILE))) {
       writeFileSync(join(deps.root, WEB_FILE), JSON.stringify(LEGACY_WEB_SETTINGS, null, 2), { mode: 0o600 });
+      // i18n-ignore: migration log written for developers
       deps.log(`${WEB_FILE} created with the previous defaults`);
     }
     writeFileSync(join(deps.root, MARKER_FILE), JSON.stringify(marker, null, 2));
+    // i18n-ignore: migration log written for developers
     deps.log(`config migration marker written (existing install: ${marker.existingInstall})`);
   }
   const migrated: string[] = [];

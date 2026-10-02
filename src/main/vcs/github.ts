@@ -223,6 +223,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
 
   const threadsQuery = (project: string, iid: number): string => {
     const [owner, name] = checkRepo(project).split('/');
+    // i18n-ignore: query language of the code host
     return `query { repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${checkIid(iid)}) { reviewThreads(first: 100) { nodes { id isResolved path line originalLine comments(first: 50) { nodes { databaseId author { login } body createdAt url } } } } } } }`;
   };
 
@@ -269,6 +270,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     },
 
     async searchIssues(project, q) {
+      // i18n-ignore: query language of the code host
       const rows = await searchRaw(`is:issue repo:${checkRepo(project)} in:title ${q.text} created:>=${q.createdAfter.slice(0, 10)}`, 20);
       return rows.filter((i) => !i.pull_request).map((i) => issueOf(i, project));
     },
@@ -286,7 +288,9 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           else found.set(key, { project, number: r.number, roles: [role] });
         }
       };
+      // i18n-ignore: query language of the code host
       if (roles.includes('author')) add(await searchRaw(`is:pr is:open author:${who}`), 'author');
+      // i18n-ignore: query language of the code host
       if (roles.includes('reviewer')) add(await searchRaw(`is:pr is:open review-requested:${who}`), 'reviewer');
       const list = [...found.values()].slice(0, opts.limit ?? 100);
       // The search result has no branch, sha or mergeable flag: one pull request read each (a few at a time).
@@ -330,6 +334,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     },
 
     async searchMrs(project, q) {
+      // i18n-ignore: query language of the code host
       const rows = await searchRaw(`is:pr repo:${checkRepo(project)} in:title ${q.text} created:>=${q.createdAfter.slice(0, 10)}`, 20);
       return rows.map(
         (r): VcsMr => ({

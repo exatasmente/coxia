@@ -1,3 +1,4 @@
+// i18n-lint: allow-file the default glossary is data: phonetic spellings of terms for the pt-BR voice, edited by the user on the Glossary screen
 // Glossary of terms for both directions of the voice: how the synthesized voice says a term,
 // and how the transcription usually mishears it (fixed back to the term).
 

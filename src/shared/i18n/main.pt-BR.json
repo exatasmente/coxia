@@ -675,5 +675,7 @@
   "prompt.sdd.vcs.changes.github": "Para ver o trecho, use gh api repos/{project}/pulls/{iid}/files",
   "prompt.sdd.vcs.changes.tool": "Para ver o trecho, use a ferramenta VcsRead (op mr_changes, project {project}, iid {iid})",
   "prompt.sdd.vcs.changes.gitlab": "Para ver o trecho, use glab api projects/{project}/merge_requests/{iid}/changes ou o MCP do GitLab (get_merge_request_details_and_changes)",
-  "prompt.sdd.vcs.notes.tool": "a ferramenta VcsRead (op issue_comments, project {project}, iid {iid})"
+  "prompt.sdd.vcs.notes.tool": "a ferramenta VcsRead (op issue_comments, project {project}, iid {iid})",
+  "main.secrets.badRef": "referência de segredo inválida \"{ref}\"",
+  "main.cycle.notJson": "não é um JSON válido: {detail}"
 }

@@ -1,3 +1,4 @@
+// i18n-lint: allow-file cycle template data: stage names and patterns of the code host, whose text is catalog keys
 import { CARD_FIELDS, type StageDef, type StageMappingRule } from '../../config/types';
 import { defaultCeremonyParams, sameFamily } from '../neutral';
 import type { CycleTemplate } from '../types';

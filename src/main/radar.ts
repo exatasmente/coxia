@@ -220,6 +220,7 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
         recommendation: recommendation(kind),
         collideCommand:
           kind === 'same-fix' && repo
+            // i18n-ignore: a command line
             ? `related-work-radar collide --repo ~/projects/${repo} --branches origin/${mA.branch} origin/${mB.branch} --base origin/${mA.target}`
             : null,
         firstSeen: seen.get(key) ?? now,

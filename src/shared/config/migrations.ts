@@ -1,3 +1,4 @@
+// i18n-lint: allow-file English diagnostics of the config migration, written to the log
 import { mergeDeep, neutralConfig, withConfigDefaults } from './defaults';
 import { LEGACY_DEFAULT_MODEL, LEGACY_PROVIDER_ID, legacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';

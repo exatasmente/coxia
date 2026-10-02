@@ -29,5 +29,6 @@ export function resumeCommand(sessionId: string, prompt?: string, cli: ClaudeCli
 // Fixed script for `bash -lc`: the session id is $1 and the prompt file is $2, so no user text is ever parsed as shell.
 export function terminalScript(withPrompt: boolean, cli: ClaudeCliOptions = DEFAULT_CLAUDE_CLI): string {
   const start = `cd ${word(cli.cwd)} && ${word(cli.command)}`;
+  // i18n-ignore: shell script
   return withPrompt ? `${start} --resume "$1" -- "$(cat "$2")"; rm -rf "$(dirname "$2")"; exec bash` : `${start} --resume "$1"; exec bash`;
 }

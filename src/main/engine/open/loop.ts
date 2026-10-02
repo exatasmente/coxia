@@ -98,6 +98,7 @@ export class OpenMaxTurnsError extends Error {
     readonly sessionId: string,
     readonly sources: string[],
   ) {
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     super('agent ended with error_max_turns');
   }
 }
@@ -144,14 +145,18 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
     tools.push({
       name: 'Agent',
       description:
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
       parameters: {
         type: 'object',
         properties: {
+          // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
           description: { type: 'string', description: 'Three to five words' },
           prompt: { type: 'string', description: 'The complete task for the sub-agent' },
           subagent_type: { type: 'string', description: 'Optional agent definition name' },
+          // i18n-ignore-end
         },
         required: ['prompt'],
       },
@@ -272,14 +277,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   }
   const finalDef: ToolDef | null =
     strategy === 'tool' && p.schema
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       ? { type: 'function', function: { name: FINAL, description: 'Returns the final answer. Call it exactly once, when you have everything you need, with the complete result.', parameters: p.schema } }
       : null;
   const schemaText = p.schema ? JSON.stringify(p.schema) : '';
   const structuredNote =
     strategy === 'tool'
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       ? `When you are done, call the ${FINAL} tool with the complete answer. Do not write the answer as plain text.`
       : strategy === 'text'
         ? ''
+        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         : `Your final message must be ONLY one JSON object that follows this JSON Schema, with no text around it and no markdown fences:\n${schemaText}`;
 
   const apiTools = (): ToolDef[] => [

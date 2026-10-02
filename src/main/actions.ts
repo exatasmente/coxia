@@ -693,7 +693,9 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
       summary: t('main.actions.publishSummary', { ref: a.mrs[0]?.ref ?? 'MR', branch: r.branch }),
       unit: { conflictId: a.id, branch: r.branch, commit: sha },
       output: [
+        // i18n-ignore: a git command line shown as it runs
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
+        // i18n-ignore: a git command line shown as it runs
         t('main.actions.commitNote', { sha: sha.slice(0, 9), message: `Merge branch 'main' into '${r.branch}'` }),
         r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
@@ -754,6 +756,7 @@ async function checkPublishable(a: ReleaseAction): Promise<void> {
 async function publishConflict(a: ReleaseAction): Promise<string> {
   const { r } = pushOwner(a);
   const fields = { repo: r.clone, branch: r.branch, commit: r.commit as string, mr: a.mrs[0]?.ref ?? '' };
+  // i18n-ignore: a git command line shown as it runs
   return audited(a, { kind: 'push', target: `git push origin HEAD:refs/heads/${r.branch}`, via: 'git', fields }, async () => {
     // The check ran moments ago, before "running"; repeat it right at the push.
     await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });

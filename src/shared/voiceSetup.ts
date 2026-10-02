@@ -135,6 +135,7 @@ export interface VoiceEnableResult {
 }
 
 /** The sentence the round trip speaks and expects back (pt-BR, as the voices are). */
+// i18n-ignore: the sentence the voice round trip speaks: the voices are pt-BR
 export const VOICE_TEST_SENTENCE = 'Olá, este é um teste da voz do Coxia.';
 
 /** Share of the expected words (accents and case ignored) found in what was heard. */

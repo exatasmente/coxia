@@ -23,6 +23,7 @@ export class MaxTurnsError extends Error {
     readonly sessionId: string,
     readonly sources: string[],
   ) {
+    // i18n-ignore: error text the engine compares
     super('agent ended with error_max_turns');
   }
 }

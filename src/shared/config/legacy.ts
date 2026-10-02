@@ -1,3 +1,4 @@
+// i18n-lint: allow-file the migrated profile of the original author: data in the language its owner wrote it in
 import { sameFamily } from '../cycles/neutral';
 import { CARD_FIELDS, LLM_ROLES, type DeepPartial, type DevCycleConfig, type LlmRole, type PromptOverride, type RoleModel, type StageDef, type UserArticle, type WorkspaceConfig } from './types';
 

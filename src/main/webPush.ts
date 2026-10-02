@@ -208,7 +208,7 @@ export function createPush(deps: PushDeps): PushService {
       }
       const retryable = !res || res.status === 429 || res.status >= 500;
       if (!retryable || attempt === 1) {
-        console.error('[push] entrega recusada:', res ? res.status : 'sem resposta');
+        console.error('[push] delivery refused:', res ? res.status : 'no response');
         return false;
       }
       await sleep(deps.retryDelayMs ?? Math.min(5000, (res?.retryAfterSec ?? 2) * 1000));

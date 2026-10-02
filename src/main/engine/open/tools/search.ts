@@ -82,11 +82,14 @@ function walk(base: string, ctx: ToolContext, limit = MAX_WALK_FILES): Walked[] 
 
 export const globTool: ToolImpl = {
   name: 'Glob',
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
   description: 'Finds files by glob pattern (for example "**/*.ts" or "src/**/*.{js,ts}"), newest first. Searches the working directory unless path is given.',
   parameters: {
     type: 'object',
     properties: {
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       pattern: { type: 'string', description: 'Glob pattern' },
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
       path: { type: 'string', description: 'Directory to search (default: the working directory)' },
     },
     required: ['pattern'],
@@ -250,11 +253,14 @@ async function grepWithJs(g: GrepInput, base: string, ctx: ToolContext): Promise
 export const grepTool: ToolImpl = {
   name: 'Grep',
   description:
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Searches file contents with a regular expression (ripgrep syntax). output_mode: "files_with_matches" (default, file names), "content" (matching lines with path:line:text) ' +
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'or "count". Narrow with path and glob (for example "*.ts"). -i ignores case, -A/-B/-C add context lines, head_limit caps the lines returned.',
   parameters: {
     type: 'object',
     properties: {
+      // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
       pattern: { type: 'string', description: 'Regular expression' },
       path: { type: 'string', description: 'File or directory to search (default: the working directory)' },
       glob: { type: 'string', description: 'Only files matching this glob' },
@@ -265,6 +271,7 @@ export const grepTool: ToolImpl = {
       '-B': { type: 'integer', description: 'Lines before each match' },
       '-C': { type: 'integer', description: 'Lines around each match' },
       head_limit: { type: 'integer', description: 'Maximum lines (default 250)' },
+      // i18n-ignore-end
     },
     required: ['pattern'],
   },

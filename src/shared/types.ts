@@ -188,6 +188,7 @@ export interface GateQuestionView {
 
 export interface GateRoundView {
   questions: GateQuestionView[];
+  // i18n-ignore: a verdict code the screens compare
   verdict: 'assertivo' | 'não assertivo' | null;
   visual: { mermaid: string; heading: string; description: string; inserted: boolean } | null;
 }

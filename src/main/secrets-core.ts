@@ -74,7 +74,7 @@ export interface SecretsStore {
 }
 
 function assertRef(ref: string): void {
-  if (!SECRET_REF.test(ref)) throw new SecretError('invalid', `invalid secret reference "${ref}"`);
+  if (!SECRET_REF.test(ref)) throw new SecretError('invalid', t('main.secrets.badRef', { ref }));
 }
 
 export function createSecretsStore(deps: SecretsDeps): SecretsStore {

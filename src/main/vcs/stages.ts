@@ -1,3 +1,4 @@
+// i18n-lint: allow-file default stage patterns of each code host: the words its own labels and statuses use
 import type { StageDef, StageKind, StageMappingRule, VcsKind } from '../../shared/config/types';
 import { matchStage } from '../../shared/config/stages';
 import { mapStageByRules } from '../../shared/cycles/stages';

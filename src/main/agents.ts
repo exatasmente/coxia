@@ -401,10 +401,12 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (m.type === 'result') {
       sessionId = m.session_id;
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
+      // i18n-ignore: developer error from the SDK result
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
+  // i18n-ignore: developer error from the SDK result
   throw new Error('agent ended without a result');
 }
 

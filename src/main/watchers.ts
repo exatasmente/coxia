@@ -198,6 +198,7 @@ export function severityOf(bugReport: string | null, labels: string[]): Severity
     const checked = boxes ? /\[[xX]\]\s*([^[\]]*)/.exec(line)?.[1] : line.replace(/^.*?severidade:?\**/i, '');
     const levels = [...(/\(([^)]*)\)/.exec(checked ?? '')?.[1] ?? '').matchAll(/P([0-3])/g)].map((m) => Number(m[1]));
     // "(P1/P2)" is read as the milder one.
+    // i18n-ignore: where the severity was read from: terms used as they are
     if (levels.length) return { level: Math.max(...levels) as Severity['level'], source: 'bug report' };
   }
   const isBug = labels.some((l) => /^(bugfix|bug|hotfix)$/i.test(l));

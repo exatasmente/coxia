@@ -37,16 +37,19 @@ export function userTerms(language: Language, user: Pick<WorkspaceConfig, 'userN
   if (language === 'en') {
     const terms = name
       ? { userName: name, theUser: name, ofUser: `${name}'s`, toUser: name, he: 'they', his: 'their' }
+      // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
       : { userName: '', theUser: 'the user', ofUser: "the user's", toUser: 'the user', he: 'they', his: 'their' };
     return { ...terms, TheUser: upper(terms.theUser) };
   }
   const a = user.userArticle;
   const terms = !name
+    // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
     ? { userName: '', theUser: 'o usuário', ofUser: 'do usuário', toUser: 'ao usuário', he: 'a pessoa', his: 'da pessoa' }
     : a === 'o'
       ? { userName: name, theUser: `o ${name}`, ofUser: `do ${name}`, toUser: `ao ${name}`, he: 'ele', his: 'dele' }
       : a === 'a'
         ? { userName: name, theUser: `a ${name}`, ofUser: `da ${name}`, toUser: `à ${name}`, he: 'ela', his: 'dela' }
+        // i18n-ignore: grammar of the words that stand for the person: the pronouns and articles of each language
         : { userName: name, theUser: name, ofUser: `de ${name}`, toUser: `a ${name}`, he: 'a pessoa', his: 'da pessoa' };
   return { ...terms, TheUser: upper(terms.theUser) };
 }
