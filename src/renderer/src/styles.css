@@ -363,6 +363,8 @@ select.text-input { background: var(--surface); }
 @media (max-height: 760px) { .composer-panel textarea { height: 6.5em; } }
 /* Keyboard focus and anchors scroll clear of the sticky hero (top) and composer (bottom) */
 html:has(.hero) { scroll-padding-top: 140px; }
+html:has(section.hero) { scroll-padding-top: 500px; }
+@media (max-height: 760px) { html:has(section.hero) { scroll-padding-top: 340px; } }
 html:has(.composer) { scroll-padding-bottom: 96px; }
 html:has(.composer-panel) { scroll-padding-bottom: 300px; }
 
@@ -372,6 +374,7 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   .page { padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
   .wrap { gap: 14px !important; }
   html:has(.hero) { scroll-padding-top: 84px; }
+  html:has(section.hero) { scroll-padding-top: 0; }
   html:has(.composer-panel) { scroll-padding-bottom: 260px; }
   /* sticky bars: header with back, a 2-line title and the mic as an icon; other buttons scroll sideways in the same row */
   .hero { top: calc(6px + env(safe-area-inset-top)); }
