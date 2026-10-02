@@ -53,7 +53,13 @@ export function sinceLabel(at: string, now: number): string {
   return d <= 0 ? 'hoje cedo' : d === 1 ? 'ontem' : d === 2 ? 'anteontem' : `${d} dias`;
 }
 
-const sentence = (s: string) => (/[.!?…]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+// The model sometimes answers the text "null" instead of a JSON null.
+const present = (s: string | null) => !!s && !/^(null|nenhum|sem bloqueio)\.?$/i.test(s.trim());
+
+function sentence(s: string): string {
+  const t = s.trim();
+  return `${t.charAt(0).toUpperCase()}${t.slice(1)}${/[.!?…]$/.test(t) ? '' : '.'}`;
+}
 
 // The speech is rebuilt around the saved next step, blocker and question: the saved "what changed" is not news anymore.
 export function reusedTurn(saved: Saved, now: number, sessionAlive: boolean): AgentTurn {
@@ -62,8 +68,8 @@ export function reusedTurn(saved: Saved, now: number, sessionAlive: boolean): Ag
   const speech = [
     `Sem mudança desde ${since}.`,
     sentence(t.next),
-    t.blocker ? sentence(`Bloqueio: ${t.blocker}`) : '',
-    t.question ? sentence(t.question) : '',
+    present(t.blocker) ? sentence(`Bloqueio: ${t.blocker}`) : '',
+    present(t.question) ? sentence(t.question as string) : '',
   ]
     .filter(Boolean)
     .join(' ');
