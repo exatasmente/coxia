@@ -1,0 +1,166 @@
+import { useState } from 'react';
+import type { ReleaseAction } from '../../../shared/types';
+import type { Screen } from '../App';
+import { api, errorText } from '../api';
+import { BackIcon } from './icons';
+
+const STATE_LABEL: Record<ReleaseAction['state'], string> = {
+  pending: 'aguardando você',
+  running: 'executando',
+  done: 'feito',
+  skipped: 'não seguido',
+  failed: 'falhou',
+};
+
+function title(a: ReleaseAction): string {
+  if (a.kind === 'sync') return `Sincronizar #${a.issue} com a main`;
+  if (a.kind === 'qa-comment') return `Atualizar o comentário do QA na #${a.issue}`;
+  return `Conflito na #${a.issue} ao sincronizar com a main`;
+}
+
+function what(a: ReleaseAction): string {
+  if (a.kind === 'sync')
+    return `Faz merge da main em ${a.mrs.map((m) => m.branch).join(', ')} e push (fast-forward, sem force-push). ${a.retest ? 'A release mexeu em arquivos do MR: o QA precisa retestar.' : 'A release não mexeu em arquivos do MR: sem reteste.'}`;
+  if (a.kind === 'qa-comment')
+    return a.noteId ? `Edita no lugar o comentário de pipelines do QA (nota ${a.noteId}), visível ao time na issue.` : 'Publica o comentário de sincronização da ferramenta na issue, visível ao time.';
+  return 'Nada é executado daqui. A call explica o conflito e a resolução; o ajuste é feito depois no Claude Code, com confirmação.';
+}
+
+function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const open = a.state === 'pending' || a.state === 'failed';
+
+  const run = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(errorText(e));
+    }
+    setBusy(null);
+  };
+
+  return (
+    <section className="panel" style={{ padding: 20, gap: 12, borderColor: a.kind === 'conflict' && open ? 'var(--amber-line)' : undefined }}>
+      <div className="row spread" style={{ alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="row" style={{ gap: 8 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{title(a)}</h2>
+            {a.release && <span className="badge badge-quiet">release {a.release}</span>}
+            <span className={`badge ${a.state === 'done' ? 'badge-now' : a.state === 'failed' ? 'badge-block' : a.state === 'pending' ? 'badge-ask' : 'badge-quiet'}`}>
+              {a.kind === 'conflict' && a.state === 'skipped' ? 'tratado fora' : STATE_LABEL[a.state]}
+            </span>
+          </div>
+          <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {a.stage.replace('STAGE:: ', '')}</div>
+        </div>
+      </div>
+
+      <div className="row" style={{ gap: 8 }}>
+        {a.mrs.map((m) => (
+          <a key={m.ref} className="badge badge-quiet mono" href={m.url} target="_blank" rel="noreferrer">
+            {m.ref} · {m.behind} atrás
+          </a>
+        ))}
+      </div>
+      <p className="small" style={{ lineHeight: 1.5 }}>{what(a)}</p>
+
+      {a.files.length > 0 && (
+        <details>
+          <summary className="small muted" style={{ cursor: 'pointer' }}>
+            {a.kind === 'conflict' ? `${a.files.length} arquivo(s) em conflito` : `${a.files.length} arquivo(s) do MR que a release também mudou`}
+          </summary>
+          <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0' }}>{a.files.join('\n')}</pre>
+        </details>
+      )}
+
+      {a.kind === 'qa-comment' && a.currentBody && a.proposedBody && (
+        <div className="quad" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          <div style={{ background: '#F7F7F8' }}>
+            <div className="section-title" style={{ marginBottom: 6 }}>Hoje na issue</div>
+            <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'var(--mono)' }}>{a.currentBody}</pre>
+          </div>
+          <div style={{ background: 'var(--teal-soft)' }}>
+            <div className="section-title" style={{ marginBottom: 6 }}>Vai ficar</div>
+            <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'var(--mono)' }}>{a.proposedBody}</pre>
+          </div>
+        </div>
+      )}
+      {a.output && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: '#F7F7F8', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: '#F7F7F8', padding: 12, borderRadius: 10 }}>{preview}</pre>}
+      {error && <div className="error">{error}</div>}
+
+      {open && (
+        <div className="row">
+          {a.kind === 'conflict' ? (
+            <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>Abrir call sobre o conflito</button>
+          ) : (
+            <>
+              {!(a.kind === 'qa-comment' && a.proposedBody) && (
+                <button type="button" className="btn" disabled={!!busy} onClick={() => void run('Simulando…', async () => setPreview(await api.previewAction(a.id)))}>
+                  {busy === 'Simulando…' ? <span className="spinner" /> : null} {a.kind === 'sync' ? 'Ver simulação' : 'Ver o comentário'}
+                </button>
+              )}
+              {confirming ? (
+                <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => void run('Executando…', () => api.approveAction(a.id)).then(() => setConfirming(false))}>
+                  {busy === 'Executando…' ? <span className="spinner" /> : null} Confirmar: {a.kind === 'sync' ? 'fazer merge e push' : 'publicar na issue'}
+                </button>
+              ) : (
+                <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>Seguir</button>
+              )}
+            </>
+          )}
+          {confirming ? (
+            <button type="button" className="btn" disabled={!!busy} onClick={() => setConfirming(false)}>Cancelar</button>
+          ) : (
+            <button type="button" className="btn" disabled={!!busy} onClick={() => void run('', () => api.skipAction(a.id))}>{a.kind === 'conflict' ? 'Já tratei fora' : 'Agora não'}</button>
+          )}
+        </div>
+      )}
+      {a.state === 'running' && <div className="row faint"><span className="spinner" /> Executando…</div>}
+    </section>
+  );
+}
+
+export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Screen) => void }) {
+  const [checking, setChecking] = useState<string | null>(null);
+  const pending = actions.filter((a) => a.state === 'pending' || a.state === 'running' || a.state === 'failed');
+  const past = actions.filter((a) => !pending.includes(a));
+
+  const detect = async () => {
+    setChecking('Conferindo a release…');
+    try {
+      setChecking(await api.detectRelease());
+    } catch (e) {
+      setChecking(`Falhou: ${errorText(e)}`);
+    }
+  };
+
+  return (
+    <div className="page">
+      <div className="wrap" style={{ maxWidth: 1100, gap: 18 }}>
+        <header className="row spread">
+          <div className="row" style={{ gap: 14 }}>
+            <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <h1 style={{ fontSize: 26, fontWeight: 700 }}>Ações de release</h1>
+          </div>
+          <div className="row">
+            {checking && <span className="small muted">{checking}</span>}
+            <button type="button" className="btn" disabled={checking === 'Conferindo a release…'} onClick={() => void detect()}>Conferir release agora</button>
+          </div>
+        </header>
+        <p className="small muted">
+          Vindas da skill post-release-sync. Nada é executado sem o seu “seguir” e a confirmação; o comentário do QA pede um novo “seguir” depois da sincronização.
+        </p>
+        <h2 className="section-title">Aguardando você · {pending.length}</h2>
+        {!pending.length && <p className="small faint">Nenhuma ação pendente.</p>}
+        {pending.map((a) => <ActionCard key={a.id} a={a} go={go} />)}
+        {past.length > 0 && <h2 className="section-title" style={{ marginTop: 12 }}>Histórico · {past.length}</h2>}
+        {past.map((a) => <ActionCard key={a.id} a={a} go={go} />)}
+      </div>
+    </div>
+  );
+}

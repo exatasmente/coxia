@@ -1,26 +1,41 @@
 import { useEffect, useState } from 'react';
-import type { Card } from '../../shared/types';
+import type { Card, ReleaseAction } from '../../shared/types';
 import { api } from './api';
 import { usePlayer } from './audio';
 import { useCeremony } from './ceremony';
+import { Actions } from './screens/Actions';
 import { Ata } from './screens/Ata';
 import { Call } from './screens/Call';
+import { Conflict } from './screens/Conflict';
 import { Deep } from './screens/Deep';
 import { History } from './screens/History';
 import { SettingsScreen } from './screens/Settings';
 import { Today } from './screens/Today';
 
-export type Screen = { name: 'today' } | { name: 'call' } | { name: 'deep'; ref: string; back: 'today' | 'call'; card?: Card } | { name: 'ata' } | { name: 'history' } | { name: 'settings' };
+export type Screen =
+  | { name: 'today' }
+  | { name: 'call' }
+  | { name: 'deep'; ref: string; back: 'today' | 'call'; card?: Card }
+  | { name: 'ata' }
+  | { name: 'history' }
+  | { name: 'settings' }
+  | { name: 'actions' }
+  | { name: 'conflict'; id: string };
 
 export function App() {
   const ceremony = useCeremony();
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
+  const [actions, setActions] = useState<ReleaseAction[]>([]);
 
   const go = (next: Screen) => {
     player.stop();
     setScreen(next);
   };
+
+  useEffect(() => {
+    void api.listActions().then(setActions);
+  }, []);
 
   const { mergeStatus, cards } = ceremony;
   // Tray menu and notifications drive the window from the main process.
@@ -28,7 +43,9 @@ export function App() {
     () =>
       api.onEvent((ev) => {
         if (ev.type === 'status') mergeStatus(ev.result, ev.checkedAt);
+        else if (ev.type === 'actions') setActions(ev.actions);
         else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
+        else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.to === 'call') go(cards ? { name: 'call' } : { name: 'today' });
         else go({ name: ev.to });
       }),
@@ -36,9 +53,11 @@ export function App() {
     [mergeStatus, cards],
   );
 
+  const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
+
   switch (screen.name) {
     case 'today':
-      return <Today ceremony={ceremony} go={go} />;
+      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':
@@ -49,5 +68,9 @@ export function App() {
       return <History go={go} />;
     case 'settings':
       return <SettingsScreen go={go} />;
+    case 'actions':
+      return <Actions actions={actions} go={go} />;
+    case 'conflict':
+      return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }
 }

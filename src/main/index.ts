@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
+import { approveAction, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude } from './claude';
@@ -70,7 +71,7 @@ function createWindow(): void {
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
   tray.setToolTip('Cerimônias');
-  const go = (to: 'today' | 'call' | 'settings' | 'history') => () => {
+  const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions') => () => {
     show();
     emit({ type: 'navigate', to });
   };
@@ -79,6 +80,8 @@ function createTray(): void {
       { label: 'Abrir', click: show },
       { label: 'Pré-daily agora', click: go('call') },
       { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => console.error('[status]', e)) },
+      { label: 'Ações de release', click: go('actions') },
+      { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => console.error('[release]', e)) },
       { label: 'Histórico', click: go('history') },
       { label: 'Configurações', click: go('settings') },
       { type: 'separator' },
@@ -119,6 +122,12 @@ function handlers(): void {
   ipcMain.handle('settings:save', (_e, s: Settings) => saveSettings(s));
   ipcMain.handle('claude:continue', (_e, sessionId: string) => continueInClaude(sessionId));
   ipcMain.handle('status:check', () => checkStatus(true));
+  ipcMain.handle('actions:list', () => listActions());
+  ipcMain.handle('actions:detect', () => detectRelease(true));
+  ipcMain.handle('actions:preview', (_e, id: string) => previewAction(id));
+  ipcMain.handle('actions:approve', (_e, id: string) => approveAction(id));
+  ipcMain.handle('actions:skip', (_e, id: string) => skipAction(id));
+  ipcMain.handle('actions:conflict', (_e, id: string, question: string) => conflictTalk(id, question));
 }
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.
@@ -136,6 +145,7 @@ if (!app.requestSingleInstanceLock()) {
     startVoice();
     createWindow();
     createTray();
+    startActions({ notify, emit });
     startScheduler({ notify, emit });
   });
   app.on('before-quit', () => {

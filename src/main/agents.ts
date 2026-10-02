@@ -26,22 +26,33 @@ function allowedFor(role: ModelRole): string[] {
 
 // The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
 const GLAB_READ = [
-  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes))?(\?[\w=&]+)?"?( --paginate)?$/,
+  /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes|pipelines))?(\?[\w=&]+)?"?( --paginate)?$/,
+  /^glab api "?projects\/[\w%.-]+\/pipelines(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
   /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
 ];
 
-const glabReadOnly: HookCallback = async (input) => {
-  if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
-  const command = String((input.tool_input as { command?: unknown }).command ?? '').trim();
-  if (GLAB_READ.some((re) => re.test(command))) return {};
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: `Na cerimônia o terminal só lê o GitLab. Use: ${GITLAB_HINT}`,
-    },
+// Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
+const GIT_MIRROR_READ = [
+  /^git -C \/home\/[\w.-]+\/\.cache\/post-release-sync\/[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( [\w./:^~-]+)+$/,
+];
+
+function shellAllowlist(patterns: RegExp[]): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
+    // Trailing stderr merge and a head limit only shorten the output, so they are accepted on any allowed command.
+    const command = String((input.tool_input as { command?: unknown }).command ?? '')
+      .trim()
+      .replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
+    if (patterns.some((re) => re.test(command))) return {};
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Use: ${GITLAB_HINT}${patterns.length > GLAB_READ.length ? ` ${GIT_HINT}` : ''}`,
+      },
+    };
   };
-};
+}
 
 // Agents run on a third-party model: secret files never enter the context.
 const SECRET_PATH = /(^|\/)\.env($|[./])|\.env$|secret|credential|token|(^|\/)key$|\.pem$|\/\.ssh\/|\/\.config\/|\/\.aws\/|\/\.docker\/|\/\.netrc$|\.mcp\.json$|\.claude\.json$/i;
@@ -61,6 +72,9 @@ const noSecrets: HookCallback = async (input) => {
     },
   };
 };
+
+const GIT_HINT =
+  'No conflito: `git -C <repo do mirror> merge-tree --write-tree --name-only <src_sha> <tgt_sha>`, `git -C <repo> merge-base <src_sha> <tgt_sha>`, `git -C <repo> diff <base> <src_sha> -- <arquivo>` e `git -C <repo> diff <base> <tgt_sha> -- <arquivo>`.';
 
 const GITLAB_HINT =
   '`glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), ' +
@@ -98,7 +112,13 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-async function run<T>(role: ModelRole, prompt: string, schema: Schema, extra: Partial<Options> = {}): Promise<Run<T>> {
+async function run<T>(
+  role: ModelRole,
+  prompt: string,
+  schema: Schema,
+  extra: Partial<Options> = {},
+  shell: { rules: string[]; patterns: RegExp[] } = { rules: [], patterns: [] },
+): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
   const q = query({
@@ -110,9 +130,9 @@ async function run<T>(role: ModelRole, prompt: string, schema: Schema, extra: Pa
       // dontAsk denies every tool that allowedTools does not pre-approve.
       permissionMode: 'dontAsk',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: `${ROLE}\nPara ler o GitLab: ${GITLAB_HINT}` },
-      allowedTools: allowedFor(role),
+      allowedTools: [...allowedFor(role), ...shell.rules],
       disallowedTools: [
-        ...(getSettings().tools.glab ? [] : ['Bash']),
+        ...(getSettings().tools.glab || shell.rules.length ? [] : ['Bash']),
         'Edit',
         'Write',
         'NotebookEdit',
@@ -126,7 +146,7 @@ async function run<T>(role: ModelRole, prompt: string, schema: Schema, extra: Pa
       ],
       hooks: {
         PreToolUse: [
-          { matcher: 'Bash', hooks: [glabReadOnly] },
+          { matcher: 'Bash', hooks: [shellAllowlist([...GLAB_READ, ...shell.patterns])] },
           { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
         ],
       },
@@ -271,4 +291,45 @@ export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string
   ].join('\n');
   const r = await run<{ texto: string }>('teams', prompt, obj({ texto: str }), { maxTurns: 2 });
   return r.data.texto;
+}
+
+export async function rewriteQaComment(issue: number, current: string, syncOutput: string, unit: Record<string, unknown> | null): Promise<{ body: string; summary: string }> {
+  const prompt = [
+    `A issue sz4#${issue} foi sincronizada com a main depois de uma release. Reescreva o comentário de pipelines do QA abaixo, que vai ser editado no lugar.`,
+    'Regras (skill post-release-sync, "Convivência com o comentário do qa-release-branch"): mantenha o texto, a menção @qa.interno e o formato;',
+    'troque o link da pipeline pela pipeline de PUSH do commit de merge (consulte com glab api projects/<grupo%2Frepo>/pipelines?ref=<branch>);',
+    'acrescente uma linha dizendo que a branch foi sincronizada com a main e se precisa de reteste, citando os arquivos sobrepostos quando houver.',
+    'Não invente pipeline: se não achar a de push do commit de merge, mantenha a atual e diga isso no resumo.',
+    `Saída do sync:\n${syncOutput.slice(-4000)}`,
+    `Unidade da ferramenta: ${JSON.stringify(unit ?? {}).slice(0, 4000)}`,
+    `Comentário atual:\n${current}`,
+    '"body": o comentário completo, pronto para substituir o atual. "resumo": uma frase dizendo o que mudou.',
+  ].join('\n');
+  const r = await run<{ body: string; resumo: string }>('deep', prompt, obj({ body: str, resumo: str }), { maxTurns: 12 });
+  return { body: r.data.body, summary: r.data.resumo };
+}
+
+export async function conflictAsk(context: string, question: string, sessionId: string | null): Promise<DeepAnswer> {
+  const prompt = [
+    sessionId
+      ? ''
+      : [
+          'Call sobre um conflito de sincronização com a main depois de uma release. Você explica; não resolve nada aqui.',
+          'Leia os dois lados no mirror da ferramenta (git -C <repo> merge-tree/diff/show/log, só leitura) e a skill post-release-sync, seção "Conflito: resolução manual".',
+          'Explique: o que cada lado mudou, por que conflita e a resolução que você propõe (qual lado fica em cada trecho e o que testar depois).',
+          'O ajuste será feito depois no Claude Code, numa worktree temporária, com confirmação do Luiz.',
+          context,
+        ].join('\n'),
+    `Pergunta do Luiz (transcrição por voz): «${question}»`,
+    '"fala": resposta em até 90 palavras, para ser ouvida.',
+    SPEECH_RULES,
+  ].join('\n');
+  const r = await run<{ fala: string }>(
+    'deep',
+    prompt,
+    obj({ fala: str }),
+    { maxTurns: 20, ...(sessionId ? { resume: sessionId } : {}) },
+    { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
+  );
+  return { sessionId: r.sessionId, speech: r.data.fala, sources: r.sources };
 }

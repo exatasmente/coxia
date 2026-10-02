@@ -1,0 +1,162 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReleaseAction } from '../../../shared/types';
+import type { Screen } from '../App';
+import { api, errorText } from '../api';
+import { type usePlayer, useRecorder } from '../audio';
+import type { Ceremony } from '../ceremony';
+import { ContinueInClaude } from './ContinueInClaude';
+import { BackIcon, MicIcon } from './icons';
+import { Wave } from './Wave';
+
+const OPENING = 'Explique o conflito: o que cada lado mudou, por que conflita e a resolução que você propõe, com o que testar depois.';
+
+export function Conflict({
+  action,
+  ceremony: c,
+  player,
+  go,
+}: { action: ReleaseAction | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const rec = useRecorder();
+  const opened = useRef(false);
+  const voice = c.voices?.agents[2] ?? null;
+
+  const ask = useCallback(
+    async (question: string) => {
+      if (!action) return;
+      setError(null);
+      setBusy('O agente está lendo os dois lados do conflito…');
+      try {
+        const updated = await api.conflictAsk(action.id, question);
+        setBusy(null);
+        const last = updated.msgs[updated.msgs.length - 1];
+        if (voice && last && !last.me) await player.say(last.text, voice, 'conflito').catch(() => undefined);
+      } catch (e) {
+        setError(errorText(e));
+        setBusy(null);
+      }
+    },
+    [action, voice, player],
+  );
+
+  useEffect(() => {
+    if (opened.current || !action) return;
+    opened.current = true;
+    if (!action.msgs.length && !action.sessionId) void ask(OPENING);
+  }, [action, ask]);
+
+  const talk = useCallback(async () => {
+    if (player.speaking) player.stop();
+    if (!rec.recording) {
+      try {
+        await rec.start();
+      } catch (e) {
+        setError(`Microfone indisponível: ${errorText(e)}`);
+      }
+      return;
+    }
+    const audio = await rec.stop();
+    if (!audio) return;
+    setBusy('Transcrevendo…');
+    try {
+      const text = (await api.transcribe(audio)).trim();
+      setBusy(null);
+      if (text) await ask(text);
+    } catch (e) {
+      setBusy(null);
+      setError(`Falha na transcrição: ${errorText(e)}`);
+    }
+  }, [rec, player, ask]);
+
+  const talkRef = useRef(talk);
+  talkRef.current = talk;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      e.preventDefault();
+      void talkRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  if (!action) {
+    return (
+      <div className="page"><div className="wrap">
+        <div className="error">Conflito não encontrado.</div>
+        <div><button type="button" className="btn" onClick={() => go({ name: 'actions' })}>Voltar</button></div>
+      </div></div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="wrap" style={{ gap: 18 }}>
+        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'actions' })}>
+            <BackIcon />
+          </button>
+          <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+            <div className="small" style={{ color: '#FCD34D', fontWeight: 600 }}>Conflito · #{action.issue} · release {action.release}</div>
+            <div style={{ fontSize: 19, fontWeight: 600 }}>{action.issueTitle}</div>
+          </div>
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#FDBA74'} small />
+          <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
+            <MicIcon /> {rec.recording ? 'Enviar fala' : 'Falar (espaço)'}
+          </button>
+        </header>
+
+        <div className="cols deep-layout">
+          <aside className="panel deep-sources" style={{ flex: '1 1 260px', maxWidth: 320, minWidth: 250, gap: 10 }}>
+            <h2 className="section-title">Em conflito</h2>
+            {action.mrs.map((m) => (
+              <a key={m.ref} className="item mono small" href={m.url} target="_blank" rel="noreferrer">{m.ref} · {m.branch} · {m.behind} atrás</a>
+            ))}
+            {action.files.map((f) => <div key={f} className="item mono" style={{ fontSize: 12, wordBreak: 'break-all', borderColor: '#FECACA', background: '#FEF2F2' }}>{f}</div>)}
+          </aside>
+
+          <main className="panel deep-main" style={{ flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }} aria-live="polite">
+            <h2 className="section-title">Conversa</h2>
+            {action.msgs.map((m, i) => (
+              <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}>
+                <div className="bubble">
+                  <div className="who">{m.me ? 'Você' : 'Agente'} · {m.at}</div>
+                  <div style={{ lineHeight: 1.5 }}>{m.text}</div>
+                </div>
+              </div>
+            ))}
+            {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {error && <div className="error">{error}</div>}
+            <form
+              className="row"
+              style={{ flexWrap: 'nowrap' }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (draft.trim() && !busy) void ask(draft.trim());
+                setDraft('');
+              }}
+            >
+              <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta para o agente" />
+              <button type="submit" className="btn btn-dark" disabled={!!busy || !draft.trim()}>Perguntar</button>
+            </form>
+          </main>
+
+          <aside className="deep-side" style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <section className="panel">
+              <h2 className="section-title">Depois da call</h2>
+              <p className="small" style={{ lineHeight: 1.5 }}>
+                Concordou com a resolução? O ajuste é feito no Claude Code, nesta mesma sessão: numa worktree temporária, com merge (nunca rebase), testes do módulo e push sem force, cada passo com o seu “sim”.
+              </p>
+              <ContinueInClaude sessionId={action.sessionId} />
+              <button type="button" className="btn" disabled={action.state !== 'pending'} onClick={() => void api.skipAction(action.id).then(() => go({ name: 'actions' }))}>
+                {action.state === 'pending' ? 'Marcar como tratado' : 'Tratado'}
+              </button>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}

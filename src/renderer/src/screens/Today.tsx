@@ -6,7 +6,7 @@ import { MicIcon } from './icons';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
-export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) => void }) {
+export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number }) {
   const [filter, setFilter] = useState<Filter>('all');
   const cards = c.cards?.cards ?? [];
   const ready = cards.filter((card) => c.turns[card.ref]).length;
@@ -49,6 +49,15 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
         </header>
 
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
+
+        {pendingActions > 0 && (
+          <div className="item row spread" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
+            <span className="small" style={{ color: 'var(--amber-ink)', fontWeight: 500 }}>
+              {pendingActions === 1 ? '1 ação de release aguardando o seu “seguir”.' : `${pendingActions} ações de release aguardando o seu “seguir”.`}
+            </span>
+            <button type="button" className="btn" onClick={() => go({ name: 'actions' })}>Ver ações</button>
+          </div>
+        )}
 
         {c.resumed && (
           <div className="item row spread" style={{ background: 'var(--teal-soft)', borderColor: '#99F6E4' }}>

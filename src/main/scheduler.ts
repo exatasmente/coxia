@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppEvent, Card } from '../shared/types';
+import { detectRelease } from './actions';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
@@ -113,7 +114,10 @@ function tick(): void {
 
   const inWindow = nowMin >= minutes(s.schedule.from) && nowMin <= minutes(s.schedule.to);
   const due = !snap.checkedAt || Date.now() - new Date(snap.checkedAt).getTime() >= s.schedule.statusEveryMin * 60_000;
-  if (inWindow && due) void checkStatus(false).catch((e) => console.error('[scheduler]', e));
+  if (inWindow && due) {
+    void checkStatus(false).catch((e) => console.error('[scheduler]', e));
+    void detectRelease(false).catch((e) => console.error('[release]', e));
+  }
 }
 
 export function startScheduler(d: Deps): void {

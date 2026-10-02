@@ -144,8 +144,36 @@ export interface HistoryEntry {
   ataSaved: boolean;
 }
 
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict';
+export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
+
+export interface ReleaseAction {
+  id: string;
+  key: string;
+  kind: ActionKind;
+  issue: number;
+  issueTitle: string;
+  stage: string;
+  release: string | null;
+  mrs: { ref: string; url: string; branch: string; behind: number }[];
+  files: string[];
+  retest: boolean;
+  state: ActionState;
+  createdAt: string;
+  finishedAt: string | null;
+  output: string | null;
+  noteId: number | null;
+  currentBody: string | null;
+  proposedBody: string | null;
+  sessionId: string | null;
+  msgs: { me: boolean; text: string; at: string }[];
+  unit: Record<string, unknown> | null;
+}
+
 export type AppEvent =
-  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' }
+  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' | 'actions' }
+  | { type: 'conflict'; id: string }
+  | { type: 'actions'; actions: ReleaseAction[] }
   | { type: 'deep'; card: Card }
   | { type: 'status'; result: CardsResult; checkedAt: string };
 
@@ -169,5 +197,11 @@ export interface Api {
   saveSettings(settings: import('./settings').Settings): Promise<import('./settings').Settings>;
   continueInClaude(sessionId: string): Promise<{ ok: boolean; command: string }>;
   checkStatus(): Promise<string>;
+  listActions(): Promise<ReleaseAction[]>;
+  detectRelease(): Promise<string>;
+  previewAction(id: string): Promise<string>;
+  approveAction(id: string): Promise<ReleaseAction>;
+  skipAction(id: string): Promise<ReleaseAction>;
+  conflictAsk(id: string, question: string): Promise<ReleaseAction>;
   onEvent(cb: (event: AppEvent) => void): () => void;
 }

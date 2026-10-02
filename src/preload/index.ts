@@ -21,6 +21,12 @@ const api: Api = {
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   continueInClaude: (sessionId) => ipcRenderer.invoke('claude:continue', sessionId),
   checkStatus: () => ipcRenderer.invoke('status:check'),
+  listActions: () => ipcRenderer.invoke('actions:list'),
+  detectRelease: () => ipcRenderer.invoke('actions:detect'),
+  previewAction: (id) => ipcRenderer.invoke('actions:preview', id),
+  approveAction: (id) => ipcRenderer.invoke('actions:approve', id),
+  skipAction: (id) => ipcRenderer.invoke('actions:skip', id),
+  conflictAsk: (id, question) => ipcRenderer.invoke('actions:conflict', id, question),
   onEvent: (cb) => {
     const listener = (_e: unknown, ev: AppEvent) => cb(ev);
     ipcRenderer.on('app:event', listener);
