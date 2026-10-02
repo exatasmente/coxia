@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setSpeechEnabled } from '../audio';
 import { BackIcon } from './icons';
+import { RetentionSection } from './RetentionSection';
 
 const ROLES: [ModelRole, string, string][] = [
   ['turn', 'Fala de cada agente', 'Monta a vez de cada atividade na pré-daily. É o papel mais chamado: um por atividade.'],
@@ -246,6 +247,8 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
             {status && <span className="small muted" style={{ whiteSpace: 'pre-line' }}>{status}</span>}
           </div>
         </section>
+
+        <RetentionSection value={s.retention} onChange={(retention) => set((p) => ({ ...p, retention }))} />
       </div>
     </div>
   );
