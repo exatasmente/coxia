@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AppEvent, ReleaseAction } from '../shared/types';
+import type { AppEvent, GitlabCommand, ReleaseAction } from '../shared/types';
 import { conflictAsk, rewriteQaComment } from './agents';
 import { getSettings } from './config';
 import { ATAS, GITLAB, PLAYBOOK } from './env';
@@ -99,8 +99,76 @@ function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'ki
     sessionId: null,
     msgs: [],
     unit: null,
+    summary: null,
+    command: null,
     ...partial,
   };
+}
+
+function describe(c: GitlabCommand): string {
+  const fields = Object.entries(c.fields).map(([k, v]) => `  ${k} = ${v.length > 300 ? `${v.slice(0, 300)}… (${v.length} caracteres)` : v}`);
+  return [`${c.method} ${c.endpoint}  (via ${c.via})`, ...fields].join('\n');
+}
+
+/**
+ * Any module proposes a GitLab write here. Nothing runs until the user says "seguir" and confirms in the Actions
+ * screen. `key` deduplicates: the same proposal is not created (nor notified) twice.
+ */
+export function proposeGitlabAction(input: {
+  key: string;
+  issue: number;
+  issueTitle?: string;
+  stage?: string;
+  summary: string;
+  detail?: string;
+  command: GitlabCommand;
+  notify?: { title: string; body: string };
+}): ReleaseAction | null {
+  if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(input.command.endpoint)) throw new Error(`endpoint inválido: ${input.command.endpoint}`);
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
+  const action = blank({
+    key: input.key,
+    kind: 'gitlab',
+    issue: input.issue,
+    issueTitle: input.issueTitle ?? '',
+    stage: input.stage ?? '',
+    summary: input.summary,
+    command: input.command,
+    output: [input.detail, describe(input.command)].filter(Boolean).join('\n\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+async function runGitlab(c: GitlabCommand): Promise<string> {
+  if (c.via === 'glab') {
+    const args = ['api', '--method', c.method, c.endpoint];
+    const files: string[] = [];
+    for (const [k, v] of Object.entries(c.fields)) {
+      if (v.length > 200 || v.includes('\n')) {
+        const file = join(tmpdir(), `gitlab-field-${Date.now()}-${files.length}.txt`);
+        writeFileSync(file, v);
+        files.push(file);
+        args.push('-F', `${k}=@${file}`);
+      } else args.push('-f', `${k}=${v}`);
+    }
+    try {
+      return (await glab(args)).slice(0, 2000);
+    } finally {
+      for (const f of files) unlinkSync(f);
+    }
+  }
+  // curl path: array fields such as reviewer_ids[] are rejected by glab (it sends a JSON body).
+  const token = (await exec('glab', ['config', 'get', 'token', '--host', GITLAB])).stdout.trim();
+  const args = ['-sS', '-w', '\nHTTP %{http_code}', '-X', c.method, '-H', `PRIVATE-TOKEN: ${token}`];
+  for (const [k, v] of Object.entries(c.fields)) args.push('--data-urlencode', `${k}=${v}`);
+  args.push(`https://${GITLAB}/api/v4/${c.endpoint}`);
+  const { stdout } = await exec('curl', args, { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+  const code = /HTTP (\d+)\s*$/.exec(stdout)?.[1];
+  if (!code || Number(code) >= 400) throw new Error(`GitLab respondeu ${code ?? '?'}: ${stdout.slice(0, 500)}`);
+  return stdout.slice(0, 2000);
 }
 
 export function listActions(): ReleaseAction[] {
@@ -190,6 +258,7 @@ export async function detectRelease(manual: boolean): Promise<string> {
 export async function previewAction(id: string): Promise<string> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(`ação ${id} não existe`);
+  if (a.kind === 'gitlab' && a.command) return describe(a.command);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
   return a.files.join('\n');
@@ -236,7 +305,9 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   update(id, (x) => ({ ...x, state: 'running' }));
   try {
     let output: string;
-    if (a.kind === 'sync') {
+    if (a.kind === 'gitlab' && a.command) {
+      output = await runGitlab(a.command);
+    } else if (a.kind === 'sync') {
       output = await cli(['sync', '--apply', '--issue', String(a.issue)]);
     } else if (a.noteId && a.proposedBody) {
       const file = join(tmpdir(), `qa-note-${a.issue}-${Date.now()}.md`);

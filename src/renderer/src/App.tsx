@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Card, ReleaseAction } from '../../shared/types';
-import { api } from './api';
+import { api, moduleEvents } from './api';
 import { usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
@@ -27,6 +27,7 @@ export type Screen =
   | { name: 'gate'; ref: string; card?: Card }
   | { name: 'qa'; ref: string; card?: Card }
   | { name: 'retro' };
+// slot: screens of feature modules (one union member each)
 
 export function App() {
   const ceremony = useCeremony();
@@ -52,6 +53,8 @@ export function App() {
         else if (ev.type === 'actions') setActions(ev.actions);
         else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
+        else if (ev.type === 'open') go(ev.screen as unknown as Screen);
+        else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
         else if (ev.to === 'call') go(cards ? { name: 'call' } : { name: 'today' });
         else go({ name: ev.to });
       }),
@@ -82,6 +85,7 @@ export function App() {
       return <QaHandoff card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'retro':
       return <RetroScreen ceremony={ceremony} player={player} go={go} />;
+    // slot: routes of feature modules
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
   }

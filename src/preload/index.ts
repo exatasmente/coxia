@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Api, AppEvent } from '../shared/types';
 
 const api: Api = {
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   loadState: () => ipcRenderer.invoke('state:load'),
   saveState: (state) => ipcRenderer.invoke('state:save', state),
   listHistory: () => ipcRenderer.invoke('history:list'),

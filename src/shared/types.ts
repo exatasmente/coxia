@@ -236,7 +236,15 @@ export interface Retro {
   createdAt: string;
 }
 
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict';
+// A GitLab write proposed by a module and run only after "seguir" + confirmation.
+export interface GitlabCommand {
+  via: 'glab' | 'curl';
+  method: 'POST' | 'PUT' | 'DELETE';
+  endpoint: string;
+  fields: Record<string, string>;
+}
+
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'gitlab';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {
@@ -260,16 +268,22 @@ export interface ReleaseAction {
   sessionId: string | null;
   msgs: { me: boolean; text: string; at: string }[];
   unit: Record<string, unknown> | null;
+  summary: string | null;
+  command: GitlabCommand | null;
 }
 
 export type AppEvent =
   | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro' }
   | { type: 'conflict'; id: string }
   | { type: 'actions'; actions: ReleaseAction[] }
+  | { type: 'open'; screen: { name: string; [key: string]: unknown } }
+  | { type: 'module'; name: string; payload: unknown }
   | { type: 'deep'; card: Card }
   | { type: 'status'; result: CardsResult; checkedAt: string };
 
 export interface Api {
+  // Generic channel for modules: each one keeps its typed wrapper next to its screen.
+  invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
   loadState(): Promise<SavedCeremony | null>;
   saveState(state: SavedCeremony): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;

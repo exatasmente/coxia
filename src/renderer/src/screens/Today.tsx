@@ -46,10 +46,13 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             </span>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
+            {/* slot: header buttons of feature modules */}
           </div>
         </header>
 
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
+
+        {/* slot: banners of feature modules */}
 
         {pendingActions > 0 && (
           <div className="item row spread" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
@@ -207,6 +210,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                     {failed ? <span style={{ color: 'var(--red)' }} title={failed}>agente falhou</span> : turn ? 'agente pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
                   </div>
                   <div className="row" style={{ gap: 8 }}>
+                    {/* slot: per-activity buttons of feature modules */}
                     {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
                     <button type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
                   </div>

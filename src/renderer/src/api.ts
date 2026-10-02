@@ -20,3 +20,6 @@ export function errorText(e: unknown): string {
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+// Main-process modules emit { type: 'module', name, payload }; screens listen with moduleEvents.addEventListener(name, …).
+export const moduleEvents = new EventTarget();

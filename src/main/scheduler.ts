@@ -5,6 +5,7 @@ import { detectRelease } from './actions';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
+import type { Job } from './module';
 
 interface Snapshot {
   checkedAt: string | null;
@@ -51,6 +52,12 @@ function today(): string {
 }
 
 let deps: Deps | null = null;
+const jobs: Job[] = [];
+const lastRun = new Map<string, number>();
+
+export function registerJob(job: Job): void {
+  jobs.push(job);
+}
 let running = false;
 
 export async function checkStatus(manual: boolean): Promise<string> {
@@ -121,6 +128,13 @@ function tick(): void {
 
   const inWindow = nowMin >= minutes(s.schedule.from) && nowMin <= minutes(s.schedule.to);
   const due = !snap.checkedAt || Date.now() - new Date(snap.checkedAt).getTime() >= s.schedule.statusEveryMin * 60_000;
+  for (const job of jobs) {
+    if (job.workHoursOnly && !(workday && inWindow)) continue;
+    if (Date.now() - (lastRun.get(job.name) ?? 0) < job.everyMin * 60_000) continue;
+    lastRun.set(job.name, Date.now());
+    void job.run().catch((e) => console.error(`[job ${job.name}]`, e));
+  }
+
   if (workday && inWindow && due) {
     void checkStatus(false).catch((e) => console.error('[scheduler]', e));
     void detectRelease(false).catch((e) => console.error('[release]', e));

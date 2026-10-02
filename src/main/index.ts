@@ -11,7 +11,8 @@ import { getSettings, saveSettings } from './config';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
-import { checkStatus, type Notice, startScheduler } from './scheduler';
+import { MODULES } from './modules';
+import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
@@ -166,6 +167,9 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     createTray();
     startActions({ notify, emit });
+    for (const register of MODULES) {
+      register({ handle: (channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)), notify, emit, job: registerJob });
+    }
     startScheduler({ notify, emit });
   });
   app.on('before-quit', () => {
