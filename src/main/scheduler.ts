@@ -10,6 +10,7 @@ interface Snapshot {
   checkedAt: string | null;
   items: Record<string, { stage: string | null; blockers: string[] }>;
   preDailyNotified: string | null;
+  retroNotified?: string | null;
 }
 
 export interface Notice {
@@ -102,19 +103,25 @@ export async function checkStatus(manual: boolean): Promise<string> {
 function tick(): void {
   const s = getSettings();
   const now = new Date();
-  if (!s.schedule.days.includes(now.getDay())) return;
+  const workday = s.schedule.days.includes(now.getDay());
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const snap = read();
 
   const pre = minutes(s.schedule.preDaily);
-  if (s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
+  if (workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
     write({ ...snap, preDailyNotified: today() });
     deps?.notify({ title: 'Hora da pré-daily', body: 'Os agentes estão prontos para a call. Clique para entrar.', onClick: { type: 'navigate', to: 'call' } });
   }
 
+  const retro = minutes(s.schedule.retroTime);
+  if (s.notifications && now.getDay() === s.schedule.retroDay && snap.retroNotified !== today() && nowMin >= retro && nowMin < retro + PRE_DAILY_WINDOW_MIN) {
+    write({ ...read(), retroNotified: today() });
+    deps?.notify({ title: 'Retro da semana', body: 'O resumo da semana está pronto para conversar. Clique para abrir.', onClick: { type: 'navigate', to: 'retro' } });
+  }
+
   const inWindow = nowMin >= minutes(s.schedule.from) && nowMin <= minutes(s.schedule.to);
   const due = !snap.checkedAt || Date.now() - new Date(snap.checkedAt).getTime() >= s.schedule.statusEveryMin * 60_000;
-  if (inWindow && due) {
+  if (workday && inWindow && due) {
     void checkStatus(false).catch((e) => console.error('[scheduler]', e));
     void detectRelease(false).catch((e) => console.error('[release]', e));
   }

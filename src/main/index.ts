@@ -9,6 +9,8 @@ import { loadCards } from './cards';
 import { continueInClaude } from './claude';
 import { getSettings, saveSettings } from './config';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
+import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
+import { askRetro, latestRetro, prepareRetro } from './retro';
 import { checkStatus, type Notice, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
@@ -72,7 +74,7 @@ function createWindow(): void {
 function createTray(): void {
   tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
   tray.setToolTip('Cerimônias');
-  const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions') => () => {
+  const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
     show();
     emit({ type: 'navigate', to });
   };
@@ -83,6 +85,7 @@ function createTray(): void {
       { label: 'Conferir status agora', click: () => void checkStatus(true).catch((e) => console.error('[status]', e)) },
       { label: 'Ações de release', click: go('actions') },
       { label: 'Conferir release agora', click: () => void detectRelease(true).catch((e) => console.error('[release]', e)) },
+      { label: 'Retro da semana', click: go('retro') },
       { label: 'Histórico', click: go('history') },
       { label: 'Configurações', click: go('settings') },
       { type: 'separator' },
@@ -138,6 +141,13 @@ function handlers(): void {
   ipcMain.handle('gate:insert', (_e, id: string) => insertGateVisual(id));
   ipcMain.handle('gate:round', (_e, id: string) => newGateRound(id));
   ipcMain.handle('gate:record', (_e, id: string) => recordGate(id));
+  ipcMain.handle('qa:prepare', (_e, card: Card) => prepareQa(card));
+  ipcMain.handle('qa:get', (_e, iid: string) => getQa(iid));
+  ipcMain.handle('qa:ask', (_e, iid: string, question: string) => askQa(iid, question));
+  ipcMain.handle('qa:write', (_e, iid: string) => writeQaChecklist(iid));
+  ipcMain.handle('retro:prepare', () => prepareRetro());
+  ipcMain.handle('retro:latest', () => latestRetro());
+  ipcMain.handle('retro:ask', (_e, id: string, question: string) => askRetro(id, question));
 }
 
 // A test run with its own data dir gets its own browser profile, so it never takes the real instance's lock.

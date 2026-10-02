@@ -23,7 +23,7 @@ function validate(s: Settings): Settings {
   for (const model of Object.values(s.models)) {
     if (!MODEL.test(model)) throw new Error(`modelo inválido: ${model}`);
   }
-  for (const t of [s.schedule.preDaily, s.schedule.from, s.schedule.to]) {
+  for (const t of [s.schedule.preDaily, s.schedule.from, s.schedule.to, s.schedule.retroTime]) {
     if (!TIME.test(t)) throw new Error(`horário inválido: ${t}`);
   }
   if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error('intervalo deve ficar entre 5 e 240 minutos');

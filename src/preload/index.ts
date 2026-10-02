@@ -36,6 +36,13 @@ const api: Api = {
   insertGateVisual: (id) => ipcRenderer.invoke('gate:insert', id),
   newGateRound: (id) => ipcRenderer.invoke('gate:round', id),
   recordGate: (id) => ipcRenderer.invoke('gate:record', id),
+  prepareQa: (card) => ipcRenderer.invoke('qa:prepare', card),
+  getQa: (iid) => ipcRenderer.invoke('qa:get', iid),
+  askQa: (iid, question) => ipcRenderer.invoke('qa:ask', iid, question),
+  writeQaChecklist: (iid) => ipcRenderer.invoke('qa:write', iid),
+  prepareRetro: () => ipcRenderer.invoke('retro:prepare'),
+  latestRetro: () => ipcRenderer.invoke('retro:latest'),
+  askRetro: (id, question) => ipcRenderer.invoke('retro:ask', id, question),
   onEvent: (cb) => {
     const listener = (_e: unknown, ev: AppEvent) => cb(ev);
     ipcRenderer.on('app:event', listener);

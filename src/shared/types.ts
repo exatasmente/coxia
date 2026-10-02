@@ -183,6 +183,59 @@ export interface GateView {
   recorded: string | null;
 }
 
+export interface Talk {
+  me: boolean;
+  text: string;
+  at: string;
+}
+
+export interface QaHandoff {
+  id: string;
+  ref: string;
+  iid: string;
+  title: string;
+  stage: string | null;
+  sessionId: string | null;
+  speech: string;
+  changed: string;
+  checklist: { title: string; items: string[] }[];
+  risks: string[];
+  environment: string;
+  teams: string;
+  checklistFile: string;
+  checklistExists: boolean;
+  written: string | null;
+  talk: Talk[];
+  createdAt: string;
+}
+
+export interface RetroItem {
+  title: string;
+  evidence: string;
+}
+
+export interface Improvement {
+  title: string;
+  dimension: string;
+  problem: string;
+  proposal: string;
+}
+
+export interface Retro {
+  id: string;
+  from: string;
+  to: string;
+  sessionId: string | null;
+  speech: string;
+  numbers: { label: string; value: string }[];
+  worked: RetroItem[];
+  stuck: RetroItem[];
+  rework: RetroItem[];
+  improvements: Improvement[];
+  talk: Talk[];
+  createdAt: string;
+}
+
 export type ActionKind = 'sync' | 'qa-comment' | 'conflict';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
@@ -210,7 +263,7 @@ export interface ReleaseAction {
 }
 
 export type AppEvent =
-  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' | 'actions' }
+  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro' }
   | { type: 'conflict'; id: string }
   | { type: 'actions'; actions: ReleaseAction[] }
   | { type: 'deep'; card: Card }
@@ -251,5 +304,12 @@ export interface Api {
   insertGateVisual(id: string): Promise<GateView>;
   newGateRound(id: string): Promise<GateView>;
   recordGate(id: string): Promise<GateView>;
+  prepareQa(card: Card): Promise<QaHandoff>;
+  getQa(iid: string): Promise<QaHandoff | null>;
+  askQa(iid: string, question: string): Promise<QaHandoff>;
+  writeQaChecklist(iid: string): Promise<QaHandoff>;
+  prepareRetro(): Promise<Retro>;
+  latestRetro(): Promise<Retro | null>;
+  askRetro(id: string, question: string): Promise<Retro>;
   onEvent(cb: (event: AppEvent) => void): () => void;
 }

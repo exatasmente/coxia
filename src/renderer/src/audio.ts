@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Voice } from '../../shared/types';
 import { api } from './api';
 
@@ -85,4 +85,47 @@ export function useRecorder() {
   }, []);
 
   return { recording, start, stop };
+}
+
+// Push-to-talk shared by the conversation screens: space or the button starts, the same again sends.
+export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: string) => Promise<void>, onError: (msg: string) => void) {
+  const rec = useRecorder();
+  const [transcribing, setTranscribing] = useState(false);
+
+  const talk = useCallback(async () => {
+    if (player.speaking) player.stop();
+    if (!rec.recording) {
+      try {
+        await rec.start();
+      } catch (e) {
+        onError(`Microfone indisponível: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return;
+    }
+    const audio = await rec.stop();
+    if (!audio) return;
+    setTranscribing(true);
+    try {
+      const text = (await api.transcribe(audio)).trim();
+      setTranscribing(false);
+      if (text) await onText(text);
+    } catch (e) {
+      setTranscribing(false);
+      onError(`Falha na transcrição: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [rec, player, onText, onError]);
+
+  const ref = useRef(talk);
+  ref.current = talk;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      e.preventDefault();
+      void ref.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  return { recording: rec.recording, transcribing, talk };
 }

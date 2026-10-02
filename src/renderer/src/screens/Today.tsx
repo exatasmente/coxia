@@ -12,6 +12,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
   const ready = cards.filter((card) => c.turns[card.ref]).length;
   const blocked = cards.filter((card) => card.blockers.length);
   const asking = cards.filter((card) => c.turns[card.ref]?.question);
+  const forQa = cards.filter((card) => card.spec && /Code Review OK|Test Fail|Ready To Test/i.test(card.stage ?? ''));
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
   const date = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
@@ -117,26 +118,40 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
 
             <div className="ceremony">
               <div className="row spread">
-                <span className="small faint" style={{ fontWeight: 500 }}>Quando subir release</span>
+                <span className="small faint" style={{ fontWeight: 500 }}>{forQa.length ? `${forQa.length} pronta(s) para o QA` : 'Quando subir release'}</span>
                 <span className="mono small faint">QA</span>
               </div>
               <div>
                 <h3 style={{ marginBottom: 6 }}>Passagem para o QA</h3>
-                <p className="small muted" style={{ lineHeight: 1.5 }}>O agente explica ao QA o que mudou e o que testar.</p>
+                <p className="small muted" style={{ lineHeight: 1.5 }}>O agente explica ao QA o que mudou e o que testar; sai o checklist e o aviso do Teams.</p>
               </div>
-              <span className="faint" style={{ marginTop: 'auto' }}>Fica para a próxima versão</span>
+              <div className="foot" style={{ justifyContent: 'flex-start' }}>
+                {forQa.slice(0, 3).map((card) => (
+                  <button key={card.ref} type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>
+                    <span className="mono">#{card.iid}</span>
+                  </button>
+                ))}
+                {!forQa.length && (
+                  <select className="text-input" aria-label="Escolher atividade para o QA" value="" onChange={(e) => { const card = cards.find((x) => x.ref === e.target.value); if (card) go({ name: 'qa', ref: card.ref, card }); }}>
+                    <option value="">Escolher atividade…</option>
+                    {cards.filter((x) => x.spec).map((x) => <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>)}
+                  </select>
+                )}
+              </div>
             </div>
 
             <div className="ceremony">
               <div className="row spread">
-                <span className="small faint" style={{ fontWeight: 500 }}>Sexta · 16:00</span>
-                <span className="mono small faint">semanal</span>
+                <span className="small faint" style={{ fontWeight: 500 }}>Semanal</span>
+                <span className="mono small faint">retro</span>
               </div>
               <div>
                 <h3 style={{ marginBottom: 6 }}>Retro</h3>
-                <p className="small muted" style={{ lineHeight: 1.5 }}>Reprovações, quizzes errados e retrabalho da semana.</p>
+                <p className="small muted" style={{ lineHeight: 1.5 }}>Reprovações, bloqueios, conflitos, quizzes errados e retrabalho dos últimos 7 dias.</p>
               </div>
-              <span className="faint" style={{ marginTop: 'auto' }}>Fica para a próxima versão</span>
+              <div className="foot" style={{ justifyContent: 'flex-start' }}>
+                <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>Abrir a retro</button>
+              </div>
             </div>
           </div>
         </section>

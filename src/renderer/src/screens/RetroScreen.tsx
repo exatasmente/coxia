@@ -1,0 +1,159 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Improvement, Retro, RetroItem } from '../../../shared/types';
+import type { Screen } from '../App';
+import { api, errorText } from '../api';
+import { type usePlayer, useTalk } from '../audio';
+import type { Ceremony } from '../ceremony';
+import { ContinueInClaude } from './ContinueInClaude';
+import { BackIcon, MicIcon } from './icons';
+import { Wave } from './Wave';
+
+function improvementEntry(m: Improvement): string {
+  return [`### N. ${m.title}`, '', `**Dimensão:** ${m.dimension}`, '', `**O problema hoje:** ${m.problem}`, '', `**O que seria:** ${m.proposal}`, ''].join('\n');
+}
+
+function Items({ title, items, tone }: { title: string; items: RetroItem[]; tone: string }) {
+  return (
+    <section className="panel" style={{ padding: 18, gap: 8 }}>
+      <h2 className="section-title">{title} · {items.length}</h2>
+      {!items.length && <p className="small faint">Nada.</p>}
+      {items.map((i) => (
+        <div key={i.title} className="item" style={{ borderLeft: `3px solid ${tone}` }}>
+          <span style={{ fontWeight: 600 }}>{i.title}</span>
+          <span className="small muted">{i.evidence}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+  const [retro, setRetro] = useState<Retro | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+  const spoken = useRef<string | null>(null);
+  const voice = c.voices?.moderator ?? null;
+
+  useEffect(() => {
+    api.latestRetro().then((r) => {
+      setRetro(r);
+      setLoaded(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!retro || !voice || spoken.current === retro.createdAt) return;
+    spoken.current = retro.createdAt;
+    void player.say(retro.speech, voice, 'retro').catch(() => undefined);
+  }, [retro, voice, player]);
+
+  const act = async (label: string, fn: () => Promise<Retro>, speakLast = false) => {
+    setBusy(label);
+    setError(null);
+    try {
+      const r = await fn();
+      setRetro(r);
+      const last = r.talk[r.talk.length - 1];
+      if (speakLast && voice && last && !last.me) void player.say(last.text, voice, 'retro').catch(() => undefined);
+    } catch (e) {
+      setError(errorText(e));
+    }
+    setBusy(null);
+  };
+
+  const ask = useCallback(
+    async (text: string) => {
+      if (retro) await act('O moderador está pensando…', () => api.askRetro(retro.id, text), true);
+    },
+    [retro],
+  );
+  const talk = useTalk(player, ask, setError);
+
+  const copy = async (what: string, text: string) => {
+    await api.copy(text);
+    setCopied(what);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const week = retro ? `${new Date(retro.from).toLocaleDateString('pt-BR')} a ${new Date(retro.to).toLocaleDateString('pt-BR')}` : '';
+
+  return (
+    <div className="page">
+      <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
+        <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+            <div className="small" style={{ color: '#99F6E4', fontWeight: 600 }}>Retro da semana{week ? ` · ${week}` : ''}</div>
+            <div style={{ fontSize: 19, fontWeight: 600 }}>Processo, não pessoas</div>
+          </div>
+          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? '#60A5FA' : '#2DD4BF'} small />
+          {retro && (
+            <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
+              <MicIcon /> {talk.recording ? 'Enviar fala' : 'Falar (espaço)'}
+            </button>
+          )}
+          <button type="button" className="btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!!busy} onClick={() => void act('O moderador está montando a retro da semana…', () => api.prepareRetro())}>
+            {retro ? 'Montar de novo' : 'Montar a retro'}
+          </button>
+        </header>
+        {error && <div className="error">{error}</div>}
+        {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+        {loaded && !retro && !busy && (
+          <p className="small muted">
+            A retro junta as cerimônias, decisões, ações de release, quizzes de gate e as mudanças no GitLab dos últimos 7 dias. O agente conduz; as melhorias saem no formato do IMPROVEMENTS.md para você levar pelo Claude Code.
+          </p>
+        )}
+
+        {retro && (
+          <>
+            <section className="panel" style={{ padding: 20, gap: 12 }}>
+              <p style={{ lineHeight: 1.6 }}>{retro.speech}</p>
+              <div className="row" style={{ gap: 10 }}>
+                {retro.numbers.map((n) => (
+                  <div key={n.label} className="panel" style={{ padding: '10px 14px', gap: 0, minWidth: 120 }}>
+                    <div style={{ fontSize: 22, fontWeight: 700 }}>{n.value}</div>
+                    <div className="small muted">{n.label}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <Items title="Funcionou" items={retro.worked} tone="var(--teal)" />
+              <Items title="Travou" items={retro.stuck} tone="#B45309" />
+              <Items title="Retrabalho" items={retro.rework} tone="var(--red)" />
+            </div>
+            <section className="panel" style={{ padding: 20, gap: 12 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600 }}>Melhorias propostas</h2>
+              <p className="small muted">O IMPROVEMENTS.md é do time: copie a entrada e leve pelo Claude Code numa branch docs/&lt;slug&gt;.</p>
+              {retro.improvements.map((m) => (
+                <div key={m.title} className="item">
+                  <div className="row spread">
+                    <span style={{ fontWeight: 600 }}>{m.title}</span>
+                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => void copy(m.title, improvementEntry(m))}>{copied === m.title ? 'Copiado' : 'Copiar entrada'}</button>
+                  </div>
+                  <span className="small muted">{m.dimension}</span>
+                  <span className="small"><b>Problema:</b> {m.problem}</span>
+                  <span className="small"><b>Proposta:</b> {m.proposal}</span>
+                </div>
+              ))}
+              <ContinueInClaude sessionId={retro.sessionId} />
+            </section>
+            <section className="panel" style={{ padding: 20, gap: 10 }}>
+              <h2 className="section-title">Conversa</h2>
+              {retro.talk.map((m, i) => (
+                <div key={i} className={`bubble-row ${m.me ? 'me' : ''}`}><div className="bubble"><div className="who">{m.me ? 'Você' : 'Moderador'} · {m.at}</div><div style={{ lineHeight: 1.5 }}>{m.text}</div></div></div>
+              ))}
+              <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) void ask(draft.trim()); setDraft(''); }}>
+                <input className="text-input" placeholder="Ou digite" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Fala na retro" />
+                <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Enviar</button>
+              </form>
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

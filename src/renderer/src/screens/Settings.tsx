@@ -170,6 +170,15 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
               <input type="time" className="text-input" aria-label="Fim" style={{ maxWidth: 130 }} value={s.schedule.to} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, to: e.target.value } }))} />
             </div>
           </div>
+          <div className="settings-row">
+            <div style={{ fontWeight: 600 }}>Aviso da retro</div>
+            <div className="row" style={{ gap: 8 }}>
+              <select className="text-input" aria-label="Dia da retro" style={{ maxWidth: 140 }} value={s.schedule.retroDay} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, retroDay: Number(e.target.value) } }))}>
+                {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </select>
+              <input type="time" className="text-input" aria-label="Hora da retro" style={{ maxWidth: 130 }} value={s.schedule.retroTime} onChange={(e) => set((p) => ({ ...p, schedule: { ...p.schedule, retroTime: e.target.value } }))} />
+            </div>
+          </div>
           <label className="check-row">
             <input type="checkbox" checked={s.notifications} onChange={() => set((p) => ({ ...p, notifications: !p.notifications }))} />
             <span>
