@@ -396,7 +396,8 @@ html:has(.composer-panel) { scroll-padding-bottom: 300px; }
   .composer { padding: 8px; }
   .composer > .btn { padding: 0 12px; }
   /* the call stage is taller than a compact bar: it scrolls with the page, the controls stay floating */
-  section.hero { position: static; }
+  section.hero { position: static; z-index: auto; }
+  .composer-panel textarea { height: 6em; }
   .call-layout > .call-main { order: -1; }
   /* columns collapse in reading order */
   .cols { flex-direction: column; align-items: stretch; }
