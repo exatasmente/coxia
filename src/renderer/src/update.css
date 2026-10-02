@@ -9,3 +9,12 @@
 .upd-toast code { font-weight: 600; }
 .upd-toast button { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: inherit; font-size: 18px; cursor: pointer; opacity: 0.8; }
 .upd-toast button:hover { opacity: 1; }
+.upd-field { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.upd-field select { max-width: 220px; }
+.upd-notes { margin: 0; max-height: 220px; overflow: auto; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.upd-progress { width: 100%; height: 10px; accent-color: var(--teal-solid); }
+.upd-commits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow: auto; font-size: 14px; }
+.upd-commits li { min-width: 0; overflow-wrap: anywhere; }
+.upd-prompt { padding-left: 14px; max-width: min(440px, calc(100vw - 24px)); flex-wrap: wrap; }
+.upd-prompt > span { flex: 1 1 auto; min-width: 0; }
+.upd-prompt .upd-prompt-go { width: auto; padding: 0 14px; font-size: 14px; font-weight: 600; border: 1px solid var(--night-line); }

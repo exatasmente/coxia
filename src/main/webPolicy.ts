@@ -4,8 +4,9 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // Acts on the desktop machine itself: terminal, clipboard, login items, local file deletion, native notifications,
 // the shell commands that conflict resolutions run (a browser must not be able to set what Aplicar executes),
 // the workspace test flag and deletion (a browser may create, rename and switch workspaces, not lower the guard),
-// and the app update (it rebuilds and replaces the installed app, then quits it).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed']);
+// and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
+// (test/updates-policy.test.ts checks that no update channel is missing).
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy']);
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // post-release-sync) waits there, so refusing it refuses all of them.
