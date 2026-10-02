@@ -9,6 +9,7 @@ import { getSettings } from './config';
 import { WORKSPACE, agentEnv } from './env';
 import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
 import { CLAUDE_BIN } from './paths';
+import { noteSession } from './sessions';
 
 const MCP_GITLAB = [
   'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
@@ -270,6 +271,7 @@ async function run<T>(
     },
   });
   for await (const m of q) {
+    if ('session_id' in m) noteSession(m.session_id, role, prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
       for (const block of m.message.content) {

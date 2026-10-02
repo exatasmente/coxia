@@ -16,6 +16,7 @@ export const WORKSPACE_FILES = [
   'efeitos.json',
   'feedback.json',
   'auditoria.jsonl',
+  'sessions.jsonl',
   'retencao.log',
 ];
 export const WORKSPACE_DIRS = ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts'];

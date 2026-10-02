@@ -43,6 +43,7 @@ function legacyLayout(): Record<string, string> {
     'efeitos.json': '{"e":1}',
     'feedback.json': '{"f":1}',
     'auditoria.jsonl': '{"kind":"gitlab"}\n',
+    'sessions.jsonl': '{"id":"s1","at":"2026-10-02T10:00:00.000Z"}\n',
     'retencao.log': 'log\n',
     '2026-10-02-pre-daily.md': '# ata',
     'historico/2026-10-02T093000.json': '{"version":1}',
@@ -66,7 +67,7 @@ function legacyLayout(): Record<string, string> {
 }
 
 const PER_WORKSPACE = [
-  'config.json', 'acoes.json', 'custo.json', 'falas.json', 'status.json', 'radar.json', 'watchers.json', 'efeitos.json', 'feedback.json', 'auditoria.jsonl', 'retencao.log',
+  'config.json', 'acoes.json', 'custo.json', 'falas.json', 'status.json', 'radar.json', 'watchers.json', 'efeitos.json', 'feedback.json', 'auditoria.jsonl', 'sessions.jsonl', 'retencao.log',
   '2026-10-02-pre-daily.md', 'historico/2026-10-02T093000.json', 'historico/2026-10-01T093000.json', 'atividade/2026-10-02.json', 'gates/g1.json', 'qa/q1.json', 'retros/r1.json', 'feedback/mr1.json', 'conflicts/c1/state.json',
 ];
 const GLOBAL = ['web-sessions.json', 'web-push-vapid.json', 'web-push.json', 'glossario.json', 'conflict-verify.json', 'saude.json', 'userData/Preferences'];
