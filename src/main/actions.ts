@@ -16,7 +16,7 @@ const ISSUE_PROJECT = 1;
 const QA_NOTE = /^@qa\.interno\b/;
 const PIPELINE_WAIT_MS = 30_000;
 // The only GraphQL write the app may propose: a work item status change (authorized by the user on 2026-10-02).
-const STATUS_MUTATION =
+export const STATUS_MUTATION =
   /^mutation \{ workItemUpdate\(input: \{ id: "gid:\/\/gitlab\/WorkItem\/\d+", statusWidget: \{ status: "gid:\/\/gitlab\/WorkItems::Statuses::Custom::Status\/\d+" \} \}\) \{ errors \} \}$/;
 
 interface Store {
@@ -113,6 +113,17 @@ function describe(c: GitlabCommand): string {
   return [`${c.method} ${c.endpoint}  (via ${c.via})`, ...fields].join('\n');
 }
 
+export function validateGitlabCommand(command: GitlabCommand): void {
+  if (command.endpoint === 'graphql') {
+    const keys = Object.keys(command.fields);
+    if (command.via !== 'glab' || command.method !== 'POST' || keys.length !== 1 || !STATUS_MUTATION.test(command.fields.query ?? '')) {
+      throw new Error('GraphQL só para a mudança de status do work item (workItemUpdate com statusWidget)');
+    }
+  } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(command.endpoint) || /\.\.|%2e/i.test(command.endpoint)) {
+    throw new Error(`endpoint inválido: ${command.endpoint}`);
+  }
+}
+
 /**
  * Any module proposes a GitLab write here. Nothing runs until the user says "seguir" and confirms in the Actions
  * screen. `key` deduplicates: the same proposal is not created (nor notified) twice.
@@ -127,15 +138,7 @@ export function proposeGitlabAction(input: {
   command: GitlabCommand;
   notify?: { title: string; body: string };
 }): ReleaseAction | null {
-  if (input.command.endpoint === 'graphql') {
-    const c = input.command;
-    const keys = Object.keys(c.fields);
-    if (c.via !== 'glab' || c.method !== 'POST' || keys.length !== 1 || !STATUS_MUTATION.test(c.fields.query ?? '')) {
-      throw new Error('GraphQL só para a mudança de status do work item (workItemUpdate com statusWidget)');
-    }
-  } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(input.command.endpoint)) {
-    throw new Error(`endpoint inválido: ${input.command.endpoint}`);
-  }
+  validateGitlabCommand(input.command);
   const store = read();
   if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
   const action = blank({

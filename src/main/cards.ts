@@ -58,6 +58,15 @@ function describe(c: { field: string; from: unknown; to: unknown }, prefix = '')
   return `${prefix}${c.field}: ${String(c.from)} → ${String(c.to)}`;
 }
 
+// Blocked first, then with pending items, then by ref.
+export function compareCards(a: Card, b: Card): number {
+  return (
+    Number(!a.blockers.length) - Number(!b.blockers.length) ||
+    Number(!a.pending.length) - Number(!b.pending.length) ||
+    a.ref.localeCompare(b.ref)
+  );
+}
+
 export async function loadCards(limit: number): Promise<CardsResult> {
   const { stdout } = await run(DAILY_REPORT, ['report', '--format', 'json', '--dry-run'], {
     timeout: 180_000,
@@ -89,11 +98,6 @@ export async function loadCards(limit: number): Promise<CardsResult> {
         url: it.web_url,
       };
     });
-  cards.sort(
-    (a, b) =>
-      Number(!a.blockers.length) - Number(!b.blockers.length) ||
-      Number(!a.pending.length) - Number(!b.pending.length) ||
-      a.ref.localeCompare(b.ref),
-  );
+  cards.sort(compareCards);
   return { generatedAt: report.generated_at, total: cards.length, cards: cards.slice(0, limit) };
 }

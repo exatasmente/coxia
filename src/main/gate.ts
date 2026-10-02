@@ -47,7 +47,7 @@ interface Gate {
 
 const DIR = join(ATAS, 'gates');
 const ID = /^[\w-]+$/;
-const LETTERS = ['A', 'B', 'C', 'D'];
+export const LETTERS = ['A', 'B', 'C', 'D'];
 const KINDS = ['previsão', 'contrafactual', 'fronteira', 'side effect', 'rollback', 'regressão'];
 
 const CANDIDATES: { sub: string; gate: 1 | 2; files: [string, string][] }[] = [
@@ -115,13 +115,13 @@ const QUESTION = obj({
   explicacao: str,
 });
 
-type RawQuestion = { pergunta: string; tipo: string; opcoes: string[]; correta: number; secao: string; explicacao: string };
+export type RawQuestion = { pergunta: string; tipo: string; opcoes: string[]; correta: number; secao: string; explicacao: string };
 
 // Models tend to put the right option first; the order is shuffled here so the letter carries no hint.
-function toQuestion(q: RawQuestion): Question {
+export function toQuestion(q: RawQuestion, random: () => number = Math.random): Question {
   const order = q.opcoes.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
   return {
@@ -168,7 +168,7 @@ export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
     quizFile: join(dirname(option.file), 'GATE_QUIZ.md'),
     summary: r.data.resumo,
     sessionId: r.sessionId || null,
-    rounds: [{ questions: r.data.perguntas.map(toQuestion), answers: r.data.perguntas.map(() => null), visual: null }],
+    rounds: [{ questions: r.data.perguntas.map((q) => toQuestion(q)), answers: r.data.perguntas.map(() => null), visual: null }],
     talk: [],
     recorded: null,
     createdAt: new Date().toISOString(),
@@ -185,9 +185,10 @@ export function getGate(id: string): GateView | null {
 }
 
 // "B", "letra b", "opção c", "a d"… → index; anything else is a free answer, which is evaluated, not accepted.
-function letter(text: string): number | null {
+export function letter(text: string): number | null {
   const t = text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, ' ').trim();
-  const m = /^(?:(?:e\s+)?(?:a\s+)?(?:letra|opcao|alternativa|resposta)\s+)?([abcd])\b/.exec(t);
+  // The letter must be the whole answer: "a resposta está no cache" starts with the article "a", not with option A.
+  const m = /^(?:e\s+)?(?:a\s+)?(?:(?:letra|opcao|alternativa|resposta)\s+)?([abcd])$/.exec(t);
   return m ? LETTERS.indexOf(m[1].toUpperCase()) : null;
 }
 
@@ -296,7 +297,7 @@ export async function newGateRound(id: string): Promise<GateView> {
     obj({ perguntas: { type: 'array', items: QUESTION, minItems: 1, maxItems: 3 } }),
     { maxTurns: 10, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
-  g.rounds.push({ questions: r.data.perguntas.map(toQuestion), answers: r.data.perguntas.map(() => null), visual: null });
+  g.rounds.push({ questions: r.data.perguntas.map((q) => toQuestion(q)), answers: r.data.perguntas.map(() => null), visual: null });
   return view(write(g));
 }
 
