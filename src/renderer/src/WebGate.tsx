@@ -85,21 +85,35 @@ export function WebGate({ children }: { children: ReactNode }) {
     void sessionCheck().then((s) => setState(s === 'ok' ? 'ready' : s));
   };
 
+  const pairWith = (code: string) => {
+    setState('pairing');
+    post('api/login', { code, name: deviceName() }).then(
+      () => location.reload(),
+      (e) => {
+        setNotice(e instanceof HttpStatusError && e.status === 401 ? 'Este link de pareamento expirou ou já foi usado. Gere outro no app do computador.' : errorText(e));
+        setState('login');
+      },
+    );
+  };
+
   useEffect(() => {
     if (!isWeb()) return;
     if (pairCode && !pairStarted) {
       pairStarted = true;
-      post('api/login', { code: pairCode, name: deviceName() }).then(
-        () => location.reload(),
-        (e) => {
-          setNotice(e instanceof HttpStatusError && e.status === 401 ? 'Este link de pareamento expirou ou já foi usado. Gere outro no app do computador.' : errorText(e));
-          setState('login');
-        },
-      );
+      pairWith(pairCode);
     } else if (!pairCode) check();
+    // The same tab given a pairing link while the app is open (pasted into the address bar).
+    const onHash = () => {
+      const code = consumePairFragment(window);
+      if (code) pairWith(code);
+    };
     const expired = () => setState((s) => (s === 'pairing' ? s : 'login'));
+    window.addEventListener('hashchange', onHash);
     window.addEventListener(UNAUTHORIZED, expired);
-    return () => window.removeEventListener(UNAUTHORIZED, expired);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+      window.removeEventListener(UNAUTHORIZED, expired);
+    };
   }, []);
 
   if (state === 'ready') return <>{children}</>;
