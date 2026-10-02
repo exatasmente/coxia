@@ -31,7 +31,7 @@ function save(terms: unknown): Term[] {
 
 async function hear(text: string, terms: unknown): Promise<ArrayBuffer> {
   const { engine } = getSettings().voice;
-  const said = spoken(String(text).slice(0, 400), sanitizeGlossary(terms));
+  const said = spoken(String(text).slice(0, 400), sanitizeGlossary(terms), engine);
   const path = await speak(said, voicesFor(engine).moderator, engine, { prosody: false, glossary: [] });
   const bytes = readFileSync(path);
   unlinkSync(path);

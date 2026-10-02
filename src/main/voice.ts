@@ -136,7 +136,7 @@ export function stopVoice(): void {
 export async function speak(text: string, wanted: Voice, engine: VoiceEngine, opts: { prosody: boolean; glossary: Term[] }): Promise<string> {
   const voice = resolveVoice(wanted, engine);
   // the tone is read from the written terms, the voice gets their pronunciation
-  const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary) }));
+  const plan = (opts.prosody ? prosodyPlan(text) : []).map((s) => ({ ...s, text: spoken(s.text, opts.glossary, engine) }));
   if (needsJoin(plan)) {
     const out = join(AUDIO, `tts-${Date.now()}-${nextId}.wav`);
     const segments = plan.map((s) => ({
@@ -150,7 +150,7 @@ export async function speak(text: string, wanted: Voice, engine: VoiceEngine, op
     return r.path ?? out;
   }
   const out = join(AUDIO, `tts-${Date.now()}-${nextId}.${engine === 'kokoro' ? 'wav' : 'mp3'}`);
-  const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary);
+  const said = plan[0]?.text ?? spoken(speakable(text), opts.glossary, engine);
   const r = await call({ cmd: 'tts', engine, text: said, voice: voice.voice, rate: voice.rate, pitch: voice.pitch, speed: voice.speed ?? 1, out });
   return r.path ?? out;
 }

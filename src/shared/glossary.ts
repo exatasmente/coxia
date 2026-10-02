@@ -1,10 +1,14 @@
 // Glossary of terms for both directions of the voice: how the synthesized voice says a term,
 // and how the transcription usually mishears it (fixed back to the term).
 
+import type { VoiceEngine } from './types';
+
 export interface Term {
   term: string;
   // empty: the voice reads the term as written
   say: string;
+  // Kokoro reads English words worse than Edge: when set it replaces `say` for that engine
+  sayKokoro?: string;
   // variants the transcription produces, replaced by the term
   heard: string[];
 }
@@ -61,7 +65,11 @@ function replaceAll(text: string, pairs: { from: string; to: string }[]): string
   return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => done[Number(i)]);
 }
 
-export function spoken(text: string, terms: Term[]): string {
+export function pronunciation(t: Term, engine: VoiceEngine): string {
+  return ((engine === 'kokoro' ? t.sayKokoro?.trim() : '') || t.say).trim();
+}
+
+export function spoken(text: string, terms: Term[], engine: VoiceEngine): string {
   const refs = text
     // "sz4!9302" reads as "sz4, MR 9302"; "#15499" as "15499"
     .replace(/(\S)!(\d+)/g, '$1, MR $2')
@@ -69,7 +77,7 @@ export function spoken(text: string, terms: Term[]): string {
     .replace(/#(\d+)/g, '$1');
   return replaceAll(
     refs,
-    terms.filter((t) => t.say.trim()).map((t) => ({ from: t.term, to: t.say.trim() })),
+    terms.filter((t) => pronunciation(t, engine)).map((t) => ({ from: t.term, to: pronunciation(t, engine) })),
   );
 }
 
@@ -108,7 +116,8 @@ export function sanitizeGlossary(input: unknown): Term[] {
       .map(clean)
       .filter((h) => h && h.toLowerCase() !== term.toLowerCase())
       .slice(0, MAX_HEARD);
-    out.push({ term, say: clean(r.say), heard });
+    const sayKokoro = clean(r.sayKokoro);
+    out.push(sayKokoro ? { term, say: clean(r.say), sayKokoro, heard } : { term, say: clean(r.say), heard });
   }
   return out;
 }
