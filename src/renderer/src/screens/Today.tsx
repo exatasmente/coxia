@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
+import { WatchersBanner } from './WatchersBanner';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -53,6 +54,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
 
         {/* slot: banners of feature modules */}
+        <WatchersBanner go={go} />
 
         {pendingActions > 0 && (
           <div className="item row spread" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
