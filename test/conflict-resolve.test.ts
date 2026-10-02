@@ -273,6 +273,34 @@ describe('apply, verify and commit', () => {
     expect(readFileSync(join(wt, 'app.js'), 'utf8')).not.toContain('from-main');
   });
 
+  it('reopens with the exact text the merge left, not a re-merge, so the decided hunks still match', async () => {
+    saveVerifyCommands({ [f.project]: 'exit 2' });
+    const id = seed(f);
+    await toProposed(id);
+    const wt = get(id).resolve?.worktree as string;
+    const snapshot = join(`${wt}.markers`, 'app.js');
+    expect(readFileSync(snapshot, 'utf8')).toContain('<<<<<<< ');
+    // a re-merge may split hunks differently; mark the snapshot so we can tell which text came back
+    writeFileSync(snapshot, `${readFileSync(snapshot, 'utf8')}// as prepared\n`);
+    decideAll(id);
+    await conflictApply(id, { skipTests: false });
+    await conflictReopen(id);
+    expect(readFileSync(join(wt, 'app.js'), 'utf8')).toBe(readFileSync(snapshot, 'utf8'));
+    decideAll(id);
+    saveVerifyCommands({ [f.project]: 'true' });
+    expect((await conflictApply(id, { skipTests: false })).resolve?.commit).toBeTruthy();
+    await conflictDiscard(id).catch(() => undefined);
+  });
+
+  it('removes the snapshot with the worktree', async () => {
+    const id = seed(f);
+    await conflictPrepare(id);
+    const wt = get(id).resolve?.worktree as string;
+    expect(existsSync(`${wt}.markers`)).toBe(true);
+    await conflictDiscard(id);
+    expect(existsSync(`${wt}.markers`)).toBe(false);
+  });
+
   it('commits a failed verification only when asked to', async () => {
     saveVerifyCommands({ [f.project]: 'exit 1' });
     const id = seed(f);

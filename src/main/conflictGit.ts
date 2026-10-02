@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type { ConflictFile, ConflictHunk } from '../shared/conflict';
@@ -173,7 +173,9 @@ export async function prepareWorktree(p: { clone: string; branch: string; target
     await git(p.dest, ['-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
     const merging = (await git(p.dest, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { fail: false })).code === 0;
     if (!merging) throw new Error(`o merge de ${target} em ${branch} não começou: a branch já contém a ${target}, ou o git recusou. Veja o MR no GitLab.`);
-    return { worktree: p.dest, syncBranch, originSha, mainSha, files: await readConflicts(p.dest) };
+    const files = await readConflicts(p.dest);
+    snapshotMarkers(p.dest, files);
+    return { worktree: p.dest, syncBranch, originSha, mainSha, files };
   } catch (e) {
     await removeWorktree(p.clone, p.dest, syncBranch, conflictsDirOf(p.dest)).catch(() => undefined);
     throw e;
@@ -181,6 +183,18 @@ export async function prepareWorktree(p: { clone: string; branch: string; target
 }
 
 const conflictsDirOf = (wt: string): string => dirname(wt);
+
+// The marked files exactly as the merge left them: reopening restores these, so the hunks match the ones the user decided.
+const markersDirOf = (wt: string): string => `${resolve(wt)}.markers`;
+
+function snapshotMarkers(wt: string, files: ConflictFile[]): void {
+  const dir = markersDirOf(wt);
+  for (const f of files.filter((x) => !x.hunks[0]?.whole)) {
+    const to = insideDir(dir, f.path);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(insideDir(wt, f.path), to);
+  }
+}
 
 export interface Resolution {
   path: string;
@@ -233,7 +247,16 @@ export async function applyResolutions(wt: string, files: ConflictFile[]): Promi
 export async function reopenResolutions(wt: string, files: ConflictFile[]): Promise<void> {
   const marked = files.filter((f) => !f.hunks[0]?.whole).map((f) => f.path);
   const whole = files.filter((f) => f.hunks[0]?.whole).map((f) => f.path);
-  if (marked.length) await git(wt, ['-c', 'merge.conflictStyle=diff3', 'checkout', '-m', '--', ...marked]);
+  if (marked.length) {
+    // checkout -m puts the conflict back in the index; its file merge may split hunks differently from the original merge,
+    // so the content comes from the snapshot taken when preparing (older preparations have none and keep checkout's text).
+    await git(wt, ['-c', 'merge.conflictStyle=diff3', 'checkout', '-m', '--', ...marked]);
+    const dir = markersDirOf(wt);
+    for (const path of marked) {
+      const saved = insideDir(dir, path);
+      if (existsSync(saved)) copyFileSync(saved, insideDir(wt, path));
+    }
+  }
   if (whole.length) await git(wt, ['update-index', '--unresolve', '--', ...whole]);
   const left = await unmergedPaths(wt);
   if (left.length !== files.length) throw new Error('não consegui reabrir os conflitos: descarte e prepare de novo');
@@ -336,4 +359,5 @@ export async function removeWorktree(clone: string, wt: string, syncBranch: stri
   }
   await git(clone, ['worktree', 'prune'], { fail: false });
   await git(clone, ['branch', '-D', syncBranch], { fail: false });
+  rmSync(markersDirOf(abs), { recursive: true, force: true });
 }
