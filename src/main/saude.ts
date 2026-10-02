@@ -8,6 +8,7 @@ import { logError } from './errorlog';
 import { DATA_ROOT } from './env';
 import { providerSecret } from './llm';
 import { secrets } from './secrets';
+import { t } from '../shared/i18n';
 import { getConfig, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module, ModuleContext } from './module';
 import { readReport, reportStatus } from './report';
@@ -187,6 +188,8 @@ async function reportCheck(): Promise<Result> {
 }
 
 async function voiceCheck(): Promise<Result> {
+  // Voice off is a state, not a failure: no sidecar is expected to run.
+  if (!getConfig().voice.enabled) return { ok: true, message: t('voice.health.off') };
   const v = await voiceStatus();
   if (!v.alive) return { ok: false, message: 'O sidecar de voz não está rodando. Reabra o app.' };
   if (v.pingMs === null) return { ok: false, message: 'O sidecar de voz não respondeu ao ping em 5 s.' };

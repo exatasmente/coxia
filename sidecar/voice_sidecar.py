@@ -23,11 +23,11 @@ import edge_tts
 from faster_whisper import WhisperModel
 
 MODEL = os.environ.get("CERIMONIAS_WHISPER_MODEL", "small")
-PROMPT = "Pré-daily. Issue, MR, merge request, pipeline, draft, code review, Gate, Plan, spec, hub-whatsapp, new-agent, sz4."
+PROMPT = "Pré-daily. Issue, MR, merge request, pipeline, draft, code review, Gate, Plan, spec."  # the app sends its glossary instead; this only fills in when it sends none
 
 HERE = Path(__file__).resolve().parent
-# CERIMONIAS_KOKORO_DIR wins; the hermes-poc checkout is a dev convenience for this machine.
-KOKORO_DIRS = [d for d in (os.environ.get("CERIMONIAS_KOKORO_DIR"), HERE / "models", Path.home() / "projects/hermes-poc/vendor/kokoro") if d]
+# The app points CERIMONIAS_KOKORO_DIR at the folder it found (its data folder, or the one in the workspace config); models/ next to this script is the fallback.
+KOKORO_DIRS = [d for d in (os.environ.get("CERIMONIAS_KOKORO_DIR"), HERE / "models") if d]
 
 _model = None
 _kokoro = None

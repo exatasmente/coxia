@@ -77,5 +77,8 @@
   "err.conflictOpenCall": "o conflito se resolve na tela dele: abra a call",
   "err.conflictOpenCall.novoice": "o conflito se resolve na tela dele: abra a conversa",
   "err.reentryNotPrepared": "call de reentrada não preparada",
-  "err.reentryNotPrepared.novoice": "conversa de reentrada não preparada"
+  "err.reentryNotPrepared.novoice": "conversa de reentrada não preparada",
+  "voice.err.off": "A voz está desligada. Ligue em Configurações › Voz.",
+  "voice.err.notInstalled": "A voz não está instalada nesta máquina. Instale em Configurações › Voz.",
+  "voice.health.off": "Voz desligada: nenhum sidecar é iniciado e o app funciona por texto."
 }

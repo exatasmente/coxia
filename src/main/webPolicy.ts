@@ -7,6 +7,9 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // and the app update (it rebuilds and replaces the installed app, then quits it).
 export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed']);
 
+// The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
+const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
+
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // post-release-sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
@@ -22,7 +25,7 @@ const WEB_ADMIN = /^web:/;
 const CONFIG_ADMIN = /^config:(save|secret|secrets|export|import)/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

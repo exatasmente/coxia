@@ -77,5 +77,8 @@
   "err.conflictOpenCall": "the conflict is resolved on its own screen: open the call",
   "err.conflictOpenCall.novoice": "the conflict is resolved on its own screen: open the chat",
   "err.reentryNotPrepared": "re-entry call not prepared",
-  "err.reentryNotPrepared.novoice": "re-entry chat not prepared"
+  "err.reentryNotPrepared.novoice": "re-entry chat not prepared",
+  "voice.err.off": "Voice is off. Turn it on in Settings › Voice.",
+  "voice.err.notInstalled": "Voice is not installed on this machine. Install it in Settings › Voice.",
+  "voice.health.off": "Voice is off: no sidecar is started and the app works by text."
 }
