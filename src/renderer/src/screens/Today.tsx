@@ -5,6 +5,7 @@ import type { Ceremony } from '../ceremony';
 import { MicIcon } from './icons';
 import { TempoHoje } from './TempoHoje';
 import { RadarButton, WorktreeBadge } from './radarSlots';
+import { WatchersBanner } from './WatchersBanner';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -58,6 +59,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
 
         <TempoHoje refreshKey={`${c.startedAt}-${c.callEnded}-${Object.values(c.deep).reduce((n, d) => n + d.msgs.length, 0)}`} />
         {/* slot: banners of feature modules */}
+        <WatchersBanner go={go} />
 
         {pendingActions > 0 && (
           <div className="item row spread" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
