@@ -439,6 +439,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
           if (!id) throw new VcsError('invalid', { detail: gid });
           return [
             rest('POST', 'graphql', {
+              // i18n-ignore: query language of the code host
               query: `mutation { workItemUpdate(input: { id: "gid://gitlab/WorkItem/${id}", statusWidget: { status: "gid://gitlab/WorkItems::Statuses::Custom::Status/${op.status}" } }) { errors } }`,
             }),
           ];

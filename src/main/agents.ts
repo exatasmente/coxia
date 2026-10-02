@@ -575,7 +575,7 @@ export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string
   const prompt = cp('teams.main', {
     target: pre.summaryTarget ? cycleWord(pre.summaryTarget) : cycleWord('cycle.summary.chat'),
     style: cycleWord(pre.summaryStyle),
-    activities: JSON.stringify(cards.map((c) => ({ ref: c.ref, titulo: c.title, url: c.url, estagio: c.stage, bloqueios: c.blockers, mudou: c.changes }))),
+    activities: JSON.stringify(cards.map((c) => ({ ref: c.ref, [t('main.teams.field.titulo')]: c.title, url: c.url, [t('main.teams.field.estagio')]: c.stage, [t('main.teams.field.bloqueios')]: c.blockers, [t('main.teams.field.mudou')]: c.changes }))),
     decisions: JSON.stringify(minutes.decisions),
     effects: JSON.stringify(minutes.effects),
   });

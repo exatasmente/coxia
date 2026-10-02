@@ -35,6 +35,7 @@ const cut = (text: string, max: number): string => (text.length > max ? `${text.
 function parse(input: unknown): { op: VcsReadOp; project: string; iid: number } {
   const i = (input ?? {}) as Record<string, unknown>;
   const op = VCS_READ_OPS.find((o) => o === i.op);
+  // i18n-ignore: tool description for the model: English by design
   if (!op || typeof i.project !== 'string' || typeof i.iid !== 'number') throw new VcsError('invalid', { detail: 'op, project, iid' });
   return { op, project: i.project, iid: checkIid(i.iid) };
 }

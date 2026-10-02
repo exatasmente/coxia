@@ -21,9 +21,11 @@ const CSP = [
   "script-src 'self'",
   // mermaid writes inline style attributes into its diagrams
   "style-src 'self' 'unsafe-inline'",
+  // i18n-ignore-start: HTTP header and content-security-policy values
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "media-src 'self' blob:",
+  // i18n-ignore-end
   "connect-src 'self'",
   "worker-src 'self'",
   "manifest-src 'self'",
@@ -258,6 +260,7 @@ export function createWebApp(deps: WebDeps): WebApp {
     if (rel === 'api/events') {
       if (method !== 'GET') throw new HttpError(405, t('main.web.method'));
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      // i18n-ignore: HTTP header and content-security-policy values
       res.write('retry: 3000\n\n: open\n\n');
       const client: SseClient = { res, deviceId: device.id };
       sse.add(client);
@@ -313,6 +316,7 @@ export function createWebApp(deps: WebDeps): WebApp {
     const hashed = /^assets\/.+-[\w-]{6,}\.\w+$/.test(rel);
     const headers: Record<string, string | number> = {
       'Content-Type': file.type,
+      // i18n-ignore: HTTP header and content-security-policy values
       'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
     };
     if (rel === 'sw.js') headers['Service-Worker-Allowed'] = deps.settings().basePath;

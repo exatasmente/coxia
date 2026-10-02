@@ -203,7 +203,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
         key: `quick:play:${job.id}`,
         issue: 0,
         issueTitle: `${req.projectPath} · pipeline ${job.runId}`,
-        summary: `Rodar o job ${job.name} (${req.projectPath}, pipeline ${job.runId})`,
+        summary: t('main.quick.runJobIn', { job: job.name, project: req.projectPath, run: String(job.runId) }),
       },
       { op: 'playJob', project: req.projectPath, jobId: Number(job.id) },
       out,

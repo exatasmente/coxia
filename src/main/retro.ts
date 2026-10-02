@@ -40,6 +40,9 @@ export function latestRetro(): Retro | null {
   return last ? read(last.replace(/\.json$/, '')) : null;
 }
 
+// The names of the digest's fields, in the language the agent answers in (the digest is JSON the prompt carries).
+const k = (name: string): string => t(`main.retro.digest.${name}`);
+
 // What happened in the last days, from the files the app and daily-report already keep. No model involved.
 function weekDigest(since: Date): Record<string, unknown> {
   const inWeek = (iso: string | number | null | undefined) => !!iso && new Date(iso) >= since;
@@ -49,18 +52,18 @@ function weekDigest(since: Date): Record<string, unknown> {
     .map((e) => {
       const s = getHistory(e.id);
       return {
-        dia: e.date,
-        atividades: e.activities,
-        decisoes: s?.decisions.map((d) => `${d.ref}: ${d.text}`) ?? [],
-        efeitos: s?.effects.map((x) => `${x.ref}: ${x.text}`) ?? [],
-        sem_resposta: e.unanswered,
-        desbloqueios: Object.keys(s?.deep ?? {}).filter((k) => s?.deep[k].msgs.length),
+        [k('dia')]: e.date,
+        [k('atividades')]: e.activities,
+        [k('decisoes')]: s?.decisions.map((d) => `${d.ref}: ${d.text}`) ?? [],
+        [k('efeitos')]: s?.effects.map((x) => `${x.ref}: ${x.text}`) ?? [],
+        [k('sem_resposta')]: e.unanswered,
+        [k('desbloqueios')]: Object.keys(s?.deep ?? {}).filter((key) => s?.deep[key].msgs.length),
       };
     });
 
   const actions = listActions()
     .filter((a) => inWeek(a.createdAt))
-    .map((a) => ({ tipo: a.kind, issue: a.issue, estado: a.state, release: a.release, reteste: a.retest, arquivos: a.files.length }));
+    .map((a) => ({ [k('tipo')]: a.kind, issue: a.issue, [k('estado')]: a.state, release: a.release, [k('reteste')]: a.retest, [k('arquivos')]: a.files.length }));
 
   const gatesDir = join(ATAS, 'gates');
   const gates = existsSync(gatesDir)
@@ -71,8 +74,8 @@ function weekDigest(since: Date): Record<string, unknown> {
         .map((g) => ({
           issue: g.ref,
           gate: g.gate,
-          rodadas: g.rounds.length,
-          erros: g.rounds.flatMap((r: { questions: { text: string; section: string }[]; answers: ({ correct: boolean } | null)[] }) =>
+          [k('rodadas')]: g.rounds.length,
+          [k('erros')]: g.rounds.flatMap((r: { questions: { text: string; section: string }[]; answers: ({ correct: boolean } | null)[] }) =>
             r.questions.filter((_, i) => r.answers[i] && !r.answers[i]?.correct).map((q) => q.section),
           ),
         }))
@@ -88,7 +91,7 @@ function weekDigest(since: Date): Record<string, unknown> {
         .map((c) => `${c.at.slice(0, 10)} ${c.ref} ${c.field}: ${String(c.from)} → ${String(c.to)}`)
     : [];
 
-  return { cerimonias: ceremonies, acoes_de_release: actions, gates, mudancas_gitlab: changes.slice(-200) };
+  return { [k('cerimonias')]: ceremonies, [k('acoes_de_release')]: actions, gates, [k('mudancas_gitlab')]: changes.slice(-200) };
 }
 
 // What the retro is based on, in words: only what this cycle has (release actions, gate quizzes, the card source's change history).

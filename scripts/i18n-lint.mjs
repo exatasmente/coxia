@@ -136,7 +136,11 @@ function tsLiterals(text) {
 // Two or more words in one piece, or a piece with an accented letter: a lone "[" or ": " between two placeholders is not prose.
 const wordsOf = (text) => {
   const pieces = text.split(/\n/);
-  return pieces.some((p) => /\p{L}{2,}\s+\p{L}{2,}/u.test(p) || /[À-ÿ]/.test(p));
+  return pieces.some((p) => {
+    // A word is plain letters between spaces: "merge-tree", "a/b" and "key:value" are code.
+    const words = p.split(/\s+/).filter((w) => /^[("'«“]?\p{L}+[.,;:!?)"'»”…]*$/u.test(w));
+    return (words.length >= 2 && words.some((w) => w.replace(/\P{L}/gu, '').length >= 3)) || /[À-ÿ]/.test(p);
+  });
 };
 
 function findings(file) {

@@ -455,6 +455,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         }
         case 'resolveThread':
           if (!/^[\w=-]{8,}$/.test(op.threadId)) throw new VcsError('invalid', { detail: op.threadId });
+          // i18n-ignore: query language of the code host
           return [graphql(`mutation { resolveReviewThread(input: { threadId: "${op.threadId}" }) { thread { isResolved } } }`)];
         case 'editIssueNote':
           return [call('PATCH', `${repo(op.project)}/issues/comments/${num(op.noteId)}`, { body: op.body })];
@@ -474,6 +475,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           const pr = await tr.get<GhPull>(`${repo(op.project)}/pulls/${checkIid(op.iid)}`);
           if (!pr.node_id || !/^[\w=-]{8,}$/.test(pr.node_id)) throw new VcsError('invalid', { detail: String(pr.node_id) });
           const mutation = op.draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
+          // i18n-ignore: query language of the code host
           return [graphql(`mutation { ${mutation}(input: { pullRequestId: "${pr.node_id}" }) { pullRequest { isDraft } } }`)];
         }
         case 'playJob':

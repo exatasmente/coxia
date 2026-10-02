@@ -289,5 +289,5 @@ function renderGrep(response: unknown, mode: Mode, max: number): string {
   const r = response as { filenames?: unknown[]; content?: unknown; appliedLimit?: number };
   const body = mode === 'files_with_matches' ? (r.filenames ?? []).map(String).join('\n') : typeof r.content === 'string' ? r.content : '';
   if (!body) return t('main.engine.text.search.noMatch');
-  return clip(body + (r.appliedLimit ? `\n… (limitado a ${r.appliedLimit} linhas; refine a busca)` : ''), max);
+  return clip(body + (r.appliedLimit ? `\n${t('main.engine.text.search.limited', { count: r.appliedLimit })}` : ''), max);
 }

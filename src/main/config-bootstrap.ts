@@ -95,6 +95,7 @@ export function bootstrapConfigs(deps: BootstrapDeps): { migrated: string[]; mar
     if (stored !== undefined && !existsSync(join(dir, V1_BACKUP_FILE))) copyFileSync(join(dir, CONFIG_FILE), join(dir, V1_BACKUP_FILE));
     writeConfigFile(dir, result.config);
     migrated.push(id);
+    // i18n-ignore: migration log written for developers
     deps.log(`workspace ${id}: config v${result.fromVersion} -> v${CONFIG_SCHEMA_VERSION} (${result.notes.join('; ')})`);
   }
   return { migrated, marker };
