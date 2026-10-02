@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { INTERVAL_MAX_HOURS, INTERVAL_MIN_HOURS, UPDATE_CHANNELS, UPDATE_MODE_SETTINGS, type UpdateSettings, type UpdatesStatus } from '../../../shared/updates';
-import { getLanguage } from '../../../shared/i18n';
 import { errorText } from '../api';
-import { useT } from '../i18n';
+import { intlLocale, useT } from '../i18n';
 import { isWeb } from '../platform';
 import { updateApi, useUpdatesStatus } from '../updateApi';
 import '../update.css';
@@ -12,10 +11,10 @@ const INTERVALS = [1, 3, 6, 12, 24, 72, 168];
 const when = (value: string | number | null): string => {
   if (value === null) return '';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(getLanguage(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-const megabytes = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const megabytes = (bytes: number): string => `${new Intl.NumberFormat(intlLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(bytes / 1024 / 1024)} MB`;
 
 type T = ReturnType<typeof useT>;
 

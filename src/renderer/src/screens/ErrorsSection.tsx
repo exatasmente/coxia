@@ -3,11 +3,13 @@ import { errorReport, type ErrorGroup, type ErrorsView } from '../../../shared/e
 import { api, errorText } from '../api';
 import '../errors.css';
 import { errorsApi } from '../errorsApi';
+import { intlLocale, useT } from '../i18n';
 import { isWeb } from '../platform';
 
-const when = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const when = (iso: string) => new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 function Group({ g }: { g: ErrorGroup }) {
+  const t = useT();
   const context = Object.entries(g.context).map(([k, v]) => `${k}=${v}`).join('  ');
   const detail = [context, g.stack].filter(Boolean).join('\n\n');
   return (
@@ -15,19 +17,19 @@ function Group({ g }: { g: ErrorGroup }) {
       <div className="err-head">
         <span className="dot" style={{ background: 'var(--warn)', flex: '0 0 auto', marginTop: 7 }} aria-hidden="true" />
         <span className="err-msg">{g.message}</span>
-        <span className="badge badge-quiet" aria-label={`${g.count} ocorrência(s)`}>×{g.count}</span>
-        {g.unseen && <span className="badge badge-block">novo</span>}
+        <span className="badge badge-quiet" aria-label={t('ui.errors.occurrences', { count: g.count })}>×{g.count}</span>
+        {g.unseen && <span className="badge badge-block">{t('ui.errors.new')}</span>}
       </div>
       {g.hint && <div className="small err-hint">{g.hint}</div>}
       <div className="small faint err-meta">
-        <span>primeiro: {when(g.firstAt)}</span>
-        <span>último: {when(g.lastAt)}</span>
-        <span>origem: {g.sources.join(', ')}</span>
-        <span>workspace: {g.workspaces.join(', ')}</span>
+        <span>{t('ui.errors.first', { date: when(g.firstAt) })}</span>
+        <span>{t('ui.errors.last', { date: when(g.lastAt) })}</span>
+        <span>{t('ui.errors.sources', { list: g.sources.join(', ') })}</span>
+        <span>{t('ui.errors.workspaces', { list: g.workspaces.join(', ') })}</span>
       </div>
       {detail && (
         <details className="err-details">
-          <summary>Detalhes</summary>
+          <summary>{t('ui.errors.details')}</summary>
           <pre className="err-stack">{detail}</pre>
         </details>
       )}
@@ -36,6 +38,7 @@ function Group({ g }: { g: ErrorGroup }) {
 }
 
 export function ErrorsSection() {
+  const t = useT();
   const [view, setView] = useState<ErrorsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -76,21 +79,21 @@ export function ErrorsSection() {
   return (
     <section className="panel" style={{ padding: 20, gap: 12 }}>
       <div className="row spread">
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Erros recentes</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.errors.title')}</h2>
         {view && view.groups.length > 0 && (
           <div className="err-actions">
             {!isWeb() && (
               <button type="button" className="btn" onClick={() => void copy()}>
-                {copied ? 'Copiado' : 'Copiar para o Claude Code'}
+                {copied ? t('ui.errors.copied') : t('ui.errors.copy')}
               </button>
             )}
-            <button type="button" className="btn" onClick={() => void clear()}>Limpar</button>
+            <button type="button" className="btn" onClick={() => void clear()}>{t('ui.errors.clear')}</button>
           </div>
         )}
       </div>
       {error && <div className="error">{error}</div>}
-      {!view && !error && <div className="row faint"><span className="spinner" /> Lendo…</div>}
-      {view && !view.groups.length && <p className="small faint">Nenhum erro registrado.</p>}
+      {!view && !error && <div className="row faint"><span className="spinner" /> {t('ui.errors.reading')}</div>}
+      {view && !view.groups.length && <p className="small faint">{t('ui.errors.none')}</p>}
       {view && view.groups.length > 0 && (
         <ul className="err-list">
           {view.groups.map((g) => (
@@ -98,7 +101,7 @@ export function ErrorsSection() {
           ))}
         </ul>
       )}
-      <p className="small faint">Erros do app, das tarefas, da voz e das telas, agrupados pela mensagem. Textos digitados, áudio e chaves nunca entram no registro.</p>
+      <p className="small faint">{t('ui.errors.footer')}</p>
     </section>
   );
 }
