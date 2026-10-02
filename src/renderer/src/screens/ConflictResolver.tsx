@@ -1,21 +1,33 @@
-import { useEffect, useState } from 'react';
-import { type ConflictHunk, type ConflictStep, type HunkChoice, conflictProgress, conflictStep, hunkReady } from '../../../shared/conflict';
-import { PARTIAL_HINT } from '../../../shared/partial';
+import { type CSSProperties, useEffect, useState } from 'react';
+import { type ConflictHunk, type ConflictStep, type Confidence, type HunkChoice, conflictStep, hunkReady } from '../../../shared/conflict';
 import type { ReleaseAction } from '../../../shared/types';
 import { AgentActivity } from '../AgentActivity';
-import { api, errorText, plural } from '../api';
+import { api, errorText } from '../api';
 import { conflictApi } from '../conflictApi';
 import { KIND_MARK, type ViewLine, proposalLines, sideLines } from '../conflictView';
+import { tNodes, useT } from '../i18n';
 import { withJob } from '../jobs';
 import '../conflict.css';
 
-const CHOICE_LABEL: Record<HunkChoice, string> = { proposal: 'Usar proposta', ours: 'Usar branch', theirs: 'Usar main', edit: 'Editar' };
+const SECTION_STYLE: CSSProperties = { padding: '18px 20px' }; // i18n-ignore: CSS value
+const CHOICE_LABEL: Record<HunkChoice, string> = { proposal: 'ui.resolver.choice.proposal', ours: 'ui.resolver.choice.ours', theirs: 'ui.resolver.choice.theirs', edit: 'ui.resolver.choice.edit' };
+const CHOSEN_LABEL: Record<HunkChoice, string> = { proposal: 'ui.resolver.chosen.proposal', ours: 'ui.resolver.chosen.ours', theirs: 'ui.resolver.chosen.theirs', edit: 'ui.resolver.chosen.edit' };
+const CONFIDENCE_LABEL: Record<Confidence, string> = { alta: 'ui.resolver.confidence.alta', media: 'ui.resolver.confidence.media', baixa: 'ui.resolver.confidence.baixa' };
+const PROGRESS_LABEL: Record<ConflictStep, string> = {
+  none: 'ui.resolver.progress.none',
+  prepared: 'ui.resolver.progress.prepared',
+  proposed: 'ui.resolver.progress.proposed',
+  applied: 'ui.resolver.progress.applied',
+  'verify-failed': 'ui.resolver.progress.verifyFailed',
+  'push-waiting': 'ui.resolver.progress.pushWaiting',
+  published: 'ui.resolver.progress.published',
+};
 
 const STEPS: { key: string; label: string; done: ConflictStep[] }[] = [
-  { key: 'prepare', label: 'Preparar', done: ['prepared', 'proposed', 'applied', 'verify-failed', 'push-waiting', 'published'] },
-  { key: 'propose', label: 'Propor', done: ['proposed', 'applied', 'verify-failed', 'push-waiting', 'published'] },
-  { key: 'apply', label: 'Aplicar e verificar', done: ['applied', 'push-waiting', 'published'] },
-  { key: 'publish', label: 'Publicar', done: ['published'] },
+  { key: 'prepare', label: 'ui.resolver.step.prepare', done: ['prepared', 'proposed', 'applied', 'verify-failed', 'push-waiting', 'published'] },
+  { key: 'propose', label: 'ui.resolver.step.propose', done: ['proposed', 'applied', 'verify-failed', 'push-waiting', 'published'] },
+  { key: 'apply', label: 'ui.resolver.step.apply', done: ['applied', 'push-waiting', 'published'] },
+  { key: 'publish', label: 'ui.resolver.step.publish', done: ['published'] },
 ];
 
 function Code({ lines, empty }: { lines: ViewLine[]; empty: string }) {
@@ -30,15 +42,17 @@ function Code({ lines, empty }: { lines: ViewLine[]; empty: string }) {
 }
 
 function Side({ title, picked, children }: { title: string; picked: boolean; children: React.ReactNode }) {
+  const t = useT();
   return (
     <div className="cr-side" data-picked={picked}>
-      <div className="cr-side-title">{title}{picked ? ' · escolhido' : ''}</div>
+      <div className="cr-side-title">{picked ? t('ui.resolver.side.picked', { title }) : title}</div>
       {children}
     </div>
   );
 }
 
 function Hunk({ h, index, total, locked, onChoose }: { h: ConflictHunk; index: number; total: number; locked: boolean; onChoose: (id: string, choice: HunkChoice, edited?: string) => Promise<void> }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -59,55 +73,55 @@ function Hunk({ h, index, total, locked, onChoose }: { h: ConflictHunk; index: n
   };
 
   const proposal = h.choice === 'edit' && h.edited !== null ? h.edited : h.proposal;
-  const proposalLabel = h.choice === 'edit' && h.edited !== null ? 'Sua edição' : 'Proposta';
+  const proposalLabel = h.choice === 'edit' && h.edited !== null ? t('ui.resolver.side.edited') : t('ui.resolver.side.proposal');
   const noMain = h.whole && h.theirsGone;
   const noBranch = h.whole && h.oursGone;
 
   return (
     <div className="cr-hunk" data-chosen={hunkReady(h)}>
       <div className="row spread" style={{ gap: 8 }}>
-        <span className="small muted">{h.whole ? 'Arquivo inteiro' : `Trecho ${index + 1} de ${total}`}</span>
+        <span className="small muted">{h.whole ? t('ui.resolver.hunk.whole') : t('ui.resolver.hunk.title', { n: index + 1, total })}</span>
         <span className="row" style={{ gap: 6 }}>
-          {h.confidence && <span className={`badge ${h.confidence === 'alta' ? 'badge-now' : h.confidence === 'media' ? 'badge-ask' : 'badge-block'}`}>confiança {h.confidence === 'media' ? 'média' : h.confidence}</span>}
-          {hunkReady(h) && <span className="badge badge-quiet">{CHOICE_LABEL[h.choice as HunkChoice].replace('Usar ', '')}</span>}
+          {h.confidence && <span className={`badge ${h.confidence === 'alta' ? 'badge-now' : h.confidence === 'media' ? 'badge-ask' : 'badge-block'}`}>{t(CONFIDENCE_LABEL[h.confidence])}</span>}
+          {hunkReady(h) && <span className="badge badge-quiet">{t(CHOSEN_LABEL[h.choice as HunkChoice])}</span>}
         </span>
       </div>
 
       <div className="cr-sides">
-        <Side title="Branch" picked={h.choice === 'ours'}>
-          <Code lines={sideLines(h.ours, h.base, 'ours')} empty={noBranch ? 'a branch removeu este arquivo' : 'a branch não acrescentou nada aqui'} />
+        <Side title={t('ui.resolver.side.branch')} picked={h.choice === 'ours'}>
+          <Code lines={sideLines(h.ours, h.base, 'ours')} empty={noBranch ? t('ui.resolver.empty.branchRemoved') : t('ui.resolver.empty.branchAdded')} />
         </Side>
-        <Side title="Main" picked={h.choice === 'theirs'}>
-          <Code lines={sideLines(h.theirs, h.base, 'theirs')} empty={noMain ? 'a main removeu este arquivo' : 'a main não acrescentou nada aqui'} />
+        <Side title={t('ui.resolver.side.main')} picked={h.choice === 'theirs'}>
+          <Code lines={sideLines(h.theirs, h.base, 'theirs')} empty={noMain ? t('ui.resolver.empty.mainRemoved') : t('ui.resolver.empty.mainAdded')} />
         </Side>
         <Side title={proposalLabel} picked={h.choice === 'proposal' || h.choice === 'edit'}>
           {proposal !== null ? (
-            <Code lines={proposalLines(proposal, h)} empty="proposta vazia: o trecho some" />
+            <Code lines={proposalLines(proposal, h)} empty={t('ui.resolver.empty.proposal')} />
           ) : (
-            <div className="cr-empty">{h.sensitive ? 'Arquivo com nome de segredo: o agente não lê. Decida você.' : 'Sem proposta ainda.'}</div>
+            <div className="cr-empty">{h.sensitive ? t('ui.resolver.empty.sensitive') : t('ui.resolver.empty.noProposal')}</div>
           )}
         </Side>
       </div>
 
-      {h.partial && <p className="cr-note" style={{ color: 'var(--amber-ink)' }}>{PARTIAL_HINT}</p>}
+      {h.partial && <p className="cr-note" style={{ color: 'var(--amber-ink)' }}>{t('ui.resolver.partialHint')}</p>}
       {h.explanation && <p className="cr-note">{h.explanation}</p>}
-      {h.test && <p className="cr-note muted"><strong>Testar:</strong> {h.test}</p>}
+      {h.test && <p className="cr-note muted"><strong>{t('ui.resolver.test')}</strong> {h.test}</p>}
 
       {editing && (
         <>
-          <textarea className="cr-edit" aria-label="Texto final do trecho" spellCheck={false} value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <textarea className="cr-edit" aria-label={t('ui.resolver.edit.aria')} spellCheck={false} value={draft} onChange={(e) => setDraft(e.target.value)} />
           <div className="cr-picks">
-            <button type="button" className="btn btn-dark" disabled={locked} onClick={() => void choose('edit', draft)}>Usar este texto</button>
-            <button type="button" className="btn" onClick={() => setEditing(false)}>Cancelar</button>
+            <button type="button" className="btn btn-dark" disabled={locked} onClick={() => void choose('edit', draft)}>{t('ui.resolver.edit.use')}</button>
+            <button type="button" className="btn" onClick={() => setEditing(false)}>{t('ui.resolver.cancel')}</button>
           </div>
         </>
       )}
 
-      <div className="cr-picks" role="group" aria-label="Decisão do trecho">
-        {h.proposal !== null && <button type="button" className={`btn ${h.choice === 'proposal' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'proposal'} disabled={locked} onClick={() => void choose('proposal')}>{CHOICE_LABEL.proposal}</button>}
-        <button type="button" className={`btn ${h.choice === 'ours' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'ours'} disabled={locked} onClick={() => void choose('ours')}>{CHOICE_LABEL.ours}</button>
-        <button type="button" className={`btn ${h.choice === 'theirs' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'theirs'} disabled={locked} onClick={() => void choose('theirs')}>{CHOICE_LABEL.theirs}</button>
-        <button type="button" className={`btn ${h.choice === 'edit' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'edit'} disabled={locked} onClick={startEdit}>{CHOICE_LABEL.edit}</button>
+      <div className="cr-picks" role="group" aria-label={t('ui.resolver.hunk.group')}>
+        {h.proposal !== null && <button type="button" className={`btn ${h.choice === 'proposal' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'proposal'} disabled={locked} onClick={() => void choose('proposal')}>{t(CHOICE_LABEL.proposal)}</button>}
+        <button type="button" className={`btn ${h.choice === 'ours' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'ours'} disabled={locked} onClick={() => void choose('ours')}>{t(CHOICE_LABEL.ours)}</button>
+        <button type="button" className={`btn ${h.choice === 'theirs' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'theirs'} disabled={locked} onClick={() => void choose('theirs')}>{t(CHOICE_LABEL.theirs)}</button>
+        <button type="button" className={`btn ${h.choice === 'edit' ? 'btn-on' : ''}`} aria-pressed={h.choice === 'edit'} disabled={locked} onClick={startEdit}>{t(CHOICE_LABEL.edit)}</button>
       </div>
       {error && <div className="error">{error}</div>}
     </div>
@@ -116,6 +130,7 @@ function Hunk({ h, index, total, locked, onChoose }: { h: ConflictHunk; index: n
 
 // The in-app resolution of a release conflict: prepare → propose → review → apply and verify → publish.
 export function ConflictResolver({ action }: { action: ReleaseAction }) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [busySince, setBusySince] = useState<number>();
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +149,17 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
   const reviewing = step === 'prepared' || step === 'proposed';
   const working = !!busy || !!r?.busy;
   const pushId = r?.pushId ?? null;
+  const progress = r?.busy ? r.busy : step === 'applied' && r?.verify?.skipped ? t('ui.resolver.progress.appliedNoTests') : t(PROGRESS_LABEL[step]);
+  const L = {
+    prepare: t('ui.resolver.busy.prepare'),
+    propose: t('ui.resolver.busy.propose'),
+    applyVerify: t('ui.resolver.busy.applyVerify'),
+    apply: t('ui.resolver.busy.apply'),
+    commit: t('ui.resolver.busy.commit'),
+    reopen: t('ui.resolver.busy.reopen'),
+    push: t('ui.resolver.busy.push'),
+    discard: t('ui.resolver.busy.discard'),
+  };
 
   useEffect(() => {
     let live = true;
@@ -175,28 +201,27 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
   if (action.state === 'skipped') return null;
 
   return (
-    <section className="panel cr" style={{ padding: '18px 20px' }} aria-label="Resolução do conflito">
+    <section className="panel cr" style={SECTION_STYLE} aria-label={t('ui.resolver.aria')}>
       <div className="row spread">
-        <h2 className="section-title">Resolver aqui</h2>
-        <span className="badge badge-ask">{conflictProgress(action)}</span>
+        <h2 className="section-title">{t('ui.resolver.title')}</h2>
+        <span className="badge badge-ask">{progress}</span>
       </div>
       <div className="cr-steps">
         {STEPS.map((s) => {
           const done = s.done.includes(step);
           const now = !done && (STEPS.find((x) => !x.done.includes(step))?.key === s.key);
-          return <span key={s.key} className="cr-step" data-state={done ? 'done' : now ? 'now' : 'todo'}>{done ? '✓ ' : ''}{s.label}</span>;
+          return <span key={s.key} className="cr-step" data-state={done ? 'done' : now ? 'now' : 'todo'}>{done ? '✓ ' : ''}{t(s.label)}</span>;
         })}
       </div>
 
       {step === 'none' && (
         <>
           <p className="cr-note">
-            Cria uma worktree temporária a partir do seu clone local (o seu trabalho no clone não é tocado), faz o merge da main na branch e mostra cada trecho em conflito.
-            Tudo fica na sua máquina até você dizer “sim” ao push.
+            {t('ui.resolver.none.intro')}
           </p>
           <div className="row">
-            <button type="button" className="btn btn-amber" disabled={working} onClick={() => void run('Preparando a worktree…', () => api.conflictPrepare(action.id))}>
-              {busy ? <span className="spinner" /> : null} Preparar a worktree
+            <button type="button" className="btn btn-amber" disabled={working} onClick={() => void run(L.prepare, () => api.conflictPrepare(action.id))}>
+              {busy ? <span className="spinner" /> : null} {t('ui.resolver.none.prepare')}
             </button>
           </div>
         </>
@@ -206,13 +231,13 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
         <>
           <p className="cr-note muted mono" style={{ wordBreak: 'break-all' }}>{r.worktree}</p>
           {r.proposalSummary && <p className="cr-note">{r.proposalSummary}</p>}
-          {hunks.length === 0 && <p className="cr-note">A main entrou sem conflito nesta branch: não há trecho para decidir. Verifique e publique a branch sincronizada.</p>}
+          {hunks.length === 0 && <p className="cr-note">{t('ui.resolver.noHunks')}</p>}
           <div className="row" hidden={hunks.length === 0}>
-            <button type="button" className="btn btn-dark" disabled={working} onClick={() => void run('O agente está propondo a resolução…', () => api.conflictPropose(action.id))}>
-              {busy?.startsWith('O agente') ? <span className="spinner" /> : null} {step === 'proposed' ? 'Pedir outra proposta' : 'Pedir proposta ao agente'}
+            <button type="button" className="btn btn-dark" disabled={working} onClick={() => void run(L.propose, () => api.conflictPropose(action.id))}>
+              {busy === L.propose ? <span className="spinner" /> : null} {step === 'proposed' ? t('ui.resolver.propose.again') : t('ui.resolver.propose.ask')}
             </button>
             {proposals > 0 && (
-              <button type="button" className="btn" disabled={working} onClick={() => void run('', () => choose('*', 'proposal'))}>Usar a proposta em {plural(proposals, 'trecho', 'trechos')}</button>
+              <button type="button" className="btn" disabled={working} onClick={() => void run('', () => choose('*', 'proposal'))}>{t('ui.resolver.useProposal', { count: proposals })}</button>
             )}
           </div>
           {files.map((f) => (
@@ -225,23 +250,23 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
           ))}
 
           <div className="cr-file">
-            <h3 className="section-title">Aplicar e verificar</h3>
+            <h3 className="section-title">{t('ui.resolver.apply.title')}</h3>
             {command ? (
-              <p className="cr-note">Comando de verificação de {project}: <code className="mono">{command}</code></p>
+              <p className="cr-note">{tNodes('ui.resolver.verifyCommand', { command: <code className="mono">{command}</code> }, { project })}</p>
             ) : (
               <>
-                <p className="cr-note">Nenhum comando de verificação configurado para {project || 'este projeto'} (Configurações › Verificação de conflitos).</p>
+                <p className="cr-note">{t('ui.resolver.noCommand', { project: project || t('ui.resolver.thisProject') })}</p>
                 <label className="check-row">
                   <input type="checkbox" checked={skipTests} onChange={() => setSkipTests(!skipTests)} />
-                  <span><span style={{ fontWeight: 600, display: 'block' }}>Seguir sem testes</span><span className="small muted">Aplica e commita o merge sem rodar nada. Confirme só se vai testar por fora.</span></span>
+                  <span><span style={{ fontWeight: 600, display: 'block' }}>{t('ui.resolver.skipTests.label')}</span><span className="small muted">{t('ui.resolver.skipTests.hint')}</span></span>
                 </label>
               </>
             )}
             <div className="row">
-              <button type="button" className="btn btn-dark" disabled={working || undecided > 0 || (!command && !skipTests)} onClick={() => void run(command ? 'Aplicando e verificando…' : 'Aplicando…', () => api.conflictApply(action.id, { skipTests: !command && skipTests }))}>
-                {busy?.startsWith('Aplicando') ? <span className="spinner" /> : null} Aplicar e verificar
+              <button type="button" className="btn btn-dark" disabled={working || undecided > 0 || (!command && !skipTests)} onClick={() => void run(command ? L.applyVerify : L.apply, () => api.conflictApply(action.id, { skipTests: !command && skipTests }))}>
+                {busy === L.applyVerify || busy === L.apply ? <span className="spinner" /> : null} {t('ui.resolver.apply.button')}
               </button>
-              {undecided > 0 && <span className="small muted">Falta decidir {plural(undecided, 'trecho', 'trechos')}.</span>}
+              {undecided > 0 && <span className="small muted">{t('ui.resolver.undecided', { count: undecided })}</span>}
             </div>
           </div>
         </>
@@ -250,54 +275,57 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
       {r && (step === 'verify-failed' || step === 'applied') && (
         <div className="cr-file">
           {r.verify?.skipped ? (
-            <p className="cr-note">Aplicado sem testes, como você confirmou.</p>
+            <p className="cr-note">{t('ui.resolver.verify.skipped')}</p>
           ) : (
             <>
               <div className="row" style={{ gap: 8 }}>
-                <span className={`badge ${r.verify?.exitCode === 0 ? 'badge-now' : 'badge-block'}`}>{r.verify?.exitCode === 0 ? 'verificação passou' : `verificação terminou com código ${r.verify?.exitCode}`}</span>
+                <span className={`badge ${r.verify?.exitCode === 0 ? 'badge-now' : 'badge-block'}`}>{r.verify?.exitCode === 0 ? t('ui.resolver.verify.passed') : t('ui.resolver.verify.failed', { code: String(r.verify?.exitCode) })}</span>
                 <code className="small mono" style={{ overflowWrap: 'anywhere' }}>{r.verify?.command}</code>
               </div>
-              <pre className="cr-log">{r.verify?.tail || '(sem saída)'}</pre>
-              {r.verify?.log && <p className="small faint mono" style={{ wordBreak: 'break-all' }}>Log completo: {r.verify.log}</p>}
+              <pre className="cr-log">{r.verify?.tail || t('ui.resolver.verify.noOutput')}</pre>
+              {r.verify?.log && <p className="small faint mono" style={{ wordBreak: 'break-all' }}>{t('ui.resolver.verify.log', { log: r.verify.log })}</p>}
             </>
           )}
-          {step === 'verify-failed' && <p className="cr-note">Julgue a saída: a main pode ter falhas que já existiam. O commit só sai se você pedir.</p>}
+          {step === 'verify-failed' && <p className="cr-note">{t('ui.resolver.verify.judge')}</p>}
           <div className="row">
             {confirm === 'commit' ? (
-              <button type="button" className="btn btn-red" disabled={working} onClick={() => void run('Commitando o merge…', () => api.conflictCommit(action.id))}>Confirmar: commitar assim mesmo</button>
+              <button type="button" className="btn btn-red" disabled={working} onClick={() => void run(L.commit, () => api.conflictCommit(action.id))}>{t('ui.resolver.commit.confirm')}</button>
             ) : (
-              <button type="button" className="btn btn-dark" disabled={working} onClick={() => (step === 'verify-failed' ? setConfirm('commit') : void run('Commitando o merge…', () => api.conflictCommit(action.id)))}>
-                {step === 'verify-failed' ? 'Commitar mesmo assim' : 'Commitar o merge'}
+              <button type="button" className="btn btn-dark" disabled={working} onClick={() => (step === 'verify-failed' ? setConfirm('commit') : void run(L.commit, () => api.conflictCommit(action.id)))}>
+                {step === 'verify-failed' ? t('ui.resolver.commit.anyway') : t('ui.resolver.commit.merge')}
               </button>
             )}
-            <button type="button" className="btn" disabled={working} onClick={() => void run('Reabrindo os conflitos…', () => api.conflictReopen(action.id))}>Reabrir a resolução</button>
+            <button type="button" className="btn" disabled={working} onClick={() => void run(L.reopen, () => api.conflictReopen(action.id))}>{t('ui.resolver.reopen')}</button>
           </div>
         </div>
       )}
 
       {r && step === 'push-waiting' && (
         <div className="cr-file">
-          <h3 className="section-title">Publicar</h3>
+          <h3 className="section-title">{t('ui.resolver.publish.title')}</h3>
           <p className="cr-note">
-            Merge commitado na worktree (<span className="mono">{r.commit?.slice(0, 9)}</span>): “Merge branch 'main' into '{r.branch}'”.
-            Publicar faz <span className="mono">git push origin HEAD:refs/heads/{r.branch}</span>, só fast-forward, sem force. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou desde o preparo.
+            {tNodes(
+              'ui.resolver.publish.intro',
+              { commit: <span className="mono">{r.commit?.slice(0, 9)}</span>, push: <span className="mono">git push origin HEAD:refs/heads/{r.branch}</span> }, // i18n-ignore: shell command
+              { branch: r.branch },
+            )}
           </p>
-          {push?.state === 'failed' && <div className="error" style={{ whiteSpace: 'pre-wrap' }}>O envio falhou: {push.output}</div>}
+          {push?.state === 'failed' && <div className="error" style={{ whiteSpace: 'pre-wrap' }}>{t('ui.resolver.publish.failed', { output: push.output ?? '' })}</div>}
           <div className="row">
             {confirm === 'push' ? (
-              <button type="button" className="btn btn-red" disabled={working || !pushId} onClick={() => void run('Enviando…', () => api.approveAction(pushId as string))}>
-                {busy === 'Enviando…' ? <span className="spinner" /> : null} Confirmar: fazer push em {r.branch}
+              <button type="button" className="btn btn-red" disabled={working || !pushId} onClick={() => void run(L.push, () => api.approveAction(pushId as string))}>
+                {busy === L.push ? <span className="spinner" /> : null} {t('ui.resolver.publish.confirm', { branch: r.branch })}
               </button>
             ) : (
-              <button type="button" className="btn btn-dark" disabled={working || !pushId} onClick={() => setConfirm('push')}>Seguir com o push</button>
+              <button type="button" className="btn btn-dark" disabled={working || !pushId} onClick={() => setConfirm('push')}>{t('ui.resolver.publish.go')}</button>
             )}
-            {confirm === 'push' && <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancelar</button>}
+            {confirm === 'push' && <button type="button" className="btn" onClick={() => setConfirm(null)}>{t('ui.resolver.cancel')}</button>}
           </div>
         </div>
       )}
 
       {r && step === 'published' && (
-        <p className="cr-note">Publicado em {r.branch}. A worktree foi removida. A atualização do comentário do QA aparece em Ações de release, com o seu próprio “sim”.</p>
+        <p className="cr-note">{t('ui.resolver.published', { branch: r.branch })}</p>
       )}
 
       {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
@@ -308,11 +336,11 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
       {r && step !== 'published' && (
         <div className="row">
           {confirm === 'discard' ? (
-            <button type="button" className="btn btn-red" disabled={working} onClick={() => void run('Descartando…', () => api.conflictDiscard(action.id))}>Confirmar: descartar a worktree e as escolhas</button>
+            <button type="button" className="btn btn-red" disabled={working} onClick={() => void run(L.discard, () => api.conflictDiscard(action.id))}>{t('ui.resolver.discard.confirm')}</button>
           ) : (
-            <button type="button" className="btn" disabled={working} onClick={() => setConfirm('discard')}>Descartar</button>
+            <button type="button" className="btn" disabled={working} onClick={() => setConfirm('discard')}>{t('ui.resolver.discard.button')}</button>
           )}
-          {confirm === 'discard' && <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancelar</button>}
+          {confirm === 'discard' && <button type="button" className="btn" onClick={() => setConfirm(null)}>{t('ui.resolver.cancel')}</button>}
         </div>
       )}
     </section>

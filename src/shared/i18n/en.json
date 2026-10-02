@@ -157,7 +157,7 @@
   "settings.appearance.title": "Appearance",
   "settings.start.title": "Startup",
   "settings.language.title": "Language",
-  "settings.language.hint": "Applies on save. Screens that are not translated yet stay in Portuguese.",
+  "settings.language.hint": "Applies on save.",
   "settings.language.pt-BR": "Português (Brasil)",
   "settings.language.en": "English",
   "nav.call": "Call",

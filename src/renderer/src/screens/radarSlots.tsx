@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { BranchHealth, RadarResult, WorktreeHealth } from '../../../shared/radar';
 import type { Screen } from '../App';
 import { api, moduleEvents } from '../api';
+import { t, useT } from '../i18n';
 
 // One shared load for every row of Today: the git scan walks all repositories and worktrees.
 let health: WorktreeHealth | null = null;
@@ -38,13 +39,14 @@ export function useWorktreeHealth(): WorktreeHealth | null {
 
 export function describeBranch(b: BranchHealth): string {
   const parts: string[] = [];
-  if (b.dirty) parts.push(`${b.dirty} ${b.dirty === 1 ? 'alteração' : 'alterações'} não commitada${b.dirty === 1 ? '' : 's'}`);
-  if (b.unpushed) parts.push(`${b.unpushed} ${b.unpushed === 1 ? 'commit' : 'commits'} sem push${b.hasUpstream ? '' : ' (branch sem remoto próprio)'}`);
-  if (b.conventionNote) parts.push(`fora do padrão: ${b.conventionNote}`);
+  if (b.dirty) parts.push(t('ui.radar.uncommitted', { count: b.dirty }));
+  if (b.unpushed) parts.push(t(b.hasUpstream ? 'ui.radar.unpushedCommits' : 'ui.radar.unpushedCommitsNoRemote', { count: b.unpushed }));
+  if (b.conventionNote) parts.push(t('ui.radar.offConvention', { note: b.conventionNote }));
   return `${b.repo} · ${b.branch}: ${parts.join('; ')}`;
 }
 
 export function RadarButton({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
   const [result, setResult] = useState<RadarResult | null>(null);
   useEffect(() => {
     void api.invoke<RadarResult | null>('radar:latest').then(setResult);
@@ -59,15 +61,16 @@ export function RadarButton({ go }: { go: (s: Screen) => void }) {
       type="button"
       className={`btn ${urgent ? 'btn-amber' : ''}`}
       style={{ minHeight: 34 }}
-      title={result ? `${total} achado(s), ${urgent} de mesma correção` : 'Ainda não rodou'}
+      title={result ? t('ui.radar.button.title', { total, urgent }) : t('ui.radar.notRunYet')}
       onClick={() => go({ name: 'radar' })}
     >
-      Radar{total > 0 ? ` · ${total}` : ''}
+      {total > 0 ? t('ui.nav.radarCount', { count: total }) : t('ui.nav.radar')}
     </button>
   );
 }
 
 export function WorktreeBadge({ iid, go }: { iid: string; go: (s: Screen) => void }) {
+  const t = useT();
   const h = useWorktreeHealth();
   const items = h?.byIssue[iid];
   if (!items?.length) return null;
@@ -75,9 +78,9 @@ export function WorktreeBadge({ iid, go }: { iid: string; go: (s: Screen) => voi
   const dirty = items.filter((b) => b.dirty > 0).length;
   const off = items.some((b) => b.conventionNote);
   const parts = [
-    unpushed ? `${unpushed} sem push` : null,
-    dirty ? `${dirty} com alterações` : null,
-    off ? 'branch fora do padrão' : null,
+    unpushed ? t('ui.radar.unpushedCount', { count: unpushed }) : null,
+    dirty ? t('ui.radar.dirtyCount', { count: dirty }) : null,
+    off ? t('ui.radar.offConventionBranch') : null,
   ].filter(Boolean);
   if (!parts.length) return null;
   return (

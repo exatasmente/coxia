@@ -10,6 +10,8 @@ import { ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../
 import { wizardApi } from '../wizardApi';
 import { newIntegration } from './ProjectsStep';
 
+const PROJECT_PLACEHOLDER = 'group/project'; // i18n-ignore: example path
+
 const DEFAULT_HOST: Record<VcsKind, string> = { gitlab: '', github: 'github.com', bitbucket: 'bitbucket.org' };
 
 /** Where the user creates a token for this host. */
@@ -208,7 +210,7 @@ export function IntegrationsStep({ cfg, setCfg, view, refreshView }: StepProps) 
               </select>
             </Field>
             <Field label={t('wizard.vcs.issuesProject')} htmlFor="wz-issues-project" hint={t('wizard.vcs.issuesProjectHint')}>
-              <input id="wz-issues-project" className="text-input mono" spellCheck={false} placeholder="group/project" disabled={!issues.vcsId} value={issues.project ?? ''} onChange={(e) => setCfg((c) => ({ ...c, projects: { ...c.projects, issues: { ...c.projects.issues, project: e.target.value.trim() || null } } }))} />
+              <input id="wz-issues-project" className="text-input mono" spellCheck={false} placeholder={PROJECT_PLACEHOLDER} disabled={!issues.vcsId} value={issues.project ?? ''} onChange={(e) => setCfg((c) => ({ ...c, projects: { ...c.projects, issues: { ...c.projects.issues, project: e.target.value.trim() || null } } }))} />
             </Field>
           </div>
           <Field label={t('wizard.vcs.issuesPrefix')} htmlFor="wz-issues-prefix" hint={t('wizard.vcs.issuesPrefixHint')}>

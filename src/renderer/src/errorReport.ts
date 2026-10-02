@@ -1,9 +1,10 @@
 import type { RendererKind } from '../../shared/errorlog';
 import { api } from './api';
+import { t } from './i18n';
 import { isWeb } from './platform';
 
 // Already in the log by another door (main logs every failed channel call) or just the connection going away.
-const IGNORED = /ResizeObserver loop|^Script error\.?$|Failed to fetch|Load failed|NetworkError|Error invoking remote method|^Erro \d{3}$/i;
+const IGNORED = /ResizeObserver loop|^Script error\.?$|Failed to fetch|Load failed|NetworkError|Error invoking remote method|^(Erro|Error) \d{3}$/i;
 const MAX_PER_MINUTE = 10;
 const REPEAT_MS = 30_000;
 
@@ -14,7 +15,7 @@ function describe(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) return { message: error.message || error.name, stack: error.stack };
   if (error && typeof error === 'object') {
     const e = error as { message?: unknown; stack?: unknown };
-    return { message: typeof e.message === 'string' ? e.message : 'objeto sem mensagem', stack: typeof e.stack === 'string' ? e.stack : undefined };
+    return { message: typeof e.message === 'string' ? e.message : t('ui.error.noMessage'), stack: typeof e.stack === 'string' ? e.stack : undefined };
   }
   return { message: String(error) };
 }

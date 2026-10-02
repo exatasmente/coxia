@@ -6,6 +6,9 @@ import type { StepProps } from '../SetupWizard';
 import { ExternalLink, Notice } from '../ui';
 import { wizardApi } from '../wizardApi';
 
+const LEGAL_URL = 'code.claude.com/docs/en/legal-and-compliance'; // i18n-ignore: URL
+const COMMERCIAL_URL = 'anthropic.com/legal/commercial-terms'; // i18n-ignore: URL
+
 const MAX_LINES = 80;
 
 export function SdkStep({ cfg, setCfg, refreshView, avail }: StepProps) {
@@ -98,8 +101,8 @@ export function SdkStep({ cfg, setCfg, refreshView, avail }: StepProps) {
           <h3 id="wz-terms" className="wz-sub">{t('wizard.sdk.termsTitle')}</h3>
           <p>{t('wizard.sdk.termsBody')}</p>
           <ul className="wz-list">
-            <li><ExternalLink href={DOC_LINKS.legal}>{t('wizard.sdk.legalLink')}</ExternalLink> <span className="small muted mono">code.claude.com/docs/en/legal-and-compliance</span></li>
-            <li><ExternalLink href={DOC_LINKS.commercialTerms}>{t('wizard.sdk.commercialLink')}</ExternalLink> <span className="small muted mono">anthropic.com/legal/commercial-terms</span></li>
+            <li><ExternalLink href={DOC_LINKS.legal}>{t('wizard.sdk.legalLink')}</ExternalLink> <span className="small muted mono">{LEGAL_URL}</span></li>
+            <li><ExternalLink href={DOC_LINKS.commercialTerms}>{t('wizard.sdk.commercialLink')}</ExternalLink> <span className="small muted mono">{COMMERCIAL_URL}</span></li>
           </ul>
           <Notice tone="info">{t('wizard.sdk.noSubscription')}</Notice>
           <label className="check-row">

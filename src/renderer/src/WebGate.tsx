@@ -1,5 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { errorText } from './api';
+import { normalizeLanguage, setLanguage } from '../../shared/i18n';
+import { useT, t } from './i18n';
 import { OutboxBanner } from './OutboxBanner';
 import { consumePairFragment } from './pairFragment';
 import { isWeb } from './platform';
@@ -12,14 +14,29 @@ type State = 'checking' | 'pairing' | 'login' | 'offline' | 'ready';
 const pairCode = isWeb() ? consumePairFragment(window) : null;
 let pairStarted = false;
 
+// Before the first login the browser has no workspace language to ask for: with nothing stored by a previous visit, follow the browser's.
+// initLanguage (main.tsx) runs after this module loads and puts a stored language on top; the desktop window never gets here.
+function followBrowserLanguage(): void {
+  try {
+    if (localStorage.getItem('cerimonias.language')) return;
+  } catch {
+    // storage unavailable: the browser language is all there is
+  }
+  const language = normalizeLanguage(navigator.language);
+  setLanguage(language);
+  document.documentElement.lang = language;
+}
+if (isWeb()) followBrowserLanguage();
+
 function deviceName(): string {
   const ua = navigator.userAgent;
-  const system = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
-  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
-  return system ? `${browser} em ${system}` : browser;
+  const system = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : ''; // i18n-ignore: OS names
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : t('ui.webGate.browser'); // i18n-ignore: browser names
+  return system ? t('ui.webGate.device', { browser, system }) : browser;
 }
 
 function Login({ notice, onDone }: { notice: string | null; onDone: () => void }) {
+  const t = useT();
   const [code, setCode] = useState('');
   const [name, setName] = useState(deviceName);
   const [busy, setBusy] = useState(false);
@@ -42,14 +59,15 @@ function Login({ notice, onDone }: { notice: string | null; onDone: () => void }
     <div className="web-center">
       <form className="panel web-card" onSubmit={(e) => void submit(e)}>
         <div>
+          {/* i18n-ignore-next-line: product name */}
           <h1 style={{ fontSize: 24, fontWeight: 700 }}>Coxia</h1>
           <p className="muted" style={{ marginTop: 6 }}>
-            Escaneie o QR code do app do computador (Configurações › Acesso pelo navegador) ou digite o código de pareamento.
+            {t('ui.webGate.intro')}
           </p>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
         <label className="web-field">
-          <span style={{ fontWeight: 600 }}>Código de pareamento</span>
+          <span style={{ fontWeight: 600 }}>{t('ui.webGate.code')}</span>
           <input
             className="text-input mono web-code"
             value={code}
@@ -58,17 +76,17 @@ function Login({ notice, onDone }: { notice: string | null; onDone: () => void }
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="XXXX-XXXX-XXXX"
+            placeholder="XXXX-XXXX-XXXX" // i18n-ignore: code format example
             maxLength={20}
             required
           />
         </label>
         <label className="web-field">
-          <span style={{ fontWeight: 600 }}>Nome deste aparelho</span>
+          <span style={{ fontWeight: 600 }}>{t('ui.webGate.deviceName')}</span>
           <input className="text-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoComplete="off" required />
         </label>
         <button type="submit" className="btn btn-dark" disabled={busy || code.trim().length < 8 || !name.trim()}>
-          {busy ? <span className="spinner" /> : null} Entrar
+          {busy ? <span className="spinner" /> : null} {t('ui.webGate.signIn')}
         </button>
       </form>
     </div>
@@ -78,6 +96,7 @@ function Login({ notice, onDone }: { notice: string | null; onDone: () => void }
 // Browser build only: pairs from the QR link, or shows the login screen until the session cookie is valid.
 // The Electron window renders the app directly.
 export function WebGate({ children }: { children: ReactNode }) {
+  const t = useT();
   const [state, setState] = useState<State>(!isWeb() ? 'ready' : pairCode ? 'pairing' : 'checking');
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -91,7 +110,7 @@ export function WebGate({ children }: { children: ReactNode }) {
     post('api/login', { code, name: deviceName() }).then(
       () => location.reload(),
       (e) => {
-        setNotice(e instanceof HttpStatusError && e.status === 401 ? 'Este link de pareamento expirou ou já foi usado. Gere outro no app do computador.' : errorText(e));
+        setNotice(e instanceof HttpStatusError && e.status === 401 ? t('ui.webGate.expired') : errorText(e));
         setState('login');
       },
     );
@@ -130,9 +149,9 @@ export function WebGate({ children }: { children: ReactNode }) {
     return (
       <div className="web-center">
         <div className="panel web-card">
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>Sem conexão</h1>
-          <p className="muted">Não consegui falar com o app no computador. Confira se ele está aberto e com o acesso pelo navegador ligado.</p>
-          <button type="button" className="btn btn-dark" onClick={check}>Tentar de novo</button>
+          <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('ui.webGate.offline.title')}</h1>
+          <p className="muted">{t('ui.webGate.offline.body')}</p>
+          <button type="button" className="btn btn-dark" onClick={check}>{t('ui.webGate.retry')}</button>
         </div>
       </div>
     );
@@ -141,7 +160,7 @@ export function WebGate({ children }: { children: ReactNode }) {
     <div className="web-center">
       <div className="row" role="status" style={{ gap: 10 }}>
         <span className="spinner" aria-hidden="true" />
-        {state === 'pairing' && <span>Pareando este aparelho…</span>}
+        {state === 'pairing' && <span>{t('ui.webGate.pairing')}</span>}
       </div>
     </div>
   );

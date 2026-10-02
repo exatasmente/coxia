@@ -1,12 +1,12 @@
-import { useSyncExternalStore } from 'react';
+import { createElement, Fragment, type ReactNode, useSyncExternalStore } from 'react';
 import type { Language } from '../../shared/config/types';
-import { i18nSnapshot, normalizeLanguage, setLanguage, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import { i18nSnapshot, intlLocale, normalizeLanguage, type Params, setLanguage, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
 import { api } from './api';
 
 const KEY = 'cerimonias.language';
 const VOICE_KEY = 'cerimonias.voice';
 
-export { t, tv };
+export { intlLocale, t, tv };
 
 export function applyLanguage(language: Language): void {
   setLanguage(language);
@@ -45,6 +45,22 @@ export function initLanguage(): void {
     },
     () => undefined,
   );
+}
+
+/** Splits translated text on its `{name}` placeholders and puts the matching React node in each: a sentence with a <code> or a <button> inside. */
+export function withNodes(text: string, nodes: Record<string, ReactNode>): ReactNode {
+  const parts = text.split(/\{(\w+)\}/);
+  return createElement(Fragment, null, ...parts.map((part, i) => (i % 2 === 0 ? part : part in nodes ? createElement(Fragment, { key: i }, nodes[part]) : `{${part}}`)));
+}
+
+/** `t` for a sentence that holds elements: `tNodes('area.hint', { key: <kbd>F1</kbd> })` with "Press {key} to open". Plain params go in the third argument. */
+export function tNodes(key: string, nodes: Record<string, ReactNode>, params?: Params): ReactNode {
+  return withNodes(t(key, params), nodes);
+}
+
+/** The voice-aware `tNodes`. */
+export function tvNodes(key: string, nodes: Record<string, ReactNode>, params?: Params): ReactNode {
+  return withNodes(tv(key, params), nodes);
 }
 
 /** The translator, re-rendering the component when the language changes. */

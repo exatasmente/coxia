@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import type { Term } from '../../../shared/glossary';
 import { type Correction, newCorrections } from '../../../shared/glossaryLearn';
 import { errorText } from '../api';
+import { useT } from '../i18n';
 import { wasTranscribed } from '../audio';
 import { glossaryApi } from '../glossaryApi';
 
@@ -10,6 +11,7 @@ import { glossaryApi } from '../glossaryApi';
  * dictionary. Nothing is saved without the click, and the message itself does not change.
  */
 export function FixHeard({ text, className = 'bubble-fix' }: { text: string; className?: string }) {
+  const t = useT();
   const field = useId();
   const [open, setOpen] = useState(false);
   const [terms, setTerms] = useState<Term[]>([]);
@@ -44,21 +46,21 @@ export function FixHeard({ text, className = 'bubble-fix' }: { text: string; cla
   return (
     <>
       <button type="button" className={className} aria-expanded={open} onClick={toggle}>
-        {open ? 'Fechar correção' : 'Corrigir transcrição'}
+        {open ? t('ui.fixHeard.close') : t('ui.fixHeard.open')}
       </button>
       {open && (
         <div className="fix-panel">
-          <label className="small muted" htmlFor={field}>Como era para estar escrito</label>
+          <label className="small muted" htmlFor={field}>{t('ui.fixHeard.field')}</label>
           <input id={field} className="text-input" value={fixed} onChange={(e) => setFixed(e.target.value)} />
           {offers.map((c) => (
             <button key={`${c.heard}>${c.term}`} type="button" className="btn fix-offer" disabled={busy} onClick={() => void teach(c)}>
-              Guardar “{c.heard}” → {c.term} no dicionário
+              {t('ui.fixHeard.save', { heard: c.heard, term: c.term })}
             </button>
           ))}
           {taught.map((c) => (
-            <span key={`${c.heard}>${c.term}`} className="small" role="status" style={{ color: 'var(--teal)' }}>Guardado: “{c.heard}” → {c.term}</span>
+            <span key={`${c.heard}>${c.term}`} className="small" role="status" style={{ color: 'var(--teal)' }}>{t('ui.fixHeard.saved', { heard: c.heard, term: c.term })}</span>
           ))}
-          {!offers.length && !taught.length && <span className="small muted">Corrija as palavras erradas: cada troca vira uma sugestão para o dicionário. A mensagem enviada não muda.</span>}
+          {!offers.length && !taught.length && <span className="small muted">{t('ui.fixHeard.hint')}</span>}
           {error && <span className="small" role="alert" style={{ color: 'var(--red)' }}>{error}</span>}
         </div>
       )}

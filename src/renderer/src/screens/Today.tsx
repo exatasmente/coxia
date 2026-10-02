@@ -17,13 +17,15 @@ import { UpdateBadge } from './UpdateBadge';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
-import { tv } from '../i18n';
+import { intlLocale, useT, useTv } from '../i18n';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
 const TOP = 3;
 
 export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
+  const t = useT();
+  const tv = useTv();
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const cycle = useCycle();
@@ -48,7 +50,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const colors = useMemo(() => new Map(cards.map((card) => [`#${card.iid}`, c.colorOf(card.ref)])), [cards, c.colorOf]);
 
   const now = new Date();
-  const date = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const date = now.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
 
   // Turns already prepared (or restored from disk) come from the cache; only the missing ones call an agent.
@@ -101,26 +103,26 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         )}
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
-          <h1>{greeting(now.getHours())}{cycle?.userName ? `, ${cycle.userName}` : ''}</h1>
+          <h1>{cycle?.userName ? t('ui.today.greetingName', { greeting: greeting(now.getHours()), name: cycle.userName }) : greeting(now.getHours())}</h1>
         </div>
       </div>
       <div className="dash-top-actions">
         <UpdateBadge go={go} />
-        {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem nas notas de cartão.">Workspace de testes</span>}
+        {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
         {!phone && (
-          <nav className="dash-nav" aria-label="Telas do app">
-            <button type="button" className="btn" onClick={() => go({ name: 'history' })}>Histórico</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>Configurações</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>Custo</button>
+          <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
+            <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
             <RadarButton go={go} />
             <SaudeButton go={go} />
-            <button type="button" className="btn" onClick={() => go({ name: 'auditoria' })}>Auditoria</button>
-            <button type="button" className="btn" title="Atalho: F1" onClick={() => go({ name: 'help' })}>Ajuda</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'auditoria' })}>{t('ui.nav.audit')}</button>
+            <button type="button" className="btn" title={t('ui.today.helpShortcut')} onClick={() => go({ name: 'help' })}>{t('ui.nav.help')}</button>
             <HeaderModuleButtons />
           </nav>
         )}
         <VoiceToggle />
-        <button type="button" className="btn icon-btn" aria-label="Execuções" title="Execuções em andamento" onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
+        <button type="button" className="btn icon-btn" aria-label={t('ui.today.jobs')} title={t('ui.today.jobsRunning')} onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
           <BellIcon />
         </button>
       </div>
@@ -143,18 +145,18 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const activities = (
     <section className="dash-sec" ref={actsRef} aria-labelledby="acts-h">
       <div className="row spread dash-sec-head">
-        <h2 id="acts-h" className="section-title">Atividades{c.cards ? ` · ${cards.length}` : ''}</h2>
+        <h2 id="acts-h" className="section-title">{c.cards ? t('ui.today.activitiesCount', { count: cards.length }) : t('ui.today.activities')}</h2>
         <button type="button" className="btn dash-refresh" disabled={c.loadingCards} onClick={() => void c.loadCards(true)}>
-          {c.loadingCards ? <span className="spinner" aria-hidden="true" /> : null} Atualizar do GitLab
+          {c.loadingCards ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.today.refreshGitlab')}
         </button>
       </div>
 
       {(listOpen || filter !== 'all') && (
-        <div className="filters" role="group" aria-label="Filtro das atividades">
+        <div className="filters" role="group" aria-label={t('ui.today.filter.label')}>
           {([
-            ['all', `Todas · ${cards.length}`],
-            ['blocked', `Com bloqueio · ${blocked.length}`],
-            ['ask', `Com pergunta · ${asking.length}`],
+            ['all', t('ui.today.filter.all', { count: cards.length })],
+            ['blocked', t('ui.today.filter.blocked', { count: blocked.length })],
+            ['ask', t('ui.today.filter.ask', { count: asking.length })],
           ] as [Filter, string][]).map(([key, label]) => (
             <button key={key} type="button" className={`filter ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
               {label}
@@ -177,7 +179,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
           <ActivityRow key={card.ref} card={card} c={c} go={go} open={openRef === card.ref} onToggle={() => setOpenRef((r) => (r === card.ref ? null : card.ref))} />
         ))}
       </ul>
-      {c.cards && !visible.length && <p className="dash-calm">Nenhuma atividade neste filtro.</p>}
+      {c.cards && !visible.length && <p className="dash-calm">{t('ui.today.noActivities')}</p>}
 
       {c.cards && (sorted.length > TOP || filter !== 'all') && (
         <button
@@ -191,13 +193,13 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             } else setListOpen(true);
           }}
         >
-          {listOpen || filter !== 'all' ? 'Mostrar só as mais urgentes' : `Ver todas as ${sorted.length}`}
+          {listOpen || filter !== 'all' ? t('ui.today.showUrgent') : t('ui.today.seeAll', { count: sorted.length })}
         </button>
       )}
 
       <p className="faint dash-foot">
-        Cada agente é montado a cada cerimônia a partir do cartão do GitLab, do spec e do playbook.
-        {c.statusAt && ` Status conferido às ${new Date(c.statusAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`}
+        {t('ui.today.foot')}
+        {c.statusAt && ` ${t('ui.today.footStatus', { time: new Date(c.statusAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) })}`}
       </p>
     </section>
   );
@@ -205,12 +207,12 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const firstBlocked = blocked[0];
   const ceremonies = (
     <section className="dash-sec" aria-labelledby="cer-h">
-      <h2 id="cer-h" className="section-title">Cerimônias</h2>
+      <h2 id="cer-h" className="section-title">{t('ui.today.ceremonies')}</h2>
       <div className="cer-row">
         {on?.preDaily !== false && (
         <div className="cer">
-          <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : 'Pré-daily'}</h3>
-          <p className="small muted">{c.cards ? `${ready} de ${cards.length} agentes prontos` : 'Montando cartões…'}</p>
+          <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : t('ui.today.preDaily')}</h3>
+          <p className="small muted">{c.cards ? t('ui.today.agentsReady', { ready, total: cards.length }) : t('ui.today.buildingCards')}</p>
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
             {c.startedAt && !c.callEnded ? tv('call.back') : tv('call.enter')}
           </button>
@@ -218,27 +220,27 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         )}
         {on?.unblock !== false && (
         <div className="cer">
-          <h3>Desbloqueio</h3>
-          <p className="small muted">{blocked.length ? `${blocked.length} com bloqueio` : 'Nenhuma bloqueada'}</p>
+          <h3>{t('ui.today.unblock')}</h3>
+          <p className="small muted">{blocked.length ? t('ui.today.withBlockers', { count: blocked.length }) : t('ui.today.noneBlocked')}</p>
           <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'today' })}>
-            {firstBlocked ? `Aprofundar #${firstBlocked.iid}` : 'Aprofundar'}
+            {firstBlocked ? t('ui.today.deepenIssue', { iid: firstBlocked.iid }) : t('ui.today.deepen')}
           </button>
         </div>
         )}
         {on?.qaHandoff !== false && (
         <div className="cer">
-          <h3>Passagem ao QA</h3>
-          <p className="small muted">{forQa.length ? `${forQa.length} pronta(s) para o QA` : 'Quando subir release'}</p>
+          <h3>{t('ui.today.qaHandoff')}</h3>
+          <p className="small muted">{forQa.length ? t('ui.today.readyForQa', { count: forQa.length }) : t('ui.today.whenRelease')}</p>
           <select
             className="text-input"
-            aria-label="Escolher atividade para o QA"
+            aria-label={t('ui.today.pickForQa')}
             value=""
             onChange={(e) => {
               const card = cards.find((x) => x.ref === e.target.value);
               if (card) go({ name: 'qa', ref: card.ref, card });
             }}
           >
-            <option value="">Escolher…</option>
+            <option value="">{t('ui.today.choose')}</option>
             {[...forQa, ...cards.filter((x) => x.spec && !forQa.includes(x))].map((x) => (
               <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>
             ))}
@@ -247,9 +249,9 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         )}
         {on?.retro !== false && (
         <div className="cer">
-          <h3>Retro</h3>
-          <p className="small muted">{retroToday ? 'É hoje, semanal' : 'Semanal, últimos 7 dias'}</p>
-          <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>Abrir a retro</button>
+          <h3>{t('ui.today.retro')}</h3>
+          <p className="small muted">{retroToday ? t('ui.today.retroToday') : t('ui.today.retroWeekly')}</p>
+          <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>{t('ui.today.openRetro')}</button>
         </div>
         )}
       </div>
@@ -260,7 +262,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     <div className="page">
       <div className="wrap dash">
         {header}
-        {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
+        {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
         <div className="dash-cols">
           <div className="dash-col">
             <div className="d-o1">{agora}</div>

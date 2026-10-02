@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { WORKSPACE_EVENT, type WorkspaceInfo, type WorkspacesView } from '../../shared/workspaces';
 import { api, moduleEvents } from './api';
+import { subscribeLanguage, t } from '../../shared/i18n';
 import './workspaces.css';
 
 export const workspaceApi = {
@@ -18,11 +19,23 @@ const subscribers = new Set<() => void>();
 
 export const runningWorkspace = (v: WorkspacesView | null): WorkspaceInfo | null => v?.list.find((w) => w.id === v.running) ?? null;
 
+// Heroes of the ceremony screens show the test workspace tag from this attribute; its text is a CSS variable so it follows the language.
+function markTestWorkspace(): void {
+  const root = document.documentElement;
+  if (state && runningWorkspace(state)?.test) {
+    root.dataset.workspaceTest = '1';
+    root.style.setProperty('--workspace-test-label', JSON.stringify(t('ui.today.testWorkspace')));
+  } else {
+    delete root.dataset.workspaceTest;
+    root.style.removeProperty('--workspace-test-label');
+  }
+}
+
+subscribeLanguage(markTestWorkspace);
+
 function set(next: WorkspacesView): void {
   state = next;
-  // Heroes of the ceremony screens show the "Workspace de testes" tag from this attribute (styles.css).
-  if (runningWorkspace(next)?.test) document.documentElement.dataset.workspaceTest = '1';
-  else delete document.documentElement.dataset.workspaceTest;
+  markTestWorkspace();
   for (const fn of subscribers) fn();
 }
 

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-const PHONE = '(max-width: 600px)';
+const PHONE = '(max-width: 600px)'; // i18n-ignore: media query
 
 function subscribe(cb: () => void): () => void {
   const mq = window.matchMedia(PHONE);

@@ -4,7 +4,7 @@ import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
 import { ActivityTimeline } from './AgentActivity';
 import { latestStep } from './activity';
-import { useT } from './i18n';
+import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
 import { useActivity, useStrayActivity } from './useActivity';
@@ -16,7 +16,7 @@ const SHOW_AFTER_MS = 700;
 const TOAST_MS = 10_000;
 const FAB = 52;
 const GAP = 12;
-const AVOID = '.composer, .composer-panel, .outbox-item';
+const AVOID = '.composer, .composer-panel, .outbox-item'; // i18n-ignore: CSS selector
 export const JOBS_OPEN = 'cerimonias:jobs-open';
 
 interface Toast {
@@ -78,11 +78,11 @@ function Icon({ kind }: { kind: 'check' | 'alert' | 'close' }) {
 }
 
 function status(j: Job<Screen>, now: number): string {
-  if (j.status === 'running') return `em andamento · ${formatElapsed(now - j.startedAt)}`;
+  if (j.status === 'running') return t('ui.jobs.status.running', { elapsed: formatElapsed(now - j.startedAt) });
   const took = formatElapsed((j.finishedAt ?? now) - j.startedAt);
   const ago = Math.max(0, Math.floor((now - (j.finishedAt ?? now)) / 60_000));
-  const when = ago < 1 ? 'agora' : `há ${ago} min`;
-  return j.status === 'done' ? `pronto ${when} · levou ${took}` : `falhou ${when} · levou ${took}`;
+  const when = ago < 1 ? t('ui.jobs.status.now') : t('ui.jobs.status.minutesAgo', { minutes: ago });
+  return t(j.status === 'done' ? 'ui.jobs.status.done' : 'ui.jobs.status.failed', { when, took });
 }
 
 // The step a running job is on, under its title; it opens into the whole live timeline.
@@ -167,7 +167,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
     };
     const onPointer = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
-      if (!layer.current?.contains(target) && !target.closest('[aria-label="Execuções"]')) setOpen(false);
+      if (!layer.current?.contains(target) && target.closest('[aria-label]')?.getAttribute('aria-label') !== t('ui.today.jobs')) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointer);
@@ -219,29 +219,37 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   };
 
   const label = total
-    ? `Tarefas do agente: ${running ? `${running} em andamento` : ''}${running && total > running ? ', ' : ''}${total > running ? `${total - running} para ver` : ''}`
+    ? t('ui.jobs.fab', {
+        parts: [running ? t('ui.jobs.fab.running', { count: running }) : '', total > running ? t('ui.jobs.fab.toSee', { count: total - running }) : ''].filter(Boolean).join(', '),
+      })
     : '';
 
   return (
-    <div className="jobs-layer" ref={layer} style={{ bottom: `calc(var(--bottom-nav-h, env(safe-area-inset-bottom, 0px)) + 16px + ${lift}px)` }}>
+    <div
+      className="jobs-layer"
+      ref={layer}
+      style={{ bottom: `calc(var(--bottom-nav-h, env(safe-area-inset-bottom, 0px)) + 16px + ${lift}px)` }} // i18n-ignore: CSS calc()
+    >
       <div className="sr-only" role="status" aria-live="polite">{announce}</div>
       <div className="jobs-toasts">
-        {toasts.map((t) => (
-          <div key={t.id} className={`jobs-toast ${t.failed ? 'jobs-toast-fail' : ''}`}>
-            <span className="jobs-toast-text">{t.title} — <button type="button" className="jobs-link" onClick={() => openJob(t.screen)}>abrir</button></span>
-            <button type="button" className="jobs-x" aria-label="Dispensar aviso" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}><Icon kind="close" /></button>
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`jobs-toast ${toast.failed ? 'jobs-toast-fail' : ''}`}>
+            <span className="jobs-toast-text">
+              {tNodes('ui.jobs.toast', { open: <button type="button" className="jobs-link" onClick={() => openJob(toast.screen)}>{t('ui.jobs.open')}</button> }, { title: toast.title })}
+            </span>
+            <button type="button" className="jobs-x" aria-label={t('ui.jobs.dismissNotice')} onClick={() => setToasts((all) => all.filter((x) => x.id !== toast.id))}><Icon kind="close" /></button>
           </div>
         ))}
       </div>
       {open && (
-        <section id="jobs-panel" className="jobs-panel" aria-label="Tarefas do agente" style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 96) }}>
+        <section id="jobs-panel" className="jobs-panel" aria-label={t('ui.jobs.panel')} style={{ maxHeight: Math.max(160, window.innerHeight - lift - FAB - 96) }}>
           <header className="jobs-panel-head">
-            <h2>Tarefas do agente</h2>
+            <h2>{t('ui.jobs.panel')}</h2>
             {shown.some((j) => j.status !== 'running') && (
-              <button type="button" className="jobs-link" onClick={() => jobs.clearFinished()}>Limpar concluídas</button>
+              <button type="button" className="jobs-link" onClick={() => jobs.clearFinished()}>{t('ui.jobs.clearFinished')}</button>
             )}
           </header>
-          {!total && <p className="jobs-empty">Nenhuma execução em andamento nem para ver.</p>}
+          {!total && <p className="jobs-empty">{t('ui.jobs.empty')}</p>}
           <ul>
             {stray.length > 0 && (
               <li className="jobs-item jobs-running">
@@ -262,7 +270,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
                   {j.status === 'failed' && j.error && <span className="jobs-item-error">{j.error}</span>}
                 </button>
                 {j.status !== 'running' && (
-                  <button type="button" className="jobs-x" aria-label={`Limpar ${j.label}`} onClick={() => jobs.dismiss(j.key)}><Icon kind="close" /></button>
+                  <button type="button" className="jobs-x" aria-label={t('ui.jobs.clear', { label: j.label })} onClick={() => jobs.dismiss(j.key)}><Icon kind="close" /></button>
                 )}
                 {j.status === 'running' && <JobSteps job={j} />}
               </li>
