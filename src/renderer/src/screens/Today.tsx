@@ -1,25 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
-import { shortRef } from '../api';
+import { api } from '../api';
 import type { Ceremony } from '../ceremony';
-import { MicIcon } from './icons';
-import { TempoHoje } from './TempoHoje';
-import { VoiceToggle } from './VoiceToggle';
-import { RadarButton, WorktreeBadge } from './radarSlots';
+import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue, sortByUrgency } from '../dashboard';
+import { useIsPhone } from '../useIsPhone';
+import { useWatcherAlerts } from '../watchersApi';
+import { BellIcon } from './dashIcons';
+import { HeaderModuleButtons } from './moduleSlots';
+import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
-import { WatchersBanner } from './WatchersBanner';
+import { TempoHoje } from './TempoHoje';
+import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
+import { VoiceToggle } from './VoiceToggle';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
-export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number }) {
+const TOP = 3;
+
+export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
+  const phone = useIsPhone();
   const [filter, setFilter] = useState<Filter>('all');
-  const cards = c.cards?.cards ?? [];
+  const [listOpen, setListOpen] = useState(false);
+  const [openRef, setOpenRef] = useState<string | null>(null);
+  const [retro, setRetro] = useState<{ day: number; time: string } | null>(null);
+  const { alerts, dismiss } = useWatcherAlerts();
+  const actsRef = useRef<HTMLElement>(null);
+
+  const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
   const ready = cards.filter((card) => c.turns[card.ref]).length;
-  const blocked = cards.filter((card) => card.blockers.length);
-  const asking = cards.filter((card) => c.turns[card.ref]?.question);
+  const sorted = useMemo(() => sortByUrgency(cards, c.turns, c.answered), [cards, c.turns, c.answered]);
+  const blocked = sorted.filter((card) => card.blockers.length);
+  const asking = pendingQuestions(sorted, c.turns, c.answered);
   const forQa = cards.filter((card) => card.spec && /Code Review OK|Test Fail|Ready To Test/i.test(card.stage ?? ''));
-  const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
-  const date = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : sorted;
+  const visible = listOpen || filter !== 'all' ? shown : shown.slice(0, TOP);
+  const needs = needsYou({ cards, turns: c.turns, answered: c.answered, actions, alerts });
+  const colors = useMemo(() => new Map(cards.map((card) => [`#${card.iid}`, c.colorOf(card.ref)])), [cards, c.colorOf]);
+
+  const now = new Date();
+  const date = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
 
   // Turns already prepared (or restored from disk) come from the cache; only the missing ones call an agent.
@@ -27,233 +47,211 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
     if (c.cards) void c.prepareAll();
   }, [c.cards, c.prepareAll]);
 
+  useEffect(() => {
+    void api.getSettings().then((s) => setRetro({ day: s.schedule.retroDay, time: s.schedule.retroTime }), () => undefined);
+  }, []);
+
+  const retroToday = !!retro && retroDue(now, retro.day, retro.time);
+  const plan = agoraPlan({
+    hasCards: !!c.cards,
+    loadingCards: c.loadingCards,
+    startedAt: c.startedAt,
+    callEnded: c.callEnded,
+    saved: !!c.saveResult,
+    resumed: c.resumed,
+    ready,
+    total: cards.length,
+    decisions: c.decisions.length,
+    effects: c.effects.length,
+    retroDue: retroToday,
+  });
+
+  const onAgora = (a: AgoraAction) => {
+    if (a === 'call') go({ name: 'call' });
+    else if (a === 'ata') go({ name: 'ata' });
+    else if (a === 'retro') go({ name: 'retro' });
+    else void c.reset();
+  };
+
+  const showFilter = (f: Filter) => {
+    setFilter(f);
+    setListOpen(true);
+    requestAnimationFrame(() => actsRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
+  };
+
+  const header = (
+    <header className="dash-top">
+      <div className="dash-hello">
+        {!phone && (
+          <div className="dash-logo" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
+            </svg>
+          </div>
+        )}
+        <div className="dash-hello-text">
+          <div className="faint">{today}</div>
+          <h1>{greeting(now.getHours())}, Luiz</h1>
+        </div>
+      </div>
+      <div className="dash-top-actions">
+        {!phone && (
+          <nav className="dash-nav" aria-label="Telas do app">
+            <button type="button" className="btn" onClick={() => go({ name: 'history' })}>Histórico</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>Configurações</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>Custo</button>
+            <RadarButton go={go} />
+            <SaudeButton go={go} />
+            <button type="button" className="btn" onClick={() => go({ name: 'auditoria' })}>Auditoria</button>
+            <button type="button" className="btn" title="Atalho: F1" onClick={() => go({ name: 'help' })}>Ajuda</button>
+            <HeaderModuleButtons />
+          </nav>
+        )}
+        <VoiceToggle />
+        <button type="button" className="btn icon-btn" aria-label="Execuções" title="Execuções em andamento" onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
+          <BellIcon />
+        </button>
+      </div>
+    </header>
+  );
+
+  const agora = <AgoraCard plan={plan} onAction={onAgora} />;
+  const tiles = <Tiles blocked={blocked.length} asking={asking.length} actions={pendingActions} onBlocked={() => showFilter('blocked')} onAsking={() => showFilter('ask')} onActions={() => go({ name: 'actions' })} />;
+  const needsBlock = (
+    <>
+      <NeedsList items={needs} go={go} dismiss={dismiss} />
+      {/* slot: banners of feature modules */}
+    </>
+  );
+  const tempo = (
+    <TempoHoje refreshKey={`${c.startedAt}-${c.callEnded}-${Object.values(c.deep).reduce((n, d) => n + d.msgs.length, 0)}`} colorFor={(issue) => (issue ? colors.get(issue) : undefined)} />
+  );
+
+  const activities = (
+    <section className="dash-sec" ref={actsRef} aria-labelledby="acts-h">
+      <div className="row spread dash-sec-head">
+        <h2 id="acts-h" className="section-title">Atividades{c.cards ? ` · ${cards.length}` : ''}</h2>
+        <button type="button" className="btn dash-refresh" disabled={c.loadingCards} onClick={() => void c.loadCards(true)}>
+          {c.loadingCards ? <span className="spinner" aria-hidden="true" /> : null} Atualizar do GitLab
+        </button>
+      </div>
+
+      {(listOpen || filter !== 'all') && (
+        <div className="filters" role="group" aria-label="Filtro das atividades">
+          {([
+            ['all', `Todas · ${cards.length}`],
+            ['blocked', `Com bloqueio · ${blocked.length}`],
+            ['ask', `Com pergunta · ${asking.length}`],
+          ] as [Filter, string][]).map(([key, label]) => (
+            <button key={key} type="button" className={`filter ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <ul className="acts">
+        {!c.cards &&
+          Array.from({ length: 3 }, (_, i) => (
+            <li key={i} className="act">
+              <div className="act-head" aria-hidden="true">
+                <div className="skeleton" style={{ width: 32, height: 32 }} />
+                <div className="skeleton" style={{ height: 16, flex: '1 1 auto' }} />
+              </div>
+            </li>
+          ))}
+        {visible.map((card) => (
+          <ActivityRow key={card.ref} card={card} c={c} go={go} open={openRef === card.ref} onToggle={() => setOpenRef((r) => (r === card.ref ? null : card.ref))} />
+        ))}
+      </ul>
+      {c.cards && !visible.length && <p className="dash-calm">Nenhuma atividade neste filtro.</p>}
+
+      {c.cards && (sorted.length > TOP || filter !== 'all') && (
+        <button
+          type="button"
+          className="btn dash-more"
+          aria-expanded={listOpen || filter !== 'all'}
+          onClick={() => {
+            if (listOpen || filter !== 'all') {
+              setListOpen(false);
+              setFilter('all');
+            } else setListOpen(true);
+          }}
+        >
+          {listOpen || filter !== 'all' ? 'Mostrar só as mais urgentes' : `Ver todas as ${sorted.length}`}
+        </button>
+      )}
+
+      <p className="faint dash-foot">
+        Cada agente é montado a cada cerimônia a partir do cartão do GitLab, do spec e do playbook.
+        {c.statusAt && ` Status conferido às ${new Date(c.statusAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`}
+      </p>
+    </section>
+  );
+
+  const firstBlocked = blocked[0];
+  const ceremonies = (
+    <section className="dash-sec" aria-labelledby="cer-h">
+      <h2 id="cer-h" className="section-title">Cerimônias</h2>
+      <div className="cer-row">
+        <div className="cer">
+          <h3>Pré-daily</h3>
+          <p className="small muted">{c.cards ? `${ready} de ${cards.length} agentes prontos` : 'Montando cartões…'}</p>
+          <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
+            {c.startedAt && !c.callEnded ? 'Voltar à call' : 'Entrar na call'}
+          </button>
+        </div>
+        <div className="cer">
+          <h3>Desbloqueio</h3>
+          <p className="small muted">{blocked.length ? `${blocked.length} com bloqueio` : 'Nenhuma bloqueada'}</p>
+          <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'today' })}>
+            {firstBlocked ? `Aprofundar #${firstBlocked.iid}` : 'Aprofundar'}
+          </button>
+        </div>
+        <div className="cer">
+          <h3>Passagem ao QA</h3>
+          <p className="small muted">{forQa.length ? `${forQa.length} pronta(s) para o QA` : 'Quando subir release'}</p>
+          <select
+            className="text-input"
+            aria-label="Escolher atividade para o QA"
+            value=""
+            onChange={(e) => {
+              const card = cards.find((x) => x.ref === e.target.value);
+              if (card) go({ name: 'qa', ref: card.ref, card });
+            }}
+          >
+            <option value="">Escolher…</option>
+            {[...forQa, ...cards.filter((x) => x.spec && !forQa.includes(x))].map((x) => (
+              <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>
+            ))}
+          </select>
+        </div>
+        <div className="cer">
+          <h3>Retro</h3>
+          <p className="small muted">{retroToday ? 'É hoje, semanal' : 'Semanal, últimos 7 dias'}</p>
+          <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>Abrir a retro</button>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div className="page">
-      <div className="wrap" style={{ maxWidth: 1320, gap: 28 }}>
-        <header className="row spread">
-          <div className="row" style={{ gap: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--night)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ color: 'var(--night-teal-2)' }} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
-              </svg>
-            </div>
-            <div>
-              <div className="faint">{today}</div>
-              <h1 style={{ fontSize: 26, fontWeight: 700 }}>Bom dia, Luiz</h1>
-            </div>
-          </div>
-          <div className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'history' })}>Histórico</button>
-            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'settings' })}>Configurações</button>
-            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'custo' })}>Custo</button>
-            <RadarButton go={go} />
-            <VoiceToggle />
-            <SaudeButton go={go} />
-            <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'auditoria' })}>Auditoria</button>
-            <button type="button" className="btn" style={{ minHeight: 34 }} title="Atalho: F1" onClick={() => go({ name: 'help' })}>Ajuda</button>
-            {/* slot: header buttons of feature modules */}
-          </div>
-        </header>
-
+      <div className="wrap dash">
+        {header}
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
-
-        <TempoHoje refreshKey={`${c.startedAt}-${c.callEnded}-${Object.values(c.deep).reduce((n, d) => n + d.msgs.length, 0)}`} />
-        {/* slot: banners of feature modules */}
-        <WatchersBanner go={go} />
-
-        {pendingActions > 0 && (
-          <div className="item row spread" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
-            <span className="small" style={{ color: 'var(--amber-ink)', fontWeight: 500 }}>
-              {pendingActions === 1 ? '1 ação de release aguardando o seu “seguir”.' : `${pendingActions} ações de release aguardando o seu “seguir”.`}
-            </span>
-            <button type="button" className="btn" onClick={() => go({ name: 'actions' })}>Ver ações</button>
+        <div className="dash-cols">
+          <div className="dash-col">
+            <div className="d-o1">{agora}</div>
+            <div className="d-o2">{tiles}</div>
+            <div className="d-o3">{needsBlock}</div>
+            <div className="d-o6">{tempo}</div>
           </div>
-        )}
-
-        {c.resumed && (
-          <div className="item row spread" style={{ background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
-            <span className="small" style={{ color: 'var(--teal-ink)' }}>
-              {c.saveResult
-                ? 'A pré-daily de hoje já foi encerrada e a ata está gravada.'
-                : c.startedAt
-                  ? `Retomando a pré-daily de hoje, começada às ${new Date(c.startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}: os agentes já preparados não são chamados de novo.`
-                  : 'Cartões e agentes de hoje recuperados do disco, sem chamar o GitLab nem os agentes de novo.'}
-            </span>
-            <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.reset()}>Nova pré-daily</button>
+          <div className="dash-col">
+            <div className="d-o4">{activities}</div>
+            <div className="d-o5">{ceremonies}</div>
           </div>
-        )}
-
-        <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <h2 className="section-title">Cerimônias de hoje</h2>
-          <div className="ceremonies">
-            <div className="ceremony main">
-              <div className="row spread">
-                <span className="small" style={{ color: 'var(--night-teal)', fontWeight: 500 }}>{c.startedAt ? 'Em andamento' : 'Agora'}</span>
-                <span className="mono small" style={{ color: 'var(--on-night-muted)' }}>~30 s por atividade</span>
-              </div>
-              <div>
-                <h3 style={{ fontSize: 22, marginBottom: 6 }}>Pré-daily</h3>
-                <p className="small" style={{ color: 'var(--on-night-3)', lineHeight: 1.5 }}>
-                  {c.cards ? `${cards.length} de ${c.cards.total} atividades, bloqueadas primeiro.` : 'Lendo o GitLab pelo daily-report (~30 s).'}
-                </p>
-              </div>
-              <div className="foot">
-                <span className="small" style={{ color: 'var(--on-night-muted)' }}>
-                  {c.cards ? `Agentes prontos ${ready} de ${cards.length}` : 'Montando cartões…'}
-                </span>
-                <button type="button" className="btn btn-accent" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
-                  <MicIcon /> {c.startedAt ? 'Voltar à call' : 'Entrar na call'}
-                </button>
-              </div>
-            </div>
-
-            <div className="ceremony">
-              <div className="row spread">
-                <span className="small" style={{ color: 'var(--warn)', fontWeight: 600 }}>{blocked.length} com bloqueio</span>
-                <span className="mono small faint">sob demanda</span>
-              </div>
-              <div>
-                <h3 style={{ marginBottom: 6 }}>Desbloqueio</h3>
-                <p className="small muted" style={{ lineHeight: 1.5 }}>Uma atividade travada, conversa a fundo com o agente dela.</p>
-              </div>
-              <div className="foot" style={{ justifyContent: 'flex-start' }}>
-                {blocked.slice(0, 3).map((card) => (
-                  <button key={card.ref} type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>
-                    <span className="mono">#{card.iid}</span>
-                  </button>
-                ))}
-                {!blocked.length && <span className="faint">Nenhuma atividade bloqueada</span>}
-              </div>
-            </div>
-
-            <div className="ceremony">
-              <div className="row spread">
-                <span className="small faint" style={{ fontWeight: 500 }}>{forQa.length ? `${forQa.length} pronta(s) para o QA` : 'Quando subir release'}</span>
-                <span className="mono small faint">QA</span>
-              </div>
-              <div>
-                <h3 style={{ marginBottom: 6 }}>Passagem para o QA</h3>
-                <p className="small muted" style={{ lineHeight: 1.5 }}>O agente explica ao QA o que mudou e o que testar; sai o checklist e o aviso do Teams.</p>
-              </div>
-              <div className="foot" style={{ justifyContent: 'flex-start' }}>
-                {forQa.slice(0, 3).map((card) => (
-                  <button key={card.ref} type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })}>
-                    <span className="mono">#{card.iid}</span>
-                  </button>
-                ))}
-                {!forQa.length && (
-                  <select className="text-input" style={{ minWidth: 0, maxWidth: '100%', width: '100%' }} aria-label="Escolher atividade para o QA" value="" onChange={(e) => { const card = cards.find((x) => x.ref === e.target.value); if (card) go({ name: 'qa', ref: card.ref, card }); }}>
-                    <option value="">Escolher atividade…</option>
-                    {cards.filter((x) => x.spec).map((x) => <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>)}
-                  </select>
-                )}
-              </div>
-            </div>
-
-            <div className="ceremony">
-              <div className="row spread">
-                <span className="small faint" style={{ fontWeight: 500 }}>Semanal</span>
-                <span className="mono small faint">retro</span>
-              </div>
-              <div>
-                <h3 style={{ marginBottom: 6 }}>Retro</h3>
-                <p className="small muted" style={{ lineHeight: 1.5 }}>Reprovações, bloqueios, conflitos, quizzes errados e retrabalho dos últimos 7 dias.</p>
-              </div>
-              <div className="foot" style={{ justifyContent: 'flex-start' }}>
-                <button type="button" className="btn" onClick={() => go({ name: 'retro' })}>Abrir a retro</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="row spread">
-            <h2 className="section-title">Agentes de atividade</h2>
-            <div className="filters" role="group" aria-label="Filtro">
-              {([
-                ['all', `Todas · ${cards.length}`],
-                ['blocked', `Com bloqueio · ${blocked.length}`],
-                ['ask', `Com pergunta · ${asking.length}`],
-              ] as [Filter, string][]).map(([key, label]) => (
-                <button key={key} type="button" className={`filter ${filter === key ? 'on' : ''}`} onClick={() => setFilter(key)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="list">
-            {!c.cards &&
-              Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="list-row">
-                  <div className="skeleton" style={{ width: 40, height: 40 }} />
-                  <div className="skeleton" style={{ height: 16, flex: '1 1 300px' }} />
-                </div>
-              ))}
-            {shown.map((card) => {
-              const turn = c.turns[card.ref];
-              const failed = c.turnErrors[card.ref];
-              return (
-                <div key={card.ref} className="list-row">
-                  <div className="row" style={{ flex: '1 1 380px', minWidth: 0, flexWrap: 'nowrap', gap: 14 }}>
-                    <div className="chip" style={{ background: c.colorOf(card.ref) }}>{shortRef(card.ref)}</div>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
-                        <a className="mono small muted" href={card.url} target="_blank" rel="noreferrer">#{card.iid}</a>
-                        <span className="title">{card.title}</span>
-                      </div>
-                      <div className="faint" style={{ marginTop: 3 }}>{card.mrs.join(' · ') || 'sem MR'}</div>
-                    </div>
-                  </div>
-                  <div className="small" style={{ flex: '0 1 220px', color: 'var(--ink-2)' }}>
-                    {[card.stage, card.spec?.phase].filter(Boolean).join(' · ') || 'sem estágio'}
-                  </div>
-                  <div className="row" style={{ flex: '0 1 260px', gap: 8 }}>
-                    {card.blockers.length > 0 && <span className="badge badge-block" title={card.blockers.join('\n')}>Bloqueio</span>}
-                    {turn?.question && <span className="badge badge-ask">Pergunta para você</span>}
-                    {turn && !turn.question && !card.blockers.length && <span className="badge badge-quiet">Só informa</span>}
-                    {turn?.reused && <span className="badge badge-quiet" title="Falei isto antes e o cartão não mudou.">Sem mudança desde {new Date(turn.reused.at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>}
-                  </div>
-                  <div className="mono faint" style={{ flex: '0 0 auto' }}>
-                    {failed ? <span style={{ color: 'var(--red)' }} title={failed}>agente falhou</span> : turn ? 'agente pronto' : <span className="row" style={{ gap: 6 }}><span className="spinner" />preparando</span>}
-                  </div>
-                  <div className="row" style={{ gap: 8 }}>
-                    <WorktreeBadge iid={card.iid} go={go} />
-                    {/* slot: per-activity buttons of feature modules */}
-                    <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>GitLab</button>
-                    {card.stage === 'Test Fail' && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>Retorno do QA</button>}
-                    {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>Discussões</button>}
-                    {card.spec && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>Gate</button>}
-                    <button type="button" className="btn" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>Aprofundar</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="row spread">
-            <p className="faint">
-              Cada agente é montado a cada cerimônia a partir do cartão do GitLab, do spec e do playbook. Nada fica guardado só na cabeça dele.
-            </p>
-            <span className="row" style={{ gap: 10 }}>
-              {c.statusAt && (
-                <span className="faint">Status conferido às {new Date(c.statusAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-              )}
-              <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.loadCards(true)}>
-                {c.loadingCards ? <span className="spinner" /> : null} Atualizar do GitLab
-              </button>
-            </span>
-          </div>
-        </section>
-
-        {(c.decisions.length > 0 || c.effects.length > 0) && (
-          <section className="panel" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '18px 20px' }}>
-            <div>
-              <div className="faint">Ata em andamento</div>
-              <div style={{ fontWeight: 600 }}>{c.decisions.length} decisões · {c.effects.length} efeitos aguardando “sim”</div>
-            </div>
-            <button type="button" className="btn" onClick={() => go({ name: 'ata' })}>Ver ata</button>
-          </section>
-        )}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { parseTarget, targetFromSearch, type PushTarget } from '../../shared/push';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
@@ -7,6 +7,7 @@ import { useCeremony } from './ceremony';
 import { Actions } from './screens/Actions';
 import { Ajuda, useHelpShortcut } from './screens/Ajuda';
 import { Glossario } from './screens/Glossario';
+import { NowPlaying } from './screens/NowPlaying';
 import { Ata } from './screens/Ata';
 import { Auditoria } from './screens/Auditoria';
 import { Call } from './screens/Call';
@@ -23,6 +24,7 @@ import { Radar } from './screens/Radar';
 import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
+import { BottomNav } from './screens/BottomNav';
 import { Today } from './screens/Today';
 import { JobsDock } from './JobsDock';
 import { targetToScreen } from './pushTarget';
@@ -51,16 +53,29 @@ export type Screen =
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
+function sameScreenKey(s: Screen): string {
+  const { name, ref, id } = s as { name: string; ref?: string; id?: string };
+  return `${name}|${ref ?? ''}|${id ?? ''}`;
+}
+
 export function App() {
   const ceremony = useCeremony();
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
   const [actions, setActions] = useState<ReleaseAction[]>([]);
 
-  const go = (next: Screen) => {
-    player.stop();
-    setScreen(next);
-  };
+  // Speech is not cut by navigation: it keeps playing and NowPlaying offers the way back to its screen.
+  const go = (next: Screen) => setScreen(next);
+  const [origin, setOrigin] = useState<Screen | null>(null);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  useEffect(() => {
+    setOrigin((o) => (player.speaking ? (o ?? screenRef.current) : null));
+  }, [player.speaking]);
+  const away = !!origin && sameScreenKey(origin) !== sameScreenKey(screen);
+  useEffect(() => {
+    document.documentElement.classList.toggle('has-now-playing', away);
+  }, [away]);
 
   useHelpShortcut(screen.name, go);
 
@@ -117,10 +132,9 @@ export function App() {
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
-  const view = (() => {
-  switch (screen.name) {
+  const view = ((): ReactElement => { switch (screen.name) {
     case 'today':
-      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} />;
+      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':
@@ -160,12 +174,13 @@ export function App() {
       return <Glossario go={go} />;
     case 'conflict':
       return <Conflict action={actions.find((a) => a.id === screen.id)} ceremony={ceremony} player={player} go={go} />;
-  }
-})();
+  } })();
 
   return (
     <>
+      {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
       {view}
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={!!ceremony.startedAt && !ceremony.callEnded} />
       <JobsDock screen={screen} go={go} />
     </>
   );
