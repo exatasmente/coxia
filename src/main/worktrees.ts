@@ -40,7 +40,7 @@ interface Worktree {
   prunable: boolean;
 }
 
-function parseWorktrees(porcelain: string): Worktree[] {
+export function parseWorktrees(porcelain: string): Worktree[] {
   return porcelain
     .split('\n\n')
     .map((block) => {

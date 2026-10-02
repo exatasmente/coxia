@@ -25,24 +25,27 @@ function allowedFor(role: ModelRole): string[] {
 }
 
 // The only shell commands a ceremony agent may run: GitLab reads, one command, no flags that write.
-const GLAB_READ = [
+export const GLAB_READ = [
   /^glab api "?projects\/[\w%.-]+\/(merge_requests|issues)\/\d+(\/(discussions|notes|approvals|changes|pipelines))?(\?[\w=&]+)?"?( --paginate)?$/,
   /^glab api "?projects\/[\w%.-]+\/pipelines(\/\d+(\/jobs)?)?(\?[\w=&%./-]+)?"?$/,
   /^glab (mr|issue) view \d+ -R [\w./-]+( --comments)?$/,
 ];
 
 // Conflict calls may also read the post-release-sync mirrors; plumbing reads only, no options that write.
-const GIT_MIRROR_READ = [
-  /^git -C \/home\/[\w.-]+\/\.cache\/post-release-sync\/[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( [\w./:^~-]+)+$/,
+export const GIT_MIRROR_READ = [
+  // Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
+  /^git -C \/home\/[\w-][\w.-]*\/\.cache\/post-release-sync\/(?!\S*\.\.)[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( (--|[\w./:^~][\w./:^~-]*))+$/,
 ];
 
-function shellAllowlist(patterns: RegExp[]): HookCallback {
+// Trailing stderr merge and a head limit only shorten the output, so they are accepted on any allowed command.
+export function stripOutputSuffix(command: string): string {
+  return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
+}
+
+export function shellAllowlist(patterns: RegExp[]): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
-    // Trailing stderr merge and a head limit only shorten the output, so they are accepted on any allowed command.
-    const command = String((input.tool_input as { command?: unknown }).command ?? '')
-      .trim()
-      .replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
+    const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
     if (patterns.some((re) => re.test(command))) return {};
     return {
       hookSpecificOutput: {
@@ -55,9 +58,9 @@ function shellAllowlist(patterns: RegExp[]): HookCallback {
 }
 
 // Agents run on a third-party model: secret files never enter the context.
-const SECRET_PATH = /(^|\/)\.env($|[./])|\.env$|secret|credential|token|(^|\/)key$|\.pem$|\/\.ssh\/|\/\.config\/|\/\.aws\/|\/\.docker\/|\/\.netrc$|\.mcp\.json$|\.claude\.json$/i;
+export const SECRET_PATH = /(^|\/)\.env($|[./*?])|\.env$|secret|credential|token|(^|[\/_.-])key$|\.pem$|(^|\/)\.(ssh|config|aws|docker)($|\/)|(^|\/)\.netrc$|\.mcp\.json$|\.claude\.json$/i;
 
-const noSecrets: HookCallback = async (input) => {
+export const noSecrets: HookCallback = async (input) => {
   if (input.hook_event_name !== 'PreToolUse') return {};
   const args = input.tool_input as { file_path?: unknown; path?: unknown; pattern?: unknown; glob?: unknown };
   const paths = [args.file_path, args.path, input.tool_name === 'Glob' ? args.pattern : null, args.glob].filter(
