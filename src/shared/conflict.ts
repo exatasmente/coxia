@@ -19,6 +19,8 @@ export interface ConflictHunk {
   explanation: string | null;
   confidence: Confidence | null;
   test: string | null;
+  // The proposal came from an agent that stopped before finishing its reading.
+  partial?: boolean;
   choice: HunkChoice | null;
   edited: string | null;
 }

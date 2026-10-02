@@ -148,6 +148,6 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );
   retro.sessionId = r.sessionId || retro.sessionId;
-  retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now() });
+  retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   return write(retro);
 }

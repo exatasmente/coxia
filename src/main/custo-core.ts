@@ -13,6 +13,7 @@ const FIRST_PROMPTS: [RegExp, CustoKind][] = [
   [/^Escreva o texto que o Luiz vai colar no Teams/, 'teams'],
   [/^A issue sz4#\d+ foi sincronizada com a main/, 'release'],
   [/^Call sobre um conflito de sincronização/, 'release'],
+  [/^Conflito de sincronização com a main depois de uma release/, 'release'],
 ];
 
 export function classify(firstPrompt: string): CustoKind | null {
