@@ -1,6 +1,7 @@
 import type { Talk, Voice } from '../../../shared/types';
 import type { usePlayer } from '../audio';
 import { RichText } from './Diagram';
+import { FixHeard } from './FixHeard';
 
 const SpeakerIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -46,6 +47,7 @@ export function Bubble({
           )}
         </div>
         <div style={{ lineHeight: 1.5 }}><RichText text={m.text} /></div>
+        {m.me && <FixHeard text={m.text} />}
       </div>
     </div>
   );

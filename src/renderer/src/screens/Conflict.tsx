@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
-import { type usePlayer, useRecorder } from '../audio';
+import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -62,7 +62,7 @@ export function Conflict({
     if (!audio) return;
     setBusy('Transcrevendo…');
     try {
-      const text = (await api.transcribe(audio)).trim();
+      const text = await transcribeAudio(audio);
       setBusy(null);
       if (text) await ask(text);
     } catch (e) {

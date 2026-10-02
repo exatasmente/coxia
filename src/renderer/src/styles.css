@@ -382,4 +382,10 @@ select.text-input { background: var(--surface); }
 .bubble-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .bubble-replay { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -4px -6px -4px 0; border-radius: 8px; border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; opacity: 0.7; }
 .bubble-replay:hover, .bubble-replay:focus-visible { opacity: 1; border-color: var(--line-3); }
+/* correction of a voice transcription: a text link under the message and its inline panel */
+.bubble-fix { display: block; margin-top: 6px; padding: 4px 0; border: 0; background: transparent; color: var(--blue-ink); font: inherit; font-size: 12px; font-weight: 600; text-decoration: underline; cursor: pointer; opacity: 0.85; }
+.bubble-fix:hover, .bubble-fix:focus-visible { opacity: 1; }
+.fix-panel { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; min-width: 0; }
+.fix-panel .text-input { min-width: 0; width: 100%; }
+.fix-offer { white-space: normal; text-align: left; height: auto; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; }
 .bubble-replay[aria-pressed="true"] { opacity: 1; color: var(--teal); border-color: var(--teal-line); }

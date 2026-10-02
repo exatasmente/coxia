@@ -190,6 +190,23 @@ export function usePlayer() {
   return { speaking, current: item, say, stop };
 }
 
+// What the recognizer returned in this session, so a chat message that came from the voice can offer to teach the glossary.
+const transcripts = new Set<string>();
+
+export async function transcribeAudio(audio: ArrayBuffer): Promise<string> {
+  const text = await transcribeAudio(audio);
+  if (text) {
+    transcripts.delete(text);
+    transcripts.add(text);
+    if (transcripts.size > 100) transcripts.delete(transcripts.values().next().value as string);
+  }
+  return text;
+}
+
+export function wasTranscribed(text: string): boolean {
+  return transcripts.has(text.trim());
+}
+
 const SAMPLE_MS = 50;
 
 // onSilence fires once per recording, when the speaker stopped talking (or hit the time limit); the screen then sends as if space was pressed.

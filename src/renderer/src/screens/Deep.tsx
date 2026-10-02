@@ -3,7 +3,7 @@ import { destination } from '../../../shared/destination';
 import type { Card, DeepState } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
-import { type usePlayer, useRecorder } from '../audio';
+import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -89,7 +89,7 @@ export function Deep({
     if (!audio) return;
     setBusy('Transcrevendo…');
     try {
-      const text = (await api.transcribe(audio)).trim();
+      const text = await transcribeAudio(audio);
       setBusy(null);
       if (text) await ask(text);
     } catch (e) {

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_GLOSSARY, type Term, sanitizeGlossary, spoken } from '../shared/glossary';
+import { learn } from '../shared/glossaryLearn';
 import { getSettings } from './config';
 import { ATAS } from './env';
 import type { Module } from './module';
@@ -42,5 +43,10 @@ export const register: Module = (ctx) => {
   ctx.handle('glossary:get', () => ({ terms: glossary(), defaults: DEFAULT_GLOSSARY }));
   ctx.handle('glossary:save', (terms: unknown) => save(terms));
   // Plays a draft: the terms come from the screen, not from the saved file.
+  // One click on a corrected transcription: adds the variant to its term (or creates the term).
+  ctx.handle('glossary:learn', (heard: unknown, term: unknown) => {
+    if (typeof heard !== 'string' || typeof term !== 'string' || !heard.trim() || !term.trim()) throw new Error('Correção inválida.');
+    return save(learn(glossary(), { heard, term }));
+  });
   ctx.handle('glossary:hear', (text: string, terms: unknown) => hear(text, terms));
 };
