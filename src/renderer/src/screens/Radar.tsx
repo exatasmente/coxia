@@ -157,7 +157,7 @@ export function Radar({ go }: { go: (s: Screen) => void }) {
           </div>
         </header>
         <p className="small muted">
-          Cruza os arquivos e os trechos das suas MRs abertas, de atividades diferentes, pelo critério da skill related-work-radar. Só lê: nada é comentado nem alterado no GitLab.
+          Cruza os arquivos e os trechos das suas MRs abertas, de atividades diferentes, pelo critério de proximidade de código. Só lê: nada é comentado nem alterado no GitLab.
         </p>
         {error && <div className="error">{error}</div>}
         {result?.failed.length ? <div className="error">Não consegui ler: {result.failed.join(' · ')}</div> : null}

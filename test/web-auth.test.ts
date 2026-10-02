@@ -143,9 +143,9 @@ describe('pairing and device upkeep', () => {
   it('renames a device with a cleaned name and keeps it across restarts', () => {
     const auth = createAuth(file, now);
     const { device } = auth.login(auth.newPairingCode().code, 'Chrome em Android', '1.1.1.1');
-    expect(auth.rename(device.id, '  Celular do Luiz\u0007 ')).toBe(true);
+    expect(auth.rename(device.id, '  Celular do Bruno\u0007 ')).toBe(true);
     expect(auth.rename('nope', 'x')).toBe(false);
-    expect(createAuth(file, now).list()[0].name).toBe('Celular do Luiz');
+    expect(createAuth(file, now).list()[0].name).toBe('Celular do Bruno');
   });
 });
 
@@ -174,6 +174,6 @@ describe('rate limit', () => {
       status(() => auth.login('AAAAAAAAAAAA', 'x', `10.0.${i}.1`));
     }
     const { code } = auth.newPairingCode();
-    expect(status(() => auth.login(code, 'x', '10.9.9.9'))).toBe(429);
+    expect(status(() => auth.login(code, 'x', '203.0.113.9'))).toBe(429);
   });
 });

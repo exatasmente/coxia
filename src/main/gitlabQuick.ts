@@ -15,7 +15,7 @@ import type { VcsCiJob, VcsWriteOp } from './vcs/types';
 // only a proposal: it waits in Ações for the user's "seguir" (proposeVcsAction), then runs through the audited executor.
 
 const JOB_EVERY_MIN = 30;
-// Build, release prep and deploy belong to the QA flow (qa-release-branch skill): the app never plays them.
+// Build, release prep and deploy belong to the QA flow (the team's release flow): the app never plays them.
 const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
 // The AI review job is left to the reviewers' flow: proposing it on every MR was noise.
 const SKIPPED_JOBS = /ai_code_review/i;

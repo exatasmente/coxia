@@ -6,7 +6,7 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` v2. O inventário do que foi desacoplado, e do que falta, está em [`decoupling-inventory.md`](decoupling-inventory.md). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` v2. Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
@@ -44,8 +44,8 @@ Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil
 
 ### Instalação nova × instalação existente
 
-- **Nova** (pasta de dados vazia): configuração neutra, `setupComplete: false`. Nenhum host, repositório, usuário de QA, ferramenta externa ou caminho `sz4`. O modelo padrão é a API da Anthropic (`haiku`/`sonnet`), com a chave referenciada por `llm.anthropic`. Sem projeto configurado, o agente trabalha na pasta do workspace, nunca na home.
-- **Existente**: a migração (`src/shared/config/migrations.ts`, `legacy.ts`) constrói o v2 a partir do `config.json` antigo e das constantes que o app tinha. Vale para **todos** os workspaces que existiam, mesmo sem `config.json`. O arquivo antigo fica em `config.v1.json`. O perfil antigo (OpenRouter, GitLab da empresa, `~/projects`, daily-report, SDD) mora em um único arquivo: `legacy.ts`. A fonte do segredo `llm.openrouter` passa a ser o comando `~/.local/bin/openrouter-key`, então a chave não é copiada. Workspaces criados depois da atualização são neutros.
+- **Nova** (pasta de dados vazia): configuração neutra, `setupComplete: false`. Nenhum host, repositório, usuário de QA, ferramenta externa ou caminho de projeto. O modelo padrão é a API da Anthropic (`haiku`/`sonnet`), com a chave referenciada por `llm.anthropic`. Sem projeto configurado, o agente trabalha na pasta do workspace, nunca na home.
+- **Existente** (uma instalação anterior à configuração, com `config.json` v1): a migração (`src/shared/config/migrations.ts`, `legacy.ts`) constrói o v2 a partir das configurações antigas (agenda, voz, ferramentas, notificações). Vale para **todos** os workspaces que existiam, mesmo sem `config.json`. O arquivo antigo fica em `config.v1.json`. O que o app antigo tinha fixo no código (host, repositórios, ferramentas, prompts) o app novo não conhece: quem quiser levar isso junto aponta a variável `COXIA_LEGACY_PROFILE` para um arquivo JSON **fora do repositório** (formato em [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` é um patch sobre os padrões neutros, `web` vai para o `web.json` se ele não existir, `secrets` registra fontes `command`, `migratedModels` diz a que provedor pertencem os modelos do arquivo v1). Sem esse arquivo a instalação migra para os padrões neutros com `setupComplete: false` e o assistente roda. Workspaces criados depois da atualização são neutros.
 - Um campo inválido num arquivo antigo é trocado pelo padrão (com nota no log), nunca trava o workspace. Um arquivo escrito por uma versão mais nova do app é recusado.
 
 Decisões do produto já refletidas:
@@ -61,7 +61,7 @@ Decisões do produto já refletidas:
 | Origem | Como funciona |
 |---|---|
 | `stored` | valor cifrado com o chaveiro do sistema (`safeStorage`). Sem chaveiro (no Linux, backend `basic_text` não conta), **recusa** gravar, a menos que o usuário aceite explicitamente o arquivo inseguro (`acceptInsecureStorage()`): então grava texto puro em `secrets.json` (0600) com aviso no próprio arquivo |
-| `command` | o valor é a saída de um executável (sem shell). É assim que quem já usava `openrouter-key` continua sem copiar a chave |
+| `command` | o valor é a saída de um executável (sem shell). É assim que quem já tem um script de chave continua sem copiar a chave |
 | `env` | o valor é uma variável de ambiente |
 
 Nada devolve valor exceto `resolve()`, e quem chama entrega direto a um processo filho ou a um cabeçalho HTTP. `list()` e `check()` nunca devolvem o valor. A exportação nunca inclui segredos.
@@ -115,7 +115,7 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` v2. The inventory of what was decoupled, and what remains, is in [`decoupling-inventory.md`](decoupling-inventory.md). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` v2. Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
@@ -153,8 +153,8 @@ Paths use `~/` when under the home folder, so a config is portable. Browser acce
 
 ### Fresh install vs existing install
 
-- **Fresh** (empty data folder): neutral config, `setupComplete: false`. No host, repository, QA user, external tool or `sz4` path. The default model is the Anthropic API (`haiku`/`sonnet`), with the key referenced as `llm.anthropic`. With no project configured the agent works in the workspace folder, never in the home folder.
-- **Existing**: the migration (`src/shared/config/migrations.ts`, `legacy.ts`) builds v2 from the old `config.json` and the constants the app used to hold. It covers **every** workspace that existed, even one with no `config.json`. The old file is kept as `config.v1.json`. The previous profile (OpenRouter, the company GitLab, `~/projects`, daily-report, SDD) lives in a single file: `legacy.ts`. The `llm.openrouter` secret's source becomes the command `~/.local/bin/openrouter-key`, so the key is never copied. Workspaces created after the update are neutral.
+- **Fresh** (empty data folder): neutral config, `setupComplete: false`. No host, repository, QA user, external tool or project path. The default model is the Anthropic API (`haiku`/`sonnet`), with the key referenced as `llm.anthropic`. With no project configured the agent works in the workspace folder, never in the home folder.
+- **Existing** (an install that predates the configuration, with a v1 `config.json`): the migration (`src/shared/config/migrations.ts`, `legacy.ts`) builds v2 from the old settings (schedule, voice, tools, notifications). It covers **every** workspace that existed, even one with no `config.json`. The old file is kept as `config.v1.json`. What the old app hardcoded (host, repositories, tools, prompts) the new app does not know: to carry it along, point the `COXIA_LEGACY_PROFILE` variable at a JSON file **outside the repository** (shape in [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` is a patch over the neutral defaults, `web` goes to `web.json` when that file does not exist, `secrets` registers `command` sources, `migratedModels` says which provider the models of the v1 file belong to). Without that file the install migrates to the neutral defaults with `setupComplete: false` and the setup assistant runs. Workspaces created after the update are neutral.
 - An invalid field in an old file is replaced by its default (with a note in the log) and never locks a workspace out. A file written by a newer app is refused.
 
 Product decisions reflected here:
@@ -170,7 +170,7 @@ Product decisions reflected here:
 | Source | How it works |
 |---|---|
 | `stored` | value encrypted with the OS keychain (`safeStorage`). Without a keychain (on Linux the `basic_text` backend does not count) it **refuses** to store, unless the user explicitly accepts the insecure file (`acceptInsecureStorage()`): it then writes plain text to `secrets.json` (0600), with a warning inside the file |
-| `command` | the value is an executable's output (no shell). This is how a user who already had `openrouter-key` keeps working without copying the key |
+| `command` | the value is an executable's output (no shell). This is how a user who already has a key script keeps working without copying the key |
 | `env` | the value is an environment variable |
 
 Nothing returns a value except `resolve()`, and its callers hand it straight to a child process or an HTTP header. `list()` and `check()` never return it. An export never includes secrets.

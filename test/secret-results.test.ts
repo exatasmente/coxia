@@ -3,17 +3,19 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  GIT_MIRROR_READ,
   SECRET_GLOBS,
   SECRET_PATH,
   SECRET_READ_DENY,
   agentHooks,
+  gitMirrorRead,
   noSecrets,
   redactSecretResults,
   secretPath,
   shellAllowlist,
   withoutSecretFiles,
 } from '../src/main/agents';
+
+const GIT_MIRROR_READ = gitMirrorRead('/home/ana/.cache/release-sync');
 
 type Hook = (input: unknown, id: undefined, opts: { signal: AbortController['signal'] }) => Promise<Record<string, unknown>>;
 
@@ -68,9 +70,9 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
   });
 
   const secret = [
-    'sz4/.env',
-    'sz4/.env.local',
-    'sz4/.envrc',
+    'web/.env',
+    'web/.env.local',
+    'web/.envrc',
     'app/prod.env',
     'config/credentials.json',
     'config/credentials.prod.json',
@@ -113,13 +115,13 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
   });
 
   it.each([
-    'sz4/app/Services/Agent/AgentService.php',
-    'sz4/README.md',
-    'sz4/config/database.php',
-    'sz4/.gitignore',
-    'sz-playbook/.claude/rules/session.md',
-    'sz4/app/Services/Auth/TokenService.php',
-    'sz4/app/Http/Controllers/SecretsController.php',
+    'web/app/Services/Agent/AgentService.php',
+    'web/README.md',
+    'web/config/database.php',
+    'web/.gitignore',
+    'playbook/.claude/rules/session.md',
+    'web/app/Services/Auth/TokenService.php',
+    'web/app/Http/Controllers/SecretsController.php',
     'front/src/auth/secret.service.ts',
     'front/src/auth/token.service.spec.ts',
     'front/src/components/TokenInput.tsx',
@@ -130,9 +132,9 @@ describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
     'lib/credentials_helper.dart',
     'lib/secret_box.rb',
     'src/Credentials.cs',
-    'sz4/app/Token/Handler.php',
-    'sz4/app/tokens/Handler.php',
-    'sz4/app/secrets/Vault.ts',
+    'web/app/Token/Handler.php',
+    'web/app/tokens/Handler.php',
+    'web/app/secrets/Vault.ts',
   ])(
     'leaves %s readable',
     (path) => {
@@ -161,7 +163,7 @@ describe('secretPath', () => {
     expect(secretPath('app/Services/TokenService.php', dir)).toBe(false);
     expect(secretPath('app/Token/TokenService.php', dir)).toBe(false);
     expect(secretPath('auth/secret.service.ts', dir)).toBe(false);
-    expect(secretPath('/home/luiz/projects/sz4/app/Services/Auth/TokenService.php')).toBe(false);
+    expect(secretPath('/home/ana/projects/web/app/Services/Auth/TokenService.php')).toBe(false);
   });
 
   it('holds back the config and data files with a secret word in the name', () => {
@@ -186,7 +188,7 @@ describe('secretPath', () => {
   it('expands ~', () => {
     expect(secretPath('~/.ssh/id_rsa')).toBe(true);
     expect(secretPath('~/.claude.json')).toBe(true);
-    expect(secretPath('~/projects/sz4/README.md')).toBe(false);
+    expect(secretPath('~/projects/web/README.md')).toBe(false);
   });
 
   it('covers the Claude Code state in the home but not the playbook .claude', () => {
@@ -195,12 +197,12 @@ describe('secretPath', () => {
     expect(secretPath(`${home}/.claude/settings.json`)).toBe(true);
     expect(secretPath(`${home}/.claude/projects/-home-x/abc.jsonl`)).toBe(true);
     expect(secretPath(`${home}/.claude/skills/x/SKILL.md`)).toBe(false);
-    expect(secretPath(`${home}/projects/sz-playbook/.claude/skills/x/SKILL.md`)).toBe(false);
+    expect(secretPath(`${home}/projects/playbook/.claude/skills/x/SKILL.md`)).toBe(false);
   });
 
   it('treats .envrc as a secret', () => {
-    expect(secretPath('/home/luiz/projects/sz4/.envrc')).toBe(true);
-    expect(secretPath('/home/luiz/projects/sz4/.environment.md')).toBe(false);
+    expect(secretPath('/home/ana/projects/web/.envrc')).toBe(true);
+    expect(secretPath('/home/ana/projects/web/.environment.md')).toBe(false);
   });
 });
 
@@ -268,7 +270,7 @@ describe('withoutSecretFiles', () => {
   });
 
   it('filters file name lists (files_with_matches, count, Glob) and fixes the count', () => {
-    const out = withoutSecretFiles({ mode: 'files_with_matches', numFiles: 3, filenames: ['src/a.php', 'sz4/.env', 'config/credentials.json'] }) as {
+    const out = withoutSecretFiles({ mode: 'files_with_matches', numFiles: 3, filenames: ['src/a.php', 'web/.env', 'config/credentials.json'] }) as {
       filenames: string[];
       numFiles: number;
     };
@@ -312,7 +314,7 @@ describe('redactSecretResults', () => {
 
 describe('shell allowlist with git and secret files', () => {
   const hook = shellAllowlist([...GIT_MIRROR_READ]);
-  const MIRROR = '/home/luiz/.cache/post-release-sync/sz4.git';
+  const MIRROR = '/home/ana/.cache/release-sync/web.git';
   const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
 
   it.each([
@@ -349,7 +351,7 @@ describe('agentHooks', () => {
   });
 
   it('adds the extra shell patterns to the Bash hook', async () => {
-    const MIRROR = '/home/luiz/.cache/post-release-sync/sz4.git';
+    const MIRROR = '/home/ana/.cache/release-sync/web.git';
     const command = `git -C ${MIRROR} merge-base a1b2c3d e4f5a6b`;
     const input = { tool_name: 'Bash', tool_input: { command } };
     expect(await decide(agentHooks().PreToolUse?.[0].hooks[0], input)).toBe('deny');

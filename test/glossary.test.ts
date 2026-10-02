@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_GLOSSARY, type Term, corrected, sanitizeGlossary, spoken, whisperHint } from '../src/shared/glossary';
 
 const terms: Term[] = [
-  { term: 'sz4', say: 'ésse zê quatro', heard: ['SZ 4'] },
+  { term: 'api', say: 'a pê i', heard: ['A P I'] },
   { term: 'QA', say: 'quiu ei', heard: ['Q&A', 'kiu ei'] },
   { term: 'pré-daily', say: 'pré deili', heard: ['pre daily'] },
   { term: 'daily', say: 'deili', heard: ['deile'] },
@@ -11,11 +11,11 @@ const terms: Term[] = [
 
 describe('spoken', () => {
   it('swaps whole terms for their pronunciation, ignoring case', () => {
-    expect(spoken('O qa do SZ4 passou.', terms, 'edge')).toBe('O quiu ei do ésse zê quatro passou.');
+    expect(spoken('O qa do API passou.', terms, 'edge')).toBe('O quiu ei do a pê i passou.');
   });
 
   it('does not touch a term inside another word', () => {
-    expect(spoken('sz4x e QAs e merge', terms, 'edge')).toBe('sz4x e QAs e merge');
+    expect(spoken('apix e QAs e merge', terms, 'edge')).toBe('apix e QAs e merge');
   });
 
   it('prefers the longer term and does not replace a replacement', () => {
@@ -23,7 +23,7 @@ describe('spoken', () => {
   });
 
   it('reads issue and MR references', () => {
-    expect(spoken('O sz4!9302 resolve a #15499 e o !797.', [], 'edge')).toBe('O sz4, MR 9302 resolve a 15499 e o MR 797.');
+    expect(spoken('O web!202 resolve a #101 e o !303.', [], 'edge')).toBe('O web, MR 202 resolve a 101 e o MR 303.');
   });
 });
 
@@ -55,13 +55,13 @@ describe('corrected', () => {
   });
 
   it('matches multiword variants and keeps the rest', () => {
-    expect(corrected('na pre daily do SZ 4', terms)).toBe('na pré-daily do sz4');
+    expect(corrected('na pre daily do A P I', terms)).toBe('na pré-daily do api');
   });
 });
 
 describe('whisperHint', () => {
   it('lists the terms and stays short', () => {
-    expect(whisperHint(terms)).toBe('Pré-daily. sz4, QA, pré-daily, daily, merge.');
+    expect(whisperHint(terms)).toBe('Pré-daily. api, QA, pré-daily, daily, merge.');
     const many = Array.from({ length: 200 }, (_, i) => ({ term: `termo${i}`, say: '', heard: [] }));
     expect(whisperHint(many).length).toBeLessThanOrEqual(600);
   });

@@ -8,8 +8,8 @@ let watchers: typeof import('../src/main/watchers');
 let cards: typeof import('../src/main/cards');
 let core: typeof import('../src/main/cycle-core');
 
-const card = (stage: string | null, over: Partial<Card> = {}): Card => ({ ref: 'sz4#1', iid: '1', title: 'T', stage, spec: null, mrs: [], mrPaths: [], blockers: [], pending: [], changes: [], note: null, url: '', ...over });
-const change = (at: string, to: string) => ({ at, ref: 'sz4#1', type: 'change', field: 'stage', from: null, to });
+const card = (stage: string | null, over: Partial<Card> = {}): Card => ({ ref: 'web#1', iid: '1', title: 'T', stage, spec: null, mrs: [], mrPaths: [], blockers: [], pending: [], changes: [], note: null, url: '', ...over });
+const change = (at: string, to: string) => ({ at, ref: 'web#1', type: 'change', field: 'stage', from: null, to });
 
 beforeAll(async () => {
   await installLegacyConfig();
@@ -40,7 +40,7 @@ describe('two rejections at the same point (the migrated profile)', () => {
 
   it('alerts again for a different card and a different count, with a stable id', () => {
     const history = [change('2026-09-01T10:00:00Z', 'Test Fail'), change('2026-09-02T10:00:00Z', 'Doing'), change('2026-09-03T10:00:00Z', 'Test Fail')];
-    expect(watchers.rejectionAlerts([card('Test Fail')], history)[0].id).toBe('rej:sz4#1:qa:2');
+    expect(watchers.rejectionAlerts([card('Test Fail')], history)[0].id).toBe('rej:web#1:qa:2');
   });
 });
 

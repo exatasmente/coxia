@@ -22,8 +22,8 @@ const { listAudit } = await import('../src/main/auditoria');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
-const gl = (over: Partial<VcsCommand> = {}): VcsCommand => ({ via: 'glab', method: 'POST', endpoint: 'projects/sz4%2Fsz4/issues/15499/notes', fields: { body: 'hello' }, ...over });
-const input = (command: VcsCommand, key = 'k1') => ({ key, issue: 15499, issueTitle: 'Issue', summary: 'Comment', command });
+const gl = (over: Partial<VcsCommand> = {}): VcsCommand => ({ via: 'glab', method: 'POST', endpoint: 'projects/acme%2Fweb/issues/101/notes', fields: { body: 'hello' }, ...over });
+const input = (command: VcsCommand, key = 'k1') => ({ key, issue: 101, issueTitle: 'Issue', summary: 'Comment', command });
 
 let ran: { command: VcsCommand }[];
 let failWith: Error | null;
@@ -51,9 +51,9 @@ afterAll(() => {
 describe('proposing', () => {
   it('stores a pending action and runs nothing', () => {
     const a = actions.proposeVcsAction(input(gl()));
-    expect(a).toMatchObject({ kind: 'gitlab', state: 'pending', issue: 15499, summary: 'Comment' });
+    expect(a).toMatchObject({ kind: 'gitlab', state: 'pending', issue: 101, summary: 'Comment' });
     expect(a?.command).toEqual(gl());
-    expect(a?.output).toContain('POST projects/sz4%2Fsz4/issues/15499/notes  (via glab)');
+    expect(a?.output).toContain('POST projects/acme%2Fweb/issues/101/notes  (via glab)');
     expect(ran).toHaveLength(0);
     expect(actions.listActions()).toHaveLength(1);
   });
@@ -98,7 +98,7 @@ describe('confirming', () => {
     expect(done.state).toBe('done');
     expect(ran).toEqual([{ command: gl() }]);
     const [line] = listAudit();
-    expect(line).toMatchObject({ kind: 'gitlab', target: 'POST projects/sz4%2Fsz4/issues/15499/notes', via: 'glab', fields: { body: 'hello' }, ok: true, code: 201, issue: 15499 });
+    expect(line).toMatchObject({ kind: 'gitlab', target: 'POST projects/acme%2Fweb/issues/101/notes', via: 'glab', fields: { body: 'hello' }, ok: true, code: 201, issue: 101 });
     expect(line.origin).toMatchObject({ actionId: a.id, key: 'k1' });
     await expect(actions.approveAction(a.id)).rejects.toThrow(/já foi tratada/);
     expect(ran).toHaveLength(1);
@@ -147,7 +147,7 @@ describe('confirming', () => {
     const a = actions.proposeVcsAction(input(gl())) as { id: string };
     const file = join(ATAS, 'acoes.json');
     const store = JSON.parse(readFileSync(file, 'utf8'));
-    store.actions[0].command.endpoint = 'projects/sz4%2Fsz4/repository/files/x/../../../../../../user';
+    store.actions[0].command.endpoint = 'projects/acme%2Fweb/repository/files/x/../../../../../../user';
     writeFileSync(file, JSON.stringify(store));
     const done = await actions.approveAction(a.id);
     expect(done.state).toBe('failed');
@@ -172,8 +172,8 @@ describe('confirming', () => {
     expect(base.id).not.toBe('qa1');
     const done = await actions.approveAction('qa1');
     expect(done.state).toBe('done');
-    expect(ran[0].command).toMatchObject({ vcs: 'gitlab', via: 'glab', method: 'PUT', endpoint: 'projects/1/issues/15499/notes/903', fields: { body: 'New body\nsecond line' } });
-    expect(listAudit()[0]).toMatchObject({ kind: 'note-edit', target: 'PUT projects/1/issues/15499/notes/903', via: 'glab' });
+    expect(ran[0].command).toMatchObject({ vcs: 'gitlab', via: 'glab', method: 'PUT', endpoint: 'projects/1/issues/101/notes/903', fields: { body: 'New body\nsecond line' } });
+    expect(listAudit()[0]).toMatchObject({ kind: 'note-edit', target: 'PUT projects/1/issues/101/notes/903', via: 'glab' });
   });
 });
 

@@ -2,13 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LEGACY_WEB_SETTINGS } from '../src/shared/config/legacy';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { neutralConfig } from '../src/shared/config/defaults';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
-import { V1_SETTINGS } from './helpers/config';
+import { V1_SETTINGS, exampleProfile } from './helpers/config';
 
 const quiet = { log: () => undefined, now: () => new Date('2026-10-02T12:00:00Z') };
 let root: string;
@@ -21,7 +20,7 @@ function put(rel: string, content: string): void {
 
 // The flat layout of the app before workspaces, with the real file names and the real settings shape.
 function flatLayout(): void {
-  put('config.json', JSON.stringify({ ...V1_SETTINGS, web: { enabled: true, host: '172.18.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'https://koala.fortics.dev/cerimonias/', trustedProxy: '172.18.0.0/16', allowExternalEffects: false } }));
+  put('config.json', JSON.stringify({ ...V1_SETTINGS, web: { enabled: true, host: '198.51.100.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'https://coxia.acme.test/cerimonias/', trustedProxy: '198.51.100.0/24', allowExternalEffects: false } }));
   put('acoes.json', '{"releaseSeen":null,"actions":[]}');
   put('custo.json', '{"version":1}');
   put('falas.json', '{"version":1,"turns":{},"reuses":[]}');
@@ -33,10 +32,10 @@ function flatLayout(): void {
 }
 
 // What the app does at startup, in the same order as env.ts + workspaceConfig.ts.
-function startUp() {
+function startUp(profile: ReturnType<typeof exampleProfile> | null = exampleProfile()) {
   const existing = detectExistingInstall(root);
   const resolved = ensureWorkspaces(root, quiet);
-  const boot = bootstrapConfigs({ root, existingInstall: existing, ...quiet });
+  const boot = bootstrapConfigs({ root, existingInstall: existing, profile, ...quiet });
   return { resolved, boot, existing };
 }
 
@@ -45,8 +44,8 @@ beforeEach(() => {
 });
 
 describe('migrateConfig', () => {
-  it('turns a v1 settings file into a v2 config with the previous app profile, keeping every value the user had', () => {
-    const r = migrateConfig({ ...V1_SETTINGS, models: { turn: 'a/b', reply: 'c/d', deep: 'e/f', teams: 'g/h' }, schedule: { ...V1_SETTINGS.schedule, preDaily: '10:15' }, notifications: false }, { legacyInstall: false });
+  it('turns a v1 settings file into a v2 config with the legacy profile, keeping every value the user had', () => {
+    const r = migrateConfig({ ...V1_SETTINGS, models: { turn: 'a/b', reply: 'c/d', deep: 'e/f', teams: 'g/h' }, schedule: { ...V1_SETTINGS.schedule, preDaily: '10:15' }, notifications: false }, { legacyInstall: false, profile: exampleProfile() });
     expect(r.fromVersion).toBe(1);
     expect(r.changed).toBe(true);
     const c = r.config;
@@ -55,19 +54,38 @@ describe('migrateConfig', () => {
     expect(c.llm.roles).toEqual({ turn: { provider: 'openrouter', model: 'a/b' }, reply: { provider: 'openrouter', model: 'c/d' }, deep: { provider: 'openrouter', model: 'e/f' }, teams: { provider: 'openrouter', model: 'g/h' }, fix: { provider: 'openrouter', model: 'c/d' } });
     expect(c.schedule.preDaily).toBe('10:15');
     expect(c.notifications).toBe(false);
-    expect(c.agents.tools).toMatchObject({ files: true, trackerMcp: true, vcsCli: true, trackerMcpServer: 'gitlab-issue-analysis' });
+    expect(c.agents.tools).toMatchObject({ files: true, trackerMcp: true, vcsCli: true, trackerMcpServer: 'tracker-issues' });
     expect(validateConfig(c).ok).toBe(true);
   });
 
+  it('without a legacy profile a v1 file keeps its settings over the neutral defaults and the setup assistant runs', () => {
+    const r = migrateConfig({ ...V1_SETTINGS, schedule: { ...V1_SETTINGS.schedule, preDaily: '10:15' }, notifications: false }, { legacyInstall: true });
+    const c = r.config;
+    expect(c.setupComplete).toBe(false);
+    expect(c.schedule.preDaily).toBe('10:15');
+    expect(c.notifications).toBe(false);
+    expect(c.vcs).toEqual([]);
+    expect(c.llm.providers.map((p) => p.id)).toEqual(neutralConfig().llm.providers.map((p) => p.id));
+    expect(c.llm.roles).toEqual(neutralConfig().llm.roles);
+    expect(c.externalTools).toEqual(neutralConfig().externalTools);
+    expect(validateConfig(c).ok).toBe(true);
+  });
+
+  it('a workspace with no config file on an existing install is neutral without a profile', () => {
+    const r = migrateConfig(undefined, { legacyInstall: true });
+    expect(r.config).toEqual(neutralConfig());
+    expect(r.config.setupComplete).toBe(false);
+  });
+
   it('marks the previous OpenRouter route as the legacy custom endpoint of the Claude SDK engine', () => {
-    const [p] = migrateConfig(V1_SETTINGS, { legacyInstall: true }).config.llm.providers;
+    const [p] = migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() }).config.llm.providers;
     expect(p).toMatchObject({ id: 'openrouter', kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://openrouter.ai/api', secretRef: 'llm.openrouter', legacyCustomEndpoint: true });
-    expect(migrateConfig(V1_SETTINGS, { legacyInstall: true }).config.claudeSdk).toEqual({ installed: true, version: null, path: null });
+    expect(migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() }).config.claudeSdk).toEqual({ installed: true, version: null, path: null });
   });
 
   it('rebuilds a missing file on an existing install from the profile, and from the neutral defaults on a fresh one', () => {
-    const legacy = migrateConfig(undefined, { legacyInstall: true });
-    expect(legacy.config.vcs[0].host).toBe('dark.smartzap.com.br');
+    const legacy = migrateConfig(undefined, { legacyInstall: true, profile: exampleProfile() });
+    expect(legacy.config.vcs[0].host).toBe('git.acme.test');
     expect(legacy.config.setupComplete).toBe(true);
     const fresh = migrateConfig(undefined, { legacyInstall: false });
     expect(fresh.config).toEqual(neutralConfig());
@@ -76,7 +94,7 @@ describe('migrateConfig', () => {
   });
 
   it('resets a field that fails validation instead of locking the workspace out', () => {
-    const r = migrateConfig({ ...V1_SETTINGS, schedule: { ...V1_SETTINGS.schedule, preDaily: '99:99' }, notifications: 'sim' }, { legacyInstall: true });
+    const r = migrateConfig({ ...V1_SETTINGS, schedule: { ...V1_SETTINGS.schedule, preDaily: '99:99' }, notifications: 'sim' }, { legacyInstall: true, profile: exampleProfile() });
     expect(r.config.schedule.preDaily).toBe('09:40');
     expect(r.config.notifications).toBe(true);
     expect(r.notes.some((n) => n.startsWith('reset schedule.preDaily'))).toBe(true);
@@ -105,12 +123,12 @@ describe('startup on the real current layout', () => {
     expect(config.schemaVersion).toBe(2);
     expect(validateConfig(config).ok).toBe(true);
     const v = validateConfig(config).config;
-    expect(v?.vcs[0].host).toBe('dark.smartzap.com.br');
-    expect(v?.projects.issues).toMatchObject({ project: 'sz4/sz4', projectId: 1, refPrefix: 'sz4#' });
-    expect(v?.devCycle.qa.user).toBe('qa.interno');
+    expect(v?.vcs[0].host).toBe('git.acme.test');
+    expect(v?.projects.issues).toMatchObject({ project: 'acme/web', projectId: 1, refPrefix: 'web#' });
+    expect(v?.devCycle.qa.user).toBe('qa.acme');
     expect(v?.llm.roles.deep.model).toBe('deepseek/deepseek-v4-pro-0813');
     expect(JSON.parse(readFileSync(join(dir, V1_BACKUP_FILE), 'utf8')).models.turn).toBe('deepseek/deepseek-v4.1-flash');
-    expect(JSON.parse(readFileSync(join(root, 'web.json'), 'utf8')).publicUrl).toBe(LEGACY_WEB_SETTINGS.publicUrl);
+    expect(JSON.parse(readFileSync(join(root, 'web.json'), 'utf8')).publicUrl).toBe(exampleProfile().web?.publicUrl);
     expect(existsSync(join(root, MARKER_FILE))).toBe(true);
   });
 
@@ -125,24 +143,24 @@ describe('startup on the real current layout', () => {
     expect(readFileSync(file, 'utf8')).toBe(before);
   });
 
-  it('every workspace of an existing install is migrated, including one that never had a config file ("Fortics - Sustentação" created without copying settings)', () => {
+  it('every workspace of an existing install is migrated, including one that never had a config file ("Acme - Sustentação" created without copying settings)', () => {
     flatLayout();
     // The registry the previous version would have left: two workspaces, the second one with data but no config.json.
-    mkdirSync(join(root, 'workspaces/fortics-sustentacao/historico'), { recursive: true });
-    writeFileSync(join(root, 'workspaces/fortics-sustentacao/historico/2026-10-01T090000.json'), '{"version":1}');
+    mkdirSync(join(root, 'workspaces/acme-support/historico'), { recursive: true });
+    writeFileSync(join(root, 'workspaces/acme-support/historico/2026-10-01T090000.json'), '{"version":1}');
     ensureWorkspaces(root, quiet);
     // Simulate the previous app: the registry exists, the second workspace is listed, and no config marker yet.
     const reg = JSON.parse(readFileSync(join(root, 'workspaces.json'), 'utf8'));
-    reg.list.push({ id: 'fortics-sustentacao', name: 'Fortics - Sustentação', createdAt: '2026-09-20T00:00:00Z', test: false });
+    reg.list.push({ id: 'acme-support', name: 'Acme - Sustentação', createdAt: '2026-09-20T00:00:00Z', test: false });
     writeFileSync(join(root, 'workspaces.json'), JSON.stringify(reg));
     const existing = detectExistingInstall(root);
     expect(existing).toBe(true);
-    const boot = bootstrapConfigs({ root, existingInstall: existing, ...quiet });
-    expect(boot.migrated.sort()).toEqual(['fortics-sustentacao', 'testes']);
-    const second = validateConfig(readConfigFile(workspaceDir(root, 'fortics-sustentacao'))).config;
-    expect(second?.vcs[0].host).toBe('dark.smartzap.com.br');
+    const boot = bootstrapConfigs({ root, existingInstall: existing, profile: exampleProfile(), ...quiet });
+    expect(boot.migrated.sort()).toEqual(['acme-support', 'testes']);
+    const second = validateConfig(readConfigFile(workspaceDir(root, 'acme-support'))).config;
+    expect(second?.vcs[0].host).toBe('git.acme.test');
     expect(second?.setupComplete).toBe(true);
-    expect(existsSync(join(workspaceDir(root, 'fortics-sustentacao'), V1_BACKUP_FILE))).toBe(false);
+    expect(existsSync(join(workspaceDir(root, 'acme-support'), V1_BACKUP_FILE))).toBe(false);
   });
 
   it('a workspace created after the update gets the neutral defaults and setupComplete false', () => {
@@ -161,7 +179,7 @@ describe('startup on the real current layout', () => {
     startUp();
     createWorkspace(root, { name: 'Copia', copySettings: true }, quiet);
     const copied = validateConfig(readConfigFile(workspaceDir(root, 'copia'))).config;
-    expect(copied?.vcs[0].host).toBe('dark.smartzap.com.br');
+    expect(copied?.vcs[0].host).toBe('git.acme.test');
   });
 
   it('empty data dir: a fresh install, neutral config, setupComplete false, no company values anywhere', () => {
@@ -173,7 +191,7 @@ describe('startup on the real current layout', () => {
     expect(c).toEqual(neutralConfig());
     expect(c?.setupComplete).toBe(false);
     expect(existsSync(join(root, 'web.json'))).toBe(false);
-    expect(JSON.stringify(c)).not.toMatch(/fortics|smartzap|sz4|sz-playbook|qa\.interno|openrouter|daily-report|claude-or|gnome-terminal|\/\.local\/bin/);
+    expect(JSON.stringify(c)).not.toMatch(/acme|playbook|qa\.acme|openrouter|cardtool|claude-alt|gnome-terminal|\/\.local\/bin/);
   });
 
   it('keeps the test flag the old registry had', () => {

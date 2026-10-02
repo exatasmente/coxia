@@ -47,13 +47,13 @@ describe('push guard', () => {
 
 describe('remote matching and clone discovery', () => {
   it('matches https, ssh and scp-like URLs of the project, and rejects other hosts and projects', () => {
-    const host = 'dark.smartzap.com.br';
-    expect(remoteMatches('https://dark.smartzap.com.br/broker-whatsapp/hub-whatsapp.git', 'broker-whatsapp/hub-whatsapp', host)).toBe(true);
-    expect(remoteMatches('git@dark.smartzap.com.br:broker-whatsapp/hub-whatsapp.git', 'broker-whatsapp/hub-whatsapp', host)).toBe(true);
-    expect(remoteMatches('ssh://git@dark.smartzap.com.br/sz4/sz4', 'sz4/sz4', host)).toBe(true);
-    expect(remoteMatches('https://github.com/broker-whatsapp/hub-whatsapp.git', 'broker-whatsapp/hub-whatsapp', host)).toBe(false);
-    expect(remoteMatches('https://dark.smartzap.com.br/sz4/sz4-frontend.git', 'sz4/sz4', host)).toBe(false);
-    expect(remoteMatches('https://dark.smartzap.com.br/other/sz4/sz4.git', 'sz4/sz4', host)).toBe(false);
+    const host = 'git.acme.test';
+    expect(remoteMatches('https://git.acme.test/acme/gateway.git', 'acme/gateway', host)).toBe(true);
+    expect(remoteMatches('git@git.acme.test:acme/gateway.git', 'acme/gateway', host)).toBe(true);
+    expect(remoteMatches('ssh://git@git.acme.test/acme/web', 'acme/web', host)).toBe(true);
+    expect(remoteMatches('https://github.com/acme/gateway.git', 'acme/gateway', host)).toBe(false);
+    expect(remoteMatches('https://git.acme.test/acme/web-frontend.git', 'acme/web', host)).toBe(false);
+    expect(remoteMatches('https://git.acme.test/other/acme/web.git', 'acme/web', host)).toBe(false);
     expect(remoteMatches('/tmp/x/grp/proj.git', 'grp/proj', host)).toBe(true);
   });
 
@@ -64,23 +64,23 @@ describe('remote matching and clone discovery', () => {
     Object.assign(process.env, IDENTITY);
     const f = makeFixture();
     made.push(f.root);
-    expect(await findClone(f.project, f.cloneRoots, 'dark.smartzap.com.br')).toBe(f.clone);
-    expect(await findClone('grp/other', f.cloneRoots, 'dark.smartzap.com.br')).toBeNull();
+    expect(await findClone(f.project, f.cloneRoots, 'git.acme.test')).toBe(f.clone);
+    expect(await findClone('grp/other', f.cloneRoots, 'git.acme.test')).toBeNull();
     const empty = join(f.root, 'none');
     mkdirSync(empty);
-    expect(await findClone(f.project, [empty, join(f.root, 'missing')], 'dark.smartzap.com.br')).toBeNull();
+    expect(await findClone(f.project, [empty, join(f.root, 'missing')], 'git.acme.test')).toBeNull();
   });
 });
 
 describe('verification settings', () => {
   it('accepts group/project keys, trims commands and drops empty ones', () => {
-    expect(validateVerify({ 'broker-whatsapp/hub-whatsapp': '  npx jest  ', 'sz4/sz4': '   ' })).toEqual({ 'broker-whatsapp/hub-whatsapp': 'npx jest' });
+    expect(validateVerify({ 'acme/gateway': '  npx jest  ', 'acme/web': '   ' })).toEqual({ 'acme/gateway': 'npx jest' });
   });
 
   it('rejects odd project names and oversized commands', () => {
     expect(() => validateVerify({ '../x': 'true' })).toThrow();
-    expect(() => validateVerify({ sz4: 'true' })).toThrow();
-    expect(() => validateVerify({ 'sz4/sz4': 'x'.repeat(2001) })).toThrow();
-    expect(() => validateVerify({ 'sz4/sz4': 'a\0b' })).toThrow();
+    expect(() => validateVerify({ web: 'true' })).toThrow();
+    expect(() => validateVerify({ 'acme/web': 'x'.repeat(2001) })).toThrow();
+    expect(() => validateVerify({ 'acme/web': 'a\0b' })).toThrow();
   });
 });

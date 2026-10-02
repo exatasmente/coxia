@@ -130,7 +130,7 @@ describe('the feed', () => {
 
   it('refuses plain HTTP, except to this machine (the local end-to-end test)', () => {
     expect(feedProblem({ provider: 'generic', url: 'http://updates.example.org/coxia/' })).toBe('insecure');
-    expect(feedProblem({ provider: 'generic', url: 'http://192.168.0.5:8080/' })).toBe('insecure');
+    expect(feedProblem({ provider: 'generic', url: 'http://203.0.113.5:8080/' })).toBe('insecure');
     expect(feedProblem({ provider: 'generic', url: 'http://127.0.0.1:9325/' })).toBeNull();
     expect(feedProblem({ provider: 'generic', url: 'http://localhost:9325/' })).toBeNull();
     expect(feedProblem({ ...github, protocol: 'http' })).toBe('insecure');

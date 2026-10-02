@@ -11,8 +11,8 @@ describe('speakable', () => {
   });
 
   it('drops markdown marks, links and urls', () => {
-    expect(speakable('## Status\n**Aprovado** no [MR 9302](https://x/y) e `main`, veja https://gitlab/z')).toBe(
-      'Status\nAprovado no MR 9302 e main, veja o link na tela',
+    expect(speakable('## Status\n**Aprovado** no [MR 202](https://x/y) e `main`, veja https://gitlab/z')).toBe(
+      'Status\nAprovado no MR 202 e main, veja o link na tela',
     );
   });
 });
@@ -33,7 +33,7 @@ describe('sentences', () => {
 
 describe('prosodyPlan', () => {
   it('gives each sentence its tone and pause', () => {
-    const plan = prosodyPlan('O 9302 está aprovado. O bloqueio é o conflito no 797. Posso seguir com o merge?');
+    const plan = prosodyPlan('O 202 está aprovado. O bloqueio é o conflito no 303. Posso seguir com o merge?');
     expect(plan.map((s) => s.tone)).toEqual(['positive', 'alert', 'question']);
     expect(plan[1].rate).toBeLessThan(0);
     expect(plan[2].pitch).toBeGreaterThan(0);

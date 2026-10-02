@@ -58,9 +58,9 @@ beforeEach(() => {
   f = makeFixture();
   conflictHooks.cloneRoots = f.cloneRoots;
   reads = [];
-  me = 'luiz.neto';
+  me = 'bruno';
   defaultBranch = 'main';
-  mr = { state: 'opened', has_conflicts: true, source_branch: f.branch, target_branch: 'main', web_url: 'https://example.test/grp/proj/-/merge_requests/1234', sha: originSha(f, f.branch), author: { username: 'luiz.neto' } };
+  mr = { state: 'opened', has_conflicts: true, source_branch: f.branch, target_branch: 'main', web_url: 'https://example.test/grp/proj/-/merge_requests/1234', sha: originSha(f, f.branch), author: { username: 'bruno' } };
   stubGitlab();
 });
 
@@ -74,26 +74,26 @@ afterAll(() => {
 
 describe('MR reference parsing', () => {
   it('reads the full path and the short form', () => {
-    expect(parseMrRef('broker-whatsapp/hub-whatsapp!797')).toEqual({ project: 'broker-whatsapp/hub-whatsapp', full: true, iid: 797 });
-    expect(parseMrRef(' sz4/sub/proj!5 ')).toEqual({ project: 'sz4/sub/proj', full: true, iid: 5 });
-    expect(parseMrRef('hub-whatsapp!797')).toEqual({ project: 'hub-whatsapp', full: false, iid: 797 });
+    expect(parseMrRef('acme/gateway!303')).toEqual({ project: 'acme/gateway', full: true, iid: 303 });
+    expect(parseMrRef(' acme/sub/proj!5 ')).toEqual({ project: 'acme/sub/proj', full: true, iid: 5 });
+    expect(parseMrRef('gateway!303')).toEqual({ project: 'gateway', full: false, iid: 303 });
   });
 
   it('refuses malformed refs', () => {
-    for (const bad of ['', '!797', 'hub-whatsapp', 'hub-whatsapp!0', 'a b!1', 'x/../y!1', 'x!1;rm', 'x!99999999999999999999']) {
+    for (const bad of ['', '!303', 'gateway', 'gateway!0', 'a b!1', 'x/../y!1', 'x!1;rm', 'x!99999999999999999999']) {
       expect(() => parseMrRef(bad), bad).toThrow(/inválid/);
     }
   });
 
   it('resolves the short form only through the MRs of the card', () => {
     const known = [
-      { ref: 'sz4!9302', project: 'sz4/sz4', iid: 9302 },
-      { ref: 'hub-whatsapp!797', project: 'broker-whatsapp/hub-whatsapp', iid: 797 },
+      { ref: 'web!202', project: 'acme/web', iid: 202 },
+      { ref: 'gateway!303', project: 'acme/gateway', iid: 303 },
     ];
-    expect(resolveMr('hub-whatsapp!797', known)).toEqual({ project: 'broker-whatsapp/hub-whatsapp', iid: 797 });
+    expect(resolveMr('gateway!303', known)).toEqual({ project: 'acme/gateway', iid: 303 });
     expect(resolveMr('other/proj!3', known)).toEqual({ project: 'other/proj', iid: 3 });
-    expect(() => resolveMr('hub-whatsapp!798', known)).toThrow(/não é um MR desta atividade/);
-    expect(() => resolveMr('nope!797', known)).toThrow(/não é um MR desta atividade/);
+    expect(() => resolveMr('gateway!798', known)).toThrow(/não é um MR desta atividade/);
+    expect(() => resolveMr('nope!303', known)).toThrow(/não é um MR desta atividade/);
   });
 });
 

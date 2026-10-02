@@ -12,7 +12,7 @@ import type { Module, ModuleContext } from './module';
 import { fetchRepos, worktreeHealth } from './worktrees';
 
 const FILE = join(ATAS, 'radar.json');
-// related-work-radar collide uses 40 lines (about one method) as "same place".
+// The collision check treats 40 lines (about one method) as "same place".
 const WINDOW = 40;
 
 interface MrChanges {

@@ -14,7 +14,7 @@ const cycleOf = (over: Partial<ReturnType<typeof neutralConfig>['devCycle']> = {
 
 describe('how a prompt addresses the person', () => {
   it('uses the article of the name in Portuguese, with the contractions it needs', () => {
-    expect(userTerms('pt-BR', { userName: 'Luiz', userArticle: 'o' })).toMatchObject({ theUser: 'o Luiz', TheUser: 'O Luiz', ofUser: 'do Luiz', toUser: 'ao Luiz', he: 'ele', his: 'dele', userName: 'Luiz' });
+    expect(userTerms('pt-BR', { userName: 'Bruno', userArticle: 'o' })).toMatchObject({ theUser: 'o Bruno', TheUser: 'O Bruno', ofUser: 'do Bruno', toUser: 'ao Bruno', he: 'ele', his: 'dele', userName: 'Bruno' });
     expect(userTerms('pt-BR', { userName: 'Ana', userArticle: 'a' })).toMatchObject({ theUser: 'a Ana', ofUser: 'da Ana', toUser: 'à Ana', he: 'ela', his: 'dela' });
   });
 
@@ -141,7 +141,7 @@ describe('the prompt catalogs', () => {
 
 describe('recognising a prompt by how it begins', () => {
   it('matches the openings of the prompts, in both languages and every family, whoever the user is', () => {
-    expect(openersOf('turn.main').some((re) => re.test('Você é o agente da atividade sz4#1 na pré-daily por voz.'))).toBe(true);
+    expect(openersOf('turn.main').some((re) => re.test('Você é o agente da atividade web#1 na pré-daily por voz.'))).toBe(true);
     expect(openersOf('turn.main').some((re) => re.test('You are the agent of activity api#7 in the voice daily scrum.'))).toBe(true);
     expect(openersOf('retro.main').some((re) => re.test('Retro semanal da Ana, por voz, de 01/10/2026 a 08/10/2026. Você conduz.'))).toBe(true);
     expect(openersOf('retro.main').some((re) => re.test("Sprint retrospective of Ana, by voice"))).toBe(false);
@@ -157,10 +157,10 @@ describe('recognising a prompt by how it begins', () => {
 
   it('captures the ref of the card from the first line', () => {
     const find = (id: string, text: string) => refOpenersOf(id).map((re) => re.exec(text)?.[1]).find(Boolean);
-    expect(find('turn.main', 'Você é o agente da atividade sz4#15499 na pré-daily por voz.')).toBe('sz4#15499');
+    expect(find('turn.main', 'Você é o agente da atividade web#101 na pré-daily por voz.')).toBe('web#101');
     expect(find('deep.intro', 'Unblock of activity 42, by voice. Investigate by reading spec')).toBe('42');
-    expect(find('gate.start', 'Gate 2 da issue sz4#1 (Título), por voz.')).toBe('sz4#1');
-    expect(find('retro.main', 'Retro semanal do Luiz, por voz')).toBeUndefined();
+    expect(find('gate.start', 'Gate 2 da issue web#1 (Título), por voz.')).toBe('web#1');
+    expect(find('retro.main', 'Retro semanal do Bruno, por voz')).toBeUndefined();
   });
 });
 
@@ -203,7 +203,7 @@ describe('English, a person named Ana, the generic SDD template', () => {
       if (p.role === 'store') continue;
       expect(p.prompt, name).not.toMatch(LEFTOVER);
       expect(p.system, name).not.toMatch(LEFTOVER);
-      expect(p.prompt, name).not.toMatch(/Luiz|Português|\bvocê\b|playbook|agent-pipeline|qa\.interno|hub-whatsapp|post-release-sync|daily-report \w+ \w+/i);
+      expect(p.prompt, name).not.toMatch(/Bruno|Português|\bvocê\b|playbook|agent-pipeline|qa\.interno|gateway|release-sync|cardtool \w+ \w+/i);
     }
     const text = all(scenario).map((p) => p.prompt).join('\n');
     expect(text).toContain('Ana');
@@ -213,7 +213,7 @@ describe('English, a person named Ana, the generic SDD template', () => {
   it('introduces the agent in English, with the name', () => {
     expect(scenario.prompts.turn.system).toContain("voice ceremony of Ana's");
     expect(scenario.prompts.turn.system).toContain('for Ana to run later');
-    expect(scenario.prompts.turn.prompt).toMatch(/^You are the agent of activity sz4#15499 in the pre-daily, by voice\./);
+    expect(scenario.prompts.turn.prompt).toMatch(/^You are the agent of activity web#101 in the pre-daily, by voice\./);
     expect(scenario.prompts.reply.prompt).toContain('Ana answered by voice (the transcript may have errors)');
     expect(scenario.prompts.deep.prompt).toContain("Ana's question (voice transcript)");
   });
@@ -262,7 +262,7 @@ describe('Portuguese, a person named Ana (feminine), the generic SDD template', 
     expect(scenario.prompts['gate-explain'].prompt).toContain('respondendo o que ela perguntar');
     expect(scenario.prompts.reentry.prompt).toContain('Você explica à Ana');
     expect(scenario.prompts.discussion.prompt).toContain('rascunho da resposta dela');
-    expect(all(scenario).map((p) => p.prompt).join('\n')).not.toMatch(/Luiz/);
+    expect(all(scenario).map((p) => p.prompt).join('\n')).not.toMatch(/Bruno/);
   });
 
   it('has no placeholder left, and writes into the section the template names', () => {
@@ -293,7 +293,7 @@ describe('the Scrum template', () => {
   it('does not offer the plan as a place for decisions or a card note it does not have', () => {
     expect(basics.reply.prompt).toContain('"alvo" (target): "ata" (minutes) for everything else.');
     expect(basics.reply.prompt).not.toContain('"spec" if');
-    expect(basics.reply.prompt).not.toContain('"daily-report" if');
+    expect(basics.reply.prompt).not.toContain('"cardtool" if');
     expect(basics['deep-options'].prompt).toContain('a ready sentence for the minutes');
   });
 

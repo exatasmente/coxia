@@ -248,7 +248,7 @@ export interface CeremonyParams {
     speechWords: number;
     /** Reads of the spec the agent may do while preparing its turn; 0 tells it not to read. */
     specReads: number;
-    /** Where the team summary of the ceremony is pasted (Teams, Slack...). Empty: a generic team chat. */
+    /** Where the team summary of the ceremony is pasted (a chat app, a wiki page...). Empty: a generic team chat. */
     summaryTarget: string;
     /** How the summary is written: greeting, sections, length. */
     summaryStyle: string;

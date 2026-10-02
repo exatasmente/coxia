@@ -5,7 +5,7 @@ import { describeErrors, prune, validate } from '../src/main/engine/open/schema'
 describe('toApiName', () => {
   it('keeps valid names and fits the rest into 64 safe characters, deterministically', () => {
     expect(toApiName('Read')).toBe('Read');
-    const long = 'mcp__gitlab-issue-analysis__get_merge_request_details_and_changes';
+    const long = 'mcp__tracker-issues-reader__get_merge_request_details_and_changes';
     expect(long.length).toBe(65);
     const mapped = toApiName(long);
     expect(mapped).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);

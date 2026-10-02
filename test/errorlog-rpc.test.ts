@@ -30,8 +30,8 @@ describe('rpc failures reach the error log', () => {
     handle('conflict:t-async', (async (_id: string) => {
       throw new Error('agent ended with error_max_turns');
     }) as never);
-    await expect(ipc.get('conflict:t-async')?.('15965-a', 'free text')).rejects.toThrow('error_max_turns');
-    expect(logs().at(-1)).toMatchObject({ source: 'rpc:conflict:t-async', context: { via: 'ipc', id: '15965-a' } });
+    await expect(ipc.get('conflict:t-async')?.('103-a', 'free text')).rejects.toThrow('error_max_turns');
+    expect(logs().at(-1)).toMatchObject({ source: 'rpc:conflict:t-async', context: { via: 'ipc', id: '103-a' } });
   });
 
   it('logs device channel failures and does not log successes', async () => {

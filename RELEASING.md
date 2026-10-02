@@ -61,7 +61,7 @@ Start from a clean, up-to-date `main` with everything merged and CI green. Descr
 scripts/release.sh 0.2.0 --author "Your Name <you@example.com>" -m "feat: release 0.2.0"
 ```
 
-What it does, in order: refuses a dirty tree, a branch other than `main`, an existing tag and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.2.0] - <today>` and updates the compare links; commits with your message; creates the annotated tag `v0.2.0`. **It stops there and prints the push commands.** The author comes from the flag or `RELEASE_AUTHOR`; the script never touches `git config`. Options: `--dry-run`, `--skip-checks`, `--allow-branch`, `--date`.
+What it does, in order: refuses a dirty tree, a branch other than `main`, an existing tag and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`) and the public audit (`scripts/public-audit.mjs`, which always runs, even with `--skip-checks`); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.2.0] - <today>` and updates the compare links; commits with your message; creates the annotated tag `v0.2.0`. **It stops there and prints the push commands.** The author comes from the flag or `RELEASE_AUTHOR`; the script never touches `git config`. Options: `--dry-run`, `--skip-checks`, `--allow-branch`, `--date`.
 
 Review the commit and the tag (`git show v0.2.0`), then push (this is the step that starts the workflow):
 
@@ -151,7 +151,7 @@ For private testing only, `electron-updater` can authenticate with a token: buil
 
 | What | Where | Trigger |
 |---|---|---|
-| `tsc`, `vitest`, theme audit, i18n lint, `electron-vite build` | `.github/workflows/ci.yml` (Ubuntu, Node from `.nvmrc`) | push and pull request to `main` |
+| `tsc`, `vitest`, theme audit, public audit, i18n lint, `electron-vite build` | `.github/workflows/ci.yml` (Ubuntu, Node from `.nvmrc`) | push and pull request to `main` |
 | Public Linux AppImage and deb, draft release | `.github/workflows/release.yml` | tag `v*.*.*`, or manual |
 | Windows and macOS (experimental) | same workflow | manual, with `experimental_platforms` |
 | Version bump, changelog, commit, tag | `scripts/release.sh` | you, on your machine |

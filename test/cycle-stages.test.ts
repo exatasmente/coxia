@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { stageOf, stagesFor } from '../src/main/vcs/stages';
 import type { VcsIssue, VcsMr } from '../src/main/vcs/types';
-import { LEGACY_STAGES, legacyCycle } from '../src/shared/config/legacy';
+import { TEST_STAGES, exampleCycle } from './helpers/config';
 import { builtInTemplate, cycleOf, isBlockedStage, isReadyForQa, isStageKind, resolveStage, returnedFromQa, stageDisplay, stageKind, stageOfText, stageText, stageUrgency } from '../src/shared/cycles';
 
-const legacy = legacyCycle();
+const legacy = exampleCycle();
 const cycle = (id: string) => cycleOf(builtInTemplate(id)!);
 
 // What the dashboard, the watchers and the feedback job tested before the stages came from the config.
@@ -44,7 +44,7 @@ describe('the stages of the migrated profile behave as the regexes they replaced
     expect(stageOfText(legacy, 'Blocked in testing')?.id).toBe('in-testing');
     expect(stageOfText(legacy, 'Blocked in development')?.id).toBe('doing');
     expect(stageOfText(legacy, 'In development')?.id).toBe('doing');
-    expect(LEGACY_STAGES.length).toBe(legacy.stages.length);
+    expect(TEST_STAGES.length).toBe(legacy.stages.length);
   });
 });
 
