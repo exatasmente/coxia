@@ -20,6 +20,8 @@
   .ws-actions .btn { flex: 1 1 100%; min-height: 44px; }
 }
 
-/* Test workspace marks: a chip in the Hoje top bar, a tag on the edge of every ceremony hero. */
+/* Test workspace marks: a chip in the Hoje top bar, a tag on the edge of every ceremony hero. The compact bars carry it below, the tall Call hero on its top edge (a bar sticks to the top of the viewport and would clip it). */
 .ws-test-chip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); font-size: 12px; font-weight: 600; white-space: nowrap; }
-html[data-workspace-test] .hero::after { content: 'Workspace de testes'; position: absolute; top: -10px; right: 18px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); font-size: 11px; font-weight: 600; line-height: 16px; pointer-events: none; }
+html[data-workspace-test] .hero::after { content: 'Workspace de testes'; position: absolute; right: 18px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); font-size: 11px; font-weight: 600; line-height: 16px; pointer-events: none; }
+html[data-workspace-test] header.hero::after { bottom: -10px; }
+html[data-workspace-test] section.hero::after { top: -5px; }

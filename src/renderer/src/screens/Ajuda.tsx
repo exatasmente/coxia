@@ -123,8 +123,11 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
         </Block>
 
         <Block title="Onde ficam os dados" intro="Tudo é arquivo local; nada vai para um servidor próprio.">
+          <Item term={<span className="mono">~/.local/share/cerimonias/workspaces/&lt;nome&gt;/</span>}>
+            Cada workspace guarda a sua cópia de: ata do dia (<span className="mono">AAAA-MM-DD-pre-daily.md</span>), <span className="mono">historico/</span> (cada cerimônia), <span className="mono">gates/</span>, <span className="mono">qa/</span>, <span className="mono">retros/</span>, <span className="mono">atividade/</span>, <span className="mono">config.json</span> (Configurações), <span className="mono">acoes.json</span> (Ações), <span className="mono">custo.json</span>, <span className="mono">radar.json</span> e <span className="mono">status.json</span>.
+          </Item>
           <Item term={<span className="mono">~/.local/share/cerimonias/</span>}>
-            Ata do dia (<span className="mono">AAAA-MM-DD-pre-daily.md</span>), <span className="mono">historico/</span> (cada cerimônia), <span className="mono">gates/</span>, <span className="mono">qa/</span>, <span className="mono">retros/</span>, <span className="mono">atividade/</span>, <span className="mono">config.json</span> (Configurações), <span className="mono">acoes.json</span> (Ações), <span className="mono">custo.json</span>, <span className="mono">radar.json</span> e <span className="mono">status.json</span>.
+            O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados, glossário e comandos de verificação de conflito. Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (GitLab, Plan das specs, daily-report).
           </Item>
           <Item term={<span className="mono">~/projects/sz-playbook/.specs/</span>}>
             Specs que o app lê e, nas escritas acima, onde grava o Registro do Plan, o QA_CHECKLIST.md e o diagrama do gate.

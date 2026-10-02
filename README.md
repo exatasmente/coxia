@@ -5,7 +5,7 @@ Rotina pessoal: pré-daily por voz com um agente por atividade aberta. Não faz 
 - **Agentes:** Claude Agent SDK com `cwd` em `~/projects`, então CLAUDE.md, skills, agentes, hooks e MCP do playbook valem como no Claude Code. Modelo `deepseek/deepseek-v4.1-flash` pelo OpenRouter (chave via `~/.local/bin/openrouter-key`). Só ferramentas de leitura (`permissionMode: dontAsk`).
 - **Cartões:** `~/.local/bin/daily-report report --format json --dry-run` + fase do spec em `sz-playbook/.specs`.
 - **Voz:** `sidecar/voice_sidecar.py` — faster-whisper local para ouvir; para falar, Edge TTS (padrão: nuvem da Microsoft, o texto falado sai da máquina) ou Kokoro (local, nada sai da máquina), escolhido em Configurações → Voz.
-- **Escrita:** só ao clicar em "Gravar" na Ata — ata em `~/.local/share/cerimonias/`, nota no `daily-report`, linha no Registro do Plan. Efeitos (push, MR, comentário) não rodam aqui: são copiados para o Claude Code.
+- **Escrita:** só ao clicar em "Gravar" na Ata — ata em `~/.local/share/cerimonias/workspaces/<nome>/`, nota no `daily-report`, linha no Registro do Plan. Efeitos (push, MR, comentário) não rodam aqui: são copiados para o Claude Code.
 
 ## Rodar
 
@@ -60,13 +60,22 @@ O script copia o AppImage mais novo de `dist/` para `~/.local/opt/cerimonias/cer
 
 **Atualizar:** `git pull`, `npm run dist`, `scripts/install-local.sh`, e fechar e abrir o app. O venv da voz e os dados não são tocados.
 
-**Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: atas, histórico, configurações) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
+**Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: workspaces com atas, histórico e configurações; acesso pelo navegador, aparelhos pareados e glossário na raiz) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
 
 O pacote não leva os modelos do Kokoro; a voz local continua lendo `CERIMONIAS_KOKORO_DIR` ou `~/projects/hermes-poc/vendor/kokoro`.
 
+## Workspaces
+
+Histórico, ações e configurações vivem em workspaces: `<dados>/workspaces/<id>/`, listados em `<dados>/workspaces.json` (`current` e a lista com nome, data e a marca de testes). Na primeira abertura depois da atualização, o que já existia é movido, sem apagar nada, para o workspace **Testes** (marca de testes ligada), que passa a ser o atual; o que moveu fica em `workspaces/migration.log`. Se a migração for interrompida, a próxima abertura termina o que faltou.
+
+- **Por workspace:** `config.json` (sem o bloco `web`), ata, `historico/`, `acoes.json`, `conflicts/`, `custo.json`, `falas.json`, `status.json`, `radar.json`, `watchers.json`, `efeitos.json`, `feedback.json` e `feedback/`, `auditoria.jsonl`, `retencao.log`, `atividade/`, `gates/`, `qa/`, `retros/`.
+- **Na raiz, valem para todos:** `web.json` (acesso pelo navegador), `web-sessions.json` (aparelhos pareados), `web-push-vapid.json` e `web-push.json`, `glossario.json`, `conflict-verify.json`, `saude.json` e `userData/` (instância de teste).
+- **Marca de testes:** com ela ligada, nada sai da máquina: aprovar ação (GitLab, push, comentário), gravar no Plan, na nota do daily-report, no QA_CHECKLIST e no GATE_QUIZ é recusado. Se o registro não puder ser lido, vale como testes.
+- **Trocar** (Configurações › Workspaces › Usar este) grava o registro e reinicia o app; pelo navegador a página recarrega sozinha. Excluir move a pasta para `workspaces/.trash/<id>-<data>`; nunca apaga.
+
 ## Tempo por issue (Clockify)
 
-O app grava, a cada 20 min no horário de trabalho e ao abrir a tela Hoje, o tempo medido nas cerimônias do dia em `~/.local/share/cerimonias/atividade/<AAAA-MM-DD>.json`. É um retrato do dia, reescrito a cada vez; o app **não** chama o Clockify.
+O app grava, a cada 20 min no horário de trabalho e ao abrir a tela Hoje, o tempo medido nas cerimônias do dia em `~/.local/share/cerimonias/workspaces/<nome>/atividade/<AAAA-MM-DD>.json`. É um retrato do dia, reescrito a cada vez; o app **não** chama o Clockify.
 
 - **De onde vem:** pré-daily (da primeira fala de cada atividade até a primeira da próxima; pausa de mais de 10 min na call não conta), desbloqueios (mensagens da conversa), gates, passagem para o QA e retro (da criação até a última gravação do arquivo da cerimônia). Retro e call sem atividade entram como `Cerimônias - Retro semanal` e `Cerimônias - Daily`.
 - `blocks`: no formato dos blocos do `clockify-log activity` (`start`, `end`, `minutes`, `projects`, `gitlab_ids`, `events`), mais `ceremony`, `ref`, `sessionId` e `description`. Podem se sobrepor (um desbloqueio acontece dentro da call).
@@ -83,7 +92,7 @@ Tire o `--dry-run` para criar. O `add` recusa o que se sobrepõe ao que já est�
 
 ## Custo (OpenRouter)
 
-A tela **Custo** (botão no topo da Hoje) lê o uso da chave (`GET /api/v1/key`) e, de cada chamada das sessões do app em `~/.claude/projects/-home-luiz-neto-projects/*.jsonl`, o preço real (`GET /api/v1/generation?id=gen-…`). As sessões são reconhecidas pelo primeiro prompt (pré-daily, desbloqueio, gate, passagem para o QA, retro, texto do Teams, release). O preço de cada chamada é guardado em `~/.local/share/cerimonias/custo.json`: depois da primeira leitura só o que é novo é consultado. A meta mensal (padrão US$ 20) fica no mesmo arquivo. A chave só é lida no processo principal e nunca é registrada.
+A tela **Custo** (botão no topo da Hoje) lê o uso da chave (`GET /api/v1/key`) e, de cada chamada das sessões do app em `~/.claude/projects/-home-luiz-neto-projects/*.jsonl`, o preço real (`GET /api/v1/generation?id=gen-…`). As sessões são reconhecidas pelo primeiro prompt (pré-daily, desbloqueio, gate, passagem para o QA, retro, texto do Teams, release). O preço de cada chamada é guardado em `~/.local/share/cerimonias/workspaces/<nome>/custo.json`: depois da primeira leitura só o que é novo é consultado. A meta mensal (padrão US$ 20) fica no mesmo arquivo. A chave só é lida no processo principal e nunca é registrada.
 
 ## Continuar no Claude Code com o pedido
 
