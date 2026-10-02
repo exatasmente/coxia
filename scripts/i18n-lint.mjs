@@ -219,6 +219,8 @@ if (flag('--json')) {
   for (const [name, list] of rows.slice(0, 40)) console.log(`${String(list.length).padStart(5)}  ${name}`);
   if (rows.length > 40) console.log(`       ... and ${rows.length - 40} more file(s)`);
   console.log(`${String(total).padStart(5)}  total in ${rows.length} file(s)`);
+  const own = rows.filter(([name]) => /^src\/(main|shared)\//.test(name)).reduce((n, [, list]) => n + list.length, 0);
+  console.log(`${String(own).padStart(5)}  of them in src/main + src/shared`);
 }
 
 const max = value('--max');

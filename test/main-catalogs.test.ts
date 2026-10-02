@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MSG_KEYS } from '../src/main/engine/open/messages';
 import { CATALOGS, createTranslator } from '../src/shared/i18n';
 import mainEn from '../src/shared/i18n/main.en.json';
 import mainPt from '../src/shared/i18n/main.pt-BR.json';
@@ -43,6 +44,28 @@ describe('the main process catalogs (main.*.json)', () => {
     expect(asked.size).toBeGreaterThan(300);
     const known = (key: string) => key in CATALOGS['pt-BR'] || `${key}_one` in CATALOGS['pt-BR'];
     expect([...asked].filter((key) => !known(key))).toEqual([]);
+  });
+
+  it('have the keys the code builds from a name: kinds, steps, tasks, voices and the engine messages', () => {
+    const groups: Record<string, string[]> = {
+      'main.radar.kind': ['same-fix', 'dependency', 'file', 'scope'],
+      'main.radar.recommendation': ['same-fix', 'dependency', 'file', 'scope'],
+      'main.conflict.step': ['none', 'prepared', 'proposed', 'applied', 'verify-failed', 'push-waiting', 'published', 'appliedNoTests'],
+      'main.saude.task': ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps'],
+      'main.saude.dep': ['glab', 'openrouter-key', 'voice', 'model'],
+      'main.retention.kind': ['sessoes', 'historico', 'gates', 'qa', 'retros', 'atividade', 'feedback'],
+      'main.retention.app': ['turn', 'unblock', 'gate', 'qa', 'retro', 'teams', 'sync', 'reentry', 'review'],
+      'main.tempo.label': ['pre-daily', 'desbloqueio', 'gate', 'qa', 'retro', 'daily'],
+      'main.custo.kind': ['turn', 'deep', 'gate', 'qa', 'retro', 'teams', 'release'],
+      'main.outbox': ['agent:reply', 'deep:ask', 'gate:answer', 'gate:explain', 'qa:ask', 'retro:ask', 'actions:conflict'],
+      'main.retro.digest': ['cerimonias', 'dia', 'atividades', 'decisoes', 'efeitos', 'sem_resposta', 'desbloqueios', 'acoes_de_release', 'tipo', 'estado', 'reteste', 'arquivos', 'rodadas', 'erros', 'mudancas_gitlab'],
+      'main.engine': MSG_KEYS as unknown as string[],
+    };
+    const missing = Object.entries(groups).flatMap(([prefix, names]) => names.map((n) => `${prefix}.${n}`)).filter((key) => !(key in pt));
+    expect(missing).toEqual([]);
+    // Every hint of the error log is a key too.
+    const hints = readFileSync(join(ROOT, 'src/shared/errorlog.ts'), 'utf8').matchAll(/hint: '(main\.errorlog\.hint\.\w+)'/g);
+    for (const m of hints) expect(pt, m[1]).toHaveProperty([m[1]]);
   });
 
   it('read in English through the translator, with a plural where the count says so', () => {

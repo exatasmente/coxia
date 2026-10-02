@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The main process, the shared modules and the agent prompts follow the workspace language (Portuguese or English): errors, notifications, tray, health messages, the minutes, the gate quiz, the QA checklist and the retro digest. The Portuguese texts are unchanged; English has golden tests of its own.
+
 ## [0.1.0] - 2026-10-02
 
 First public version.
