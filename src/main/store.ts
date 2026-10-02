@@ -78,7 +78,7 @@ function currentNote(ref: string): string | null {
 }
 
 async function writeDailyNote(d: Decision): Promise<{ ok: boolean; detail: string }> {
-  // `daily-report note` replaces the note, so the previous one is kept in front.
+  // The card source's note command replaces the note, so the previous one is kept in front.
   const previous = currentNote(d.ref);
   const note = previous ? `${previous} | ${today()}: ${d.text}` : `${today()}: ${d.text}`;
   const source = rc().cardSource;
@@ -96,7 +96,7 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[])
   for (const i of selected) {
     const d = m.decisions[i];
     if (!d) continue;
-    const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do daily-report');
+    const blocked = d.target === 'ata' ? null : externalRefusal('gravar no Plan ou na nota do cartão');
     if (blocked) {
       written.push({ ref: d.ref, dest: d.dest, ok: false, detail: 'workspace de testes: ficou só na ata' });
       continue;
@@ -105,9 +105,9 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[])
       const r =
         d.target === 'spec'
           ? writeSpecRegistro(d)
-          : d.target === 'daily-report'
-            ? await writeDailyNote(d)
-            : { ok: true, detail: ataPath };
+          : d.target === 'ata'
+            ? { ok: true, detail: ataPath }
+            : await writeDailyNote(d);
       written.push({ ref: d.ref, dest: d.dest, ...r });
     } catch (e) {
       written.push({ ref: d.ref, dest: d.dest, ok: false, detail: String(e) });

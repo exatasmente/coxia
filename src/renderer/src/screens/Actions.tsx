@@ -184,7 +184,7 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
           </div>
         </header>
         <p className="small muted">
-          Vindas da skill post-release-sync. Nada é executado sem o seu “seguir” e a confirmação; o comentário do QA pede um novo “seguir” depois da sincronização.
+          Vindas da ferramenta de sincronização de release. Nada é executado sem o seu “seguir” e a confirmação; o comentário do QA pede um novo “seguir” depois da sincronização.
         </p>
         <h2 className="section-title">Aguardando você · {pending.length}</h2>
         {!pending.length && <p className="small faint">Nenhuma ação pendente.</p>}

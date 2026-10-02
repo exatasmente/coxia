@@ -110,7 +110,7 @@ export interface IssueProjectConfig {
   project: string | null;
   /** Numeric id of that project, for APIs that need it. */
   projectId: number | null;
-  /** Prefix of a card ref, e.g. "sz4#" for "sz4#15499". Empty: refs are bare numbers. */
+  /** Prefix of a card ref, e.g. "app#" for "app#101". Empty: refs are bare numbers. */
   refPrefix: string;
 }
 
@@ -309,6 +309,19 @@ export interface PromptOverride {
   en?: string;
 }
 
+export interface QuickTransitionRule {
+  /** Name of the status the issue moves to. */
+  to: string;
+  /** Id of that status on the GitLab instance. */
+  id: number;
+  /** The stage label the issue gets. */
+  label: string;
+  /** Statuses it may leave. */
+  from: string[];
+  /** Stage labels removed on the way (any other stage label blocks the move). */
+  removable: string[];
+}
+
 export interface DevCycleConfig {
   /** Template this section was filled from ("none", "sdd", "scrum", "kanban", "github-flow", "minimal", or a custom one). Informational once edited. */
   templateId: string;
@@ -329,6 +342,8 @@ export interface DevCycleConfig {
   /** Regular expression for the label that says an issue shipped in a version. Group 1, when present, is the version shown. */
   releaseLabelPattern: string;
   specLayout: SpecLayout;
+  /** Status changes the card's quick actions offer on GitLab (custom status ids differ per instance, so each workspace lists its own). Empty: none. */
+  quickTransitions: QuickTransitionRule[];
   qa: {
     /** Login whose issue notes carry the release branch and pipelines. null: no QA hand-off notes. */
     user: string | null;
@@ -426,8 +441,8 @@ export interface ReleaseSyncConfig extends CommandConfig {
 }
 
 export interface TimeExportConfig extends CommandConfig {
-  /** Shape of the exported entries. */
-  format: 'none' | 'clockify-log';
+  /** Layout the export command reads: "none" (the day file only) or the name of a layout. */
+  format: string;
 }
 
 export interface TerminalConfig {
@@ -481,7 +496,7 @@ export interface WorkspaceConfig {
   language: Language;
   /** How the agents address the user. Empty: no name. */
   userName: string;
-  /** Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone, no article. Only pt-BR text reads it. */
+  /** Portuguese article that goes with the name ("o Bruno", "a Ana"); empty: the name alone, no article. Only pt-BR text reads it. */
   userArticle: UserArticle;
   appearance: { theme: Theme };
   notifications: boolean;

@@ -1,4 +1,4 @@
-import type { VcsKind } from '../shared/config/types';
+import type { QuickTransitionRule, VcsKind } from '../shared/config/types';
 import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeVcsAction, proposeVcsCommands } from './actions';
@@ -20,29 +20,12 @@ const QA_OWNED = /^(deploy|build|pre_build|set_version)/i;
 // The AI review job is left to the reviewers' flow: proposing it on every MR was noise.
 const SKIPPED_JOBS = /ai_code_review/i;
 
-// agent-pipeline §8 (what the dev moves) with the closed label sets of qa-release-branch §5. Review and QA exits
-// (In code review, Approved/Rejected, In testing, Failed testing, Approved in testing, Done...) are never offered.
-// The status ids are the custom statuses of one GitLab instance: only the SDD template on GitLab has them.
-const RULES = [
-  {
-    to: 'In development',
-    id: 75,
-    label: 'STAGE:: Doing',
-    from: ['Open', 'Ready for planning', 'Blocked in development', 'Rejected in code review', 'Failed testing'],
-    removable: ['STAGE:: Backlog', 'STAGE:: To Do', 'STAGE:: Code Review Fail', 'STAGE:: Test Fail'],
-  },
-  { to: 'Ready for code review', id: 77, label: 'STAGE:: Code Review', from: ['In development'], removable: ['STAGE:: Doing'] },
-  {
-    to: 'Ready for testing',
-    id: 6,
-    label: 'STAGE:: Ready To Test',
-    from: ['Approved in code review', 'Failed testing', 'In development'],
-    removable: ['STAGE:: Code Review OK', 'STAGE:: Code Review', 'STAGE:: Test Fail', 'STAGE:: Doing'],
-  },
-];
+// The status changes come from devCycle.quickTransitions: their status ids are the custom statuses of one GitLab instance.
+// Review and QA exits are never listed there, the app only offers what the developer moves.
+type Rule = QuickTransitionRule;
 
-function activeRules(): typeof RULES {
-  return rc().primaryVcs?.kind === 'gitlab' && getConfig().devCycle.templateId === 'sz-sdd' ? RULES : [];
+function activeRules(): Rule[] {
+  return rc().primaryVcs?.kind === 'gitlab' ? getConfig().devCycle.quickTransitions : [];
 }
 
 interface ReportMr {

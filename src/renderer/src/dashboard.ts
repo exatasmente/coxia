@@ -108,7 +108,7 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
     return {
       phase: 'loading',
       title: capital(label),
-      hint: 'Lendo o GitLab pelo daily-report (~30 s).',
+      hint: 'Lendo os cartões da fonte configurada (~30 s).',
       progress: 'Montando cartões…',
       primary: { action: 'call', label: `Começar a ${label}`, disabled: true },
       secondary: retro,

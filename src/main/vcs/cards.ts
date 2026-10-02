@@ -5,7 +5,7 @@ import type { VcsIssue, VcsMr, VcsProvider } from './types';
 import { pool } from './util';
 
 // The generic card source: my assigned open issues and their merge or pull requests, built from the provider. It stands in for an
-// external daily-report command when the workspace has none, and produces the same items (issue, mr) that command did.
+// external card source command when the workspace has none, and produces the same items (issue, mr) that command did.
 
 export interface CardItem {
   kind: 'issue' | 'mr';
@@ -56,7 +56,7 @@ export interface CardState {
 export interface CardSourceOptions {
   /** "group/name" of the issue project; null: every project the host lists for me. */
   issueProject: string | null;
-  /** "sz4#" for "sz4#15499"; empty: "<repo>#<n>". */
+  /** "app#" for "app#101"; empty: "<repo>#<n>". */
   refPrefix: string;
   /** devCycle.stages; empty: the host's defaults. */
   stages: StageDef[];

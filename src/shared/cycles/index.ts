@@ -18,10 +18,6 @@ export { githubFlow, kanban, minimal, scrum, sdd };
 /** The templates that ship with the app, in the order the wizard lists them. */
 export const BUILT_IN_TEMPLATES: CycleTemplate[] = [sdd, scrum, kanban, githubFlow, minimal];
 
-// The id the existing install's cycle carries: the SDD template plus the author's specifics (see config/legacy.ts).
-const ALIASES: Record<string, string> = { 'sz-sdd': 'sdd' };
-
 export function builtInTemplate(id: string): CycleTemplate | undefined {
-  const real = ALIASES[id] ?? id;
-  return BUILT_IN_TEMPLATES.find((t) => t.id === real);
+  return BUILT_IN_TEMPLATES.find((t) => t.id === id);
 }

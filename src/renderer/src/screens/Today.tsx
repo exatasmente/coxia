@@ -106,7 +106,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
       </div>
       <div className="dash-top-actions">
         <UpdateBadge go={go} />
-        {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem no daily-report.">Workspace de testes</span>}
+        {testWorkspace && <span className="ws-test-chip" title="Nada sai da máquina daqui: sem escrita no GitLab, no Plan das specs nem nas notas de cartão.">Workspace de testes</span>}
         {!phone && (
           <nav className="dash-nav" aria-label="Telas do app">
             <button type="button" className="btn" onClick={() => go({ name: 'history' })}>Histórico</button>

@@ -35,9 +35,9 @@ const LABELS: Record<string, string> = {
 };
 
 const DEP_LABELS: Record<DepId, string> = {
-  glab: 'glab autenticado',
-  'openrouter-key': 'Chave do provedor de modelos',
-  'daily-report': 'daily-report',
+  vcs: 'Host de código autenticado',
+  'llm-key': 'Chave do provedor de modelos',
+  'card-source': 'Fonte de cartões',
   voice: 'Sidecar de voz',
   model: 'Modelo respondendo',
 };
@@ -143,7 +143,7 @@ export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
 
 type Result = { ok: boolean; message: string };
 
-async function glabCheck(): Promise<Result> {
+async function vcsCheck(): Promise<Result> {
   const vcs = rc().primaryVcs;
   if (!vcs) return { ok: true, message: 'Sem integração de VCS configurada (opcional).' };
   const cli = vcsCliFor();
@@ -230,9 +230,9 @@ async function modelCheck(): Promise<Result> {
 }
 
 const CHECKS: { id: DepId; run: () => Promise<Result>; costly?: boolean }[] = [
-  { id: 'glab', run: glabCheck },
-  { id: 'openrouter-key', run: keyCheck },
-  { id: 'daily-report', run: reportCheck },
+  { id: 'vcs', run: vcsCheck },
+  { id: 'llm-key', run: keyCheck },
+  { id: 'card-source', run: reportCheck },
   { id: 'voice', run: voiceCheck },
   { id: 'model', run: modelCheck, costly: true },
 ];

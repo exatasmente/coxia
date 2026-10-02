@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { safeStorage } from 'electron';
-import { LEGACY_OPENROUTER_KEY_COMMAND, LEGACY_SECRET_REF } from '../shared/config/legacy';
+import type { LegacySecretSeed } from '../shared/config/legacy';
 import { DATA_ROOT } from './env';
 import { type CryptoPort, type SecretsStore, createSecretsStore } from './secrets-core';
 
@@ -44,7 +44,7 @@ export function secrets(): SecretsStore {
   return store;
 }
 
-/** An install that already ran the author's openrouter-key script keeps using it: the same command becomes the source of the OpenRouter secret. */
-export function seedLegacySecrets(): void {
-  if (!secrets().has(LEGACY_SECRET_REF)) secrets().set({ ref: LEGACY_SECRET_REF, source: 'command', command: LEGACY_OPENROUTER_KEY_COMMAND, args: [] });
+/** An install that already ran a key script keeps using it: the command of the legacy profile becomes the source of that secret. */
+export function seedLegacySecrets(seeds: LegacySecretSeed[]): void {
+  for (const s of seeds) if (!secrets().has(s.ref)) secrets().set({ ref: s.ref, source: 'command', command: s.command, args: s.args });
 }

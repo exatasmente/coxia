@@ -1,5 +1,5 @@
 import { mergeDeep, neutralConfig, withConfigDefaults } from './defaults';
-import { LEGACY_DEFAULT_MODEL, LEGACY_PROVIDER_ID, legacyProfile } from './legacy';
+import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type WorkspaceConfig } from './types';
 
@@ -12,9 +12,11 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 export interface MigrationContext {
   /**
    * The workspace belongs to an install that existed before configuration did, and has no config file to read.
-   * Such a workspace gets the author's profile (legacy.ts) so it keeps behaving as before; without it, the neutral defaults apply.
+   * Such a workspace gets the optional profile (legacy.ts) so it keeps behaving as before; without one, the neutral defaults apply.
    */
   legacyInstall: boolean;
+  /** The profile file of the person, when there is one. */
+  profile?: LegacyProfile | null;
 }
 
 export interface MigrationResult {
@@ -31,15 +33,21 @@ type Step = (doc: Doc, ctx: MigrationContext, notes: string[]) => Doc;
 const isObject = (v: unknown): v is Doc => typeof v === 'object' && v !== null && !Array.isArray(v);
 const pick = (v: unknown): Doc => (isObject(v) ? v : {});
 
-function v1ToV2(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+// The base a migrated document starts from: the neutral defaults, plus the person's profile when there is one.
+function baseOf(ctx: MigrationContext): WorkspaceConfig {
+  return ctx.profile ? (mergeDeep(neutralConfig(), ctx.profile.config) as WorkspaceConfig) : neutralConfig();
+}
+
+function v1ToV2(old: Doc, ctx: MigrationContext, notes: string[]): Doc {
   const models = pick(old.models);
   const tools = pick(old.tools);
+  const carried = ctx.profile?.migratedModels ?? null;
   const model = (role: LlmRole): string => {
     const m = models[role === 'fix' ? 'reply' : role];
-    return typeof m === 'string' && m.trim() ? m.trim() : LEGACY_DEFAULT_MODEL;
+    return typeof m === 'string' && m.trim() ? m.trim() : (carried?.defaultModel ?? '');
   };
   const patch: DeepPartial<WorkspaceConfig> & Doc = {
-    llm: { roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: LEGACY_PROVIDER_ID, model: model(r) }])) as Record<LlmRole, { provider: string; model: string }> },
+    llm: carried ? { roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: carried.provider, model: model(r) }])) as Record<LlmRole, { provider: string; model: string }> } : undefined,
     agents: { tools: { files: tools.files as boolean, skills: tools.skills as boolean, trackerMcp: tools.gitlabMcp as boolean, vcsCli: tools.glab as boolean, subagents: tools.subagents as boolean } },
     schedule: pick(old.schedule),
     voice: pick(old.voice),
@@ -49,8 +57,8 @@ function v1ToV2(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
     appearance: pick(old.appearance),
   };
   if (isObject(old.web)) notes.push('web settings are not part of the workspace config (they stay in the shared web.json)');
-  notes.push('built from the v1 settings and the constants the app used to hardcode');
-  return { ...(mergeDeep(mergeDeep(neutralConfig(), legacyProfile()), dropUndefined(patch)) as unknown as Doc), schemaVersion: 2 };
+  notes.push(ctx.profile ? 'built from the v1 settings and the legacy profile file' : 'built from the v1 settings over the neutral defaults (no legacy profile)');
+  return { ...(mergeDeep(baseOf(ctx), dropUndefined(patch)) as unknown as Doc), schemaVersion: 2 };
 }
 
 function dropUndefined<T>(v: T): T {
@@ -100,7 +108,7 @@ export function migrateConfig(raw: unknown, ctx: MigrationContext): MigrationRes
   } else if (ctx.legacyInstall) {
     doc = {};
     version = 1;
-    notes.push('no config file on an existing install: profile of the previous app');
+    notes.push('no config file on an existing install: the legacy profile, or the neutral defaults without one');
   } else {
     return { config: neutralConfig(), fromVersion: CONFIG_SCHEMA_VERSION, changed: false, notes: ['fresh install: neutral defaults'] };
   }
@@ -115,7 +123,7 @@ export function migrateConfig(raw: unknown, ctx: MigrationContext): MigrationRes
   }
   let result = validateConfig(doc);
   if (!result.ok) {
-    doc = repair(doc, ctx.legacyInstall || fromVersion < CONFIG_SCHEMA_VERSION ? (mergeDeep(neutralConfig(), legacyProfile()) as WorkspaceConfig) : neutralConfig(), result.errors, notes);
+    doc = repair(doc, ctx.legacyInstall || fromVersion < CONFIG_SCHEMA_VERSION ? baseOf(ctx) : neutralConfig(), result.errors, notes);
     result = validateConfig(doc);
     changed = true;
   }

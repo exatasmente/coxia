@@ -9,7 +9,7 @@ function hm(min: number): string {
   return min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${min} min`;
 }
 
-// "Tempo de hoje por issue": the blocks come from the files the app already keeps and are written for clockify-log.
+// "Tempo de hoje por issue": the blocks come from the files the app already keeps and are written as time entries.
 export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; colorFor: (issue: string | null) => string | undefined }) {
   const [day, setDay] = useState<TempoDay | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export function TempoHoje({ refreshKey, colorFor }: { refreshKey: unknown; color
               </span>
             </div>
           ))}
-          <p className="small faint">Medido nas cerimônias do app; sem sobreposição, pronto para o clockify-log.</p>
+          <p className="small faint">Medido nas cerimônias do app; sem sobreposição, pronto para exportar.</p>
           <button type="button" className="btn" title={day.file} onClick={() => void copy()}>
             {copied ? 'Caminho copiado' : 'Copiar caminho do arquivo'}
           </button>

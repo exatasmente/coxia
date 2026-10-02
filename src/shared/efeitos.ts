@@ -22,7 +22,7 @@ export type CheckKind = (typeof CHECK_KINDS)[number];
 
 export interface CheckSpec {
   kind: CheckKind;
-  // GitLab project path ("sz4/sz4"); not needed for issue_created, which uses it as the search scope.
+  // GitLab project path ("acme/web"); not needed for issue_created, which uses it as the search scope.
   project: string;
   iid: number | null;
   // Expected label, job name, reviewer username, pipeline status or title words, depending on the kind.

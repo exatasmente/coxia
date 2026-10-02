@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../api';
 import { conflictApi } from '../conflictApi';
-import { VERIFY_DEFAULTS } from '../conflictVerifyDefaults';
+import { VERIFY_SUGGESTION } from '../conflictVerifyDefaults';
 import { isWeb } from '../platform';
 
 // Per project: the shell command that checks a conflict resolution in its worktree before the merge is committed.
@@ -51,7 +51,7 @@ export function ConflictVerifySection() {
         <h2 style={{ fontSize: 18, fontWeight: 600 }}>Verificação de conflitos</h2>
         <p className="small muted" style={{ marginTop: 4 }}>
           Comando de shell que roda na worktree do conflito, depois de aplicar a resolução e antes do commit do merge. Vazio: sem verificação (o app pede um “seguir sem testes”).
-          Variáveis: CLONE_DIR (seu clone, de onde dá para ligar o node_modules) e WORKTREE_DIR. Exemplo para o hub-whatsapp, que só testa no Node 18:{' '}
+          Variáveis: CLONE_DIR (seu clone, de onde dá para ligar o node_modules) e WORKTREE_DIR. Exemplo para um projeto que só testa no Node 18:{' '}
           <code className="mono">source ~/.nvm/nvm.sh; nvm use 18 &gt;/dev/null; ln -sfn "$CLONE_DIR/node_modules" node_modules; npx jest</code>
         </p>
         {web && <p className="small muted">Só a janela do app altera estes comandos: o navegador não pode escolher o que o Aplicar executa.</p>}
@@ -69,8 +69,8 @@ export function ConflictVerifySection() {
               value={commands[p] ?? ''}
               onChange={(e) => setCommands({ ...commands, [p]: e.target.value })}
             />
-            {!web && VERIFY_DEFAULTS[p] && commands[p] !== VERIFY_DEFAULTS[p] && (
-              <button type="button" className="btn" onClick={() => setCommands({ ...commands, [p]: VERIFY_DEFAULTS[p] })}>Sugestão</button>
+            {!web && commands[p] !== VERIFY_SUGGESTION && (
+              <button type="button" className="btn" onClick={() => setCommands({ ...commands, [p]: VERIFY_SUGGESTION })}>Sugestão (Node)</button>
             )}
           </div>
         </div>

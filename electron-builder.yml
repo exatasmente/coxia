@@ -1,4 +1,4 @@
-appId: br.com.fortics.cerimonias
+appId: io.github.exatasmente.coxia
 productName: Cerimônias
 executableName: cerimonias
 directories:
@@ -22,7 +22,7 @@ extraResources:
 linux:
   icon: resources/icon.png
   category: Office
-  maintainer: Luiz Neto <luiz.neto@fortics.com.br>
+  maintainer: Luiz Neto <22161417+exatasmente@users.noreply.github.com>
   synopsis: Cerimônias por voz com agentes por atividade
   syncDesktopName: true
   target:
