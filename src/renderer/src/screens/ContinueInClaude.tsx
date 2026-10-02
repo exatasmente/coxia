@@ -16,7 +16,7 @@ export function ContinueInClaude({ sessionId, prompt, label, dark = false }: { s
     setState('Comando copiado');
     setTimeout(() => setState(null), 2000);
   };
-  const style = dark ? { background: 'transparent', color: '#F9FAFB', borderColor: '#374151' } : undefined;
+  const style = dark ? { background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' } : undefined;
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
       <button type="button" className="btn" style={style} title={prompt ? 'Abre um terminal retomando a sessão do agente já com este pedido' : 'Abre um terminal com claude-or --resume nesta sessão do agente'} onClick={() => void open()}>

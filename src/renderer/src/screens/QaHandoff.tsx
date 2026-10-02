@@ -73,14 +73,14 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#C4B5FD', fontWeight: 600 }}>Passagem para o QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
+            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Passagem para o QA · #{card.iid}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? '#60A5FA' : '#C4B5FD'} level={talk.level} small />
+          <Wave on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-violet)'} level={talk.level} small />
           {qa && (
-            <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
+            <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
             </button>
           )}
@@ -143,10 +143,10 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
               <section className="panel-dark" style={{ padding: 20, gap: 12, borderRadius: 16 }}>
                 <div className="row spread">
                   <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aviso no Teams</h2>
-                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={!qa.teams} onClick={() => void copy('teams', qa.teams)}>{copied === 'teams' ? 'Copiado' : 'Copiar'}</button>
+                  <button type="button" className="btn" style={{ minHeight: 40, background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!qa.teams} onClick={() => void copy('teams', qa.teams)}>{copied === 'teams' ? 'Copiado' : 'Copiar'}</button>
                 </div>
-                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: '#9CA3AF' }}>Sem a nota do QA na issue ainda: o texto sai depois que a qa-release-branch criar a branch e o comentário.</p>}
-                <p className="small" style={{ color: '#9CA3AF' }}>Você cola no Teams; nada é publicado daqui.</p>
+                {qa.teams ? <pre className="teams">{qa.teams}</pre> : <p className="small" style={{ color: 'var(--on-night-muted)' }}>Sem a nota do QA na issue ainda: o texto sai depois que a qa-release-branch criar a branch e o comentário.</p>}
+                <p className="small" style={{ color: 'var(--on-night-muted)' }}>Você cola no Teams; nada é publicado daqui.</p>
               </section>
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">Perguntas do QA</h2>

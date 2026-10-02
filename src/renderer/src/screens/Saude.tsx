@@ -11,7 +11,7 @@ const when = (iso: string | null) =>
 const secs = (ms: number | null) => (ms === null ? '–' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 
 function Dot({ ok }: { ok: boolean | null }) {
-  const color = ok === null ? 'var(--faint)' : ok ? 'var(--teal)' : '#B45309';
+  const color = ok === null ? 'var(--faint)' : ok ? 'var(--teal)' : 'var(--warn)';
   return <span className="dot" style={{ background: color, flex: '0 0 auto' }} aria-label={ok === null ? 'sem dado' : ok ? 'ok' : 'com problema'} />;
 }
 

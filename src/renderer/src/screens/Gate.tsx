@@ -100,7 +100,7 @@ export function Gate({
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -123,18 +123,18 @@ export function Gate({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}>
             <BackIcon />
           </button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#93C5FD', fontWeight: 600 }}>
+            <div className="small" style={{ color: 'var(--night-blue)', fontWeight: 600 }}>
               {gate ? `Gate ${gate.gate} · ${gate.label} · rodada ${gate.rounds.length}` : 'Gate com quiz'} · #{card.iid}
             </div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? '#60A5FA' : '#93C5FD'} level={rec.level} small />
+          <Wave on={!!player.speaking || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--night-blue)'} level={rec.level} small />
           {gate && (
-            <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: '#99F6E4', borderColor: '#2DD4BF' }} disabled={!!busy} onClick={() => void talk()}>
+            <button type="button" className={`btn ${rec.recording ? 'btn-rec' : ''}`} style={rec.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy} onClick={() => void talk()}>
               <MicIcon /> {rec.recording ? 'Enviar fala' : roundDone ? 'Perguntar (espaço)' : 'Responder (espaço)'}
             </button>
           )}
@@ -189,7 +189,7 @@ export function Gate({
                           className={`option ${chosen ? 'on' : ''}`}
                           disabled={!active || !!busy}
                           onClick={() => answer({ choice: oi })}
-                          style={right ? { borderColor: 'var(--teal)', borderWidth: 2 } : chosen && roundDone ? { borderColor: 'var(--red)', borderWidth: 2, background: '#FEF2F2' } : undefined}
+                          style={right ? { borderColor: 'var(--teal)', borderWidth: 2 } : chosen && roundDone ? { borderColor: 'var(--red)', borderWidth: 2, background: 'var(--red-faint)' } : undefined}
                         >
                           <span style={{ fontWeight: 600 }}>{LETTERS[oi]})</span> {o}
                         </button>
@@ -198,7 +198,7 @@ export function Gate({
                   </div>
                   {q.answer?.other && <div className="item"><span className="small">Sua resposta: “{q.answer.other}”</span>{q.answer.comment && <span className="small muted">{q.answer.comment}</span>}</div>}
                   {roundDone && q.explanation && (
-                    <div className="item" style={{ background: q.answer?.correct ? 'var(--teal-soft)' : 'var(--amber-soft)', borderColor: q.answer?.correct ? '#99F6E4' : 'var(--amber-line)' }}>
+                    <div className="item" style={{ background: q.answer?.correct ? 'var(--teal-soft)' : 'var(--amber-soft)', borderColor: q.answer?.correct ? 'var(--teal-line)' : 'var(--amber-line)' }}>
                       <span className="small">{q.explanation}</span>
                       <span className="dest">→ {q.section}</span>
                     </div>
@@ -215,7 +215,7 @@ export function Gate({
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
 
             {roundDone && (
-              <section className="panel" style={{ padding: 20, gap: 12, borderColor: round.verdict === 'assertivo' ? '#99F6E4' : 'var(--amber-line)' }}>
+              <section className="panel" style={{ padding: 20, gap: 12, borderColor: round.verdict === 'assertivo' ? 'var(--teal-line)' : 'var(--amber-line)' }}>
                 <h2 style={{ fontSize: 18, fontWeight: 600 }}>{round.verdict === 'assertivo' ? 'Quiz assertivo' : 'Não assertivo: ciclo de consolidação'}</h2>
                 {round.verdict === 'assertivo' ? (
                   <p className="small" style={{ lineHeight: 1.5 }}>
@@ -238,7 +238,7 @@ export function Gate({
                     {round.visual ? (
                       <div className="item">
                         <span className="small">{round.visual.description} → <span className="mono">{round.visual.heading}</span></span>
-                        <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: 0, background: '#F7F7F8', padding: 10, borderRadius: 8 }}>{round.visual.mermaid}</pre>
+                        <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: 0, background: 'var(--surface-2)', padding: 10, borderRadius: 8 }}>{round.visual.mermaid}</pre>
                         {round.visual.inserted ? (
                           <span className="small" style={{ color: 'var(--teal-ink)' }}>Inserido no artefato.</span>
                         ) : confirmInsert ? (

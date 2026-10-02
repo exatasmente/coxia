@@ -123,13 +123,13 @@ export function Discussions({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
         <header className="panel-dark" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label="Voltar" onClick={() => go({ name: 'today' })}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: '#C4B5FD', fontWeight: 600 }}>Discussões · {mr?.ref ?? 'sem MR'} · #{card.iid}</div>
+            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>Discussões · {mr?.ref ?? 'sem MR'} · #{card.iid}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
-          <Wave on={!!player.speaking} color="#C4B5FD" small />
-          <button type="button" className="btn" style={{ background: 'transparent', color: '#F9FAFB', borderColor: '#374151' }} disabled={loading || !mr} onClick={() => mr && void load(mr)}>
+          <Wave on={!!player.speaking} color="var(--night-violet)" small />
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && void load(mr)}>
             {loading ? <span className="spinner" /> : null} Atualizar
           </button>
         </header>
@@ -197,7 +197,7 @@ export function Discussions({
                   value={body}
                   onChange={(e) => setDrafts((x) => ({ ...x, [current.id]: e.target.value }))}
                   rows={6}
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #d1d5db', font: 'inherit', lineHeight: 1.5, resize: 'vertical' }}
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--field-line)', font: 'inherit', lineHeight: 1.5, resize: 'vertical' }}
                 />
                 <div className="row" style={{ gap: 8 }}>
                   <button type="button" className="btn btn-dark" disabled={!!busy || !body.trim()} onClick={() => mr && void propose('reply', current, () => feedbackApi.replyDiscussion(card, mr, current.id, body))}>Responder</button>
@@ -206,7 +206,7 @@ export function Discussions({
                 </div>
                 <p className="faint">Cada botão só cria uma proposta. Nada vai ao GitLab antes do “seguir” e da confirmação na tela Ações.</p>
                 {[...replied, ...(resolveProposal ? [resolveProposal] : [])].map((p) => (
-                  <div key={p.key} className="item row spread" style={{ flexDirection: 'row', background: 'var(--teal-soft)', borderColor: '#99f6e4' }}>
+                  <div key={p.key} className="item row spread" style={{ flexDirection: 'row', background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
                     <span className="small">{p.kind === 'reply' ? 'Resposta' : 'Resolver'}: {STATE_LABEL[p.state]}</span>
                     <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'actions' })}>Ver em Ações</button>
                   </div>

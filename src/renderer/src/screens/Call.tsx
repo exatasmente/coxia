@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import type { Screen } from '../App';
 import { api, clock, errorText, plural, shortRef } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
@@ -9,8 +9,8 @@ import { Wave } from './Wave';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
 
-const MODERATOR_COLOR = '#12161C';
-const ME_COLOR = '#1D4ED8';
+const MODERATOR_COLOR = 'var(--ink)';
+const ME_COLOR = 'var(--blue)';
 
 function normalize(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, '').trim();
@@ -165,7 +165,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   talkRef.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button')) return;
+      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void talkRef.current();
     };
@@ -196,7 +196,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
           <div className="row" style={{ gap: 14 }}>
             <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>Pré-daily</h1>
-            <span className="pill" style={{ background: '#CCFBF1', color: 'var(--teal-ink)', borderColor: '#CCFBF1', fontWeight: 600 }}>
+            <span className="pill" style={{ background: 'var(--chip-teal-bg)', color: 'var(--chip-teal-ink)', borderColor: 'var(--chip-teal-bg)', fontWeight: 600 }}>
               <span className="live-dot" />{phase === 'ended' ? 'Encerrada' : 'Ao vivo'} · {clock(c.startedAt ?? now, now)}
             </span>
             <span className="muted small">{phase === 'ended' ? 'Pauta concluída' : idx >= 0 ? `Atividade ${idx + 1} de ${cards.length}` : 'Abertura'}</span>
@@ -232,7 +232,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             <section className="panel-dark">
               {phase === 'ended' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 4px' }}>
-                  <div className="small" style={{ color: '#99F6E4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fim da pauta</div>
+                  <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fim da pauta</div>
                   <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.3 }}>
                     {plural(c.decisions.length, 'decisão', 'decisões')}, {plural(c.effects.length, 'efeito', 'efeitos')} na fila e {plural(c.minutes.unanswered.length, 'pergunta', 'perguntas')} sem resposta.
                   </div>
@@ -243,25 +243,25 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <div className="row spread" style={{ alignItems: 'center' }}>
                     {card ? (
                       <div className="row" style={{ gap: 16, flexWrap: 'nowrap', minWidth: 0 }}>
-                        <div className="chip chip-lg" style={{ background: c.colorOf(card.ref), boxShadow: speakingWho === card.ref ? '0 0 0 6px rgba(45,212,191,0.25)' : 'none' }}>
+                        <div className="chip chip-lg" style={{ background: c.colorOf(card.ref), boxShadow: speakingWho === card.ref ? '0 0 0 6px var(--glow)' : 'none' }}>
                           {shortRef(card.ref)}
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
-                            <span className="mono" style={{ color: '#9CA3AF' }}>#{card.iid}</span>
-                            <span className="small" style={{ color: '#9CA3AF' }}>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ')}</span>
+                            <span className="mono" style={{ color: 'var(--on-night-muted)' }}>#{card.iid}</span>
+                            <span className="small" style={{ color: 'var(--on-night-muted)' }}>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ')}</span>
                           </div>
                           <div style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25 }}>{card.title}</div>
-                          <div className="small" style={{ color: '#9CA3AF', marginTop: 4 }}>
+                          <div className="small" style={{ color: 'var(--on-night-muted)', marginTop: 4 }}>
                             {card.mrs.join(' · ') || 'sem MR'} · voz {c.voiceOf(card.ref)?.label}
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="row" style={{ gap: 16 }}>
-                        <div className="chip chip-lg" style={{ background: '#374151' }}>M</div>
+                        <div className="chip chip-lg" style={{ background: 'var(--night-line)' }}>M</div>
                         <div>
-                          <div className="small" style={{ color: '#9CA3AF' }}>Moderador · voz {c.voices?.moderator.label}</div>
+                          <div className="small" style={{ color: 'var(--on-night-muted)' }}>Moderador · voz {c.voices?.moderator.label}</div>
                           <div style={{ fontSize: 21, fontWeight: 600 }}>Abertura da pré-daily</div>
                         </div>
                       </div>
@@ -275,7 +275,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </div>
 
                   <div className="row" style={{ gap: 16, minHeight: 64, flexWrap: 'nowrap' }}>
-                    <Wave on={!!speakingWho || rec.recording} color={rec.recording ? '#60A5FA' : '#2DD4BF'} level={rec.level} />
+                    <Wave on={!!speakingWho || rec.recording} color={rec.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={rec.level} />
                     <span className={`speaker ${rec.recording ? 'me' : !speakingWho && !busy && phase !== 'preparing' ? 'idle' : ''}`}>{speakerLabel}</span>
                   </div>
 
@@ -304,7 +304,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             </section>
 
             {phase !== 'ended' && (
-              <div className="row" role="toolbar" aria-label="Controles da call">
+              <div className="row" role="group" aria-label="Controles da call">
                 <button type="button" className={`btn ${rec.recording ? 'btn-rec' : 'btn-blue'}`} disabled={busy || phase === 'intro'} onClick={() => void talk()}>
                   <MicIcon />
                   {rec.recording ? 'Enviar fala (espaço)' : phase === 'transcribing' ? 'Transcrevendo…' : phase === 'thinking' ? 'Pensando…' : 'Falar (espaço)'}
@@ -329,7 +329,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
               {c.log.slice(-8).map((l, i) => (
                 <div key={`${l.at}-${i}`} className="log-line">
                   <span className="at">{l.at}</span>
-                  <span className="who" style={{ color: l.color }}>{l.who}</span>
+                  <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
                   <span className="text">{l.text}</span>
                 </div>
               ))}

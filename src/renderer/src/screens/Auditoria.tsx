@@ -59,7 +59,7 @@ export function Auditoria({ go }: { go: (s: Screen) => void }) {
             onChange={(e) => setIssue(e.target.value)}
             placeholder="Filtrar por issue (ex.: 15499)"
             aria-label="Filtrar por issue"
-            style={{ marginLeft: 'auto', minHeight: 36, padding: '0 12px', borderRadius: 10, border: '1px solid #d1d5db', minWidth: 220 }}
+            style={{ marginLeft: 'auto', minHeight: 36, padding: '0 12px', borderRadius: 10, border: '1px solid var(--field-line)', minWidth: 220 }}
           />
           <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => void load()}>Atualizar</button>
         </header>

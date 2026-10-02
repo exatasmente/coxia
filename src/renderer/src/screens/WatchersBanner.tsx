@@ -22,7 +22,7 @@ export function WatchersBanner({ go }: { go: (s: Screen) => void }) {
           <div
             key={a.id}
             className="item row spread"
-            style={stop ? { background: 'var(--red-soft)', borderColor: '#fca5a5' } : { background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}
+            style={stop ? { background: 'var(--red-soft)', borderColor: 'var(--red-mid)' } : { background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}
           >
             <div>
               <div className="small" style={{ color: stop ? 'var(--red-ink)' : 'var(--amber-ink)', fontWeight: 600 }}>{a.message}</div>

@@ -12,6 +12,6 @@ export function SpeakPill() {
   return engine === 'kokoro' ? (
     <span className="pill"><span className="dot" />Falar: Kokoro (local)</span>
   ) : (
-    <span className="pill"><span className="dot" style={{ background: '#B45309' }} />Falar: Edge (nuvem)</span>
+    <span className="pill"><span className="dot" style={{ background: 'var(--warn)' }} />Falar: Edge (nuvem)</span>
   );
 }

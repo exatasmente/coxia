@@ -133,7 +133,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
         <p className="small muted">Aqui você só monta propostas. Nada vai ao GitLab antes do “seguir” e da confirmação na tela Ações.</p>
 
         {done.length > 0 && (
-          <div className="item" style={{ background: 'var(--teal-soft)', borderColor: '#99F6E4' }}>
+          <div className="item" style={{ background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
             <div className="small" style={{ color: 'var(--teal-ink)', fontWeight: 600 }}>Proposta criada — confirme em Ações.</div>
             {done.map((d, i) => <div key={i} className="small">{d}</div>)}
           </div>

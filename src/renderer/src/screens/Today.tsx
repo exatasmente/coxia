@@ -34,7 +34,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--night)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5EEAD4" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ color: 'var(--night-teal-2)' }} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
               </svg>
             </div>
@@ -57,6 +57,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
             <VoiceToggle />
             <SaudeButton go={go} />
             <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => go({ name: 'auditoria' })}>Auditoria</button>
+            <button type="button" className="btn" style={{ minHeight: 34 }} title="Atalho: F1" onClick={() => go({ name: 'help' })}>Ajuda</button>
             {/* slot: header buttons of feature modules */}
           </div>
         </header>
@@ -77,7 +78,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
         )}
 
         {c.resumed && (
-          <div className="item row spread" style={{ background: 'var(--teal-soft)', borderColor: '#99F6E4' }}>
+          <div className="item row spread" style={{ background: 'var(--teal-soft)', borderColor: 'var(--teal-line)' }}>
             <span className="small" style={{ color: 'var(--teal-ink)' }}>
               {c.saveResult
                 ? 'A pré-daily de hoje já foi encerrada e a ata está gravada.'
@@ -94,17 +95,17 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
           <div className="ceremonies">
             <div className="ceremony main">
               <div className="row spread">
-                <span className="small" style={{ color: '#99F6E4', fontWeight: 500 }}>{c.startedAt ? 'Em andamento' : 'Agora'}</span>
-                <span className="mono small" style={{ color: '#9CA3AF' }}>~30 s por atividade</span>
+                <span className="small" style={{ color: 'var(--night-teal)', fontWeight: 500 }}>{c.startedAt ? 'Em andamento' : 'Agora'}</span>
+                <span className="mono small" style={{ color: 'var(--on-night-muted)' }}>~30 s por atividade</span>
               </div>
               <div>
                 <h3 style={{ fontSize: 22, marginBottom: 6 }}>Pré-daily</h3>
-                <p className="small" style={{ color: '#D1D5DB', lineHeight: 1.5 }}>
+                <p className="small" style={{ color: 'var(--on-night-3)', lineHeight: 1.5 }}>
                   {c.cards ? `${cards.length} de ${c.cards.total} atividades, bloqueadas primeiro.` : 'Lendo o GitLab pelo daily-report (~30 s).'}
                 </p>
               </div>
               <div className="foot">
-                <span className="small" style={{ color: '#9CA3AF' }}>
+                <span className="small" style={{ color: 'var(--on-night-muted)' }}>
                   {c.cards ? `Agentes prontos ${ready} de ${cards.length}` : 'Montando cartões…'}
                 </span>
                 <button type="button" className="btn btn-accent" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
@@ -115,7 +116,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
 
             <div className="ceremony">
               <div className="row spread">
-                <span className="small" style={{ color: '#A16207', fontWeight: 600 }}>{blocked.length} com bloqueio</span>
+                <span className="small" style={{ color: 'var(--warn)', fontWeight: 600 }}>{blocked.length} com bloqueio</span>
                 <span className="mono small faint">sob demanda</span>
               </div>
               <div>
