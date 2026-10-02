@@ -1,5 +1,6 @@
 import mermaid from 'mermaid';
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { parseBlocks, parseInline, splitDiagrams } from '../richText';
 
 function darkTheme(): boolean {
   const t = document.documentElement.dataset.theme;
@@ -132,92 +133,41 @@ function DiagramViewer({ svg, title, onClose }: { svg: string; title?: string; o
   );
 }
 
-const FENCE = /```mermaid\s*\n([\s\S]*?)```/g;
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*)/g;
-
 function Inline({ text }: { text: string }) {
   return (
     <>
-      {text.split(INLINE).map((part, i) =>
-        part.startsWith('`') && part.endsWith('`') && part.length > 2 ? (
-          <code key={i} className="mono rich-code">{part.slice(1, -1)}</code>
-        ) : part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
-          <strong key={i}>{part.slice(2, -2)}</strong>
-        ) : (
-          <Fragment key={i}>{part}</Fragment>
-        ),
+      {parseInline(text).map((s, i) =>
+        s.kind === 'code' ? <code key={i} className="mono rich-code">{s.value}</code> : s.kind === 'bold' ? <strong key={i}>{s.value}</strong> : <Fragment key={i}>{s.value}</Fragment>,
       )}
     </>
   );
 }
 
-const ITEM = /^\s*(?:[-*•]|(\d+)[.)])\s+/;
-
-// Paragraphs, lists, headings, `code` and **bold**: enough for the agents' chat text, built as elements (no HTML).
 function Blocks({ text }: { text: string }) {
-  const blocks: { kind: 'p' | 'ul' | 'ol' | 'h' | 'pre'; lines: string[] }[] = [];
-  let code: string[] | null = null;
-  for (const line of text.split('\n')) {
-    if (line.trim().startsWith('```')) {
-      if (code) {
-        blocks.push({ kind: 'pre', lines: code });
-        code = null;
-      } else code = [];
-      continue;
-    }
-    if (code) {
-      code.push(line);
-      continue;
-    }
-    const trimmed = line.trim();
-    const last = blocks[blocks.length - 1];
-    if (!trimmed) {
-      blocks.push({ kind: 'p', lines: [] });
-      continue;
-    }
-    const item = ITEM.exec(line);
-    if (item) {
-      const kind = item[1] ? 'ol' : 'ul';
-      if (last?.kind === kind) last.lines.push(line.replace(ITEM, ''));
-      else blocks.push({ kind, lines: [line.replace(ITEM, '')] });
-    } else if (/^#{1,6}\s/.test(trimmed)) {
-      blocks.push({ kind: 'h', lines: [trimmed.replace(/^#{1,6}\s+/, '')] });
-    } else if (last?.kind === 'p') last.lines.push(trimmed);
-    else blocks.push({ kind: 'p', lines: [trimmed] });
-  }
-  if (code) blocks.push({ kind: 'pre', lines: code });
   return (
     <div className="rich">
-      {blocks
-        .filter((b) => b.lines.length)
-        .map((b, i) =>
-          b.kind === 'ul' || b.kind === 'ol' ? (
-            (b.kind === 'ul' ? <ul key={i}>{b.lines.map((l, j) => <li key={j}><Inline text={l} /></li>)}</ul> : <ol key={i}>{b.lines.map((l, j) => <li key={j}><Inline text={l} /></li>)}</ol>)
-          ) : b.kind === 'pre' ? (
-            <pre key={i} className="mono rich-pre">{b.lines.join('\n')}</pre>
-          ) : b.kind === 'h' ? (
-            <p key={i} className="rich-h"><Inline text={b.lines[0]} /></p>
-          ) : (
-            <p key={i}>{b.lines.map((l, j) => <Fragment key={j}>{j > 0 && <br />}<Inline text={l} /></Fragment>)}</p>
-          ),
-        )}
+      {parseBlocks(text).map((b, i) =>
+        b.kind === 'ul' ? (
+          <ul key={i}>{b.lines.map((l, j) => <li key={j}><Inline text={l} /></li>)}</ul>
+        ) : b.kind === 'ol' ? (
+          <ol key={i} start={b.start}>{b.lines.map((l, j) => <li key={j}><Inline text={l} /></li>)}</ol>
+        ) : b.kind === 'pre' ? (
+          <pre key={i} className="mono rich-pre">{b.lines.join('\n')}</pre>
+        ) : b.kind === 'h' ? (
+          <p key={i} className="rich-h"><Inline text={b.lines[0]} /></p>
+        ) : (
+          <p key={i}>{b.lines.map((l, j) => <Fragment key={j}>{j > 0 && <br />}<Inline text={l} /></Fragment>)}</p>
+        ),
+      )}
     </div>
   );
 }
 
 // Chat text with ```mermaid blocks drawn as diagrams.
 export function RichText({ text }: { text: string }) {
-  const parts: { kind: 'text' | 'diagram'; value: string }[] = [];
-  let last = 0;
-  for (const m of text.matchAll(FENCE)) {
-    if (m.index > last) parts.push({ kind: 'text', value: text.slice(last, m.index) });
-    parts.push({ kind: 'diagram', value: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push({ kind: 'text', value: text.slice(last) });
   return (
     <>
-      {parts.map((p, i) => (
+      {splitDiagrams(text).map((p, i) => (
         <Fragment key={i}>{p.kind === 'diagram' ? <Diagram code={p.value} /> : p.value.trim() && <Blocks text={p.value.trim()} />}</Fragment>
       ))}
     </>
