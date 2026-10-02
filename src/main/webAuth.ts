@@ -97,6 +97,7 @@ export function createAuth(file: string, now: () => number = Date.now): Auth {
 
   function fail(ip: string): never {
     fails.set(ip, [...recent(fails.get(ip) ?? []), now()]);
+    if (fails.size > 1000) for (const [k, list] of fails) if (!recent(list).length) fails.delete(k);
     globalFails.push(now());
     if (pairing && ++pairing.fails >= FAILS_PER_CODE) pairing = null;
     throw new AuthError(401, 'Código inválido ou expirado.');

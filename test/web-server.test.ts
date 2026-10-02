@@ -256,6 +256,11 @@ describe('request guards', () => {
     expect(res.status).toBe(413);
   });
 
+  it('caps the login body at 4 KB before anyone is authenticated', async () => {
+    const res = await http('POST', `${BASE}api/login`, { headers: { ...JSON_POST, 'X-Forwarded-For': '203.0.113.77' }, body: JSON.stringify({ code: 'x'.repeat(5000), name: 'x' }) }).catch(() => ({ status: 413 }));
+    expect(res.status).toBe(413);
+  });
+
   it('originAllowed and clientIp helpers', () => {
     expect(originAllowed(undefined, PUBLIC)).toBe(true);
     expect(originAllowed('https://koala.fortics.dev', PUBLIC)).toBe(true);

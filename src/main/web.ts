@@ -10,6 +10,7 @@ import { webRefusal } from './webPolicy';
 
 const COOKIE = 'cer_session';
 const MAX_BODY = 15 * 1024 * 1024;
+const LOGIN_BODY = 4096;
 const HEARTBEAT_MS = 25_000;
 
 const CSP = [
@@ -134,13 +135,13 @@ class HttpError extends Error {
   }
 }
 
-function readBody(req: IncomingMessage): Promise<Buffer> {
+function readBody(req: IncomingMessage, max = MAX_BODY): Promise<Buffer> {
   return new Promise((ok, fail) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > max) {
         fail(new HttpError(413, 'Corpo grande demais.'));
         req.destroy();
         return;
@@ -202,7 +203,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       guardWrite(req);
       let body: { code?: unknown; name?: unknown };
       try {
-        body = JSON.parse((await readBody(req)).toString('utf8')) as { code?: unknown; name?: unknown };
+        body = JSON.parse((await readBody(req, LOGIN_BODY)).toString('utf8')) as { code?: unknown; name?: unknown };
       } catch {
         throw new HttpError(400, 'JSON inválido.');
       }
@@ -243,7 +244,7 @@ export function createWebApp(deps: WebDeps): WebApp {
     if (rel.startsWith('api/rpc/')) {
       if (method !== 'POST') throw new HttpError(405, 'Método não permitido.');
       guardWrite(req);
-      const channel = decodeURIComponent(rel.slice('api/rpc/'.length));
+      const channel = rel.slice('api/rpc/'.length);
       if (!deps.hasChannel(channel)) throw new HttpError(404, `Canal desconhecido: ${channel}`);
       const refusal = webRefusal(channel, deps.settings().allowExternalEffects);
       if (refusal) throw new HttpError(403, refusal);
