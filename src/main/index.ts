@@ -202,7 +202,9 @@ async function quitForUpdate(): Promise<void> {
   quitRequested = true;
   console.log('[update] quit requested');
   if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    const started = Date.now();
     await flushRenderer((ev) => win?.webContents.send('app:event', ev), 3000);
+    console.log(`[update] window state saved in ${Date.now() - started} ms`);
   }
   quitting = true;
   app.quit();

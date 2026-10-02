@@ -58,11 +58,35 @@ scripts/install-local.sh --autostart   # idem, e abre ao entrar no sistema (opci
 
 O script copia o AppImage mais novo de `dist/` para `~/.local/opt/cerimonias/cerimonias.AppImage`, o ícone para `~/.local/share/icons/hicolor/256x256/apps/` e cria `~/.local/share/applications/cerimonias.desktop` (aparece no menu de aplicativos). Com `--autostart` escreve `~/.config/autostart/cerimonias.desktop` apontando para o AppImage instalado, com `--hidden`; sem a flag, não mexe nisso e avisa se o entry existente aponta para outro lugar (por exemplo, a árvore de desenvolvimento). Rodar de novo é seguro: o que não mudou é deixado como está e o AppImage novo troca o antigo por renomeação. Cada passo é impresso. Precisa de `libfuse2` (`sudo apt install libfuse2t64`) para o AppImage abrir.
 
-**Atualizar:** `git pull`, `npm run dist`, `scripts/install-local.sh`, e fechar e abrir o app. O venv da voz e os dados não são tocados.
+Para atualizar o app instalado, veja [Atualizar](#atualizar).
 
 **Dev e instalado juntos:** os dois usam o mesmo nome de app (`cerimonias`), então compartilham os dados (`~/.local/share/cerimonias`: workspaces com atas, histórico e configurações; acesso pelo navegador, aparelhos pareados e glossário na raiz) **e** o `userData` do Electron (`~/.config/cerimonias`), e com ele o bloqueio de instância única. Na prática, **só uma instância roda por vez**: abrir a outra enquanto uma está aberta só traz a janela da primeira para a frente. Para testar o código em desenvolvimento, feche o instalado; para voltar, feche o dev. O que muda de um para o outro é onde ficam o código e o venv da voz (dev: `sidecar/.venv`; instalado: `~/.config/cerimonias/voice-venv`, criado na primeira abertura, com rede). Para rodar uma cópia isolada de teste, aponte `CERIMONIAS_DATA_DIR` (e `CERIMONIAS_SPECS_DIR`) para uma pasta de teste: o `userData` passa a ficar dentro dela.
 
 O pacote não leva os modelos do Kokoro; a voz local continua lendo `CERIMONIAS_KOKORO_DIR` ou `~/projects/hermes-poc/vendor/kokoro`.
+
+## Atualizar
+
+Depois de `git pull` (ou de commitar uma mudança), um comando só recompila, fecha o app em uso, instala a versão nova e abre de novo:
+
+```bash
+scripts/update.sh
+```
+
+Passos, nesta ordem (cada um é impresso e vai para `~/.local/state/cerimonias/update.log`):
+
+1. **Confere a árvore.** Recusa e lista os arquivos se houver mudança não commitada em `src/` (`--force-dirty` ignora, e o build sai marcado `+dirty`).
+2. **Compila** com `npm run dist` (log em `~/.local/state/cerimonias/build.log`, leva alguns minutos). Se falhar, mostra o final do log e **sai sem tocar no app instalado**.
+3. **Pede ao app em uso que feche.** O script abre o binário instalado com `--quit-for-update`: a instância que está rodando recebe o pedido (instância única), manda a janela salvar a cerimônia do dia e sai pelo caminho normal; a instância nova que fez o pedido sai na hora. Ele espera o processo sumir (até 45 s, `--timeout <s>`). Se não sumir, para com uma mensagem clara, sem instalar nada e sem matar o app; `--kill` envia SIGTERM (e SIGKILL só depois de 10 s). Fechar assim, e não matando o AppImage, evita o "Erro no barramento" (SIGBUS) que acontece quando o ponto de montagem some debaixo de um app vivo. Ações de release e resoluções de conflito já são gravadas em disco a cada passo; o que não sobrevive é uma chamada de agente ou de voz no meio da execução.
+4. **Instala** com `scripts/install-local.sh`, sem mexer no autostart: ligado continua ligado, desligado continua desligado.
+5. **Abre o app novo**, separado do terminal (`setsid`/`nohup`), com a saída em `~/.local/state/cerimonias/app.log`, e imprime a versão e o commit que ele informou (`<dados>/run.json`).
+
+Outras opções: `--no-build` reaproveita o `dist/*.AppImage` mais novo, `--hidden` abre só na bandeja, `--no-start` instala sem abrir. Duas atualizações ao mesmo tempo não rodam (a segunda recusa).
+
+**Pelo app:** Configurações → "Atualizar o app" mostra a versão instalada (versão, commit e data da compilação, gravados no build), o último commit da `main` em `~/projects/cerimonias` (só leitura) e o botão "Atualizar agora", que pede confirmação e roda `scripts/update.sh` separado do app. O app fecha sozinho no fim da compilação e, na primeira abertura depois, avisa uma vez "Atualizado para &lt;commit&gt;". A seção só existe na janela do app, não no navegador, e em desenvolvimento (`npx electron .`) o botão apenas explica que só vale no app instalado.
+
+**Primeira vez:** o app instalado antes desta versão ainda não entende `--quit-for-update`. Na primeira atualização o script espera, avisa e, se o app não fechar, feche-o com "Sair" na bandeja e rode `scripts/update.sh --no-build` para continuar sem recompilar.
+
+**Variáveis** (para testar sem tocar na instalação real): `CERIMONIAS_PREFIX`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `CERIMONIAS_DATA_DIR` e `CERIMONIAS_APP_ARGS` (argumentos extras em toda abertura do app, por exemplo `--user-data-dir=...`); `CERIMONIAS_SOURCE_DIR` muda a árvore que a tela consulta e atualiza (padrão `~/projects/cerimonias`).
 
 ## Workspaces
 
