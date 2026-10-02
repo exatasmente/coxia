@@ -1,15 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
-import { setSpeechEnabled, speechEnabled } from '../audio';
+import { setSpeechEnabled, useSpeechEnabled } from '../audio';
 
 // Quick switch in the header; the same flag lives in Settings → Voz.
 export function VoiceToggle() {
-  const [on, setOn] = useState(speechEnabled());
+  const on = useSpeechEnabled();
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    void api.getSettings().then((s) => setOn(s.voice.speak));
-  }, []);
 
   const toggle = async () => {
     setSaving(true);
@@ -17,7 +13,6 @@ export function VoiceToggle() {
       const s = await api.getSettings();
       const saved = await api.saveSettings({ ...s, voice: { ...s.voice, speak: !s.voice.speak } });
       setSpeechEnabled(saved.voice.speak);
-      setOn(saved.voice.speak);
     } finally {
       setSaving(false);
     }

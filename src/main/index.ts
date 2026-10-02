@@ -130,7 +130,11 @@ function handlers(): void {
   handle('voice:list', () => voicesFor(getSettings().voice.engine));
   handle('clipboard:copy', (text: string) => clipboard.writeText(text));
   handle('settings:get', () => getSettings());
-  handle('settings:save', (s: Settings) => saveSettings(s));
+  handle('settings:save', (s: Settings) => {
+    const saved = saveSettings(s);
+    emit({ type: 'settings', settings: saved });
+    return saved;
+  });
   handle('claude:continue', (sessionId: string, prompt?: string) => continueInClaude(sessionId, prompt));
   handle('status:check', () => checkStatus(true));
   handle('actions:list', () => listActions());

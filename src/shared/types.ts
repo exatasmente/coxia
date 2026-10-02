@@ -302,7 +302,9 @@ export type AppEvent =
   | { type: 'open'; screen: { name: string; [key: string]: unknown } }
   | { type: 'module'; name: string; payload: unknown }
   | { type: 'deep'; card: Card }
-  | { type: 'status'; result: CardsResult; checkedAt: string };
+  | { type: 'status'; result: CardsResult; checkedAt: string }
+  // every window and browser follows a settings change made in any of them
+  | { type: 'settings'; settings: import('./settings').Settings };
 
 export interface Api {
   // Generic channel for modules: each one keeps its typed wrapper next to its screen.

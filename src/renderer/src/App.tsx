@@ -80,6 +80,10 @@ export function App() {
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
         else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
+        else if (ev.type === 'settings') {
+          setSpeechEnabled(ev.settings.voice.speak);
+          setBargeIn(ev.settings.voice.bargeIn);
+        }
         else if (ev.to === 'call') go(cards ? { name: 'call' } : { name: 'today' });
         else go({ name: ev.to });
       }),
