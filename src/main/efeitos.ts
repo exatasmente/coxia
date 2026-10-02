@@ -266,7 +266,7 @@ export async function verify(c: CheckSpec, since: string): Promise<Verdict> {
       return { done: !!hit, at: hit?.committed_date, evidence: hit ? `commit ${hit.id.slice(0, 8)} em !${c.iid}` : `nenhum commit novo em !${c.iid}` };
     }
     case 'mr_pipeline': {
-      const list = (await get<GlPipeline[]>(`${mr}/pipelines`)).filter((x) => after(x.created_at, since) && (!v || x.status === v));
+      const list = (await get<GlPipeline[]>(`${mr}/pipelines`)).filter((x) => after(x.created_at, since) && (v ? x.status === v : x.status !== 'skipped'));
       const hit = list.sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
       return { done: !!hit, at: hit?.created_at, evidence: hit ? `pipeline ${hit.id} (${hit.status}) em !${c.iid}` : `nenhuma pipeline nova em !${c.iid}` };
     }
