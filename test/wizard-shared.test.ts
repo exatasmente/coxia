@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
 import type { LlmProvider } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
-import { OPEN_PRESETS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
+import { type ProviderDraft, OPEN_PRESETS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
 
 describe('wizard steps', () => {
   it('shows the SDK step only when a provider runs on the SDK engine', () => {
@@ -26,13 +26,13 @@ describe('wizard steps', () => {
 
 describe('providers', () => {
   it('builds a valid provider for every kind, with a reference and no secret value', () => {
-    const base = { preset: 'custom' as const, baseUrl: '', options: {}, model: '' };
-    const drafts = [
-      { ...base, kind: 'anthropic' as const },
-      { ...base, kind: 'bedrock' as const, options: { region: 'us-east-1', profile: ' ' } },
-      { ...base, kind: 'vertex' as const, options: { project: 'p', region: 'global' } },
-      { ...base, kind: 'foundry' as const, options: { resource: 'r' } },
-      { ...base, kind: 'openai-compatible' as const, preset: 'openrouter' as const, baseUrl: 'https://openrouter.ai/api/v1/', model: 'x/y' },
+    const base = { preset: 'custom' as const, baseUrl: '', options: {} as Record<string, string>, model: '' };
+    const drafts: ProviderDraft[] = [
+      { ...base, kind: 'anthropic' },
+      { ...base, kind: 'bedrock', options: { region: 'us-east-1', profile: ' ' } },
+      { ...base, kind: 'vertex', options: { project: 'p', region: 'global' } },
+      { ...base, kind: 'foundry', options: { resource: 'r' } },
+      { ...base, kind: 'openai-compatible', preset: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1/', model: 'x/y' },
     ];
     const providers: LlmProvider[] = [];
     for (const d of drafts) providers.push(buildProvider(d, providers.map((p) => p.id), d.kind !== 'vertex'));
@@ -103,5 +103,23 @@ describe('parseRemote', () => {
     expect(parseRemote(null)).toBeNull();
     expect(parseRemote('/some/local/path')).toBeNull();
     expect(parseRemote('https://github.com/')).toBeNull();
+  });
+});
+
+describe('userName', () => {
+  it('is empty on a fresh install and kept as the name the app always used for a migrated one', async () => {
+    const { legacyConfigFixture } = await import('./helpers/config');
+    expect(neutralConfig().userName).toBe('');
+    expect(legacyConfigFixture().userName).toBe('Luiz');
+    expect(validateConfig({ schemaVersion: 2, userName: 'Ana' }).config?.userName).toBe('Ana');
+  });
+});
+
+describe('web policy', () => {
+  it('refuses every wizard channel to a browser, and still lets it read the config', async () => {
+    const { webAccess } = await import('../src/main/webPolicy');
+    const { WIZARD_CHANNELS } = await import('../src/shared/wizard');
+    for (const channel of Object.values(WIZARD_CHANNELS)) expect(webAccess(channel), channel).toBe('deny');
+    expect(webAccess('config:get')).toBe('allow');
   });
 });

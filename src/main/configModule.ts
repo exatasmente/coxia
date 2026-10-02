@@ -86,6 +86,8 @@ export const configModule: Module = (ctx) => {
   });
 
   ctx.handle('config:import-pick', async (): Promise<string | null> => {
+    // Test hook: the isolated UI tests cannot drive a native file dialog.
+    if (process.env.COXIA_TEST_IMPORT_FILE) return process.env.COXIA_TEST_IMPORT_FILE;
     const options = { title: 'Importar uma configuração', properties: ['openFile' as const], filters: [{ name: 'Configuração Coxia', extensions: ['json'] }] };
     const win = parentWindow();
     const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);

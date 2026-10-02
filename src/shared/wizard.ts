@@ -1,6 +1,7 @@
 import type { CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
 import { LLM_ROLES, defaultEngine } from './config/types';
 import type { SdkLocationView } from './configView';
+import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInput, type SecretSourceType } from './secrets';
 
 // Everything the setup wizard's screens and the main process agree on: the steps, the presets, the pure helpers (recommendations, remote
 // parsing, ids) and the shapes of the wizard:* channels. The channels only exist in the desktop window (webPolicy.ts).
@@ -378,3 +379,34 @@ export type SdkEvent =
   | { phase: 'cancelled' };
 
 export type VoiceAction = 'check' | 'install' | 'test';
+
+// ---- secret entry -----------------------------------------------------------------------------------------------------------------------
+
+/** What a secret field holds while the user types: one source at a time. The value never leaves the form except through secretInputFrom. */
+export interface SecretDraft {
+  source: SecretSourceType;
+  value: string;
+  envName: string;
+  command: string;
+}
+
+export const emptySecretDraft = (source: SecretSourceType = 'stored'): SecretDraft => ({ source, value: '', envName: '', command: '' });
+
+export type SecretProblem = 'empty' | 'bad-ref' | 'too-long' | 'bad-env-name';
+
+/** The input for `config:secret-set` from what the user typed, or the reason it cannot be sent. */
+export function secretInputFrom(ref: string, d: SecretDraft): { input: SecretInput } | { problem: SecretProblem } {
+  if (!SECRET_REF.test(ref)) return { problem: 'bad-ref' };
+  if (d.source === 'stored') {
+    if (!d.value.trim()) return { problem: 'empty' };
+    if (d.value.length > SECRET_MAX_LENGTH) return { problem: 'too-long' };
+    return { input: { ref, source: 'stored', value: d.value.trim() } };
+  }
+  if (d.source === 'env') {
+    if (!d.envName.trim()) return { problem: 'empty' };
+    return ENV_NAME.test(d.envName.trim()) ? { input: { ref, source: 'env', name: d.envName.trim() } } : { problem: 'bad-env-name' };
+  }
+  const parts = d.command.trim().match(/"[^"]*"|'[^']*'|\S+/g)?.map((p) => p.replace(/^(["'])(.*)\1$/, '$2')) ?? [];
+  if (!parts.length) return { problem: 'empty' };
+  return { input: { ref, source: 'command', command: parts[0], args: parts.slice(1) } };
+}

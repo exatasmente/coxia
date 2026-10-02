@@ -99,13 +99,12 @@ describe('installSdk', () => {
     const calls: { args: string[]; cwd: string }[] = [];
     const spawnNpm = (args: string[], cwd: string) => {
       calls.push({ args, cwd });
-      const child = Object.assign(new EventEmitter(), {
-        stdout: new EventEmitter(),
-        stderr: new EventEmitter(),
-        kill() {
-          this.emit('close', null);
-        },
-      }) as FakeChild;
+      const child = new EventEmitter() as FakeChild;
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {
+        child.emit('close', null);
+      };
       queueMicrotask(() => script(child, cwd));
       return child as never;
     };
