@@ -11,7 +11,7 @@ const FIRST_PROMPTS: [RegExp, CustoKind][] = [
   [/^Passagem para o QA da issue /, 'qa'],
   [/^Retro semanal do Luiz/, 'retro'],
   [/^Escreva o texto que o Luiz vai colar no Teams/, 'teams'],
-  [/^A issue sz4#\d+ foi sincronizada com a main/, 'release'],
+  [/^A issue \S*\d+ foi sincronizada com a main/, 'release'],
   [/^Call sobre um conflito de sincronização/, 'release'],
   [/^Conflito de sincronização com a main depois de uma release/, 'release'],
 ];

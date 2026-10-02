@@ -1,0 +1,135 @@
+import { existsSync } from 'node:fs';
+import { LEGACY_SECRET_REF } from '../shared/config/legacy';
+import { setLanguage } from '../shared/i18n';
+import { migrateConfig } from '../shared/config/migrations';
+import type { WorkspaceConfig } from '../shared/config/types';
+import { summarizeIssues, validateConfig } from '../shared/config/validate';
+import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
+import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
+import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
+import { secrets, seedLegacySecrets } from './secrets';
+
+// The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
+// Modules read `rc()` at call time, never at import time: the config can change while the app runs (Settings, import, the wizard).
+
+let state: { config: WorkspaceConfig; resolved: ResolvedConfig } | null = null;
+let bootstrapped = false;
+const listeners = new Set<(config: WorkspaceConfig) => void>();
+
+const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
+
+function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
+  let legacy = false;
+  if (!bootstrapped) {
+    bootstrapped = true;
+    legacy = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log: (m) => console.log(`[config] ${m}`) }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
+  }
+  const stored = readConfigFile(ATAS);
+  const checked = validateConfig(stored);
+  const config = checked.config ?? migrateConfig(stored, { legacyInstall: legacy }).config;
+  if (legacy && config.llm.providers.some((p) => p.secretRef === LEGACY_SECRET_REF)) {
+    try {
+      seedLegacySecrets();
+    } catch (e) {
+      console.error('[config] could not register the previous secret source', e instanceof Error ? e.message : e);
+    }
+  }
+  setLanguage(config.language);
+  return { config, resolved: resolveConfig(config, context()) };
+}
+
+export function getConfig(): WorkspaceConfig {
+  state ??= load();
+  return state.config;
+}
+
+/** The resolved view: absolute paths, the optional integrations that are on, the former constants. */
+export function rc(): ResolvedConfig {
+  state ??= load();
+  return state.resolved;
+}
+
+export function docsSources(): ResolvedDocs {
+  return resolveDocs(getConfig(), context(), existsSync);
+}
+
+/** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
+export function saveConfig(next: unknown): WorkspaceConfig {
+  const checked = validateConfig(next);
+  if (!checked.ok || !checked.config) throw new Error(`configuração inválida: ${summarizeIssues(checked.errors)}`);
+  writeConfigFile(ATAS, checked.config);
+  state = { config: checked.config, resolved: resolveConfig(checked.config, context()) };
+  setLanguage(checked.config.language);
+  for (const fn of listeners) fn(checked.config);
+  return checked.config;
+}
+
+export function updateConfig(change: (current: WorkspaceConfig) => WorkspaceConfig): WorkspaceConfig {
+  return saveConfig(change(structuredClone(getConfig())));
+}
+
+export function reloadConfig(): WorkspaceConfig {
+  state = null;
+  return getConfig();
+}
+
+export function onConfigChange(fn: (config: WorkspaceConfig) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/** Environment for a child that talks to the VCS host through its CLI (glab). Without a configured host the CLI uses its own default. */
+export function vcsCliEnv(): NodeJS.ProcessEnv {
+  const host = rc().vcsHost;
+  return host ? { ...process.env, GITLAB_HOST: host } : { ...process.env };
+}
+
+/** Whether a secretRef the config points at has a source on this machine. */
+export function secretConfigured(ref: string | null): boolean {
+  return !ref || secrets().has(ref);
+}
+
+/** The issue project as the API path segment: the numeric id when known, else the URL-encoded "group/name". */
+export function issueProjectRef(): string {
+  const { projectId, project } = rc().issues;
+  if (projectId !== null) return String(projectId);
+  if (project) return encodeURIComponent(project);
+  throw new Error('Este workspace não tem um projeto de issues configurado.');
+}
+
+/** The VCS host, or an error naming what is missing: for the calls that cannot work without one. */
+export function requireVcsHost(): string {
+  const host = rc().vcsHost;
+  if (!host) throw new Error('Este workspace não tem uma integração com o GitLab configurada.');
+  return host;
+}
+
+/** Matches a note that opens with the QA user mention (the release hand-off comment), or null when the workspace has no QA user. */
+export function qaNoteMarker(): RegExp | null {
+  const user = rc().qaUser;
+  return user ? new RegExp(`^@${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`) : null;
+}
+
+/** The issue project URL-encoded as a path segment ("group%2Fname"), else its numeric id. */
+export function issueProjectPath(): string {
+  const { project } = rc().issues;
+  return project ? encodeURIComponent(project) : issueProjectRef();
+}
+
+/** Web URL of an issue of the configured project, or null when the workspace has no host or issue project. */
+export function issueWebUrl(iid: string | number): string | null {
+  const { project } = rc().issues;
+  const host = rc().vcsHost;
+  return host && project ? `https://${host}/${project}/-/work_items/${iid}` : null;
+}
+
+/** A card ref of an issue of the configured project ("sz4#15499" with the prefix, a bare number without one). */
+export function isIssueRef(ref: string): boolean {
+  const { refPrefix, project } = rc().issues;
+  return !!project && ref.startsWith(refPrefix) && /^\d+$/.test(ref.slice(refPrefix.length));
+}
+
+/** Login of the QA account, or an empty string when the workspace has none (nothing matches it). */
+export function qaUser(): string {
+  return rc().qaUser ?? '';
+}

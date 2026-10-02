@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { AgentTurn, Card } from '../shared/types';
-import { TRANSCRIPTS } from './custo';
+import { rc } from './workspaceConfig';
 import { ATAS } from './env';
 import { type Artifact, type Saved, fingerprint, isReusable, reusedTurn } from './falas-core';
 
@@ -47,7 +47,7 @@ export function cardFingerprint(card: Card): string {
   return fingerprint(card, card.spec ? artifactsOf(card.spec.folder) : []);
 }
 
-const sessionAlive = (id: string | null) => !!id && existsSync(join(TRANSCRIPTS, `${id}.jsonl`));
+const sessionAlive = (id: string | null) => !!id && existsSync(join(rc().transcriptsDir, `${id}.jsonl`));
 
 // A turn saved within the last days for the same fingerprint, rebuilt to say nothing changed; null means ask the agent.
 export function reusableTurn(card: Card, now = Date.now()): AgentTurn | null {

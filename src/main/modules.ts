@@ -1,6 +1,7 @@
 import { autostart } from './autostart';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
+import { configModule } from './configModule';
 import { register as conflictVerify } from './conflictVerify';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
@@ -20,6 +21,7 @@ import type { Module } from './module';
 export const MODULES: Module[] = [
   auditoria,
   autostart,
+  configModule,
   conflictVerify,
   custoTempo,
   diagramFix,

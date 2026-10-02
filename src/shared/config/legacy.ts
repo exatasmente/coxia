@@ -46,10 +46,13 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
         {
           id: LEGACY_PROVIDER_ID,
           kind: 'anthropic',
+          engine: 'claude-sdk',
           baseUrl: 'https://openrouter.ai/api',
           models: [...LEGACY_MODEL_OPTIONS],
           secretRef: LEGACY_SECRET_REF,
           envFile: '~/.claude/openrouter.settings.json',
+          options: {},
+          legacyCustomEndpoint: true,
         },
       ],
     },
@@ -80,6 +83,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
       templateId: 'sz-sdd',
       ceremonies: { preDaily: true, unblock: true, gate: true, qaHandoff: true, retro: true, releaseConflicts: true },
       stages: LEGACY_STAGES,
+      releaseLabelPattern: '^sz4-(\\d+\\.\\d+\\.\\d+)$',
       specLayout: {
         folderPrefix: '#{iid}-',
         phaseFiles: [
@@ -107,7 +111,9 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
       },
       qa: { user: 'qa.interno' },
     },
+    agents: { tools: { trackerMcpServer: 'gitlab-issue-analysis' } },
     voice: { enabled: true, depsInstalled: true },
+    claudeSdk: { installed: true, version: null, path: null },
     externalTools: {
       cardSource: {
         enabled: true,
@@ -115,6 +121,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
         reportArgs: ['report', '--format', 'json', '--dry-run'],
         noteArgs: ['note', '{ref}', '{note}'],
         stateFile: '~/.local/share/daily-report/state.json',
+        historyFile: '~/.local/share/daily-report/history.jsonl',
         timeoutMs: 150_000,
       },
       releaseSync: { enabled: true, command: '~/projects/sz-playbook/.claude/bin/post-release-sync', cwd: '~/projects/sz-playbook', mirrorsDir: '~/.cache/post-release-sync' },

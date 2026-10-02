@@ -14,23 +14,44 @@ export const THEMES: Theme[] = ['system', 'light', 'dark'];
 export const LLM_ROLES = ['turn', 'reply', 'deep', 'teams', 'fix'] as const;
 export type LlmRole = (typeof LLM_ROLES)[number];
 
-// Wire protocol of a provider. anthropic: spoken natively by the Claude Agent SDK (Anthropic, OpenRouter, any gateway that mirrors /v1/messages).
-// openai: needs the translation adapter registered in main/llm.ts.
-export const PROVIDER_KINDS = ['anthropic', 'openai'] as const;
+// How a provider is reached. anthropic, bedrock, vertex and foundry are the ways to run Claude (API key or cloud credentials; never a claude.ai
+// subscription login, which Anthropic does not allow third-party apps to offer). openai-compatible covers hosted and local OpenAI-style servers.
+export const PROVIDER_KINDS = ['anthropic', 'bedrock', 'vertex', 'foundry', 'openai-compatible'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+
+// The agent loop that serves a provider. claude-sdk: the Claude Agent SDK (Claude models only). open: the app's own open-source loop,
+// for OpenAI-compatible and local providers (src/main/engine/open/, built separately; it plugs in through main/engine/registry.ts).
+export const ENGINES = ['claude-sdk', 'open'] as const;
+export type EngineId = (typeof ENGINES)[number];
+
+export function defaultEngine(kind: ProviderKind): EngineId {
+  return kind === 'openai-compatible' ? 'open' : 'claude-sdk';
+}
 
 export interface LlmProvider {
   /** Stable id, referenced by llm.roles. Lowercase letters, digits, "-" and "_". */
   id: string;
   kind: ProviderKind;
-  /** API root: https://api.anthropic.com, https://openrouter.ai/api, http://localhost:11434/v1 ... */
+  /** Which agent loop serves this provider. claude-sdk needs a Claude-capable kind (anything but openai-compatible). */
+  engine: EngineId;
+  /** API root: https://api.anthropic.com, https://openrouter.ai/api, http://localhost:11434/v1 ... Cloud kinds may leave it empty. */
   baseUrl: string;
   /** Model ids the provider offers (suggestions for the model picker; any id may still be typed). */
   models: string[];
-  /** Reference into the secrets store. null: no key is sent (local model, or the credentials the Claude CLI already has). */
+  /**
+   * Reference into the secrets store (API key). null: send no key, which is right for a local server and for the cloud kinds that use the
+   * machine's own credentials (AWS default chain, gcloud application default credentials, az login).
+   */
   secretRef: string | null;
   /** Optional Claude-settings-style JSON file whose "env" block (minus KEY/TOKEN variables) is merged into the agent environment. */
   envFile: string | null;
+  /** Kind-specific, non-secret settings. bedrock: region, profile. vertex: project, region. foundry: resource. */
+  options: Record<string, string>;
+  /**
+   * The Claude Agent SDK is pointed at a non-Anthropic endpoint (non-Claude models). Anthropic does not support that; it exists so an
+   * install made before the configuration keeps working. Never set by the wizard, never offered to a fresh install.
+   */
+  legacyCustomEndpoint: boolean;
 }
 
 export interface RoleModel {
@@ -164,6 +185,8 @@ export interface DevCycleConfig {
   templateId: string;
   ceremonies: Record<CeremonyId, boolean>;
   stages: StageDef[];
+  /** Regular expression for the label that says an issue shipped in a version. Group 1, when present, is the version shown. */
+  releaseLabelPattern: string;
   specLayout: SpecLayout;
   qa: {
     /** Login whose issue notes carry the release branch and pipelines. null: no QA hand-off notes. */
@@ -185,6 +208,8 @@ export interface AgentToolsConfig {
   skills: boolean;
   /** Issue tracker MCP tools (get issue / merge request details). */
   trackerMcp: boolean;
+  /** Name of the MCP server that offers them (tools are mcp__<server>__get_issue_details_and_comments and ...get_merge_request_details_and_changes). Empty: none. */
+  trackerMcpServer: string;
   /** Read-only use of the VCS CLI through the shell allow-list. */
   vcsCli: boolean;
   subagents: boolean;
@@ -228,6 +253,8 @@ export interface CardSourceConfig extends CommandConfig {
   noteArgs: string[];
   /** File where the tool keeps its state, read to prepend the previous note. null: no previous note. */
   stateFile: string | null;
+  /** File where the tool appends one line per day it ran (the retro and the watchers read it). null: none. */
+  historyFile: string | null;
   timeoutMs: number;
 }
 
@@ -275,6 +302,15 @@ export interface ScheduleConfig {
   retroTime: string;
 }
 
+/** Where the Claude Agent SDK comes from: bundled with the app (installs made before the SDK became a separate download) or a user-local install. */
+export interface ClaudeSdkConfig {
+  /** The SDK was installed by the wizard (or exists bundled with an existing install). */
+  installed: boolean;
+  version: string | null;
+  /** Folder of the user-local install (it holds node_modules/@anthropic-ai/claude-agent-sdk). null: the bundled copy. */
+  path: string | null;
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -292,6 +328,7 @@ export interface WorkspaceConfig {
   devCycle: DevCycleConfig;
   agents: AgentsConfig;
   voice: VoiceConfig;
+  claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
 }
 

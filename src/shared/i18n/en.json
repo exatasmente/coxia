@@ -1,0 +1,13 @@
+{
+  "settings.title": "Settings",
+  "settings.models.title": "Models",
+  "settings.tools.title": "Agent tools",
+  "settings.voice.title": "Voice",
+  "settings.schedule.title": "Schedule and notifications",
+  "settings.appearance.title": "Appearance",
+  "settings.start.title": "Startup",
+  "settings.language.title": "Language",
+  "settings.language.hint": "Applies on save. Screens that are not translated yet stay in Portuguese.",
+  "settings.language.pt-BR": "Português (Brasil)",
+  "settings.language.en": "English"
+}

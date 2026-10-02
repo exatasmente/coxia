@@ -89,7 +89,7 @@ function hhmm(date: string, at: string): number | null {
 
 // Pre-daily: log lines carry the activity (#iid) and the time since the call started. An activity lasts from its first line
 // to the first line of the next one (the last one, to the end of the call); the opening is the daily itself.
-export function ceremonySpans(s: SavedCeremony, fileMtime: number): Span[] {
+export function ceremonySpans(s: SavedCeremony, fileMtime: number, refPrefix = ''): Span[] {
   if (!s.startedAt) return [];
   const started = s.startedAt;
   const end = s.endedAt ?? Math.max(fileMtime, started);
@@ -110,7 +110,7 @@ export function ceremonySpans(s: SavedCeremony, fileMtime: number): Span[] {
   const push = (kind: TempoKind, iid: string | null, from: number, to: number, note: string) => {
     if (to <= from) return;
     const card = iid ? titles.get(iid) : undefined;
-    spans.push({ kind, ref: card?.ref ?? (iid ? `sz4#${iid}` : null), iid, title: card?.title ?? '', sessionId: card ? (s.turns[card.ref]?.sessionId ?? null) : null, from, to, note });
+    spans.push({ kind, ref: card?.ref ?? (iid ? `${refPrefix}${iid}` : null), iid, title: card?.title ?? '', sessionId: card ? (s.turns[card.ref]?.sessionId ?? null) : null, from, to, note });
   };
 
   if (!runs.length) {

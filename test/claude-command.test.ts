@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { MAX_PROMPT, SESSION_ID, resumeCommand, shellQuote, terminalScript } from '../src/shared/claude-command';
+import { MAX_PROMPT, SESSION_ID, resumeCommand as resume, shellQuote, terminalScript as script } from '../src/shared/claude-command';
+
+// The wrapper and the folder the author's install used; the commands take them from the workspace config.
+const CLI = { command: 'claude-or', cwd: '~/projects' };
+const resumeCommand = (id: string, prompt?: string) => resume(id, prompt, CLI);
+const terminalScript = (withPrompt: boolean) => script(withPrompt, CLI);
 
 const ID = '0a1b2c3d-4e5f-6789-abcd-ef0123456789';
 const dir = mkdtempSync(join(tmpdir(), 'cerimonias-cmd-'));
@@ -121,5 +126,16 @@ describe('prompt limit', () => {
   it('stays well below one argv entry on Linux (128 KB)', () => {
     expect(MAX_PROMPT).toBeLessThan(128 * 1024);
     expect(MAX_PROMPT).toBeGreaterThan(0);
+  });
+});
+
+describe('the CLI comes from the config', () => {
+  it('defaults to plain claude in the home folder', () => {
+    expect(resume(ID)).toBe(`cd ~ && claude --resume ${ID}`);
+  });
+
+  it('quotes a command or folder that is not a plain word, since they come from a file', () => {
+    expect(resume(ID, undefined, { command: 'my cli', cwd: "/work/it's here" })).toBe(`cd '/work/it'\\''s here' && 'my cli' --resume ${ID}`);
+    expect(script(false, { command: 'x; rm -rf ~', cwd: '/tmp' })).toBe(`cd /tmp && 'x; rm -rf ~' --resume "$1"; exec bash`);
   });
 });

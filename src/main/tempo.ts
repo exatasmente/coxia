@@ -4,6 +4,7 @@ import type { TempoDay } from '../shared/tempo';
 import { ATAS } from './env';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
+import { rc } from './workspaceConfig';
 import { type GateFile, type QaFile, type RetroFile, type Span, type Timed, buildDay, ceremonySpans, deepSpans, gateSpan, localDate, qaSpan, retroSpan } from './tempo-core';
 
 const OUT = join(ATAS, 'atividade');
@@ -30,7 +31,7 @@ export function spansOf(date: string): Span[] {
     const s = getHistory(entry.id);
     if (!s) continue;
     const mtime = statSync(join(ATAS, 'historico', `${entry.id}.json`)).mtimeMs;
-    spans.push(...ceremonySpans(s, mtime), ...deepSpans(s));
+    spans.push(...ceremonySpans(s, mtime, rc().issues.refPrefix), ...deepSpans(s));
   }
   spans.push(
     ...timedFiles<GateFile>('gates').map(gateSpan),

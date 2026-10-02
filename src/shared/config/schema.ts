@@ -1,5 +1,5 @@
 import type { JsonSchema } from './jsonSchema';
-import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { CEREMONY_IDS, CLI_PREFERENCES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
 // The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -29,13 +29,16 @@ const provider = object(
   'A model provider.',
   {
     id: string('Stable id, referenced by llm.roles.', { pattern: ID }),
-    kind: enumOf('Wire protocol: anthropic is spoken natively; openai goes through the translation adapter.', PROVIDER_KINDS),
-    baseUrl: string('API root, e.g. https://api.anthropic.com or http://localhost:11434/v1.', { minLength: 1 }),
+    kind: enumOf('How the provider is reached: anthropic, bedrock, vertex, foundry (Claude) or openai-compatible.', PROVIDER_KINDS),
+    engine: enumOf("Agent loop that serves the provider: claude-sdk (Claude models) or open (the app's own loop).", ENGINES),
+    baseUrl: string('API root, e.g. https://api.anthropic.com or http://localhost:11434/v1. Cloud kinds may leave it empty.'),
     models: strings('Model ids the provider offers (suggestions; any id may still be typed).'),
-    secretRef: { ...nullableString('Reference into the secrets store. null: no key is sent.') },
+    secretRef: nullableString("Reference into the secrets store (API key). null: no key is sent (local server, or the machine's own cloud credentials)."),
     envFile: nullableString('Claude-settings-style JSON file whose "env" block (minus KEY/TOKEN variables) joins the agent environment.'),
+    options: { type: 'object', description: 'Kind-specific, non-secret settings (bedrock: region, profile; vertex: project, region; foundry: resource).', additionalProperties: { type: 'string', maxLength: 400 } },
+    legacyCustomEndpoint: boolean('The Claude Agent SDK is pointed at a non-Anthropic endpoint; kept only for installs that predate the configuration.'),
   },
-  ['id', 'kind', 'baseUrl'],
+  ['id', 'kind'],
 );
 
 const repo = object(
@@ -102,7 +105,7 @@ const command = { enabled: boolean('The integration is on.'), command: string('E
 
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $id: 'https://coxia.app/schemas/workspace-config-v2.json',
+  $id: 'urn:coxia:schema:workspace-config:2',
   title: 'Coxia workspace configuration',
   ...object(
     'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
@@ -153,6 +156,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         templateId: string('Template this section came from.', { pattern: '^[a-z0-9][a-z0-9_.-]{0,47}$' }),
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
+        releaseLabelPattern: string('Regular expression for the label that says an issue shipped; group 1 is the version shown.', { maxLength: 200 }),
         specLayout: object('How an issue folder is laid out.', {
           folderPrefix: string('The spec folder starts with this; "{iid}" is the issue number.', { minLength: 1, maxLength: 100 }),
           phaseFiles: list('From the most advanced phase to the first.', phaseFile, { maxItems: 60 }),
@@ -167,6 +171,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           files: boolean('Read, Grep and Glob.'),
           skills: boolean('Claude Code skills.'),
           trackerMcp: boolean('Issue tracker MCP tools.'),
+          trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
           vcsCli: boolean('Read-only use of the VCS CLI.'),
           subagents: boolean('Subagents in the unblock ceremony.'),
         }),
@@ -184,12 +189,18 @@ export const CONFIG_SCHEMA: JsonSchema = {
         prosody: boolean('Per-sentence intonation.'),
         bargeIn: boolean('Speaking interrupts the agent.'),
       }),
+      claudeSdk: object('Where the Claude Agent SDK comes from.', {
+        installed: boolean('The SDK was installed by the wizard, or is bundled with an install that predates the wizard.'),
+        version: nullableString('Installed version, when known.'),
+        path: nullableString('Folder of the user-local install; null: the bundled copy.'),
+      }),
       externalTools: object('Optional tools the app calls. Each one is off until configured.', {
         cardSource: object('Command that lists the day\'s cards as JSON.', {
           ...command,
           reportArgs: strings('Arguments that print the cards.'),
           noteArgs: strings('Arguments that store a note; {ref} and {note} are replaced.'),
           stateFile: nullableString('File where the tool keeps its state.'),
+          historyFile: nullableString('File where the tool appends one line per day it ran.'),
           timeoutMs: integer('Timeout of one run.', 1000, 900_000),
         }),
         releaseSync: object('Command that syncs branches with main after a release.', { ...command, cwd: nullableString('Working directory; null: the projects root.'), mirrorsDir: nullableString('Folder of the bare mirrors the tool keeps.') }),

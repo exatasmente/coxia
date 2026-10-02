@@ -17,8 +17,12 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 // Pairing and web access settings only exist in the desktop window.
 const WEB_ADMIN = /^web:/;
 
+// The configuration can name programs to run and folders to read, and the secrets store holds keys: reading the config and its schema is
+// open to a paired browser; saving it, the secrets and export/import files are not.
+const CONFIG_ADMIN = /^config:(save|secret|secrets|export|import)/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

@@ -16,6 +16,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 
 import { askAgent, conflictAsk, conflictPropose, obj, str } from '../src/main/agents';
 import { classify } from '../src/main/custo-core';
+import { installEnvSecret, installLegacyConfig } from './helpers/config';
+
+await installLegacyConfig();
+await installEnvSecret('llm.openrouter');
 
 const init = (id: string) => ({ type: 'system', subtype: 'init', session_id: id });
 const toolUse = (command: string) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command } }] } });

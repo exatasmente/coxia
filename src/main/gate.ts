@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
-import { ATAS, SPECS } from './env';
+import { ATAS } from './env';
+import { rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
 
 // Quiz mechanics from the agent-pipeline skill, §2.1. The correct answers never leave this module before a round is answered.
@@ -51,13 +52,10 @@ const ID = /^[\w-]+$/;
 export const LETTERS = ['A', 'B', 'C', 'D'];
 const KINDS = ['previsão', 'contrafactual', 'fronteira', 'side effect', 'rollback', 'regressão'];
 
-const CANDIDATES: { sub: string; gate: 1 | 2; files: [string, string][] }[] = [
-  { sub: 'bug', gate: 1, files: [['1_INVESTIGATION.md', 'Investigation']] },
-  { sub: 'bug', gate: 2, files: [['2_PLAN.md', 'Plan']] },
-  { sub: 'feat', gate: 1, files: [['1_SPEC_FUNCIONAL.md', 'Spec Funcional'], ['0_RFC.md', 'RFC']] },
-  { sub: 'feat', gate: 2, files: [['3_PLAN.md', 'Plan']] },
-  { sub: 'investigation', gate: 1, files: [['1_FINDINGS.md', 'Findings']] },
-];
+function inSpecs(file: string): boolean {
+  const specs = rc().specsDir;
+  return !!specs && file.startsWith(specs);
+}
 
 function now(): string {
   return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -101,7 +99,7 @@ function view(g: Gate): GateView {
 export function gateOptions(card: Card): GateOption[] {
   if (!card.spec) return [];
   const folder = card.spec.folder;
-  return CANDIDATES.flatMap((c) => {
+  return rc().specLayout.gateFiles.flatMap((c) => {
     const hit = c.files.find(([f]) => existsSync(join(folder, c.sub, f)));
     return hit ? [{ gate: c.gate, label: hit[1], file: join(folder, c.sub, hit[0]) }] : [];
   });
@@ -166,7 +164,7 @@ export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
     gate,
     label: option.label,
     artifact: option.file,
-    quizFile: join(dirname(option.file), 'GATE_QUIZ.md'),
+    quizFile: join(dirname(option.file), rc().specLayout.documents.gateQuiz),
     summary: r.data.resumo,
     sessionId: r.sessionId || null,
     rounds: [{ questions: r.data.perguntas.map((q) => toQuestion(q)), answers: r.data.perguntas.map(() => null), visual: null }],
@@ -269,7 +267,7 @@ export function insertGateVisual(id: string): GateView {
   const round = g.rounds[g.rounds.length - 1];
   const v = round.visual;
   if (!v || v.inserted) throw new Error('não há recurso visual a inserir');
-  if (!g.artifact.startsWith(SPECS)) throw new Error('artefato fora do .specs');
+  if (!inSpecs(g.artifact)) throw new Error('artefato fora da pasta de specs');
   const lines = readFileSync(g.artifact, 'utf8').split('\n');
   const start = lines.findIndex((l) => /^#{1,6} /.test(l) && l.replace(/^#+\s*/, '').trim() === v.heading);
   if (start < 0) throw new Error(`heading «${v.heading}» não encontrado em ${basename(g.artifact)}`);
@@ -311,7 +309,7 @@ function cell(text: string): string {
 export function recordGate(id: string): GateView {
   assertExternalWrite('registrar o quiz no GATE_QUIZ da spec');
   const g = read(id);
-  if (!g.quizFile.startsWith(SPECS)) throw new Error('GATE_QUIZ fora do .specs');
+  if (!inSpecs(g.quizFile)) throw new Error(`${rc().specLayout.documents.gateQuiz} fora da pasta de specs`);
   const v = view(g);
   const verdicts = v.rounds.map((r) => r.verdict);
   const final = verdicts[verdicts.length - 1];

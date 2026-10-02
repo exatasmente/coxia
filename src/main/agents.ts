@@ -1,31 +1,40 @@
 import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
-import { type HookCallback, type Options, query } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult } from '../shared/types';
 import type { ModelRole } from '../shared/settings';
-import { getSettings } from './config';
-import { WORKSPACE, agentEnv } from './env';
+import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
+import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { cardFingerprint, rememberTurn, reusableTurn } from './falas';
-import { CLAUDE_BIN } from './paths';
+import { claudeSdkEnv } from './llm';
 import { noteSession } from './sessions';
+import { docsSources, getConfig, rc } from './workspaceConfig';
 
-const MCP_GITLAB = [
-  'mcp__gitlab-issue-analysis__get_issue_details_and_comments',
-  'mcp__gitlab-issue-analysis__get_merge_request_details_and_changes',
-];
 const GLAB_RULES = ['Bash(glab api:*)', 'Bash(glab mr view:*)', 'Bash(glab issue view:*)'];
 
-// Tools pre-approved for a role, from the settings; dontAsk denies everything else.
+// The read-only glab shell applies to a GitLab integration whose CLI is on.
+function glabOn(): boolean {
+  const v = rc().primaryVcs;
+  return getConfig().agents.tools.vcsCli && v?.kind === 'gitlab' && v.cli === 'glab';
+}
+
+function trackerMcpTools(): string[] {
+  const server = getConfig().agents.tools.trackerMcpServer.trim();
+  return server ? [`mcp__${server}__get_issue_details_and_comments`, `mcp__${server}__get_merge_request_details_and_changes`] : [];
+}
+
+// Tools pre-approved for a role, from the workspace config; dontAsk denies everything else.
 function allowedFor(role: ModelRole): string[] {
   if (role === 'teams') return [];
-  const t = getSettings().tools;
+  const t = getConfig().agents.tools;
   return [
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
-    ...(t.gitlabMcp ? MCP_GITLAB : []),
-    ...(t.glab ? GLAB_RULES : []),
+    ...(t.trackerMcp ? trackerMcpTools() : []),
+    ...(glabOn() ? GLAB_RULES : []),
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
 }
@@ -42,6 +51,19 @@ export const GIT_MIRROR_READ = [
   // Arguments never start with a dash except the bare `--`: no --no-index, --output or --ext-diff; no `..` in the repo path.
   /^git -C \/home\/[\w-][\w.-]*\/\.cache\/post-release-sync\/(?!\S*\.\.)[\w./-]+\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\d+)?|merge-base)( (--|[\w./:^~][\w./:^~-]*))+$/,
 ];
+
+const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+// The same plumbing-only allow-list, for the folder where the release-sync tool keeps its mirrors (releaseSync.mirrorsDir).
+export function gitMirrorRead(mirrorsDir: string): RegExp[] {
+  const dir = escapeRe(mirrorsDir.replace(/\/+$/, ''));
+  return [new RegExp(`^git -C ${dir}\\/(?!\\S*\\.\\.)[\\w./-]+\\.git (merge-tree --write-tree( --name-only)?|diff( --stat)?|show( --stat)?|log --oneline( -\\d+)?|merge-base)( (--|[\\w./:^~][\\w./:^~-]*))+$`)];
+}
+
+function mirrorPatterns(): RegExp[] {
+  const dir = rc().releaseSync?.mirrorsDir;
+  return dir ? gitMirrorRead(dir) : [];
+}
 
 // Trailing stderr merge and a head limit only shorten the output, so they are accepted on any allowed command.
 export function stripOutputSuffix(command: string): string {
@@ -220,6 +242,22 @@ const GITLAB_HINT =
   '`glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou ' +
   '`glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.';
 
+// What the agents are told about the issue tracker; empty when the workspace has no GitLab with its CLI on.
+function vcsHint(): string {
+  return glabOn() ? `Para ler o GitLab: ${GITLAB_HINT}` : '';
+}
+
+/** "sz4#15499" for a workspace whose cards carry a prefix, "15499" for one that does not. */
+export function issueRef(iid: string | number): string {
+  return `${rc().issues.refPrefix}${iid}`;
+}
+
+/** "@qa.interno" for a workspace with a QA user, plain words otherwise. */
+export function qaMention(): string {
+  const user = rc().qaUser;
+  return user ? `@${user}` : 'o usuário de QA';
+}
+
 const SPEECH_RULES =
   'Português do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. ' +
   'Issue pelo número curto ("a 15499"), MR pelo repositório e número ("o 797 do hub-whatsapp"). ' +
@@ -237,28 +275,9 @@ const ROLE =
   'A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. ' +
   'Toda ação com efeito externo vira item da ata para o Luiz executar depois, com confirmação.';
 
-interface Run<T> {
-  data: T;
-  sessionId: string;
-  sources: string[];
-  // The agent ran out of turns and answered from what it had already read.
-  partial?: true;
-}
-
-class MaxTurnsError extends Error {
-  constructor(
-    readonly sessionId: string,
-    readonly sources: string[],
-  ) {
-    super('agent ended with error_max_turns');
-  }
-}
-
 const WRAP_UP =
   'Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, ' +
   'com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.';
-
-type Schema = Record<string, unknown>;
 
 const str = { type: 'string' };
 // Up to three ready-made replies: in the call the person may tap one instead of speaking.
@@ -282,27 +301,37 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
-async function runOnce<T>(
-  role: ModelRole,
-  prompt: string,
-  schema: Schema,
-  extra: Partial<Options> = {},
-  shell: { rules: string[]; patterns: RegExp[] } = { rules: [], patterns: [] },
-): Promise<Run<T>> {
+// The prompt of an agent call: the role preamble (or the workspace's override), the VCS hints and the extra instructions of the config.
+function systemPrompt(role: ModelRole): string {
+  const agents = getConfig().agents;
+  const preamble = agents.roles[role].promptOverride.trim() || ROLE;
+  return [preamble, vcsHint(), agents.extraInstructions.trim(), agents.roles[role].extraInstructions.trim()].filter(Boolean).join('\n');
+}
+
+// Folders the config lists as documentation but that sit outside the working directory: the agent may read them too.
+function extraDirs(cwd: string): string[] {
+  const d = docsSources();
+  const listed = [...d.claudeMdRoots, ...d.skillsDirs, ...d.rulesDirs, ...d.agentsDirs, ...d.knowledgeDirs].filter((p) => !d.detected.includes(p));
+  return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
+}
+
+async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
+  const query = await loadClaudeQuery();
+  const exe = claudeExecutable();
   const q = query({
-    prompt,
+    prompt: req.prompt,
     options: {
-      cwd: WORKSPACE,
-      model: getSettings().models[role],
-      env: agentEnv(),
+      cwd: req.cwd,
+      model: req.target.model,
+      env: claudeSdkEnv(req.target),
       // dontAsk denies every tool that allowedTools does not pre-approve.
       permissionMode: 'dontAsk',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: `${ROLE}\nPara ler o GitLab: ${GITLAB_HINT}` },
-      allowedTools: [...allowedFor(role), ...shell.rules],
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
+      allowedTools: req.allowedTools,
       disallowedTools: [
-        ...(getSettings().tools.glab || shell.rules.length ? [] : ['Bash']),
+        ...(glabOn() || req.shell.rules.length ? [] : ['Bash']),
         'Edit',
         'Write',
         'NotebookEdit',
@@ -310,15 +339,16 @@ async function runOnce<T>(
         'WebSearch',
         ...SECRET_READ_DENY,
       ],
-      hooks: agentHooks(shell.patterns),
-      outputFormat: { type: 'json_schema', schema },
+      hooks: agentHooks(req.shell.patterns),
+      outputFormat: { type: 'json_schema', schema: req.schema },
       maxTurns: 8,
-      ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
-      ...extra,
+      ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
+      ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
+      ...req.extra,
     },
   });
   for await (const m of q) {
-    if ('session_id' in m) noteSession(m.session_id, role, prompt);
+    if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
       for (const block of m.message.content) {
@@ -342,6 +372,21 @@ async function runOnce<T>(
   throw new Error('agent ended without a result');
 }
 
+registerEngine('claude-sdk', runClaudeSdk);
+
+// One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
+async function runOnce<T>(
+  role: ModelRole,
+  prompt: string,
+  schema: Schema,
+  extra: Partial<Options> = {},
+  shell: ShellPolicy = { rules: [], patterns: [] },
+): Promise<Run<T>> {
+  const target = engineFor(role);
+  const cwd = rc().projectsRoot;
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd), shell, extra });
+}
+
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
 // The resume stays in the same session transcript, which is what the cost panel reads, so its generations are counted.
 async function run<T>(
@@ -349,7 +394,7 @@ async function run<T>(
   prompt: string,
   schema: Schema,
   extra: Partial<Options> = {},
-  shell: { rules: string[]; patterns: RegExp[] } = { rules: [], patterns: [] },
+  shell: ShellPolicy = { rules: [], patterns: [] },
 ): Promise<Run<T>> {
   try {
     return await runOnce<T>(role, prompt, schema, extra, shell);
@@ -503,8 +548,8 @@ export async function teamsText(minutes: Minutes, cards: Card[]): Promise<string
 
 export async function rewriteQaComment(issue: number, current: string, syncOutput: string, unit: Record<string, unknown> | null): Promise<{ body: string; summary: string }> {
   const prompt = [
-    `A issue sz4#${issue} foi sincronizada com a main depois de uma release. Reescreva o comentário de pipelines do QA abaixo, que vai ser editado no lugar.`,
-    'Regras (skill post-release-sync, "Convivência com o comentário do qa-release-branch"): mantenha o texto, a menção @qa.interno e o formato;',
+    `A issue ${issueRef(issue)} foi sincronizada com a main depois de uma release. Reescreva o comentário de pipelines do QA abaixo, que vai ser editado no lugar.`,
+    'Regras (skill post-release-sync, "Convivência com o comentário do qa-release-branch"): mantenha o texto, a menção ${qaMention()} e o formato;',
     'troque o link da pipeline pela pipeline de PUSH do commit de merge (consulte com glab api projects/<grupo%2Frepo>/pipelines?ref=<branch>);',
     'acrescente uma linha dizendo que a branch foi sincronizada com a main e se precisa de reteste, citando os arquivos sobrepostos quando houver.',
     'Não invente pipeline: se não achar a de push do commit de merge, mantenha a atual e diga isso no resumo.',
@@ -539,7 +584,7 @@ export async function conflictAsk(context: string, question: string, sessionId: 
     prompt,
     obj({ fala: str, texto: str }),
     { maxTurns: 40, ...(sessionId ? { resume: sessionId } : {}) },
-    { rules: ['Bash(git -C:*)'], patterns: GIT_MIRROR_READ },
+    { rules: ['Bash(git -C:*)'], patterns: mirrorPatterns() },
   );
   return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
 }
@@ -630,7 +675,7 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
     [`### trecho ${h.id}`, `arquivo: ${h.file}`, '--- BRANCH (ours) ---', clip(h.ours, left), '--- BASE ---', clip(h.base, left), '--- MAIN (theirs) ---', clip(h.theirs, left)].join('\n'),
   );
   const prompt = [
-    `Conflito de sincronização com a main depois de uma release: issue sz4#${p.issue} (${p.title}), ${p.mr}, branch ${p.branch}.`,
+    `Conflito de sincronização com a main depois de uma release: issue ${issueRef(p.issue)} (${p.title}), ${p.mr}, branch ${p.branch}.`,
     'Para cada trecho em conflito abaixo, proponha o texto final (sem marcadores de conflito). BRANCH é o que o MR escreveu; MAIN é o que a release trouxe; BASE é o ancestral comum (quando houver).',
     'O conflito típico pós-release é COMPLEMENTAR: os dois lados acrescentaram coisas diferentes no mesmo trecho, e a resolução é combinar os dois. Mantenha o que cada lado fez; ajuste só o necessário para os dois conviverem (ordem, vírgulas, imports).',
     'Nunca invente código além de combinar ou adaptar os dois lados. Se os lados são incompatíveis e a combinação exigiria inventar, escolha um lado inteiro, diga qual e marque confianca "baixa".',

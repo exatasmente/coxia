@@ -5,7 +5,10 @@ import { promisify } from 'node:util';
 import type { DepHealth, DepId, SaudeSnapshot, TaskHealth } from '../shared/saude';
 import { getSettings } from './config';
 import { logError } from './errorlog';
-import { DATA_ROOT, GITLAB, HOME, openRouterKey } from './env';
+import { DATA_ROOT } from './env';
+import { providerSecret } from './llm';
+import { secrets } from './secrets';
+import { getConfig, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module, ModuleContext } from './module';
 import { readReport, reportStatus } from './report';
 import { voiceStatus } from './voice';
@@ -31,7 +34,7 @@ const LABELS: Record<string, string> = {
 
 const DEP_LABELS: Record<DepId, string> = {
   glab: 'glab autenticado',
-  'openrouter-key': 'Chave da OpenRouter',
+  'openrouter-key': 'Chave do provedor de modelos',
   'daily-report': 'daily-report',
   voice: 'Sidecar de voz',
   model: 'Modelo respondendo',
@@ -139,8 +142,10 @@ export async function track<T>(name: string, fn: () => Promise<T>): Promise<T> {
 type Result = { ok: boolean; message: string };
 
 async function glabCheck(): Promise<Result> {
+  const vcs = rc().primaryVcs;
+  if (!vcs?.cli) return { ok: true, message: 'Sem integração de VCS por CLI configurada (opcional).' };
   try {
-    const { stdout, stderr } = await run('glab', ['auth', 'status', '--hostname', GITLAB], { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 20_000 });
+    const { stdout, stderr } = await run(vcs.cli, ['auth', 'status', '--hostname', vcs.host], { env: vcsCliEnv(), timeout: 20_000 });
     const text = `${stdout}\n${stderr}`;
     return { ok: true, message: short(text.split('\n').find((l) => /logged in/i.test(l)) ?? text) };
   } catch (e) {
@@ -149,17 +154,24 @@ async function glabCheck(): Promise<Result> {
   }
 }
 
+// The secrets of the providers the roles use: present, and from which source. Never the value.
 async function keyCheck(): Promise<Result> {
-  try {
-    const { stdout } = await run(join(HOME, '.local/bin/openrouter-key'), ['--status'], { timeout: 10_000 });
-    const get = (k: string) => stdout.split('\n').find((l) => l.startsWith(`${k}:`))?.slice(k.length + 1).trim();
-    return { ok: true, message: `Chave presente (fonte ${get('fonte') ?? '?'}, ${get('tamanho') ?? '?'} caracteres).` };
-  } catch {
-    return { ok: false, message: 'Sem chave da OpenRouter. Rode openrouter-key --status no terminal.' };
+  const used = [...new Set(Object.values(getConfig().llm.roles).map((r) => r.provider))].map((id) => getConfig().llm.providers.find((p) => p.id === id)).filter((p) => !!p);
+  const withKey = used.filter((p) => p.secretRef);
+  if (!withKey.length) return { ok: true, message: 'Os provedores em uso não pedem chave.' };
+  const lines: string[] = [];
+  for (const p of withKey) {
+    const ref = p.secretRef as string;
+    const check = secrets().check(ref);
+    if (!check.ok) return { ok: false, message: `Sem chave para ${p.id}: ${check.reason ?? 'não configurada'}. Defina em Configurações.` };
+    const info = secrets().list().find((i) => i.ref === ref);
+    lines.push(`${p.id} (fonte ${info?.source ?? '?'})`);
   }
+  return { ok: true, message: `Chave presente: ${lines.join(', ')}.` };
 }
 
 async function reportCheck(): Promise<Result> {
+  if (!rc().cardSource) return { ok: true, message: 'Fonte de cartões não configurada (opcional).' };
   const before = reportStatus();
   // Fresh cache answers without a new run; a stale one makes the single shared run happen now.
   try {
@@ -181,17 +193,20 @@ async function voiceCheck(): Promise<Result> {
   return { ok: true, message: `Vivo, respondeu em ${v.pingMs} ms${v.ready ? '' : ' (ainda carregando o modelo)'}.` };
 }
 
-// One minimal request (a few tokens) over the same Anthropic-compatible route the agents use.
+// One minimal request (a few tokens) over the same Anthropic-compatible route the agents use. Only for providers that speak it directly.
 async function modelCheck(): Promise<Result> {
-  const model = getSettings().models.turn;
+  const target = rc().role('turn');
+  if (target.kind !== 'anthropic' || !target.baseUrl) return { ok: true, message: `Sem teste automático para provedores do tipo ${target.kind}.` };
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/messages', {
+    const key = providerSecret(target.secretRef);
+    const official = /^https:\/\/api\.anthropic\.com\/?$/.test(target.baseUrl);
+    const res = await fetch(`${target.baseUrl.replace(/\/+$/, '')}/v1/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', authorization: `Bearer ${openRouterKey()}` },
-      body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: 'ok' }] }),
+      headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', ...(key ? (official ? { 'x-api-key': key } : { authorization: `Bearer ${key}` }) : {}) },
+      body: JSON.stringify({ model: target.model, max_tokens: 8, messages: [{ role: 'user', content: 'ok' }] }),
       signal: AbortSignal.timeout(40_000),
     });
-    if (res.ok) return { ok: true, message: `${model} respondeu.` };
+    if (res.ok) return { ok: true, message: `${target.model} respondeu.` };
     const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } | string };
     const msg = typeof body.error === 'string' ? body.error : body.error?.message ?? '';
     return { ok: false, message: short(`HTTP ${res.status} ${msg}`) };

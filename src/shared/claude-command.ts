@@ -7,15 +7,27 @@ export function shellQuote(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Which CLI resumes the session and where it starts: externalTools.claudeCli of the workspace config. */
+export interface ClaudeCliOptions {
+  command: string;
+  /** Starting directory; a leading "~/" is left for the shell to expand. */
+  cwd: string;
+}
+
+export const DEFAULT_CLAUDE_CLI: ClaudeCliOptions = { command: 'claude', cwd: '~' };
+
+const PLAIN = /^(~(\/[\w./+@-]*)?|[\w./+@-]+)$/;
+// Both values come from a config file, so they are quoted unless they are plain words and paths.
+const word = (text: string): string => (PLAIN.test(text) ? text : shellQuote(text));
+
 // What the user can paste into a terminal. The app itself never runs this string: see terminalScript.
-export function resumeCommand(sessionId: string, prompt?: string): string {
+export function resumeCommand(sessionId: string, prompt?: string, cli: ClaudeCliOptions = DEFAULT_CLAUDE_CLI): string {
   const text = prompt?.trim();
-  return `cd ~/projects && claude-or --resume ${sessionId}${text ? ` -- ${shellQuote(text)}` : ''}`;
+  return `cd ${word(cli.cwd)} && ${word(cli.command)} --resume ${sessionId}${text ? ` -- ${shellQuote(text)}` : ''}`;
 }
 
 // Fixed script for `bash -lc`: the session id is $1 and the prompt file is $2, so no user text is ever parsed as shell.
-export function terminalScript(withPrompt: boolean): string {
-  return withPrompt
-    ? 'cd ~/projects && claude-or --resume "$1" -- "$(cat "$2")"; rm -rf "$(dirname "$2")"; exec bash'
-    : 'cd ~/projects && claude-or --resume "$1"; exec bash';
+export function terminalScript(withPrompt: boolean, cli: ClaudeCliOptions = DEFAULT_CLAUDE_CLI): string {
+  const start = `cd ${word(cli.cwd)} && ${word(cli.command)}`;
+  return withPrompt ? `${start} --resume "$1" -- "$(cat "$2")"; rm -rf "$(dirname "$2")"; exec bash` : `${start} --resume "$1"; exec bash`;
 }

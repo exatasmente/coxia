@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Decision, Minutes, SaveResult } from '../shared/types';
-import { ATAS, DAILY_REPORT, HOME } from './env';
+import { ATAS } from './env';
 import { invalidateReport } from './report';
 import { externalRefusal } from './workspace';
+import { rc } from './workspaceConfig';
 
 const run = promisify(execFile);
 
@@ -60,8 +61,10 @@ function writeSpecRegistro(d: Decision): { ok: boolean; detail: string } {
 }
 
 function currentNote(ref: string): string | null {
+  const file = rc().cardSource?.stateFile;
+  if (!file) return null;
   try {
-    const state = JSON.parse(readFileSync(join(HOME, '.local/share/daily-report/state.json'), 'utf8'));
+    const state = JSON.parse(readFileSync(file, 'utf8'));
     const item = Object.values(state.items as Record<string, { ref: string; manual_note: string | null }>).find(
       (it) => it.ref === ref,
     );
@@ -75,9 +78,11 @@ async function writeDailyNote(d: Decision): Promise<{ ok: boolean; detail: strin
   // `daily-report note` replaces the note, so the previous one is kept in front.
   const previous = currentNote(d.ref);
   const note = previous ? `${previous} | ${today()}: ${d.text}` : `${today()}: ${d.text}`;
-  await run(DAILY_REPORT, ['note', d.ref, note], { timeout: 30_000 });
+  const source = rc().cardSource;
+  if (!source?.noteArgs.length) return { ok: false, detail: 'a fonte de cartões não grava notas: ficou só na ata' };
+  await run(source.command, source.noteArgs.map((a) => a.replace('{ref}', d.ref).replace('{note}', note)), { timeout: 30_000 });
   invalidateReport();
-  return { ok: true, detail: `daily-report note ${d.ref}` };
+  return { ok: true, detail: `${basename(source.command)} note ${d.ref}` };
 }
 
 export async function saveMinutes(m: Minutes, teams: string, selected: number[]): Promise<SaveResult> {

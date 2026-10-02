@@ -1,22 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
-import { SPECS } from './env';
 import { type ReportItem, readReport } from './report';
-
-const PHASES: [string, string][] = [
-  ['ISSUE_COMPLETION.md', 'ISSUE_COMPLETION escrito'],
-  ['3_TEST_PLAN.md', 'test plan escrito'],
-  ['4_TEST_PLAN.md', 'test plan escrito'],
-  ['2_PLAN.md', 'Plan escrito'],
-  ['3_PLAN.md', 'Plan escrito'],
-  ['2_SPEC_TECNICO.md', 'spec técnico escrito'],
-  ['1_SPEC_FUNCIONAL.md', 'spec funcional escrito'],
-  ['1_INVESTIGATION.md', 'investigação escrita'],
-  ['1_FINDINGS.md', 'findings escritos'],
-  ['0_RFC.md', 'RFC escrita'],
-  ['0_BUG_REPORT.md', 'bug report escrito'],
-];
+import { rc } from './workspaceConfig';
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -26,14 +12,17 @@ function walk(dir: string): string[] {
 }
 
 export function specInfo(iid: string): SpecInfo | null {
-  if (!existsSync(SPECS)) return null;
-  const name = readdirSync(SPECS).filter((n) => n.startsWith(`#${iid}-`)).sort()[0];
+  const specs = rc().specsDir;
+  if (!specs || !existsSync(specs)) return null;
+  const layout = rc().specLayout;
+  const prefix = layout.folderPrefix.replace('{iid}', iid);
+  const name = readdirSync(specs).filter((n) => n.startsWith(prefix)).sort()[0];
   if (!name) return null;
-  const folder = join(SPECS, name);
+  const folder = join(specs, name);
   const files = walk(folder);
   const has = (base: string) => files.find((f) => f.endsWith(`/${base}`)) ?? null;
-  const phase = PHASES.find(([base]) => has(base))?.[1] ?? 'pasta de spec sem artefato';
-  return { folder, phase, planFile: has('2_PLAN.md') ?? has('3_PLAN.md') };
+  const phase = layout.phaseFiles.find(({ file }) => has(file))?.label ?? 'pasta de spec sem artefato';
+  return { folder, phase, planFile: layout.planFiles.map(has).find((f) => f !== null) ?? null };
 }
 
 function describe(c: { field: string; from: unknown; to: unknown }, prefix = ''): string {

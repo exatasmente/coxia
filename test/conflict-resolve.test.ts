@@ -16,6 +16,8 @@ vi.mock('../src/main/agents', async (importOriginal) => ({
 const { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictHooks, conflictPrepare, conflictPropose, conflictReopen, listActions, skipAction } = await import('../src/main/actions');
 const { saveVerifyCommands } = await import('../src/main/conflictVerify');
 const { ATAS } = await import('../src/main/env');
+const { installLegacyConfig } = await import('./helpers/config');
+await installLegacyConfig();
 
 const ACTIONS = join(ATAS, 'acoes.json');
 const AUDIT = join(ATAS, 'auditoria.jsonl');

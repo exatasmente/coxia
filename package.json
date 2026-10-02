@@ -9,6 +9,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "i18n:lint": "node scripts/i18n-lint.mjs --keys",
     "dist": "electron-vite build && electron-builder --linux AppImage deb"
   },
   "type": "module",

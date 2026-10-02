@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
-import { ATAS, HOME } from './env';
+import { ATAS } from './env';
+import { rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 
 const DIR = join(ATAS, 'retros');
@@ -75,8 +76,8 @@ function weekDigest(since: Date): Record<string, unknown> {
         }))
     : [];
 
-  const historyFile = join(HOME, '.local/share/daily-report/history.jsonl');
-  const changes = existsSync(historyFile)
+  const historyFile = rc().cardSource?.historyFile ?? null;
+  const changes = historyFile && existsSync(historyFile)
     ? readFileSync(historyFile, 'utf8')
         .split('\n')
         .filter(Boolean)

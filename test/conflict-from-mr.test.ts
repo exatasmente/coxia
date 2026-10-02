@@ -20,6 +20,8 @@ process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { conflictDiscard, conflictFromMr, conflictHooks, conflictPrepare, listActions } = await import('../src/main/actions');
 const { ATAS } = await import('../src/main/env');
+const { installLegacyConfig } = await import('./helpers/config');
+await installLegacyConfig();
 
 let f: Fixture;
 let reads: string[];

@@ -6,7 +6,8 @@ import type { Card } from '../shared/types';
 import type { WatcherAlert } from '../shared/watchers';
 import { loadCards, specInfo } from './cards';
 import { getSettings } from './config';
-import { ATAS, GITLAB, HOME } from './env';
+import { ATAS } from './env';
+import { rc, vcsCliEnv } from './workspaceConfig';
 import { logError } from './errorlog';
 import { gateOptions } from './gate';
 import type { Module, ModuleContext } from './module';
@@ -15,8 +16,6 @@ import type { Notice } from './scheduler';
 const run = promisify(execFile);
 
 const FILE = join(ATAS, 'watchers.json');
-const HISTORY = join(HOME, '.local/share/daily-report/history.jsonl');
-const REPORT_STATE = join(HOME, '.local/share/daily-report/state.json');
 const EVERY_MIN = 15;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -111,7 +110,7 @@ interface HistoryRow {
 
 function readHistory(): HistoryRow[] {
   try {
-    return readFileSync(HISTORY, 'utf8')
+    return readFileSync(rc().cardSource?.historyFile ?? '', 'utf8')
       .split('\n')
       .filter(Boolean)
       .flatMap((l) => {
@@ -207,7 +206,7 @@ export function severityOf(bugReport: string | null, labels: string[]): Severity
 
 // Only GET: the watchers never write to GitLab.
 async function glabGet<T>(path: string): Promise<T> {
-  const { stdout } = await run('glab', ['api', path], { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await run('glab', ['api', path], { env: vcsCliEnv(), timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout) as T;
 }
 
@@ -224,7 +223,7 @@ interface GlMr {
   merged_at: string | null;
 }
 
-// A closed issue alone is not enough (superseded or duplicate issues close without shipping): it needs a version label such as "sz4-51.22.0".
+// A closed issue alone is not enough (superseded or duplicate issues close without shipping): it needs a version label (devCycle.releaseLabelPattern).
 async function inProduction(projectId: number, iid: number): Promise<{ at: string | null; reason: string } | null> {
   const issue = await glabGet<GlIssue>(`projects/${projectId}/issues/${iid}`);
   // related_merge_requests also lists other repositories' MRs that merely mention the issue (the playbook's, for one).
@@ -233,14 +232,16 @@ async function inProduction(projectId: number, iid: number): Promise<{ at: strin
     .filter((m) => m.state === 'merged' && /^(main|release\/\d[\w.]*)$/.test(m.target_branch))
     .sort((a, b) => (b.merged_at ?? '').localeCompare(a.merged_at ?? ''))[0];
   if (shipped) return { at: shipped.merged_at, reason: `!${shipped.iid} mergeada em ${shipped.target_branch}` };
-  const version = issue.labels.find((l) => /^sz4-\d+\.\d+\.\d+$/.test(l));
-  if (issue.state === 'closed' && version) return { at: issue.closed_at, reason: `issue fechada na versão ${version.slice(4)}` };
+  const pattern = rc().releaseLabelPattern;
+  const label = issue.labels.find((l) => pattern.test(l));
+  const version = label ? (pattern.exec(label)?.[1] ?? label) : null;
+  if (issue.state === 'closed' && version) return { at: issue.closed_at, reason: `issue fechada na versão ${version}` };
   return null;
 }
 
 function reportIssues(): ReportIssue[] {
   try {
-    const items = (JSON.parse(readFileSync(REPORT_STATE, 'utf8')) as { items: Record<string, ReportIssue & { iid: number }> }).items;
+    const items = (JSON.parse(readFileSync(rc().cardSource?.stateFile ?? '', 'utf8')) as { items: Record<string, ReportIssue & { iid: number }> }).items;
     return Object.values(items).filter((i) => i.kind === 'issue');
   } catch {
     return [];

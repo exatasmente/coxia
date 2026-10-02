@@ -2,15 +2,17 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { join } from 'node:path';
 import type { CustoKey, CustoKind, CustoScope, CustoSummary } from '../shared/custo';
 import { DEFAULT_GOAL, type GenRef, type GenStat, classify, firstPromptOf, gensOf, inScope, parseGeneration, parseKey, summarize } from './custo-core';
-import { ATAS, DATA_ROOT, HOME, WORKSPACE, WORKSPACE_ID, openRouterKey } from './env';
+import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
+import { openRouterKey } from './llm';
 import { reuseTimes } from './falas';
 import type { Module } from './module';
 import { sessionOwners } from './sessions-core';
 import { readRegistry } from './workspaces-core';
+import { rc } from './workspaceConfig';
 
 const FILE = join(ATAS, 'custo.json');
 const API = 'https://openrouter.ai/api/v1';
-export const TRANSCRIPTS = process.env.CERIMONIAS_TRANSCRIPTS_DIR ?? join(HOME, '.claude/projects', WORKSPACE.replace(/\//g, '-'));
+const transcriptsDir = (): string => rc().transcriptsDir;
 const PARALLEL = 6;
 const DAY = 86_400_000;
 
@@ -70,10 +72,10 @@ function since(now = Date.now()): number {
 }
 
 function scan(c: Cache, from: number): GenRef[] {
-  if (!existsSync(TRANSCRIPTS)) return [];
+  if (!existsSync(transcriptsDir())) return [];
   const live = new Set<string>();
-  for (const name of readdirSync(TRANSCRIPTS).filter((f) => f.endsWith('.jsonl'))) {
-    const path = join(TRANSCRIPTS, name);
+  for (const name of readdirSync(transcriptsDir()).filter((f) => f.endsWith('.jsonl'))) {
+    const path = join(transcriptsDir(), name);
     const st = statSync(path);
     if (st.mtimeMs < from) continue;
     live.add(name);

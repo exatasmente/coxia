@@ -1,0 +1,13 @@
+{
+  "settings.title": "Configurações",
+  "settings.models.title": "Modelos",
+  "settings.tools.title": "Ferramentas dos agentes",
+  "settings.voice.title": "Voz",
+  "settings.schedule.title": "Agenda e notificações",
+  "settings.appearance.title": "Aparência",
+  "settings.start.title": "Início",
+  "settings.language.title": "Idioma",
+  "settings.language.hint": "Vale ao salvar. As telas ainda não traduzidas continuam em português.",
+  "settings.language.pt-BR": "Português (Brasil)",
+  "settings.language.en": "English"
+}

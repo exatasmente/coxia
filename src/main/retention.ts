@@ -13,7 +13,8 @@ import {
 } from '../shared/retention';
 import { getSettings } from './config';
 import { firstPromptOf } from './custo-core';
-import { ATAS, DATA_ROOT, HOME, WORKSPACE, WORKSPACE_ID } from './env';
+import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
+import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { sessionRefs } from './sessions-core';
 import { readRegistry, workspaceDir } from './workspaces-core';
@@ -29,7 +30,7 @@ import {
   selectRetention,
 } from './retention-core';
 
-const SESSIONS = process.env.CERIMONIAS_TRANSCRIPTS_DIR ?? join(HOME, '.claude/projects', WORKSPACE.replace(/\//g, '-'));
+const sessionsDir = (): string => rc().transcriptsDir;
 const DATA_GROUPS: RetentionKind[] = ['historico', 'gates', 'qa', 'retros', 'atividade', 'feedback'];
 const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
 const DATA_FILE = /^[\w.-]+\.json$/;
@@ -57,18 +58,18 @@ function dirSize(dir: string): number {
 }
 
 function sessionFiles(): RetentionFile[] {
-  if (!existsSync(SESSIONS)) return [];
+  if (!existsSync(sessionsDir())) return [];
   const files: RetentionFile[] = [];
-  for (const entry of readdirSync(SESSIONS, { withFileTypes: true })) {
+  for (const entry of readdirSync(sessionsDir(), { withFileTypes: true })) {
     if (!entry.isFile() || !SESSION_FILE.test(entry.name)) continue;
-    const path = join(SESSIONS, entry.name);
+    const path = join(sessionsDir(), entry.name);
     const st = statSync(path);
     const sessionId = entry.name.replace(/\.jsonl$/, '');
     const firstPrompt = firstPromptOf(head(path).split('\n'));
     let size = st.size;
     // Only a transcript that starts like the app's is read whole, to see whether someone else continued it.
     const entrypoints = appPromptKind(firstPrompt) ? entrypointsOf(readFileSync(path, 'utf8')) : undefined;
-    const companion = join(SESSIONS, sessionId);
+    const companion = join(sessionsDir(), sessionId);
     if (existsSync(companion) && lstatSync(companion).isDirectory()) size += dirSize(companion);
     files.push({ kind: 'sessoes', path, size, mtimeMs: st.mtimeMs, sessionId, firstPrompt, entrypoints });
   }
@@ -193,12 +194,12 @@ function removeOne(file: RetentionFile): void {
   const st = lstatSync(file.path);
   if (!st.isFile()) throw new Error('não é um arquivo comum');
   if (st.mtimeMs !== file.mtimeMs) throw new Error('foi alterado depois da prévia');
-  const root = file.kind === 'sessoes' ? SESSIONS : join(ATAS, file.kind);
+  const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
   if (!inside(file.path, root)) throw new Error('fora da pasta esperada');
   unlinkSync(file.path);
   if (file.kind === 'sessoes' && file.sessionId) {
-    const companion = join(SESSIONS, file.sessionId);
-    if (existsSync(companion) && lstatSync(companion).isDirectory() && inside(companion, SESSIONS)) rmSync(companion, { recursive: true, force: true });
+    const companion = join(sessionsDir(), file.sessionId);
+    if (existsSync(companion) && lstatSync(companion).isDirectory() && inside(companion, sessionsDir())) rmSync(companion, { recursive: true, force: true });
   }
 }
 

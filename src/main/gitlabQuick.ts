@@ -4,13 +4,12 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickPerson, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeGitlabAction } from './actions';
 import { getSettings } from './config';
-import { GITLAB } from './env';
+import { isIssueRef, issueProjectRef, rc, vcsCliEnv } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
 import type { Notice } from './scheduler';
 
 const exec = promisify(execFile);
-const ISSUE_PROJECT = 1;
 const JOB_EVERY_MIN = 30;
 const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|wip:)\s*/i;
 // Build, release prep and deploy belong to the QA flow (qa-release-branch skill): the app never plays them.
@@ -75,7 +74,7 @@ interface ApiJob {
 }
 
 async function glab(args: string[]): Promise<string> {
-  const { stdout } = await exec('glab', args, { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await exec('glab', args, { env: vcsCliEnv(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 
@@ -145,9 +144,9 @@ function transitionsFor(status: string | null, labels: string[]): QuickTransitio
 }
 
 async function readIssue(iid: number): Promise<QuickIssue & { gid: string | null }> {
-  const issue = await get<{ labels: string[] }>(`projects/${ISSUE_PROJECT}/issues/${iid}`);
+  const issue = await get<{ labels: string[] }>(`projects/${issueProjectRef()}/issues/${iid}`);
   const q = await readQuery<{ data: { project: { workItems: { nodes: { id: string; widgets: { type: string; status?: { name: string } }[] }[] } } } }>(
-    `query { project(fullPath: "sz4/sz4") { workItems(iid: "${iid}") { nodes { id widgets { type ... on WorkItemWidgetStatus { status { name } } } } } } }`,
+    `query { project(fullPath: "${rc().issues.project}") { workItems(iid: "${iid}") { nodes { id widgets { type ... on WorkItemWidgetStatus { status { name } } } } } } }`,
   );
   const node = q.data.project.workItems.nodes[0];
   const status = node?.widgets.find((w) => w.type === 'STATUS')?.status?.name ?? null;
@@ -169,7 +168,7 @@ async function context(card: Card): Promise<QuickContext> {
     )
   ).filter((m): m is QuickMr => !!m);
   let issue: QuickIssue | null = null;
-  if (/^sz4#\d+$/.test(card.ref)) {
+  if (isIssueRef(card.ref)) {
     try {
       const { gid: _gid, ...rest } = await readIssue(Number(card.iid));
       issue = rest;
@@ -211,7 +210,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     const issue = await readIssue(req.issue);
     const t = issue.transitions.find((x) => x.to === req.to);
     if (!t?.allowed) throw new Error(t?.reason ?? 'transição não permitida');
-    const title = (await get<{ title: string }>(`projects/${ISSUE_PROJECT}/issues/${req.issue}`)).title;
+    const title = (await get<{ title: string }>(`projects/${issueProjectRef()}/issues/${req.issue}`)).title;
     if (issue.gid) {
       propose(
         {
@@ -242,7 +241,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
           issueTitle: title,
           stage: issue.stageLabels.join(', '),
           summary: `Label da #${req.issue}: ${t.removeLabels.length ? `${t.removeLabels.join(', ')} → ` : ''}${t.addLabel ?? ''} (${issue.status} → ${t.to})`,
-          command: { via: 'glab', method: 'PUT', endpoint: `projects/${ISSUE_PROJECT}/issues/${req.issue}`, fields },
+          command: { via: 'glab', method: 'PUT', endpoint: `projects/${issueProjectRef()}/issues/${req.issue}`, fields },
         },
         out,
       );

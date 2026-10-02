@@ -20,7 +20,7 @@ const APP_PROMPTS: [RegExp, string][] = [
   [/^Retro semanal do Luiz, por voz/, 'retro'],
   [/^Na retro, o Luiz disse /, 'retro'],
   [/^Escreva o texto que o Luiz vai colar no Teams/, 'texto do Teams'],
-  [/^A issue sz4#\d+ foi sincronizada com a main depois de uma release/, 'sincronização com a release'],
+  [/^A issue \S*\d+ foi sincronizada com a main depois de uma release/, 'sincronização com a release'],
   [/^Call sobre um conflito de sincronização com a main/, 'sincronização com a release'],
   [/^Call de reentrada da issue /, 'reentrada'],
   [/^Revisão do MR \S+ \(issue /, 'revisão de MR'],

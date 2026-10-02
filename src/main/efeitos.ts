@@ -5,7 +5,8 @@ import { promisify } from 'node:util';
 import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type EfeitosView, WINDOW_DAYS, effectKey } from '../shared/efeitos';
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
-import { ATAS, GITLAB } from './env';
+import { ATAS } from './env';
+import { rc, vcsCliEnv } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 
@@ -16,7 +17,6 @@ const DAY_MS = 86_400_000;
 const PRUNE_MS = 30 * DAY_MS;
 const MAX_CLASSIFY_PER_RUN = 8;
 const MAX_CLASSIFY_TRIES = 3;
-const ISSUE_PROJECT = 'sz4/sz4';
 const PROJECT = /^[\w.-]+(\/[\w.-]+)+$/;
 const NEEDS_IID = new Set<CheckKind>(CHECK_KINDS.filter((k) => !['issue_created', 'mr_created'].includes(k)));
 
@@ -126,7 +126,7 @@ const KIND_HELP: Record<CheckKind, string> = {
   mr_pipeline: 'uma pipeline do MR rodou depois da cerimônia (valor opcional: status esperado, como success)',
   mr_job: 'um job com esse nome rodou numa pipeline do MR depois da cerimônia (valor: nome do job)',
   mr_comment: 'o Luiz comentou no MR depois da cerimônia',
-  issue_comment: 'o Luiz comentou na issue depois da cerimônia (project sz4/sz4 + iid da issue)',
+  issue_comment: 'o Luiz comentou na issue depois da cerimônia (project do rastreador de issues + iid da issue)',
   issue_label: 'a issue ganhou a label (valor: a label, como STAGE::Ready to test)',
   issue_label_removed: 'a issue deixou de ter a label (valor: a label)',
   issue_closed: 'a issue foi fechada',
@@ -138,7 +138,7 @@ function classifyPrompt(entry: EffectEntry, card: Card | undefined): string {
   return [
     'Classifique UMA ação pendente da pré-daily numa verificação objetiva, que o app fará depois só com GET no GitLab. Não use ferramentas.',
     `Ação: «${entry.text}»`,
-    `Atividade: ${entry.ref} (repositório citado: ${entry.repo}). A issue ${issueIid ? `#${issueIid}` : ''} vive no projeto ${ISSUE_PROJECT}.`,
+    `Atividade: ${entry.ref} (repositório citado: ${entry.repo}). A issue ${issueIid ? `#${issueIid}` : ''} vive no projeto ${rc().issues.project ?? 'não configurado'}.`,
     `MRs da atividade (project e iid para usar): ${JSON.stringify(card?.mrPaths ?? [])}. Estágio: ${card?.stage ?? 'desconhecido'}.`,
     'Tipos de verificação disponíveis:',
     ...CHECK_KINDS.map((k) => `- ${k}: ${KIND_HELP[k]}`),
@@ -188,7 +188,7 @@ async function classify(entry: EffectEntry, cards: Card[]): Promise<void> {
 // ---------------------------------------------------------------- verification (GET only)
 
 async function get<T>(path: string): Promise<T> {
-  const { stdout } = await run('glab', ['api', path], { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await run('glab', ['api', path], { env: vcsCliEnv(), timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout) as T;
 }
 

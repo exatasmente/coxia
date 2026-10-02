@@ -60,7 +60,7 @@ describe('config schema', () => {
   });
 
   it('reports the path and the reason of each problem', () => {
-    const bad = { ...neutralConfig(), language: 'fr', schedule: { ...neutralConfig().schedule, preDaily: '25:00' }, llm: { providers: [{ id: 'Bad Id', kind: 'ollama', baseUrl: '' }] } };
+    const bad = { ...neutralConfig(), language: 'fr', schedule: { ...neutralConfig().schedule, preDaily: '25:00' }, llm: { providers: [{ id: 'Bad Id', kind: 'ollama', baseUrl: 5 }] } };
     const paths = validateConfig(bad).errors.map((e) => e.path);
     expect(paths).toEqual(expect.arrayContaining(['language', 'schedule.preDaily', 'llm.providers[0].id', 'llm.providers[0].kind', 'llm.providers[0].baseUrl']));
   });
@@ -95,7 +95,7 @@ describe('config schema', () => {
   it('lists the secrets a config needs, one entry per ref', () => {
     const c = neutralConfig();
     c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: 'ana', secretRef: 'vcs.gh', cliPreference: 'auto', cliCommand: null }];
-    c.llm.providers.push({ id: 'second', kind: 'openai', baseUrl: 'http://localhost:1234/v1', models: [], secretRef: 'llm.anthropic', envFile: null });
+    c.llm.providers.push({ id: 'second', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:1234/v1', models: [], secretRef: 'llm.anthropic', envFile: null, options: {}, legacyCustomEndpoint: false });
     const reqs = collectSecretRequirements(c);
     expect(reqs.map((r) => r.ref).sort()).toEqual(['llm.anthropic', 'vcs.gh']);
     expect(reqs.find((r) => r.ref === 'llm.anthropic')?.usedBy).toEqual(['llm.providers.anthropic', 'llm.providers.second']);

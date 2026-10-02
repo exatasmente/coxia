@@ -1,12 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DATA_ROOT } from './env';
+import { rc } from './workspaceConfig';
 import type { Module } from './module';
 
 // Per project ("<group>/<project>") shell command that checks a conflict resolution in its worktree. Empty: none.
 const FILE = join(DATA_ROOT, 'conflict-verify.json');
-const MIRRORS = join(homedir(), '.cache/post-release-sync');
 const PROJECT = /^[\w.-]+(\/[\w.-]+)+$/;
 const MAX = 2000;
 
@@ -51,9 +50,11 @@ export function saveVerifyCommands(commands: Record<string, string>): Record<str
 
 function mirrored(): string[] {
   const out: string[] = [];
+  const mirrors = rc().releaseSync?.mirrorsDir;
+  if (!mirrors) return out;
   try {
-    for (const ns of readdirSync(MIRRORS)) {
-      for (const repo of readdirSync(join(MIRRORS, ns))) if (repo.endsWith('.git')) out.push(`${ns}/${repo.slice(0, -4)}`);
+    for (const ns of readdirSync(mirrors)) {
+      for (const repo of readdirSync(join(mirrors, ns))) if (repo.endsWith('.git')) out.push(`${ns}/${repo.slice(0, -4)}`);
     }
   } catch {}
   return out.sort();

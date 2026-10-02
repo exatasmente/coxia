@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { RadarFinding, RadarKind, RadarRegion, RadarResult, RadarSide } from '../shared/radar';
+import { stageRank } from '../shared/config/stages';
 import type { Card } from '../shared/types';
 import { loadCards } from './cards';
 import { getSettings } from './config';
-import { ATAS, GITLAB } from './env';
+import { ATAS } from './env';
+import { rc, vcsCliEnv } from './workspaceConfig';
 import type { Module, ModuleContext } from './module';
 import { fetchRepos, worktreeHealth } from './worktrees';
 
@@ -38,14 +40,7 @@ interface Unit {
 
 // The daily-report stage is coarse; the weights follow PESO_ETAPA in related-work-radar (more advanced = costlier to touch).
 export function stageWeight(stage: string | null): number {
-  const s = stage ?? '';
-  if (/Test OK|Approved in testing/i.test(s)) return 7;
-  if (/Ready To Test|In Testing|Test Fail|Failed testing|Blocked in testing/i.test(s)) return 6;
-  if (/Code Review OK|Approved in code review/i.test(s)) return 5;
-  if (/Code Review|Ready for code review|In code review/i.test(s)) return 4;
-  if (/Rejected/i.test(s)) return 3;
-  if (/Doing|In development|Blocked in development/i.test(s)) return 2;
-  return 0;
+  return stageRank(rc().stages, stage);
 }
 
 // Files that every parallel change touches (locales, lockfiles, env samples, spec index): a collision there is mechanical.
@@ -238,7 +233,7 @@ export function analyze(units: Unit[], seen: Map<string, string>, now: string): 
 }
 
 async function glabGet(path: string): Promise<string> {
-  const { stdout } = await exec('glab', ['api', path], { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 90_000, maxBuffer: 64 * 1024 * 1024 });
+  const { stdout } = await exec('glab', ['api', path], { env: vcsCliEnv(), timeout: 90_000, maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 }
 

@@ -1,4 +1,4 @@
-import { CEREMONY_IDS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type AgentRoleConfig, type CeremonyId, type DeepPartial, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
+import { CEREMONY_IDS, CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type CeremonyId, type DeepPartial, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // The values of the original author live in legacy.ts and reach a workspace only through the v1 migration.
@@ -23,7 +23,7 @@ export function neutralConfig(): WorkspaceConfig {
     retention: { enabled: false, days: 30 },
     schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
     llm: {
-      providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null }],
+      providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null, options: {}, legacyCustomEndpoint: false }],
       roles: roles<RoleModel>((r) => ({ provider: DEFAULT_PROVIDER_ID, model: NEUTRAL_ROLE_MODELS[r] })),
     },
     projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '' } },
@@ -33,6 +33,7 @@ export function neutralConfig(): WorkspaceConfig {
       templateId: 'none',
       ceremonies: Object.fromEntries(CEREMONY_IDS.map((c) => [c, c !== 'qaHandoff' && c !== 'releaseConflicts'])) as Record<CeremonyId, boolean>,
       stages: [],
+      releaseLabelPattern: '^v?(\\d+\\.\\d+\\.\\d+)$',
       specLayout: {
         folderPrefix: '#{iid}-',
         phaseFiles: [],
@@ -43,13 +44,14 @@ export function neutralConfig(): WorkspaceConfig {
       qa: { user: null },
     },
     agents: {
-      tools: { files: true, skills: true, trackerMcp: true, vcsCli: true, subagents: true },
+      tools: { files: true, skills: true, trackerMcp: true, trackerMcpServer: '', vcsCli: true, subagents: true },
       extraInstructions: '',
       roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '' })),
     },
     voice: { enabled: true, engine: 'edge', sttModel: 'small', depsInstalled: false, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
+    claudeSdk: { installed: false, version: null, path: null },
     externalTools: {
-      cardSource: { enabled: false, command: '', reportArgs: [], noteArgs: [], stateFile: null, timeoutMs: 150_000 },
+      cardSource: { enabled: false, command: '', reportArgs: [], noteArgs: [], stateFile: null, historyFile: null, timeoutMs: 150_000 },
       releaseSync: { enabled: false, command: '', cwd: null, mirrorsDir: null },
       timeExport: { enabled: false, command: '', format: 'none' },
       terminal: { command: null, args: [] },
@@ -73,7 +75,7 @@ export function mergeDeep<T>(base: T, patch: unknown): T {
   return out as T;
 }
 
-const PROVIDER_DEFAULTS = { models: [] as string[], secretRef: null, envFile: null };
+const PROVIDER_DEFAULTS = { models: [] as string[], secretRef: null, envFile: null, options: {} as Record<string, string>, legacyCustomEndpoint: false };
 const REPO_DEFAULTS = { remoteUrl: null, vcsId: null, projectPath: null };
 const VCS_DEFAULTS = { apiUrl: '', user: '', secretRef: null, cliPreference: 'auto' as const, cliCommand: null };
 
@@ -82,7 +84,7 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
   const c = mergeDeep(neutralConfig(), partial ?? {});
   return {
     ...c,
-    llm: { ...c.llm, providers: c.llm.providers.map((p) => ({ ...PROVIDER_DEFAULTS, ...p })) },
+    llm: { ...c.llm, providers: c.llm.providers.map((p) => ({ ...PROVIDER_DEFAULTS, ...p, engine: p.engine ?? defaultEngine(p.kind), baseUrl: p.baseUrl ?? '' })) },
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
   };

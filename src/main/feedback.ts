@@ -20,18 +20,20 @@ import { listActions, proposeGitlabAction } from './actions';
 import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agents';
 import { loadCards } from './cards';
 import { getSettings } from './config';
-import { ATAS, GITLAB, PLAYBOOK } from './env';
+import { ATAS } from './env';
+import { docsSources, isIssueRef, issueProjectRef, issueWebUrl, qaUser, rc, vcsCliEnv } from './workspaceConfig';
 import { logError } from './errorlog';
 import type { Module } from './module';
 import type { Notice } from './scheduler';
 
 const exec = promisify(execFile);
 
-const QA_USER = 'qa.interno';
-const ISSUE_PROJECT = 1;
 const SEEN_FILE = join(ATAS, 'feedback.json');
 const DIR = join(ATAS, 'feedback');
-const PIPELINE_SKILL = join(PLAYBOOK, '.claude/skills/agent-pipeline/SKILL.md');
+// The team's pipeline skill, when one of the configured skills folders has it.
+function pipelineSkill(): string | null {
+  return docsSources().skillsDirs.map((d) => join(d, 'agent-pipeline/SKILL.md')).find((f) => existsSync(f)) ?? null;
+}
 const POOL = 4;
 const MAX_NOTICES = 4;
 
@@ -76,7 +78,7 @@ interface Deps {
 // ---------- GitLab reads ----------
 
 async function glab(args: string[]): Promise<string> {
-  const { stdout } = await exec('glab', args, { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
+  const { stdout } = await exec('glab', args, { env: vcsCliEnv(), timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
   return stdout;
 }
 
@@ -122,10 +124,10 @@ function realNotes(d: GlDiscussion): GlNote[] {
 }
 
 async function issueStatuses(cards: Card[]): Promise<Map<string, string>> {
-  const iids = cards.filter((c) => c.ref.startsWith('sz4#') && /^\d+$/.test(c.iid)).map((c) => `"${c.iid}"`);
+  const iids = cards.filter((c) => isIssueRef(c.ref) && /^\d+$/.test(c.iid)).map((c) => `"${c.iid}"`);
   const out = new Map<string, string>();
   if (!iids.length) return out;
-  const query = `{ project(fullPath:"sz4/sz4"){ workItems(iids:[${iids.join(',')}]){ nodes{ iid widgets{ ... on WorkItemWidgetStatus{ status{ name } } } } } } }`;
+  const query = `{ project(fullPath:"${rc().issues.project}"){ workItems(iids:[${iids.join(',')}]){ nodes{ iid widgets{ ... on WorkItemWidgetStatus{ status{ name } } } } } } }`;
   try {
     const r = JSON.parse(await glab(['api', 'graphql', '-f', `query=${query}`])) as {
       data?: { project?: { workItems?: { nodes: { iid: string; widgets: { status?: { name: string } }[] }[] } } };
@@ -189,7 +191,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
           const all = await getAll<GlDiscussion>(`${mrBase(mr)}/discussions`);
           const before = prev.mrs[mr.ref];
           const open = all.filter(isUnresolved);
-          const qa = all.flatMap(realNotes).filter((n) => n.author.username === QA_USER);
+          const qa = all.flatMap(realNotes).filter((n) => n.author.username === qaUser());
           const freshQa = qa.filter((n) => !before?.qaNotes.includes(n.id));
           // Threads the user opened or last answered are not news to them.
           const fresh = open.filter((d) => !before?.discussions.includes(d.id) && realNotes(d).at(-1)?.author.username !== user);
@@ -213,10 +215,10 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
     const returned = card.stage === 'Test Fail' || status === 'Failed testing';
     let qaNotes = before?.qaNotes ?? [];
     let freshNotes: GlNote[] = [];
-    if (card.ref.startsWith('sz4#') && /^\d+$/.test(card.iid)) {
+    if (isIssueRef(card.ref) && /^\d+$/.test(card.iid)) {
       try {
-        const notes = (await getAll<GlNote>(`projects/${ISSUE_PROJECT}/issues/${card.iid}/notes?sort=desc&order_by=created_at`)).filter(
-          (n) => !n.system && n.author.username === QA_USER,
+        const notes = (await getAll<GlNote>(`projects/${issueProjectRef()}/issues/${card.iid}/notes?sort=desc&order_by=created_at`)).filter(
+          (n) => !n.system && n.author.username === qaUser(),
         );
         qaNotes = notes.map((n) => n.id);
         if (before) freshNotes = notes.filter((n) => !before.qaNotes.includes(n.id));
@@ -315,17 +317,17 @@ export function getReentry(iid: string): Reentry | null {
 
 async function qaNotesOf(card: Card): Promise<(QaNoteView & { body: string })[]> {
   const found: (QaNoteView & { body: string })[] = [];
-  if (card.ref.startsWith('sz4#')) {
-    const notes = await getAll<GlNote>(`projects/${ISSUE_PROJECT}/issues/${card.iid}/notes?sort=desc&order_by=created_at`);
-    for (const n of notes.filter((x) => !x.system && x.author.username === QA_USER)) {
-      found.push({ id: n.id, at: n.created_at, where: `#${card.iid}`, excerpt: excerpt(n.body), body: n.body, url: `https://${GITLAB}/sz4/sz4/-/work_items/${card.iid}#note_${n.id}` });
+  if (isIssueRef(card.ref)) {
+    const notes = await getAll<GlNote>(`projects/${issueProjectRef()}/issues/${card.iid}/notes?sort=desc&order_by=created_at`);
+    for (const n of notes.filter((x) => !x.system && x.author.username === qaUser())) {
+      found.push({ id: n.id, at: n.created_at, where: `#${card.iid}`, excerpt: excerpt(n.body), body: n.body, url: `${issueWebUrl(card.iid) ?? ''}#note_${n.id}` });
     }
   }
   for (const mr of card.mrPaths) {
     try {
       const all = await getAll<GlDiscussion>(`${mrBase(mr)}/discussions`);
-      for (const n of all.flatMap(realNotes).filter((x) => x.author.username === QA_USER)) {
-        found.push({ id: n.id, at: n.created_at, where: mr.ref, excerpt: excerpt(n.body), body: n.body, url: `https://${GITLAB}/${mr.project}/-/merge_requests/${mr.iid}#note_${n.id}` });
+      for (const n of all.flatMap(realNotes).filter((x) => x.author.username === qaUser())) {
+        found.push({ id: n.id, at: n.created_at, where: mr.ref, excerpt: excerpt(n.body), body: n.body, url: `https://${rc().vcsHost}/${mr.project}/-/merge_requests/${mr.iid}#note_${n.id}` });
       }
     } catch (e) {
       console.error(`[feedback] ${mr.ref}`, (e as Error).message);
@@ -346,9 +348,9 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
     `Estágio atual: ${card.stage ?? 'sem estágio'}. ${card.spec ? `Spec em ${card.spec.folder} (${card.spec.phase}); leia o Plan, a investigação ou o spec técnico e o ISSUE_COMPLETION, no máximo 5 leituras.` : 'A issue não tem pasta de spec: diga isso.'}`,
     `MRs: ${JSON.stringify(card.mrPaths)}.`,
     recent.length
-      ? `Comentários mais recentes do ${QA_USER} (a conta do QA), do mais novo para o mais antigo:\n${recent.map((n) => `--- ${n.where}, ${n.at}\n${n.body.slice(0, 5000)}`).join('\n')}`
-      : `Não há nota do ${QA_USER} na issue nem nos MRs. Diga isso e não invente achado do QA.`,
-    `Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de ${PIPELINE_SKILL}.`,
+      ? `Comentários mais recentes do ${qaUser()} (a conta do QA), do mais novo para o mais antigo:\n${recent.map((n) => `--- ${n.where}, ${n.at}\n${n.body.slice(0, 5000)}`).join('\n')}`
+      : `Não há nota do ${qaUser()} na issue nem nos MRs. Diga isso e não invente achado do QA.`,
+    ...(pipelineSkill() ? [`Leia a seção "3. Ciclos" (a tabela de gatilhos e o texto abaixo dela) e a seção "7. QA-assistente" (tabela de classes) de ${pipelineSkill()}.`] : []),
     'Classifique o retorno:',
     '- "defeito-novo": o QA expôs um defeito que o fix criou ou deixou aparecer, fora do que a issue tratava. Reentra em F1 (ciclo novo, nova investigação, Gate 1 novo).',
     '- "causa-diferente": o problema é o mesmo sintoma, mas a causa não é a investigada. Reentra em F1.',

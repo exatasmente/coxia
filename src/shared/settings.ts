@@ -1,10 +1,19 @@
-export type ModelRole = 'turn' | 'reply' | 'deep' | 'teams';
+import { neutralConfig } from './config/defaults';
+import { settingsFromConfig } from './config/settingsView';
+import { THEMES, type Language, type LlmRole, type Theme } from './config/types';
 
-export type Theme = 'system' | 'light' | 'dark';
-export const THEMES: Theme[] = ['system', 'light', 'dark'];
+export type ModelRole = LlmRole;
+export type { Theme };
+export { THEMES };
 
+// The flat view of the workspace config that the Settings screen edits. The source of truth is the WorkspaceConfig (shared/config);
+// see settingsView.ts for how this is derived and applied back.
 export interface Settings {
+  language: Language;
+  /** Model id per role; the provider of each role is part of the workspace config. */
   models: Record<ModelRole, string>;
+  /** Model ids the configured providers offer, for the pickers. Read-only: a save ignores it. */
+  modelOptions: string[];
   tools: {
     files: boolean;
     skills: boolean;
@@ -29,7 +38,7 @@ export interface Settings {
   web: WebSettings;
 }
 
-// Browser access (PWA). Only the desktop window changes these, through the web:* channels.
+// Browser access (PWA). Only the desktop window changes these, through the web:* channels. Machine-level: it lives in the data root, not in a workspace.
 export interface WebSettings {
   enabled: boolean;
   host: string;
@@ -41,37 +50,25 @@ export interface WebSettings {
   allowExternalEffects: boolean;
 }
 
-export const MODEL_OPTIONS = ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4-pro-0813', 'qwen/qwen3.7-flash'];
-
-export const DEFAULT_SETTINGS: Settings = {
-  models: {
-    turn: 'deepseek/deepseek-v4.1-flash',
-    reply: 'deepseek/deepseek-v4.1-flash',
-    deep: 'deepseek/deepseek-v4.1-flash',
-    teams: 'deepseek/deepseek-v4.1-flash',
-  },
-  tools: { files: true, skills: true, gitlabMcp: true, glab: true, subagents: true },
-  schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
-  voice: { autoStop: true, silenceMs: 1200, speak: true, engine: 'edge', prosody: true, bargeIn: true },
-  notifications: true,
-  closeToTray: true,
-  retention: { enabled: false, days: 30 },
-  appearance: { theme: 'system' },
-  web: {
-    enabled: false,
-    host: '172.18.0.1',
-    port: 4330,
-    basePath: '/cerimonias/',
-    publicUrl: 'https://koala.fortics.dev/cerimonias/',
-    trustedProxy: '172.18.0.0/16',
-    allowExternalEffects: false,
-  },
+// Loopback only: a fresh install never listens on a network address nor points at somebody's tunnel.
+export const NEUTRAL_WEB: WebSettings = {
+  enabled: false,
+  host: '127.0.0.1',
+  port: 4330,
+  basePath: '/cerimonias/',
+  publicUrl: 'http://localhost:4330/cerimonias/',
+  trustedProxy: '127.0.0.1/32',
+  allowExternalEffects: false,
 };
+
+export const DEFAULT_SETTINGS: Settings = settingsFromConfig(neutralConfig(), NEUTRAL_WEB);
 
 export function withDefaults(partial: Partial<Settings> | null | undefined): Settings {
   const p = partial ?? {};
   return {
+    language: p.language === 'en' || p.language === 'pt-BR' ? p.language : DEFAULT_SETTINGS.language,
     models: { ...DEFAULT_SETTINGS.models, ...p.models },
+    modelOptions: Array.isArray(p.modelOptions) ? p.modelOptions : DEFAULT_SETTINGS.modelOptions,
     tools: { ...DEFAULT_SETTINGS.tools, ...p.tools },
     schedule: { ...DEFAULT_SETTINGS.schedule, ...p.schedule },
     voice: { ...DEFAULT_SETTINGS.voice, ...p.voice },

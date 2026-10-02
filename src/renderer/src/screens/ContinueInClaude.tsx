@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { resumeCommand } from '../../../shared/claude-command';
 import { api } from '../api';
 import { isWeb } from '../platform';
 
@@ -13,14 +12,14 @@ export function ContinueInClaude({ sessionId, prompt, label, dark = false }: { s
     setTimeout(() => setState(null), 3000);
   };
   const copy = async () => {
-    await api.copy(resumeCommand(sessionId, prompt));
+    await api.copy(await api.invoke<string>('claude:command', sessionId, prompt));
     setState('Comando copiado');
     setTimeout(() => setState(null), 2000);
   };
   const style = dark ? { background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' } : undefined;
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-      {!isWeb() && <button type="button" className="btn" style={style} title={prompt ? 'Abre um terminal retomando a sessão do agente já com este pedido' : 'Abre um terminal com claude-or --resume nesta sessão do agente'} onClick={() => void open()}>
+      {!isWeb() && <button type="button" className="btn" style={style} title={prompt ? 'Abre um terminal retomando a sessão do agente já com este pedido' : 'Abre um terminal retomando esta sessão do agente'} onClick={() => void open()}>
         {state ?? label ?? 'Continuar no Claude Code'}
       </button>}
       <button type="button" className="btn icon-btn" style={style} aria-label="Copiar o comando de retomada" title="Copiar o comando" onClick={() => void copy()}>

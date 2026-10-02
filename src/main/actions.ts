@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import type { AppEvent, Card, GitlabCommand, ReleaseAction } from '../shared/types';
-import { conflictAsk, conflictPropose as askProposal, rewriteQaComment, secretPath } from './agents';
+import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { getSettings } from './config';
 import {
@@ -24,15 +24,13 @@ import {
 import { assertResolvable, resolveMr, type MrRead } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
-import { ATAS, GITLAB, PLAYBOOK, WORKSPACE } from './env';
+import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
+import { issueProjectRef, qaNoteMarker, rc, requireVcsHost, vcsCliEnv } from './workspaceConfig';
 
 const exec = promisify(execFile);
-const CLI = join(PLAYBOOK, '.claude/bin/post-release-sync');
 const FILE = join(ATAS, 'acoes.json');
-const ISSUE_PROJECT = 1;
-const QA_NOTE = /^@qa\.interno\b/;
 const PIPELINE_WAIT_MS = 30_000;
 // The only GraphQL write the app may propose: a work item status change (authorized by the user on 2026-10-02).
 export const STATUS_MUTATION =
@@ -92,7 +90,9 @@ function update(id: string, change: (a: ReleaseAction) => ReleaseAction): Releas
 
 async function cli(args: string[]): Promise<string> {
   try {
-    const { stdout, stderr } = await exec(CLI, args, { cwd: PLAYBOOK, timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    const sync = rc().releaseSync;
+    if (!sync) throw new Error('A ferramenta de sincronização de release não está configurada neste workspace.');
+    const { stdout, stderr } = await exec(sync.command, args, { cwd: sync.cwd, timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     return `${stdout}${stderr ? `\n${stderr}` : ''}`.trim();
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; message: string };
@@ -101,7 +101,7 @@ async function cli(args: string[]): Promise<string> {
 }
 
 async function glab(args: string[]): Promise<string> {
-  const { stdout } = await exec('glab', args, { env: { ...process.env, GITLAB_HOST: GITLAB }, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await exec('glab', args, { env: vcsCliEnv(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 
@@ -205,10 +205,11 @@ async function runGitlab(c: GitlabCommand, meta: { code?: number } = {}): Promis
     }
   }
   // curl path: array fields such as reviewer_ids[] are rejected by glab (it sends a JSON body).
-  const token = (await exec('glab', ['config', 'get', 'token', '--host', GITLAB])).stdout.trim();
+  const host = requireVcsHost();
+  const token = (await exec('glab', ['config', 'get', 'token', '--host', host])).stdout.trim();
   const args = ['-sS', '-w', '\nHTTP %{http_code}', '-X', c.method, '-H', `PRIVATE-TOKEN: ${token}`];
   for (const [k, v] of Object.entries(c.fields)) args.push('--data-urlencode', `${k}=${v}`);
-  args.push(`https://${GITLAB}/api/v4/${c.endpoint}`);
+  args.push(`https://${host}/api/v4/${c.endpoint}`);
   const { stdout } = await exec('curl', args, { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
   const code = /HTTP (\d+)\s*$/.exec(stdout)?.[1];
   if (code) meta.code = Number(code);
@@ -222,6 +223,7 @@ export function listActions(): ReleaseAction[] {
 
 export async function detectRelease(manual: boolean): Promise<string> {
   if (detecting) return 'Já estou conferindo a release.';
+  if (!rc().releaseSync) return 'A ferramenta de sincronização de release não está configurada neste workspace.';
   detecting = true;
   try {
     const status = await cli(['status']);
@@ -311,12 +313,13 @@ export async function previewAction(id: string): Promise<string> {
 }
 
 async function qaNote(issue: number): Promise<{ id: number; body: string } | null> {
-  const notes = JSON.parse(await glab(['api', `projects/${ISSUE_PROJECT}/issues/${issue}/notes?sort=desc&order_by=created_at&per_page=100`])) as {
+  const notes = JSON.parse(await glab(['api', `projects/${issueProjectRef()}/issues/${issue}/notes?sort=desc&order_by=created_at&per_page=100`])) as {
     id: number;
     body: string;
     system: boolean;
   }[];
-  const note = notes.find((n) => !n.system && QA_NOTE.test(n.body.trim()));
+  const marker = qaNoteMarker();
+  const note = marker ? notes.find((n) => !n.system && marker.test(n.body.trim())) : undefined;
   return note ? { id: note.id, body: note.body } : null;
 }
 
@@ -384,7 +387,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     } else if (a.noteId && a.proposedBody) {
       const file = join(tmpdir(), `qa-note-${a.issue}-${Date.now()}.md`);
       writeFileSync(file, a.proposedBody);
-      const endpoint = `projects/${ISSUE_PROJECT}/issues/${a.issue}/notes/${a.noteId}`;
+      const endpoint = `projects/${issueProjectRef()}/issues/${a.issue}/notes/${a.noteId}`;
       const body = a.proposedBody;
       try {
         output = await audited(a, { kind: 'note-edit', target: `PUT ${endpoint}`, via: 'glab', fields: { body } }, async () => {
@@ -433,7 +436,7 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
       ].join('\n')
     : 'Sem dados do mirror: use o GitLab.';
   const context = [
-    `Issue sz4#${a.issue} (${a.issueTitle}), release ${a.release}. Arquivos em conflito: ${a.files.join(', ') || 'nenhum listado'}.`,
+    `Issue ${issueRef(a.issue)} (${a.issueTitle}), release ${a.release}. Arquivos em conflito: ${a.files.join(', ') || 'nenhum listado'}.`,
     `Comandos para ler os dois lados (um por vez):\n${commands}`,
     a.resolve && !a.resolve.publishedAt ? `Worktree de resolução já preparada (com os marcadores nos arquivos): ${a.resolve.worktree}. Passo atual: ${conflictStep(a)}.` : '',
     `Unidade da ferramenta: ${JSON.stringify(a.unit).slice(0, 3000)}`,
@@ -455,13 +458,19 @@ const CONFLICTS = join(ATAS, 'conflicts');
 const FENCE = /^```[\w-]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
 
 // Tests replace these: the clone search roots and what runs after a publish.
+let cloneRootsOverride: string[] | null = null;
 export const conflictHooks: {
   cloneRoots: string[];
   scheduleQaComment: (sync: ReleaseAction) => void;
   // GET only: the GitLab reads that conflict:fromMr makes.
   gitlabGet: (endpoint: string) => Promise<unknown>;
 } = {
-  cloneRoots: [process.env.CERIMONIAS_CLONES_DIR ?? WORKSPACE],
+  get cloneRoots() {
+    return cloneRootsOverride ?? rc().cloneRoots;
+  },
+  set cloneRoots(roots: string[]) {
+    cloneRootsOverride = roots;
+  },
   gitlabGet: async (endpoint) => JSON.parse(await glab(['api', endpoint])),
   scheduleQaComment: (sync) => {
     // The push pipeline takes a moment to appear; the comment draft waits for it.
@@ -570,7 +579,7 @@ export async function conflictPrepare(id: string): Promise<ReleaseAction> {
     const branch = u.source_branch ?? a.mrs[0]?.branch;
     const project = projectOf(u);
     if (!iid || !branch || !project) throw new Error('faltam dados do MR na ação (projeto, número ou branch)');
-    const clone = await findClone(project, conflictHooks.cloneRoots, GITLAB);
+    const clone = await findClone(project, conflictHooks.cloneRoots, requireVcsHost());
     if (!clone) throw new Error(`não achei um clone local de ${project} em ${conflictHooks.cloneRoots.join(', ')} (o remote origin precisa apontar para ele)`);
     const target = u.target_branch ?? 'main';
     const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`) });

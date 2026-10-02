@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { getSettings, saveSettings, saveWebSettings, validateWeb } from '../src/main/config';
+import { LEGACY_WEB_SETTINGS } from '../src/shared/config/legacy';
 import { DEFAULT_SETTINGS, withDefaults } from '../src/shared/settings';
 
 describe('web settings', () => {
-  it('is off by default and aims at the Docker gateway and the public tunnel', () => {
+  it('is off by default and listens on loopback only, with no company host', () => {
     const w = withDefaults(null).web;
-    expect(w).toMatchObject({ enabled: false, host: '172.18.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'https://koala.fortics.dev/cerimonias/', trustedProxy: '172.18.0.0/16', allowExternalEffects: false });
+    expect(w).toMatchObject({ enabled: false, host: '127.0.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'http://localhost:4330/cerimonias/', trustedProxy: '127.0.0.1/32', allowExternalEffects: false });
+    expect(JSON.stringify(w)).not.toMatch(/fortics|koala|172\.18/);
+  });
+
+  it('the previous defaults are kept for an existing install, and pass the same validation', () => {
+    expect(validateWeb(LEGACY_WEB_SETTINGS)).toMatchObject({ host: '172.18.0.1', publicUrl: 'https://koala.fortics.dev/cerimonias/' });
   });
 
   it('validates host, port, base path and public url', () => {

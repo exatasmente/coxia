@@ -12,11 +12,13 @@ import { App } from './App';
 import { unlockAudio } from './audio';
 import { ErrorBoundary } from './ErrorBoundary';
 import { installErrorReporting } from './errorReport';
+import { initLanguage } from './i18n';
 import { isWeb } from './platform';
 import { initTheme } from './theme';
 import { WebGate } from './WebGate';
 
 initTheme();
+initLanguage();
 installErrorReporting();
 
 // Mobile browsers keep the AudioContext suspended until a gesture.

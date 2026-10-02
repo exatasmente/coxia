@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { DEFAULT_SETTINGS, type WebSettings } from '../shared/settings';
+import type { WebSettings } from '../shared/settings';
 import type { AppEvent } from '../shared/types';
 import type { PairingCode, WebView } from '../shared/webAccess';
 import { getSettings, saveWebSettings } from './config';
@@ -18,10 +18,10 @@ const theAuth = (): Auth => (auth ??= createAuth(join(DATA_ROOT, 'web-sessions.j
 
 let push: PushService | null = null;
 
-// The VAPID subject is the public address, never a person's email; a local test address falls back to the default.
+// The VAPID subject is the public address, never a person's email; a local test address falls back to a fixed https placeholder.
 function vapidSubject(): string {
   const url = getSettings().web.publicUrl;
-  return url.startsWith('https://') ? url : DEFAULT_SETTINGS.web.publicUrl;
+  return url.startsWith('https://') ? url : 'https://localhost/';
 }
 
 const thePush = (): PushService =>

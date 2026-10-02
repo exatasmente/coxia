@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { MODEL_OPTIONS, type ModelRole, type Settings, type Theme } from '../../../shared/settings';
+import { LANGUAGES } from '../../../shared/config/types';
+import { type ModelRole, type Settings, type Theme } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setBargeIn, setSpeechEnabled } from '../audio';
 import { autostartApi } from '../autostartApi';
+import { applyLanguage, useT } from '../i18n';
 import { applyTheme } from '../theme';
 import { jobs, useJobs } from '../useJobs';
 import { FalaCostByModel } from './FalasCusto';
@@ -20,6 +22,7 @@ const ROLES: [ModelRole, string, string][] = [
   ['reply', 'Resposta ao que você diz', 'Entende a sua resposta e tira dela a decisão e a ação.'],
   ['deep', 'Desbloqueio', 'Investiga a fundo, lendo spec, GitLab e playbook. Vale um modelo mais forte.'],
   ['teams', 'Texto do Teams', 'Escreve o resumo para a daily do time.'],
+  ['fix', 'Correções rápidas', 'Conserta diagramas e confere respostas curtas. Um modelo barato basta.'],
 ];
 
 const TOOLS: [keyof Settings['tools'], string, string][] = [
@@ -39,6 +42,7 @@ const THEME_LABELS: [Theme, string, string][] = [
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
   const [s, setS] = useState<Settings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +85,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       setBargeIn(saved.voice.bargeIn);
       clearSpeechCache();
       applyTheme(saved.appearance.theme);
+      applyLanguage(saved.language);
       setSaved(`Salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (e) {
       setError(errorText(e));
@@ -98,7 +103,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
             <button type="button" className="btn icon-btn" aria-label="Voltar para Hoje" onClick={() => go({ name: 'today' })}><BackIcon /></button>
-            <h1 style={{ fontSize: 26, fontWeight: 700 }}>Configurações</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('settings.title')}</h1>
           </div>
           <div className="row">
             {saved && <span className="small" style={{ color: 'var(--teal-ink)' }}>{saved}</span>}
@@ -111,11 +116,11 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Modelos</h2>
-            <p className="small muted" style={{ marginTop: 4 }}>Pelo OpenRouter. Vale a partir da próxima chamada de agente.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.models.title')}</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>Pelo provedor configurado para cada papel. Vale a partir da próxima chamada de agente.</p>
           </div>
           {ROLES.map(([role, label, hint]) => {
-            const custom = !MODEL_OPTIONS.includes(s.models[role]);
+            const custom = !s.modelOptions.includes(s.models[role]);
             return (
               <div key={role} className="settings-row">
                 <div>
@@ -130,7 +135,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
                     value={custom ? '__custom' : s.models[role]}
                     onChange={(e) => set((p) => ({ ...p, models: { ...p.models, [role]: e.target.value === '__custom' ? '' : e.target.value } }))}
                   >
-                    {MODEL_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {s.modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
                     <option value="__custom">Outro…</option>
                   </select>
                   {custom && (
@@ -150,7 +155,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Ferramentas dos agentes</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.tools.title')}</h2>
             <p className="small muted" style={{ marginTop: 4 }}>
               Sempre bloqueado, independentemente daqui: editar arquivos, web, arquivos de segredo e qualquer escrita no GitLab.
             </p>
@@ -168,7 +173,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Voz</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.voice.title')}</h2>
             <p className="small muted" style={{ marginTop: 4 }}>O espaço continua enviando a fala antes da hora. Vale a partir da próxima gravação.</p>
           </div>
           <div className="settings-row">
@@ -231,7 +236,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Agenda e notificações</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.schedule.title')}</h2>
             <p className="small muted" style={{ marginTop: 4 }}>Conferir o status usa só o daily-report: não chama nenhum modelo.</p>
           </div>
           <div className="settings-row">
@@ -303,7 +308,21 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <ConflictVerifySection />
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aparência</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.language.title')}</h2>
+            <p className="small muted" style={{ marginTop: 4 }}>{t('settings.language.hint')}</p>
+          </div>
+          <div role="group" aria-label={t('settings.language.title')} className="row" style={{ gap: 8 }}>
+            {LANGUAGES.map((lang) => (
+              <button key={lang} type="button" aria-pressed={s.language === lang} className={`filter ${s.language === lang ? 'on' : ''}`} onClick={() => set((p) => ({ ...p, language: lang }))}>
+                {t(`settings.language.${lang}`)}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel" style={{ padding: 20, gap: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.appearance.title')}</h2>
             <p className="small muted" style={{ marginTop: 4 }}>Vale ao salvar. A call e os painéis escuros ficam escuros nos dois temas.</p>
           </div>
           <div role="group" aria-label="Tema" className="row" style={{ gap: 8 }}>
@@ -325,7 +344,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Início</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.start.title')}</h2>
           </div>
           <label className="check-row">
             <input type="checkbox" checked={autostart === true} disabled={autostart === null} onChange={() => void toggleAutostart()} />

@@ -3,12 +3,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { BranchHealth, WorktreeHealth } from '../shared/radar';
-import { WORKSPACE } from './env';
+import { rc } from './workspaceConfig';
 import { logError } from './errorlog';
 
 const exec = promisify(execFile);
 
-export const REPOS = ['sz4', 'sz4-frontend', 'sz4-backend', 'new-agent', 'hub-whatsapp', 'agent-socket-manager', 'sz-playbook'];
+// The repositories of the workspace (projects.repos): every module that looks at checkouts goes through here.
+export const repos = () => rc().repos;
 
 // Read-only on purpose: --no-optional-locks keeps `git status` from refreshing (writing) the index.
 async function git(repo: string, args: string[]): Promise<string> {
@@ -92,7 +93,8 @@ interface Ref {
 }
 
 async function inspectRepo(name: string): Promise<BranchHealth[]> {
-  const repo = join(WORKSPACE, name);
+  const repo = repos().find((r) => r.id === name)?.path;
+  if (!repo) return [];
   if (!existsSync(join(repo, '.git'))) return [];
   const [wtOut, refOut] = await Promise.all([
     git(repo, ['worktree', 'list', '--porcelain']),
@@ -171,7 +173,7 @@ async function inspectRepo(name: string): Promise<BranchHealth[]> {
 // the real remote instead of the last fetch someone happened to run.
 export async function fetchRepos(): Promise<void> {
   await Promise.all(
-    REPOS.map((r) => join(WORKSPACE, r))
+    repos().map((r) => r.path)
       .filter((repo) => existsSync(join(repo, '.git')))
       .map((repo) => exec('git', ['-C', repo, 'fetch', '--quiet', 'origin'], { timeout: 120_000 }).catch((e) => {
         console.error('[fetch]', repo, String(e).slice(0, 200));
@@ -181,7 +183,7 @@ export async function fetchRepos(): Promise<void> {
 }
 
 export async function worktreeHealth(): Promise<WorktreeHealth> {
-  const all = (await Promise.all(REPOS.map((r) => inspectRepo(r).catch(() => [] as BranchHealth[])))).flat();
+  const all = (await Promise.all(repos().map((r) => inspectRepo(r.id).catch(() => [] as BranchHealth[])))).flat();
   const byIssue: Record<string, BranchHealth[]> = {};
   const unassigned: BranchHealth[] = [];
   for (const item of all) {

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { DAILY_REPORT } from './env';
+import { rc } from './workspaceConfig';
 
 const run = promisify(execFile);
 
@@ -46,9 +46,14 @@ const status: ReportStatus = { lastOkAt: null, lastDurationMs: null, lastError: 
 
 const timedOut = (e: unknown) => Boolean((e as { killed?: boolean }).killed) || (e as { code?: string }).code === 'ETIMEDOUT';
 
+// A workspace with no card source (externalTools.cardSource off) has no cards: the screens show an empty day, not an error.
+const EMPTY: Report = { generated_at: new Date(0).toISOString(), items: [] };
+
 async function spawnOnce(): Promise<Report> {
+  const source = rc().cardSource;
+  if (!source) return { ...EMPTY, generated_at: new Date().toISOString() };
   spawned++;
-  const { stdout } = await run(DAILY_REPORT, ['report', '--format', 'json', '--dry-run'], { timeout: TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
+  const { stdout } = await run(source.command, source.reportArgs, { timeout: source.timeoutMs || TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 });
   return JSON.parse(stdout) as Report;
 }
 

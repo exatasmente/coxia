@@ -1,7 +1,7 @@
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA } from './schema';
-import { CONFIG_SCHEMA_VERSION, type SecretRequirement, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
 export interface ConfigIssue {
   path: string;
@@ -20,12 +20,30 @@ function duplicates(ids: string[]): string[] {
   return ids.filter((id, i) => ids.indexOf(id) !== i);
 }
 
+const ANTHROPIC_HOST = /^https:\/\/api\.anthropic\.com\/?$/;
+
+function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const at = (field: string) => `llm.providers.${p.id}.${field}`;
+  if (p.engine === 'claude-sdk' && p.kind === 'openai-compatible') errors.push({ path: at('engine'), message: 'the Claude Agent SDK cannot serve an openai-compatible provider; use the open engine' });
+  if ((p.kind === 'anthropic' || p.kind === 'openai-compatible') && !p.baseUrl.trim()) errors.push({ path: at('baseUrl'), message: 'is required for this kind' });
+  if (p.baseUrl.trim() && !/^https?:\/\//.test(p.baseUrl)) errors.push({ path: at('baseUrl'), message: 'must start with http:// or https://' });
+  if (p.kind === 'anthropic' && p.engine === 'claude-sdk' && p.baseUrl.trim() && !ANTHROPIC_HOST.test(p.baseUrl) && !p.legacyCustomEndpoint) {
+    warnings.push({ path: at('baseUrl'), message: 'the Claude Agent SDK is pointed at a non-Anthropic endpoint; only Claude models are supported there' });
+  }
+  if (p.legacyCustomEndpoint && p.kind !== 'anthropic') errors.push({ path: at('legacyCustomEndpoint'), message: 'only applies to the anthropic kind' });
+  if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });
+  if (p.kind === 'bedrock' && !p.options.region) warnings.push({ path: at('options.region'), message: 'no AWS region set' });
+  if (p.kind === 'vertex' && !(p.options.project && p.options.region)) warnings.push({ path: at('options'), message: 'vertex needs project and region' });
+  if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
+}
+
 function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
   for (const [role, rm] of Object.entries(c.llm.roles)) {
     if (!providers.has(rm.provider)) errors.push({ path: `llm.roles.${role}.provider`, message: `unknown provider "${rm.provider}"` });
   }
+  for (const p of c.llm.providers) providerRules(p, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });
   for (const id of duplicates(c.projects.repos.map((r) => r.id))) errors.push({ path: 'projects.repos', message: `duplicate repo id "${id}"` });
@@ -43,6 +61,11 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
       }
     }),
   );
+  try {
+    new RegExp(c.devCycle.releaseLabelPattern);
+  } catch {
+    errors.push({ path: 'devCycle.releaseLabelPattern', message: 'not a valid regular expression' });
+  }
   if (!c.devCycle.specLayout.folderPrefix.includes('{iid}')) warnings.push({ path: 'devCycle.specLayout.folderPrefix', message: 'has no {iid}: every issue would match the same folder' });
   if (c.schedule.from >= c.schedule.to) warnings.push({ path: 'schedule', message: 'the work day ends before it starts' });
   for (const [tool, cfg] of Object.entries({ cardSource: c.externalTools.cardSource, releaseSync: c.externalTools.releaseSync, timeExport: c.externalTools.timeExport })) {

@@ -6,7 +6,7 @@ import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, 
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
-import { continueInClaude } from './claude';
+import { continueInClaude, pasteCommand } from './claude';
 import { getSettings, saveSettings } from './config';
 import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
@@ -171,6 +171,7 @@ function handlers(): void {
     return saved;
   });
   handle('claude:continue', (sessionId: string, prompt?: string) => continueInClaude(sessionId, prompt));
+  handle('claude:command', (sessionId: string, prompt?: string) => pasteCommand(sessionId, prompt));
   handle('status:check', () => checkStatus(true));
   handle('actions:list', () => listActions());
   handle('actions:detect', () => detectRelease(true));
