@@ -92,7 +92,44 @@ export interface SaveResult {
   written: { ref: string; dest: string; ok: boolean; detail: string }[];
 }
 
+export interface LogLine {
+  who: string;
+  text: string;
+  at: string;
+  color: string;
+}
+
+export interface DeepState {
+  sessionId: string | null;
+  msgs: { me: boolean; text: string; at: string }[];
+  sources: string[];
+  options: DeepOption[] | null;
+  pick: number | null;
+  saved: boolean;
+}
+
+export interface SavedCeremony {
+  version: 1;
+  date: string;
+  cards: CardsResult | null;
+  turns: Record<string, AgentTurn>;
+  decisions: Decision[];
+  effects: Effect[];
+  answered: Record<string, boolean>;
+  log: LogLine[];
+  startedAt: number | null;
+  endedAt: number | null;
+  callIdx: number;
+  callEnded: boolean;
+  spoken: Record<string, boolean>;
+  deep: Record<string, DeepState>;
+  teams: string | null;
+  saveResult: SaveResult | null;
+}
+
 export interface Api {
+  loadState(): Promise<SavedCeremony | null>;
+  saveState(state: SavedCeremony): Promise<void>;
   loadCards(limit: number): Promise<CardsResult>;
   prepareTurn(card: Card): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SaveResult } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
@@ -14,11 +13,10 @@ function effectsPrompt(effects: Ceremony['effects']): string {
 export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) => void }) {
   const m = c.minutes;
   const [selected, setSelected] = useState<boolean[]>(() => m.decisions.map(() => true));
-  const [teams, setTeams] = useState<string | null>(null);
+  const { teams, setTeams, saveResult: result, setSaveResult: setResult } = c;
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'teams' | 'effects' | null>(null);
   const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<SaveResult | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const asked = useRef(false);
 
@@ -33,10 +31,10 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
   }, [m, c.cards]);
 
   useEffect(() => {
-    if (asked.current) return;
+    if (asked.current || teams) return;
     asked.current = true;
     void loadTeams();
-  }, [loadTeams]);
+  }, [loadTeams, teams]);
 
   const copy = async (what: 'teams' | 'effects', text: string) => {
     await api.copy(text);

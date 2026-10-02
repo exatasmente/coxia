@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, app, clipboard, ipcMain, session, shell } from 'electron';
-import type { AgentTurn, Card, Minutes, Voice } from '../shared/types';
+import type { AgentTurn, Card, Minutes, SavedCeremony, Voice } from '../shared/types';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
+import { loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
 
@@ -26,6 +27,8 @@ function createWindow(): void {
 }
 
 function handlers(): void {
+  ipcMain.handle('state:load', () => loadState());
+  ipcMain.handle('state:save', (_e, state: SavedCeremony) => saveState(state));
   ipcMain.handle('cards:load', (_e, limit: number) => loadCards(limit));
   ipcMain.handle('agent:prepare', (_e, card: Card) => prepareTurn(card));
   ipcMain.handle('agent:reply', (_e, card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
@@ -34,7 +37,9 @@ function handlers(): void {
   ipcMain.handle('ata:teams', (_e, minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
   ipcMain.handle('ata:save', (_e, minutes: Minutes, teams: string, selected: number[]) => saveMinutes(minutes, teams, selected));
   ipcMain.handle('voice:speak', async (_e, text: string, voice: Voice) => {
-    const bytes = readFileSync(await speak(text, voice));
+    const path = await speak(text, voice);
+    const bytes = readFileSync(path);
+    unlinkSync(path);
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
   ipcMain.handle('voice:transcribe', (_e, audio: ArrayBuffer) => transcribe(audio));

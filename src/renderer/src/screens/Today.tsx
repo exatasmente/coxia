@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Screen } from '../App';
 import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
@@ -8,7 +8,6 @@ type Filter = 'all' | 'blocked' | 'ask';
 
 export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) => void }) {
   const [filter, setFilter] = useState<Filter>('all');
-  const prepared = useRef(false);
   const cards = c.cards?.cards ?? [];
   const ready = cards.filter((card) => c.turns[card.ref]).length;
   const blocked = cards.filter((card) => card.blockers.length);
@@ -17,11 +16,9 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
   const date = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
 
+  // Turns already prepared (or restored from disk) come from the cache; only the missing ones call an agent.
   useEffect(() => {
-    if (c.cards && !prepared.current) {
-      prepared.current = true;
-      void c.prepareAll();
-    }
+    if (c.cards) void c.prepareAll();
   }, [c.cards, c.prepareAll]);
 
   return (
@@ -50,6 +47,19 @@ export function Today({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen)
         </header>
 
         {c.cardsError && <div className="error">Não consegui montar os cartões: {c.cardsError}</div>}
+
+        {c.resumed && (
+          <div className="item row spread" style={{ background: 'var(--teal-soft)', borderColor: '#99F6E4' }}>
+            <span className="small" style={{ color: 'var(--teal-ink)' }}>
+              {c.saveResult
+                ? 'A pré-daily de hoje já foi encerrada e a ata está gravada.'
+                : c.startedAt
+                  ? `Retomando a pré-daily de hoje, começada às ${new Date(c.startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}: os agentes já preparados não são chamados de novo.`
+                  : 'Cartões e agentes de hoje recuperados do disco, sem chamar o GitLab nem os agentes de novo.'}
+            </span>
+            <button type="button" className="btn" disabled={c.loadingCards} onClick={() => void c.reset()}>Nova pré-daily</button>
+          </div>
+        )}
 
         <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <h2 className="section-title">Cerimônias de hoje</h2>

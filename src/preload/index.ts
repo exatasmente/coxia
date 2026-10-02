@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Api } from '../shared/types';
 
 const api: Api = {
+  loadState: () => ipcRenderer.invoke('state:load'),
+  saveState: (state) => ipcRenderer.invoke('state:save', state),
   loadCards: (limit) => ipcRenderer.invoke('cards:load', limit),
   prepareTurn: (card) => ipcRenderer.invoke('agent:prepare', card),
   reply: (card, turn, text) => ipcRenderer.invoke('agent:reply', card, turn, text),

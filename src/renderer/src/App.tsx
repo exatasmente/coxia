@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { Ata } from './screens/Ata';
@@ -12,11 +12,6 @@ export function App() {
   const ceremony = useCeremony();
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>({ name: 'today' });
-  const { loadCards } = ceremony;
-
-  useEffect(() => {
-    void loadCards();
-  }, [loadCards]);
 
   const go = (next: Screen) => {
     player.stop();

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { destination } from '../../../shared/destination';
-import type { DeepOption } from '../../../shared/types';
+import type { DeepState } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText, shortRef } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
-import type { Ceremony } from '../ceremony';
+import { type Ceremony, EMPTY_DEEP } from '../ceremony';
 import { BackIcon, MicIcon } from './icons';
 import { Wave } from './Wave';
 
-type Msg = { me: boolean; text: string; at: string };
-
 const OPENING = 'Explique o bloqueio desta atividade, o que você leu para chegar nisso e o que precisa de mim para destravar.';
+
+function now(): string {
+  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
 
 export function Deep({
   ceremony: c,
@@ -20,34 +22,31 @@ export function Deep({
   back,
 }: { ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void; refName: string; back: 'today' | 'call' }) {
   const card = c.cards?.cards.find((x) => x.ref === refName);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [sources, setSources] = useState<string[]>([]);
+  const { sessionId, msgs, sources, options, pick, saved } = c.deep[refName] ?? EMPTY_DEEP;
+  const { updateDeep } = c;
+  const update = useCallback((change: (d: DeepState) => DeepState) => updateDeep(refName, change), [updateDeep, refName]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [options, setOptions] = useState<DeepOption[] | null>(null);
-  const [pick, setPick] = useState<number | null>(null);
-  const [saved, setSaved] = useState(false);
   const [draft, setDraft] = useState('');
-  const [started] = useState(Date.now());
   const rec = useRecorder();
   const opened = useRef(false);
-  const time = () => {
-    const s = Math.floor((Date.now() - started) / 1000);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  };
+  const session = useRef(sessionId);
+  session.current = sessionId;
 
   const ask = useCallback(
     async (question: string, shown = true) => {
       if (!card) return;
       setError(null);
-      if (shown) setMsgs((m) => [...m, { me: true, text: question, at: time() }]);
+      if (shown) update((d) => ({ ...d, msgs: [...d.msgs, { me: true, text: question, at: now() }] }));
       setBusy('O agente está lendo e investigando…');
       try {
-        const r = await api.deepAsk(card, question, sessionId);
-        setSessionId(r.sessionId);
-        setSources((s) => [...new Set([...s, ...r.sources])]);
-        setMsgs((m) => [...m, { me: false, text: r.speech, at: time() }]);
+        const r = await api.deepAsk(card, question, session.current);
+        update((d) => ({
+          ...d,
+          sessionId: r.sessionId,
+          sources: [...new Set([...d.sources, ...r.sources])],
+          msgs: [...d.msgs, { me: false, text: r.speech, at: now() }],
+        }));
         setBusy(null);
         const voice = c.voiceOf(card.ref);
         if (voice) await player.say(r.speech, voice, card.ref).catch(() => undefined);
@@ -56,14 +55,15 @@ export function Deep({
         setBusy(null);
       }
     },
-    [card, sessionId, c, player],
+    [card, update, c, player],
   );
 
+  // A conversation already on disk is resumed as is; only a new one starts with the opening question.
   useEffect(() => {
     if (opened.current || !card) return;
     opened.current = true;
-    void ask(OPENING, false);
-  }, [card, ask]);
+    if (!msgs.length && !sessionId) void ask(OPENING, false);
+  }, [card, ask, msgs.length, sessionId]);
 
   const talk = useCallback(async () => {
     if (player.speaking) player.stop();
@@ -106,9 +106,7 @@ export function Deep({
     setError(null);
     try {
       const opts = await api.deepOptions(card, sessionId);
-      setOptions(opts);
-      setPick(Math.max(0, opts.findIndex((o) => o.recommended)));
-      setSaved(false);
+      update((d) => ({ ...d, options: opts, pick: Math.max(0, opts.findIndex((o) => o.recommended)), saved: false }));
     } catch (e) {
       setError(errorText(e));
     }
@@ -134,7 +132,7 @@ export function Deep({
     c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target) });
     if (chosen.effect) c.addEffect({ ref: card.ref, text: chosen.effect, repo: card.mrs[0]?.split('!')[0] ?? card.ref.split('#')[0] });
     c.markAnswered(card.ref);
-    setSaved(true);
+    update((d) => ({ ...d, saved: true }));
   };
 
   return (
@@ -217,7 +215,7 @@ export function Deep({
                 </>
               )}
               {options?.map((o, i) => (
-                <button key={o.title} type="button" className={`option ${pick === i ? 'on' : ''}`} aria-pressed={pick === i} onClick={() => { setPick(i); setSaved(false); }}>
+                <button key={o.title} type="button" className={`option ${pick === i ? 'on' : ''}`} aria-pressed={pick === i} onClick={() => update((d) => ({ ...d, pick: i, saved: false }))}>
                   <span className="row spread" style={{ alignItems: 'baseline' }}>
                     <span style={{ fontWeight: 600 }}>{String.fromCharCode(65 + i)}. {o.title}</span>
                     {o.recommended && <span className="badge" style={{ background: '#CCFBF1', color: 'var(--teal-ink)', fontSize: 11 }}>recomendada</span>}

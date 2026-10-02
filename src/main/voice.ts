@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -8,7 +8,7 @@ import type { Voice } from '../shared/types';
 const ROOT = join(import.meta.dirname, '../..');
 const PYTHON = join(ROOT, 'sidecar/.venv/bin/python');
 const SCRIPT = join(ROOT, 'sidecar/voice_sidecar.py');
-const AUDIO = join(tmpdir(), 'cerimonias-audio');
+const AUDIO = process.env.CERIMONIAS_AUDIO_DIR ?? join(tmpdir(), 'cerimonias-audio');
 
 export const MODERATOR: Voice = { voice: 'pt-BR-ThalitaMultilingualNeural', rate: '+0%', pitch: '+0Hz', label: 'Thalita' };
 
@@ -57,11 +57,13 @@ function call(req: Record<string, unknown>): Promise<Reply> {
 }
 
 export function startVoice(): void {
+  rmSync(AUDIO, { recursive: true, force: true });
   sidecar();
 }
 
 export function stopVoice(): void {
   proc?.kill();
+  rmSync(AUDIO, { recursive: true, force: true });
 }
 
 export async function speak(text: string, voice: Voice): Promise<string> {
@@ -73,6 +75,10 @@ export async function speak(text: string, voice: Voice): Promise<string> {
 export async function transcribe(audio: ArrayBuffer): Promise<string> {
   const path = join(AUDIO, `stt-${Date.now()}.webm`);
   writeFileSync(path, Buffer.from(audio));
-  const r = await call({ cmd: 'stt', path });
-  return r.text ?? '';
+  try {
+    const r = await call({ cmd: 'stt', path });
+    return r.text ?? '';
+  } finally {
+    unlinkSync(path);
+  }
 }

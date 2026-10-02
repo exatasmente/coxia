@@ -8,7 +8,7 @@ export const WORKSPACE = join(HOME, 'projects');
 export const PLAYBOOK = join(WORKSPACE, 'sz-playbook');
 export const SPECS = join(PLAYBOOK, '.specs');
 export const DAILY_REPORT = join(HOME, '.local/bin/daily-report');
-export const ATAS = join(HOME, '.local/share/cerimonias');
+export const ATAS = process.env.CERIMONIAS_DATA_DIR ?? join(HOME, '.local/share/cerimonias');
 export const MODEL = process.env.CERIMONIAS_MODEL ?? 'deepseek/deepseek-v4.1-flash';
 export const GITLAB = 'dark.smartzap.com.br';
 

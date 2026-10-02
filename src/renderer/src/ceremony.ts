@@ -1,18 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentTurn, Card, CardsResult, Decision, Effect, Minutes, Voice } from '../../shared/types';
+import type {
+  AgentTurn,
+  Card,
+  CardsResult,
+  Decision,
+  DeepState,
+  Effect,
+  LogLine,
+  Minutes,
+  SaveResult,
+  SavedCeremony,
+  Voice,
+} from '../../shared/types';
 import { AGENT_COLORS, api, clock, errorText } from './api';
 
-export interface LogLine {
-  who: string;
-  text: string;
-  at: string;
-  color: string;
-}
+export type { LogLine };
 
 const LIMIT = 8;
 const PARALLEL = 3;
+const SAVE_DELAY_MS = 400;
+
+export const EMPTY_DEEP: DeepState = { sessionId: null, msgs: [], sources: [], options: null, pick: null, saved: false };
 
 export function useCeremony() {
+  const [restored, setRestored] = useState(false);
   const [cards, setCards] = useState<CardsResult | null>(null);
   const [cardsError, setCardsError] = useState<string | null>(null);
   const [loadingCards, setLoadingCards] = useState(false);
@@ -28,11 +39,11 @@ export function useCeremony() {
   const [callIdx, setCallIdx] = useState(-1);
   const [callEnded, setCallEnded] = useState(false);
   const [spoken, setSpoken] = useState<Record<string, boolean>>({});
+  const [deep, setDeep] = useState<Record<string, DeepState>>({});
+  const [teams, setTeams] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
+  const [resumed, setResumed] = useState(false);
   const pending = useRef(new Map<string, Promise<AgentTurn>>());
-
-  useEffect(() => {
-    void api.voices().then(setVoices);
-  }, []);
 
   const loadCards = useCallback(async () => {
     setLoadingCards(true);
@@ -45,6 +56,72 @@ export function useCeremony() {
       setLoadingCards(false);
     }
   }, []);
+
+  const hydrate = useCallback((s: SavedCeremony) => {
+    setCards(s.cards);
+    setTurns(s.turns);
+    for (const [ref, turn] of Object.entries(s.turns)) pending.current.set(ref, Promise.resolve(turn));
+    setDecisions(s.decisions);
+    setEffects(s.effects);
+    setAnswered(s.answered);
+    setLog(s.log);
+    setStartedAt(s.startedAt);
+    setEndedAt(s.endedAt);
+    setCallIdx(s.callIdx);
+    setCallEnded(s.callEnded);
+    setSpoken(s.spoken);
+    setDeep(s.deep);
+    setTeams(s.teams);
+    setSaveResult(s.saveResult);
+  }, []);
+
+  // Today's ceremony comes back from disk; otherwise the cards are built from GitLab.
+  useEffect(() => {
+    void api.voices().then(setVoices);
+    void api.loadState().then((saved) => {
+      if (saved?.cards) {
+        hydrate(saved);
+        setResumed(true);
+      } else void loadCards();
+      setRestored(true);
+    });
+  }, [hydrate, loadCards]);
+
+  const snapshot = useMemo(
+    (): SavedCeremony => ({
+      version: 1,
+      date: '',
+      cards,
+      turns,
+      decisions,
+      effects,
+      answered,
+      log,
+      startedAt,
+      endedAt,
+      callIdx,
+      callEnded,
+      spoken,
+      deep,
+      teams,
+      saveResult,
+    }),
+    [cards, turns, decisions, effects, answered, log, startedAt, endedAt, callIdx, callEnded, spoken, deep, teams, saveResult],
+  );
+
+  useEffect(() => {
+    if (!restored || !snapshot.cards) return;
+    const t = setTimeout(() => void api.saveState(snapshot), SAVE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [restored, snapshot]);
+
+  const reset = useCallback(async () => {
+    pending.current.clear();
+    hydrate({ ...snapshot, cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, saveResult: null });
+    setTurnErrors({});
+    setResumed(false);
+    await loadCards();
+  }, [hydrate, snapshot, loadCards]);
 
   const getTurn = useCallback((card: Card): Promise<AgentTurn> => {
     const known = pending.current.get(card.ref);
@@ -73,18 +150,11 @@ export function useCeremony() {
     await Promise.all(Array.from({ length: PARALLEL }, worker));
   }, [cards, getTurn]);
 
-  const colorOf = useCallback(
-    (ref: string) => AGENT_COLORS[Math.max(0, cards?.cards.findIndex((c) => c.ref === ref) ?? 0) % AGENT_COLORS.length],
-    [cards],
-  );
-
+  const indexOf = useCallback((ref: string) => Math.max(0, cards?.cards.findIndex((c) => c.ref === ref) ?? 0), [cards]);
+  const colorOf = useCallback((ref: string) => AGENT_COLORS[indexOf(ref) % AGENT_COLORS.length], [indexOf]);
   const voiceOf = useCallback(
-    (ref: string): Voice | null => {
-      if (!voices) return null;
-      const i = Math.max(0, cards?.cards.findIndex((c) => c.ref === ref) ?? 0);
-      return voices.agents[i % voices.agents.length];
-    },
-    [cards, voices],
+    (ref: string): Voice | null => (voices ? voices.agents[indexOf(ref) % voices.agents.length] : null),
+    [voices, indexOf],
   );
 
   const addLog = useCallback(
@@ -101,6 +171,10 @@ export function useCeremony() {
     setEndedAt(null);
   }, [startedAt]);
 
+  const updateDeep = useCallback((ref: string, change: (d: DeepState) => DeepState) => {
+    setDeep((all) => ({ ...all, [ref]: change(all[ref] ?? EMPTY_DEEP) }));
+  }, []);
+
   const minutes = useMemo((): Minutes => {
     const unanswered = (cards?.cards ?? [])
       .map((c) => ({ ref: c.ref, question: turns[c.ref]?.question ?? null }))
@@ -116,6 +190,9 @@ export function useCeremony() {
   }, [cards, turns, answered, decisions, effects, log, startedAt, endedAt]);
 
   return {
+    restored,
+    resumed,
+    reset,
     cards,
     cardsError,
     loadingCards,
@@ -143,6 +220,12 @@ export function useCeremony() {
     callEnded,
     spoken,
     markSpoken: (ref: string) => setSpoken((s) => ({ ...s, [ref]: true })),
+    deep,
+    updateDeep,
+    teams,
+    setTeams,
+    saveResult,
+    setSaveResult,
     voices,
     colorOf,
     voiceOf,
