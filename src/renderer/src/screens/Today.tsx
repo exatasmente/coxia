@@ -142,7 +142,7 @@ export function Today({ ceremony: c, go, pendingActions }: { ceremony: Ceremony;
                   </button>
                 ))}
                 {!forQa.length && (
-                  <select className="text-input" aria-label="Escolher atividade para o QA" value="" onChange={(e) => { const card = cards.find((x) => x.ref === e.target.value); if (card) go({ name: 'qa', ref: card.ref, card }); }}>
+                  <select className="text-input" style={{ minWidth: 0, maxWidth: '100%', width: '100%' }} aria-label="Escolher atividade para o QA" value="" onChange={(e) => { const card = cards.find((x) => x.ref === e.target.value); if (card) go({ name: 'qa', ref: card.ref, card }); }}>
                     <option value="">Escolher atividade…</option>
                     {cards.filter((x) => x.spec).map((x) => <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>)}
                   </select>
