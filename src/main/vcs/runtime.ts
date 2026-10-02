@@ -39,6 +39,8 @@ export interface VcsRuntime {
   settings: VcsSettings;
   provider: VcsProvider;
   exec: VcsExecutor;
+  /** The HTTP client of the API transport (null when the integration uses its CLI): what the probe reads scopes and rate limits with. */
+  api?: HttpClient | null;
 }
 
 export function defaultApiUrl(kind: VcsKind, host: string): string {
@@ -87,6 +89,7 @@ export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
       : apiTransport(client as HttpClient, graphqlClient ? { client: graphqlClient, path: 'graphql' } : null);
     return {
       settings: s,
+      api: client,
       provider: createGitLabProvider({ id: s.id, host: s.host, transport }),
       exec: gitlabExecutor({ host: s.host, command: s.cli, env, run: deps.run, client, graphqlClient, validate: validateGitLabCommand }),
     };
@@ -98,11 +101,12 @@ export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
       : apiTransport(client as HttpClient, graphqlClient ? { client: graphqlClient, path: 'graphql' } : null);
     return {
       settings: s,
+      api: client,
       provider: createGitHubProvider({ id: s.id, host: s.host, transport }),
       exec: githubExecutor({ host: s.host, command: s.cli, env, run: deps.run, client, graphqlClient, validate: validateGitHubCommand }),
     };
   }
   const options: BitbucketOptions = { id: s.id, host: s.host, client: client as HttpClient, repos: s.repos };
   const provider = createBitbucketProvider(options);
-  return { settings: s, provider, exec: bitbucketExecutor({ client: client as HttpClient, validate: provider.validateCommand }) };
+  return { settings: s, api: client, provider, exec: bitbucketExecutor({ client: client as HttpClient, validate: provider.validateCommand }) };
 }

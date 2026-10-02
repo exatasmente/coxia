@@ -1,0 +1,84 @@
+{
+  "user": { "id": 1001, "login": "ana-dev", "name": "Ana Dev", "html_url": "https://ghe.test/ana-dev", "type": "User" },
+  "issues_assigned": [
+    {
+      "number": 12, "title": "Export fails with accents", "state": "open", "labels": [{ "name": "bug" }, { "name": "in progress" }],
+      "milestone": { "title": "v1.2" }, "assignees": [{ "login": "ana-dev" }], "user": { "login": "bob-qa" },
+      "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null,
+      "html_url": "https://ghe.test/acme/app/issues/12", "repository_url": "https://ghe.test/api/v3/repos/acme/app", "body": "steps"
+    },
+    {
+      "number": 7, "title": "Fix accents in export", "state": "open", "labels": [], "assignees": [{ "login": "ana-dev" }], "user": { "login": "ana-dev" },
+      "html_url": "https://ghe.test/acme/app/pull/7", "repository_url": "https://ghe.test/api/v3/repos/acme/app", "pull_request": { "url": "https://ghe.test/api/v3/repos/acme/app/pulls/7" }
+    }
+  ],
+  "issue_12": {
+    "number": 12, "title": "Export fails with accents", "state": "open", "labels": [{ "name": "bug" }, { "name": "in progress" }],
+    "milestone": { "title": "v1.2" }, "assignees": [{ "login": "ana-dev" }], "user": { "login": "bob-qa" },
+    "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null, "html_url": "https://ghe.test/acme/app/issues/12"
+  },
+  "issue_comments": [
+    { "id": 5001, "body": "Looking into it", "created_at": "2026-09-29T08:00:00Z", "user": { "login": "ana-dev" }, "html_url": "https://ghe.test/acme/app/issues/12#issuecomment-5001" },
+    { "id": 5002, "body": "Retest please", "created_at": "2026-10-01T08:00:00Z", "user": { "login": "bob-qa" }, "html_url": "https://ghe.test/acme/app/issues/12#issuecomment-5002" }
+  ],
+  "search_prs_author": {
+    "total_count": 1,
+    "items": [{ "number": 7, "title": "Fix accents in export", "state": "open", "repository_url": "https://ghe.test/api/v3/repos/acme/app", "html_url": "https://ghe.test/acme/app/pull/7", "pull_request": {} }]
+  },
+  "search_prs_reviewer": {
+    "total_count": 1,
+    "items": [{ "number": 9, "title": "Add retry to the uploader", "state": "open", "repository_url": "https://ghe.test/api/v3/repos/acme/uploader", "html_url": "https://ghe.test/acme/uploader/pull/9", "pull_request": {} }]
+  },
+  "pull_7": {
+    "number": 7, "node_id": "PR_kwDOAbCdEf4Abcd", "title": "Fix accents in export", "state": "open", "merged": false, "draft": true,
+    "head": { "ref": "release/bugfix/12", "sha": "aaaa1111bbbb2222cccc3333dddd4444eeee5555" }, "base": { "ref": "main" },
+    "html_url": "https://ghe.test/acme/app/pull/7", "user": { "login": "ana-dev" },
+    "requested_reviewers": [{ "id": 1002, "login": "carol-dev", "html_url": "https://ghe.test/carol-dev" }],
+    "mergeable": false, "mergeable_state": "dirty", "body": "Fixes #12", "created_at": "2026-09-30T10:00:00Z", "updated_at": "2026-10-01T10:00:00Z"
+  },
+  "pull_9": {
+    "number": 9, "node_id": "PR_kwDOAbCdEf4Efgh", "title": "Add retry to the uploader", "state": "open", "merged": false, "draft": false,
+    "head": { "ref": "feature/retry", "sha": "ffff6666ffff6666" }, "base": { "ref": "main" },
+    "html_url": "https://ghe.test/acme/uploader/pull/9", "user": { "login": "carol-dev" }, "requested_reviewers": [{ "id": 1001, "login": "ana-dev" }],
+    "mergeable": true, "mergeable_state": "clean", "body": ""
+  },
+  "check_runs_failed": { "total_count": 2, "check_runs": [{ "status": "completed", "conclusion": "success" }, { "status": "completed", "conclusion": "failure" }] },
+  "check_runs_running": { "total_count": 1, "check_runs": [{ "status": "in_progress", "conclusion": null }] },
+  "combined_empty": { "state": "pending", "statuses": [] },
+  "reviews": [
+    { "user": { "login": "carol-dev" }, "state": "CHANGES_REQUESTED", "submitted_at": "2026-10-01T08:00:00Z" },
+    { "user": { "login": "carol-dev" }, "state": "APPROVED", "submitted_at": "2026-10-01T09:00:00Z" },
+    { "user": { "login": "dave-ops" }, "state": "COMMENTED", "submitted_at": "2026-10-01T09:30:00Z" }
+  ],
+  "threads_graphql": {
+    "data": { "repository": { "pullRequest": { "reviewThreads": { "nodes": [
+      { "id": "PRRT_kwDOAbCdEf5Abc1", "isResolved": false, "path": "src/export.ts", "line": 12, "originalLine": 10, "comments": { "nodes": [
+        { "databaseId": 7001, "author": { "login": "carol-dev" }, "body": "Why not reuse the helper?", "createdAt": "2026-10-01T09:00:00Z", "url": "https://ghe.test/acme/app/pull/7#discussion_r7001" },
+        { "databaseId": 7002, "author": { "login": "ana-dev" }, "body": "Will check", "createdAt": "2026-10-01T09:10:00Z", "url": "https://ghe.test/acme/app/pull/7#discussion_r7002" }
+      ] } },
+      { "id": "PRRT_kwDOAbCdEf5Abc2", "isResolved": true, "path": "src/a.ts", "line": null, "originalLine": 3, "comments": { "nodes": [
+        { "databaseId": 7003, "author": { "login": "carol-dev" }, "body": "typo", "createdAt": "2026-09-30T09:00:00Z" }
+      ] } }
+    ] } } } }
+  },
+  "review_comments": [{ "id": 7001, "body": "Why not reuse the helper?", "created_at": "2026-10-01T09:00:00Z", "user": { "login": "carol-dev" } }],
+  "timeline": [
+    { "event": "labeled" },
+    { "event": "cross-referenced", "source": { "type": "issue", "issue": { "number": 7, "pull_request": {}, "repository": { "full_name": "acme/app" } } } },
+    { "event": "cross-referenced", "source": { "type": "issue", "issue": { "number": 3, "pull_request": {}, "repository": { "full_name": "acme/playbook" } } } },
+    { "event": "cross-referenced", "source": { "type": "issue", "issue": { "number": 20, "repository": { "full_name": "acme/app" } } } }
+  ],
+  "pull_files": [{ "filename": "src/export.ts", "patch": "@@ -10,3 +10,4 @@\n a\n+b\n c\n" }, { "filename": "assets/logo.png" }],
+  "pull_commits": [{ "sha": "cccc3333dddd4444", "commit": { "committer": { "date": "2026-10-01T09:30:00Z" } } }],
+  "runs": { "workflow_runs": [{ "id": 31, "status": "completed", "conclusion": "failure", "created_at": "2026-10-01T10:00:00Z", "html_url": "https://ghe.test/acme/app/actions/runs/31" }, { "id": 30, "status": "in_progress", "conclusion": null, "created_at": "2026-09-30T10:00:00Z" }] },
+  "run_jobs": { "jobs": [{ "id": 41, "name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-10-01T10:01:00Z", "workflow_name": "CI" }, { "id": 42, "name": "e2e", "status": "completed", "conclusion": "failure", "workflow_name": "CI" }] },
+  "repo": { "full_name": "acme/app", "default_branch": "main", "html_url": "https://ghe.test/acme/app" },
+  "branch_main": { "name": "main", "commit": { "sha": "9999aaaa8888bbbb7777cccc6666dddd5555eeee" } },
+  "collaborators": [
+    { "id": 1001, "login": "ana-dev", "permissions": { "push": true }, "type": "User" },
+    { "id": 1002, "login": "carol-dev", "name": null, "permissions": { "push": true }, "type": "User" },
+    { "id": 1003, "login": "ci[bot]", "permissions": { "push": true }, "type": "Bot" },
+    { "id": 1004, "login": "reader", "permissions": { "push": false }, "type": "User" }
+  ],
+  "compare": { "behind_by": 4 }
+}

@@ -64,7 +64,8 @@ function settingsOf(id: string | null): VcsSettings | null {
   return { id: v.id, kind: v.kind, host: v.host, apiUrl: cfg?.apiUrl ?? '', user: v.user, secretRef: v.secretRef, cli: v.cli, preference: cfg?.cliPreference ?? 'auto', repos: [...repos].sort() };
 }
 
-function depsNow(): RuntimeDeps {
+/** The dependencies a runtime is built with: the secrets store, the process environment, and whatever the tests replaced. */
+export function vcsRuntimeDeps(): RuntimeDeps {
   return { token, env: () => ({ ...process.env }), cliInstalled, ...override };
 }
 
@@ -75,7 +76,7 @@ export function vcsRuntime(id: string | null = null): VcsRuntime | null {
   if (!s) return null;
   const key = JSON.stringify(s);
   if (cache?.key === key) return cache.runtime;
-  const runtime = buildRuntime(s, depsNow());
+  const runtime = buildRuntime(s, vcsRuntimeDeps());
   cache = { key, runtime };
   return runtime;
 }
