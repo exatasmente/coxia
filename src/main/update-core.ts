@@ -68,3 +68,33 @@ export function parseUpdatedMarker(text: string): { commit: string | null } | nu
 export function runInfo(pid: number, build: BuildInfo, startedAt: string): Record<string, string | number> {
   return { pid, version: build.version, commit: build.commit, builtAt: build.builtAt, startedAt };
 }
+
+export interface Proc {
+  pid: number;
+  ppid: number;
+  cmd: string;
+}
+
+// /proc/<pid>/stat is `pid (comm) state ppid ...` and comm may itself contain spaces and parentheses.
+export function parseStat(stat: string): { pid: number; ppid: number } | null {
+  const m = /^(\d+) \(.*\) \S (\d+) /s.exec(stat);
+  return m ? { pid: Number(m[1]), ppid: Number(m[2]) } : null;
+}
+
+// What the app itself started (git fetch, glab, daily-report, the voice sidecar, the agent binary and whatever they
+// spawn), not Chromium's own helpers (zygote, GPU, renderers, utilities: `--type=`). Each of them holds files of the
+// AppImage mount open, so one still running keeps the AppImage from unmounting and exiting after the app is gone.
+export function ownedDescendants(procs: readonly Proc[], root: number): number[] {
+  const kids = new Map<number, Proc[]>();
+  for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
+  const out: number[] = [];
+  const walk = (pid: number): void => {
+    for (const child of kids.get(pid) ?? []) {
+      if (/(^| )--type=/.test(child.cmd)) continue;
+      out.push(child.pid);
+      walk(child.pid);
+    }
+  };
+  walk(root);
+  return out;
+}

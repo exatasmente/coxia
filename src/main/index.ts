@@ -14,7 +14,7 @@ import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
 import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
-import { announceRunning, flushRenderer, forgetRunning } from './update';
+import { announceRunning, flushRenderer, forgetRunning, terminateChildren } from './update';
 import { bindIpc, handle } from './rpc';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
@@ -206,6 +206,7 @@ async function quitForUpdate(): Promise<void> {
     await flushRenderer((ev) => win?.webContents.send('app:event', ev), 3000);
     console.log(`[update] window state saved in ${Date.now() - started} ms`);
   }
+  console.log(`[update] stopped ${terminateChildren()} child process(es)`);
   quitting = true;
   app.quit();
   setTimeout(() => app.exit(0), 8000).unref();

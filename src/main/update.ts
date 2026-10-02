@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
@@ -9,10 +9,13 @@ import { DATA_ROOT, HOME } from './env';
 import type { Module } from './module';
 import { PACKAGED } from './paths';
 import {
+  ownedDescendants,
   parseBehind,
   parseLatest,
+  parseStat,
   parseUpdatedMarker,
   readBuild,
+  type Proc,
   runInfo,
   stateDir,
   stripDirty,
@@ -117,6 +120,31 @@ export function announceRunning(): void {
 
 export function forgetRunning(): void {
   clearRunInfo();
+}
+
+function listProcs(): Proc[] {
+  const procs: Proc[] = [];
+  for (const name of readdirSync('/proc')) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const stat = parseStat(readFileSync(`/proc/${name}/stat`, 'utf8'));
+      if (stat) procs.push({ ...stat, cmd: readFileSync(`/proc/${name}/cmdline`, 'utf8').replace(/\0/g, ' ') });
+    } catch {}
+  }
+  return procs;
+}
+
+// Stops what the app started and is still running (see ownedDescendants), so the AppImage can unmount once the app exits.
+export function terminateChildren(): number {
+  if (process.platform !== 'linux') return 0;
+  let stopped = 0;
+  for (const pid of ownedDescendants(listProcs(), process.pid)) {
+    try {
+      process.kill(pid, 'SIGTERM');
+      stopped++;
+    } catch {}
+  }
+  return stopped;
 }
 
 const waiting = new Set<() => void>();
