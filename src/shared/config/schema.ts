@@ -1,5 +1,5 @@
 import type { JsonSchema } from './jsonSchema';
-import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
 // The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -197,10 +197,8 @@ export const CONFIG_SCHEMA: JsonSchema = {
       schemaVersion: { type: 'integer', description: 'Version of this document.', const: CONFIG_SCHEMA_VERSION },
       setupComplete: boolean('The setup wizard finished (or the config came from an existing install).'),
       language: enumOf('Interface and agent language.', LANGUAGES),
-      user: object('The person using the app.', {
-        displayName: string('How the agents address the person; empty: "the user".', { maxLength: 80 }),
-        article: enumOf('Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone.', ['', 'o', 'a']),
-      }),
+      userName: string('How the agents address the user; empty: no name.', { maxLength: 80 }),
+      userArticle: enumOf('Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone.', USER_ARTICLES),
       appearance: object('Look.', { theme: enumOf('Color theme.', THEMES) }),
       notifications: boolean('Desktop and push notifications.'),
       closeToTray: boolean('Closing the window keeps the app in the tray.'),

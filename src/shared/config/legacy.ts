@@ -1,5 +1,5 @@
 import { sameFamily } from '../cycles/neutral';
-import { CARD_FIELDS, LLM_ROLES, type DeepPartial, type DevCycleConfig, type LlmRole, type PromptOverride, type RoleModel, type StageDef, type UserConfig, type WorkspaceConfig } from './types';
+import { CARD_FIELDS, LLM_ROLES, type DeepPartial, type DevCycleConfig, type LlmRole, type PromptOverride, type RoleModel, type StageDef, type UserArticle, type WorkspaceConfig } from './types';
 
 // The one place where the original author's company and machine live: what the app hardcoded before the configuration existed.
 // It reaches a workspace only through the v1 migration (migrations.ts), so an existing install keeps working unchanged.
@@ -36,7 +36,7 @@ export const LEGACY_STAGES: StageDef[] = [
   { id: 'doing', label: 'Doing', match: ['Doing', 'In development', 'Blocked in development'], kind: 'development', rank: 2 },
 ];
 
-export const LEGACY_USER: UserConfig = { displayName: 'Luiz', article: 'o' };
+export const LEGACY_USER: { userName: string; userArticle: UserArticle } = { userName: 'Luiz', userArticle: 'o' };
 
 const pt = (text: string): PromptOverride => ({ 'pt-BR': text });
 
@@ -124,7 +124,8 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
   return {
     setupComplete: true,
     language: 'pt-BR',
-    user: LEGACY_USER,
+    userName: LEGACY_USER.userName,
+    userArticle: LEGACY_USER.userArticle,
     llm: {
       roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { provider: LEGACY_PROVIDER_ID, model: LEGACY_DEFAULT_MODEL }])) as Record<LlmRole, RoleModel>,
       providers: [

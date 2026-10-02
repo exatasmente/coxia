@@ -43,6 +43,11 @@ export function findTemplate(id: string): CycleTemplate | undefined {
   return builtInTemplate(id) ?? readUserTemplates().find((t) => t.id === id);
 }
 
+/** Every template this machine offers: the ones that ship with the app, then the ones a person imported. */
+export function allTemplates(): { template: CycleTemplate; builtIn: boolean }[] {
+  return [...BUILT_IN_TEMPLATES.map((template) => ({ template, builtIn: true })), ...readUserTemplates().filter((t) => !builtInTemplate(t.id)).map((template) => ({ template, builtIn: false }))];
+}
+
 function summarize(t: CycleTemplate, builtIn: boolean, language: Language): TemplateSummary {
   const cycle: DevCycleConfig = cycleOf(t);
   return {
@@ -58,7 +63,7 @@ function summarize(t: CycleTemplate, builtIn: boolean, language: Language): Temp
 
 /** Every template this machine offers, built-in first, in the language of the workspace. */
 export function listTemplates(language: Language = getConfig().language): TemplateSummary[] {
-  return [...BUILT_IN_TEMPLATES.map((t) => summarize(t, true, language)), ...readUserTemplates().filter((t) => !builtInTemplate(t.id)).map((t) => summarize(t, false, language))];
+  return allTemplates().map(({ template, builtIn }) => summarize(template, builtIn, language));
 }
 
 /** Applies a template to the running workspace: validates, saves and returns the new view. Throws with the problems named. */

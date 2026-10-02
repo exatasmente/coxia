@@ -93,6 +93,17 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 - **i18n:** `t(chave, params)` em `src/shared/i18n` (renderer e main), catálogos `pt-BR.json` e `en.json` com chaves planas; falta de chave cai no pt-BR e depois na própria chave. No renderer: `useT()` e `initLanguage()`. A tela de Configurações usa `t()` nos títulos. `npm run i18n:lint` (`scripts/i18n-lint.mjs`) lista os textos literais por arquivo (`--file`, `--json`, `--max N` para travar em CI, `--keys` confere os dois catálogos).
 - **Testes:** `test/setup.ts` dá a cada arquivo de teste uma pasta de dados própria (config neutra). Para simular uma instalação antiga: `installLegacyConfig()` e `installEnvSecret()` de `test/helpers/config.ts`.
 
+### Assistente de configuração
+
+`setupComplete: false` (instalação nova, ou um workspace novo) abre o assistente em vez do app; uma configuração migrada (`true`) nunca o vê, a não ser em Configurações → "Configurações e workspaces" → "Abrir o assistente". Nove passos (idioma e nome, modelos, Claude Agent SDK, projetos, integrações, documentação dos agentes, ciclo, voz, revisão); todos menos o primeiro e o último podem ser pulados, e o passo atual fica em `<workspace>/wizard.json` para retomar. Cada "Continuar" grava a configuração inteira (`config:save`).
+
+- Código: `src/renderer/src/wizard/` (tela, passos, importação e exportação), `src/main/wizard.ts` (canais `wizard:*`, **só desktop**; um navegador recebe só o aviso "termine no computador"), `src/main/wizard-core.ts` (varredura de repositórios e de documentação, instalador do SDK, chamada mínima de VCS), `src/shared/wizard.ts` (passos, presets, recomendações, formatos). Textos em `src/shared/i18n/wizard.*.json`.
+- Segredos: digitados só no desktop, vão para `config:secret-set` (guardado, variável de ambiente ou comando); o valor nunca volta para a tela.
+- Teste de conexão: provedores abertos usam `probeOpenAIProvider` (capacidades gravadas no provedor); os da família Claude fazem uma chamada curta pelo Claude Agent SDK, com o mesmo ambiente dos agentes.
+- SDK: instalado com `npm` em `<dados>/claude-sdk` depois dos termos da Anthropic; registra `claudeSdk`. `COXIA_SDK_BUNDLED=0` simula uma build sem o SDK embutido; `COXIA_NPM` troca o executável do npm.
+- Peças de outros trabalhos, procuradas em tempo de execução (o assistente funciona sem elas): `src/main/vcs` (`probeVcs`, senão um GET do usuário atual pela API REST), `src/shared/cycles` (modelos de ciclo e a varredura "Preparar agentes", senão lista de espaço reservado e uma busca simples de `.claude/`, `CLAUDE.md`, `.mcp.json`), canais `voice:check|install|test` (senão "em breve").
+- `userName` (como os agentes chamam a pessoa) já é guardado e usado na saudação do Hoje; os prompts dos agentes ainda dizem "Luiz" e passam a usá-lo na fase de prompts.
+
 ### Não verificado
 
 - Variáveis de ambiente de Bedrock, Vertex e Foundry (`llm-core.ts`) foram escritas pela documentação do Claude Code, sem conta de nuvem para testar.
@@ -189,6 +200,17 @@ Channels (`configModule.ts`; those that write or touch files are **desktop only*
 - **Optional voice:** `voice.enabled` is stored but **nothing reads it yet**.
 - **i18n:** `t(key, params)` in `src/shared/i18n` (renderer and main), `pt-BR.json` and `en.json` catalogs with flat keys; a missing key falls back to pt-BR, then to the key itself. In the renderer: `useT()` and `initLanguage()`. The Settings screen uses `t()` for its headings. `npm run i18n:lint` (`scripts/i18n-lint.mjs`) lists literal strings per file (`--file`, `--json`, `--max N` to ratchet in CI, `--keys` checks both catalogs).
 - **Tests:** `test/setup.ts` gives every test file its own data folder (neutral config). To simulate an old install: `installLegacyConfig()` and `installEnvSecret()` from `test/helpers/config.ts`.
+
+### Setup wizard
+
+`setupComplete: false` (a fresh install, or a new workspace) opens the wizard instead of the app; a migrated config (`true`) never sees it unless it is opened from Settings → "Settings and workspaces" → "Open the wizard". Nine steps (language and name, models, Claude Agent SDK, projects, integrations, agent documentation, cycle, voice, review); all but the first and the last can be skipped, and the current step is kept in `<workspace>/wizard.json` so it resumes. Every "Continue" saves the whole config (`config:save`).
+
+- Code: `src/renderer/src/wizard/` (screen, steps, import and export), `src/main/wizard.ts` (`wizard:*` channels, **desktop only**; a browser only gets the "finish it on the computer" notice), `src/main/wizard-core.ts` (repository and documentation scans, the SDK installer, the minimal VCS call), `src/shared/wizard.ts` (steps, presets, recommendations, shapes). Strings live in `src/shared/i18n/wizard.*.json`.
+- Secrets: typed in the desktop only, sent to `config:secret-set` (stored, environment variable or command); the value never comes back to the screen.
+- Connection test: open providers use `probeOpenAIProvider` (capabilities are stored on the provider); Claude-family ones make a short call through the Claude Agent SDK with the environment the agents would get.
+- SDK: installed with `npm` into `<data>/claude-sdk` after Anthropic's terms; records `claudeSdk`. `COXIA_SDK_BUNDLED=0` simulates a build that does not bundle the SDK; `COXIA_NPM` overrides the npm executable.
+- Pieces from other work, looked up at run time (the wizard works without them): `src/main/vcs` (`probeVcs`, else a GET of the current user through the REST API), `src/shared/cycles` (cycle templates and the "prepare agents" scan, else a placeholder list and a simple search for `.claude/`, `CLAUDE.md`, `.mcp.json`), `voice:check|install|test` channels (else "coming soon").
+- `userName` (what the agents call the person) is stored and already used in the Today greeting; the agent prompts still say "Luiz" and will use it in the prompts phase.
 
 ### Not verified
 

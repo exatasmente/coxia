@@ -16,7 +16,7 @@ export const language = (): Language => getConfig().language;
 
 /** The localized text of a cycle config value (a catalog key or a literal). */
 export function text(value: string, params?: Params): string {
-  return cycleText(value, language(), { ...userTerms(language(), getConfig().user), ...params });
+  return cycleText(value, language(), { ...userTerms(language(), getConfig()), ...params });
 }
 
 /** "GitLab", "GitHub", "Bitbucket", or a neutral phrase when the workspace has no integration. */
@@ -48,7 +48,7 @@ export function qaMention(): string {
 /** Placeholders every prompt may use. */
 export function baseParams(): Params {
   const lang = language();
-  const terms = userTerms(lang, getConfig().user);
+  const terms = userTerms(lang, getConfig());
   const c = cycle();
   const base: Params = {
     ...terms,

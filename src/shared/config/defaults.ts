@@ -19,7 +19,8 @@ export function neutralConfig(): WorkspaceConfig {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     setupComplete: false,
     language: 'pt-BR',
-    user: { displayName: '', article: '' },
+    userName: '',
+    userArticle: '',
     appearance: { theme: 'system' },
     notifications: true,
     closeToTray: true,
@@ -89,7 +90,7 @@ function isLegacyCycle(partial: unknown): boolean {
 
 /** Fills whatever a stored or imported config leaves out with the neutral default (forward compatible: a newer field never breaks an older file). */
 export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Record<string, unknown> | null | undefined): WorkspaceConfig {
-  const base = isLegacyCycle(partial) ? mergeDeep(neutralConfig(), { user: LEGACY_USER, devCycle: legacyCycle() }) : neutralConfig();
+  const base = isLegacyCycle(partial) ? mergeDeep(neutralConfig(), { ...LEGACY_USER, devCycle: legacyCycle() }) : neutralConfig();
   const c = mergeDeep(base, partial ?? {});
   return {
     ...c,

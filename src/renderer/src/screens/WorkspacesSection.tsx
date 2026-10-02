@@ -7,7 +7,7 @@ import { publishWorkspaces, useWorkspaces, workspaceApi } from '../workspaceApi'
 const day = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 // The window closes and opens again by itself; a browser waits for the server to come back and reloads.
-function RestartOverlay({ name }: { name: string }) {
+export function RestartOverlay({ name }: { name: string }) {
   useEffect(() => {
     if (!isWeb()) return;
     let sawDown = false;

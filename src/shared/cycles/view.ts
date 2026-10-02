@@ -30,7 +30,7 @@ export interface CycleView {
 
 export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): CycleView {
   const { devCycle, language } = config;
-  const terms = userTerms(language, config.user);
+  const terms = userTerms(language, config);
   return {
     templateId: devCycle.templateId,
     templateName: builtInName(devCycle.templateId, language),

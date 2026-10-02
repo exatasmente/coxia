@@ -469,19 +469,18 @@ export interface ClaudeSdkConfig {
   path: string | null;
 }
 
-export interface UserConfig {
-  /** How the agents and the screens address the person ("Ana"). Empty: they say "you" / "the user". */
-  displayName: string;
-  /** Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone, no article. Only pt-BR text reads it. */
-  article: '' | 'o' | 'a';
-}
+export const USER_ARTICLES = ['', 'o', 'a'] as const;
+export type UserArticle = (typeof USER_ARTICLES)[number];
 
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
   setupComplete: boolean;
   language: Language;
-  user: UserConfig;
+  /** How the agents address the user. Empty: no name. */
+  userName: string;
+  /** Portuguese article that goes with the name ("o Luiz", "a Ana"); empty: the name alone, no article. Only pt-BR text reads it. */
+  userArticle: UserArticle;
   appearance: { theme: Theme };
   notifications: boolean;
   closeToTray: boolean;

@@ -1,4 +1,4 @@
-import type { Language, UserConfig } from '../config/types';
+import type { Language, WorkspaceConfig } from '../config/types';
 import { CATALOGS, FALLBACK_LANGUAGE, type Params } from '../i18n';
 
 // Text of the development cycle: catalog keys or literals, placeholders, and the way the agents address the person.
@@ -21,18 +21,18 @@ const upper = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1)
 
 /**
  * The words that stand for the person in a prompt. pt-BR needs an article and a contraction ("o Luiz", "do Luiz", "ao Luiz"), which depend on
- * the name's gender, so the config says it (`user.article`); with no article the name stands alone ("Luiz", "de Luiz", "a Luiz").
+ * the name's gender, so the config says it (`userArticle`); with no article the name stands alone ("Luiz", "de Luiz", "a Luiz").
  * With no name at all the agents say "o usuário" / "the user".
  */
-export function userTerms(language: Language, user: Pick<UserConfig, 'displayName' | 'article'>): Record<string, string> {
-  const name = user.displayName.trim();
+export function userTerms(language: Language, user: Pick<WorkspaceConfig, 'userName' | 'userArticle'>): Record<string, string> {
+  const name = user.userName.trim();
   if (language === 'en') {
     const terms = name
       ? { userName: name, theUser: name, ofUser: `${name}'s`, toUser: name, he: 'they', his: 'their' }
       : { userName: '', theUser: 'the user', ofUser: "the user's", toUser: 'the user', he: 'they', his: 'their' };
     return { ...terms, TheUser: upper(terms.theUser) };
   }
-  const a = user.article;
+  const a = user.userArticle;
   const terms = !name
     ? { userName: '', theUser: 'o usuário', ofUser: 'do usuário', toUser: 'ao usuário', he: 'a pessoa', his: 'da pessoa' }
     : a === 'o'

@@ -184,7 +184,7 @@ describe('the migrated profile is the SDD template with the author specifics', (
     const r = validateConfig(old);
     expect(r.errors).toEqual([]);
     const c = r.config!;
-    expect(c.user).toEqual({ displayName: 'Luiz', article: 'o' });
+    expect([c.userName, c.userArticle]).toEqual(['Luiz', 'o']);
     expect(c.devCycle.specLayout.decisionLog.heading).toBe('Registro');
     expect(c.devCycle.ceremonyParams.preDaily.summaryTarget).toBe('Teams');
     expect(c.devCycle.promptOverrides['rules.speechExamples']).toBeDefined();
@@ -194,7 +194,7 @@ describe('the migrated profile is the SDD template with the author specifics', (
 
   it('a config of another template is completed with the neutral cycle instead', () => {
     const c = withConfigDefaults({ devCycle: { templateId: 'scrum' } });
-    expect(c.user.displayName).toBe('');
+    expect(c.userName).toBe('');
     expect(c.devCycle.promptOverrides).toEqual({});
   });
 });

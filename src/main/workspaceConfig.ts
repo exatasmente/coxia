@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { LEGACY_SECRET_REF } from '../shared/config/legacy';
+import { LEGACY_SECRET_REF, legacyProfile } from '../shared/config/legacy';
 import { setLanguage } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
 import type { WorkspaceConfig } from '../shared/config/types';
@@ -14,19 +14,22 @@ import { secrets, seedLegacySecrets } from './secrets';
 
 let state: { config: WorkspaceConfig; resolved: ResolvedConfig } | null = null;
 let bootstrapped = false;
+let legacyWorkspace = false;
 const listeners = new Set<(config: WorkspaceConfig) => void>();
 
 const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
 
 function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
-  let legacy = false;
   if (!bootstrapped) {
     bootstrapped = true;
-    legacy = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log: (m) => console.log(`[config] ${m}`) }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
+    legacyWorkspace = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log: (m) => console.log(`[config] ${m}`) }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
   }
   const stored = readConfigFile(ATAS);
   const checked = validateConfig(stored);
+  const legacy = legacyWorkspace;
   const config = checked.config ?? migrateConfig(stored, { legacyInstall: legacy }).config;
+  // A config migrated before userName existed keeps the name the app always used (the prompts still say it).
+  if (legacy && checked.ok && !(typeof stored === 'object' && stored !== null && 'userName' in stored)) config.userName = legacyProfile().userName ?? '';
   if (legacy && config.llm.providers.some((p) => p.secretRef === LEGACY_SECRET_REF)) {
     try {
       seedLegacySecrets();
