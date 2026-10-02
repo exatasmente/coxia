@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { type ConflictHunk, type ConflictStep, type HunkChoice, conflictProgress, conflictStep, hunkReady } from '../../../shared/conflict';
 import { PARTIAL_HINT } from '../../../shared/partial';
 import type { ReleaseAction } from '../../../shared/types';
+import { AgentActivity } from '../AgentActivity';
 import { api, errorText, plural } from '../api';
 import { conflictApi } from '../conflictApi';
 import { KIND_MARK, type ViewLine, proposalLines, sideLines } from '../conflictView';
+import { withJob } from '../jobs';
 import '../conflict.css';
 
 const CHOICE_LABEL: Record<HunkChoice, string> = { proposal: 'Usar proposta', ours: 'Usar branch', theirs: 'Usar main', edit: 'Editar' };
@@ -115,6 +117,7 @@ function Hunk({ h, index, total, locked, onChoose }: { h: ConflictHunk; index: n
 // The in-app resolution of a release conflict: prepare → propose → review → apply and verify → publish.
 export function ConflictResolver({ action }: { action: ReleaseAction }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [busySince, setBusySince] = useState<number>();
   const [error, setError] = useState<string | null>(null);
   const [command, setCommand] = useState<string | null | undefined>(undefined);
   const [skipTests, setSkipTests] = useState(false);
@@ -154,9 +157,10 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
+    setBusySince(Date.now());
     setError(null);
     try {
-      await fn();
+      await withJob(`resolve:${action.id}`, fn);
     } catch (e) {
       setError(errorText(e));
     }
@@ -297,6 +301,7 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
       )}
 
       {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+      {busy && <AgentActivity jobId={`resolve:${action.id}`} since={busySince} />}
       {!busy && r?.busy && <div className="row faint"><span className="spinner" /> {r.busy}</div>}
       {error && <div className="error" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>}
 

@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import type { Voice } from '../../../shared/types';
 import type { Screen } from '../App';
+import { AgentActivity } from '../AgentActivity';
 import { api, clock, errorText, plural, shortRef } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
@@ -327,6 +328,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                       </div>
                     </div>
                   )}
+                  {card && !turn && <AgentActivity jobId={`prep:${card.ref}`} />}
                 </>
               )}
             </section>

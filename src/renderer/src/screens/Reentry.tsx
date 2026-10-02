@@ -5,6 +5,7 @@ import type { Screen } from '../App';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { feedbackApi } from '../feedbackApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -112,6 +113,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
         </header>
         {error && <div className="error">{error}</div>}
         {(busy && !re) && <div className="row faint"><span className="spinner" /> {busy}</div>}
+        {(busy && !re) && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
         {loaded && !re && !busy && (
           <div><button type="button" className="btn btn-dark" onClick={() => act('prepare', 'Retorno do QA', 'O agente está lendo o comentário do QA e o spec…', () => feedbackApi.prepareReentry(card))}>Tentar de novo</button></div>
         )}
@@ -154,6 +156,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
                   <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="reentrada" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+                {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
                 <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim() && !busy) ask(draft.trim()); setDraft(''); }}>
                   <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
                   <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>

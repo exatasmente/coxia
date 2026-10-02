@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { ConflictResolver } from './ConflictResolver';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -135,6 +136,7 @@ export function Conflict({
               <Bubble key={i} m={m} who={m.me ? 'Você' : 'Agente'} voice={voice} player={player} speaker="conflito" />
             ))}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
             {error && <div className="error">{error}</div>}
             <form
               className="row composer"

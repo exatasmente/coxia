@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -107,6 +108,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
         </header>
         {error && <div className="error">{error}</div>}
         {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+        {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
         {loaded && !retro && !busy && (
           <p className="small muted">
             A retro junta as cerimônias, decisões, ações de release, quizzes de gate e as mudanças no GitLab dos últimos 7 dias. O agente conduz; as melhorias saem no formato do IMPROVEMENTS.md para você levar pelo Claude Code.

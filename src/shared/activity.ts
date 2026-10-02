@@ -19,6 +19,8 @@ export interface ActivityEntry {
 
 export const ACTIVITY_EVENT = 'agent:activity';
 export const ACTIVITY_GET = 'agent:activity:get';
+/** Fired on window when the browser's event stream dropped and came back: what was said in the gap is fetched again. */
+export const EVENTS_RECONNECTED = 'cerimonias:events-reconnected';
 export const ACTIVITY_RING = 200;
 export const ACTIVITY_TEXT_MAX = 200;
 export const ACTIVITY_LABEL_MAX = 240;

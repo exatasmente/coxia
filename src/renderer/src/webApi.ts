@@ -1,5 +1,6 @@
 // Browser (PWA) stand-in for the preload: window.api over HTTP RPC + Server-Sent Events.
 // Imported first in main.tsx so api.ts finds window.api.
+import { EVENTS_RECONNECTED } from '../../shared/activity';
 import { buildApi } from '../../shared/apiChannels';
 import type { AppEvent } from '../../shared/types';
 import { isQueueable, IDEMPOTENCY_HEADER } from '../../shared/outbox';
@@ -50,8 +51,16 @@ function openEvents(): void {
     const ev = decodeWire(JSON.parse(m.data)) as AppEvent;
     for (const cb of [...listeners]) cb(ev);
   };
+  let dropped = false;
+  source.onopen = () => {
+    if (dropped) window.dispatchEvent(new Event(EVENTS_RECONNECTED));
+    dropped = false;
+  };
   // EventSource retries on its own; only a dead session needs the login screen.
-  source.onerror = () => void sessionCheck().then((s) => s === 'login' && window.dispatchEvent(new Event(UNAUTHORIZED)));
+  source.onerror = () => {
+    dropped = true;
+    void sessionCheck().then((s) => s === 'login' && window.dispatchEvent(new Event(UNAUTHORIZED)));
+  };
 }
 
 function onEvent(cb: (ev: AppEvent) => void): () => void {

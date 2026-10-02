@@ -7,6 +7,7 @@ import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import { type Ceremony, EMPTY_DEEP } from '../ceremony';
 import { destinationLabels, useCycle } from '../cycleApi';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -209,6 +210,7 @@ export function Deep({
               <Bubble key={i} m={m} who={m.me ? 'Você' : `Agente #${card.iid}`} voice={c.voiceOf(card.ref)} player={player} speaker={card.ref} />
             ))}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
             {error && <div className="error">{error}</div>}
             <form
               className="row composer"

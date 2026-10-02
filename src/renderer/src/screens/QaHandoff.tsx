@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -102,6 +103,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
             </p>
             <div><button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act('prepare', 'Passagem para o QA', 'O agente está lendo a atividade…', () => api.prepareQa(card))}>Preparar</button></div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
           </section>
         )}
 
@@ -161,6 +163,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
                   <Bubble key={i} m={m} who={m.me ? 'Pergunta' : 'Agente'} voice={voice} player={player} speaker="qa" />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+                {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
                 <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) ask(draft.trim()); setDraft(''); }}>
                   <input className="text-input" placeholder="Ou digite a pergunta" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Pergunta" />
                   <button type="submit" className="btn btn-dark" disabled={!draft.trim() || !!busy}>Perguntar</button>

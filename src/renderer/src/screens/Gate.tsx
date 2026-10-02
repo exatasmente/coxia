@@ -5,6 +5,7 @@ import { api, errorText } from '../api';
 import { transcribeAudio, type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { AgentActivity } from '../AgentActivity';
 import { Bubble } from './Bubble';
 import { FixHeard } from './FixHeard';
 import { ContinueInClaude } from './ContinueInClaude';
@@ -192,6 +193,7 @@ export function Gate({
               ))}
             </div>
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
           </section>
         )}
 
@@ -250,6 +252,7 @@ export function Gate({
               );
             })}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
+            {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
 
             {roundDone && (
               <section className="panel" style={{ padding: 20, gap: 12, borderColor: round.verdict === 'assertivo' ? 'var(--teal-line)' : 'var(--amber-line)' }}>
