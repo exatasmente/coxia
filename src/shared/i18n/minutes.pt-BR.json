@@ -30,7 +30,7 @@
   "minutes.diff.decisionsAdded": "Decisões novas",
   "minutes.diff.decisionsChanged": "Decisões que mudaram",
   "minutes.diff.effectsAdded": "Efeitos novos na fila",
-  "minutes.diff.resolved": "Perguntas respondidas",
+  "minutes.diff.resolved": "Perguntas resolvidas",
   "minutes.diff.newQuestions": "Perguntas novas sem resposta",
   "minutes.diff.activitiesNew": "Atividades abordadas pela primeira vez",
   "minutes.diff.activitiesUnchanged": "Retomadas sem mudança",
@@ -117,5 +117,6 @@
   "prompt.sdd.turn.sameDay.effect": "- Efeitos na fila para o Claude Code: {text}",
   "prompt.sdd.turn.sameDay.question": "- Pergunta que ficou sem resposta: {text}",
   "prompt.sdd.turn.sameDay.deep": "- Houve aprofundamento; o último ponto foi: {text}",
-  "prompt.sdd.turn.sameDay.nothing": "Nada mudou no cartão desde então; {theUser} pediu para aprofundar mesmo assim. Aprofunde, sem repetir o que já foi dito."
+  "prompt.sdd.turn.sameDay.nothing": "Nada mudou no cartão desde então; {theUser} pediu para aprofundar mesmo assim. Aprofunde, sem repetir o que já foi dito.",
+  "minutes.delete.versionLine": "Versão {n} ({from}–{to})"
 }

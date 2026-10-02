@@ -30,7 +30,7 @@
   "minutes.diff.decisionsAdded": "New decisions",
   "minutes.diff.decisionsChanged": "Decisions that changed",
   "minutes.diff.effectsAdded": "New effects in the queue",
-  "minutes.diff.resolved": "Questions answered",
+  "minutes.diff.resolved": "Questions resolved",
   "minutes.diff.newQuestions": "New unanswered questions",
   "minutes.diff.activitiesNew": "Activities covered for the first time",
   "minutes.diff.activitiesUnchanged": "Revisited with no change",
@@ -117,5 +117,6 @@
   "prompt.sdd.turn.sameDay.effect": "- Effects queued for Claude Code: {text}",
   "prompt.sdd.turn.sameDay.question": "- Question left unanswered: {text}",
   "prompt.sdd.turn.sameDay.deep": "- There was a deep dive; the last point was: {text}",
-  "prompt.sdd.turn.sameDay.nothing": "Nothing changed on the card since then; {theUser} asked to go deeper anyway. Go deeper, without repeating what was already said."
+  "prompt.sdd.turn.sameDay.nothing": "Nothing changed on the card since then; {theUser} asked to go deeper anyway. Go deeper, without repeating what was already said.",
+  "minutes.delete.versionLine": "Version {n} ({from}–{to})"
 }

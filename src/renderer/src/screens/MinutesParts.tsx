@@ -192,7 +192,7 @@ export function DeleteSheet({ date, which, onClose, onDone }: { date: string; wh
           <p className="small">{t('minutes.delete.intro', { days: preview.trashDays })}</p>
           <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
             {preview.versions.map((v) => (
-              <li key={v.n}>{t('minutes.delete.version', { n: v.n, from: clockTime(v.startedAt), to: clockTime(v.endedAt) })}</li>
+              <li key={v.n}>{t('minutes.delete.versionLine', { n: v.n, from: clockTime(v.startedAt), to: clockTime(v.endedAt) })}</li>
             ))}
             {preview.files.length > 0 && <li className="mono" style={{ overflowWrap: 'anywhere' }}>{preview.files.join(', ')}</li>}
             {preview.ceremonies > 0 && <li>{t('minutes.delete.ceremonies', { count: preview.ceremonies })}</li>}
