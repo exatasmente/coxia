@@ -133,7 +133,11 @@ export function infoOf(v: SameDayVerdict): SameDayInfo {
   return { kind: v.kind, since: v.ctx.last.seen.at, version: v.ctx.last.version, changes: v.changes.map(changeText), decided: v.ctx.decisions.map((d) => d.text) };
 }
 
-const bare = (s: string): string => s.trim().replace(/[.!?…]+$/, '');
+// A sentence ends once: the catalog texts carry no final punctuation, so a question keeps its mark and a statement gets a period.
+const end = (s: string): string => {
+  const t = s.trim();
+  return /[.!?…]$/.test(t) ? t : `${t}.`;
+};
 
 /** The turn for a card nothing happened to since an earlier meeting: built from that meeting's turn, no agent call. */
 export function unchangedTurn(card: Card, v: SameDayVerdict): AgentTurn {
@@ -141,13 +145,13 @@ export function unchangedTurn(card: Card, v: SameDayVerdict): AgentTurn {
   const t = v.ctx.last.turn;
   const time = clockOf(v.ctx.last.seen.at, lang);
   const head = voiceText('sameDay.unchanged.head', lang).replace('{time}', time);
-  const decided = v.ctx.decisions.map((d) => bare(d.text));
+  const decided = v.ctx.decisions.map((d) => d.text.trim().replace(/[.;]+$/, ''));
   const pending = v.ctx.question ?? t.next;
   const speech = [
     head,
-    decided.length ? voiceText('sameDay.unchanged.decided', lang).replace('{text}', decided.join('; ')) : '',
-    t.blocker ? voiceText('sameDay.unchanged.blocker', lang).replace('{text}', bare(t.blocker)) : '',
-    pending ? voiceText('sameDay.unchanged.pending', lang).replace('{text}', bare(pending)) : '',
+    decided.length ? end(voiceText('sameDay.unchanged.decided', lang).replace('{text}', decided.join('; '))) : '',
+    t.blocker ? end(voiceText('sameDay.unchanged.blocker', lang).replace('{text}', t.blocker)) : '',
+    pending ? end(voiceText('sameDay.unchanged.pending', lang).replace('{text}', pending)) : '',
   ]
     .filter(Boolean)
     .join(' ');

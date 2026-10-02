@@ -458,9 +458,11 @@ export function restoreMinutes(id: string, now = Date.now()): Restored {
   const index = readIndex(m.date) ?? { version: 1 as const, date: m.date, versions: [], dayTeams: null };
   const taken = new Set(index.versions.map((v) => v.n));
   const renumbered: Restored['versions'] = [];
-  for (const v of m.versions) {
-    let n = v.n;
-    if (taken.has(n)) n = Math.max(0, ...taken, ...m.versions.map((x) => x.n)) + 1;
+  // When any number is taken they all go after the existing ones, in their own order, so the day still reads in sequence.
+  const shift = m.versions.some((v) => taken.has(v.n));
+  const firstFree = Math.max(0, ...taken) + 1;
+  for (const [i, v] of m.versions.entries()) {
+    const n = shift ? firstFree + i : v.n;
     taken.add(n);
     renumbered.push({ from: v.n, to: n });
     const rec = { ...v, n, file: v.file && n !== v.n ? versionFile(m.date, n) : v.file };

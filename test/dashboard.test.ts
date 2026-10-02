@@ -43,6 +43,13 @@ describe('agoraPlan', () => {
     expect(p.secondary).toEqual([]);
   });
 
+  it('says what an earlier meeting today leaves, and the version of one that ended', () => {
+    setLanguage('pt-BR');
+    expect(agoraPlan({ ...base, sameDay: { version: null, unchanged: 3, changed: 1 } }).hint).toContain('3 sem mudanças, 1 com mudanças');
+    expect(agoraPlan({ ...base, sameDay: { version: null, unchanged: 0, changed: 0 } }).hint).toContain('bloqueadas primeiro');
+    expect(agoraPlan({ ...base, callEnded: true, startedAt: 1, sameDay: { version: 2, unchanged: 0, changed: 0 } }).title).toBe('Pré-daily encerrada · Versão 2 de hoje');
+  });
+
   it('shows the loading state while the cards are being built', () => {
     const p = agoraPlan({ ...base, hasCards: false });
     expect(p.phase).toBe('loading');
