@@ -343,7 +343,7 @@
   "wizard.voice.working": "Working…",
   "wizard.voice.resultOk": "All good.",
   "wizard.voice.resultFail": "Failed.",
-  "wizard.voice.lazy": "If you skip, the app prepares the voice environment by itself at the first utterance (needs network and uv).",
+  "wizard.voice.lazy": "If you skip, voice stays off and the ceremonies work by text. You can install it later in Settings › Voice (needs the network).",
   "wizard.review.edit": "Edit",
   "wizard.review.editStep": "Edit: {step}",
   "wizard.review.status.ok": "configured",

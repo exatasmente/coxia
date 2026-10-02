@@ -4,7 +4,7 @@ import { getSettings } from './config';
 import { logError } from './errorlog';
 import type { Module } from './module';
 import { roundTrip, setupContext, sidecarRunning, stopSidecar, syncVoice } from './voice';
-import { activeVenv, checkVoice, installVoice, isSttModel, uninstallVoice } from './voice-setup';
+import { activeVenv, checkVoice, installVoice, isSttModel, modelsAnywhere, uninstallVoice } from './voice-setup';
 import { getConfig, onConfigChange, updateConfig } from './workspaceConfig';
 
 // The voice setup channels (voice:*). Desktop only (webPolicy): they install software, delete files and start processes on the machine.
@@ -102,9 +102,12 @@ export const voiceModule: Module = (ctx) => {
     if (installing) throw new Error('an install is running');
     stopSidecar();
     const result = uninstallVoice(setupContext());
+    // The chosen model went with the folder: fall back to one that is still on the machine, so turning voice on later never downloads in the background.
+    const left = modelsAnywhere(setupContext());
     updateConfig((c) => {
       c.voice.enabled = false;
       c.voice.depsInstalled = activeVenv(setupContext().paths) !== null;
+      if (!left[c.voice.sttModel as SttModel]) c.voice.sttModel = (['small', 'base', 'tiny'] as const).find((m) => left[m]) ?? c.voice.sttModel;
       return c;
     });
     return result;

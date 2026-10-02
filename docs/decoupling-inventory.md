@@ -123,10 +123,10 @@ Every company-specific or machine-specific assumption the app carried when it wa
 
 | Where (now) | What | Phase |
 |---|---|---|
-| `sidecar/voice_sidecar.py:26` | recognition prompt biased to `hub-whatsapp, new-agent, sz4` | voice (from the glossary/config) |
-| `sidecar/voice_sidecar.py:29-30` | `~/projects/hermes-poc/vendor/kokoro` as a Kokoro model location | voice |
-| `src/main/venv.ts:14-15` | looks in `~/.local/bin` first | packaging |
-| `config.voice.enabled` | stored, but **nothing reads it yet**: the sidecar still starts and the screens still say "call" | voice |
+| `sidecar/voice_sidecar.py` | recognition prompt: the app sends the glossary; the built-in fallback is generic. Done in the voice phase | voice (done) |
+| `sidecar/voice_sidecar.py` | the Kokoro folder of the author's machine now lives in the legacy profile (`voice.kokoroDir`), not in the code. Done | voice (done) |
+| `src/main/venv.ts` | looks in `~/.local/bin` first (a desktop session often lacks it in PATH), then in PATH | packaging |
+| `config.voice.enabled` | read: off means no sidecar, no microphone, no synthesis, and the screens say "conversa"/"chat" instead of "call". Done | voice (done) |
 | `src/main/update.ts:38,94-107`, `scripts/update.sh`, `scripts/install-local.sh` | updates by `git pull` + rebuild of `~/projects/cerimonias`, AppImage in `~/.local/opt/cerimonias`, `cerimonias.desktop` autostart | packaging |
 | `electron-builder.yml:1,24`, `package.json:42-43` | `appId br.com.fortics.cerimonias`, maintainer, homepage `dark.smartzap.com.br` | packaging |
 | `README.md` | the whole README describes the personal setup (paths, daily-report, Clockify, OpenRouter) | wizard + packaging: rewritten for open source |
