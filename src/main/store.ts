@@ -7,6 +7,7 @@ import { ATAS } from './env';
 import { invalidateReport } from './report';
 import { externalRefusal } from './workspace';
 import { rc } from './workspaceConfig';
+import { modeText } from './agentVoice';
 
 const run = promisify(execFile);
 
@@ -54,7 +55,7 @@ function writeSpecRegistro(d: Decision): { ok: boolean; detail: string } {
   const start = heading.index + heading[0].length;
   const nextHeading = text.slice(start).search(/^#{1,2} /m);
   const end = nextHeading === -1 ? text.length : start + nextHeading;
-  const entry = `- ${today()} (pré-daily por voz): ${d.text}\n`;
+  const entry = `- ${today()} (pré-daily ${modeText()}): ${d.text}\n`;
   const before = text.slice(0, end).replace(/\n*$/, '\n');
   writeFileSync(path, `${before}${entry}${end < text.length ? '\n' : ''}${text.slice(end)}`);
   return { ok: true, detail: path };

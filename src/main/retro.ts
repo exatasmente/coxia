@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { join } from 'node:path';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str } from './agents';
+import { chatRules, speechRules, askAgent, obj, str } from './agents';
+import { callWord, heardText, modeText } from './agentVoice';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
@@ -104,13 +105,13 @@ export async function prepareRetro(): Promise<Retro> {
   }>(
     'deep',
     [
-      `Retro semanal do Luiz, por voz, de ${from.toLocaleDateString('pt-BR')} a ${to.toLocaleDateString('pt-BR')}. Você conduz.`,
+      `Retro semanal do Luiz, ${modeText()}, de ${from.toLocaleDateString('pt-BR')} a ${to.toLocaleDateString('pt-BR')}. Você conduz.`,
       'Base: o resumo abaixo (cerimônias, decisões, ações de release, quizzes de gate e mudanças no GitLab). Pode ler specs e o playbook para entender um ponto; não invente fato que não esteja no resumo ou no que você ler.',
       'Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.',
       '"fala": abertura de até 150 palavras. "numeros": de 3 a 6 contagens da semana; "valor" é só o número (ex.: "2", "4") e o contexto vai em "rotulo" (até 8 palavras). Cada item de "funcionou", "travou" e "retrabalho" com a evidência concreta (issue, data).',
       '"melhorias": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.',
       `Resumo da semana: ${JSON.stringify(digest).slice(0, 24000)}`,
-      SPEECH_RULES,
+      speechRules(),
     ].join('\n'),
     obj({
       fala: str,
@@ -144,7 +145,7 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
   if (!retro) throw new Error('retro não encontrada');
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Na retro, o Luiz disse (transcrição por voz): «${question}»`, 'Responda, aprofunde ou proponha; "fala" até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    [`Na retro, o Luiz disse (${heardText()}): «${question}»`, 'Responda, aprofunde ou proponha; "fala" até 90 palavras.', chatRules(), speechRules()].join('\n'),
     obj({ fala: str, texto: str }),
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );

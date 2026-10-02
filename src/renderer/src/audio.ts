@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { voiceEnabled } from '../../shared/i18n';
 import { DEFAULT_SETTINGS } from '../../shared/settings';
 import type { SpeechSegment, Voice } from '../../shared/types';
 import { api } from './api';
@@ -102,6 +103,7 @@ function keepPlaybackSession(on: boolean): void {
 
 // Mobile browsers start the AudioContext suspended until a user gesture.
 export function unlockAudio(): void {
+  if (!voiceEnabled()) return;
   try {
     if (!preferPlaybackSession() && !sessionKeeper && isIos()) {
       sessionKeeper = new Audio(silentWav());
@@ -346,6 +348,8 @@ export function usePlayer() {
 
   const say = useCallback(
     async (text: string, voice: Voice, who: string, opts: { force?: boolean; item?: unknown } = {}) => {
+      // Voice off: text everywhere. Nothing is synthesized, nothing waits for a reading time, the flow just goes on.
+      if (!voiceEnabled()) return;
       if (!speechOn && !opts.force) {
         stop();
         setSpeaking(who);
@@ -395,6 +399,7 @@ function recordingType(): string | undefined {
 const transcripts = new Set<string>();
 
 export async function transcribeAudio(audio: ArrayBuffer): Promise<string> {
+  if (!voiceEnabled()) throw new Error('voice is off');
   const text = await api.transcribe(audio);
   if (text) {
     transcripts.delete(text);
@@ -465,6 +470,7 @@ export function useRecorder(onSilence?: () => void) {
   );
 
   const start = useCallback(async () => {
+    if (!voiceEnabled()) throw new Error('voice is off');
     const handoff = takeHandoff();
     stopSpeech();
     autoStopped.current = false;
@@ -552,7 +558,7 @@ export function useTalk(player: ReturnType<typeof usePlayer>, onText: (text: str
   ref.current = talk;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
+      if (e.code !== 'Space' || !voiceEnabled() || e.repeat || (e.target as HTMLElement).closest('input, textarea, button, select, a')) return;
       e.preventDefault();
       void ref.current();
     };

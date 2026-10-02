@@ -9,6 +9,9 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // screen: a token never travels through the browser channel).
 export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe']);
 
+// The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
+const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
+
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // post-release-sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
@@ -28,7 +31,7 @@ const CONFIG_ADMIN = /^config:(save|secret|secrets|export|import)/;
 const WIZARD = /^wizard:/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || WIZARD.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

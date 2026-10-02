@@ -119,7 +119,7 @@ export function legacyProfile(): DeepPartial<WorkspaceConfig> {
       qa: { user: 'qa.interno' },
     },
     agents: { tools: { trackerMcpServer: 'gitlab-issue-analysis' } },
-    voice: { enabled: true, depsInstalled: true },
+    voice: { enabled: true, depsInstalled: true, kokoroDir: '~/projects/hermes-poc/vendor/kokoro' },
     claudeSdk: { installed: true, version: null, path: null },
     externalTools: {
       cardSource: {

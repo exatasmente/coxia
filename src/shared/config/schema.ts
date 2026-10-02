@@ -204,6 +204,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         engine: enumOf('Text-to-speech engine.', VOICE_ENGINES),
         sttModel: string('faster-whisper model name.', { minLength: 1, maxLength: 60 }),
         depsInstalled: boolean('The sidecar dependencies are installed on this machine.'),
+        kokoroDir: nullableString('Folder with the Kokoro model files, outside the app data folder. null: only the app folders.'),
         autoStop: boolean('Send when the speaker stops.'),
         silenceMs: integer('Silence that ends an utterance (ms).', 500, 5000),
         speak: boolean('Agents speak aloud.'),

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { setSpeechEnabled, useSpeechEnabled } from '../audio';
+import { useVoiceEnabled } from '../i18n';
 import { SpeakerOffIcon, SpeakerOnIcon } from './dashIcons';
 
 // Quick switch in the top bar; the same flag lives in Settings → Voz.
 export function VoiceToggle() {
   const on = useSpeechEnabled();
+  const voiceOn = useVoiceEnabled();
   const [saving, setSaving] = useState(false);
 
   const toggle = async () => {
@@ -19,6 +21,8 @@ export function VoiceToggle() {
     }
   };
 
+  // The speaker switch is a sub-option of voice: with voice off there is nothing to silence.
+  if (!voiceOn) return null;
   return (
     <button
       type="button"

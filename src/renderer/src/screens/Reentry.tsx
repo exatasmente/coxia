@@ -10,6 +10,8 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
+import { tv } from '../i18n';
+import { useVoiceEnabled } from '../i18n';
 
 const CLASS_LABEL: Record<ReentryClass, string> = {
   'defeito-novo': 'Defeito novo',
@@ -85,6 +87,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
     },
     [card],
   );
+  const voiceOn = useVoiceEnabled();
   const talk = useTalk(player, ask, setError);
 
   if (!card) {
@@ -101,7 +104,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
           </div>
           <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--night-orange)'} small />
-          {re && (
+          {re && voiceOn && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? 'Enviar pergunta' : 'Perguntar (espaço)'}
             </button>
@@ -157,7 +160,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
                 </form>
               </section>
               <section className="panel" style={{ gap: 10 }}>
-                <h2 className="section-title">Depois da call</h2>
+                <h2 className="section-title">{tv('call.after')}</h2>
                 <p className="small" style={{ lineHeight: 1.5 }}>Seguir a reentrada é no Claude Code, nesta mesma sessão do agente.</p>
                 <ContinueInClaude sessionId={re.sessionId} />
                 <button type="button" className="btn" disabled={!!busy} onClick={() => act('prepare', 'Retorno do QA', 'O agente está relendo o retorno…', () => feedbackApi.prepareReentry(card))}>Preparar de novo</button>

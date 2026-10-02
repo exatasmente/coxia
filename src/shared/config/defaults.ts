@@ -49,7 +49,7 @@ export function neutralConfig(): WorkspaceConfig {
       extraInstructions: '',
       roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '' })),
     },
-    voice: { enabled: true, engine: 'edge', sttModel: 'small', depsInstalled: false, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
+    voice: { enabled: false, engine: 'edge', sttModel: 'small', depsInstalled: false, kokoroDir: null, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
     claudeSdk: { installed: false, version: null, path: null },
     externalTools: {
       cardSource: { enabled: false, command: '', reportArgs: [], noteArgs: [], stateFile: null, historyFile: null, timeoutMs: 150_000 },

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { LEGACY_SECRET_REF, legacyProfile } from '../shared/config/legacy';
-import { setLanguage, t } from '../shared/i18n';
+import { setLanguage, setVoiceEnabled, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
 import type { WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
@@ -38,6 +38,7 @@ function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
     }
   }
   setLanguage(config.language);
+  setVoiceEnabled(config.voice.enabled);
   return { config, resolved: resolveConfig(config, context()) };
 }
 
@@ -63,6 +64,7 @@ export function saveConfig(next: unknown): WorkspaceConfig {
   writeConfigFile(ATAS, checked.config);
   state = { config: checked.config, resolved: resolveConfig(checked.config, context()) };
   setLanguage(checked.config.language);
+  setVoiceEnabled(checked.config.voice.enabled);
   for (const fn of listeners) fn(checked.config);
   return checked.config;
 }

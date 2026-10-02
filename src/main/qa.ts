@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, qaMention, str } from './agents';
+import { chatRules, speechRules, askAgent, obj, qaMention, str } from './agents';
+import { callWord, heardText, modeText } from './agentVoice';
 import { ATAS } from './env';
 import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
 import { issueNotesHint } from './vcs/readPolicy';
@@ -42,7 +43,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
   const testPlans = layout.phaseFiles.map((f) => f.file).filter((f) => /TEST_PLAN/i.test(f));
   const noteUrl = issueWebUrl(card.iid);
   const prompt = [
-    `Passagem para o QA da issue ${card.ref} (${card.title}), por voz. Você explica ao QA o que mudou e o que testar.`,
+    `Passagem para o QA da issue ${card.ref} (${card.title}), ${modeText()}. Você explica ao QA o que mudou e o que testar.`,
     `Leia em ${card.spec.folder}: ${layout.documents.completion} (Testes do Desenvolvedor e checklist de impacto)${testPlans.length ? `, o plano de testes (${testPlans.join(' ou ')})` : ''}, o Plan e o que precisar.`,
     `MRs: ${JSON.stringify(card.mrPaths)}. Leia o diff pelo MCP do GitLab e os comentários da issue com ${issueNotesHint(rc().issues.project ?? issueProjectKey(), card.iid)}, procurando a nota "${qaMention()}" (branch de release e pipelines).`,
     'Skills de referência: qa-release-branch (texto do Teams) e testar-atividade-gitlab (cenário: objetivo, precondições, ações, resultado esperado, evidência).',
@@ -51,7 +52,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
     '"checklist": seções (ex.: "Cenários principais (fluxo feliz)", "Regressão", "Bordas") com itens verificáveis, cada um com ação e resultado esperado.',
     '"riscos": o que pode quebrar além do fluxo corrigido. "ambiente": branch de release, pipeline e jobs de deploy pela nota do QA; se não houver nota, diga que a branch de release ainda não foi criada (skill qa-release-branch).',
     `"nota_qa": o id da nota ${qaMention()} mais recente, ou null. "teams": ${noteUrl ? `se houver nota, exatamente "Bom dia!\\n\\nAtividades disponíveis para testes :\\n${noteUrl}#note_<id>"; sem nota, ""` : '""'}.`,
-    SPEECH_RULES,
+    speechRules(),
   ].join('\n');
   const r = await askAgent<{
     fala: string;
@@ -101,7 +102,7 @@ export async function askQa(iid: string, question: string): Promise<QaHandoff> {
   if (!q) throw new Error('passagem para o QA não preparada');
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do QA ou do Luiz na passagem da ${q.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    [`Pergunta do QA ou do Luiz na passagem da ${q.ref} (${heardText()}): «${question}»`, '"fala": até 90 palavras.', chatRules(), speechRules()].join('\n'),
     obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(q.sessionId ? { resume: q.sessionId } : {}) },
   );
@@ -122,7 +123,7 @@ export function writeQaChecklist(iid: string): QaHandoff {
     `> ${q.changed.replace(/\n+/g, ' ')}`,
     `>`,
     `> **Ambiente:** ${q.environment.replace(/\n+/g, ' ')}`,
-    `> Gerado na passagem para o QA por voz (${new Date().toLocaleDateString('sv-SE')}).`,
+    `> Gerado na passagem para o QA ${modeText()} (${new Date().toLocaleDateString('sv-SE')}).`,
     '',
     '---',
     ...q.checklist.flatMap((s, i) => ['', `## ${i + 1}. ${s.title}`, '', ...s.items.map((it) => `- [ ] ${it}`)]),

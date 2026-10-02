@@ -6,6 +6,7 @@ import { api, errorText } from '../api';
 import { t, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
+import { tv } from '../i18n';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
   pending: 'aguardando você',
@@ -30,7 +31,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'qa-comment')
     return a.noteId ? `Edita no lugar o comentário de pipelines do QA (nota ${a.noteId}), visível ao time na issue.` : 'Publica o comentário de sincronização da ferramenta na issue, visível ao time.';
   if (a.kind === 'conflict-push') return 'Push da branch com o merge da main já resolvido e verificado na worktree local: fast-forward, sem force, visível ao time. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou.';
-  return 'A call explica o conflito; a resolução é feita na tela dele, numa worktree local. Nada vai para o GitLab sem o seu “sim” ao push.';
+  return tv('call.explainsConflict');
 }
 
 function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
@@ -122,7 +123,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       {open && (
         <div className="row">
           {a.kind === 'conflict' ? (
-            <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? 'Continuar a resolução' : 'Abrir call e resolver o conflito'}</button>
+            <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? 'Continuar a resolução' : tv('call.openAndResolve')}</button>
           ) : (
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (

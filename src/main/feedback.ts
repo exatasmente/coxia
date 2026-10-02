@@ -15,7 +15,8 @@ import type {
   ReentryPhase,
 } from '../shared/feedback';
 import { listActions, proposeVcsCommands } from './actions';
-import { CHAT_RULES, SPEECH_RULES, askAgent, obj, str, strOrNull } from './agents';
+import { chatRules, speechRules, askAgent, obj, str, strOrNull } from './agents';
+import { callWord, heardText, modeText } from './agentVoice';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
@@ -26,6 +27,7 @@ import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
 import { mrChangesHint } from './vcs/readPolicy';
 import type { VcsComment, VcsThread } from './vcs/types';
+import { tv } from '../shared/i18n';
 
 const SEEN_FILE = join(ATAS, 'feedback.json');
 const DIR = join(ATAS, 'feedback');
@@ -202,14 +204,14 @@ function noticesFor(events: FeedbackEvent[]): Notice[] {
     if (e.kind === 'returned') {
       return {
         title: `A #${e.card.iid} voltou do QA`,
-        body: `${e.why}${e.note ? `\n${e.note}` : ''}\nClique para a call de reentrada.`,
+        body: `${e.why}${e.note ? `\n${e.note}` : ''}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
     if (e.kind === 'qa-note') {
       return {
         title: `Nota nova do QA na ${e.where}`,
-        body: `${e.note}\nClique para a call de reentrada.`,
+        body: `${e.note}\n${tv('notify.reentry.hint')}`,
         onClick: { type: 'open', screen: { name: 'reentry', ref: e.card.ref, card: e.card } },
       };
     }
@@ -287,7 +289,7 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
   const notes = await qaNotesOf(card);
   const recent = notes.slice(0, 3);
   const prompt = [
-    `Call de reentrada da issue ${card.ref} (${card.title}), por voz: o QA ou a revisão devolveu a atividade. Você explica ao Luiz o que voltou e onde ela reentra no pipeline.`,
+    `${callWord()} de reentrada da issue ${card.ref} (${card.title}), ${modeText()}: o QA ou a revisão devolveu a atividade. Você explica ao Luiz o que voltou e onde ela reentra no pipeline.`,
     `Estágio atual: ${card.stage ?? 'sem estágio'}. ${card.spec ? `Spec em ${card.spec.folder} (${card.spec.phase}); leia o Plan, a investigação ou o spec técnico e o ISSUE_COMPLETION, no máximo 5 leituras.` : 'A issue não tem pasta de spec: diga isso.'}`,
     `MRs: ${JSON.stringify(card.mrPaths)}.`,
     recent.length
@@ -303,7 +305,7 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
     '"fala": até 130 palavras, para ser ouvida: o que o QA encontrou, a classificação, em que fase reentra e o primeiro passo.',
     '"achou": o que o QA encontrou, em um parágrafo, com os cenários que falharam. "motivo": por que essa classificação, em uma ou duas frases.',
     '"passos": de 2 a 4 passos do que o agente faz na reentrada, da coluna "O agente faz" da tabela, aplicados a esta issue (inclua o quiz do delta quando houver).',
-    SPEECH_RULES,
+    speechRules(),
   ].join('\n');
   const r = await askAgent<{ fala: string; achou: string; classificacao: ReentryClass; motivo: string; fase: ReentryPhase; passos: string[]; duvida: string | null }>(
     'deep',
@@ -342,10 +344,10 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
 
 export async function askReentry(iid: string, question: string): Promise<Reentry> {
   const re = getReentry(iid);
-  if (!re) throw new Error('call de reentrada não preparada');
+  if (!re) throw new Error(tv('err.reentryNotPrepared'));
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
-    [`Pergunta do Luiz na reentrada da ${re.ref} (transcrição por voz): «${question}»`, '"fala": até 90 palavras.', CHAT_RULES, SPEECH_RULES].join('\n'),
+    [`Pergunta do Luiz na reentrada da ${re.ref} (${heardText()}): «${question}»`, '"fala": até 90 palavras.', chatRules(), speechRules()].join('\n'),
     obj({ fala: str, texto: str }),
     { maxTurns: 12, ...(re.sessionId ? { resume: re.sessionId } : {}) },
   );
@@ -420,8 +422,8 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     '"fala": até 90 palavras, para ser ouvida: o ponto, se o revisor tem razão pelo que você leu e o que o Luiz precisa decidir.',
     '"rascunho": a resposta do Luiz ao revisor, em português, direta e cordial, até 80 palavras, em primeira pessoa e com a acentuação correta. Não afirme que algo foi corrigido, testado ou commitado se você não viu isso; se exige mudança, escreva a intenção ("Vou ajustar X"). Se faltar informação, deixe o trecho entre [colchetes] para ele completar.',
     '"texto" explica o ponto; o rascunho da resposta vai só em "rascunho", sem repeti-lo no texto.',
-    CHAT_RULES,
-    SPEECH_RULES,
+    chatRules(),
+    speechRules(),
   ]
     .filter(Boolean)
     .join('\n');

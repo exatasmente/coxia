@@ -199,6 +199,8 @@ async function reportCheck(): Promise<Result> {
 }
 
 async function voiceCheck(): Promise<Result> {
+  // Voice off is a state, not a failure: no sidecar is expected to run.
+  if (!getConfig().voice.enabled) return { ok: true, message: t('voice.health.off') };
   const v = await voiceStatus();
   if (!v.alive) return { ok: false, message: 'O sidecar de voz não está rodando. Reabra o app.' };
   if (v.pingMs === null) return { ok: false, message: 'O sidecar de voz não respondeu ao ping em 5 s.' };

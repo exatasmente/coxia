@@ -16,6 +16,7 @@ import { saude } from './saude';
 import { update } from './update';
 import { updates } from './updates';
 import { vcsModule } from './vcs/module';
+import { voiceModule } from './voiceModule';
 import { wizard } from './wizard';
 import { workspaces } from './workspaces';
 import type { Module } from './module';
@@ -39,6 +40,7 @@ export const MODULES: Module[] = [
   update,
   updates,
   vcsModule,
+  voiceModule,
   watchers,
   wizard,
   workspaces,

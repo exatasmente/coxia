@@ -1,6 +1,7 @@
 import type { AgentTurn, Card, ReleaseAction } from '../../shared/types';
 import type { TempoIssue } from '../../shared/tempo';
 import type { WatcherAlert } from '../../shared/watchers';
+import { tv } from '../../shared/i18n';
 
 // Pure rules behind the Hoje dashboard: what the main card offers, what needs the person, how activities are ordered.
 
@@ -86,10 +87,10 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   if (i.startedAt) {
     return {
       phase: 'live',
-      title: 'Call em andamento',
+      title: tv('call.inProgress'),
       hint: ataHint(i) ?? note,
       progress: null,
-      primary: { action: 'call', label: 'Voltar à call' },
+      primary: { action: 'call', label: tv('call.back') },
       secondary: [ata],
     };
   }

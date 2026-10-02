@@ -8,6 +8,7 @@ import { ATAS } from './env';
 import type { Job } from './module';
 import { knownTask, track } from './saude';
 import { rc } from './workspaceConfig';
+import { tv } from '../shared/i18n';
 
 interface Snapshot {
   checkedAt: string | null;
@@ -120,7 +121,7 @@ function tick(): void {
   const pre = minutes(s.schedule.preDaily);
   if (workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
     write({ ...snap, preDailyNotified: today() });
-    deps?.notify({ title: 'Hora da pré-daily', body: 'Os agentes estão prontos para a call. Clique para entrar.', onClick: { type: 'navigate', to: 'call' } });
+    deps?.notify({ title: 'Hora da pré-daily', body: tv('notify.preDaily.body'), onClick: { type: 'navigate', to: 'call' } });
   }
 
   const retro = minutes(s.schedule.retroTime);
