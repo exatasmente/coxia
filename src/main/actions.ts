@@ -454,7 +454,7 @@ export const conflictHooks: {
   cloneRoots: string[];
   scheduleQaComment: (sync: ReleaseAction) => void;
 } = {
-  cloneRoots: [WORKSPACE],
+  cloneRoots: [process.env.CERIMONIAS_CLONES_DIR ?? WORKSPACE],
   scheduleQaComment: (sync) => {
     // The push pipeline takes a moment to appear; the comment draft waits for it.
     setTimeout(() => void proposeQaComment(sync).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);

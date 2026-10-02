@@ -7,6 +7,7 @@ import { autostartApi } from '../autostartApi';
 import { applyTheme } from '../theme';
 import { FalaCostByModel } from './FalasCusto';
 import { BackIcon } from './icons';
+import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
 import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
@@ -295,6 +296,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         </section>
 
         <RetentionSection value={s.retention} onChange={(retention) => set((p) => ({ ...p, retention }))} />
+        <ConflictVerifySection />
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Aparência</h2>
