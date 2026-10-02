@@ -15,7 +15,7 @@ import { MODULES } from './modules';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
-import { AGENT_VOICES, MODERATOR, speak, startVoice, stopVoice, transcribe } from './voice';
+import { speak, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 
 const RESOURCES = join(import.meta.dirname, '../../resources');
 
@@ -115,13 +115,13 @@ function handlers(): void {
   ipcMain.handle('ata:teams', (_e, minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
   ipcMain.handle('ata:save', (_e, minutes: Minutes, teams: string, selected: number[]) => saveMinutes(minutes, teams, selected));
   ipcMain.handle('voice:speak', async (_e, text: string, voice: Voice) => {
-    const path = await speak(text, voice);
+    const path = await speak(text, voice, getSettings().voice.engine);
     const bytes = readFileSync(path);
     unlinkSync(path);
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
   ipcMain.handle('voice:transcribe', (_e, audio: ArrayBuffer) => transcribe(audio));
-  ipcMain.handle('voice:list', () => ({ moderator: MODERATOR, agents: AGENT_VOICES }));
+  ipcMain.handle('voice:list', () => voicesFor(getSettings().voice.engine));
   ipcMain.handle('clipboard:copy', (_e, text: string) => clipboard.writeText(text));
   ipcMain.handle('settings:get', () => getSettings());
   ipcMain.handle('settings:save', (_e, s: Settings) => saveSettings(s));

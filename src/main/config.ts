@@ -28,6 +28,7 @@ function validate(s: Settings): Settings {
   }
   if (!(s.schedule.statusEveryMin >= 5 && s.schedule.statusEveryMin <= 240)) throw new Error('intervalo deve ficar entre 5 e 240 minutos');
   if (!(s.voice.silenceMs >= 500 && s.voice.silenceMs <= 5000)) throw new Error('silêncio deve ficar entre 500 e 5000 ms');
+  if (s.voice.engine !== 'edge' && s.voice.engine !== 'kokoro') throw new Error('motor de voz inválido');
   return s;
 }
 

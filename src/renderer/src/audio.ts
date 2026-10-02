@@ -6,11 +6,11 @@ import { VAD_DEFAULTS, levelOf, rmsOf, vadInit, vadStep } from './vad';
 
 const CACHE_SIZE = 40;
 
-// Synthesized speech stays in memory only (never on disk), so a phrase heard again is not sent to Edge again.
+// Synthesized speech stays in memory only (never on disk), so a phrase heard again is not synthesized again.
 const speechCache = new Map<string, ArrayBuffer>();
 
 async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
-  const key = `${voice.voice}|${voice.rate}|${voice.pitch}|${text}`;
+  const key = `${voice.engine ?? 'edge'}|${voice.voice}|${voice.rate}|${voice.pitch}|${voice.speed ?? 1}|${text}`;
   const hit = speechCache.get(key);
   if (hit) {
     speechCache.delete(key);
@@ -21,6 +21,15 @@ async function synthesize(text: string, voice: Voice): Promise<ArrayBuffer> {
   speechCache.set(key, bytes);
   if (speechCache.size > CACHE_SIZE) speechCache.delete(speechCache.keys().next().value as string);
   return bytes;
+}
+
+export function clearSpeechCache(): void {
+  speechCache.clear();
+}
+
+// Kokoro returns WAV, Edge MP3.
+function mimeOf(bytes: ArrayBuffer): string {
+  return new TextDecoder().decode(new Uint8Array(bytes, 0, 4)) === 'RIFF' ? 'audio/wav' : 'audio/mpeg';
 }
 
 // When speech is off nothing is synthesized: the agents' text still shows on screen and nothing goes to Edge.
@@ -59,7 +68,7 @@ export function usePlayer() {
       if (!speechOn) return;
       const bytes = await synthesize(text, voice);
       stop();
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mimeOf(bytes) }));
       const audio = new Audio(url);
       current.current = audio;
       setSpeaking(who);

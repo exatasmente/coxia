@@ -1,3 +1,5 @@
 faster-whisper==1.2.1
 edge-tts==7.2.7
 av==18.1.0
+kokoro-onnx==0.6.1
+soundfile==0.14.0

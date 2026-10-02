@@ -6,3 +6,5 @@ scratch/
 .npm-*.log
 .uv-*.log
 .electron-dl.log
+sidecar/.venv-test/
+sidecar/models/
