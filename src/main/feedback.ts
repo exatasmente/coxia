@@ -481,7 +481,7 @@ export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): P
     'deep',
     prompt,
     obj({ fala: str, texto: str, ponto: str, precisa_codigo: { type: 'boolean' }, rascunho: str }),
-    { maxTurns: 14 },
+    { maxTurns: 20 },
   );
   const store = readStore(mr);
   const explanation = { speech: r.data.fala, text: r.data.texto || r.data.fala, point: r.data.ponto, needsCode: r.data.precisa_codigo, draft: r.data.rascunho, sessionId: r.sessionId || null, at: new Date().toISOString(), notes: notes.length };
