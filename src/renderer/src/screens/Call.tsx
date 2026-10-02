@@ -1,8 +1,10 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import type { Voice } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, clock, errorText, plural, shortRef } from '../api';
 import { type usePlayer, useRecorder } from '../audio';
 import type { Ceremony } from '../ceremony';
+import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
@@ -187,7 +189,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     phase === 'thinking' ? 'Agente pensando…' :
     phase === 'preparing' ? 'Agente lendo o cartão…' :
     speakingWho === 'Moderador' ? 'Moderador falando' :
-    speakingWho && card ? `Agente #${card.iid} falando` : 'Aguardando você';
+    speakingWho ? `Agente #${cards.find((x) => x.ref === speakingWho)?.iid ?? card?.iid} falando` : 'Aguardando você';
 
   return (
     <div className="page">
@@ -326,13 +328,27 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 <h2 className="section-title">Transcrição</h2>
                 <span className="faint">whisper local · últimas falas</span>
               </div>
-              {c.log.slice(-8).map((l, i) => (
-                <div key={`${l.at}-${i}`} className="log-line">
-                  <span className="at">{l.at}</span>
-                  <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
-                  <span className="text">{l.text}</span>
-                </div>
-              ))}
+              {c.log.slice(-8).map((l, i) => {
+                const spoken = l.who === 'Moderador' ? { who: 'Moderador', voice: c.voices?.moderator } : (() => {
+                  const x = cards.find((k) => `#${k.iid}` === l.who);
+                  return x ? { who: x.ref, voice: c.voiceOf(x.ref) } : null;
+                })();
+                return (
+                  <div key={`${l.at}-${i}`} className="log-line">
+                    <span className="at">{l.at}</span>
+                    <span className="who" style={{ '--c': l.color } as CSSProperties}>{l.who}</span>
+                    <span className="text">{l.text}</span>
+                    {spoken?.voice && (
+                      <ReplayButton
+                        playing={player.speaking === spoken.who && player.current === l}
+                        label={`Ouvir de novo a fala de ${l.who}`}
+                        onPlay={() => void player.say(l.text, spoken.voice as Voice, spoken.who, { force: true, item: l }).catch(() => undefined)}
+                        onStop={() => player.stop()}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </section>
           </main>
 
