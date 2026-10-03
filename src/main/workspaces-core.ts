@@ -23,7 +23,9 @@ export const WORKSPACE_FILES = [
 export const WORKSPACE_DIRS = ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts'];
 export const ATA_FILE = /^\d{4}-\d{2}-\d{2}-pre-daily\.md$/;
 
-// Shared by every workspace, so switching never unpairs a phone or loses a personal setting.
+// Shared by every workspace, so switching never unpairs a phone or loses a personal setting. conflict-verify.json is the exception that is going
+// away: the verification commands are workspace config now, and verify-move.ts empties this file into the workspaces at startup. It stays listed so the
+// flat-layout migration never moves it into one workspace before that.
 export const WEB_FILE = 'web.json';
 export const GLOBAL_ENTRIES = [WEB_FILE, 'web-sessions.json', 'web-push-vapid.json', 'web-push.json', 'glossario.json', 'conflict-verify.json', 'saude.json', 'userData'];
 

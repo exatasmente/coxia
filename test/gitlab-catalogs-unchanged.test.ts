@@ -98,6 +98,14 @@ const INTENDED: Record<string, Intended> = {
       ],
     ],
   },
+  'ui.help.data.shared.text': {
+    reason: 'the conflict verification commands moved from the file every workspace shared into each workspace config (#26), so the Help no longer lists them as shared',
+    language: 'both',
+    replace: [
+      ['aparelhos pareados, glossário e comandos de verificação de conflito.', 'aparelhos pareados e glossário. Os comandos de verificação de conflito são de cada workspace (Configurações › Verificação de conflitos).'],
+      ['paired devices, the glossary and the conflict verification commands.', 'paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification).'],
+    ],
+  },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 

@@ -190,7 +190,7 @@
   "ui.help.cmd.next.text": "Passa para o próximo agente. Na última atividade, fecha a pauta. Precisa estar no começo da frase.",
   "ui.help.data.intro": "Tudo é arquivo local; nada vai para um servidor próprio.",
   "ui.help.data.minutesFile": "AAAA-MM-DD-pre-daily.md",
-  "ui.help.data.shared.text": "O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados, glossário e comandos de verificação de conflito. Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (host de código, Plan das specs, notas de cartão).",
+  "ui.help.data.shared.text": "O que vale para todos os workspaces: acesso pelo navegador e aparelhos pareados e glossário. Os comandos de verificação de conflito são de cada workspace (Configurações › Verificação de conflitos). Em Configurações › Workspaces dá para criar um workspace vazio para o uso real e marcar o atual como de testes: nele nada sai da máquina (host de código, Plan das specs, notas de cartão).",
   "ui.help.data.specs.term": "<docs.specsDir>",
   "ui.help.data.specs.text": "Specs que o app lê e, nas escritas acima, onde grava o Registro do Plan, o QA_CHECKLIST.md e o diagrama do gate.",
   "ui.help.data.theme.term": "Tema",

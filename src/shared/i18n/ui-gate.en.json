@@ -190,7 +190,7 @@
   "ui.help.cmd.next.text": "Moves on to the next agent. On the last activity, it closes the agenda. It must be at the start of the sentence.",
   "ui.help.data.intro": "Everything is a local file; nothing goes to a server of ours.",
   "ui.help.data.minutesFile": "YYYY-MM-DD-pre-daily.md",
-  "ui.help.data.shared.text": "What applies to all workspaces: browser access and paired devices, the glossary and the conflict verification commands. In Settings › Workspaces you can create an empty workspace for real use and mark the current one as a test workspace: in it nothing leaves the machine (code host, the specs’ Plan, card notes).",
+  "ui.help.data.shared.text": "What applies to all workspaces: browser access and paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification). In Settings › Workspaces you can create an empty workspace for real use and mark the current one as a test workspace: in it nothing leaves the machine (code host, the specs’ Plan, card notes).",
   "ui.help.data.specs.term": "<docs.specsDir>",
   "ui.help.data.specs.text": "Specs the app reads and, in the writes above, where it saves the Plan log, QA_CHECKLIST.md and the gate diagram.",
   "ui.help.data.theme.term": "Theme",

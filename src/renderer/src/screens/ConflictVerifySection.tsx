@@ -7,12 +7,13 @@ import { isWeb } from '../platform';
 
 const EXAMPLE_COMMAND = 'source ~/.nvm/nvm.sh; nvm use 18 >/dev/null; ln -sfn "$CLONE_DIR/node_modules" node_modules; npx jest'; // i18n-ignore: shell command
 
-// Per project: the shell command that checks a conflict resolution in its worktree before the merge is committed.
+// Per project of this workspace: the shell command that checks a conflict resolution in its worktree before the merge is committed.
 export function ConflictVerifySection() {
   const t = useT();
   const [projects, setProjects] = useState<string[]>([]);
   const [commands, setCommands] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, string>>({});
+  const [unclaimed, setUnclaimed] = useState<Record<string, string>>({});
   const [extra, setExtra] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +24,7 @@ export function ConflictVerifySection() {
       setProjects(c.projects);
       setCommands(c.commands);
       setSaved(c.commands);
+      setUnclaimed(c.unclaimed);
     }).catch((e) => setError(errorText(e)));
   }, []);
 
@@ -36,6 +38,7 @@ export function ConflictVerifySection() {
       setProjects(c.projects);
       setCommands(c.commands);
       setSaved(c.commands);
+      setUnclaimed(c.unclaimed);
       setMessage(t('ui.verify.saved'));
     } catch (e) {
       setError(errorText(e));
@@ -49,6 +52,12 @@ export function ConflictVerifySection() {
     setExtra('');
   };
 
+  const useHere = (project: string) => {
+    if (!projects.includes(project)) setProjects([...projects, project].sort());
+    setCommands({ ...commands, [project]: unclaimed[project] });
+  };
+  const orphans = Object.keys(unclaimed).filter((p) => !(p in commands)).sort();
+
   return (
     <section className="panel" style={{ padding: 20, gap: 14 }}>
       <div>
@@ -56,8 +65,10 @@ export function ConflictVerifySection() {
         <p className="small muted" style={{ marginTop: 4 }}>
           {tNodes('ui.verify.hint', { command: <code className="mono">{EXAMPLE_COMMAND}</code> })}
         </p>
+        <p className="small muted">{t('ui.verify.scope')}</p>
         {web && <p className="small muted">{t('ui.verify.webNote')}</p>}
       </div>
+      {!projects.length && <p className="small muted">{t('ui.verify.empty')}</p>}
       {projects.map((p) => (
         <div key={p} className="settings-row">
           <label htmlFor={`cv-${p}`} className="mono" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{p}</label>
@@ -82,6 +93,19 @@ export function ConflictVerifySection() {
           <input className="text-input mono" style={{ maxWidth: 320 }} placeholder={t('ui.verify.otherPlaceholder')} aria-label={t('ui.verify.otherAria')} value={extra} onChange={(e) => setExtra(e.target.value)} />
           <button type="button" className="btn" disabled={!extra.trim()} onClick={addProject}>{t('ui.verify.add')}</button>
           <button type="button" className="btn btn-dark" disabled={!dirty} onClick={() => void save()}>{t('ui.verify.save')}</button>
+        </div>
+      )}
+      {orphans.length > 0 && (
+        <div role="note" style={{ display: 'grid', gap: 8, padding: 12, borderRadius: 10, border: '1px solid var(--field-line)' }}> {/* i18n-ignore: CSS values */}
+          <strong>{t('ui.verify.unclaimed.title')}</strong>
+          <span className="small muted">{t('ui.verify.unclaimed.hint')}</span>
+          {orphans.map((p) => (
+            <div key={p} className="row" style={{ minWidth: 0, flexWrap: 'nowrap' }}>
+              <span className="mono small" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{p}</span>
+              <span className="mono small muted" style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{unclaimed[p]}</span>
+              {!web && <button type="button" className="btn" onClick={() => useHere(p)}>{t('ui.verify.unclaimed.use')}</button>}
+            </div>
+          ))}
         </div>
       )}
       {message && <div className="small muted">{message}</div>}
