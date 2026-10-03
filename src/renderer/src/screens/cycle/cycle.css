@@ -112,6 +112,7 @@
   .cy-top { flex-wrap: wrap; }
   .cy-timeline-panel, .cy-review, .cy-now-panel { padding: 14px; }
   .cy-facts { flex-direction: column; gap: 4px; }
+  .cy-role { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cy-switch-knob { transition: none; }

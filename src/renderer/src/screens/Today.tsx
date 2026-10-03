@@ -10,6 +10,8 @@ import { useIsPhone } from '../useIsPhone';
 import { useWatcherAlerts } from '../watchersApi';
 import { BellIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
+import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
+import { useRuns } from './cycle/runsApi';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
@@ -41,7 +43,9 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
   const ready = cards.filter((card) => c.turns[card.ref]).length;
   // `cards` is already in the agenda's order (blocked, priority, last update): Today lists them as the call will, without sorting again.
-  const blocked = cards.filter((card) => card.blockers.length);
+  // A run stopped on a question or a failure blocks its card as much as a blocker the tracker shows.
+  const runs = useRuns();
+  const blocked = cards.filter((card) => card.blockers.length || (runs && isRunBlocker(runOfCard(runs, card.ref))));
   const asking = pendingQuestions(cards, c.turns, c.answered);
   const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;

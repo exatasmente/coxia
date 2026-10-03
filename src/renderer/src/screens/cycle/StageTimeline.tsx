@@ -104,7 +104,7 @@ function Row({ run, row, comments, config, web, go, view }: { run: Run; row: Sta
         {agent && (
           <p className="small cy-meta">
             <strong>{agentName(team, agent)}</strong>
-            {agentRole(team, agent) ? <span className="faint"> · {agentRole(team, agent)}</span> : null}
+            {agentRole(team, agent) ? <span className="faint cy-role"> · {agentRole(team, agent)}</span> : null}
             <span className={`badge cy-autonomy ${autonomous ? 'cy-auto-on' : 'cy-auto-off'}`}>{t(autonomous ? 'ui.cycle.stage.autonomous' : 'ui.cycle.stage.waitsForYou')}</span>
           </p>
         )}
