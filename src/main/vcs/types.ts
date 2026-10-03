@@ -178,6 +178,15 @@ export interface MyMrOptions {
   limit?: number;
 }
 
+export interface IssueListOptions {
+  /** The project whose open issues are listed, whoever they are assigned to. */
+  project: string;
+  /** `labels` keeps the issues that carry any of `labels`. */
+  scope: 'all' | 'labels';
+  labels?: string[];
+  limit?: number;
+}
+
 export interface VcsProvider {
   readonly kind: VcsKind;
   readonly id: string;
@@ -189,6 +198,8 @@ export interface VcsProvider {
 
   // issues
   listMyIssues(opts?: { project?: string | null; limit?: number }): Promise<VcsIssue[]>;
+  /** The open issues of one project, newest update first; throws `unsupported` for a label scope on a host whose issues have no labels. */
+  listIssues(opts: IssueListOptions): Promise<VcsIssue[]>;
   /** `status` also reads the workflow status and the global id (a second call on GitLab); its failure is the caller's. */
   getIssue(project: string, iid: number, opts?: { status?: boolean }): Promise<VcsIssue>;
   /** Workflow status by issue number; an empty map when the host has none or the read failed. */

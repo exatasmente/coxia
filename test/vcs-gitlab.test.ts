@@ -381,3 +381,67 @@ describe('the executor', () => {
     expect(host?.hits.filter((h) => h.method === 'POST')).toHaveLength(1);
   });
 });
+
+describe('the open issues of a project, whoever they are assigned to', () => {
+  const issue = (iid: number, updated: string, labels: string[] = []) => ({ ...F.issues_assigned[0], id: 9000 + iid, iid, title: `Issue ${iid}`, labels, updated_at: updated });
+  const route = `GET /api/v4/projects/${P}/issues`;
+  const gql = { 'POST /api/graphql': { json: F.workitem_status } };
+
+  it('reads the open issues of the project with an explicit scope, and fills the status', async () => {
+    const rt = await api({ [route]: { json: F.issues_assigned }, ...gql });
+    const issues = await rt.provider.listIssues({ project: 'acme/app', scope: 'all' });
+    expect(host?.log()[0]).toBe(`GET /api/v4/projects/${P}/issues?scope=all&state=opened&order_by=updated_at&per_page=100&page=1`);
+    expect(issues.map((i) => [i.project, i.iid, i.status])).toEqual([['acme/app', 102, null], ['acme/app', 101, 'In development']]);
+  });
+
+  it('asks one read per label, merges by issue number and orders by the last update', async () => {
+    const byLabel: Record<string, unknown[]> = {
+      bug: [issue(1, '2026-10-01T10:00:00Z', ['bug']), issue(2, '2026-09-01T10:00:00Z', ['bug', 'ready'])],
+      ready: [issue(2, '2026-09-01T10:00:00Z', ['bug', 'ready']), issue(3, '2026-10-02T10:00:00Z', ['ready'])],
+    };
+    const rt = await api({ [route]: (h: { query: URLSearchParams }) => ({ json: byLabel[h.query.get('labels') ?? ''] ?? [] }), ...gql });
+    const issues = await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['bug', 'ready', 'Bug'] });
+    const reads = host?.log().filter((l) => l.includes('/issues?')) ?? [];
+    expect(reads.map((l) => /labels=([^&]*)/.exec(l)?.[1]).sort()).toEqual(['bug', 'ready']);
+    expect(issues.map((i) => i.iid)).toEqual([3, 1, 2]);
+  });
+
+  it('encodes a scoped label with spaces and colons', async () => {
+    const rt = await api({ [route]: { json: [] }, ...gql });
+    await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['STAGE:: Doing'] });
+    expect(host?.hits[0].query.get('labels')).toBe('STAGE:: Doing');
+  });
+
+  it('is an empty list for a label nothing carries, and for a label scope with no label (no request)', async () => {
+    const rt = await api({ [route]: { json: [] }, ...gql });
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['nothing'] })).toEqual([]);
+    const before = host?.log().length;
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: [] })).toEqual([]);
+    expect(host?.log().length).toBe(before);
+  });
+
+  it('cuts at the limit and reads the pages the limit needs', async () => {
+    const many = (from: number) => Array.from({ length: 100 }, (_, i) => issue(from + i, `2026-10-01T10:${String(59 - ((from + i) % 60)).padStart(2, '0')}:00Z`));
+    const rt = await api({ [route]: (h: { query: URLSearchParams }) => ({ json: many(h.query.get('page') === '1' ? 1 : 101) }), ...gql });
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'all', limit: 100 })).toHaveLength(100);
+    expect(host?.log().filter((l) => l.includes('/issues?'))).toHaveLength(1);
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'all' })).toHaveLength(200);
+  });
+
+  it('accepts the numeric project id and refuses a path that is not a project', async () => {
+    const rt = await api({ 'GET /api/v4/projects/7/issues': { json: [issue(5, '2026-10-01T10:00:00Z')] } });
+    expect((await rt.provider.listIssues({ project: '7', scope: 'all' })).map((i) => i.iid)).toEqual([5]);
+    await expect(rt.provider.listIssues({ project: '../x', scope: 'all' })).rejects.toBeInstanceOf(VcsError);
+  });
+
+  it('asks glab for the same endpoint', async () => {
+    const calls: string[][] = [];
+    const run: CliRun = async (_f, args) => {
+      calls.push(args);
+      return JSON.stringify([]);
+    };
+    const rt = buildRuntime(settings({ preference: 'cli' }), { token: () => 'unused', env: () => ({}), run });
+    await rt.provider.listIssues({ project: 'acme/app', scope: 'all' });
+    expect(calls).toEqual([['api', `projects/${P}/issues?scope=all&state=opened&order_by=updated_at&per_page=100&page=1`]]);
+  });
+});

@@ -238,6 +238,19 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       return lists.flat().slice(0, opts.limit ?? 200);
     },
 
+    async listIssues(opts) {
+      // The tracker has no labels: a label scope would show every issue, so it is refused instead of widened.
+      if (opts.scope === 'labels') throw new VcsError('unsupported', { kind: 'Bitbucket', what: t('vcs.write.labels') });
+      try {
+        const rows = await c.values<BbIssue>(`${repo(opts.project)}/issues`, { query: { q: ISSUE_OPEN, sort: '-updated_on' }, maxPages: 2 });
+        return rows.slice(0, opts.limit ?? 200).map((i) => issueOf(i, opts.project));
+      } catch (e) {
+        // A repository with the tracker off answers 404: it has no issues, which is not an error.
+        if (e instanceof VcsError && e.code === 'not_found') return [];
+        throw e;
+      }
+    },
+
     async getIssue(project, iid) {
       return issueOf(await c.getJson<BbIssue>(`${repo(project)}/issues/${checkIid(iid)}`, undefined, `#${iid}`), project);
     },
