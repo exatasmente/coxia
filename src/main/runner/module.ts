@@ -1,4 +1,5 @@
-import { HOME, ATAS } from '../env';
+import { join } from 'node:path';
+import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
 import { RunError, isFlowCycle } from '../../shared/runs';
@@ -6,6 +7,7 @@ import type { Module } from '../module';
 import { runStore } from '../runs';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
+import { createSandboxService } from '../sandbox';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone } from './door';
 import { createPublisher } from './publish';
@@ -42,8 +44,13 @@ const id = (v: unknown): string => {
   return v;
 };
 
+/** The sandbox of the running workspace's agents. Its folders live under the workspace's data and are the app's own: nothing from an earlier process is kept. */
+export const sandbox = createSandboxService({ dir: join(ATAS, 'sandbox'), home: HOME, protect: [DATA_ROOT] });
+
 export const runsModule: Module = (ctx) => {
+  sandbox.purge();
   const r = createRunner({
+    sandbox,
     runs: runStore(),
     forum: forumStore(),
     config: getConfig,
@@ -67,6 +74,9 @@ export const runsModule: Module = (ctx) => {
   interceptPosts((thread, body) => r.answerPost(thread, body));
   forumStore().subscribe((m) => r.onMessage(m));
 
+  // Whether this computer can make a sandbox, for the team editor to offer the option; `probe` asks again. Neither changes anything.
+  ctx.handle('sandbox:status', () => sandbox.status());
+  ctx.handle('sandbox:probe', () => sandbox.status(true));
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
   // A document a stage produced, for the run screen to show: read only, from the run's own cycle folder, and open to a paired browser like the thread beside it.

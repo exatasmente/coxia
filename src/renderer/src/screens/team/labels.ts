@@ -1,4 +1,5 @@
-import type { AgentPermission, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { SandboxReason } from '../../../../shared/sandbox';
+import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
 import type { TeamTab } from './teamNav';
 
 // The catalog keys of the values a screen of the team and cycle shows by name. Tables, not built keys, so each key is written out where a search and the
@@ -15,6 +16,20 @@ export const TAB_LABEL: Record<TeamTab, string> = {
 export const PERMISSION_HINT: Record<AgentPermission, string> = {
   read: 'ui.team.permission.read.hint',
   worktree: 'ui.team.permission.worktree.hint',
+};
+
+export const TRACKER_LABEL: Record<AgentTracker, string> = { none: 'ui.team.tracker.none', read: 'ui.team.tracker.read' };
+export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.tracker.none.hint', read: 'ui.team.tracker.read.hint' };
+export const SHELL_LABEL: Record<AgentShell, string> = { none: 'ui.team.shell.none', allowlist: 'ui.team.shell.allowlist', sandbox: 'ui.team.shell.sandbox' };
+export const SHELL_HINT: Record<AgentShell, string> = { none: 'ui.team.shell.none.hint', allowlist: 'ui.team.shell.allowlist.hint', sandbox: 'ui.team.shell.sandbox.hint' };
+
+export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry' };
+export const SANDBOX_REASON_LABEL: Record<SandboxReason, string> = {
+  platform: 'ui.sandbox.reason.platform',
+  'no-bwrap': 'ui.sandbox.reason.no-bwrap',
+  refused: 'ui.sandbox.reason.refused',
+  'no-prlimit': 'ui.sandbox.reason.no-prlimit',
+  'no-timeout': 'ui.sandbox.reason.no-timeout',
 };
 
 export const TYPE_LABEL: Record<StageType, string> = { work: 'ui.flow.type.work', gate: 'ui.flow.type.gate', wait: 'ui.flow.type.wait' };

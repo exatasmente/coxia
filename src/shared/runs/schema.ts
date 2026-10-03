@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -105,15 +105,15 @@ const qaRecord = object(
     scenarios: {
       type: 'array',
       description: 'The scenarios checked.',
-      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }), severity: enumOf('Whether a failure sends the work back; absent: blocking.', SCENARIO_SEVERITIES) }, ['name', 'result', 'detail']),
+      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }), severity: enumOf('Whether a failure sends the work back; absent: blocking.', SCENARIO_SEVERITIES), evidence: enumOf('executed: the agent ran something in its sandbox to check it; read: it only looked.', SCENARIO_EVIDENCE), unbacked: { type: 'boolean', description: 'Claimed as executed and nothing of the stage\'s commands backs it.' }, commands: { type: 'array', description: 'Numbers of the stage\'s commands the scenario rests on.', items: { type: 'integer', minimum: 1, maximum: 10_000 }, maxItems: 50 } }, ['name', 'result', 'detail']),
       maxItems: 200,
     },
     head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },
     commands: {
       type: 'array',
       description: 'The commands the app ran before this pass.',
-      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' } }, ['command', 'exitCode', 'timedOut']),
-      maxItems: 20,
+      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' }, n: { type: 'integer', description: 'Its number in the stage\'s list (a stage that ran in a sandbox).', minimum: 1, maximum: 10_000 }, by: enumOf('Who ran it, in that case.', ['app', 'agent']) }, ['command', 'exitCode', 'timedOut']),
+      maxItems: 200,
     },
   },
   ['stage', 'by', 'at', 'summary', 'scenarios', 'head'],

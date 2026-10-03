@@ -4,7 +4,7 @@ import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
+import { type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
@@ -13,6 +13,9 @@ import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type CommandResult, type CommandRunner, runCommand, runCommands } from './commands';
+import { recordWrite } from '../auditoria';
+import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
+import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
@@ -20,7 +23,7 @@ import { type CommentAsk, type StageInput, stagePrompt, systemText } from './pro
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -44,6 +47,8 @@ export interface ExecutorDeps {
   identity?: (wt: string) => Promise<Identity | null>;
   /** Runs the commands QA is given the results of (the real one by default). */
   commandRunner?: CommandRunner;
+  /** Makes the sandbox of an agent set to `shell: sandbox`. Without one, a stage of such an agent fails: it never runs its commands unsandboxed. */
+  sandbox?: SandboxService;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -165,16 +170,85 @@ export function watchdog(abort: AbortController, limits: Limits): Watchdog {
 /** The old shape, for a caller with one number: that long of silence, and that long in all. */
 export const withLimit = <T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> => watchdog(abort, { idleMs: ms, maxMs: ms }).guard(work);
 
+/** The commands the app runs before QA, through the stage's sandbox: the same result shape as when the app runs them itself. */
+export const sessionRunner = (session: SandboxSession): CommandRunner => async (_cwd, command) => {
+  const r = await session.exec(command);
+  return { command, exitCode: r.exitCode, timedOut: r.timedOut, output: r.output, ms: r.ms };
+};
+
+const clipText = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/** What the thread says about a command of a sandbox: how it ended. */
+const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }));
+
+/**
+ * Makes the sandbox of the stage, and tells the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot
+ * make one fails the stage: the agent is set to run commands in a sandbox, and nothing here falls back to running them without.
+ */
+async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean): Promise<SandboxSession> {
+  const config = d.config();
+  const threadId = runThreadId(run.id);
+  if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
+  const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(r.command.replace(/\s+/g, ' '), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
+      if (mode === 'run') {
+        recordWrite({
+          kind: 'exec',
+          issue: run.issue.iid,
+          target: redact(clipText(r.command, 300)),
+          via: 'sandbox',
+          fields: { agent: agent.id, run: run.id, stage: stage.id, n: String(r.n), ms: String(r.ms), timedOut: String(r.timedOut) },
+          ok: r.exitCode === 0,
+          code: r.exitCode,
+          result: r.output.slice(-300),
+          origin: { actionId: '', kind: 'run-exec', key: `${run.id}:${stage.id}`, summary: null },
+          by: agent.id,
+        });
+      }
+    } catch (e) {
+      console.error('[runner] could not record a command', e instanceof Error ? e.message : e);
+    }
+  };
+  const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.proxy', params: { agent: agent.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a request of the proxy', e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy });
+  } catch (e) {
+    if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
+    throw e;
+  }
+}
+
 /**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
  */
 export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void): Promise<StageRun> {
   const config = d.config();
-  const { agent, stage, kind } = pickAgent(config, run, flow);
+  const { agent, stage } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
+  const writes = agent.permission === 'worktree';
+  const session = agent.shell === 'sandbox' ? await openStageSandbox(d, run, stage, agent, writes) : null;
+  try {
+    return await runStage(d, run, flow, abort, usage, session);
+  } finally {
+    // Whatever happened, nothing the stage started outlives it.
+    await session?.close();
+  }
+}
+
+async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null): Promise<StageRun> {
+  const config = d.config();
+  const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
-  const commands = writes ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
+  // The commands of the workspace's list, exactly as written: only for an agent that writes and is set to them (an agent saved before `shell` existed is).
+  const commands = writes && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;
@@ -201,8 +275,9 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;
 
   // QA is a reader: it cannot run anything, so the app runs what the workspace allows before it and gives it the results.
-  const ran: CommandResult[] | undefined = kind === 'qa' && !writes ? await runCommands(config.runner.commands ?? (await declaredCommands(wt, run.base)), wt, d.commandRunner ?? runCommand, abort.signal) : undefined;
-  if (ran?.length) {
+  const ran: CommandResult[] | undefined = kind === 'qa' && !writes ? await runCommands(config.runner.commands ?? (await declaredCommands(wt, run.base)), wt, session ? sessionRunner(session) : (d.commandRunner ?? runCommand), abort.signal) : undefined;
+  // Inside a sandbox every command already told the thread as it ran; the app's own run before QA is announced as one line.
+  if (ran?.length && !session) {
     const list = ran.map((r) => `${r.command} (${r.timedOut ? 'timeout' : (r.exitCode ?? '—')})`).join(', ');
     d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.commands', params: { list }, stage: stage.id });
   }
@@ -230,6 +305,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     turnsTo: askTarget(config, agent),
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
+    numberedCommands: !!session,
+    sandbox: session ? { network: config.runner.sandbox.network, reader: !writes } : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -245,10 +322,11 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id) }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,
+    exec: session ?? undefined,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
@@ -263,9 +341,16 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     throw e;
+  } finally {
+    // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.
+    await session?.close();
   }
 
   const output = readOutput(data, kind);
+  // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
+  if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, session?.log ?? [], !!session);
+  // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's.
+  const ranInSandbox: CommandResult[] | undefined = session ? session.log.filter((e) => !e.refused).map((e) => ({ command: e.command, exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })) : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];
@@ -277,7 +362,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(a.content, run.issue));
     written.push(a.name);
   }
-  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ran ? { commands: ran } : {}) };
+  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });
@@ -291,6 +376,6 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const code = writes && !noCodeChange;
   const fallback = commitFallback(stage.label, code);
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
-  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ran ? { commands: ran } : {}) };
+  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
 

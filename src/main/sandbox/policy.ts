@@ -107,6 +107,10 @@ export const SUPERVISOR_SH = `#!/bin/sh
 if [ -n "$COXIA_PROXY" ]; then
   command -v node >/dev/null 2>&1 || { echo no-node; exit 3; }
   node ${CTL}/forward.js >/dev/null 2>&1 &
+  # Ready means the forwarder listens: a command that runs at once must find the proxy.
+  i=0
+  while [ ! -e ${OUT}/forward.ready ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  [ -e ${OUT}/forward.ready ] || { echo no-forwarder; exit 4; }
 fi
 echo ready
 while IFS=' ' read -r id token secs; do
@@ -128,5 +132,5 @@ net.createServer((c) => {
   const end = () => { c.destroy(); u.destroy(); };
   c.on('error', end); u.on('error', end);
   c.pipe(u); u.pipe(c);
-}).listen(${PROXY_PORT}, '127.0.0.1');
+}).listen(${PROXY_PORT}, '127.0.0.1', () => require('fs').writeFileSync('${OUT}/forward.ready', '1'));
 `;

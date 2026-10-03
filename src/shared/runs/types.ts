@@ -176,11 +176,21 @@ export type ScenarioResult = (typeof SCENARIO_RESULTS)[number];
 export const SCENARIO_SEVERITIES = ['blocking', 'non-blocking'] as const;
 export type ScenarioSeverity = (typeof SCENARIO_SEVERITIES)[number];
 
+/** What a QA scenario rests on: the agent ran something in its sandbox to check it (`executed`), or only looked at code, documents and results (`read`). */
+export const SCENARIO_EVIDENCE = ['executed', 'read'] as const;
+export type ScenarioEvidence = (typeof SCENARIO_EVIDENCE)[number];
+
 export interface Scenario {
   name: string;
   result: ScenarioResult;
   detail: string;
   severity?: ScenarioSeverity;
+  /** Absent in a pass recorded before the field existed (it was read, as nothing could be run). */
+  evidence?: ScenarioEvidence;
+  /** The agent claimed `executed` and the app found nothing of the stage's commands behind it: it is recorded as `read` and labelled. */
+  unbacked?: boolean;
+  /** The numbers (in the stage's command list) of the commands an `executed` scenario rests on. */
+  commands?: number[];
 }
 
 /** What the QA agent checked. */
@@ -200,6 +210,10 @@ export interface QaCommand {
   command: string;
   exitCode: number | null;
   timedOut: boolean;
+  /** Its number in the stage's list, when the stage ran in a sandbox (the app's own commands first, then the agent's). */
+  n?: number;
+  /** Who ran it, in that case. */
+  by?: 'app' | 'agent';
 }
 
 export interface RunIssue {

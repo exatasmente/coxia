@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RunnerConfig } from '../../../../shared/config/types';
+import type { RunnerConfig, SandboxNetwork } from '../../../../shared/config/types';
+import { SANDBOX_LIMIT_RANGES } from '../../../../shared/sandboxPaths';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerOfWeb, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
+import { SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL } from './labels';
+import { useSandboxStatus } from './sandboxStatus';
 
 /**
  * Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as.
@@ -123,6 +126,8 @@ export function RunnerSection({ config, save }: SectionProps) {
         </fieldset>
       )}
 
+      <SandboxBlock draft={draft} set={set} stored={config.runner} web={web} at={at} />
+
       <Labeled label={t('ui.runner.commit')} hint={t('ui.runner.commitHint')} error={at('commitMessage')}>
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
       </Labeled>
@@ -155,5 +160,73 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dt className="wz-label">{t('ui.runner.identity')}</dt>
       <dd className="small">{identity}</dd>
     </dl>
+  );
+}
+
+const LIMIT_FIELDS = [
+  ['commandMs', 'ui.runner.sandbox.limit.commandMs', 1000],
+  ['stageMs', 'ui.runner.sandbox.limit.stageMs', 60_000],
+  ['memoryMb', 'ui.runner.sandbox.limit.memoryMb', 1],
+  ['processes', 'ui.runner.sandbox.limit.processes', 1],
+  ['fileMb', 'ui.runner.sandbox.limit.fileMb', 1],
+  ['copyMb', 'ui.runner.sandbox.limit.copyMb', 1],
+] as const;
+
+/**
+ * What the sandbox of an agent that runs commands may reach and use. Only the computer changes it: a paired browser is shown what is set. The network switch is a window to
+ * the listed hosts only (through a filtering proxy), and the text next to it says so.
+ */
+function SandboxBlock({ draft, set, stored, web, at }: { draft: RunnerDraft; set: (p: Partial<RunnerDraft>) => void; stored: RunnerConfig; web: boolean; at: (field: string) => string | undefined }) {
+  const t = useT();
+  const { status, check, checking } = useSandboxStatus();
+  const sb = web ? stored.sandbox : draft.sandbox;
+  const setSb = (patch: Partial<RunnerDraft['sandbox']>) => set({ sandbox: { ...draft.sandbox, ...patch } });
+  const num = (v: string): number => (v === '' ? Number.NaN : Number(v));
+  const network: SandboxNetwork = sb.network;
+  return (
+    <fieldset className="wz-fieldset">
+      <legend className="wz-label">{t('ui.runner.sandbox')}</legend>
+      <p className="small muted">{t('ui.runner.sandbox.hint')}</p>
+      <p className="small" role="status">
+        {status === null ? t('ui.runner.sandbox.checking') : status.available ? t('ui.runner.sandbox.available', { version: status.version ?? '' }) : t('ui.runner.sandbox.unavailable', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}
+        {!web && <button type="button" className="btn" style={{ marginLeft: 8 }} disabled={checking} onClick={check}>{t('ui.runner.sandbox.check')}</button>}
+      </p>
+      {web ? (
+        <dl className="tm-readonly" aria-label={t('ui.runner.webOnComputer')}>
+          <dt className="wz-label">{t('ui.runner.sandbox.network')}</dt>
+          <dd className="small">{t(SANDBOX_NETWORK_LABEL[network])}</dd>
+          <dt className="wz-label">{t('ui.runner.sandbox.hosts')}</dt>
+          <dd className="mono small">{sb.registryHosts.join(', ') || '—'}</dd>
+          <dt className="wz-label">{t('ui.runner.sandbox.paths')}</dt>
+          <dd className="mono small">{sb.readOnlyPaths.join(', ') || t('ui.runner.sandbox.pathsNone')}</dd>
+        </dl>
+      ) : (
+        <>
+          <div role="group" aria-label={t('ui.runner.sandbox.network')} className="wz-pills">
+            {(['off', 'registry'] as const).map((n) => (
+              <button key={n} type="button" aria-pressed={network === n} className={`filter ${network === n ? 'on' : ''}`} onClick={() => setSb({ network: n })}>{t(SANDBOX_NETWORK_LABEL[n])}</button>
+            ))}
+          </div>
+          <p className="small muted">{network === 'off' ? t('ui.runner.sandbox.network.off.hint') : t('ui.runner.sandbox.network.registry.hint')}</p>
+          {network === 'registry' && (
+            <ChipsInput label={t('ui.runner.sandbox.hosts')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(host) => t('ui.runner.sandbox.hostRemove', { host })} values={sb.registryHosts} onChange={(registryHosts) => setSb({ registryHosts })} add={(list, text) => (text.trim() && !list.includes(text.trim().toLowerCase()) ? [...list, text.trim().toLowerCase()] : list)} error={at('sandboxHosts')} />
+          )}
+          <ChipsInput label={t('ui.runner.sandbox.paths')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(path) => t('ui.runner.sandbox.pathRemove', { path })} values={sb.readOnlyPaths} onChange={(readOnlyPaths) => setSb({ readOnlyPaths })} add={(list, text) => (text.trim() && !list.includes(text.trim()) ? [...list, text.trim()] : list)} error={at('sandboxPaths')} />
+          <p className="small muted">{t('ui.runner.sandbox.pathsHint')}</p>
+          <div className="wz-two">
+            {LIMIT_FIELDS.map(([key, label, unit]) => {
+              const [min, max] = SANDBOX_LIMIT_RANGES[key];
+              const shown = draft.sandbox.limits[key] / unit;
+              return (
+                <Labeled key={key} label={t(label)} hint={t('ui.runner.sandbox.limitRange', { min: min / unit, max: max / unit })}>
+                  {(id) => <input id={id} type="number" min={min / unit} max={max / unit} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(shown) ? '' : shown} onChange={(e) => setSb({ limits: { ...draft.sandbox.limits, [key]: Math.round(num(e.target.value) * unit) } })} />}
+                </Labeled>
+              );
+            })}
+          </div>
+          {at('sandboxLimits') && <div className="tm-field-error small" role="alert">{at('sandboxLimits')}</div>}
+        </>
+      )}
+    </fieldset>
   );
 }

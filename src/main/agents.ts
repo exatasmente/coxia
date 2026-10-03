@@ -26,7 +26,10 @@ import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, in
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
-import { vcsProvider } from './vcs';
+import { vcsProvider, vcsReady } from './vcs';
+import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
+import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME } from './sandbox/tool';
+import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
 
@@ -36,14 +39,14 @@ function trackerMcpTools(): string[] {
 }
 
 // Tools pre-approved for a role, from the workspace config; dontAsk denies everything else.
-function allowedFor(role: ModelRole): string[] {
+function allowedFor(role: ModelRole, host = true): string[] {
   if (role === 'teams') return [];
   const t = getConfig().agents.tools;
   return [
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
-    ...(t.trackerMcp ? trackerMcpTools() : []),
-    ...vcsReadPolicy().rules,
+    ...(host && t.trackerMcp ? trackerMcpTools() : []),
+    ...(host ? vcsReadPolicy().rules : []),
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
 }
@@ -266,11 +269,11 @@ export const redactSecretResults: HookCallback = async (input) => {
   return { hookSpecificOutput: { hookEventName: 'PostToolUse', updatedToolOutput: clean } };
 };
 
-export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks']> {
+export function agentHooks(patterns: RegExp[] = [], host = true): NonNullable<Options['hooks']> {
   // The shell allow-list follows the configured provider (glab for GitLab, gh for GitHub); a host with no CLI (Bitbucket, an API-only integration)
   // reads through the app's tool and has no shell command to allow, and it is not told about a CLI it does not have.
   const policy = vcsReadPolicy();
-  const cli = policy.via === 'cli';
+  const cli = host && policy.via === 'cli';
   return {
     PreToolUse: [
       { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage)] },
@@ -357,8 +360,10 @@ function extraDirs(cwd: string, role: ModelRole): string[] {
 // instead of the read-only ones, and a shell only for the exact commands it was given. Everything else stays denied.
 function sdkOptions(req: EngineRequest): Options {
   const confine = req.confine;
-  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns);
-  const shellOff = confine ? !req.shell.rules.length : !(vcsReadPolicy().via === 'cli' || req.shell.rules.length);
+  // A call with no code host read has no CLI to allow either: its shell is whatever commands it was given.
+  const host = (req.tracker ?? 'workspace') === 'workspace';
+  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host);
+  const shellOff = confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -411,19 +416,25 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
 
 // Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
 function wantsVcsTool(req: EngineRequest): boolean {
-  if (req.confine || req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
-  return vcsReadPolicy().via === 'tool';
+  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  const mode = req.tracker ?? 'workspace';
+  if (mode === 'none') return false;
+  // An agent that writes reads the host through the tool only, whichever read path the workspace has (the CLI would run beside repository code with the person's credentials).
+  if (req.confine) return mode === 'tool' && vcsReadPolicy().via !== 'none' && vcsReady();
+  return mode === 'workspace' && vcsReadPolicy().via === 'tool';
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider())] : []), ...(req.exec ? [shellToolImpl(req.exec)] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : [])];
   return runOpenOnce<T>({
     selection,
     prompt: req.prompt,
-    options: { ...sdkOptions(tool ? { ...req, allowedTools: [...req.allowedTools, VCS_READ_TOOL_NAME] } : req), model: req.target.model },
-    extraTools: tool ? [vcsReadToolImpl(() => vcsProvider())] : undefined,
+    options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
+    extraTools: extraTools.length ? extraTools : undefined,
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
@@ -459,7 +470,11 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const query = await loadClaudeQuery();
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
-  const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
+  const vcs = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
+  const shell = req.exec ? await shellMcpServer(req.exec) : null;
+  // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
+  if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));
+  const mcp = vcs || shell ? { ...(vcs ?? {}), ...(shell ?? {}) } : null;
   const env = claudeSdkEnv(req.target);
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
@@ -467,7 +482,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req), confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,
@@ -864,6 +879,8 @@ export interface AgentCall {
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
   cwd: string;
   confine?: Confinement;
+  /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
+  exec?: SandboxSession;
   /** What the live activity calls it (the agent's id). */
   label: string;
   maxTurns: number;
@@ -876,9 +893,35 @@ export interface AgentCall {
 
 // What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
 // An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given.
-function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy } {
-  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep'), shell: { rules: [], patterns: [] } };
-  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] } };
+function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']> } {
+  const tracker = trackerOf(call.agent, !!call.confine);
+  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace'), shell: { rules: [], patterns: [] }, tracker };
+  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker };
+}
+
+/**
+ * What an agent of a run may read from the code host. `none` gives it nothing; `read` gives a reader what the ceremonies get (the workspace's switches decide the path)
+ * and an agent that writes the `VcsRead` tool only. An agent saved before the field existed reads as it behaved: a reader had the host read, one that writes had none.
+ */
+export function trackerOf(agent: Pick<AgentDef, 'tracker' | 'permission'>, confined: boolean): NonNullable<EngineRequest['tracker']> {
+  const value = agent.tracker ?? (agent.permission === 'worktree' ? 'none' : 'read');
+  if (value === 'none') return 'none';
+  return confined ? 'tool' : 'workspace';
+}
+
+// The live activity shows the call the model made; this adds how it ended, once the command has.
+function withActivity(session: SandboxSession, activity: RunActivity): SandboxSession {
+  return {
+    exec: async (command) => {
+      const r = await session.exec(command);
+      activity.tool(r.refused ? `exit — ${r.refused}` : r.timedOut ? `exit — timeout (${Math.round(r.ms / 1000)}s)` : `exit ${r.exitCode ?? '—'} (${Math.max(1, Math.round(r.ms / 100) / 10)}s)`);
+      return r;
+    },
+    get log() {
+      return session.log;
+    },
+    close: () => session.close(),
+  };
 }
 
 /**
@@ -891,7 +934,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   const activity = beginActivity(call.label, (p) => secretPath(p, call.cwd));
   activity.status('started');
   try {
-    const { allowedTools, shell } = toolsOf(call);
+    const { allowedTools, shell, tracker } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
     const r = await runnerFor(target)<T>({
@@ -907,6 +950,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       extra: { maxTurns: call.maxTurns },
       activity,
       confine: call.confine,
+      tracker,
+      exec: call.exec ? withActivity(call.exec, activity) : undefined,
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,

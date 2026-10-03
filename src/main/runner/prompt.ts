@@ -35,6 +35,10 @@ export interface StageInput {
   answer: { question: string; text: string; by: string } | null;
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
+  /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
+  sandbox?: { network: 'off' | 'registry'; reader: boolean };
+  /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
+  numberedCommands?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
   earlier?: ReviewRecord[];
   /** The branch's diff, for the stage that reads it. */
@@ -87,6 +91,8 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
+    i.sandbox ? (i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox?.reader ? cp('runner.rules.shellReader') : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
     agents.persona.trim(),
@@ -116,10 +122,10 @@ export function commentPrompt(i: StageInput): string {
 }
 
 /** What the app ran before QA, as the stage reads it: each command with how it ended and the end of its output, or the plain statement that nothing ran. */
-export function commandsSection(results: CommandResult[]): string {
+export function commandsSection(results: CommandResult[], numbered = false): string {
   if (!results.length) return cp('runner.section.commandsNone');
   const head = (r: CommandResult): string => (r.timedOut ? cp('runner.commands.timeout', { command: r.command }) : r.exitCode === null ? cp('runner.commands.notRun', { command: r.command }) : cp('runner.commands.exit', { command: r.command, code: r.exitCode }));
-  const text = results.map((r) => `${head(r)}\n${r.output ? fence(r.output) : cp('runner.commands.noOutput')}`).join('\n\n');
+  const text = results.map((r, i) => `${numbered ? `#${i + 1} ` : ''}${head(r)}\n${r.output ? fence(r.output) : cp('runner.commands.noOutput')}`).join('\n\n');
   return cp('runner.section.commands', { text });
 }
 
@@ -142,7 +148,7 @@ export function stagePrompt(i: StageInput): string {
     const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
-  if (i.commandResults) sections.push(commandsSection(i.commandResults));
+  if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
@@ -155,6 +161,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

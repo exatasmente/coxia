@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
 import { squadsOf } from '../../../../shared/config/squads';
-import { removeAgent } from '../../../../shared/config/team';
-import { LLM_ROLES, type AgentDef, type AgentPermission, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
-import { applyAgent, agentProblems, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
-import { PERMISSION_HINT } from './labels';
+import { isWeb } from '../../platform';
+import { applyAgent, agentProblems, blankAgent, draftOf, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { PERMISSION_HINT, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { Recommended } from './Recommended';
+import { useSandboxStatus } from './sandboxStatus';
 import { teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
 import { Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
@@ -46,6 +49,7 @@ export function TeamSection(props: SectionProps) {
           <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
+        {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
           {config.agents.team.map((a) => {
             const works = stagesOfAgent(config, a);
@@ -67,6 +71,8 @@ export function TeamSection(props: SectionProps) {
                   <div><dt>{t('ui.team.squad')}</dt><dd>{squad ? squadName(squad) : t('ui.team.shared')}</dd></div>
                   <div><dt>{t('ui.team.stages')}</dt><dd>{works.length ? works.map((s) => s.label || s.id).join(', ') : t('ui.team.noStages')}</dd></div>
                   <div><dt>{t('ui.team.permission')}</dt><dd>{t(`ui.team.permission.${a.permission}`)}</dd></div>
+                  {!a.system && <div><dt>{t('ui.team.tracker')}</dt><dd>{t(TRACKER_LABEL[a.tracker])}</dd></div>}
+                  {!a.system && <div><dt>{t('ui.team.shell')}</dt><dd>{t(SHELL_LABEL[a.shell])}</dd></div>}
                   <div><dt>{t('ui.team.model')}</dt><dd>{modelText(config, a, t)}</dd></div>
                   <div><dt>{t('ui.team.turnsTo')}</dt><dd>{a.turnsTo ? agentNameById(config, a.turnsTo) : t('ui.team.thePerson')}</dd></div>
                 </dl>
@@ -165,12 +171,13 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
 
         <Labeled label={t('ui.team.f.permission')} hint={t(PERMISSION_HINT[draft.permission])}>
           {(id) => (
-            <select id={id} className="text-input" value={draft.permission} onChange={(e) => set({ permission: e.target.value as AgentPermission })}>
+            <select id={id} className="text-input" value={draft.permission} onChange={(e) => set({ permission: e.target.value as AgentPermission, shell: shellAfterPermission(draft.shell, e.target.value as AgentPermission) })}>
               <option value="read">{t('ui.team.permission.read')}</option>
               <option value="worktree">{t('ui.team.permission.worktree')}</option>
             </select>
           )}
         </Labeled>
+        <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
 
@@ -218,6 +225,44 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
         {system && <p className="small muted">{t('ui.team.systemNote')}</p>}
       </form>
     </SidePanel>
+  );
+}
+
+/**
+ * The two permissions of a run: what the agent may read of the code host and what it may run. A value the person cannot give is not offered: `allowlist` is for an agent that
+ * writes, `sandbox` only where this computer can make one, and from a paired browser nothing above what the agent has now (an agent made there has neither).
+ */
+function PermissionFields({ config, initial, draft, isNew, set, error }: { config: WorkspaceConfig; initial: AgentDraft; draft: AgentDraft; isNew: boolean; set: (p: Partial<AgentDraft>) => void; error?: string }) {
+  const t = useT();
+  const web = isWeb();
+  const { status } = useSandboxStatus();
+  const sandbox = status?.available === true;
+  const was = { tracker: isNew ? 'none' : initial.tracker, shell: isNew ? 'none' : initial.shell } as { tracker: AgentTracker; shell: AgentShell };
+  const trackerChoices = AGENT_TRACKERS.filter((v) => !web || v === draft.tracker || !trackerRaised(was.tracker, v));
+  const shellChoices = AGENT_SHELLS.filter((v) => (v !== 'allowlist' || draft.permission === 'worktree' || draft.shell === v) && (v !== 'sandbox' || sandbox || draft.shell === v) && (!web || v === draft.shell || !shellRaised(was.shell, v)));
+  const sb = config.runner.sandbox;
+  return (
+    <>
+      <Labeled label={t('ui.team.f.tracker')} hint={t(TRACKER_HINT[draft.tracker])}>
+        {(id) => (
+          <select id={id} className="text-input" value={draft.tracker} onChange={(e) => set({ tracker: e.target.value as AgentTracker })}>
+            {trackerChoices.map((v) => <option key={v} value={v}>{t(TRACKER_LABEL[v])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      <Labeled label={t('ui.team.f.shell')} hint={t(SHELL_HINT[draft.shell])} error={error}>
+        {(id) => (
+          <select id={id} className="text-input" value={draft.shell} onChange={(e) => set({ shell: e.target.value as AgentShell })}>
+            {shellChoices.map((v) => <option key={v} value={v}>{t(SHELL_LABEL[v])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      {draft.shell === 'sandbox' && (
+        <p className="small muted">{t('ui.team.shell.sandboxSummary', { network: t(SANDBOX_NETWORK_LABEL[sb.network]), folders: sb.readOnlyPaths.length ? sb.readOnlyPaths.join(', ') : t('ui.runner.sandbox.pathsNone') })}{draft.permission === 'read' ? ` ${t('ui.team.shell.readerCopy')}` : ''}</p>
+      )}
+      {status && !status.available && !web && <p className="small muted">{t('ui.team.shell.noSandbox', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}</p>}
+      {status && !status.available && web && <p className="small muted">{t('ui.team.shell.noSandboxWeb')}</p>}
+    </>
   );
 }
 

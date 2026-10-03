@@ -4,20 +4,21 @@ import { mergeTemplateTeam } from '../../../../shared/cycles/apply';
 import { shownText } from '../../../../shared/cycles/text';
 import { CEREMONY_IDS, STAGE_KINDS, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import type { CycleTemplateInfo, CycleTemplatesResult } from '../../../../shared/wizard';
-import { errorText } from '../../api';
+import { api, errorText } from '../../api';
+import type { SandboxStatus } from '../../../../shared/sandbox';
 import { useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
 import { Notice } from '../ui';
 import { wizardApi } from '../wizardApi';
 
 /** The config after choosing a template: the cycle section starts from the neutral one, then the template's patch goes over it. */
-export function applyTemplate(c: WorkspaceConfig, tpl: Pick<CycleTemplateInfo, 'id' | 'patch' | 'team'>): WorkspaceConfig {
+export function applyTemplate(c: WorkspaceConfig, tpl: Pick<CycleTemplateInfo, 'id' | 'patch' | 'team'>, sandbox = false): WorkspaceConfig {
   const base: WorkspaceConfig = { ...c, devCycle: neutralConfig().devCycle };
   const next = tpl.patch ? mergeDeep(base, tpl.patch) : base;
   // The QA account belongs to the team, not to the template: choosing another template keeps it.
   const qa = next.devCycle.qa.user || !c.devCycle.qa.user ? next.devCycle.qa : { ...next.devCycle.qa, user: c.devCycle.qa.user };
   // The agents the person already has stay; the template adds the ones it brings and the stages the cycle lacks are dropped from every agent.
-  const team = mergeTemplateTeam(next.agents.team, tpl.team ?? [], next.devCycle);
+  const team = mergeTemplateTeam(next.agents.team, tpl.team ?? [], next.devCycle, { sandbox });
   return { ...next, agents: { ...next.agents, team }, devCycle: { ...next.devCycle, templateId: tpl.id, qa } };
 }
 
@@ -25,9 +26,12 @@ export function CycleStep({ cfg, setCfg }: StepProps) {
   const t = useT();
   const [res, setRes] = useState<CycleTemplatesResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether this computer can make a sandbox: the agents a template brings keep theirs only where it can.
+  const [sandbox, setSandbox] = useState(false);
 
   useEffect(() => {
     wizardApi.cycleTemplates().then(setRes, (e) => setError(errorText(e)));
+    api.invoke<SandboxStatus>('sandbox:status').then((s) => setSandbox(s.available), () => setSandbox(false));
   }, []);
 
   const current = cfg.devCycle.templateId;
@@ -49,7 +53,7 @@ export function CycleStep({ cfg, setCfg }: StepProps) {
             const desc = placeholder ? t(`wizard.cycle.tpl.${tpl.id}.hint`) : tpl.description;
             return (
               <label key={tpl.id} className={`wz-card-item wz-choice ${current === tpl.id ? 'wz-on' : ''} ${tpl.available ? '' : 'wz-disabled'}`}>
-                <input type="radio" name="cycle-template" checked={current === tpl.id} disabled={!tpl.available} onChange={() => setCfg((c) => applyTemplate(c, tpl))} />
+                <input type="radio" name="cycle-template" checked={current === tpl.id} disabled={!tpl.available} onChange={() => setCfg((c) => applyTemplate(c, tpl, sandbox))} />
                 <span>
                   <span className="wz-card-title">{name} {!tpl.available && <span className="badge badge-quiet">{t('wizard.soon')}</span>}</span>
                   {desc && <span className="small muted wz-block">{desc}</span>}

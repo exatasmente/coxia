@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { newAgent } from '../../../../shared/config/team';
+import { isWeb } from '../../platform';
 import { LLM_ROLES, STAGE_KINDS, STAGE_TYPES, WAIT_KINDS, type AgentDef, type LlmRole, type StageDef, type StageType, type WaitKind } from '../../../../shared/config/types';
 import { ISSUE_RECORD, isWork } from '../../../../shared/runs/flow';
 import { flowIssueText, type FlowIssue } from '../../../../shared/runs/flowCheck';
@@ -283,7 +284,7 @@ function NewAgentForm({ takenIds, onCreate, onCancel }: { takenIds: string[]; on
       <Toggle checked={autonomous} onChange={setAutonomous} label={t('ui.team.autonomy')} />
       <p className="small muted">{t('ui.flow.newAgent.idNote', { id })}</p>
       <div className="wz-actions">
-        <button type="button" className="btn btn-dark" disabled={!name.trim()} onClick={() => onCreate(newAgent({ id, name: name.trim(), job: job.trim(), model: { role }, permission: writes ? 'worktree' : 'read', autonomous }))}>{t('ui.flow.newAgent.create')}</button>
+        <button type="button" className="btn btn-dark" disabled={!name.trim()} onClick={() => onCreate(newAgent({ id, name: name.trim(), job: job.trim(), model: { role }, permission: writes ? 'worktree' : 'read', tracker: 'none', shell: !isWeb() && writes ? 'allowlist' : 'none', autonomous }))}>{t('ui.flow.newAgent.create')}</button>
         <button type="button" className="btn" onClick={onCancel}>{t('ui.team.cancel')}</button>
       </div>
     </div>

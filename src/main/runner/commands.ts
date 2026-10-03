@@ -16,6 +16,9 @@ export interface CommandResult {
   timedOut: boolean;
   output: string;
   ms: number;
+  /** In a sandbox: its number in the stage's list (the app's commands first, then the agent's), and who ran it. */
+  n?: number;
+  by?: 'app' | 'agent';
 }
 
 export interface CommandOptions {

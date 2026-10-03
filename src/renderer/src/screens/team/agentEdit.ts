@@ -1,7 +1,7 @@
 import { ID } from '../../../../shared/config/schema';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
 import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../../../../shared/config/team';
-import type { AgentDef, AgentModel, AgentPermission, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
+import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
@@ -17,6 +17,8 @@ export interface AgentDraft {
   instructions: string;
   model: AgentModel;
   permission: AgentPermission;
+  tracker: AgentTracker;
+  shell: AgentShell;
   autonomous: boolean;
   squad: string | null;
   turnsTo: string | null;
@@ -24,7 +26,7 @@ export interface AgentDraft {
   stages: string[];
 }
 
-export type AgentField = 'id' | 'name' | 'model' | 'turnsTo';
+export type AgentField = 'id' | 'name' | 'model' | 'turnsTo' | 'shell';
 
 export interface AgentProblem {
   field: AgentField;
@@ -41,6 +43,8 @@ export function draftOf(a: AgentDef): AgentDraft {
     instructions: a.instructions,
     model: { ...a.model },
     permission: a.permission,
+    tracker: a.tracker,
+    shell: a.shell,
     autonomous: a.autonomous,
     squad: a.squad ?? null,
     turnsTo: a.turnsTo,
@@ -49,7 +53,7 @@ export function draftOf(a: AgentDef): AgentDraft {
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', autonomous: false, squad: null, turnsTo: null, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', autonomous: false, squad: null, turnsTo: null, stages: [] };
 }
 
 /** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
@@ -83,8 +87,13 @@ export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew:
     if (!config.llm.providers.some((p) => p.id === draft.model.provider)) out.push({ field: 'model', key: 'ui.team.err.provider' });
     else if (!draft.model.model.trim()) out.push({ field: 'model', key: 'ui.team.err.modelName' });
   }
+  // Commands in the real worktree could leave files that the app then commits for an agent that promised only to read: a reader runs commands in a sandbox.
+  if (draft.shell === 'allowlist' && draft.permission !== 'worktree') out.push({ field: 'shell', key: 'ui.team.err.allowlist' });
   return out;
 }
+
+/** The shell a draft has after its permission changes: `allowlist` needs the permission to write, so a reader falls to `none`. */
+export const shellAfterPermission = (shell: AgentShell, permission: AgentPermission): AgentShell => (shell === 'allowlist' && permission !== 'worktree' ? 'none' : shell);
 
 /** The config the draft makes: the agent added or edited, and its squad. Throws what the pure edits throw (a taken id). */
 export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): WorkspaceConfig {
@@ -94,6 +103,8 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
     instructions: draft.instructions,
     model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim() },
     permission: draft.permission,
+    tracker: draft.tracker,
+    shell: draft.shell,
     autonomous: draft.autonomous,
     turnsTo: draft.turnsTo,
     stages: draft.stages,

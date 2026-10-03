@@ -16,6 +16,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'note-edit': { key: 'ui.audit.kind.noteEdit' },
   push: { key: 'ui.audit.kind.push' },
   minutes: { key: 'ui.audit.kind.minutes' },
+  exec: { key: 'ui.audit.kind.exec' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

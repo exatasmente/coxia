@@ -3,6 +3,7 @@ import type { LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
+import type { SandboxSession } from '../sandbox/session';
 
 // The contract between the ceremonies (main/agents.ts `run`) and an agent engine.
 // An engine takes one structured request and returns the model's JSON answer plus the sources it read; it never knows about ceremonies.
@@ -64,6 +65,14 @@ export interface EngineRequest {
   extra: Partial<Options>;
   /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
   confine?: Confinement;
+  /**
+   * How much of the code host the call may read. `workspace` (the default, what the ceremonies and a reader with `tracker: read` get): the host CLI allow-list, the `VcsRead`
+   * tool and the tracker MCP tools the workspace switched on. `tool`: only the `VcsRead` tool (an agent that writes with `tracker: read`: no CLI, no MCP server).
+   * `none`: nothing of the host.
+   */
+  tracker?: 'workspace' | 'tool' | 'none';
+  /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
+  exec?: SandboxSession;
   /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
   abort?: AbortController;
   /** Called once per model call with what it used (and what it cost, when the provider or the SDK said). */

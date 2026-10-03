@@ -68,6 +68,8 @@ export function ReviewRounds({ run, config }: { run: Run; config: WorkspaceConfi
                 <div className="row cy-finding-head">
                   <span className={`badge ${s.result === 'pass' ? 'cy-tone-done' : s.result === 'fail' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{t(RESULT_KEY[s.result])}</span>
                   <span className="small"><strong>{s.name}</strong></span>
+                  {s.evidence && <span className={`badge ${s.evidence === 'executed' ? 'cy-tone-done' : 'cy-tone-quiet'}`}>{t(s.evidence === 'executed' ? 'ui.cycle.evidence.executed' : 'ui.cycle.evidence.read')}</span>}
+                  {s.unbacked && <span className="badge cy-tone-blocked">{t('ui.cycle.evidence.unbacked')}</span>}
                 </div>
                 {s.detail && <p className="small cy-finding-body">{s.detail}</p>}
               </li>

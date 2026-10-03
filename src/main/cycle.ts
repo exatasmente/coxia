@@ -3,6 +3,7 @@ import { BrowserWindow, dialog } from 'electron';
 import type { ApplyOptions } from '../shared/cycles';
 import { t } from '../shared/i18n';
 import { CYCLE_EVENT } from '../shared/cycles/events';
+import { sandboxStatus } from './sandbox/probe';
 import { applyCycleTemplate, checkTemplateText, cycleView, exportCurrentCycle, listTemplates, removeTemplate, saveTemplateText } from './cycle-core';
 import type { Module } from './module';
 
@@ -20,8 +21,9 @@ export const cycleModule: Module = (ctx) => {
 
   ctx.handle('cycle:view', () => cycleView());
   ctx.handle('cycle:templates', () => listTemplates());
-  ctx.handle('cycle:apply', (id: string, options?: ApplyOptions) => {
-    applyCycleTemplate(id, options);
+  ctx.handle('cycle:apply', async (id: string, options?: ApplyOptions) => {
+    // The agents a template brings keep their sandbox only where one works: the machine's answer, never the caller's.
+    applyCycleTemplate(id, { ...options, sandbox: (await sandboxStatus()).available });
     return announce();
   });
   ctx.handle('cycle:template-export', (meta: { id: string; name: string; description?: string }) => exportCurrentCycle(meta));

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTranslator, t } from '../../shared/i18n';
 import { ARTIFACT_NAME } from '../../shared/runs';
@@ -67,8 +67,9 @@ const FOLDER_MAX = 120_000;
 export function readFolder(wt: string, folder: string): FolderFile[] {
   const dir = join(wt, folder);
   if (!existsSync(dir)) return [];
+  // Only regular files that really are inside the worktree: a link planted by a command of a sandbox (to a key, to anything of the person's) is never followed.
   const names = readdirSync(dir)
-    .filter((n) => ARTIFACT_NAME.test(n) && statSync(join(dir, n)).isFile())
+    .filter((n) => ARTIFACT_NAME.test(n) && lstatSync(join(dir, n)).isFile() && checkPath(wt, join(folder, n), { read: true }).ok)
     .sort((a, b) => (a === ISSUE_FILE ? -1 : b === ISSUE_FILE ? 1 : a.localeCompare(b)));
   let left = FOLDER_MAX;
   const files: FolderFile[] = [];

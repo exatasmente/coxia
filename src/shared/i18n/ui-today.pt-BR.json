@@ -2,6 +2,7 @@
   "ui.audit.error": "erro",
   "ui.audit.filterLabel": "Filtrar por issue",
   "ui.audit.filterPlaceholder": "Filtrar por issue (ex.: 101)",
+  "ui.audit.kind.exec": "Comando na sandbox",
   "ui.audit.kind.minutes": "Atas",
   "ui.audit.kind.noteEdit": "Edição de nota",
   "ui.audit.kind.publish": "Publicação",

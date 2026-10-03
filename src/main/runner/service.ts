@@ -85,6 +85,7 @@ import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
+import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
 import type { CommandRunner } from './commands';
@@ -98,7 +99,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree'] as const;
+export const RUNNER_ERROR_CODES = ['nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -154,6 +155,8 @@ export interface RunnerDeps {
   identity?(wt: string): Promise<Identity | null>;
   /** Runs the commands QA is given the results of; the real one by default (tests give a fake). */
   commandRunner?: CommandRunner;
+  /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
+  sandbox?: SandboxService;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -215,7 +218,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner };
+  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -401,7 +404,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       return;
     }
     if (r.kind === 'qa') {
-      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head, ...(r.commands ? { commands: r.commands.map(({ command, exitCode, timedOut }) => ({ command, exitCode, timedOut })) } : {}) }, now()));
+      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head, ...(r.commands ? { commands: r.commands.map(({ command, exitCode, timedOut, n, by }) => ({ command, exitCode, timedOut, ...(n !== undefined ? { n } : {}), ...(by ? { by } : {}) })) } : {}) }, now()));
       // Only a failure that blocks sends the work back; what QA noted without blocking is reported with its result.
       const failed = out.scenarios.some(scenarioBlocks);
       const back = flow.find((s) => s.id === flowStage.returnsTo);
@@ -473,6 +476,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!env.issues.project) throw new RunnerError('no-issue-project');
     const { iid, ref } = refOf(raw);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    // An agent set to run commands in a sandbox on a computer that cannot make one: said now, before a worktree exists, not when its stage is reached.
+    const sandboxed = config.agents.team.filter((a) => a.shell === 'sandbox' && a.stages.length);
+    if (sandboxed.length) {
+      const st = deps.sandbox ? await deps.sandbox.status() : null;
+      if (!st?.available) throw new RunnerError('no-sandbox', { agent: sandboxed.map((a) => a.id).join(', '), reason: st ? reasonText(st) : t('main.sandbox.reason.platform') });
+    }
     const flow = flowNow();
     // The refusal the first transition would give, before anything is created on disk, and then what the flow check says stops a run.
     assertStartable(flow);

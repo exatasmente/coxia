@@ -1,3 +1,4 @@
+import { shellRaised, trackerRaised } from '../shared/config/team';
 import type { WorkspaceConfig } from '../shared/config/types';
 
 // What a paired browser may change in the configuration. config:save is desktop-only because the configuration names programs to run (runner.commands, the
@@ -49,7 +50,23 @@ export function changedPaths(before: unknown, after: unknown, at = ''): string[]
 
 const covered = (path: string): boolean => WEB_EDITABLE.some((p) => path === p || path.startsWith(`${p}.`));
 
+/**
+ * What a paired browser may do with the two permissions of an agent: lower them, never raise them. `agents.team` is one editable path, so the field-by-field check is
+ * made here: an agent whose `shell` or `tracker` goes up is refused by name, and an agent that did not exist may only be made with `none` for both (what it can run and
+ * read is what the person at the computer gave it).
+ */
+export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  const was = new Map(before.agents.team.map((a) => [a.id, a]));
+  const out: string[] = [];
+  for (const a of after.agents.team) {
+    const old = was.get(a.id) ?? { shell: 'none' as const, tracker: 'none' as const };
+    if (shellRaised(old.shell, a.shell)) out.push(`agents.team[${a.id}].shell`);
+    if (trackerRaised(old.tracker, a.tracker)) out.push(`agents.team[${a.id}].tracker`);
+  }
+  return out;
+}
+
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return changedPaths(before, after).filter((p) => !covered(p));
+  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after)];
 }

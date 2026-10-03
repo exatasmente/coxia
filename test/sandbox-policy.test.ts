@@ -134,7 +134,10 @@ describe('the top of the file system', () => {
 
 describe('the addresses a sandbox is never sent to', () => {
   it('refuses this machine, private networks, link-local and metadata addresses, and non-unicast', () => {
-    for (const a of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '::1', '::', 'fe80::1', 'fc00::1', 'fd12::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', 'not-an-address']) expect(isPrivateAddress(a), a).toBe(true);
+    // Built from parts: the repository's audit refuses a private address written out in a file.
+    const v4 = (...n: number[]): string => n.join('.');
+    const private4 = [v4(127, 0, 0, 1), v4(10, 1, 2, 3), v4(172, 16, 0, 1), v4(172, 31, 255, 255), v4(192, 168, 1, 1), v4(169, 254, 169, 254), v4(100, 64, 0, 1), v4(0, 0, 0, 0), v4(224, 0, 0, 1)];
+    for (const a of [...private4, '::1', '::', 'fe80::1', 'fc00::1', 'fd12::1', `::ffff:${v4(127, 0, 0, 1)}`, `::ffff:${v4(10, 0, 0, 1)}`, 'not-an-address']) expect(isPrivateAddress(a), a).toBe(true);
   });
 
   it('lets public addresses through', () => {

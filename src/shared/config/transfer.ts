@@ -146,6 +146,11 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
   add('externalTools.claudeCli.command', t.claudeCli.command);
   for (const v of c.vcs) add(`vcs.${v.id}.cliCommand`, v.cliCommand);
   (c.runner.commands ?? []).forEach((cmd, i) => add(`runner.commands[${i}]`, cmd));
+  // An agent set to run commands runs programs too: a sandbox takes any command, a list takes the runner's.
+  for (const a of c.agents.team) {
+    if (a.shell === 'sandbox') add(`agents.team[${a.id}].shell`, 'sandbox: any command the agent chooses, inside a sandbox');
+    else if (a.shell === 'allowlist') add(`agents.team[${a.id}].shell`, 'allowlist: the commands of runner.commands');
+  }
   return found;
 }
 
@@ -164,6 +169,7 @@ export function collectPaths(c: WorkspaceConfig): { field: string; path: string 
   add('externalTools.cardSource.stateFile', c.externalTools.cardSource.stateFile);
   add('externalTools.claudeCli.cwd', c.externalTools.claudeCli.cwd);
   add('runner.worktreesDir', c.runner.worktreesDir);
+  c.runner.sandbox.readOnlyPaths.forEach((p, i) => add(`runner.sandbox.readOnlyPaths[${i}]`, p));
   c.llm.providers.forEach((p) => add(`llm.providers.${p.id}.envFile`, p.envFile));
   return found;
 }

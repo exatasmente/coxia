@@ -127,4 +127,24 @@ maybe('a real sandbox', () => {
     }
     expect(existsSync(join(worktree, 'only-in-the-copy.txt'))).toBe(false);
   });
+
+  // The registry mode, as far as it can be shown without a network: the forwarder inside reaches the app's proxy through the socket in the stage folder, and the proxy
+  // refuses a host that is not listed before it resolves anything. The sandbox still has only its own loopback.
+  (existsSync('/usr/bin/node') ? it : it.skip)('reaches the proxy of the registry mode through the forwarder, and nothing else', async () => {
+    const config = neutralSandbox();
+    config.network = 'registry';
+    config.registryHosts = ['registry.example.com'];
+    const decisions: string[] = [];
+    const s = await service.open({ worktree, reader: false, config, onProxy: (d) => decisions.push(`${d.host}:${d.allowed ? 'ok' : d.why}`) });
+    try {
+      const script = "const c=require('net').connect(3128,'127.0.0.1',()=>c.write('CONNECT not-listed.example.org:443 HTTP/1.1\\r\\n\\r\\n'));c.on('data',d=>{console.log(String(d).split('\\r\\n')[0]);c.destroy()});c.on('error',e=>console.log('error',e.code))";
+      const r = await s.exec(`node -e "${script}"; tail -n +3 /proc/net/dev | cut -d: -f1`);
+      expect(r.output).toContain('403 Forbidden');
+      expect(r.output).toMatch(/^\s*lo$/m);
+      expect(r.output).not.toMatch(/^\s*(eth|en|wl)\S*$/m);
+      expect(decisions).toEqual(['not-listed.example.org:host']);
+    } finally {
+      await s.close();
+    }
+  });
 });

@@ -69,6 +69,8 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 
 const finding = obj({ path: str, line: intOrNull, endLine: intOrNull, side: { enum: ['new', 'old'] }, severity: { enum: ['blocking', 'suggestion'] }, body: str, suggestion: strOrNull });
 const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str });
+// An agent that can run commands says, per scenario, whether it did and which commands (their numbers) back it.
+const scenarioWithEvidence = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str, evidence: { enum: ['executed', 'read'] }, commands: { type: 'array', items: { type: 'integer' } } });
 
 const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sections: { type: 'array', items: obj({ heading: str, body: str }) }, technical: str });
 
@@ -85,6 +87,8 @@ export interface OutputWants {
   comment?: boolean;
   /** The stage ends with the push: ask for the pull request description too. */
   pr?: boolean;
+  /** QA can run commands in a sandbox: ask each scenario for its `evidence` and the numbers of the commands behind it. */
+  evidence?: boolean;
 }
 
 /** The JSON Schema of a stage's answer. */
@@ -97,7 +101,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
     question: strOrNull,
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
-  if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: scenario } });
+  if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: wants.evidence ? scenarioWithEvidence : scenario } });
   if (wants.ask) base.needsPerson = { type: 'boolean' };
   if (wants.reporter) base.reporterQuestion = strOrNull;
   if (wants.priority) Object.assign(base, { priority: strOrNull, milestone: strOrNull });
@@ -142,7 +146,38 @@ export function readScenario(raw: unknown): Scenario | null {
   const s = record(raw);
   const name = text(s.name, 500);
   if (!name) return null;
-  return { name, result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run', severity: s.severity === 'non-blocking' ? 'non-blocking' : 'blocking', detail: text(s.detail, 8000) };
+  const commands = list(s.commands).filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1).slice(0, 50);
+  return {
+    name,
+    result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run',
+    severity: s.severity === 'non-blocking' ? 'non-blocking' : 'blocking',
+    detail: text(s.detail, 8000),
+    ...(s.evidence === 'executed' || s.evidence === 'read' ? { evidence: s.evidence } : {}),
+    ...(commands.length ? { commands } : {}),
+  };
+}
+
+/** What the app knows of a command of the stage, for checking a claim of execution. */
+export interface ExecSummary {
+  n: number;
+  exitCode: number | null;
+  timedOut: boolean;
+}
+
+/**
+ * The scenarios of a QA pass with their evidence checked. When the agent was not asked (it had no sandbox) every scenario is `read`. When it was, an `executed` claim stands only
+ * if it cites a command of this stage that backs it: a pass needs one that ended with exit code 0, a failure any that ran to an end. A claim that nothing backs is recorded as
+ * `read` and marked `unbacked`, so a pass nobody ran is visible as one. It proves that a command ran, not that the behaviour is right.
+ */
+export function backEvidence(scenarios: Scenario[], log: readonly ExecSummary[], asked: boolean): Scenario[] {
+  return scenarios.map((s) => {
+    const { commands, evidence: _claimed, unbacked: _flag, ...rest } = s;
+    if (!asked || s.evidence !== 'executed') return { ...rest, evidence: 'read' };
+    const cited = [...new Set((commands ?? []).filter((n) => log.some((l) => l.n === n)))];
+    const ran = (n: number): ExecSummary | undefined => log.find((l) => l.n === n);
+    const backed = cited.some((n) => (s.result === 'pass' ? ran(n)?.exitCode === 0 : s.result === 'fail' ? ran(n)?.exitCode !== null || ran(n)?.timedOut === true : true));
+    return backed ? { ...rest, evidence: 'executed', commands: cited } : { ...rest, evidence: 'read', unbacked: true };
+  });
 }
 
 /** A failed scenario that sends the work back: any failure that is not marked non-blocking. */

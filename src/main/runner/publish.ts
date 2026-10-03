@@ -385,13 +385,22 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return `### ${tr('main.runner.scenario.notesTitle')}\n\n${notes.map((s) => tr('main.runner.scenario.note', { name: s.name, detail: s.detail || '—' })).join('\n')}`;
   };
 
+  // For a QA agent with a sandbox: how many scenarios were executed and which claims nothing backed. Absent for one without (everything it did was reading).
+  const evidenceTail = (end: StageEnd): string | undefined => {
+    if (end.kind !== 'qa' || end.agent.shell !== 'sandbox' || !end.output.scenarios.length) return undefined;
+    const all = end.output.scenarios;
+    const unbacked = all.filter((s) => s.unbacked);
+    const lines = [tr('main.runner.scenario.evidenceLine', { executed: all.filter((s) => s.evidence === 'executed').length, total: all.length }), ...(unbacked.length ? [tr('main.runner.scenario.evidenceUnbacked', { names: unbacked.map((s) => s.name).join('; ') })] : [])];
+    return `### ${tr('main.runner.scenario.evidenceTitle')}\n\n${lines.join('\n')}`;
+  };
+
   async function stageComment(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
     const tpl = templateOf(config, end.stage);
     if (!tpl) return;
     const run = need(runId);
     const marker = markerOf(run.id, end.stage.id);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary, tail: notesTail(end) });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary, tail: [notesTail(end), evidenceTail(end)].filter(Boolean).join('\n\n') || undefined });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true });
   }

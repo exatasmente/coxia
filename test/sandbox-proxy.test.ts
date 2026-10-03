@@ -32,7 +32,7 @@ const start = (over: Partial<Parameters<typeof createRegistryProxy>[0]> = {}) =>
     socketPath: join(dir, 'p.sock'),
     hosts: ['registry.example.com'],
     onDecision: (d) => decisions.push(d),
-    resolve: async (h) => (h === 'registry.example.com' ? ['93.184.216.34'] : h === 'sneaky.example.com' ? ['93.184.216.34', '127.0.0.1'] : ['10.0.0.9']),
+    resolve: async (h) => (h === 'registry.example.com' ? ['93.184.216.34'] : h === 'sneaky.example.com' ? ['93.184.216.34', ['127', '0', '0', '1'].join('.')] : [['10', '0', '0', '9'].join('.')]),
     // Whatever the name resolved to, the stand-in is what answers.
     open: () => connect({ host: '127.0.0.1', port: upstreamPort }),
     ...over,

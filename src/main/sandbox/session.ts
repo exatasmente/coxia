@@ -163,9 +163,9 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const ready = await new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => resolve(stderr.trim() || 'timeout'), o.readyMs ?? 10_000);
     const onLine = (line: string): void => {
-      if (line === 'ready' || line === 'no-node') {
+      if (line === 'ready' || line === 'no-node' || line === 'no-forwarder') {
         clearTimeout(timer);
-        resolve(line === 'ready' ? null : 'no-node');
+        resolve(line === 'ready' ? null : line);
       }
     };
     lines.push(onLine);
@@ -177,6 +177,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   if (ready !== null) {
     await close();
     if (ready === 'no-node') throw new SandboxError('no-node');
+    if (ready === 'no-forwarder') throw new SandboxError('start-failed', { detail: 'the forwarder of the registry mode did not start' });
     throw new SandboxError('start-failed', { detail: redact(ready.split('\n')[0]).slice(0, 300) });
   }
 
