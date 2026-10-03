@@ -1,3 +1,4 @@
+export * from './comment';
 export * from './flow';
 export * from './schema';
 export * from './transitions';

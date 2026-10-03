@@ -15,6 +15,17 @@ export interface ArtifactOutput {
   content: string;
 }
 
+/** What an agent writes for a tracker comment: a text per section of the template, and the technical part. The app composes the comment around it. */
+export interface StageComment {
+  sections: { heading: string; body: string }[];
+  technical: string;
+}
+
+/** The pull request description an agent writes: its title, and the same as a comment. */
+export interface PullRequestText extends StageComment {
+  title: string;
+}
+
 export interface StageOutput {
   /** What the agent did, for the thread. */
   summary: string;
@@ -30,6 +41,10 @@ export interface StageOutput {
   findings: Finding[];
   /** QA only. */
   scenarios: Scenario[];
+  /** The text of this stage's tracker comment, when its template asked for one and the agent wrote it. */
+  comment: StageComment | null;
+  /** The pull request description, asked of the stage that ends with the push. */
+  pr: PullRequestText | null;
 }
 
 const str = { type: 'string' };
@@ -43,8 +58,17 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 const finding = obj({ path: str, line: intOrNull, endLine: intOrNull, side: { enum: ['new', 'old'] }, severity: { enum: ['blocking', 'suggestion'] }, body: str, suggestion: strOrNull });
 const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, detail: str });
 
+const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sections: { type: 'array', items: obj({ heading: str, body: str }) }, technical: str });
+
+export interface OutputWants {
+  /** The stage has a comment template: ask for `comment`. */
+  comment?: boolean;
+  /** The stage ends with the push: ask for the pull request description too. */
+  pr?: boolean;
+}
+
 /** The JSON Schema of a stage's answer. */
-export function outputSchema(kind: OutputKind): Record<string, unknown> {
+export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<string, unknown> {
   const base: Record<string, unknown> = {
     summary: str,
     commit: str,
@@ -54,6 +78,8 @@ export function outputSchema(kind: OutputKind): Record<string, unknown> {
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: scenario } });
+  if (wants.comment) base.comment = commentText();
+  if (wants.pr) base.pr = commentText({ title: str });
   return obj(base);
 }
 
@@ -95,6 +121,23 @@ export function readScenario(raw: unknown): Scenario | null {
   return { name, result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run', detail: text(s.detail, 8000) };
 }
 
+export function readComment(raw: unknown): StageComment | null {
+  const c = record(raw);
+  const sections = list(c.sections).flatMap((x) => {
+    const s = record(x);
+    const body = text(s.body, 8000);
+    return body ? [{ heading: text(s.heading, 300), body }] : [];
+  });
+  const technical = text(c.technical, 12_000);
+  return sections.length || technical ? { sections, technical } : null;
+}
+
+export function readPullRequest(raw: unknown): PullRequestText | null {
+  const c = readComment(raw);
+  const title = text(record(raw).title, 200).split('\n')[0].trim();
+  return c || title ? { title, sections: c?.sections ?? [], technical: c?.technical ?? '' } : null;
+}
+
 /** The answer of the agent, read leniently. A review that says "approved" but lists a blocking finding is not approved: the findings are what the developer gets. */
 export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
   const o = record(raw);
@@ -114,6 +157,8 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     verdict,
     findings,
     scenarios: kind === 'qa' ? list(o.scenarios).flatMap((s) => readScenario(s) ?? []) : [],
+    comment: readComment(o.comment),
+    pr: readPullRequest(o.pr),
   };
 }
 

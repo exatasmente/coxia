@@ -10,6 +10,12 @@ import { type FolderFile, ISSUE_FILE } from './cycleFolder';
 // language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
 // it is material, not instructions.
 
+/** What the agent is asked to write for a tracker comment: the sections of the template (heading and what each must say), and whether there is a technical part. */
+export interface CommentAsk {
+  sections: { heading: string; guidance: string }[];
+  technical: boolean;
+}
+
 export interface StageInput {
   run: Run;
   stage: FlowStage;
@@ -28,6 +34,10 @@ export interface StageInput {
   answer: { question: string; text: string } | null;
   /** The branch's diff, for the stage that reads it. */
   diff: { text: string; stat: string; clipped: boolean } | null;
+  /** The comment this stage leaves on the tracker; null when its template says none. */
+  comment?: CommentAsk | null;
+  /** The pull request description, for the stage that ends with the push. */
+  pr?: CommentAsk | null;
 }
 
 const MESSAGE_MAX = 1500;
@@ -68,6 +78,18 @@ export function systemText(i: StageInput): string {
     .join('\n\n');
 }
 
+const sectionLines = (ask: CommentAsk): string => ask.sections.map((s) => `- ${cycleWord(s.heading)}: ${cycleWord(s.guidance)}`).join('\n');
+
+/** What the agent is told about the tracker comment (and the pull request description) it writes in this stage: the template's sections and the comment standard. */
+export function commentPrompt(i: StageInput): string {
+  const parts: string[] = [];
+  if (i.comment) {
+    parts.push(cp('runner.comment', { sections: sectionLines(i.comment), technical: i.comment.technical ? cp('runner.comment.technical') : cp('runner.comment.noTechnical') }));
+  }
+  if (i.pr) parts.push(cp('runner.comment.pr', { sections: sectionLines(i.pr), technical: i.pr.technical ? cp('runner.comment.technical') : cp('runner.comment.noTechnical') }));
+  return parts.join('\n\n');
+}
+
 export function stagePrompt(i: StageInput): string {
   const sections: string[] = [];
   for (const f of i.files) {
@@ -88,6 +110,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'),
+    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

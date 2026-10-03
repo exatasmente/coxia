@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, readOutput } from '../../shared/runs';
+import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
@@ -11,7 +11,7 @@ import type { ForumStore } from '../forum-core';
 import { readFolder, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, commitAll, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type Denial, confinedHooks } from './hooks';
-import { type StageInput, stagePrompt, systemText } from './prompt';
+import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -118,6 +118,15 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;
   const looked = await headSha(wt);
 
+  // The comment this stage leaves on the tracker, and the pull request description when this stage ends with the push: the agent is told the
+  // sections of the cycle's templates and writes the text of each, so no second call is needed.
+  const askOf = (key: string): CommentAsk | null => {
+    const tpl = config.devCycle.comments[key];
+    return tpl ? { sections: tpl.sections, technical: tpl.technicalDetail } : null;
+  };
+  const comment = askOf(stage.id);
+  const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
+
   const input: StageInput = {
     run,
     stage,
@@ -131,6 +140,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     attempt,
     handoff: pendingHandoff(thread, agent.id),
     answer: pendingAnswer(thread, agent.id, stage.id),
+    comment,
+    pr,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -146,7 +157,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,

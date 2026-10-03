@@ -871,5 +871,20 @@
   "main.runner.error.branch-exists": "A branch {detail} já existe no repositório: o runner não reaproveita o que não criou. Apague ou renomeie essa branch e tente de novo.",
   "main.runner.error.dest-exists": "A pasta {detail} já existe: o runner não escreve por cima do que não criou.",
   "main.runner.error.not-worktree": "{detail} não é uma cópia de trabalho do git (é um repositório sem arquivos?).",
-  "main.runner.error.cancelled": "A etapa foi interrompida porque a execução foi cancelada."
+  "main.runner.error.cancelled": "A etapa foi interrompida porque a execução foi cancelada.",
+  "prompt.sdd.runner.comment": "O comentário desta etapa na tracker vai no campo comment: sections (um texto para cada seção abaixo, com o título dela, nesta ordem) e technical.\n{sections}\n{technical}\nRegras: as seções são lidas por quem não lê código (produto, suporte, quem abriu a issue): diga qual é o comportamento, não como foi construído; nomes de arquivo, função e linha vão só em technical. Impessoal: sem primeira pessoa e sem pessoa ou agente como sujeito; o sujeito é o sistema ou o comportamento. Completo em si: sem citar a conversa, os agentes, as ferramentas, a execução, caminhos locais nem comandos que você rodou; sem log bruto; nunca uma credencial, token ou contato pessoal, mesmo que a issue traga um. Quando citar as palavras da própria issue, cite em bloco. Deixe vazio o texto de uma seção que não tem nada a dizer.",
+  "prompt.sdd.runner.comment.technical": "technical: o que só quem programa precisa (arquivos, funções, commits), em Markdown.",
+  "prompt.sdd.runner.comment.noTechnical": "Este comentário não tem seção técnica: deixe technical vazio.",
+  "prompt.sdd.runner.comment.pr": "A descrição do pull request vai no campo pr: title (o que a mudança faz, em uma linha de até 70 caracteres, sem o número da issue), sections (um texto para cada seção abaixo, com o título dela) e technical. Valem as mesmas regras do comentário.\n{sections}\n{technical}",
+  "main.runner.comment.technicalDetail": "Detalhe técnico",
+  "main.runner.comment.result.approved": "aprovada",
+  "main.runner.comment.result.changes": "alterações pedidas",
+  "main.runner.comment.result.pass": "todos os cenários passaram",
+  "main.runner.comment.result.fail": "alguns cenários falharam",
+  "main.runner.comment.result.partial": "nem todos os cenários foram executados",
+  "main.runner.comment.decision.approved": "aprovado",
+  "main.runner.comment.decision.rejected": "devolvido",
+  "main.runner.comment.decision.skipped": "pulado",
+  "main.runner.comment.notable": "{status}. O comentário completo: {url}",
+  "main.runner.comment.notableNoLink": "{status}. Veja o comentário desta etapa acima."
 }

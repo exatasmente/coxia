@@ -33,3 +33,10 @@ export function producerOf(flow: FlowStage[], stageId: string): FlowStage | null
   for (let j = i - 1; j >= 0; j--) if (!flow[j].human) return flow[j];
   return null;
 }
+
+/** The stage that ends with the push: the last one whose agent changes the worktree. Its work is what the pull request carries. */
+export function pushStageOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage | null {
+  const writes = new Set(config.agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
+  const found = flow.filter((s) => !s.human && s.agent && writes.has(s.agent));
+  return found.length ? found[found.length - 1] : null;
+}

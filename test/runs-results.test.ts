@@ -69,6 +69,18 @@ describe('the answer of a stage', () => {
     expect((outputSchema('work') as { required: string[] }).required).toEqual(props('work'));
   });
 
+  it('asks for the text of the tracker comment, and of the pull request description, only when a template wants it', () => {
+    const props = (w: { comment?: boolean; pr?: boolean }) => Object.keys((outputSchema('work', w) as { properties: object }).properties);
+    expect(props({})).toEqual(['summary', 'commit', 'artifacts', 'handoff', 'question']);
+    expect(props({ comment: true })).toEqual(['summary', 'commit', 'artifacts', 'handoff', 'question', 'comment']);
+    expect(props({ comment: true, pr: true }).slice(-2)).toEqual(['comment', 'pr']);
+    expect((outputSchema('review', { comment: true }) as { required: string[] }).required).toContain('comment');
+    const o = readOutput({ summary: 's', comment: { sections: [{ heading: ' What ', body: ' text ' }, { heading: 'empty', body: '  ' }, 'x'], technical: ' detail ' }, pr: { title: ' Do it\nmore ', sections: [], technical: '' } }, 'work');
+    expect(o.comment).toEqual({ sections: [{ heading: 'What', body: 'text' }], technical: 'detail' });
+    expect(o.pr).toEqual({ title: 'Do it', sections: [], technical: '' });
+    expect(readOutput({ summary: 's', comment: { sections: [], technical: '' }, pr: 'no' }, 'work')).toMatchObject({ comment: null, pr: null });
+  });
+
   it('is read leniently: text trimmed, "null" strings and empties are nothing, names and kinds checked', () => {
     const o = readOutput({ summary: '  Done.  ', commit: 'x', handoff: 'null', question: 'None', artifacts: [{ name: '1_SPEC.md', content: 'c' }, { name: '../evil', content: 'c' }, { name: '.hidden', content: 'c' }, { name: 'a/b.md', content: 'c' }, { name: 'ok.md' }, 'x'], extra: 1 }, 'work');
     expect(o).toMatchObject({ summary: 'Done.', handoff: '', question: '', verdict: null, findings: [], scenarios: [] });

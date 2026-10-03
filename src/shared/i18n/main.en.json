@@ -871,5 +871,20 @@
   "main.runner.error.branch-exists": "The branch {detail} already exists in the repository: the runner does not reuse what it did not make. Delete or rename that branch and try again.",
   "main.runner.error.dest-exists": "The folder {detail} already exists: the runner does not write over what it did not make.",
   "main.runner.error.not-worktree": "{detail} is not a git work tree (a bare repository?).",
-  "main.runner.error.cancelled": "The stage was stopped because the run was cancelled."
+  "main.runner.error.cancelled": "The stage was stopped because the run was cancelled.",
+  "prompt.sdd.runner.comment": "The comment of this stage on the tracker goes in the field comment: sections (a text for each section below, with its heading, in this order) and technical.\n{sections}\n{technical}\nRules: the sections are read by people who do not read code (product, support, whoever opened the issue): say what the behavior is, not how it is built; file, function and line names go only in technical. Impersonal: no first person, and no person or agent as the subject; the subject is the system or the behavior. Complete in itself: no mention of the thread, the agents, the tools, the run, local paths or commands you ran; no raw logs; never a credential, token or personal contact, even if the issue has one. When the issue's own words are quoted, quote them in a block. Leave a section's text empty when it has nothing to say.",
+  "prompt.sdd.runner.comment.technical": "technical: what only an engineer needs (files, functions, commits), in Markdown.",
+  "prompt.sdd.runner.comment.noTechnical": "This comment has no technical section: leave technical empty.",
+  "prompt.sdd.runner.comment.pr": "The pull request description goes in the field pr: title (what the change does, in one line under 70 characters, without the issue number), sections (a text for each section below, with its heading) and technical. The same rules apply as for the comment.\n{sections}\n{technical}",
+  "main.runner.comment.technicalDetail": "Technical detail",
+  "main.runner.comment.result.approved": "approved",
+  "main.runner.comment.result.changes": "changes requested",
+  "main.runner.comment.result.pass": "all scenarios passed",
+  "main.runner.comment.result.fail": "some scenarios failed",
+  "main.runner.comment.result.partial": "not every scenario was run",
+  "main.runner.comment.decision.approved": "approved",
+  "main.runner.comment.decision.rejected": "sent back",
+  "main.runner.comment.decision.skipped": "skipped",
+  "main.runner.comment.notable": "{status}. The full comment: {url}",
+  "main.runner.comment.notableNoLink": "{status}. See the comment of this stage above."
 }
