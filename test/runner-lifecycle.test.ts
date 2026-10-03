@@ -323,6 +323,25 @@ describe('the review limit and QA', () => {
     expect(run.returns).toEqual({ qa: 1 });
   });
 
+  it('gives the review of round two what the earlier round found and says not to promote a suggestion without a new fact', async () => {
+    const b = await boot({ configure: (c) => (c.language = 'en') });
+    easy(b);
+    const suggestion = { ...finding('Consider a clearer name.'), severity: 'suggestion' };
+    b.engine.script('reviewer', () => work('One thing.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding('The constant must be 2.'), suggestion] }), () => work('Fine now.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved' }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const reviews = b.engine.calls.filter((c) => c.agent.id === 'reviewer');
+    expect(reviews[0].prompt).not.toContain('The review passes before this one');
+    expect(reviews[0].prompt).not.toContain('This is round');
+    expect(reviews[1].prompt).toContain('The review passes before this one');
+    expect(reviews[1].prompt).toContain('Round 1, verdict changes. One thing.');
+    expect(reviews[1].prompt).toContain('[blocks] src/feature.ts:1: The constant must be 2.');
+    expect(reviews[1].prompt).toContain('[suggestion] src/feature.ts:1: Consider a clearer name.');
+    expect(reviews[1].prompt).toContain('This is round 2 of the review');
+    expect(reviews[1].prompt).toContain('does not become blocking because you look again');
+  });
+
   it('asks the person at the limit of QA with its own account: the scenarios that failed, not the agent text', async () => {
     const b = await boot();
     easy(b);

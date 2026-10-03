@@ -163,6 +163,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     routing,
     squad: squadOf(config, run.squad),
     turnsTo: askTarget(config, agent),
+    earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 

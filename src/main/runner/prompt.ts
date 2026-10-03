@@ -1,7 +1,7 @@
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, messageText } from '../../shared/forum';
 import type { OutputKind, RoutingWhy } from '../../shared/runs';
-import type { FlowStage, Run } from '../../shared/runs';
+import { type FlowStage, type ReviewRecord, type Run, findingText } from '../../shared/runs';
 import { t } from '../../shared/i18n';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import { type FolderFile, ISSUE_FILE } from './cycleFolder';
@@ -32,6 +32,8 @@ export interface StageInput {
   handoff: { from: string; text: string } | null;
   /** The person's answer to what this agent asked before. */
   answer: { question: string; text: string; by: string } | null;
+  /** The review passes of this stage that came before this one, for a review that is not the first. */
+  earlier?: ReviewRecord[];
   /** The branch's diff, for the stage that reads it. */
   diff: { text: string; stat: string; clipped: boolean } | null;
   /** The comment this stage leaves on the tracker; null when its template says none. */
@@ -107,6 +109,16 @@ export function commentPrompt(i: StageInput): string {
   return parts.join('\n\n');
 }
 
+/** The earlier review passes as lines a model can read: each round's verdict and summary, then its findings (blocking ones first). */
+export function roundsText(rounds: ReviewRecord[]): string {
+  return rounds
+    .map((r) => {
+      const order = [...r.findings].sort((a, b) => Number(b.severity === 'blocking') - Number(a.severity === 'blocking'));
+      return [cp('runner.rounds.round', { round: r.round, verdict: r.verdict, summary: clip(r.summary, 600) }), ...order.map(findingText)].join('\n');
+    })
+    .join('\n\n');
+}
+
 export function stagePrompt(i: StageInput): string {
   const sections: string[] = [];
   for (const f of i.files) {
@@ -116,6 +128,7 @@ export function stagePrompt(i: StageInput): string {
     const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
+  if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
   if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
@@ -127,6 +140,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }
