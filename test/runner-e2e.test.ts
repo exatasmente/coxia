@@ -70,6 +70,7 @@ describe('a run from refine to ready', () => {
     expect(refine.prompt).toContain('The thing must do X and not Y.');
     expect(refine.prompt).toContain('1_SPEC.md');
     expect(refine.confine).toBeUndefined();
+    expect(refine.system).toContain('Nunca anuncie na conversa uma pergunta');
     expect(refine.cwd).toBe(wt);
 
     // gate 1 approved; the planner asks, the run waits, and a post in the thread answers it
@@ -86,6 +87,9 @@ describe('a run from refine to ready', () => {
     expect(run).toMatchObject({ status: 'gate', stage: 'gate2' });
     expect(engine.calls[2].prompt).toContain('Should the thing also handle Y?');
     expect(engine.calls[2].prompt).toContain('Yes, handle Y as well.');
+    // a resumed stage is told to update its documents with the answer, not to read the repository again
+    expect(engine.calls[2].prompt).toContain('sem explorar o repositório do zero');
+    expect(engine.calls[1].prompt).not.toContain('sem explorar o repositório do zero');
     expect(run.stages.find((s) => s.stage === 'plan')?.attempts).toBe(1);
 
     // QA stops being autonomous before it is reached; gate 2 approved; implement, review, back to implement, review again
