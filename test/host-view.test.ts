@@ -46,6 +46,7 @@ describe('the tool switches of Settings', () => {
   it('lists the agent read switch only with an integration, and the tracker MCP switch only with a server', () => {
     expect(visibleTools(view(null).host)).toEqual(['files', 'skills', 'subagents']);
     expect(visibleTools(view('github').host)).toEqual(['files', 'skills', 'glab', 'subagents']);
+    expect(visibleTools(view('gitlab').host)).toEqual(['files', 'skills', 'gitlabMcp', 'glab', 'subagents']);
     const c = hostConfig('bitbucket');
     c.agents.tools.trackerMcpServer = 'tracker';
     expect(visibleTools(hostFacts(c))).toEqual(['files', 'skills', 'gitlabMcp', 'glab', 'subagents']);

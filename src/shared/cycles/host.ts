@@ -47,7 +47,8 @@ export function hostFacts(config: WorkspaceConfig): HostFacts {
     reviewerReplaces: kind === 'gitlab',
     readSwitch: primary !== null,
     cli: primary ? configuredCli(primary) : null,
-    trackerMcp: config.agents.tools.trackerMcpServer.trim() !== '',
+    // GitLab always had the switch: with no server configured it reads the default tracker server ({trackerMcp}).
+    trackerMcp: kind === 'gitlab' || config.agents.tools.trackerMcpServer.trim() !== '',
     engines: Object.fromEntries(LLM_ROLES.map((r) => [r, engineOf(r)])) as Record<LlmRole, EngineId>,
   };
 }
