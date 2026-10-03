@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Each improvement the retro's conversation raises becomes a proposal in Actions to open an issue, one per improvement and in the order they came: the improvement's title, and in the body its dimension, today's problem, what it would be and the retro it came from. Nothing is written to the code host until you say yes; then the issue is created through the audited path and a run starts on it, with its own cycle folder, thread and documents. Skipping creates nothing, and a test workspace refuses the approval. Without a tracker integration, an issue project or issue write (or when the host refuses the title), the improvement stays in the retro's conversation with the reason said.
+
+### Changed
+
+- The retro no longer asks the model for process improvements nor keeps them: the proposed improvements section leaves the retro screen and the field leaves the retro record, in every cycle family. A retro written by an earlier version still opens; the old field is ignored.
+
+### Added
+
 - **A release process in three steps: a release branch, a beta, then stable.** `scripts/release.sh open X.Y.Z` cuts `release/X.Y.Z` from `main` (or, for a patch, from a stable tag with `--from`); the pull requests of the version target that branch and are merged locally with the maintainer's noreply identity; `scripts/release.sh beta` cuts `X.Y.Z-beta.N` with the next number, published as a pre-release that only people on the beta channel receive; `scripts/release.sh stable` cuts `X.Y.Z` on `main` once a beta tag exists and the release branch is merged and holds nothing newer than that beta. The script refuses a branch whose number does not match the version, a version number with a leading zero, and a tag that would sit on a commit the remote branch lacks (it reads the remote-tracking refs and never fetches; the workflow checks the same before building). `--emergency` skips the beta rules for a stable that cannot wait, loudly and written in the tag. The stable's changelog section folds the beta sections of its version. CI runs for pull requests and pushes to `release/**`. `RELEASING.md`, `CONTRIBUTING.md` and `docs/updates.md` (how a person joins the beta channel) describe it; the design is in `docs/cycles/27-release-process/`.
 
 ### Fixed
