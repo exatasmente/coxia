@@ -174,6 +174,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     pump(id);
     return run;
   }
+
   // ---- running the stages -----------------------------------------------------------------------------------------------------------
 
   function pump(id: string): void {
@@ -181,10 +182,12 @@ export function createRunner(deps: RunnerDeps): Runner {
       again.add(id);
       return;
     }
-    const work = drive(id).finally(() => {
-      inflight.delete(id);
-      if (again.delete(id)) pump(id);
-    });
+    const work = drive(id)
+      .catch((e) => console.error('[runner]', id, e instanceof Error ? e.message : e))
+      .finally(() => {
+        inflight.delete(id);
+        if (again.delete(id)) pump(id);
+      });
     inflight.set(id, work);
   }
 
