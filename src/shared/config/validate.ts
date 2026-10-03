@@ -6,6 +6,7 @@ import { checkSquads, squadIssueText } from '../runs/squadCheck';
 import { promptFamilies } from '../cycles/prompts';
 import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
+import { isVerifyProject } from '../verifyCommands';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
@@ -217,6 +218,9 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     if (r.vcsId && !vcsIds.has(r.vcsId)) errors.push({ path: `projects.repos[${i}].vcsId`, message: `unknown integration "${r.vcsId}"` });
   });
   if (c.projects.issues.vcsId && !vcsIds.has(c.projects.issues.vcsId)) errors.push({ path: 'projects.issues.vcsId', message: `unknown integration "${c.projects.issues.vcsId}"` });
+  for (const key of Object.keys(c.projects.verifyCommands)) {
+    if (!isVerifyProject(key)) errors.push({ path: 'projects.verifyCommands', message: `"${key}" is not a project path (use group/project)` });
+  }
   const tracker = c.vcs.find((v) => v.id === c.projects.issues.vcsId) ?? c.vcs[0] ?? null;
   const cards = c.projects.issues;
   const fallback = effectiveCardScope({ scope: cards.cardScope, labels: cards.cardLabels, project: cards.project, kind: tracker?.kind ?? null }).fallback;

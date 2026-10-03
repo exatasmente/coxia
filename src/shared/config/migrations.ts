@@ -23,6 +23,9 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v10 `agents.team[].tracker` and `.shell` (what an agent of a run may read from the code host and run), and `runner.sandbox` (what the sandbox of an agent set to
 //       `shell: sandbox` may reach and use). Nothing is raised: an agent that writes keeps its commands (`allowlist`, or `none` when the workspace lists none), an agent
 //       that only reads keeps no commands and keeps the code host read it had when the workspace switches for it were on.
+//   v11 projects.verifyCommands: the conflict verification command of each project, which used to live in one file shared by every workspace.
+//       The step only adds the empty map; the commands of the old file are moved by a startup step in the main process (verify-move.ts), because
+//       a migration never reads the disk. The bump makes an older app refuse the file instead of resetting the whole `projects` block.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -237,8 +240,15 @@ function v9ToV10(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 10, agents: { ...agents, team }, runner: { ...runner, sandbox: runner.sandbox ?? neutralSandbox() } };
 }
 
+// A v10 file has no verification commands: it gets an empty map (one already there is kept), and nothing else in the file moves.
+function v10ToV11(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  const projects = pick(old.projects);
+  if (!Object.keys(projects).length) return { ...old, schemaVersion: 11 };
+  return { ...old, schemaVersion: 11, projects: { ...projects, verifyCommands: isObject(projects.verifyCommands) ? projects.verifyCommands : {} } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

@@ -1,8 +1,9 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
+import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 9). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 11). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -334,6 +335,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           cardScope: enumOf('Which open issues become cards: assigned (mine, the default), all (every open issue of the issue project) or labels (those of the issue project with any of cardLabels).', CARD_SCOPES),
           cardLabels: list('Labels of the "labels" scope: an issue with any of them is a card. No comma, quote, backslash or control character; at most 10.', { type: 'string', maxLength: 100, pattern: CARD_LABEL }, { maxItems: 10 }),
         }),
+        verifyCommands: { type: 'object', description: 'Shell command (bash -lc, in the conflict worktree) that checks a conflict resolution, by project "group/name". A blank command means none.', additionalProperties: { type: 'string', maxLength: VERIFY_COMMAND_MAX, pattern: NO_NUL } },
       }),
       vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),
       docs: object('Where the agents find their context (Claude Code layout).', {

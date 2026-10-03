@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 9): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 10;
+export const CONFIG_SCHEMA_VERSION = 11;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -128,6 +128,8 @@ export interface ProjectsConfig {
   /** Also treat the git repos found directly under the roots as projects (consumed by the VCS phase). */
   autoDiscover: boolean;
   issues: IssueProjectConfig;
+  /** Shell command that checks a conflict resolution in its worktree, by project ("group/project", the key the conflict flow uses). Absent or blank: none. */
+  verifyCommands: Record<string, string>;
 }
 
 export const VCS_KINDS = ['gitlab', 'github', 'bitbucket'] as const;

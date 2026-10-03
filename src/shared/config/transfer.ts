@@ -151,6 +151,8 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
     if (a.shell === 'sandbox') add(`agents.team[${a.id}].shell`, 'sandbox: any command the agent chooses, inside a sandbox');
     else if (a.shell === 'allowlist') add(`agents.team[${a.id}].shell`, 'allowlist: the commands of runner.commands');
   }
+  // Run with bash -lc in the worktree of a conflict resolution: a shell line, not an executable, and the importer should read it as well.
+  for (const [project, command] of Object.entries(c.projects.verifyCommands)) add(`projects.verifyCommands[${project}]`, command);
   return found;
 }
 
