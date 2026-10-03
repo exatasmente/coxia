@@ -135,6 +135,13 @@ describe('the card report from a provider', () => {
     expect(report.items.filter((i) => i.kind === 'mr').every((m) => m.milestone === undefined)).toBe(true);
   });
 
+  it('keeps only the merge requests of the workspace projects when it knows them', async () => {
+    const { report } = await buildCardReport(glRuntime().provider, { ...opts, projects: ['ACME/app'] });
+    expect(report.items.filter((i) => i.kind === 'mr').map((m) => m.ref)).toEqual(['app!7']);
+    const all = await buildCardReport(glRuntime().provider, { ...opts, projects: [] });
+    expect(all.report.items.filter((i) => i.kind === 'mr').map((m) => m.ref)).toEqual(['app!7', 'uploader!9']);
+  });
+
   it('says what blocks and what waits, in the workspace language', async () => {
     const { report } = await buildCardReport(glRuntime().provider, opts);
     const mr7 = report.items.find((i) => i.ref === 'app!7');
