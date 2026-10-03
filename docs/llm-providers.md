@@ -79,7 +79,9 @@ Quando o servidor diz que o contexto estourou, ou a estimativa passa de 80% da j
 
 ### Provedores: o que foi testado
 
-Importante: **nenhum modelo real foi testado ainda.** Não havia Ollama nem outro servidor nesta máquina. A suíte roda contra um servidor OpenAI falso e roteirizado (`test/helpers/fakeOpenAI.ts`) que reproduz o formato do SSE, chamadas de ferramenta em paralelo (com e sem `index`/`id`), erros com a redação de OpenAI, Ollama, vLLM e DeepSeek, `reasoning`/`reasoning_content` e `<think>`.
+Importante: **um** modelo real foi testado, uma vez, e só no runner; nenhum outro, e nenhum nas cerimônias. A suíte roda contra um servidor OpenAI falso e roteirizado (`test/helpers/fakeOpenAI.ts`) que reproduz o formato do SSE, chamadas de ferramenta em paralelo (com e sem `index`/`id`), erros com a redação de OpenAI, Ollama, vLLM e DeepSeek, `reasoning`/`reasoning_content` e `<think>`.
+
+**O que rodou de verdade:** DeepSeek v4.1 flash pelo OpenRouter, no motor aberto (saída estruturada em `auto`), no runner, em uma issue pequena de um projeto Node, de ponta a ponta no ciclo de agentes contra um host GitHub falso com memória: duas execuções de cerca de 50 chamadas ao modelo cada (uma terminou, a outra parou no limite de rodadas da revisão), por volta de US$ 0,3 cada. Isso mostra que o loop, a saída estruturada, as ferramentas de leitura e de escrita confinada e o runner funcionam com esse modelo nessa tarefa. **Não** mostra nada sobre outro modelo, sobre Ollama ou servidor local, sobre repositório grande ou de outra linguagem, sobre um host de código real, nem sobre o caminho do Claude Agent SDK; e as correções feitas depois dessa execução foram testadas só com o servidor falso. Os detalhes e o que mudou estão em [`runner.md`](runner.md#não-verificado).
 
 | Provedor | Situação |
 |---|---|
@@ -89,7 +91,8 @@ Importante: **nenhum modelo real foi testado ainda.** Não havia Ollama nem outr
 | llama.cpp `llama-server` (use `--jinja` para chamadas de ferramenta) | esperado funcionar; não testado |
 | vLLM (`--enable-auto-tool-choice --tool-call-parser ...`) | esperado funcionar; não testado |
 | OpenAI (`max_completion_tokens`, `temperature` fixo em modelos de raciocínio: tratados por fallback) | esperado funcionar; não testado |
-| Groq, DeepSeek direto, OpenRouter (modelos não Claude) | esperado funcionar; não testado |
+| OpenRouter com DeepSeek v4.1 flash | testado no runner (motor aberto, uma issue pequena, host falso); só esse modelo |
+| Groq, DeepSeek direto, outros modelos do OpenRouter (não Claude) | esperado funcionar; não testado |
 
 ### Limitações conhecidas
 
@@ -101,7 +104,7 @@ Importante: **nenhum modelo real foi testado ainda.** Não havia Ollama nem outr
 - MCP: só stdio, sem OAuth e sem servidores remotos.
 - Um raciocínio que vem como `<think>` só é reconhecido no início da resposta; o texto de raciocínio nunca entra na resposta final.
 - Os dois motores usam sessões diferentes: uma sessão do Claude não retoma no motor aberto (vira sessão nova).
-- O custo em dólar não é calculado; só os tokens são gravados.
+- O custo em dólar não é calculado pelo app: os tokens são gravados (por etapa, no runner) e o custo só aparece quando o provedor o informa (o OpenRouter informa) ou o SDK do Claude o informa.
 
 ---
 
@@ -180,7 +183,9 @@ When the server says the context overflowed, or the estimate passes 80% of the k
 
 ### Providers: what was tested
 
-Important: **no real model has been tested yet.** There was no Ollama or other server on the development machine. The suite runs against a scripted fake OpenAI server (`test/helpers/fakeOpenAI.ts`) that reproduces SSE framing, parallel tool calls (with and without `index`/`id`), errors worded like OpenAI, Ollama, vLLM and DeepSeek, `reasoning`/`reasoning_content` and `<think>`.
+Important: **one** real model has been tested, once, and only in the runner; no other, and none in the ceremonies. The suite runs against a scripted fake OpenAI server (`test/helpers/fakeOpenAI.ts`) that reproduces SSE framing, parallel tool calls (with and without `index`/`id`), errors worded like OpenAI, Ollama, vLLM and DeepSeek, `reasoning`/`reasoning_content` and `<think>`.
+
+**What really ran:** DeepSeek v4.1 flash through OpenRouter, on the open engine (structured output on `auto`), in the runner, on one small issue of a Node project, end to end through the agent cycle against a fake GitHub host with a memory: two runs of about 50 model calls each (one finished, the other stopped at the review's round limit), around US$ 0.3 each. It shows that the loop, the structured output, the read tools, the confined write tools and the runner work with that model on that task. It shows **nothing** about another model, about Ollama or a local server, about a large repository or one in another language, about a real code host, or about the Claude Agent SDK path; and the fixes made after that run were tested only against the fake server. The details and what changed are in [`runner.md`](runner.md#not-verified).
 
 | Provider | Status |
 |---|---|
@@ -190,7 +195,8 @@ Important: **no real model has been tested yet.** There was no Ollama or other s
 | llama.cpp `llama-server` (use `--jinja` for tool calls) | expected to work; untested |
 | vLLM (`--enable-auto-tool-choice --tool-call-parser ...`) | expected to work; untested |
 | OpenAI (`max_completion_tokens`, fixed `temperature` on reasoning models: handled by fallback) | expected to work; untested |
-| Groq, DeepSeek direct, OpenRouter (non-Claude models) | expected to work; untested |
+| OpenRouter with DeepSeek v4.1 flash | tested in the runner (open engine, one small issue, fake host); that model only |
+| Groq, DeepSeek direct, other OpenRouter models (non-Claude) | expected to work; untested |
 
 ### Known limitations
 
@@ -202,4 +208,4 @@ Important: **no real model has been tested yet.** There was no Ollama or other s
 - MCP: stdio only, no OAuth and no remote servers.
 - Reasoning that arrives as `<think>` is recognised only at the start of the answer; reasoning text never reaches the final answer.
 - The two engines keep separate sessions: a Claude session does not resume on the open engine (it starts a new one).
-- Dollar cost is not computed; only tokens are recorded.
+- Dollar cost is not computed by the app: tokens are recorded (per stage, in the runner) and a cost only shows when the provider reports one (OpenRouter does) or the Claude SDK does.
