@@ -1266,7 +1266,7 @@
    "repos/group/project/pulls/7/reviews",
    {
     "event": "REQUEST_CHANGES",
-    "body": "**Review: changes requested (round 1)**\n\n### Findings that block\n\nWrong.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=1 -->\n",
+    "body": "**Review: changes requested (round 1)**\n\n### Beyond the lines of the code\n\nWrong.\n\n1 comment left on the code itself; it is not repeated here.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=1 -->\n",
     "commit_id": "<sha>",
     "comments": [
      {
@@ -1304,7 +1304,7 @@
    "repos/group/project/pulls/7/reviews",
    {
     "event": "COMMENT",
-    "body": "**Review: approved (round 2)**\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=2 -->\n",
+    "body": "**Review: approved (round 2)**\n\nNo comment left on the code itself.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=2 -->\n",
     "commit_id": "<sha>",
     "comments": []
    }
@@ -1328,7 +1328,7 @@
    "repos/group/project/pulls/7/reviews",
    {
     "event": "COMMENT",
-    "body": "**Review: approved (round 3)**\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=3 -->\n",
+    "body": "**Review: approved (round 3)**\n\nNo comment left on the code itself.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=3 -->\n",
     "commit_id": "<sha>",
     "comments": []
    }

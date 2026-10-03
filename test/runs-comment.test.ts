@@ -54,8 +54,8 @@ describe('composing the comment', () => {
   it('matches a section by its place when the agent wrote as many as the template has but named them differently', () => {
     const c: StageComment = { sections: [{ heading: 'a', body: 'one' }, { heading: 'b', body: 'two' }], technical: '' };
     const out = renderComment(templates.review, ctx(), c, { marker });
-    expect(out.body).toContain('### Findings that block\n\none');
-    expect(out.body).toContain('### Suggestions that do not block\n\ntwo');
+    expect(out.body).toContain('### Beyond the lines of the code\n\none');
+    expect(out.body).toContain('### What was not reviewed\n\ntwo');
   });
 
   it('says what the agent summarized under the first section when it wrote no comment of its own, and leaves the technical detail out', () => {

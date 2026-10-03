@@ -60,7 +60,7 @@ function script(b: Boot): void {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Built.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: BUILT(), pr: PR });
   });
-  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'The thing does X: passed.']]) }));
 }
 
@@ -109,7 +109,7 @@ describe('a run whose agents are all autonomous', () => {
         work('Two blocking points.', {
           artifacts: [doc('4_REVIEW.md')],
           verdict: 'changes',
-          comment: comment([['Findings that block', 'The constant is wrong.']]),
+          comment: comment([['Beyond the lines of the code', 'The constant is wrong.']]),
           findings: [
             finding({ suggestion: 'export const feature = 2;' }),
             finding({ path: 'docs/notes.md', line: null, severity: 'suggestion', body: 'The notes need a title.' }),
@@ -121,7 +121,7 @@ describe('a run whose agents are all autonomous', () => {
         work('Only suggestions.', {
           artifacts: [doc('4_REVIEW.md')],
           verdict: 'approved',
-          comment: comment([['Suggestions that do not block', 'Two small ones.']]),
+          comment: comment([['Beyond the lines of the code', 'Two small ones.']]),
           findings: [finding({ severity: 'suggestion', body: 'The constant must be two.' }), finding({ line: 2, severity: 'suggestion', body: 'Name the second constant.' })],
         }),
     );
@@ -181,6 +181,10 @@ describe('a run whose agents are all autonomous', () => {
     expect(r1.comments[0].body).toContain('```suggestion\nexport const feature = 2;\n```');
     expect(r1.comments[0].body).toContain(`<!-- coxia:run=${end.id} stage=review round=1 finding=0 -->`);
     expect(r1.body.startsWith('**Review: changes requested (round 1)**')).toBe(true);
+    // the general comment says how many comments went on the code and does not repeat them; the agent's own text stays, since it is about no finding
+    expect(r1.body).toContain('3 comments left on the code itself; they are not repeated here.');
+    expect(r1.body).toContain('### Beyond the lines of the code\n\nThe constant is wrong.');
+    expect(r1.body).not.toContain('The notes need a title');
     expect(r1.body).toContain('Points about files that are no longer in the change');
     expect(r1.body).toContain('`src/gone.ts:3`: This file left the change.');
     expect(r1.body.indexOf('src/gone.ts')).toBeLessThan(r1.body.indexOf('<details>'));
@@ -489,7 +493,7 @@ describe('the push and the pull request', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
     script(b);
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'One.']]), findings: [finding({ suggestion: 'export const feature = 2;' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Suggestions that do not block', 'None.']]), findings: [] }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'One.']]), findings: [finding({ suggestion: 'export const feature = 2;' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Beyond the lines of the code', 'None.']]), findings: [] }));
     b.engine.script(
       'developer',
       async (_c, tools) => {
@@ -550,7 +554,7 @@ describe('the push and the pull request', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
     script(b);
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'One.']]), findings: [finding({})] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'One.']]), findings: [finding({})] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
     const run = await start(b);
     await through(b, run);
     expect(forge.reviews[0]).toMatchObject({ event: 'COMMENT' });
@@ -562,7 +566,7 @@ describe('the push and the pull request', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
     script(b);
-    b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Suggestions that do not block', 'None.']]), findings: [finding({ severity: 'suggestion', body: 'Name it better.' })] }));
+    b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Beyond the lines of the code', 'None.']]), findings: [finding({ severity: 'suggestion', body: 'Name it better.' })] }));
     const run = await start(b);
     const end = await through(b, run);
     expect(forge.reviews).toHaveLength(1);

@@ -35,7 +35,7 @@ import type { ForumStore } from '../forum-core';
 import type { RunStore } from '../runs-core';
 import { moveRun } from '../runs-forum';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
-import { type Placed, commentText, generalFindings, placeFindings, reviewComments, sameFinding, withTail } from './review';
+import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
 
 // What the runner leaves on the code host: the comment of each stage on the issue, the decision of each gate, the questions of the agents, the review of
 // the pull request on its lines, and the proposals of the push and the pull request. It decides what goes out by itself (the agent is autonomous and the
@@ -449,7 +449,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const title = `${titleOf(tpl)} (${round})`;
     if (run.comments[key]?.status === 'published') return;
     const marker = markerOf(run.id, 'review', round);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
+    // The general comment is for what does not fit a line: whatever the agent wrote that says what a finding says on its line is left out (the fallback text
+    // is not used either: with findings, the summary would be them again).
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round, result: resultWord(end) }, withoutRepeats(end.output.comment, record.findings), { marker, ...(record.findings.length ? {} : { fallback: end.output.summary }) });
     const hash = hashOf(rendered.body);
     run = moveRun(d, runId, (r) => recordCommentDraft(r, key, { target: 'mr', bodyHash: hash, body: rendered.body, headline: rendered.status, title }, now()));
     await publishReview(runId, round, { autonomous: end.autonomous, by: end.agent.id });
@@ -516,7 +518,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       problems.push(...checked.problems);
       bodies.set(p.index, checked.body);
     }
-    const general = checkComment(withTail(draft.body, generalFindings(fresh, lang())), { ...checkOptions(run, config), status: draft.headline ?? '', marker: markerOf(run.id, 'review', round), technicalDetail: tpl?.technicalDetail ?? true });
+    const general = checkComment(withTail(draft.body, [lineCountText(reviewComments(fresh, bodies).length, lang()), generalFindings(fresh, lang())].filter(Boolean).join('\n\n')), { ...checkOptions(run, config), status: draft.headline ?? '', marker: markerOf(run.id, 'review', round), technicalDetail: tpl?.technicalDetail ?? true });
     problems.push(...general.problems);
 
     // Whatever still blocks asks for changes again, answered thread or not; nothing the app writes ever approves. On a pull request of the person's own

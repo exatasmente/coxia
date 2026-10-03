@@ -1,7 +1,7 @@
 // How the findings of a review become the comments of a review on the pull request: where each one stands on the diff, what its comment says, and
 // when a replacement may be a suggestion block the author applies with one click.
 import { describe, expect, it } from 'vitest';
-import { commentText, generalFindings, placeFindings, replacementBlock, reviewComments, sameFinding, withTail } from '../src/main/runner/review';
+import { commentText, generalFindings, lineCountText, placeFindings, replacementBlock, reviewComments, sameFinding, withTail, withoutRepeats } from '../src/main/runner/review';
 import type { Finding } from '../src/shared/runs';
 
 const f = (over: Partial<Finding> = {}): Finding => ({ path: 'src/a.ts', line: 11, endLine: null, side: 'new', severity: 'blocking', body: 'The constant must be 2.', suggestion: null, ...over });
@@ -103,5 +103,32 @@ describe('whether two findings of different rounds are the same', () => {
   it('is no for another file or another point', () => {
     expect(sameFinding(f(), f({ path: 'src/b.ts' }))).toBe(false);
     expect(sameFinding(f(), f({ body: 'The helper is never called anywhere.' }))).toBe(false);
+  });
+});
+
+describe('the general comment of a review', () => {
+  it('says in one line how many comments the review left on the code, in the comment\'s language', () => {
+    expect(lineCountText(0, 'en')).toBe('No comment left on the code itself.');
+    expect(lineCountText(1, 'en')).toBe('1 comment left on the code itself; it is not repeated here.');
+    expect(lineCountText(4, 'en')).toBe('4 comments left on the code itself; they are not repeated here.');
+    expect(lineCountText(2, 'pt-BR')).toBe('2 comentários deixados no próprio código; não se repetem aqui.');
+  });
+
+  it('leaves out of the agent\'s text what a finding says on its line, and keeps what is about no finding', () => {
+    const findings = [f({ body: 'The substitution of every non alphanumeric sequence by one hyphen makes punctuation between letters introduce a separation.' }), f({ path: 'test/a.test.ts', line: 3, body: 'No regression case for punctuation between letters.' })];
+    const text = [
+      'The substitution of every non alphanumeric sequence by a single hyphen makes punctuation between letters introduce separation, which rule 3 forbids.',
+      '- The suite lacks a regression case for punctuation between letters in test/a.test.ts:3.\n- The change needs a note in the changelog before it ships.',
+      'The review did not run the application.',
+    ].join('\n\n');
+    const out = withoutRepeats({ sections: [{ heading: 'Beyond', body: text }, { heading: 'Repeated only', body: 'The substitution of every non alphanumeric sequence by one hyphen makes punctuation between letters introduce a separation.' }], technical: 'kept' }, findings);
+    expect(out).toEqual({ sections: [{ heading: 'Beyond', body: '- The change needs a note in the changelog before it ships.\n\nThe review did not run the application.' }], technical: 'kept' });
+  });
+
+  it('changes nothing when there are no findings or no text, and does not drop short remarks', () => {
+    const c = { sections: [{ heading: 'a', body: 'All good.' }], technical: '' };
+    expect(withoutRepeats(c, [])).toBe(c);
+    expect(withoutRepeats(null, [f()])).toBeNull();
+    expect(withoutRepeats(c, [f({ body: 'All good, really good, all good.' })])).toEqual(c);
   });
 });

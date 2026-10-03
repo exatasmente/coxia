@@ -53,7 +53,7 @@ function script(b: Boot): void {
   b.engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.', comment: comment([['What is asked', '> The thing must do X.'], ['Acceptance', 'X happens.']]) }));
   b.engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }));
   b.engine.script('developer', built());
-  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'The thing does X: passed.']]) }));
 }
 
@@ -117,7 +117,7 @@ describe('the agent cycle, as before the flow was generalized', () => {
   it('a review that sends the work back once, with both gates approved', async () => {
     const b = await scenario();
     b.engine.script('developer', built(1), built(2));
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'The constant is wrong.']]), findings: [finding({ suggestion: 'export const feature = 2;' })] }), () => work('Fine now.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'The constant is wrong.']]), findings: [finding({ suggestion: 'export const feature = 2;' })] }), () => work('Fine now.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
     const run = await start(b);
     const end = await through(b, run, 'Looks right.');
     expect(end.status).toBe('done');
@@ -137,7 +137,7 @@ describe('the agent cycle, as before the flow was generalized', () => {
   it('a review that sends the work back twice reaches its own limit: the run asks the person, and the answer goes back a stage', async () => {
     const b = await scenario();
     b.engine.script('developer', built(1), built(2), built(3));
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Still a point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Still wrong.']]), findings: [finding({ body: 'Still wrong.' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'Wrong.']]), findings: [finding()] }), () => work('Still a point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'Still wrong.']]), findings: [finding({ body: 'Still wrong.' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
     const run = await start(b);
     let now = await through(b, run);
     expect(now.status).toBe('question');
@@ -150,7 +150,7 @@ describe('the agent cycle, as before the flow was generalized', () => {
   it('a review sent back once and a QA failure sent back once spend a round of their own each: the run does not stop', async () => {
     const b = await scenario();
     b.engine.script('developer', built(1), built(2), built(3));
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
     b.engine.script('qa', () => work('Broke.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'fail', detail: 'a 500' }], comment: comment([['Scenarios verified and their result', 'login: failed.']]) }), () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'login: passed.']]) }));
     const run = await start(b);
     const end = await through(b, run);
@@ -182,7 +182,7 @@ describe('the agent cycle, as before the flow was generalized', () => {
     const b = await scenario((c) => {
       for (const id of ['planner', 'reviewer']) c.agents.team.find((a) => a.id === id)!.autonomous = false;
     });
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
     b.engine.script('developer', built(1), built(2));
     const run = await start(b);
     for (let i = 0; i < 30; i++) {

@@ -1032,7 +1032,7 @@
    "repos/group/project/pulls/7/reviews",
    {
     "event": "COMMENT",
-    "body": "**Review: approved (round 1)**\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=1 -->\n",
+    "body": "**Review: approved (round 1)**\n\nNo comment left on the code itself.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=1 -->\n",
     "commit_id": "<sha>",
     "comments": []
    }

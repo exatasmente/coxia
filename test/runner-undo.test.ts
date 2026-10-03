@@ -43,7 +43,7 @@ function script(b: Boot): void {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Built.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: comment([['What changed for the person using it', 'It exists.']]), pr: { title: 'Add the thing', ...comment([['What changes for the person using it', 'X.']]) } });
   });
-  b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding({ suggestion: 'export const feature = 2;' }), finding({ path: 'docs/notes.md', line: null, severity: 'suggestion', body: 'A title is missing.' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+  b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'Wrong.']]), findings: [finding({ suggestion: 'export const feature = 2;' }), finding({ path: 'docs/notes.md', line: null, severity: 'suggestion', body: 'A title is missing.' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'Passed.']]) }));
 }
 

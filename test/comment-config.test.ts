@@ -26,7 +26,7 @@ describe('the templates the agent cycle brings', () => {
     expect(headings('refine')).toEqual(['What is asked', 'What changes for the person using it', 'Acceptance', 'Out of scope', 'Open questions']);
     expect(headings('plan')).toEqual(['Approach', 'What changes, by area', 'Risks and how they are covered', 'How it will be tested']);
     expect(headings('implement')).toEqual(['What changed for the person using it', 'How to verify', 'Extra findings']);
-    expect(headings('review')).toEqual(['Findings that block', 'Suggestions that do not block']);
+    expect(headings('review')).toEqual(['Beyond the lines of the code', 'What was not reviewed']);
     expect(headings('qa')).toEqual(['Scenarios verified and their result', 'What was not verified']);
     expect(['refine', 'plan', 'implement', 'review', 'qa', 'pr'].map((id) => c[id].technicalDetail)).toEqual([true, true, true, true, true, true]);
     expect([c.gate.technicalDetail, c.question.technicalDetail, c.triage.technicalDetail, c.communicate.technicalDetail]).toEqual([false, false, false, false]);

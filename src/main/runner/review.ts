@@ -1,7 +1,7 @@
 import type { VcsKind } from '../../shared/config/types';
 import type { Language } from '../../shared/config/types';
 import { createTranslator } from '../../shared/i18n';
-import { type Finding, sameFinding, whereOf } from '../../shared/runs';
+import { type Finding, type StageComment, sameFinding, whereOf } from '../../shared/runs';
 import { covers, indexPatch } from '../vcs/diffLines';
 import type { ReviewComment } from '../vcs/types';
 
@@ -97,4 +97,45 @@ export function withTail(body: string, extra: string): string {
   const cut = at >= 0 ? at : body.lastIndexOf('<!--');
   const stop = cut >= 0 ? cut : body.length;
   return `${body.slice(0, stop).trimEnd()}\n\n${extra.trim()}\n\n${body.slice(stop)}`;
+}
+
+/** The one line that says how many comments the review left on the lines of the code. */
+export function lineCountText(count: number, language: Language): string {
+  const tr = createTranslator(language);
+  return count > 0 ? tr('main.runner.review.count', { count }) : tr('main.runner.review.countNone');
+}
+
+const wordsOf = (text: string): Set<string> => new Set(text.toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu) ?? []);
+
+/** Whether a piece of the general text says what a finding already says on its line: it names the finding's place, or most of its words are the finding's. */
+function repeatsFinding(piece: string, findings: Finding[]): boolean {
+  const mine = wordsOf(piece);
+  return findings.some((f) => {
+    if (f.line !== null && piece.includes(`${f.path}:${f.line}`)) return true;
+    const theirs = wordsOf(f.body);
+    if (mine.size < 4 || !theirs.size) return false;
+    let shared = 0;
+    for (const w of mine) if (theirs.has(w)) shared++;
+    return shared / mine.size >= 0.6;
+  });
+}
+
+/**
+ * The agent's text for the general comment of a review without what repeats a finding: the findings are the comments on the lines, so a paragraph or a list
+ * item of a section that says the same thing is left out (a section with nothing else is left out whole). What is about no finding stays.
+ */
+export function withoutRepeats(content: StageComment | null, findings: Finding[]): StageComment | null {
+  if (!content || !findings.length) return content;
+  const sections = content.sections.flatMap((s) => {
+    const kept = s.body
+      .split(/\n{2,}/)
+      .flatMap((paragraph) => {
+        const items = /^\s*(?:[-*]|\d+[.)])\s/m.test(paragraph) ? paragraph.split('\n') : [paragraph];
+        return items.filter((item) => item.trim() && !repeatsFinding(item, findings));
+      })
+      .join('\n\n')
+      .trim();
+    return kept ? [{ ...s, body: kept }] : [];
+  });
+  return { ...content, sections };
 }
