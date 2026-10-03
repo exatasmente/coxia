@@ -985,5 +985,12 @@
   "prompt.sdd.runner.chain.main": "{asker} asks:\n<data>\n{question}\n</data>\n\n{sections}\n\nDecide what to do with it and answer in the JSON asked for: verdict, text and reason.\n- answer: you can answer from the documents, the issue and the code; text is the answer, complete enough to act on.\n- pass: it is not yours to answer or you cannot; reason says why in a sentence, and text is the question as the next one in the chain needs it (or empty to pass it as it is).\n- needs-person: it is a decision only the person can take (scope, priority, accepting a risk): reason says what has to be decided.\nNever decide for the person what is theirs to decide, and never invent what the documents and the code do not say.",
   "main.forum.code.runner.chain.hops": "The question passed through {hops} agents without being answered: it goes to you now.",
   "main.forum.code.runner.chain.gone": "{agent} is no longer in the team: the question goes to you.",
-  "main.forum.code.runner.chain.failed": "{agent} could not answer the question ({detail}): it goes to you."
+  "main.forum.code.runner.chain.failed": "{agent} could not answer the question ({detail}): it goes to you.",
+  "main.runner.error.nothing-to-undo": "There is no comment of this run to take back for \"{key}\": it was not posted, it is the pull request's description, or it was already removed.",
+  "main.runner.undo.summary": "Delete the comment \"{title}\"",
+  "main.runner.undo.detail": "The runner posted this comment by itself and it will be deleted from the tracker after your yes. The run keeps the record that it was removed. {url}",
+  "main.forum.code.runner.undo.proposed": "Deleting the comment \"{title}\" waits for your yes in Actions.",
+  "main.forum.code.runner.undo.removed": "The comment \"{title}\" was deleted from the tracker.",
+  "main.forum.code.runner.undo.refused": "This workspace does not write to the code host: the comment \"{title}\" stays.",
+  "main.forum.code.runner.undo.nothing": "Nothing could be found to delete for \"{title}\"."
 }

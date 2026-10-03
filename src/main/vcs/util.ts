@@ -57,6 +57,13 @@ export function num(value: unknown): number {
   return typeof value === 'number' ? value : Number(value) || 0;
 }
 
+/** The id of a note to delete: a positive whole number, never what `num` makes of text (0), because a delete must name exactly what it removes. */
+export function noteNum(value: string | number): number {
+  const n = typeof value === 'number' ? value : /^\d+$/.test(value) ? Number(value) : 0;
+  if (!Number.isSafeInteger(n) || n <= 0) throw new VcsError('invalid', { detail: String(value).slice(0, 40) });
+  return n;
+}
+
 /** Worst-first merge of several CI states into the one the card shows. */
 export function worstCi(states: VcsCiStatus[]): VcsCiStatus | null {
   const order: VcsCiStatus[] = ['failed', 'running', 'pending', 'manual', 'canceled', 'success', 'skipped'];

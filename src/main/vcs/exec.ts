@@ -120,7 +120,7 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
         const r = await d.client.request(c.method, c.endpoint, { form: c.fields });
         meta.code = r.status;
         meta.response = r.body;
-        return JSON.stringify(r.body).slice(0, RESULT_MAX);
+        return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
       }
       throw new Error(t('vcs.validate.endpoint', { endpoint: c.endpoint }));
     },

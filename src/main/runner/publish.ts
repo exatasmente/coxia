@@ -22,6 +22,7 @@ import {
   recordCommentProposal,
   recordCommentPublished,
   recordCommentRefused,
+  recordCommentRemoved,
   renderComment,
 } from '../../shared/runs';
 import type { ReleaseAction, VcsCommand } from '../../shared/types';
@@ -124,6 +125,8 @@ export interface Publisher {
   flushReviews(runId: string): Promise<void>;
   /** Whether the event a waiting run waits for has happened, as the code host says (a reply is what the person wrote). Never throws: an unreadable host is "not yet". */
   waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
+  /** Proposes deleting what an automatic post of the run put on the tracker (always a "yes"). `proposed` is false when there was nothing to propose and `reason` says why. */
+  undo(runId: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
   stageEntered(runId: string, e: { stage: FlowStage; previous: FlowStage | null; autonomous: boolean }): Promise<void>;
 }
@@ -608,6 +611,53 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     await publishReview(runId, waiting.round, { autonomous: stageAutonomy(run, waiting.stage), by: waiting.by || flowStage?.agent || 'app' });
   }
 
+  // ---- taking a post back ------------------------------------------------------------------------------------------------------------
+
+  /** The notes of a review round: the comments on its lines and files (found by their marker) and, where the host lets it be deleted, its general comment. */
+  async function reviewNotes(run: Run, round: number, rec: { noteId: string | number | null }, provider: VcsProvider, pr: { project: string; iid: number }): Promise<{ id: string | number; target: 'mr' | 'review' }[]> {
+    const found: { id: string | number; target: 'mr' | 'review' }[] = [];
+    for (const thread of await provider.listMrThreads(pr.project, pr.iid)) {
+      const m = readMarker(thread.notes[0]?.body ?? '');
+      if (m && m.run === run.id && m.key === 'review' && m.round === round && m.finding !== null) found.push({ id: thread.notes[0].id, target: 'review' });
+    }
+    // GitHub's review text is the review itself, which a host never deletes once submitted; on the other hosts it is a comment like the rest.
+    if (provider.kind !== 'github' && rec.noteId !== null) found.push({ id: rec.noteId, target: 'mr' });
+    return found;
+  }
+
+  async function undo(runId: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }> {
+    const run = need(runId);
+    const rec = run.comments[key];
+    const title = rec?.title || key;
+    if (!rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') return { proposed: false, reason: 'nothing' };
+    if (door.refusal()) {
+      say(run, 'runner.undo.refused', { title });
+      return { proposed: false, reason: 'refused' };
+    }
+    const provider = door.provider();
+    if (!provider) return { proposed: false, reason: 'no-host' };
+    const { issue } = projects(run);
+    const review = /^review-(\d+)$/.exec(key);
+    let ops: VcsWriteOp[];
+    if (rec.target === 'issue') {
+      ops = [{ op: 'deleteNote', project: issue, iid: run.issue.iid, noteId: rec.noteId, target: 'issue' }];
+    } else {
+      const pr = await prOf(run, provider);
+      if (!pr) return { proposed: false, reason: 'nothing' };
+      const notes = review ? await reviewNotes(run, Number(review[1]), rec, provider, pr) : [{ id: rec.noteId, target: 'mr' as const }];
+      ops = notes.map((n) => ({ op: 'deleteNote' as const, project: pr.project, iid: pr.iid, noteId: n.id, target: n.target }));
+    }
+    const commands = (await Promise.all(ops.map((o) => provider.planWrite(o)))).flat();
+    if (!commands.length) {
+      say(run, 'runner.undo.nothing', { title });
+      return { proposed: false, reason: 'nothing' };
+    }
+    const summary = tr('main.runner.undo.summary', { title });
+    const created = door.propose({ key: `undo:${runId}:${key}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail: [tr('main.runner.undo.detail', { url: rec.url ?? '' }), rec.body ?? ''].filter(Boolean).join('\n\n'), unit: { runId, purpose: 'undo', key }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+    if (created) say(run, 'runner.undo.proposed', { title });
+    return { proposed: true };
+  }
+
   // ---- what happens when a proposal is carried out -----------------------------------------------------------------------------------
 
   async function done(a: ReleaseAction, responses: unknown[]): Promise<void> {
@@ -622,6 +672,13 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!run) return;
     const provider = door.provider();
     if (unit.purpose === 'run-pr') return pullRequestOpened(runId, responses);
+    if (unit.purpose === 'undo') {
+      const key = String(unit.key);
+      if (!run.comments[key]) return;
+      const after = moveRun(d, runId, (r) => recordCommentRemoved(r, key, now()));
+      say(after, 'runner.undo.removed', { title: after.comments[key].title || key });
+      return;
+    }
     if (unit.purpose === 'review' && provider) {
       const round = Number(unit.round);
       const draft = run.comments[`review-${round}`];
@@ -770,6 +827,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     actionDone: (a, responses) => guarded(String(a.unit?.runId ?? ''), () => done(a, responses)),
     flushReviews: (runId) => guarded(runId, () => flush(runId)),
     waitOver,
+    undo: (runId, key) => undo(runId, key),
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
   };
 }

@@ -20,7 +20,7 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
-import { checkIid, enc, iso, issueRefsOf, num, pool, worstCi } from './util';
+import { checkIid, enc, iso, issueRefsOf, noteNum, num, pool, worstCi } from './util';
 
 // GitHub (github.com and GitHub Enterprise Server): REST for everything, GraphQL for what REST cannot say or do: whether a review
 // thread is resolved, resolving it, and the draft state of a pull request. Issues are GitHub issues (no separate workflow status:
@@ -494,6 +494,10 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         case 'editMrNote':
           // A pull request's conversation comments are issue comments on GitHub.
           return [call('PATCH', `${repo(op.project)}/issues/comments/${num(op.noteId)}`, { body: op.body })];
+        case 'deleteNote':
+          checkIid(op.iid);
+          // The conversation comments of an issue and of a pull request are the same resource on GitHub; a comment on a line or a file of a review is not.
+          return [call('DELETE', op.target === 'review' ? `${repo(op.project)}/pulls/comments/${noteNum(op.noteId)}` : `${repo(op.project)}/issues/comments/${noteNum(op.noteId)}`, undefined)];
         case 'submitReview': {
           const n = checkIid(op.iid);
           const sha = checkSha(op.commitSha);
@@ -526,6 +530,9 @@ const WRITES: { method: VcsCommand['method']; re: RegExp; keys: string[]; option
   { method: 'POST', re: new RegExp(`^repos/${R}/issues/\\d+/labels$`), keys: ['labels'] },
   { method: 'DELETE', re: new RegExp(`^repos/${R}/issues/\\d+/labels/[\\w%.-]+$`), keys: [] },
   { method: 'PATCH', re: new RegExp(`^repos/${R}/issues/comments/\\d+$`), keys: ['body'] },
+  // Only a comment the runner wrote can be taken back: the conversation comment of an issue or pull request, and the comment of a review.
+  { method: 'DELETE', re: new RegExp(`^repos/${R}/issues/comments/\\d+$`), keys: [] },
+  { method: 'DELETE', re: new RegExp(`^repos/${R}/pulls/comments/\\d+$`), keys: [] },
   { method: 'PATCH', re: new RegExp(`^repos/${R}/issues/\\d+$`), keys: ['state'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/requested_reviewers$`), keys: ['reviewers'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/comments/\\d+/replies$`), keys: ['body'] },

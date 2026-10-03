@@ -985,5 +985,12 @@
   "prompt.sdd.runner.chain.main": "{asker} pergunta:\n<data>\n{question}\n</data>\n\n{sections}\n\nDecida o que fazer com ela e responda no JSON pedido: verdict, text e reason.\n- answer: você pode responder a partir dos documentos, da issue e do código; text é a resposta, completa o bastante para agir.\n- pass: não é sua para responder ou você não consegue; reason diz por quê em uma frase, e text é a pergunta como o próximo da cadeia precisa dela (ou vazio para repassar como está).\n- needs-person: é uma decisão que só a pessoa pode tomar (escopo, prioridade, aceitar um risco): reason diz o que precisa ser decidido.\nNunca decida pela pessoa o que é dela decidir, e nunca invente o que os documentos e o código não dizem.",
   "main.forum.code.runner.chain.hops": "A pergunta passou por {hops} agentes sem ser respondida: ela vai para você agora.",
   "main.forum.code.runner.chain.gone": "{agent} não está mais no time: a pergunta vai para você.",
-  "main.forum.code.runner.chain.failed": "{agent} não conseguiu responder à pergunta ({detail}): ela vai para você."
+  "main.forum.code.runner.chain.failed": "{agent} não conseguiu responder à pergunta ({detail}): ela vai para você.",
+  "main.runner.error.nothing-to-undo": "Não há comentário desta execução para desfazer em \"{key}\": ele não foi publicado, é a descrição do pull request ou já foi removido.",
+  "main.runner.undo.summary": "Apagar o comentário \"{title}\"",
+  "main.runner.undo.detail": "A execução publicou este comentário sozinha e ele será apagado do rastreador depois do seu sim. A execução guarda o registro de que foi removido. {url}",
+  "main.forum.code.runner.undo.proposed": "Apagar o comentário \"{title}\" espera o seu sim em Ações.",
+  "main.forum.code.runner.undo.removed": "O comentário \"{title}\" foi apagado do rastreador.",
+  "main.forum.code.runner.undo.refused": "Este espaço de trabalho não escreve no servidor de código: o comentário \"{title}\" fica.",
+  "main.forum.code.runner.undo.nothing": "Nada foi encontrado para apagar em \"{title}\"."
 }

@@ -147,6 +147,9 @@ describe('planWrite', () => {
 
   it('comments on issues and PRs, and replies by parent', async () => {
     expect(await plan({ op: 'commentIssue', project: 'acme/app', iid: 12, body: 'hi' })).toEqual([cmd({ endpoint: 'repositories/acme/app/issues/12/comments', json: '{"content":{"raw":"hi"}}' })]);
+    expect(await plan({ op: 'deleteNote', project: 'acme/app', iid: 12, noteId: 5, target: 'issue' })).toEqual([cmd({ method: 'DELETE', endpoint: 'repositories/acme/app/issues/12/comments/5' })]);
+    for (const target of ['mr', 'review'] as const) expect(await plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: 5, target })).toEqual([cmd({ method: 'DELETE', endpoint: 'repositories/acme/app/pullrequests/7/comments/5' })]);
+    await expect(plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: 'x', target: 'mr' })).rejects.toThrow();
     expect(await plan({ op: 'commentMr', project: 'acme/app', iid: 7, body: 'hi' })).toEqual([cmd({ endpoint: 'repositories/acme/app/pullrequests/7/comments', json: '{"content":{"raw":"hi"}}' })]);
     expect(await plan({ op: 'replyThread', project: 'acme/app', iid: 7, threadId: '101', body: 'ok' })).toEqual([cmd({ endpoint: 'repositories/acme/app/pullrequests/7/comments', json: '{"content":{"raw":"ok"},"parent":{"id":101}}' })]);
     expect(await plan({ op: 'resolveThread', project: 'acme/app', iid: 7, threadId: '101' })).toEqual([cmd({ endpoint: 'repositories/acme/app/pullrequests/7/comments/101/resolve' })]);
@@ -179,6 +182,8 @@ describe('validateCommand: what a Bitbucket write may look like', () => {
       ok({ endpoint: 'repositories/acme/app/issues/1/comments' }),
       ok({ endpoint: 'repositories/acme/app/pullrequests/7/comments/3/resolve', json: undefined }),
       ok({ method: 'PUT', endpoint: 'repositories/acme/app/issues/1/comments/3' }),
+      ok({ method: 'DELETE', endpoint: 'repositories/acme/app/pullrequests/7/comments/3', json: undefined }),
+      ok({ method: 'DELETE', endpoint: 'repositories/acme/app/issues/1/comments/3', json: undefined }),
       ok({ method: 'PUT', endpoint: 'repositories/acme/app/issues/1', json: '{"state":"closed"}' }),
       ok({ method: 'PUT', endpoint: 'repositories/acme/app/pullrequests/7', json: '{"title":"t","draft":true}' }),
     ]) expect(() => validateBitbucketCommand(c)).not.toThrow();
@@ -187,7 +192,9 @@ describe('validateCommand: what a Bitbucket write may look like', () => {
   const refused: [string, Partial<VcsCommand>][] = [
     ['merging', { endpoint: 'repositories/acme/app/pullrequests/7/merge', json: '{}' }],
     ['declining', { endpoint: 'repositories/acme/app/pullrequests/7/decline', json: '{}' }],
-    ['deleting a PR comment', { method: 'DELETE', endpoint: 'repositories/acme/app/pullrequests/7/comments/3', json: undefined }],
+    ['deleting a pull request', { method: 'DELETE', endpoint: 'repositories/acme/app/pullrequests/7', json: undefined }],
+    ['deleting a repository', { method: 'DELETE', endpoint: 'repositories/acme/app', json: undefined }],
+    ['deleting a comment with a body', { method: 'DELETE', endpoint: 'repositories/acme/app/pullrequests/7/comments/3', json: '{"content":{"raw":"x"}}' }],
     ['a body key that is not allowed', { json: '{"content":{"raw":"x"},"assignee":{}}' }],
     ['a missing required key', { json: '{"parent":{"id":3}}' }],
     ['content that is not raw text', { json: '{"content":{"raw":3}}' }],

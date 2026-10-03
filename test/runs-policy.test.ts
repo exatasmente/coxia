@@ -8,7 +8,7 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 // What a paired browser may do to a run. Reading, and answering the question a stage is waiting on, are open: the phone is where a person answers, and
 // an answer only lets the stage that asked go on. Everything else starts work or changes a run, or what an agent may do by itself: the window only.
 const OPEN = ['runs:list', 'runs:get', 'runs:answer'];
-const WINDOW_ONLY = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:setAutonomous'];
+const WINDOW_ONLY = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:undoPost', 'runs:setAutonomous'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');

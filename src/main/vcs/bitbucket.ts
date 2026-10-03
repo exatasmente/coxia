@@ -428,6 +428,8 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
           const id = checkIid(Number(op.noteId));
           return [call('PUT', `${repo(op.project)}/pullrequests/${checkIid(op.iid)}/comments/${id}`, { content: { raw: op.body } })];
         }
+        case 'deleteNote':
+          return [call('DELETE', `${repo(op.project)}/${op.target === 'issue' ? 'issues' : 'pullrequests'}/${checkIid(op.iid)}/comments/${checkIid(Number(op.noteId))}`)];
         case 'createMr':
           return [call('POST', `${repo(op.project)}/pullrequests`, { title: op.title, description: op.body, source: { branch: { name: op.sourceBranch } }, destination: { branch: { name: op.targetBranch } } })];
         case 'submitReview': {
@@ -464,6 +466,8 @@ const WRITES: { method: VcsCommand['method']; re: RegExp; allowed: string[]; req
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests$`), allowed: ['title', 'description', 'source', 'destination'], required: ['title', 'source', 'destination'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+/resolve$`), allowed: [], required: [] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/issues/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
+  { method: 'DELETE', re: new RegExp(`^repositories/${R}/issues/\\d+/comments/\\d+$`), allowed: [], required: [] },
+  { method: 'DELETE', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+$`), allowed: [], required: [] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/issues/\\d+$`), allowed: ['state'], required: ['state'] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/pullrequests/\\d+$`), allowed: ['title', 'reviewers', 'draft'], required: ['title'] },
 ];

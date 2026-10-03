@@ -316,6 +316,15 @@ describe('planWrite: the commands are the ones the app always proposed', () => {
     expect(await plan(true, { op: 'editIssueNote', project: '1', iid: 101, noteId: 903, body: 'new' })).toEqual([cmd({ method: 'PUT', endpoint: 'projects/1/issues/101/notes/903', fields: { body: 'new' } })]);
   });
 
+  it('deletes a note of an issue or of a merge request, a comment of a review being a note of the merge request', async () => {
+    const del = (endpoint: string) => cmd({ method: 'DELETE', endpoint });
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 101, noteId: 903, target: 'issue' })).toEqual([del('projects/1/issues/101/notes/903')]);
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: 904, target: 'mr' })).toEqual([del('projects/1/merge_requests/7/notes/904')]);
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: 905, target: 'review' })).toEqual([del('projects/1/merge_requests/7/notes/905')]);
+    for (const via of [true, false]) for (const c of await plan(via, { op: 'deleteNote', project: '1', iid: 7, noteId: 905, target: 'review' })) expect(() => validateGitLabCommand(c)).not.toThrow();
+    await expect(plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: '905/x', target: 'mr' })).rejects.toThrow();
+  });
+
   it('every planned command passes its own validator', async () => {
     const ops: VcsWriteOp[] = [
       { op: 'commentIssue', project: 'acme/app', iid: 1, body: 'x' },

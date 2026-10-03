@@ -71,7 +71,7 @@ import type { Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree'] as const;
+export const RUNNER_ERROR_CODES = ['nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -136,6 +136,8 @@ export interface Runner {
   answer(id: string, text: string): Run;
   retry(id: string): Run;
   cancel(id: string): Run;
+  /** Proposes deleting a comment the runner posted by itself, as an action that waits for a "yes" (and is audited when it runs); the run keeps the record as removed. */
+  undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
   skipWait(id: string, reason: string): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
@@ -474,6 +476,12 @@ export function createRunner(deps: RunnerDeps): Runner {
       aborts.get(id)?.abort();
       chainAborts.get(id)?.abort();
       return run;
+    },
+    async undoPost(id, key) {
+      const run = need(id);
+      const rec = run.comments[key];
+      if (!deps.publisher || !rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') throw new RunnerError('nothing-to-undo', { key: key.slice(0, 48) });
+      return deps.publisher.undo(id, key);
     },
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
     migrateFlow(id) {

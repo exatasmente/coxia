@@ -135,6 +135,15 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
       if (!found) throw new Error('404 not found');
       found.body = json.body;
       response = { id: found.id };
+    } else if (command.method === 'DELETE' && (m = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(\d+)$/.exec(command.endpoint))) {
+      const id = Number(m[1]);
+      if (![...forge.notes.values()].flat().some((n) => n.id === id)) throw new Error('404 not found');
+      for (const [number, list] of forge.notes) forge.notes.set(number, list.filter((n) => n.id !== id));
+    } else if (command.method === 'DELETE' && (m = /^repos\/[^/]+\/[^/]+\/pulls\/comments\/(\d+)$/.exec(command.endpoint))) {
+      const id = Number(m[1]);
+      if (!forge.threads.some((t) => t.comments.some((c) => c.databaseId === id))) throw new Error('404 not found');
+      for (const t of forge.threads) t.comments = t.comments.filter((c) => c.databaseId !== id);
+      forge.threads = forge.threads.filter((t) => t.comments.length);
     } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/\d+\/labels$/.exec(command.endpoint)) && command.method === 'POST') {
       forge.labels = [...new Set([...forge.labels, ...(json.labels as string[])])];
     } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/\d+\/labels\/([\w%.-]+)$/.exec(command.endpoint)) && command.method === 'DELETE') {

@@ -22,7 +22,7 @@ import type {
   VcsWriteOp,
 } from './types';
 import { type PatchIndex, indexPatch } from './diffLines';
-import { checkIid, checkProject, enc, iso, issueRefsOf, num, pool } from './util';
+import { checkIid, checkProject, enc, iso, issueRefsOf, noteNum, num, pool } from './util';
 
 // GitLab, REST v4 plus the one GraphQL read the work item status needs. The transport is the glab CLI (the migrated user's setup) or
 // fetch with a token; this file does not know which. Endpoints and fields are the ones the app called before providers existed.
@@ -495,6 +495,9 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
           return [rest('POST', `${repoPath(op.project)}/jobs/${num(op.jobId)}/play`, {})];
         case 'editMrNote':
           return [rest('PUT', `${repoPath(op.project)}/merge_requests/${checkIid(op.iid)}/notes/${num(op.noteId)}`, { body: op.body })];
+        case 'deleteNote':
+          // A comment of a review is a note of a discussion: the same resource as any note of the merge request.
+          return [rest('DELETE', `${repoPath(op.project)}/${op.target === 'issue' ? 'issues' : 'merge_requests'}/${checkIid(op.iid)}/notes/${noteNum(op.noteId)}`, {})];
         case 'createMr':
           return [rest('POST', `${repoPath(op.project)}/merge_requests`, { source_branch: op.sourceBranch, target_branch: op.targetBranch, title: op.title, description: op.body })];
         case 'submitReview': {
@@ -538,7 +541,11 @@ const FIELD_RULES: { method: VcsCommand['method']; re: RegExp; allowed: RegExp; 
   },
   { method: 'POST', re: /^projects\/[\w%.-]+\/merge_requests$/, allowed: /^(?:source_branch|target_branch|title|description)$/, required: ['source_branch', 'target_branch', 'title'] },
   { method: 'PUT', re: /^projects\/[\w%.-]+\/merge_requests\/\d+\/notes\/\d+$/, allowed: /^body$/, required: ['body'] },
+  { method: 'DELETE', re: /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\/\d+$/, allowed: /^$/, required: [] },
 ];
+
+// The only thing that may be deleted is a note of an issue or of a merge request.
+const DELETE_NOTE = /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\/\d+$/;
 
 /** What a GitLab write may look like: GraphQL only for the status mutation, REST only under projects/, and the review calls with only their own fields. */
 export function validateGitLabCommand(command: VcsCommand): void {
@@ -549,7 +556,7 @@ export function validateGitLabCommand(command: VcsCommand): void {
     }
   } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(command.endpoint) || /\.\.|%2e/i.test(command.endpoint)) {
     throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
-  } else if (command.json !== undefined) {
+  } else if (command.json !== undefined || (command.method === 'DELETE' && !DELETE_NOTE.test(command.endpoint))) {
     throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
   } else {
     const rule = FIELD_RULES.find((r) => r.method === command.method && r.re.test(command.endpoint));

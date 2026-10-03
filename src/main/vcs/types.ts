@@ -197,6 +197,11 @@ export type VcsWriteOp =
    * positions were taken from; the provider anchors every comment to it.
    */
   | { op: 'submitReview'; project: string; iid: number; event: ReviewEvent; body: string; comments: ReviewComment[]; commitSha: string }
+  /**
+   * A comment deleted. `target` says which kind of note it is, because hosts keep them apart: the conversation comment of an issue (`issue`) or of a
+   * merge or pull request (`mr`), and a comment of a review on a line or a file (`review`; on GitHub a different resource from the conversation's).
+   */
+  | { op: 'deleteNote'; project: string; iid: number; noteId: string | number; target: 'issue' | 'mr' | 'review' }
   /** A pull request from a branch of the same repository. */
   | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string };
 
