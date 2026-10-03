@@ -233,6 +233,20 @@ describe('a stage that goes wrong', () => {
     expect(c.thread(second).some((m) => m.code === 'runner.qa.commands')).toBe(false);
   });
 
+  it('tells every agent to state only what its stage verified, and gives the comment sections guidance that says the same', async () => {
+    const b = await boot({ configure: (c) => (c.language = 'en') });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    for (const call of b.engine.calls) expect(call.system, call.agent.id).toContain('Say only what you verified in this stage');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.prompt).toContain('what this stage verified (read, exercised or saw working)');
+    expect(qa.prompt).toContain('A scenario that was only read in the code says it was only read');
+    expect(qa.prompt).toContain('Do not leave it empty when nothing was exercised');
+    const dev = b.engine.calls.find((c) => c.agent.id === 'developer')!;
+    expect(dev.prompt).toContain('Say what this pass ran or saw working, and what it did not run');
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);

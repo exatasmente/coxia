@@ -25,6 +25,7 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title }),
     cp('runner.rules.data'),
+    cp('runner.rules.claims'),
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),

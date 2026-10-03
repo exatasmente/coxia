@@ -52,6 +52,7 @@ export function chainCall(i: ChainInput): AgentCall {
     cp('runner.chain.system', { agent: cycleWord(i.holder.name), job: cycleWord(i.holder.job), asker: i.asker, ref: i.run.issue.ref, title: i.run.issue.title, stage: i.run.stage }),
     i.liaison && others.length ? cp('runner.chain.liaison', { squad: cycleWord(i.liaison.squad.name), squads: others.map(squadLine).join('\n') }) : '',
     cp('runner.rules.data'),
+    cp('runner.rules.claims'),
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.holder.instructions).trim(),

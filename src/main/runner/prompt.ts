@@ -88,6 +88,7 @@ export function systemText(i: StageInput): string {
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
     cp('runner.rules.data'),
+    cp('runner.rules.claims'),
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),

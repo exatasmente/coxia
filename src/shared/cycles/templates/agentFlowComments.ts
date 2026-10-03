@@ -3,7 +3,8 @@ import type { CommentTemplate } from '../../config/types';
 
 // The comments the agent cycle leaves on the tracker, one template per work stage and per event. Every text is a catalog key
 // (`cycle.agentFlow.comment.<id>.*`), so the comments follow the workspace's language until the person edits a text into a literal.
-// Each template follows the comment standard: status first, sections a person who is not an engineer can read, technical detail last.
+// Each template follows the comment standard: status first, sections a person who is not an engineer can read, technical detail last. What a section says is only
+// what the stage verified (its guidance and the prompt's rules say so); what it did not verify is written as such.
 
 const key = (id: string, part: string): string => `cycle.agentFlow.comment.${id}.${part}`;
 

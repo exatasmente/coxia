@@ -43,6 +43,7 @@ export function requestCall(i: RequestInput): AgentCall {
   const system = [
     cp('runner.request.system', { agent: cycleWord(i.holder.name), job: cycleWord(i.holder.job), squad: cycleWord(i.to.name), mission: i.to.mission.trim() ? cycleWord(i.to.mission) : '—', asker: i.asker, from: cycleWord(i.from.name) }),
     cp('runner.rules.data'),
+    cp('runner.rules.claims'),
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.holder.instructions).trim(),
