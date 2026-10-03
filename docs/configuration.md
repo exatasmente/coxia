@@ -30,7 +30,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `appearance`, `notifications`, `closeToTray`, `retention`, `schedule` | as configurações que já existiam |
 | `llm.providers[]` | `{ id, kind, engine, baseUrl, models, secretRef, envFile, options, capabilities, structured, headers, ..., legacyCustomEndpoint }`. `kind`: `anthropic`, `bedrock`, `vertex`, `foundry`, `openai-compatible`. `engine`: `claude-sdk` (modelos Claude) ou `open` (loop próprio, OpenAI-compatível e local) |
 | `llm.roles` | por papel (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }` |
-| `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (projeto de issues, prefixo dos cartões) |
+| `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (projeto de issues, prefixo dos cartões, `cardScope` e `cardLabels`: quais issues viram cartões) |
 | `vcs[]` | integrações `gitlab` / `github` / `bitbucket`: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | fontes de contexto no estilo Claude Code: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` acrescenta `~/.claude` e `<projeto>/.claude` |
 | `userName`, `userArticle` | como os agentes chamam a pessoa e o artigo português que acompanha o nome (`o`, `a` ou vazio) |
@@ -43,6 +43,8 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil. O acesso pelo navegador (host, porta, URL pública) é da máquina e fica em `web.json`.
 
 Histórico do esquema: **v1** (sem `schemaVersion`) eram as configurações soltas do app antes da configuração existir; **v2** é o `WorkspaceConfig`; **v3** acrescenta `devCycle.priority` e os campos de cartão `priority` e `milestone`. A migração de v2 para v3 (`v2ToV3` em `migrations.ts`) cria `priority: { labels: [] }` e acrescenta os dois campos à lista `enrichment.cardFields` que o arquivo já tinha, sem tocar no resto. Um `config.json` v3 não abre em um app que só conhece o v2 (ele recusa, como qualquer arquivo de um app mais novo).
+
+**Quais issues viram cartões** (`projects.issues.cardScope`): `assigned` (as atribuídas a você, o padrão e o que todo workspace fazia), `all` (todas as issues abertas do projeto de issues) ou `labels` (as abertas do projeto de issues que têm qualquer uma de `cardLabels`, até 10 nomes sem vírgula, aspas nem barra invertida). É um campo opcional com padrão, então o esquema continua no **v3** e nenhum arquivo precisa de migração: um arquivo sem os campos abre como `assigned`, e um valor inválido volta sozinho ao padrão sem mexer no resto do bloco `issues`. Um arquivo salvo com os campos novos e aberto por uma versão anterior (0.2.2 ou menos) é lido por ela como inválido e ela zera o bloco `projects.issues` em memória: não há volta para versões anteriores. `all` e `labels` precisam do projeto de issues; sem ele, ou com `labels` sem nenhuma label, ou no Bitbucket (cujas issues não têm labels), valem as issues atribuídas a você, e o assistente e a validação dizem isso. O comando de fonte de cartões (`externalTools.cardSource`) define os seus próprios cartões e ignora a escolha. Edição: etapa de integrações do assistente, no bloco "Onde ficam as issues". Detalhes por host em [`vcs-providers.md`](vcs-providers.md#cartões-e-estágios).
 
 ### Instalação nova × instalação existente
 
@@ -141,7 +143,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `appearance`, `notifications`, `closeToTray`, `retention`, `schedule` | the settings that already existed |
 | `llm.providers[]` | `{ id, kind, engine, baseUrl, models, secretRef, envFile, options, capabilities, structured, headers, ..., legacyCustomEndpoint }`. `kind`: `anthropic`, `bedrock`, `vertex`, `foundry`, `openai-compatible`. `engine`: `claude-sdk` (Claude models) or `open` (own loop, OpenAI-compatible and local) |
 | `llm.roles` | per role (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }` |
-| `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (the issue project, card ref prefix) |
+| `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (the issue project, card ref prefix, `cardScope` and `cardLabels`: which issues become cards) |
 | `vcs[]` | `gitlab` / `github` / `bitbucket` integrations: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | Claude Code style context sources: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` adds `~/.claude` and `<project>/.claude` |
 | `userName`, `userArticle` | what the agents call the person, and the Portuguese article that goes with the name (`o`, `a` or empty) |
@@ -154,6 +156,8 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 
 Schema history: **v1** (no `schemaVersion`) was the app's loose settings before configuration existed; **v2** is `WorkspaceConfig`; **v3** adds `devCycle.priority` and the card fields `priority` and `milestone`. The v2 to v3 migration (`v2ToV3` in `migrations.ts`) creates `priority: { labels: [] }` and appends the two fields to the `enrichment.cardFields` list the file already had, touching nothing else. A v3 `config.json` does not open in an app that only knows v2 (it refuses, like any file from a newer app).
+
+**Which issues become cards** (`projects.issues.cardScope`): `assigned` (the ones assigned to you, the default and what every workspace did), `all` (every open issue of the issue project) or `labels` (the open issues of the issue project that carry any of `cardLabels`: up to 10 names with no comma, quote or backslash). It is an optional field with a default, so the schema stays at **v3** and no file needs a migration: a file without the fields opens as `assigned`, and an invalid value is reset on its own without touching the rest of the `issues` block. A file saved with the new fields and opened by an earlier version (0.2.2 or older) is read by it as invalid and it resets the `projects.issues` block in memory: there is no going back to an earlier version. `all` and `labels` need the issue project; without it, or with `labels` and no label, or on Bitbucket (whose issues have no labels), the issues assigned to you apply, and the wizard and the validation say so. The card source command (`externalTools.cardSource`) defines its own cards and ignores the choice. Edited in the wizard's integrations step, in the "Where the issues live" block. Per-host details in [`vcs-providers.md`](vcs-providers.md#cards-and-stages).
 
 ### Fresh install vs existing install
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A workspace setting chooses which issues become cards: the ones assigned to you (the default, so nothing changes for an existing workspace), every open issue of the issue project, or the open issues of the issue project that carry any of a list of labels. It works on GitHub and GitLab; Bitbucket offers the first two (its issues have no labels). It is edited in the integrations step of the setup wizard, next to the issue project; without an issue project, with no labels listed, or on Bitbucket with labels, the issues assigned to you apply and the wizard says so. A card source command keeps deciding its own cards. The merge and pull request cards, the call's agenda of 8 and its "left out" list are unchanged. The configuration schema stays at version 3 (two optional fields with defaults).
+
 ## [0.2.2] - 2026-10-03
 
 ### Fixed

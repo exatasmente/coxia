@@ -29,6 +29,7 @@ O token vem do cofre de segredos (`secretRef`: `stored`, `command` ou `env`, ver
 | Credencial | `PRIVATE-TOKEN` | `Authorization: Bearer` | `usuario:senha-de-app` (Basic) ou token de acesso puro (Bearer) |
 | CLI opcional | `glab` (`GITLAB_HOST`) | `gh` (`GH_HOST` em Enterprise) | nenhum |
 | Issues | issues do projeto, com status do work item | issues (sem status próprio: o estágio vem das labels e dos PRs) | rastreador de issues (opcional por repositório), o estado é o status |
+| Issues do projeto ("todas" e "por label") | `projects/<id>/issues?scope=all&state=opened`; por label, uma leitura por label (o filtro "qualquer uma" é de plano pago), reunidas pelo número | busca `is:issue is:open repo:<r>` e, por label, `label:"a","b"` (a vírgula é OU); a busca deixa os PRs fora da conta de páginas | `issues?q=` com os estados abertos, sem filtro de responsável; por label, não existe (o rastreador não tem labels) |
 | Lista "minhas" | `issues?scope=assigned_to_me`, `merge_requests?scope=created_by_me` e `reviewer_username` | `issues?filter=assigned`, busca `is:pr author:` e `review-requested:` | `pullrequests/{uuid}`; revisão pedida e issues nos repositórios configurados |
 
 ### Permissões do token
@@ -48,7 +49,7 @@ Com o login do CLI (`cliPreference: cli`) valem as permissões da sessão do CLI
 
 | Recurso | Lê | Propõe (escrita) |
 |---|---|---|
-| Cartões do dia sem comando externo (`vcs/cardSource.ts`) | minhas issues abertas, meus MRs e os pedidos de revisão, CI e aprovações | n/d |
+| Cartões do dia sem comando externo (`vcs/cardSource.ts`) | as issues abertas que o escopo do workspace escolhe (as minhas por padrão), meus MRs e os pedidos de revisão, CI e aprovações | n/d |
 | Ações rápidas (`gitlabQuick.ts`) | MR, pipeline e jobs, membros do projeto, issue e status | revisor, tirar de rascunho, rodar job manual, status e labels da issue |
 | Feedback e reentrada (`feedback.ts`) | threads de MR (resolvidas ou não), notas do QA em issue e MR | responder uma discussão, marcar como resolvida |
 | Efeitos da pré-daily (`efeitos.ts`) | MR, commits, pipelines, jobs, comentários, labels, estado da issue | n/d |
@@ -71,7 +72,9 @@ Limites por provedor: status de issue do GitLab depende dos ids de status da ins
 
 ### Cartões e estágios
 
-Sem `externalTools.cardSource`, os cartões vêm do provedor (`vcs/cards.ts`): uma issue por issue atribuída a você, MRs ligados por `Closes #n` no texto, no nome da branch ou pelo que o host diz. O estágio vem do mapeamento do workspace (`devCycle.stages`: `match` contra o status e as labels, o de maior `rank` vence). Com `devCycle.stages` vazio valem padrões por provedor (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" e equivalentes em inglês; sem sinal nenhum, o estágio sai do que os MRs fazem (rascunho, aberto, aprovado, mergeado). O item de issue leva também as labels, o milestone e a hora da última atualização (`updated_at`), de onde saem a prioridade do cartão e a ordem da lista ([`cycles.md`](cycles.md#prioridade)). O que mudou desde o começo do dia fica em `vcs-cards.json` do workspace.
+Sem `externalTools.cardSource`, os cartões vêm do provedor (`vcs/cards.ts`): uma issue por issue atribuída a você (ou, conforme `projects.issues.cardScope`, por issue aberta do projeto de issues ou só pelas que têm alguma das `cardLabels`: [`configuration.md`](configuration.md); sem o projeto de issues, sem labels ou no Bitbucket, que não tem labels nas issues, vale "atribuídas a você"), MRs ligados por `Closes #n` no texto, no nome da branch ou pelo que o host diz. O estágio vem do mapeamento do workspace (`devCycle.stages`: `match` contra o status e as labels, o de maior `rank` vence). Com `devCycle.stages` vazio valem padrões por provedor (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" e equivalentes em inglês; sem sinal nenhum, o estágio sai do que os MRs fazem (rascunho, aberto, aprovado, mergeado). O item de issue leva também as labels, o milestone e a hora da última atualização (`updated_at`), de onde saem a prioridade do cartão e a ordem da lista ([`cycles.md`](cycles.md#prioridade)). O que mudou desde o começo do dia fica em `vcs-cards.json` do workspace.
+
+O escopo dos cartões (`all`, `labels`) usa os mesmos limites de antes: no máximo 100 issues saem da fonte (duas páginas de 100 no GitHub e no Bitbucket, as páginas que o limite pede no GitLab), a ligação com MRs lê no máximo 25 issues sem MR no texto, e o que passa de 8 na chamada vai para a lista "fora da pauta". Uma issue além das 100 mais recentes não vira cartão, e isso não é avisado (vale também para `assigned`). A busca do GitHub tem limite de taxa próprio (mais baixo) e pode demorar a mostrar uma issue recém-criada; o relatório fica em cache por 5 minutos, mas salvar outra escolha de escopo o refaz na hora. Os MRs dos cartões não mudam com o escopo.
 
 ### O que a interface mostra por host
 
@@ -98,6 +101,7 @@ Toda chamada tem tempo limite (30 s na API, 60 s no CLI). Uma leitura repete em 
 ### Não verificado
 
 - GitHub e Bitbucket só foram testados contra servidores falsos com respostas modeladas na documentação; nenhuma conta real. As **escritas** de qualquer provedor (inclusive o executor via API do GitLab e o `gh api --input`) não rodaram em host real: o único uso real foi uma leitura (`GET`) no GitLab, pelo login do `glab`.
+- `all` e `labels` dos cartões só rodaram contra servidores falsos (a busca do GitHub com `label:"a","b"` como OU e o `labels=` do GitLab seguem a documentação; não foram conferidos num host real).
 - O GraphQL de threads do GitHub (`reviewThreads`) e de rascunho (`markPullRequestReadyForReview`) segue o esquema público, sem conta para conferir.
 - Bitbucket: `resolve` de comentário, `draft` no PR e `conflito` (não há campo) dependem da versão da API.
 - A ferramenta `VcsRead` no Claude SDK usa `zod` (peer do SDK): se não carregar, o agente fica sem ela.
@@ -129,6 +133,7 @@ The token comes from the secrets store (`secretRef`: `stored`, `command` or `env
 | Credential | `PRIVATE-TOKEN` | `Authorization: Bearer` | `user:app-password` (Basic) or a bare access token (Bearer) |
 | Optional CLI | `glab` (`GITLAB_HOST`) | `gh` (`GH_HOST` on Enterprise) | none |
 | Issues | project issues, with the work item status | issues (no status of their own: the stage comes from labels and PRs) | issue tracker (optional per repository), the state is the status |
+| Project issues ("all" and "by label") | `projects/<id>/issues?scope=all&state=opened`; by label, one read per label (the "any of" filter is a paid-tier feature), merged by number | search `is:issue is:open repo:<r>` and, by label, `label:"a","b"` (the comma is OR); the search keeps PRs out of the page count | `issues?q=` with the open states and no assignee filter; by label, none (the tracker has no labels) |
 | "Mine" lists | `issues?scope=assigned_to_me`, `merge_requests?scope=created_by_me` and `reviewer_username` | `issues?filter=assigned`, searches `is:pr author:` and `review-requested:` | `pullrequests/{uuid}`; requested reviews and issues in the configured repositories |
 
 ### Token permissions
@@ -148,7 +153,7 @@ With the CLI login (`cliPreference: cli`) the CLI session's permissions apply. T
 
 | Feature | Reads | Proposes (write) |
 |---|---|---|
-| Day cards without an external command (`vcs/cardSource.ts`) | my open issues, my MRs and review requests, CI and approvals | n/a |
+| Day cards without an external command (`vcs/cardSource.ts`) | the open issues the workspace's scope picks (mine by default), my MRs and review requests, CI and approvals | n/a |
 | Quick actions (`gitlabQuick.ts`) | MR, pipeline and jobs, project members, issue and status | reviewer, take out of draft, play a manual job, issue status and labels |
 | Feedback and re-entry (`feedback.ts`) | MR threads (resolved or not), QA notes on issues and MRs | reply to a discussion, mark it resolved |
 | Pre-daily effects (`efeitos.ts`) | MR, commits, pipelines, jobs, comments, labels, issue state | n/a |
@@ -171,7 +176,9 @@ Limits per provider: GitLab issue status depends on the instance's status ids (e
 
 ### Cards and stages
 
-Without `externalTools.cardSource`, cards come from the provider (`vcs/cards.ts`): one card per issue assigned to you, MRs linked by `Closes #n` in their text, the branch name or what the host says. The stage comes from the workspace mapping (`devCycle.stages`: `match` against the status and labels, the highest `rank` wins). With `devCycle.stages` empty, per-provider defaults apply (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" and equivalents; with no signal at all the stage comes from what the MRs are doing (draft, open, approved, merged). An issue item also carries the labels, the milestone and the time of the last update (`updated_at`), which is where a card's priority and the order of the list come from ([`cycles.md`](cycles.md#priority)). What changed since the day began is kept in the workspace's `vcs-cards.json`.
+Without `externalTools.cardSource`, cards come from the provider (`vcs/cards.ts`): one card per issue assigned to you (or, by `projects.issues.cardScope`, per open issue of the issue project or only those with one of the `cardLabels`: [`configuration.md`](configuration.md); with no issue project, no labels, or on Bitbucket, whose issues have no labels, "assigned to you" applies), MRs linked by `Closes #n` in their text, the branch name or what the host says. The stage comes from the workspace mapping (`devCycle.stages`: `match` against the status and labels, the highest `rank` wins). With `devCycle.stages` empty, per-provider defaults apply (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" and equivalents; with no signal at all the stage comes from what the MRs are doing (draft, open, approved, merged). An issue item also carries the labels, the milestone and the time of the last update (`updated_at`), which is where a card's priority and the order of the list come from ([`cycles.md`](cycles.md#priority)). What changed since the day began is kept in the workspace's `vcs-cards.json`.
+
+The card scope (`all`, `labels`) keeps the same limits as before: at most 100 issues leave the source (two pages of 100 on GitHub and Bitbucket, the pages the limit needs on GitLab), the MR linking reads at most 25 issues with no MR in any text, and what goes past 8 in the call lands in the "left out" list. An issue beyond the 100 most recent does not become a card, and that is not announced (true of `assigned` as well). GitHub's search has a rate limit of its own (lower) and may be slow to show a just-created issue; the report is cached for 5 minutes, but saving another scope rebuilds it at once. The MRs of the cards do not change with the scope.
 
 ### What the interface shows per host
 
@@ -201,3 +208,4 @@ Every call has a timeout (30 s on the API, 60 s on the CLI). A read retries on n
 - GitHub's GraphQL for threads (`reviewThreads`) and draft (`markPullRequestReadyForReview`) follows the public schema, with no account to check against.
 - Bitbucket: comment `resolve`, PR `draft` and the conflict flag (there is no field) depend on the API version.
 - The `VcsRead` tool on the Claude SDK uses `zod` (a peer of the SDK): if it cannot load, the agent runs without the tool.
+- The `all` and `labels` card scopes only ran against fake servers (GitHub's search with `label:"a","b"` as OR and GitLab's `labels=` follow the documentation; neither was checked on a real host).
