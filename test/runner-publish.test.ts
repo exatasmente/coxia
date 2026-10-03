@@ -271,7 +271,7 @@ describe('a run whose agents are all autonomous', () => {
       const end = await through(b, run);
       expect(end).toMatchObject({ status: 'done', stage: 'ready' });
       const first = issueNotes()[1][1].split('\n')[0];
-      expect(first).toBe('**Portão 1: aprovado**');
+      expect(first).toBe('**Gate 1: aprovado**');
       expect(b.thread(run).map((m) => messageText(m)).join('\n')).toContain('Etapa Plano');
       expect(b.engine.calls.find((c) => c.agent.id === 'planner')!.system).toContain('na etapa "Plano"');
       expect(b.engine.calls.find((c) => c.agent.id === 'planner')!.prompt).toContain('Etapa "Plano"');

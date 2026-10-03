@@ -52,7 +52,7 @@ describe('where a person reads a stage name', () => {
 
   it('a decision and an error of a run name it too', () => {
     setLanguage('pt-BR');
-    expect(messageText({ code: 'gate.approved', params: { stage: 'cycle.agentFlow.stage.gate1' } })).toBe('Portão 1: aprovado.');
+    expect(messageText({ code: 'gate.approved', params: { stage: 'cycle.agentFlow.stage.gate1' } })).toBe('Gate 1: aprovado.');
     expect(new RunError('no-agent', { stage: 'cycle.agentFlow.stage.review' }).message).toContain('Revisão');
   });
 
@@ -60,7 +60,7 @@ describe('where a person reads a stage name', () => {
     const { c } = view();
     const draw = () => flowDiagram(c.devCycle.stages, c.agents.team, (a) => a.id, { returns: 'returns' });
     setLanguage('pt-BR');
-    expect(draw()).toContain('n1{{"Portão 1"}}');
+    expect(draw()).toContain('n1{{"Gate 1"}}');
     setLanguage('en');
     expect(draw()).toContain('n1{{"Gate 1"}}');
   });

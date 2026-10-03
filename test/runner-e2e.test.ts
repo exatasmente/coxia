@@ -184,9 +184,9 @@ describe('a run from refine to ready', () => {
     expect(refusals.map((m) => m.params.tool)).toEqual(['Write', 'Write', 'Bash', 'Bash']);
     expect(refusals.every((m) => m.stage === 'implement')).toBe(true);
     expect(b.notices.map((n) => n.title.replace(/app#101/, 'REF'))).toEqual([
-      'REF espera você no portão',
+      'REF espera você no gate',
       'REF: um agente tem uma pergunta',
-      'REF espera você no portão',
+      'REF espera você no gate',
       'REF: etapa esperando para começar',
       'REF: resultado esperando você',
       'REF: execução concluída',

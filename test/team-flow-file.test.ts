@@ -20,7 +20,7 @@ describe('the diagram of a flow', () => {
     const lines = code.split('\n');
     expect(lines[0]).toBe('flowchart TD');
     expect(lines.filter((l) => /^ {2}n\d+[[{(]/.test(l))).toHaveLength(8);
-    expect(code).toContain('n1{{"Portão 1"}}');
+    expect(code).toContain('n1{{"Gate 1"}}');
     const business = applyTemplate(neutralConfig(), agentFlow);
     expect(flowDiagram(business.devCycle.stages, business.agents.team, label, words)).toContain('(["Pronto');
   });
