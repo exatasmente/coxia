@@ -69,16 +69,42 @@ describe('the stored fields', () => {
     expect(neutralConfig().projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
   });
 
-  it('a current file without them opens as assigned and is not rewritten', () => {
+  it('a schema 3 file gets the default written out, keeps the rest of its issue project, and a version 4 file without them is left alone', () => {
     const stored = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
     delete stored.projects.issues.cardScope;
     delete stored.projects.issues.cardLabels;
     stored.projects.issues = { ...stored.projects.issues, vcsId: null, project: 'acme/app', refPrefix: 'app#' };
-    const r = migrateConfig(stored, { legacyInstall: false });
+    const v3 = { ...stored, schemaVersion: 3 };
+    const r = migrateConfig(v3, { legacyInstall: false });
     expect(r.fromVersion).toBe(3);
-    expect(r.config.schemaVersion).toBe(3);
-    expect(r.changed).toBe(false);
+    expect(r.changed).toBe(true);
+    expect(r.config.schemaVersion).toBe(4);
     expect(r.config.projects.issues).toMatchObject({ project: 'acme/app', refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] });
+    expect(validateConfig(r.config).ok).toBe(true);
+    const v4 = migrateConfig(stored, { legacyInstall: false });
+    expect(v4.changed).toBe(false);
+    expect(v4.config.projects.issues).toMatchObject({ project: 'acme/app', cardScope: 'assigned', cardLabels: [] });
+  });
+
+  it('the v3 to v4 step is idempotent, keeps a scope already there, and tolerates a file with no projects', () => {
+    const v3 = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+    v3.schemaVersion = 3;
+    v3.projects.issues = { ...v3.projects.issues, cardScope: 'labels', cardLabels: ['ready'] };
+    expect(migrateConfig(v3, { legacyInstall: false }).config.projects.issues).toMatchObject({ cardScope: 'labels', cardLabels: ['ready'] });
+    const bare = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
+    expect(bare.config.language).toBe('en');
+    expect(bare.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
+  });
+
+  it('a file from before the card fields (schema 2) ends at 4 with the scope and the priority section', () => {
+    const v2 = { ...neutralConfig(), schemaVersion: 2 } as Record<string, any>;
+    delete v2.devCycle.priority;
+    delete v2.projects.issues.cardScope;
+    delete v2.projects.issues.cardLabels;
+    const r = migrateConfig(v2, { legacyInstall: false });
+    expect(r.config.schemaVersion).toBe(4);
+    expect(r.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
+    expect(r.config.devCycle.priority).toEqual({ labels: [] });
   });
 
   it('an invalid scope or label is reset by itself, keeping the rest of the block', () => {

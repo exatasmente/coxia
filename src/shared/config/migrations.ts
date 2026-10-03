@@ -8,6 +8,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v1  no schemaVersion; the flat "Settings" of the app before configuration existed (models, tools, schedule, voice, ...; web lived in it too).
 //   v2  WorkspaceConfig (types.ts).
 //   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
+//   v4  projects.issues.cardScope and cardLabels: which issues become cards. Nothing stored changes; the bump makes an app that does not know the
+//       fields refuse the file instead of repairing (and then saving) a `projects.issues` block it cannot read.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -88,8 +90,20 @@ function v2ToV3(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   };
 }
 
+// A v3 file has no card scope: it gets today's behavior written out, and nothing else in the file moves.
+function v3ToV4(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  const projects = pick(old.projects);
+  if (!Object.keys(projects).length) return { ...old, schemaVersion: 4 };
+  const issues = pick(projects.issues);
+  return {
+    ...old,
+    schemaVersion: 4,
+    projects: { ...projects, issues: { ...issues, cardScope: issues.cardScope ?? 'assigned', cardLabels: issues.cardLabels ?? [] } },
+  };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

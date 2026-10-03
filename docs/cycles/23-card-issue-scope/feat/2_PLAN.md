@@ -51,12 +51,19 @@ Order of the checks is the order above, so the note names the first thing to fix
 
 `VCS_CAPS` gets `issueLabels: boolean` (GitHub and GitLab true, Bitbucket false). It stays plain data next to the other caps; `HostFacts` does not expose it (nothing on screen outside the wizard needs it).
 
-### Migration: no schema bump (decision D1)
+### Migration: schema 3 -> 4 (decision D1)
 
-The schema stays **3**. Nothing stored has to change: `cardScope` and `cardLabels` are optional with a default, `withConfigDefaults` completes any v3 file that lacks them, and the default (`assigned`) is exactly what an existing workspace did, so an existing file opens unchanged and keeps its cards. v2 -> v3 was a real bump because a stored list (`enrichment.cardFields`) had to gain entries; here no stored value moves. Consequences, recorded on purpose:
+`CONFIG_SCHEMA_VERSION` goes to 4 and `STEPS[3] = v3ToV4` is added in `src/shared/config/migrations.ts`:
+
+- writes `projects.issues.cardScope = 'assigned'` and `cardLabels = []` when absent (a value already there is kept, so the step is idempotent) and sets `schemaVersion: 4`;
+- leaves the rest of the document alone, and a document with no `projects` to the defaults;
+- never reads the disk.
+
+Why a bump although no stored value changes: the schema is strict (`additionalProperties: false`), so an app that does not know the two fields reads a file with them as invalid, repairs by resetting the whole `projects.issues` block in memory and could save it back, losing the issue project. The version refusal ("written by a newer app") is the project's established way to avoid that (v2 -> v3 did the same). The first draft of this plan had no bump; the maintainer session chose the refusal.
 
 - A bad stored value is repaired by the existing `repair()`: the path `projects.issues.cardScope` exists in the neutral base, so just that field goes back to `assigned` (with a note), the rest of the block is kept. Tested.
-- **Downgrade:** a file saved by this version and opened by 0.2.2 or earlier fails that version's strict schema ("is not a known field") and its repair resets the whole `projects.issues` block of the in-memory config. The project already treats an older app reading a newer file as unsupported (the version refusal exists for that), but a bump would have turned this into a clean refusal. If the maintainer prefers the refusal, the change is `CONFIG_SCHEMA_VERSION = 4`, a `v3ToV4` step that writes the two defaults, and the eight assertions of `3` in the tests; listed as an open decision in the report.
+- A v4 file hand-edited to drop the fields still opens as `assigned` (the defaults fill it).
+- Tests: `test/card-scope.test.ts` (v3 gets the defaults and keeps its project, v2 ends at 4, idempotent, keeps a scope already set, a file with no projects), and every assertion of the schema version in the config tests now says 4 (the "newer app" ones say 5).
 - The JSON Schema description of the file (`config:schema`) documents both fields; `test/config-schema.test.ts` (types, schema and defaults cannot drift) covers them.
 
 ## Provider API
@@ -120,7 +127,7 @@ The place is the integrations step of the wizard, in the "Where the issues live"
 | File | What it proves |
 |---|---|
 | `test/card-scope.test.ts` (new) | `effectiveCardScope` for every combination: each fallback and its precedence, label cleaning, `assigned` unaffected by labels |
-| `test/config-schema.test.ts`, `config-migrations.test.ts` | defaults hold the two fields; a v3 file without them opens as `assigned`; an invalid scope or label is repaired to the default without touching `project`/`refPrefix`; labels with a comma or a quote are refused; the schema stays at 3 and `config-transfer` round-trips the fields |
+| `test/config-schema.test.ts`, `config-migrations.test.ts` | defaults hold the two fields; a v3 file gets the defaults written by `v3ToV4`; an invalid scope or label is repaired to the default without touching `project`/`refPrefix`; labels with a comma or a quote are refused; the schema is 4 and `config-transfer` round-trips the fields |
 | `test/vcs-github.test.ts` | exact search query for `all` and for `labels` (any-of syntax, `is:issue is:open repo:`), PRs left out, pagination bounded at two pages, the same through `gh` (CLI fake) |
 | `test/vcs-gitlab.test.ts` | exact endpoints (`scope=all`, one read per label), merge by issue number, ordering, status attached, numeric project |
 | `test/vcs-bitbucket.test.ts` | `all` query and the 404 of a repository without a tracker; `labels` throws `unsupported` |
@@ -137,7 +144,7 @@ The place is the integrations step of the wizard, in the "Where the issues live"
 | GitHub search rate limit / index lag | five minute cache; `rate_limited` mapping; documented |
 | GitLab `labels` costs one read per label | at most 10 labels, three at a time |
 | A stored `labels` that cannot work (Bitbucket, empty) looks broken | the fallback is visible: wizard note, validation warning |
-| Downgrade reads the new fields as unknown | see D1 |
+| An older app reads the new fields as unknown | the schema bump makes it refuse the file (D1) |
 | The cached report served after a scope change | cache key (above) |
 | Label names with characters a query could misread | refused by the schema; providers still strip quotes and backslashes defensively |
 
@@ -145,7 +152,7 @@ The place is the integrations step of the wizard, in the "Where the issues live"
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | No schema bump, no migration step | nothing stored changes; optional fields with defaults; `assigned` equals today. Downgrade cost recorded above |
+| D1 | Schema 3 -> 4 with a `v3ToV4` step that writes the defaults | a strict schema makes an older app repair and possibly re-save a reset `projects.issues`; the version refusal is the established protection (decided by the maintainer session; first draft had no bump) |
 | D2 | Fields in `projects.issues` (`cardScope`, `cardLabels`), not a new section | one decision, one place, `rc().issues` already carries it |
 | D3 | `all` and `labels` without an issue project fall back to `assigned`, with a note and a warning; the choice is kept | "all issues the host lists for me" has no meaning without a project (a user can see thousands); not blocking the save because the project may be set next |
 | D4 | `labels` with no labels falls back to `assigned`, not to `all` | an empty filter must never widen the day to every issue |
@@ -156,3 +163,11 @@ The place is the integrations step of the wizard, in the "Where the issues live"
 | D9 | The scope never changes the card JSON | prompts and goldens stay; "who is it assigned to" is its own issue |
 | D10 | The scope is ignored when an external card-source command is on, and the wizard says so | the command defines its cards |
 | D11 | The report cache is keyed by the tracker settings | a saved change shows at once without a cross-module event |
+
+## Follow-ups (not part of this change)
+
+| # | Follow-up | Why it is left out |
+|---|---|---|
+| F1 | Show who an issue is assigned to on the card | changes what the agents read and the prompt goldens; its own issue (D9) |
+| F2 | Say so when more than 100 open issues are cut at the source | silent for `assigned` too today; a separate change to all scopes |
+| F3 | Check the GitHub search OR-label syntax, the GitLab `labels=` reads and the Bitbucket query on real hosts | the suite only runs against fakes; `3_TEST_PLAN.md` is the check |

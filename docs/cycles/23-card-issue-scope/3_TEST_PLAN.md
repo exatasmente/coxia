@@ -28,7 +28,7 @@ npm run dev
 ### Default: an existing workspace is unchanged
 
 1. Open Today (use "refresh" so the cache is skipped). The cards are A and B, and the pull request linked to A. C, D, E and F are not there.
-2. Open the workspace's `config.json` (`<data>/workspaces/<id>/config.json`). `"schemaVersion"` is `3` and `projects.issues` shows `"cardScope": "assigned"` and `"cardLabels": []` after the wizard saved it. Delete the two lines, restart the app: it opens, Today shows A and B again, and the file is not rewritten until something is saved.
+2. Open the workspace's `config.json` (`<data>/workspaces/<id>/config.json`). `"schemaVersion"` is `4` and `projects.issues` shows `"cardScope": "assigned"` and `"cardLabels": []` after the wizard saved it. Set `"schemaVersion"` back to `3` and delete the two lines, restart the app: it opens and migrates, Today shows A and B again, and the file is back at version 4 with the two defaults.
 
 Automated: `test/card-scope.test.ts` ("a current file without them opens as assigned"), `test/vcs-cards.test.ts` ("asks for the issues assigned to me, exactly as before"), `test/config-resolve.test.ts`, the prompt goldens (`test/golden`, untouched).
 

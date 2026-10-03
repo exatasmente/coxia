@@ -62,6 +62,6 @@ The block shows, as a note, what the saved choice will actually do: the fallback
 - Switching it to `all` shows the open issues of the issue project, assigned to me or not, and no pull request; switching to `labels` with `bug, ready` shows only the issues carrying either label.
 - The same three on GitLab; on Bitbucket `all` works and `labels` is not offered.
 - With no issue project, `all` and `labels` show the assigned cards and the settings explain why.
-- An existing configuration file opens unchanged and behaves as `assigned`; a hand-edited file with an invalid scope is repaired to `assigned`, never locks the workspace out.
+- An existing configuration file migrates to schema 4 with `assigned` and behaves as before; a hand-edited file with an invalid scope is repaired to `assigned`, never locks the workspace out.
 - Today and the call take their cards as before: a long list fills the "left out" list.
 - No test reaches a network, a model or a host.
