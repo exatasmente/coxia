@@ -64,6 +64,9 @@ export interface Picked {
   kind: OutputKind;
 }
 
+/** The agent a question of `agent` goes to first: the one it turns to, when that is another agent of the team. */
+export const askTarget = (config: WorkspaceConfig, agent: AgentDef): string | null => (agent.turnsTo && agent.turnsTo !== agent.id && config.agents.team.some((a) => a.id === agent.turnsTo) ? agent.turnsTo : null);
+
 export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]): Picked {
   const stage = flow.find((s) => s.id === run.stage);
   if (!stage || !stage.agent) throw new StageError('no-stage', { stage: run.stage });
@@ -80,13 +83,13 @@ export function pendingHandoff(thread: ForumMessage[], agent: string): { from: s
 }
 
 /** The person's answer to the last question this agent asked in this stage, until the agent reports again. */
-export function pendingAnswer(thread: ForumMessage[], agent: string, stage: string): { question: string; text: string } | null {
+export function pendingAnswer(thread: ForumMessage[], agent: string, stage: string): { question: string; text: string; by: string } | null {
   const asked = [...thread].reverse().find((m) => m.kind === 'question' && m.author.type === 'agent' && m.author.id === agent && m.stage === stage);
   if (!asked) return null;
   const answered = thread.find((m) => m.kind === 'answer' && m.seq > asked.seq);
   if (!answered) return null;
   const reported = thread.some((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === agent && m.seq > answered.seq);
-  return reported ? null : { question: asked.text, text: answered.text };
+  return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t('main.runner.author.person') };
 }
 
 export async function withLimit<T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> {
@@ -150,6 +153,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     pr,
     reporter,
     priority,
+    turnsTo: askTarget(config, agent),
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -165,7 +169,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent) }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,

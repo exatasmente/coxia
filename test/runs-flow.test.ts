@@ -2,7 +2,7 @@
 // the stage where it ends, and moving a run to another flow.
 import { describe, expect, it } from 'vitest';
 import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
-import { type FlowStage, RunError, askReporter, cancel, flowOf, gateApprove, gateReject, handBack, migrateFlow, recordCommentPublished, recordCommentRemoved, reviewReturn, stageDone, waitDone, waitSkip } from '../src/shared/runs';
+import { type FlowStage, RunError, answer, answerByAgent, ask, askReporter, cancel, passQuestion, flowOf, gateApprove, gateReject, handBack, migrateFlow, recordCommentPublished, recordCommentRemoved, reviewReturn, stageDone, waitDone, waitSkip } from '../src/shared/runs';
 import { agentFlowConfig, drive, startInput } from './helpers/runs';
 
 const flowFrom = (edit: (c: WorkspaceConfig) => void): FlowStage[] => {
@@ -239,5 +239,60 @@ describe('a comment that was removed', () => {
     d.do((r, at) => recordCommentRemoved(r, 'refine', at));
     expect(d.run.comments.refine).toMatchObject({ status: 'removed', noteId: null, url: 'https://example.com/n/77', body: 'text' });
     expect(() => recordCommentRemoved(d.run, 'plan', '2026-10-03T11:00:00.000Z')).toThrow(RunError);
+  });
+});
+
+describe('a question that goes through agents', () => {
+  const asking = () => {
+    const d = drive();
+    d.do((r, at) => ask(r, { by: 'refiner', text: 'Which one?', holder: 'planner' }, at));
+    return d;
+  };
+
+  it('starts with the agent it goes to: an internal message, not a public record, with the run waiting', () => {
+    const d = asking();
+    expect(d.run).toMatchObject({ status: 'question', question: { by: 'refiner', holder: 'planner', hops: 0, kind: 'agent' } });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'question', to: 'planner', public: false });
+    expect(d.run.stages.find((s) => s.stage === 'refine')?.status).toBe('waiting');
+  });
+
+  it('goes to the person at once when nobody is named, as a public record', () => {
+    const d = drive();
+    d.do((r, at) => ask(r, { by: 'refiner', text: 'Which one?' }, at));
+    expect(d.run.question).toMatchObject({ holder: null, hops: 0 });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'question', to: null, public: true });
+  });
+
+  it('passes on with the reason said, counts the hop, and becomes public only when it reaches the person', () => {
+    const d = asking();
+    d.do((r, at) => passQuestion(r, { from: 'planner', to: 'developer', text: 'Which one, for the code?', reason: 'Not mine.' }, at));
+    expect(d.run.question).toMatchObject({ holder: 'developer', hops: 1, text: 'Which one, for the code?' });
+    expect(d.messages.slice(-2).map((m) => [m.kind, m.author, m.to, m.public])).toEqual([['post', { type: 'agent', id: 'planner' }, undefined, false], ['question', { type: 'agent', id: 'planner' }, 'developer', false]]);
+    d.do((r, at) => passQuestion(r, { from: 'developer', to: null, text: '', reason: '' }, at));
+    expect(d.run.question).toMatchObject({ holder: null, hops: 2, text: 'Which one, for the code?' });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'question', to: 'person', public: true });
+    expect(d.run.history.filter((h) => h.type === 'question-passed').map((h) => [h.by, h.detail])).toEqual([['planner', 'developer'], ['developer', 'person']]);
+  });
+
+  it('is passed only by the agent it is with', () => {
+    const d = asking();
+    expect(() => passQuestion(d.run, { from: 'developer', to: null, text: '', reason: '' }, '2026-10-03T11:00:00.000Z')).toThrow(RunError);
+    expect(() => answerByAgent(d.run, { by: 'developer', text: 'x' }, '2026-10-03T11:00:00.000Z')).toThrow(RunError);
+  });
+
+  it('is answered by the agent it is with: the stage of the asker goes on, and the answer is an internal message to the asker', () => {
+    const d = asking();
+    expect(() => answerByAgent(d.run, { by: 'planner', text: ' ' }, '2026-10-03T11:00:00.000Z')).toThrow(RunError);
+    d.do((r, at) => answerByAgent(r, { by: 'planner', text: 'This one.' }, at));
+    expect(d.run).toMatchObject({ status: 'working', stage: 'refine', question: null });
+    expect(d.run.stages.find((s) => s.stage === 'refine')?.status).toBe('running');
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'answer', author: { type: 'agent', id: 'planner' }, to: 'refiner', public: false });
+  });
+
+  it('can be answered by the person while it is with an agent, and that ends the chain', () => {
+    const d = asking();
+    d.do((r, at) => answer(r, d.flow, 'This one, from me.', at));
+    expect(d.run).toMatchObject({ status: 'working', question: null });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'answer', author: { type: 'person' }, public: true });
   });
 });

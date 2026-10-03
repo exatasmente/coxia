@@ -31,13 +31,15 @@ export interface StageInput {
   /** A note the previous stage left for this agent. */
   handoff: { from: string; text: string } | null;
   /** The person's answer to what this agent asked before. */
-  answer: { question: string; text: string } | null;
+  answer: { question: string; text: string; by: string } | null;
   /** The branch's diff, for the stage that reads it. */
   diff: { text: string; stat: string; clipped: boolean } | null;
   /** The comment this stage leaves on the tracker; null when its template says none. */
   comment?: CommentAsk | null;
   /** The pull request description, for the stage that ends with the push. */
   pr?: CommentAsk | null;
+  /** The agent a question of this agent goes to first (`AgentDef.turnsTo`), when it is in the team; absent: it goes to the person. */
+  turnsTo?: string | null;
   /** The agent may ask the person who reported the issue, on the issue. */
   reporter?: boolean;
   /** The labels the agent may propose as the issue's priority (the ones that can be written to the tracker); empty or absent: it proposes none. */
@@ -106,7 +108,7 @@ export function stagePrompt(i: StageInput): string {
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
   if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
-  if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text) }));
+  if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text), from: i.answer.by }));
   return cp('runner.stage', {
     stage: i.stage.label,
     ref: i.run.issue.ref,
@@ -114,6 +116,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

@@ -799,7 +799,7 @@
   "prompt.sdd.runner.section.clipped": "(cortado aqui: o arquivo é maior)",
   "prompt.sdd.runner.section.thread": "O que já se disse na conversa da atividade, do mais antigo ao mais novo:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.handoff": "Recado para você, de {from}:\n<data>\n{text}\n</data>",
-  "prompt.sdd.runner.section.answer": "Você perguntou à pessoa: {question}\nA resposta:\n<data>\n{text}\n</data>\nSiga daqui sem perguntar a mesma coisa de novo.",
+  "prompt.sdd.runner.section.answer": "Você perguntou: {question}\nA resposta, de {from}:\n<data>\n{text}\n</data>\nSiga daqui sem perguntar a mesma coisa de novo.",
   "prompt.sdd.runner.section.diff": "O que a branch alterou desde que foi criada (sem a pasta do ciclo). Resumo:\n{stat}\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.diffNone": "A branch ainda não tem alteração fora da pasta do ciclo.",
   "prompt.sdd.runner.section.diffClipped": "(cortado aqui: o diff é maior; leia o resto nos arquivos)",
@@ -979,5 +979,11 @@
   "main.forum.code.runner.priority.milestone": "{agent} propôs o marco \"{milestone}\". Defina no rastreador se concordar.",
   "main.forum.code.runner.priority.noWrite": "A prioridade proposta \"{to}\" não foi escrita: {reason}.",
   "main.forum.code.runner.priority.refused": "Este espaço de trabalho não escreve no servidor de código: a prioridade \"{to}\" não foi proposta.",
-  "main.forum.code.run.completed.noAgent": "Execução concluída: a etapa {stage} não tem agente, então nada foi feito nela. Atribua um agente a ela no time para que seja trabalhada da próxima vez."
+  "main.forum.code.run.completed.noAgent": "Execução concluída: a etapa {stage} não tem agente, então nada foi feito nela. Atribua um agente a ela no time para que seja trabalhada da próxima vez.",
+  "prompt.sdd.runner.output.ask": "Quando você não puder seguir sem uma resposta, ponha a pergunta em question (senão null): ela vai primeiro para {agent}, que responde a partir dos documentos, da issue e do código quando puder, e repassa quando não puder. Se a pergunta é uma decisão que só a pessoa pode tomar (escopo, prioridade, aceitar um risco), ponha needsPerson como true e ela vai direto para a pessoa. Pergunte uma vez, tão completa quanto quem responde precisa.",
+  "prompt.sdd.runner.chain.system": "Você é {agent}, membro de um time de agentes que leva uma issue até um pull request. {job}\nOutro agente do time, {asker}, fez uma pergunta a você na conversa da atividade {ref} \"{title}\" (etapa \"{stage}\"). Você só lê: não altera nada nem executa nada.",
+  "prompt.sdd.runner.chain.main": "{asker} pergunta:\n<data>\n{question}\n</data>\n\n{sections}\n\nDecida o que fazer com ela e responda no JSON pedido: verdict, text e reason.\n- answer: você pode responder a partir dos documentos, da issue e do código; text é a resposta, completa o bastante para agir.\n- pass: não é sua para responder ou você não consegue; reason diz por quê em uma frase, e text é a pergunta como o próximo da cadeia precisa dela (ou vazio para repassar como está).\n- needs-person: é uma decisão que só a pessoa pode tomar (escopo, prioridade, aceitar um risco): reason diz o que precisa ser decidido.\nNunca decida pela pessoa o que é dela decidir, e nunca invente o que os documentos e o código não dizem.",
+  "main.forum.code.runner.chain.hops": "A pergunta passou por {hops} agentes sem ser respondida: ela vai para você agora.",
+  "main.forum.code.runner.chain.gone": "{agent} não está mais no time: a pergunta vai para você.",
+  "main.forum.code.runner.chain.failed": "{agent} não conseguiu responder à pergunta ({detail}): ela vai para você."
 }

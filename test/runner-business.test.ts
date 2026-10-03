@@ -142,6 +142,26 @@ describe('an issue through the agent cycle', () => {
     expect(heads().some((h) => h.includes('Change delivered'))).toBe(false);
   });
 
+  it('asks the person on the issue only when a question reaches them, not at each step of the chain between the agents', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    script(b);
+    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+    b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')] }));
+    b.engine.script('developer', () => work('Stuck.', { question: 'Should archived items be covered?' }));
+    b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }), () => ({ verdict: 'pass', text: '', reason: 'Scope.' }));
+    b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }), () => ({ verdict: 'needs-person', text: '', reason: 'The person decides scope.' }));
+    const started = await b.runner.start('app#101');
+    const run = await through(b, started);
+    expect(run).toMatchObject({ status: 'question', question: { holder: null } });
+    const waiting = issueNotes().filter((n) => n.startsWith('**Waiting for an answer**'));
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toContain('Should archived items be covered?');
+    expect(b.thread(run).filter((m) => m.kind === 'question' && m.public).map((m) => [m.author.type === 'agent' ? m.author.id : '', m.to])).toEqual([['product-owner', 'person']]);
+    expect(b.thread(run).find((m) => m.kind === 'question' && m.public)?.published).toMatchObject({ target: 'issue' });
+  });
+
   it('starts the flow of a workspace only when it has no problem: the agent cycle as delivered is fine', async () => {
     const b = await boot({ flow: 'business', configure: configure() });
     script(b);

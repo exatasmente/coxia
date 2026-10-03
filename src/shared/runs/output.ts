@@ -36,6 +36,8 @@ export interface StageOutput {
   handoff: string;
   /** Something the agent cannot go on without; non-empty pauses the stage. It goes to the agent the asker turns to, and from there up to the person. */
   question: string;
+  /** The question is a decision only the person can take (scope, priority, a risk to accept): it goes to them at once, past the agents. */
+  needsPerson: boolean;
   /** Something only the person who reported the issue can say; non-empty makes the stage wait for their reply on the issue. */
   reporterQuestion: string;
   /** A priority the agent proposes for the issue, one of the configured labels; always a proposal for the person to accept. */
@@ -71,6 +73,8 @@ export interface OutputWants {
   reporter?: boolean;
   /** The agent may propose a priority and a milestone: ask for `priority` and `milestone`. */
   priority?: boolean;
+  /** The agent turns to another agent before the person: ask whether the question is the person's alone (`needsPerson`). */
+  ask?: boolean;
   /** The stage has a comment template: ask for `comment`. */
   comment?: boolean;
   /** The stage ends with the push: ask for the pull request description too. */
@@ -88,6 +92,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: scenario } });
+  if (wants.ask) base.needsPerson = { type: 'boolean' };
   if (wants.reporter) base.reporterQuestion = strOrNull;
   if (wants.priority) Object.assign(base, { priority: strOrNull, milestone: strOrNull });
   if (wants.comment) base.comment = commentText();
@@ -166,6 +171,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     }),
     handoff: text(o.handoff),
     question: text(o.question),
+    needsPerson: o.needsPerson === true,
     reporterQuestion: text(o.reporterQuestion),
     priority: text(o.priority, 200),
     milestone: text(o.milestone, 200),

@@ -36,9 +36,16 @@ export interface StageRecord {
 export const QUESTION_KINDS = ['agent', 'review-limit'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
+/** How many agents a question may pass through before it goes to the person, whatever the agents say. */
+export const MAX_QUESTION_HOPS = 4;
+
 export interface PendingQuestion {
   /** The agent id that asked, or "app". */
   by: string;
+  /** The agent the question is with now (an agent of the chain); null: the person. Absent in a run written before agents talked first. */
+  holder?: string | null;
+  /** How many times the question has been passed on. */
+  hops?: number;
   kind: QuestionKind;
   text: string;
   askedAt: string;
@@ -51,7 +58,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {

@@ -293,16 +293,52 @@ export function gateSkip(run: Run, flow: FlowStage[], reason: string, at: string
 }
 
 /** The working agent cannot go on without the person: the stage waits, the run shows as blocked. */
-export function ask(run: Run, question: { by: string; text: string }, at: string): Transition {
+export function ask(run: Run, question: { by: string; text: string; /** The agent the asker turns to; absent or null: the person. */ holder?: string | null }, at: string): Transition {
   need(run, 'working');
   const text = question.text.trim();
   if (!text) throw new RunError('empty-text');
+  const holder = question.holder || null;
   const out = clone(run, at);
   out.status = 'question';
-  out.question = { by: question.by, kind: 'agent', text, askedAt: at, stage: run.stage };
+  out.question = { by: question.by, holder, hops: 0, kind: 'agent', text, askedAt: at, stage: run.stage };
   (record(out, run.stage) as StageRecord).status = 'waiting';
   log(out, at, 'question', run.stage, question.by, text);
-  return { run: out, messages: [{ kind: 'question', author: agent(question.by), text, stage: run.stage, public: true }] };
+  // A question that goes to another agent first is the team talking: it stays in the thread and is not a public record until it reaches the person.
+  return { run: out, messages: [{ kind: 'question', author: agent(question.by), text, to: holder, stage: run.stage, public: holder === null }] };
+}
+
+/**
+ * The agent a question is with cannot answer it (or it is not its to answer): it goes on to the next agent, or to the person, with the reason said in the thread.
+ * `to` null: the person. Every step is a message, so the thread shows who asked whom and why it reached whoever finally answers.
+ */
+export function passQuestion(run: Run, input: { from: string; to: string | null; text: string; reason: string }, at: string): Transition {
+  need(run, 'question');
+  const q = run.question;
+  if (!q || q.kind !== 'agent' || (q.holder ?? null) !== input.from) throw new RunError('wrong-state', { status: run.status });
+  const out = clone(run, at);
+  const text = input.text.trim() || q.text;
+  const hops = (q.hops ?? 0) + 1;
+  out.question = { ...(out.question as NonNullable<Run['question']>), holder: input.to, hops, text };
+  log(out, at, 'question-passed', run.stage, input.from, input.to ?? 'person');
+  const messages: ForumDraft[] = [];
+  if (input.reason.trim()) messages.push({ kind: 'post', author: agent(input.from), text: input.reason.trim(), stage: run.stage, public: false });
+  messages.push({ kind: 'question', author: agent(input.from), text, to: input.to ?? 'person', stage: run.stage, public: input.to === null });
+  return { run: out, messages };
+}
+
+/** The agent the question is with answers it: the stage of the asker goes on with the answer, without the person. */
+export function answerByAgent(run: Run, input: { by: string; text: string }, at: string): Transition {
+  need(run, 'question');
+  const q = run.question;
+  if (!q || q.kind !== 'agent' || !q.holder || q.holder !== input.by) throw new RunError('wrong-state', { status: run.status });
+  const text = input.text.trim();
+  if (!text) throw new RunError('empty-text');
+  const out = clone(run, at);
+  out.question = null;
+  out.status = 'working';
+  (record(out, run.stage) as StageRecord).status = 'running';
+  log(out, at, 'answer', run.stage, input.by, text);
+  return { run: out, messages: [{ kind: 'answer', author: agent(input.by), text, to: q.by, stage: run.stage, public: false }] };
 }
 
 /**

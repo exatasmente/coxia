@@ -159,7 +159,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     stage: string('The stage the run is in.', { pattern: ID }),
     stages: { type: 'array', description: 'One record per stage entered.', items: stageRecord, maxItems: 60 },
     question: {
-      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }) }, ['by', 'kind', 'text', 'askedAt', 'stage']),
+      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), holder: { type: ['string', 'null'], description: 'The agent the question is with now; null: the person.', maxLength: 48 }, hops: { type: 'integer', description: 'How many times it was passed on.', minimum: 0, maximum: 100 }, kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }) }, ['by', 'kind', 'text', 'askedAt', 'stage']),
       type: ['object', 'null'],
     },
     pending,

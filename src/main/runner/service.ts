@@ -13,6 +13,7 @@ import {
   askReporter,
   assertStartable,
   answer as answerMove,
+  answerByAgent,
   ask,
   cancel as cancelMove,
   failuresText,
@@ -28,7 +29,9 @@ import {
   gateSkip,
   handBack,
   isTerminal,
+  MAX_QUESTION_HOPS,
   newRunId,
+  passQuestion,
   producerOf,
   recordQa,
   recordReview,
@@ -57,8 +60,9 @@ import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
-import { type ExecutorDeps, type StageEngine, type StageRun, StageError, executeStage, pickAgent, withLimit } from './executor';
+import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, pickAgent, withLimit } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
+import { chainCall, readChain } from './chain';
 import { mentionCall } from './mention';
 import type { Publisher } from './publish';
 
@@ -182,6 +186,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   const again = new Set<string>();
   const aborts = new Map<string, AbortController>();
   const mentions = new Map<string, Promise<void>>();
+  const chains = new Map<string, Promise<void>>();
+  const chainAborts = new Map<string, AbortController>();
   const refused = new Set<string>();
   const starting = new Set<string>();
   let scanning: Promise<Run[]> | null = null;
@@ -207,8 +213,15 @@ export function createRunner(deps: RunnerDeps): Runner {
         publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
       }
     }
+    // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
+    if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;
-    if (before === run.status || !deps.notify || !deps.config().notifications) return;
+    if (before === run.status || (run.status === 'question' && run.question?.holder)) return;
+    notify(run);
+  }
+
+  function notify(run: Run): void {
+    if (!deps.notify || !deps.config().notifications) return;
     const key = ({ gate: 'gate', question: 'question', failed: 'failed', 'to-start': 'toStart', 'to-accept': 'toAccept', done: 'done' } as Record<string, string>)[run.status];
     if (!key) return;
     const params = { ref: run.issue.ref, title: run.issue.title, stage: flowFor(run).find((s) => s.id === run.stage)?.label ?? run.stage };
@@ -305,8 +318,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     if (out.question) {
       if (out.summary) post(out.summary);
-      apply((x) => ask(x, { by, text: out.question }, now()));
-      publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
+      // The question goes to the agent the asker turns to; a decision only the person can take goes to them at once. What reaches the person is also asked on the issue.
+      const holder = out.needsPerson ? null : askTarget(deps.config(), agent);
+      apply((x) => ask(x, { by, text: out.question, holder }, now()));
+      if (!holder) publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
     if (r.kind === 'review') {
@@ -457,6 +472,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     cancel(id) {
       const run = move(id, (r, _f, at) => cancelMove(r, 'person', at));
       aborts.get(id)?.abort();
+      chainAborts.get(id)?.abort();
       return run;
     },
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
@@ -509,6 +525,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
         if (isTerminal(run)) continue;
         try {
+          if (run.status === 'question' && run.question?.holder) startChain(run.id);
           if (run.status === 'working') moveRun(d, run.id, (r) => resumeAfterRestart(r, flowFor(r), now()));
           pump(run.id);
         } catch (e) {
@@ -518,7 +535,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     async idle() {
       for (let i = 0; i < 50; i++) {
-        const all = [...inflight.values(), ...mentions.values(), ...publishing.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
+        const all = [...inflight.values(), ...mentions.values(), ...chains.values(), ...publishing.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
         if (!all.length) return;
         await Promise.allSettled(all);
       }
@@ -552,6 +569,83 @@ export function createRunner(deps: RunnerDeps): Runner {
         const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
         deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
       }
+    }
+  }
+
+  // ---- agents talk before they ask the person ----------------------------------------------------------------------------------------
+
+  function startChain(id: string): void {
+    if (chains.has(id)) return;
+    // Started on the next turn, so the map holds it before the walk makes its first move.
+    const work = Promise.resolve()
+      .then(() => walkChain(id))
+      .catch((e) => console.error('[runner] question chain', id, e instanceof Error ? e.message : e))
+      .finally(() => {
+        chains.delete(id);
+        chainAborts.delete(id);
+      });
+    chains.set(id, work);
+  }
+
+  // The question reaches the person: it is a public record (and asked on the issue under the asker's autonomy), and the person is told.
+  function reachPerson(id: string): void {
+    const run = need(id);
+    const q = run.question;
+    if (!q || q.kind !== 'agent') return;
+    const flowStage = flowFor(run).find((s) => s.id === q.stage);
+    const agent = deps.config().agents.team.find((a) => a.id === q.by);
+    if (flowStage && agent) {
+      const autonomous = run.stages.find((s) => s.stage === q.stage)?.autonomous ?? false;
+      publish(id, (p) => p.asked(id, { stage: flowStage, agent, question: q.text, autonomous }));
+    }
+    notify(run);
+  }
+
+  // Up to the person, with what happened said in the thread: every hop is a message, and so is the one that forced the question up.
+  function handUp(id: string, from: string, why: 'hops' | 'gone' | 'failed', detail = ''): void {
+    const run = need(id);
+    deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: `runner.chain.${why}`, params: { agent: from, detail, hops: MAX_QUESTION_HOPS }, stage: run.stage });
+    move(id, (r, _f, at) => passQuestion(r, { from, to: null, text: '', reason: '' }, at));
+    reachPerson(id);
+  }
+
+  async function walkChain(id: string): Promise<void> {
+    for (let step = 0; step <= MAX_QUESTION_HOPS + 1; step++) {
+      const run = deps.runs.get(id);
+      const q = run?.question;
+      if (!run || run.status !== 'question' || !q || q.kind !== 'agent' || !q.holder) return;
+      const config = deps.config();
+      const holder = config.agents.team.find((a) => a.id === q.holder);
+      if (!holder) return handUp(id, q.holder, 'gone');
+      if ((q.hops ?? 0) >= MAX_QUESTION_HOPS) return handUp(id, holder.id, 'hops');
+
+      const env = deps.env();
+      const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
+      let answer: ReturnType<typeof readChain> = null;
+      let failure = '';
+      try {
+        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd });
+        const abort = new AbortController();
+        chainAborts.set(id, abort);
+        const r = await withLimit(withActivityContext(`run:${id}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
+        answer = readChain(r.data);
+        if (!answer) failure = 'empty-answer';
+      } catch (e) {
+        failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+      }
+      // The person (or a cancel) may have answered while the agent thought: then what it said is not used.
+      const now = deps.runs.get(id)?.question;
+      if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
+      if (!answer) return handUp(id, holder.id, 'failed', failure);
+
+      if (answer.verdict === 'answer' && answer.text) {
+        move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: answer.text }, at));
+        return;
+      }
+      // Pass on to whoever the holder turns to (the person when it turns to no one); a decision only the person can take goes to them straight.
+      const next = answer.verdict === 'pass' ? askTarget(config, holder) : null;
+      move(id, (r, _f, at) => passQuestion(r, { from: holder.id, to: next, text: answer.verdict === 'pass' ? answer.text : '', reason: answer.reason }, at));
+      if (next === null) return reachPerson(id);
     }
   }
 
