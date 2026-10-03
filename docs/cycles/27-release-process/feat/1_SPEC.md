@@ -181,11 +181,12 @@ Both are read-only checks run by the same 5-minute pass as the other waits; both
 | D2 | `--emergency` skips the beta, merge and remote rules only, in a stable on `main`; it is written in the tag | taken in part 1 |
 | D3 | `stable` also accepts being the keyword (version read from `package.json`) | taken in part 1 |
 | D4 | The branch's merge is checked with the beta tag **and** the release branch when it still exists; a branch deleted earlier is not an error | taken in part 1 |
-| D5 | Part 2 uses a **run kind** (`subject`), not a release issue | recommended; **maintainer to confirm before part 2** |
-| D6 | Pushes and tags always wait for a person, even for an autonomous Release manager | recommended; **maintainer to confirm** |
+| D5 | Part 2 uses a **run kind** (`Run.subject: { kind: 'release', version }`, optional: an issue run has none), not one of the "one run per issue" slots. A **tracking issue** "Release X.Y.Z" is added on top of it (D11) | **approved by the maintainer on 2026-10-03** |
+| D6 | Pushing the release branch and pushing a tag always wait for a person's "yes", even for an autonomous Release manager. The other release actions (open the branch, merge an approved pull request into it, cut a beta or the stable locally) follow the agent's autonomy like the comments do | **approved by the maintainer on 2026-10-03** |
 | D7 | The merge of a pull request is a `git merge --no-ff` in the app's clone, not the host's API | follows the issue; recorded here |
 | D9 | Hotfixing an older line while `main` carries a newer one is **not supported**; `open --from` refuses it and `RELEASING.md` says what to do instead (the current line, or by hand outside the flow) | taken in the review of part 1 |
 | D10 | The script compares `HEAD` with the remote-tracking refs it has and never fetches: a stable needs `origin/main` to be an ancestor of `HEAD` (skippable with `--emergency`), a beta needs the same of `origin/release/X.Y.Z` (not skippable) | taken in the review of part 1 |
+| D11 | The release run keeps a **tracking issue** on the tracker, "Release X.Y.Z": created (or an open one with the same title adopted) when the run starts, through the door of Actions like every host write (a proposal, or an audited call when the Release manager is autonomous); each stage leaves its progress comment on it (the stage comment templates of `devCycle.comments`); one comment of its own, edited in place, lists the activities of the version with links to their issues and pull requests; it is closed when the stable is published | **approved by the maintainer on 2026-10-03** (the detail is in section 4.7) |
 | D8 | The issue's "first use" (the pending work of #26 as `0.4.1-beta.1`) has been overtaken: `0.5.0-beta.1` was cut straight on `main` before the process existed, so the first real use is the next version, and `0.5.0` itself folds that beta into its stable | recorded |
 
 ## 7. Out of scope
