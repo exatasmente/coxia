@@ -10,7 +10,6 @@ import { AgentActivity } from '../../AgentActivity';
 import { errorText } from '../../api';
 import type { Ceremony } from '../../ceremony';
 import { useT } from '../../i18n';
-import { isWeb } from '../../platform';
 import { BackIcon } from '../icons';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
@@ -56,7 +55,7 @@ interface Props {
   tab?: 'cycle' | 'forum';
 }
 
-function FlowNote({ run, current, web }: { run: Run; current: string; web: boolean }) {
+function FlowNote({ run, current }: { run: Run; current: string }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,8 +77,7 @@ function FlowNote({ run, current, web }: { run: Run; current: string; web: boole
   return (
     <div className="cy-flow-note" role="note">
       <span className="small">{t('ui.cycle.flow.older')}</span>
-      <button type="button" className="btn cy-mini" disabled={busy || web} onClick={move}>{t('ui.cycle.flow.migrate')}</button>
-      {web && <span className="faint small">{t('ui.cycle.desktopOnly')}</span>}
+      <button type="button" className="btn cy-mini" disabled={busy} onClick={move}>{t('ui.cycle.flow.migrate')}</button>
       {error && <span className="error cy-inline-error" role="alert">{error}</span>}
     </div>
   );
@@ -94,7 +92,6 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
   const seen = useSeen();
   const run = useRun(id);
   const config = useRunConfig();
-  const web = isWeb();
   // The flow the run keeps (its own copy), with the agents as they are now; and the hash of the cycle's flow today.
   const flow = useMemo(() => (run && config ? flowOfRun(run, config) : (run?.flow?.stages ?? [])), [run, config]);
   const currentHash = useMemo(() => (run && config ? snapshotOf(flowOf(squadView(config, run.squad))).hash : ''), [run, config]);
@@ -148,7 +145,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
             </div>
           ) : null}
         </dl>
-        <FlowNote run={run} current={currentHash} web={web} />
+        <FlowNote run={run} current={currentHash} />
         {narrow && (
           <div className="cy-tabs" role="tablist" aria-label={t('ui.cycle.tabs')}>
             <button type="button" role="tab" id="cy-tab-cycle" aria-selected={tab === 'cycle'} aria-controls="cy-panel-cycle" className={`cy-tab ${tab === 'cycle' ? 'on' : ''}`} onClick={() => setTab('cycle')}>{t('ui.cycle.tab.cycle')}</button>
@@ -161,9 +158,9 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
         <div className="cy-cols">
           {(!narrow || tab === 'cycle') && (
             <div className="cy-main" id="cy-panel-cycle" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-cycle' : undefined}>
-              <RunActions run={run} flow={flow} config={config} web={web} card={card} actions={actions} go={go} />
+              <RunActions run={run} flow={flow} config={config} card={card} actions={actions} go={go} />
               {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
-              <StageTimeline run={run} flow={flow} config={config} web={web} go={go} />
+              <StageTimeline run={run} flow={flow} config={config} go={go} />
               <ReviewRounds run={run} config={config} />
             </div>
           )}

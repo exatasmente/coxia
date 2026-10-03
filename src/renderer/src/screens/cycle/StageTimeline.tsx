@@ -50,7 +50,7 @@ const KIND_KEY: Record<CommentRow['kind'], string> = {
 const UNDO_KEY = { refused: 'ui.cycle.comment.undoRefused', nothing: 'ui.cycle.comment.undoNothing', 'no-host': 'ui.cycle.comment.undoNoHost' } as const;
 
 /** One tracker comment of the run: where it stands, the link to it, and "delete" for a post that is up (a proposal that waits in Actions for the person's yes). */
-function CommentLine({ run, row, web, go }: { run: Run; row: CommentRow; web: boolean; go: (s: Screen) => void }) {
+function CommentLine({ run, row, go }: { run: Run; row: CommentRow; go: (s: Screen) => void }) {
   const t = useT();
   const [step, setStep] = useState<'idle' | 'confirm' | 'busy'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -78,7 +78,7 @@ function CommentLine({ run, row, web, go }: { run: Run; row: CommentRow; web: bo
         </span>
         {status === 'proposed' && <button type="button" className="btn cy-mini" onClick={() => go({ name: 'actions' })}>{t('ui.cycle.comment.seeActions')}</button>}
         {canUndoPost(row) && step !== 'confirm' && (
-          <button type="button" className="btn cy-mini" disabled={step === 'busy' || web} title={web ? t('ui.cycle.desktopOnly') : undefined} onClick={() => setStep('confirm')}>
+          <button type="button" className="btn cy-mini" disabled={step === 'busy'} onClick={() => setStep('confirm')}>
             {t('ui.cycle.comment.undo')}
           </button>
         )}
@@ -106,7 +106,7 @@ function Usage({ usage }: { usage: StageUsage }) {
   return <p className="faint small cy-usage">{t(p.cost === null ? 'ui.cycle.stage.usage' : 'ui.cycle.stage.usageCost', { ...p, cost: p.cost ?? '' })}</p>;
 }
 
-function Row({ run, row, comments, config, web, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; web: boolean; go: (s: Screen) => void; view: (name: string) => void }) {
+function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; go: (s: Screen) => void; view: (name: string) => void }) {
   const t = useT();
   const { stage, record, state } = row;
   const team = config?.agents.team;
@@ -144,7 +144,7 @@ function Row({ run, row, comments, config, web, go, view }: { run: Run; row: Sta
         )}
         {comments.length > 0 && (
           <ul className="cy-comments" aria-label={t('ui.cycle.stage.comments')}>
-            {comments.map((c) => <CommentLine key={c.key} run={run} row={c} web={web} go={go} />)}
+            {comments.map((c) => <CommentLine key={c.key} run={run} row={c} go={go} />)}
           </ul>
         )}
       </div>
@@ -153,7 +153,7 @@ function Row({ run, row, comments, config, web, go, view }: { run: Run; row: Sta
 }
 
 /** The stages of the flow the run follows, in order, as a timeline: each with its agent, who decides when it starts, its state, its attempts, its documents and its tracker comments. */
-export function StageTimeline({ run, flow, config, web, go }: { run: Run; flow: readonly FlowStage[]; config: WorkspaceConfig | null; web: boolean; go: (s: Screen) => void }) {
+export function StageTimeline({ run, flow, config, go }: { run: Run; flow: readonly FlowStage[]; config: WorkspaceConfig | null; go: (s: Screen) => void }) {
   const t = useT();
   const [viewing, setViewing] = useState<string | null>(null);
   const rows = stageRows(run, flow);
@@ -166,13 +166,13 @@ export function StageTimeline({ run, flow, config, web, go }: { run: Run; flow: 
       <h2 id="cy-stages-h" className="cy-h">{t('ui.cycle.stages.title')}</h2>
       <ol className="cy-timeline">
         {rows.map((row) => (
-          <Row key={row.stage.id} run={run} row={row} comments={comments.filter((c) => c.stage === row.stage.id)} config={config} web={web} go={go} view={setViewing} />
+          <Row key={row.stage.id} run={run} row={row} comments={comments.filter((c) => c.stage === row.stage.id)} config={config} go={go} view={setViewing} />
         ))}
       </ol>
       {loose.length > 0 && (
         <>
           <h3 className="section-title">{t('ui.cycle.stages.other')}</h3>
-          <ul className="cy-comments">{loose.map((c) => <CommentLine key={c.key} run={run} row={c} web={web} go={go} />)}</ul>
+          <ul className="cy-comments">{loose.map((c) => <CommentLine key={c.key} run={run} row={c} go={go} />)}</ul>
         </>
       )}
       {viewing && <ArtifactView runId={run.id} name={viewing} onClose={() => setViewing(null)} />}

@@ -64,7 +64,6 @@
   "ui.cycle.comment.undoNothing": "There is nothing to delete for this comment.",
   "ui.cycle.comment.undoProposed": "Deleting the comment waits for your yes in Actions.",
   "ui.cycle.comment.undoRefused": "This workspace is for tests and does not write to the code host: the comment stays.",
-  "ui.cycle.desktopOnly": "Only the app on the computer can do this: in the browser you read and answer questions.",
   "ui.cycle.error.noAgent": "The stage has no agent and cannot start. Pick an agent in the team and try again.",
   "ui.cycle.error.noEvent": "The stage is a wait with no event to wait for. Fix the flow and try again.",
   "ui.cycle.error.stageFailed": "The stage failed: {detail}",
