@@ -18,7 +18,7 @@ import { type SdkHooks, policyFromHooks } from './policy';
 import { describeErrors, prune, validate } from './schema';
 import { type SessionLine, type UsageRecord, appendLines, messagesOf, readSession } from './session';
 import { estimateTokens, parseToolArguments, repairJson, toApiName } from './text';
-import { bashTool } from './tools/bash';
+import { bashToolFor } from './tools/bash';
 import { type McpServerConfig, loadMcpConfigs, mcpTools } from './tools/mcp';
 import { readTool } from './tools/read';
 import { globTool, grepTool } from './tools/search';
@@ -137,7 +137,7 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   if (on('Glob')) tools.push(globTool);
   if (on('Skill') && skills.length) tools.push(skillTool(skills));
   for (const extra of p.extraTools ?? []) if (on(extra.name)) tools.push(extra);
-  if (!denied.has('Bash') && p.allowedTools.some((t) => t === 'Bash' || t.startsWith('Bash('))) tools.push(bashTool);
+  if (!denied.has('Bash') && p.allowedTools.some((t) => t === 'Bash' || t.startsWith('Bash('))) tools.push(bashToolFor(bashPrefixesOf(p.allowedTools)));
   const mcpAllowed = p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
   if (mcpAllowed.length) {
     const servers: Record<string, McpServerConfig> = loadMcpConfigs(p.docs?.mcpConfigs ?? []);

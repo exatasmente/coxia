@@ -490,7 +490,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   </>
                 )}
                 <button type="button" className="btn btn-amber" disabled={!card} onClick={() => card && go({ name: 'deep', ref: card.ref, back: 'call' })}>{t('ui.call.deepen')}</button>
-                <ContinueInClaude sessionId={turn?.sessionId} />
+                <ContinueInClaude sessionId={turn?.sessionId} role="turn" />
                 <span className="grow" />
                 <button type="button" className="btn btn-dark" disabled={phase === 'intro' || busy || rec.recording} onClick={next}>
                   {idx >= cards.length - 1 ? t('ui.call.closeAgenda') : t('ui.call.nextAgent')} <NextIcon />

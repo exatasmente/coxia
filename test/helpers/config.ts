@@ -37,6 +37,14 @@ export async function installLegacyConfig(): Promise<WorkspaceConfig> {
   return saveConfig(legacyConfigFixture());
 }
 
+/** Makes the running workspace one on a host of the given kind, with its CLI forced on (so no test depends on what the machine has installed). */
+export async function installHostConfig(kind: VcsKind | null, options: { language?: Language; cliPreference?: 'auto' | 'cli' | 'api' } = {}): Promise<WorkspaceConfig> {
+  const { saveConfig } = await import('../../src/main/workspaceConfig');
+  const c = hostConfig(kind, { language: options.language ?? 'pt-BR' });
+  if (c.vcs[0]) c.vcs[0].cliPreference = options.cliPreference ?? 'cli';
+  return saveConfig(c);
+}
+
 /** Gives a secret ref an environment-variable source holding a throwaway value, so a provider resolves without a keychain. */
 export async function installEnvSecret(ref: string, name = 'COXIA_TEST_KEY', value = 'test-key-not-real'): Promise<void> {
   process.env[name] = value;

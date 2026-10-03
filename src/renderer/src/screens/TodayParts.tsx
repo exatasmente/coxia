@@ -6,6 +6,7 @@ import { useCycle } from '../cycleApi';
 import { intlLocale, useT } from '../i18n';
 import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
 import { returnedFromQa } from '../../../shared/cycles/stages';
+import { showQuickActions } from '../../../shared/cycles/view';
 import type { Card } from '../../../shared/types';
 import { getLanguage } from '../../../shared/i18n';
 import { clockOf } from '../../../shared/sameDay';
@@ -211,7 +212,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <div className="act-actions">
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
-            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>{t('ui.today.row.hostButton')}</button>
+            {cycle && showQuickActions(card, cycle.host) && <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>{t('ui.today.row.hostButton')}</button>}
             {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>{t('ui.today.row.qaReturn')}</button>}
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>{t('ui.today.row.discussions')}</button>}
             {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}

@@ -349,6 +349,7 @@
   "prompt.sdd.system.role": "Você participa de uma cerimônia por voz {ofUser} como agente de uma atividade. A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do {vcsName}. Toda ação com efeito externo vira item da ata para {theUser} executar depois, com confirmação.",
   "prompt.sdd.system.hintGitplumbing": "No conflito: `git -C <repo do mirror> merge-tree --write-tree --name-only <src_sha> <tgt_sha>`, `git -C <repo> merge-base <src_sha> <tgt_sha>`, `git -C <repo> diff <base> <src_sha> -- <arquivo>` e `git -C <repo> diff <base> <tgt_sha> -- <arquivo>`.",
   "prompt.sdd.system.shellDenied": "Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Use: {hints}",
+  "prompt.sdd.system.shellDeniedNone": "Na cerimônia o terminal só lê, um comando por vez (sem ; && ou pipes, exceto | head). Neste workspace nenhum comando de leitura está liberado.",
   "prompt.sdd.system.secretDenied": "Arquivo de configuração ou segredo: fora do alcance da cerimônia.",
   "prompt.sdd.system.broadSearch": "Busca ampla demais: {root} reúne vários repositórios e a busca leva minutos. Repita com `path` apontando para o repositório certo{hint}.",
   "prompt.sdd.system.wrapUp": "Acabaram as chamadas de ferramenta: você não pode ler nem pesquisar mais nada. Responda agora, no formato JSON pedido, com o que você já sabe e leu nesta sessão. Diga na própria resposta o que você não conseguiu conferir; não invente o que faltou.",

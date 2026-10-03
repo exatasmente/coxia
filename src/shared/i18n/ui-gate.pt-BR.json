@@ -166,6 +166,8 @@
   "ui.help.back": "Voltar para Hoje",
   "ui.help.ceremonies.gate": "Gate",
   "ui.help.ceremonies.gate.text": "O agente lê o artefato da fase (Investigation, RFC, Spec Funcional, Findings ou Plan), faz o resumo do gate e até 3 perguntas de consequência. A aprovação continua sendo a sua frase no chat do Claude Code.",
+  "ui.help.ceremonies.hostOnly": "Discussões, {vcsName}",
+  "ui.help.ceremonies.hostOnly.text": "Discussões percorre as discussões abertas de um {anCr}. {vcsName} monta propostas (reviewer, rascunho e afins) para você confirmar em Ações.",
   "ui.help.ceremonies.others": "Retorno do QA, Discussões, {vcsName}",
   "ui.help.ceremonies.others.text": "Retorno do QA explica uma atividade que voltou do teste. Discussões percorre as discussões abertas de um {anCr}. {vcsName} monta propostas (label, reviewer e afins) para você confirmar em Ações.",
   "ui.help.ceremonies.preDaily": "Pré-daily",

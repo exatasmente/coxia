@@ -1,5 +1,6 @@
-import type { CycleMeanings, Language, StageDef, WorkspaceConfig } from '../config/types';
+import type { CycleMeanings, Language, LlmRole, StageDef, WorkspaceConfig } from '../config/types';
 import type { DestinationLabels } from '../destination';
+import type { Card } from '../types';
 import type { Terms } from '../i18n/terms';
 import { availability, type Availability, type CeremonyContext } from './ceremonies';
 import { hostFacts, type HostFacts } from './host';
@@ -62,5 +63,56 @@ export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): Cycle
     host,
     cardsFrom: ctx.noteTool ?? host.name,
     specs: ctx.specs,
+  };
+}
+
+// What the screens show or hide, from what the workspace has. Pure, so a test settles it without a screen.
+
+/** The "host" button of an activity opens the Quick actions screen: worth it when the card has a change request to act on, or a status to move. */
+export function showQuickActions(card: Pick<Card, 'mrPaths'>, host: HostFacts): boolean {
+  return host.kind !== null && (card.mrPaths.length > 0 || host.issueStatus);
+}
+
+/** The issue status block (status, stage labels, transitions) of the Quick actions screen: only a host with a status the app moves. */
+export const showIssueStatus = (host: HostFacts): boolean => host.issueStatus;
+
+export type ToolSwitch = 'files' | 'skills' | 'gitlabMcp' | 'glab' | 'subagents';
+
+/**
+ * The tool switches Settings lists. The agent read switch needs an integration to govern (and is labelled by the host and its CLI, or by the
+ * app's own tool when the host has none); the tracker MCP switch does nothing without a configured server.
+ */
+export function visibleTools(host: HostFacts): ToolSwitch[] {
+  return (['files', 'skills', 'gitlabMcp', 'glab', 'subagents'] as const).filter((key) => (key === 'gitlabMcp' ? host.trackerMcp : key === 'glab' ? host.readSwitch : true));
+}
+
+/** "Continue in Claude Code" resumes a session through `claude --resume`, which only reads the sessions of the Claude engine. */
+export function showContinueInClaude(host: HostFacts, role: LlmRole): boolean {
+  // A turn is answered by the reply role, in the same session.
+  return host.engines[role] !== 'open' && (role !== 'turn' || host.engines.reply !== 'open');
+}
+
+export interface ListedCeremonies {
+  preDaily: boolean;
+  unblock: boolean;
+  qaHandoff: boolean;
+  retro: boolean;
+  gate: boolean;
+  /** An activity can come back from testing: the cycle has a "returned" stage. */
+  qaReturn: boolean;
+  /** Discussions, Quick actions and the radar read the code host. */
+  host: boolean;
+}
+
+/** The ceremonies the Help screen describes: only the ones the cycle has and the workspace can run. */
+export function ceremoniesListed(view: Pick<CycleView, 'ceremonies' | 'stages' | 'host'>): ListedCeremonies {
+  return {
+    preDaily: view.ceremonies.preDaily,
+    unblock: view.ceremonies.unblock,
+    qaHandoff: view.ceremonies.qaHandoff,
+    retro: view.ceremonies.retro,
+    gate: view.ceremonies.gate,
+    qaReturn: view.stages.some((s) => s.kind === 'returned'),
+    host: view.host.kind !== null,
   };
 }

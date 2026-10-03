@@ -8,6 +8,7 @@ import { EngineError } from '../src/main/engine/open/errors';
 import { type OpenRunParams, OpenMaxTurnsError, StructuredOutputError, runOpen } from '../src/main/engine/open/loop';
 import { messagesOf, readSession, usageOf } from '../src/main/engine/open/session';
 import { closeAllMcp, loadMcpConfigs, mcpTools } from '../src/main/engine/open/tools/mcp';
+import { installHostConfig } from './helpers/config';
 import { type Fake, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
 const schema = obj({ fala: str, texto: str });
@@ -206,7 +207,8 @@ describe('tool failures are fed back, not thrown', () => {
       ]),
       finalCall(),
     ]);
-    await runOpen(params(fake, { allowedTools: ['Read', 'Bash(glab api:*)'] }));
+    await installHostConfig('gitlab');
+    await runOpen(params(fake, { allowedTools: ['Read', 'Bash(glab api:*)'], hooks: agentHooks() }));
     const [first, second] = toolMessages(fake.chats()[1].body as Record<string, any>).map((t) => t.content);
     expect(first).toContain('só lê');
     // allowed by the hook allowlist, but this call only whitelisted `glab api`

@@ -242,7 +242,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                         </span>
                         <span className="small">{turn?.speech ?? t('ui.history.noSpeech')}</span>
                         {turn?.question && <span className="small" style={{ color: 'var(--blue-ink)' }}>{t(detail.answered[card.ref] ? 'ui.history.questionAnswered' : 'ui.history.question', { question: turn.question })}</span>}
-                        <span><ContinueInClaude sessionId={turn?.sessionId} /></span>
+                        <span><ContinueInClaude sessionId={turn?.sessionId} role="turn" /></span>
                       </div>
                     );
                   })}

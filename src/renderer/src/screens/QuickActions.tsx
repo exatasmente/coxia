@@ -3,12 +3,14 @@ import type { QuickContext, QuickMember, QuickMr, QuickRequest, QuickResult, Qui
 import type { Card } from '../../../shared/types';
 import type { Screen } from '../App';
 import { errorText } from '../api';
+import { useCycle } from '../cycleApi';
+import { showIssueStatus } from '../../../shared/cycles/view';
 import { useT } from '../i18n';
 import { quickApi } from '../gitlabQuickApi';
 import { jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
 
-function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: QuickMember[] | undefined; busy: boolean; onPropose: (r: QuickRequest) => void }) {
+function MrBlock({ mr, members, busy, replacesReviewers, onPropose }: { mr: QuickMr; members: QuickMember[] | undefined; busy: boolean; replacesReviewers: boolean; onPropose: (r: QuickRequest) => void }) {
   const t = useT();
   const [reviewer, setReviewer] = useState('');
   const usual = (members ?? []).filter((m) => m.usual > 0);
@@ -50,7 +52,7 @@ function MrBlock({ mr, members, busy, onPropose }: { mr: QuickMr; members: Quick
       ) : (
         <p className="small faint">{t('ui.quick.mr.readonly')}</p>
       )}
-      {mr.mine && mr.reviewers.length > 0 && <p className="small faint">{t('ui.quick.reviewer.replaces')}</p>}
+      {mr.mine && replacesReviewers && mr.reviewers.length > 0 && <p className="small faint">{t('ui.quick.reviewer.replaces')}</p>}
 
       {mr.mine && mr.manualJobs.length > 0 && (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -85,6 +87,7 @@ function Transition({ transition, status, busy, onPropose }: { transition: Quick
 
 export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Screen) => void }) {
   const t = useT();
+  const host = useCycle()?.host;
   const [ctx, setCtx] = useState<QuickContext | null>(null);
   const [members, setMembers] = useState<Record<string, QuickMember[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +154,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
         {!ctx && !error && <div className="row faint"><span className="spinner" /> {t('ui.quick.job.readBusy')}</div>}
         {ctx?.warnings.map((w) => <div key={w} className="small faint">{w}</div>)}
 
-        {ctx?.issue && (
+        {ctx?.issue && host && showIssueStatus(host) && (
           <>
             <h2 className="section-title">{t('ui.quick.status', { status: ctx.issue.status ?? t('ui.quick.status.none') })}</h2>
             <div className="small muted">
@@ -166,7 +169,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
 
         {ctx && <h2 className="section-title">{t('ui.quick.mrs', { count: ctx.mrs.length })}</h2>}
         {ctx && !ctx.mrs.length && <p className="small faint">{t('ui.quick.mrs.none')}</p>}
-        {ctx?.mrs.map((m) => <MrBlock key={m.ref} mr={m} members={members[m.projectPath]} busy={busy} onPropose={(r) => propose(r)} />)}
+        {ctx?.mrs.map((m) => <MrBlock key={m.ref} mr={m} members={members[m.projectPath]} busy={busy} replacesReviewers={host?.reviewerReplaces ?? false} onPropose={(r) => propose(r)} />)}
       </div>
     </div>
   );

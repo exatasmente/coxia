@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SECRET_GLOBS, agentHooks, secretPath } from '../src/main/agents';
 import { policyFromHooks } from '../src/main/engine/open/policy';
-import { bashTool, parseCommand, prefixAllows, splitArgs } from '../src/main/engine/open/tools/bash';
+import { bashDescription, bashTool, bashToolFor, parseCommand, prefixAllows, splitArgs } from '../src/main/engine/open/tools/bash';
 import { readTool } from '../src/main/engine/open/tools/read';
 import { globTool, globToRegex, grepTool } from '../src/main/engine/open/tools/search';
+import { installHostConfig } from './helpers/config';
 import type { ToolContext, ToolImpl } from '../src/main/engine/open/tools/types';
 
 let root: string;
@@ -218,6 +219,22 @@ describe('Bash', () => {
     expect(prefixAllows([], 'anything')).toBe(true);
   });
 
+  it('tells the model about the commands of the code host in use, and only those', () => {
+    const gitlab = bashDescription(['glab api', 'glab mr view', 'glab issue view']);
+    expect(gitlab).toContain('code host reads (glab api / glab mr view / glab issue view)');
+    expect(gitlab).not.toMatch(/\bgh\b/);
+    const github = bashDescription(['gh api', 'gh pr view', 'gh issue view']);
+    expect(github).toContain('code host reads (gh api / gh pr view / gh issue view)');
+    expect(github).not.toContain('glab');
+    // A host with no CLI has no shell command to name; plumbing git is all a conflict call adds.
+    for (const text of [bashDescription([]), bashDescription(['git -C'])]) expect(text).not.toMatch(/glab|\bgh\b/);
+    expect(bashDescription(['git -C'])).toContain('Only plumbing git reads are accepted');
+    expect(bashDescription(['gh api', 'git -C'])).toContain('and, in conflict calls, plumbing git reads');
+    expect(bashToolFor(['gh api', 'gh pr view', 'gh issue view']).description).toBe(github);
+    expect(bashToolFor(['gh api']).name).toBe('Bash');
+    expect(bashTool.description).toBe(bashDescription([]));
+  });
+
   it('runs the program directly: operators and variables stay literal', async () => {
     expect(await run(bashTool, { command: 'echo hi; echo bye' })).toBe('hi; echo bye');
     expect(await run(bashTool, { command: 'echo $HOME' })).toBe('$HOME');
@@ -236,7 +253,12 @@ describe('Bash', () => {
 });
 
 describe('the shared policy, same refusals as the Claude path', () => {
-  const policy = policyFromHooks(agentHooks(), 'sess');
+  let policy: ReturnType<typeof policyFromHooks>;
+  beforeAll(async () => {
+    // A GitLab workspace reading through glab: the policy the commands below are checked against.
+    await installHostConfig('gitlab');
+    policy = policyFromHooks(agentHooks(), 'sess');
+  });
   const pre = (tool: string, input: Record<string, unknown>) => policy.pre(tool, input, root);
 
   it('denies secret files through the same noSecrets hook', async () => {
