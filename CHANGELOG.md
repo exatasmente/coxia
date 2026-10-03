@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-03
+
 ### Fixed
 
 - Buttons and texts name the integration the workspace has instead of GitLab: GitHub and Bitbucket workspaces read "PR", `app#7` and, on GitHub, "checks"; the agents are told the same, and are no longer sent to `glab` on a host that has no CLI. What a host does not have is hidden (the issue status block of Quick actions on GitHub and Bitbucket, the tracker MCP switch on GitHub and Bitbucket without a server, "Continue in Claude Code" for open-engine sessions, the Help entries of ceremonies the cycle does not have), and the texts that named the daily ceremony, the retro window, the summary target or the SDD documents ("Plan", "playbook") follow the cycle when it is not the SDD template with its default parameters. For a GitLab workspace on the SDD template with its default parameters nothing changes, in the interface or in the prompts the agents get, except that a few pt-BR texts that said "a MR" now say "o MR" (and "Continue in Claude Code" is hidden for open-engine sessions, where it cannot work; the open engine's Bash tool description names only the active host's CLI; and with the agents' VCS reading off or no integration, the shell refusal says no command is open instead of pointing to `glab`).
@@ -53,7 +55,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/exatasmente/coxia/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/exatasmente/coxia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/exatasmente/coxia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/exatasmente/coxia/releases/tag/v0.1.0
