@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { termsFor } from '../shared/cycles/terms';
 import { setLanguage, setTerms, setVoiceEnabled, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
-import type { WorkspaceConfig } from '../shared/config/types';
+import type { VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
 import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
@@ -86,6 +86,11 @@ export function reloadConfig(): WorkspaceConfig {
 export function onConfigChange(fn: (config: WorkspaceConfig) => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/** The kind of the integration that holds the issues (gitlab, github, bitbucket), or null when the workspace has none. */
+export function primaryKind(): VcsKind | null {
+  return rc().primaryVcs?.kind ?? null;
 }
 
 /** Environment for a child that talks to the VCS host through its CLI (glab, gh). Without a configured host the CLI uses its own default. */

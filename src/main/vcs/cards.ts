@@ -1,5 +1,6 @@
 import type { StageDef, StageMappingRule, VcsKind } from '../../shared/config/types';
 import { t } from '../../shared/i18n';
+import { crRef } from '../../shared/vcs';
 import { stageOf, stagesFor } from './stages';
 import type { VcsIssue, VcsMr, VcsProvider } from './types';
 import { pool } from './util';
@@ -173,8 +174,11 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
     });
   }
 
+  // An issue and a change request can share a number on a host with separate sequences (Bitbucket): the longer form tells them apart.
+  const issueRefs = new Set(items.map((i) => i.ref));
   for (const m of mrs) {
-    const ref = `${short(m.project)}!${m.iid}`;
+    const brief = crRef(o.kind, m.project, m.iid);
+    const ref = issueRefs.has(brief) ? crRef(o.kind, m.project, m.iid, { full: true }) : brief;
     const snap: CardSnapshot = { stage: null, pipeline: m.ci?.status ?? null, draft: m.draft, conflicts: m.hasConflicts === true, state: m.state };
     current[ref] = snap;
     const refs = refsOf.get(`${m.project}!${m.iid}`) ?? [];

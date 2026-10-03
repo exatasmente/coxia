@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { getTerms, t } from '../shared/i18n';
+import { crRef } from '../shared/vcs';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
@@ -34,7 +35,7 @@ import { VcsError } from './vcs/errors';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
-import { issueProjectKey, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
+import { issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
 
 /** The workspace's word for a change request (MR, PR), for a notification of an action that has no ref. */
@@ -498,7 +499,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   const issue = Number(card.iid);
   if (!Number.isInteger(issue) || issue <= 0) throw new Error(t('main.actions.noIssueNumber', { iid: card.iid }));
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
-  const ref = `${project}!${iid}`;
+  const ref = crRef(primaryKind(), project, iid, { full: true });
   const prov = vcsProvider();
   const [mr, repo, user] = await Promise.all([prov.getMr(project, iid), prov.getRepo(project), prov.currentUser()]);
   assertResolvable(ref, mr, { me: user.username, defaultBranch: repo.defaultBranch });
@@ -550,7 +551,7 @@ export async function conflictPrepare(id: string): Promise<ReleaseAction> {
     if (r) throw new Error(t('main.actions.alreadyPrepared'));
     if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
     const u = (a.unit ?? {}) as Partial<Unit>;
-    const iid = Number(u.mr_iid ?? /!(\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
+    const iid = Number(u.mr_iid ?? /[!#](\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
     const branch = u.source_branch ?? a.mrs[0]?.branch;
     const project = projectOf(u);
     if (!iid || !branch || !project) throw new Error(t('main.actions.mrDataMissing'));

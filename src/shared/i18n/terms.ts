@@ -45,6 +45,9 @@ const FALLBACK: Record<Language, { host: string; ceremony: string; summaryTarget
 };
 // i18n-ignore-end
 
+/** The marker a ref of a change request is written with on a host: "app!7" on GitLab, "app#7" elsewhere. */
+export const crMarkOf = (kind: VcsKind | null): string => (kind ? HOSTS[kind].mark : MERGE.mark);
+
 export const upperFirstWord = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 /**
@@ -53,7 +56,7 @@ export const upperFirstWord = (s: string): string => (s ? s.charAt(0).toUpperCas
  */
 export function hostWords(kind: VcsKind | null, language: Language): TermWords {
   const h: HostWords = kind ? HOSTS[kind] : { ...MERGE, name: FALLBACK[language].host, ci: 'pipeline' };
-  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, CrLongs: upperFirstWord(h.crLongs), crMark: h.mark, anCr: language === 'en' ? `${h.mark === '!' ? 'an' : 'a'} ${h.cr}` : h.cr, ci: h.ci };
+  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, CrLongs: upperFirstWord(h.crLongs), crMark: h.mark, anCr: language === 'en' ? `${h.cr === 'MR' ? 'an' : 'a'} ${h.cr}` : h.cr, ci: h.ci };
 }
 
 /** What a placeholder is before the workspace says anything: no integration, the app's own ceremony, a generic team chat, a week. */

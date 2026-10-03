@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { TEST_STAGES } from './helpers/config';
+import { TEST_STAGES, hostConfig } from './helpers/config';
 import { matchStage } from '../src/shared/config/stages';
-import { setLanguage } from '../src/shared/i18n';
+import { termsFor } from '../src/shared/cycles';
+import { resetTerms, setLanguage, setTerms } from '../src/shared/i18n';
 import { buildCardReport } from '../src/main/vcs/cards';
 import { DEFAULT_STAGES, kindFromWork, stageOf, stagesFor } from '../src/main/vcs/stages';
 import { buildRuntime } from '../src/main/vcs/runtime';
@@ -23,6 +24,7 @@ afterEach(async () => {
   await host?.close();
   host = null;
   setLanguage('pt-BR');
+  resetTerms();
 });
 afterAll(() => rmSync(DATA, { recursive: true, force: true }));
 
@@ -224,12 +226,14 @@ describe('the card report from a provider', () => {
       [`GET ${API}/repos/acme/app/pulls/7/reviews`]: { json: GH.reviews },
       [`GET ${API}/repos/acme/uploader/pulls/9/reviews`]: { json: [] },
     });
+    // The workspace is on GitHub: a pull request is app#7 and the CI of a card is "checks".
+    setTerms(termsFor(hostConfig('github', { language: 'pt-BR' }), 'pt-BR'));
     const rt = buildRuntime({ id: 'gh', kind: 'github', host: 'ghe.test', apiUrl: `${host.url}${API}`, user: '', secretRef: 'x', cli: null, preference: 'api', repos: [] }, { token: () => 't', env: () => ({}), sleep: noSleep });
     const { report } = await buildCardReport(rt.provider, { issueProject: null, refPrefix: '', stages: [], kind: 'github', state: null, now: () => NOW });
     const issues = report.items.filter((i) => i.kind === 'issue');
     expect(issues.map((i) => [i.ref, i.stage])).toEqual([['app#12', 'In development']]);
-    const pr7 = report.items.find((i) => i.ref === 'app!7');
-    expect(pr7).toMatchObject({ issue_refs: ['12'], blockers: ['Pipeline falhou', 'Conflito com a branch de destino'], pending: ['Ainda em rascunho'], pipeline: 'failed', has_conflicts: true });
-    expect(report.items.find((i) => i.ref === 'uploader!9')).toMatchObject({ roles: ['reviewer'], pending: ['Revisão pedida a você', 'Pipeline em andamento'] });
+    const pr7 = report.items.find((i) => i.ref === 'app#7');
+    expect(pr7).toMatchObject({ issue_refs: ['12'], blockers: ['Checks falharam', 'Conflito com a branch de destino'], pending: ['Ainda em rascunho'], pipeline: 'failed', has_conflicts: true });
+    expect(report.items.find((i) => i.ref === 'uploader#9')).toMatchObject({ roles: ['reviewer'], pending: ['Revisão pedida a você', 'Checks em andamento'] });
   });
 });

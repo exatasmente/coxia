@@ -3,7 +3,7 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeVcsAction, proposeVcsCommands } from './actions';
 import { getSettings } from './config';
-import { getConfig, isIssueRef, issueProjectKey, rc } from './workspaceConfig';
+import { getConfig, isIssueRef, issueProjectKey, primaryKind, rc } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
 import type { Notice } from './scheduler';
@@ -11,6 +11,7 @@ import { vcsProvider, vcsReady } from './vcs';
 import { undrafted } from './vcs/gitlab';
 import type { VcsCiJob, VcsWriteOp } from './vcs/types';
 import { t } from '../shared/i18n';
+import { crRef } from '../shared/vcs';
 
 // The quick actions of a card (reviewer, draft, manual jobs, issue status) on whichever code host the workspace uses. Every write is
 // only a proposal: it waits in Ações for the user's "seguir" (proposeVcsAction), then runs through the audited executor.
@@ -56,7 +57,7 @@ async function mrInfo(projectPath: string, iid: number, user: string): Promise<Q
   const m = await prov.getMr(projectPath, iid);
   const jobs = prov.caps.manualJobs && m.ci?.runId != null ? await prov.listCiJobs(projectPath, m.ci.runId) : [];
   return {
-    ref: `${projectPath.split('/').pop()}!${iid}`,
+    ref: crRef(primaryKind(), projectPath, iid),
     projectPath,
     iid,
     title: m.title,
@@ -190,7 +191,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     );
     return out;
   }
-  const ref = `${req.projectPath.split('/').pop()}!${req.mrIid}`;
+  const ref = crRef(primaryKind(), req.projectPath, req.mrIid);
   const mr = await prov.getMr(req.projectPath, req.mrIid);
   if (mr.state !== 'open') throw new Error(t('main.quick.notOpen', { ref }));
   if (mr.author !== (await prov.currentUser()).username) throw new Error(t('main.quick.readOnly', { ref, author: mr.author }));
