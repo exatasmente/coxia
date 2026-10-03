@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { createRunStore } from '../src/main/runs-core';
 import { WAIT_KINDS } from '../src/shared/config/types';
 import { type RunSubject, RunError, RUN_SCHEMA, gateApprove, gateReject, gateSkip, parseRun, recordSubject, sendBackTo, stageDone, startRun } from '../src/shared/runs';
+import { planHeads, shortSha } from '../src/shared/runs/view';
 import { agentFlowStages, at, drive, startInput } from './helpers/runs';
 
 const flow = agentFlowStages();
@@ -149,5 +150,35 @@ describe('the heads a plan froze', () => {
     while ((d.run.stage as string) !== 'gate1') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
     d.do((r, when) => gateApprove(r, flow, when));
     expect(planned(d)).toEqual({ '7': H2 });
+  });
+});
+
+describe('the commits the plan gate shows', () => {
+  const activity = (pr: number, head: string) => ({ pr, title: 't', url: 'u', head, state: 'open' as const, approved: true, issue: null });
+  const H1 = '1'.repeat(40);
+  const H2 = '2'.repeat(40);
+
+  it('are the ones the run entered the gate with, whatever a later read of the host says, and show what moved', () => {
+    const d = drive(flow, startInput({ issue: { ref: 'release:0.6.0', iid: 0, title: 'Release 0.6.0', url: null }, cycleId: 'release-flow', subject: subject({ activities: [activity(7, H1), activity(8, H2)] }) }));
+    expect(planHeads(d.run)).toBeNull();
+    while (d.run.stage !== 'gate1') d.do((r, when) => stageDone(r, flow, { summary: 's', handoff: '', artifacts: [] }, when));
+    expect(d.run.subject?.seen).toEqual({ '7': H1, '8': H2 });
+    expect(planHeads(d.run)).toEqual([{ pr: 7, seen: H1, now: null }, { pr: 8, seen: H2, now: null }]);
+    // a sweep rewrites the activities during the wait: `seen` stays, and the list says what moved
+    d.do((r, when) => recordSubject(r, { activities: [activity(7, H2), activity(8, H2), activity(9, H1)] }, when));
+    expect(d.run.subject?.seen).toEqual({ '7': H1, '8': H2 });
+    expect(planHeads(d.run)).toEqual([{ pr: 7, seen: H1, now: H2 }, { pr: 8, seen: H2, now: null }]);
+    expect(shortSha(H1)).toBe('1'.repeat(9));
+    // accepting freezes `seen`, not what the activities say now
+    d.do((r, when) => gateApprove(r, flow, when));
+    expect(d.run.subject?.planned).toEqual({ '7': H1, '8': H2 });
+    expect(planHeads(d.run)).toBeNull();
+  });
+
+  it('are an empty list for a plan with no pull request, and nothing for a run that is not at its gate or is not a release', () => {
+    const empty = drive(flow, startInput({ issue: { ref: 'release:0.6.0', iid: 0, title: 'Release 0.6.0', url: null }, cycleId: 'release-flow', subject: subject() }));
+    while (empty.run.stage !== 'gate1') empty.do((r, when) => stageDone(r, flow, { summary: 's', handoff: '', artifacts: [] }, when));
+    expect(planHeads(empty.run)).toEqual([]);
+    expect(planHeads(drive(flow).run)).toBeNull();
   });
 });

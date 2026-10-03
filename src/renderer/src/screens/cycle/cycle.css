@@ -216,3 +216,5 @@
 .cy-release-start { padding: 16px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .cy-release-title { font-size: 16px; font-weight: 600; }
 .cy-release-fields { align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+
+.cy-plan-heads ul { margin: 4px 0 0; padding-left: 18px; }

@@ -155,10 +155,35 @@ describe('Bitbucket', () => {
   it('lists the pull requests aimed at a branch with the host\'s own query, open and merged', async () => {
     const rt = await make(BB, '/2.0', { 'GET /2.0/repositories/acme/app/pullrequests': (h) => ({ json: { values: h.query.get('q')?.includes('state="OPEN"') ? [{ ...bbPr(9, 'OPEN'), source: { branch: { name: 'feat/9' }, commit: { hash: '9'.repeat(12) }, repository: { full_name: 'someone/app' } } }] : [bbPr(8, 'MERGED')] } }) });
     const mrs = await rt.provider.listMrsByTarget('acme/app', 'release/0.6.0');
-    expect(host?.hits.map((h) => h.query.get('q')).sort()).toEqual(['destination.branch.name="release/0.6.0" AND state="MERGED"', 'destination.branch.name="release/0.6.0" AND state="OPEN"']);
+    expect(host?.hits.filter((h) => h.path.endsWith('/pullrequests')).map((h) => h.query.get('q')).sort()).toEqual(['destination.branch.name="release/0.6.0" AND state="MERGED"', 'destination.branch.name="release/0.6.0" AND state="OPEN"']);
     expect(mrs[0].fromFork).toBe(true);
     expect(mrs.map((m) => [m.iid, m.state, m.targetBranch])).toEqual([[9, 'open', 'release/0.6.0'], [8, 'merged', 'release/0.6.0']]);
     await expect(rt.provider.listMrsByTarget('acme/app', 'x" OR state="DECLINED')).rejects.toBeInstanceOf(VcsError);
+  });
+
+  it('reads the commit of a pull request in full: the 12-character hash the host gives is never what a head is compared with', async () => {
+    const full = '9'.repeat(12) + 'abcdef0123456789abcdef012345';
+    expect(full).toHaveLength(40);
+    const rt = await make(BB, '/2.0', {
+      'GET /2.0/repositories/acme/app/pullrequests': (h) => ({ json: { values: h.query.get('q')?.includes('state="OPEN"') ? [{ ...bbPr(9, 'OPEN'), source: { branch: { name: 'feat/9' }, commit: { hash: '9'.repeat(12) }, repository: { full_name: 'acme/app' } } }] : [bbPr(8, 'MERGED')] } }),
+      'GET /2.0/repositories/acme/app/pullrequests/9': () => ({ json: { ...bbPr(9, 'OPEN'), source: { branch: { name: 'feat/9' }, commit: { hash: '9'.repeat(12) }, repository: { full_name: 'acme/app' } } } }),
+      'GET /2.0/repositories/acme/app/commit/999999999999': () => ({ json: { hash: full } }),
+    });
+    const mrs = await rt.provider.listMrsByTarget('acme/app', 'release/0.6.0');
+    expect(mrs.find((m) => m.iid === 9)?.sha).toBe(full);
+    // a merged pull request is history: its short hash was not looked up
+    expect(mrs.find((m) => m.iid === 8)?.sha).toHaveLength(12);
+    expect(host?.hits.filter((h) => h.path.includes('/commit/'))).toHaveLength(1);
+    expect((await rt.provider.getMr('acme/app', 9)).sha).toBe(full);
+  });
+
+  it('keeps the short hash when the commit cannot be read in full, or the host answers another commit: nothing then compares equal to it', async () => {
+    const pr = { ...bbPr(9, 'OPEN'), source: { branch: { name: 'feat/9' }, commit: { hash: '9'.repeat(12) }, repository: { full_name: 'acme/app' } } };
+    const gone = await make(BB, '/2.0', { 'GET /2.0/repositories/acme/app/pullrequests/9': () => ({ json: pr }) });
+    expect((await gone.provider.getMr('acme/app', 9)).sha).toBe('9'.repeat(12));
+    await host?.close();
+    const other = await make(BB, '/2.0', { 'GET /2.0/repositories/acme/app/pullrequests/9': () => ({ json: pr }), 'GET /2.0/repositories/acme/app/commit/999999999999': () => ({ json: { hash: 'a'.repeat(40) } }) });
+    expect((await other.provider.getMr('acme/app', 9)).sha).toBe('9'.repeat(12));
   });
 
   it('has no releases: it says there is none and asks the host nothing', async () => {

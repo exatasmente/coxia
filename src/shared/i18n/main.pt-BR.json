@@ -1264,7 +1264,7 @@
   "main.release.branchElsewhere": "A branch {branch} está com checkout em {path}, e uma branch não pode ter checkout duas vezes: troque aquele checkout para outra branch (os passos da release rodam em um worktree próprio e nunca o tocam) e tente de novo.",
   "main.release.prFork": "O {crLong} #{pr} vem de um fork, ou o host não disse que não vem: o app não integra código de outro repositório. Integre à mão se confia nele. Nada foi integrado.",
   "main.release.notPlanned": "O {crLong} #{pr} não estava no plano que você aprovou neste commit (é novo, ou recebeu push depois): nada foi integrado. Devolva a execução ao plano para ele ser planejado de novo.",
-  "main.release.worktreeFailed": "O worktree desta release não pôde ser criado em {path}: {detail}",
+  "main.release.worktreeFailed": "O worktree desta release não pôde ser criado em {path}: {detail}. Se a pasta dele foi apagada, o git precisa ser 2.31 ou mais novo para o app tomar o registro antigo (as versões anteriores não dizem que sumiu), e um worktree travado nunca é tomado: rode `git worktree prune` ou `git worktree unlock {path}` você mesmo no seu clone.",
   "main.release.scriptTimedOut": "O script de release ({mode}) passou do limite de {minutes} minutos e foi parado, com tudo que ele tinha iniciado; o worktree voltou como estava.",
   "main.forum.code.runner.release.trackingNotAdopted": "Existe uma issue aberta com o título da release, mas não é da própria pessoa e não tem rótulo desta versão, então não foi usada: {url} (de {author}). Uma nova issue de acompanhamento é criada.",
   "main.release.branchExists": "A branch {branch} já existe (aqui ou no remoto): ela não é aberta de novo, e nada foi rodado. As integrações e os cortes seguem na branch que está lá.",

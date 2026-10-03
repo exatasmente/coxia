@@ -261,3 +261,29 @@ export function usageParams(u: StageUsage, locale: string): { calls: string; pro
   const money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
   return { calls: n.format(u.calls), prompt: n.format(u.promptTokens), cached: n.format(u.cachedTokens), completion: n.format(u.completionTokens), cost: u.costUsd === null ? null : money.format(u.costUsd) };
 }
+
+// ---- the commits a release plan is accepted at ---------------------------------------------------------------------------------------
+
+export interface PlanHead {
+  pr: number;
+  /** The commit the run saw the pull request at when it entered the plan gate: the one accepting the plan freezes. */
+  seen: string;
+  /** The commit the host showed at the last read, when it is another one: it is not merged unless the run is planned again. */
+  now: string | null;
+}
+
+/** A short commit name for a person to read. */
+export const shortSha = (sha: string): string => sha.slice(0, 9);
+
+/**
+ * What the plan gate of a release run shows beside its buttons: each pull request the plan was written for and the commit it was at. Null when this is no release
+ * run at its plan gate (or the plan was already accepted). An empty list means the plan has no pull request, and so nothing can be merged.
+ */
+export function planHeads(run: Pick<Run, 'status' | 'subject'>): PlanHead[] | null {
+  const subject = run.subject;
+  if (run.status !== 'gate' || !subject?.seen || subject.planned) return null;
+  const now = new Map(subject.activities.map((a) => [String(a.pr), a.head]));
+  return Object.entries(subject.seen)
+    .map(([pr, seen]) => ({ pr: Number(pr), seen, now: now.has(pr) && now.get(pr)?.toLowerCase() !== seen.toLowerCase() ? (now.get(pr) as string) : null }))
+    .sort((a, b) => a.pr - b.pr);
+}

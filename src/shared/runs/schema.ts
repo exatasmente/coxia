@@ -221,6 +221,7 @@ const subject = object(
     from: { type: ['string', 'null'], description: 'The stable tag a patch is cut from.', maxLength: 40 },
     tracking: { ...object('The tracking issue on the tracker.', { iid: { type: 'integer', description: 'Its number.', minimum: 1 }, url: nullableString('Web address.'), closed: { type: 'boolean', description: 'The app closed it: the stable version was published.' } }, ['iid', 'url']), type: ['object', 'null'] },
     activities: { type: 'array', description: 'The pull requests of the version, as last read.', items: activity, maxItems: 200 },
+    seen: { type: 'object', description: 'The head of each pull request (by number) when the run entered the plan gate: what the person is shown there.', additionalProperties: string('A commit.', { maxLength: 80 }) },
     planned: { type: 'object', description: 'The head of each pull request (by number) when the person accepted the plan.', additionalProperties: string('A commit.', { maxLength: 80 }) },
   },
   ['kind', 'version', 'from', 'tracking', 'activities'],

@@ -1264,7 +1264,7 @@
   "main.release.branchElsewhere": "The branch {branch} is checked out in {path}, and a branch cannot be checked out twice: switch that checkout to another branch (the release steps run in a worktree of their own and never touch it) and try again.",
   "main.release.prFork": "{CrLong} #{pr} comes from a fork, or the host did not say it does not: the app does not merge code from another repository. Merge it by hand if you trust it. Nothing was merged.",
   "main.release.notPlanned": "{CrLong} #{pr} was not in the plan you approved at this commit (it is new, or it was pushed to since): nothing was merged. Send the run back to the plan so that it is planned again.",
-  "main.release.worktreeFailed": "The worktree of this release could not be made at {path}: {detail}",
+  "main.release.worktreeFailed": "The worktree of this release could not be made at {path}: {detail}. If its folder was deleted, git has to be 2.31 or newer for the app to take the old registration over (older versions do not say it is gone), and a worktree that is locked is never taken: run `git worktree prune` or `git worktree unlock {path}` yourself in your clone.",
   "main.release.scriptTimedOut": "The release script ({mode}) ran past its limit of {minutes} minutes and was stopped, with everything it had started; the worktree was put back as it was.",
   "main.forum.code.runner.release.trackingNotAdopted": "An open issue titled like the release exists, but it is not the person's own and carries no label of this version, so it was not used: {url} (by {author}). A new tracking issue is made.",
   "main.release.branchExists": "The branch {branch} already exists (here or on the remote): it is not opened again, and nothing was run. Merges and cuts go on in the branch that is there.",

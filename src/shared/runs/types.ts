@@ -310,7 +310,12 @@ export interface RunSubject {
   /** The pull requests of the version, as the run last read them (the plan's list; the waits and the tracking issue's list are worked out from them). */
   activities: ReleaseActivity[];
   /**
-   * The head of each pull request (by number) as the run had read it when the person accepted the plan at its first gate: the only commits a `merge-pr` may bring in.
+   * The head of each pull request (by number) as the run had read it when it ENTERED the plan gate, the commits the person is shown there. Taken once on entry and never
+   * rewritten by a later read of the host (`activities` is, every sweep): a push made during the wait is therefore not in it. Absent until the plan gate is first entered.
+   */
+  seen?: Record<string, string>;
+  /**
+   * The head of each pull request (by number) the person accepted with the plan: a copy of `seen` made by the gate at its first gate: the only commits a `merge-pr` may bring in.
    * Absent until that gate is accepted. A pull request added, or pushed to, after it needs a new plan.
    */
   planned?: Record<string, string>;

@@ -476,6 +476,22 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  /**
+   * The run has just entered the plan gate with the heads it had read (`seen`, taken by the transition): the host is read once more and `seen` is taken again from that, so what
+   * the person is shown is as fresh as the end of the plan stage. After this nothing rewrites it (a sweep rewrites `activities`, not `seen`): the gate freezes `seen`.
+   */
+  async function sealSeen(runId: string): Promise<void> {
+    const run = need(runId);
+    if (!run.subject || run.subject.planned || run.status !== 'gate') return;
+    const first = flowOfRun(run, deps.config()).find((s) => s.type === 'gate');
+    if (!first || first.id !== run.stage) return;
+    await refreshActivities(runId);
+    const fresh = need(runId);
+    if (!fresh.subject || fresh.subject.planned || fresh.status !== 'gate' || fresh.stage !== first.id) return;
+    const seen = Object.fromEntries(fresh.subject.activities.map((a) => [String(a.pr), a.head]));
+    moveRun(d, runId, (r) => recordSubject(r, { seen }, now()));
+  }
+
   async function gate(runId: string, e: { stage: FlowStage; action: GateAction; reason: string; autonomous: boolean }): Promise<void> {
     const config = deps.config();
     if (e.action !== 'reject' && need(runId).subject && flowOfRun(need(runId), config).find((s) => s.type === 'gate')?.id === e.stage.id) await reportMovedSincePlan(runId).catch(() => undefined);
@@ -1336,6 +1352,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   return {
     stageEnded: (runId, end) =>
       guarded(runId, async () => {
+        await sealSeen(runId);
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
         if (end.output.priority) await proposePriority(runId, end);

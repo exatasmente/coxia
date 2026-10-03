@@ -155,7 +155,7 @@ async function prepareWorktree(env: ReleaseEnv): Promise<string> {
     if (existsSync(wt) && readdirSync(wt).length) throw new Error(t('main.release.worktreeBusy', { path: wt }));
     mkdirSync(dirname(wt), { recursive: true });
     await fetchBranch(env.clone, 'main');
-    const base = (await exists(env.clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(env.clone, 'refs/heads/main')) ? 'refs/heads/main' : 'HEAD';
+    const base = (await mainBase(env.clone)) ?? 'HEAD';
     // A worktree whose folder was deleted is still registered, and git then refuses the path. Only THIS path is taken over (`--force`, and only when git lists it as
     // prunable): a repository-wide `git worktree prune` would also forget the registrations of other worktrees whose folders are gone (a drive that is not mounted).
     const made = await git(env.clone, ['worktree', 'add', '--detach', '--quiet', ...((await registeredButGone(env.clone, wt)) ? ['--force'] : []), wt, base], { fail: false });
@@ -247,6 +247,7 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
   if (!existsSync(file)) throw new Error(t('main.release.noScript'));
   const limit = env.scriptTimeoutMs ?? 40 * 60_000;
   const startedAt = Date.now();
+  const before = await sha(env.clone, 'HEAD');
   const child = spawn(file, [mode, ...extra], { cwd: env.clone, env: scriptEnv(env), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let text = '';
   const keep = (b: Buffer): void => {
@@ -268,6 +269,12 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
     const finish = (c: number | null): void => {
       if (settled) return;
       settled = true;
+      // whatever of the script's group is still alive (a background check it started) goes with it; the group may be gone already
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e;
+      }
       child.stdout.destroy();
       child.stderr.destroy();
       done(c);
@@ -278,7 +285,7 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
   });
   clearTimeout(timer);
   if (timedOut) {
-    await recoverWorktree(env.clone, startedAt, version);
+    await recoverWorktree(env.clone, startedAt, version, before);
     throw new Error(t('main.release.scriptTimedOut', { mode, minutes: Math.max(1, Math.round(limit / 60_000)) }));
   }
   if (code !== 0) throw new Error(t('main.release.scriptFailed', { mode, detail: tail(text.trim() || `exit ${code}`) }));
@@ -288,9 +295,9 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
 /**
  * What a script that was killed may leave in the worktree (it is ours alone): stale locks, a half-made version bump. Locks are removed only when they were made after
  * the step began (an older one is somebody else's, the person's own git perhaps) and only the ones this step's refs could have: the worktree's index and HEAD, the
- * release branch and the tags of the version. Then the tree goes back to the commit it was at.
+ * release branch and the tags of the version. Then the tree goes back to the commit the step began at.
  */
-async function recoverWorktree(wt: string, since: number, version: string): Promise<void> {
+async function recoverWorktree(wt: string, since: number, version: string, before: string | null): Promise<void> {
   try {
     const dirOf = async (flag: string): Promise<string> => resolve(wt, (await git(wt, ['rev-parse', flag], { fail: false })).stdout.trim());
     const gitDir = await dirOf('--git-dir');
@@ -306,8 +313,11 @@ async function recoverWorktree(wt: string, since: number, version: string): Prom
     stale(join(gitDir, 'HEAD.lock'));
     stale(join(common, 'refs', 'heads', `${releaseBranchOf(version)}.lock`));
     const tags = join(common, 'refs', 'tags');
-    if (existsSync(tags)) for (const name of readdirSync(tags)) if (name.startsWith(releaseTagOf(version)) && name.endsWith('.lock')) stale(join(tags, name));
-    await git(wt, ['reset', '--hard', '--quiet', 'HEAD'], { fail: false });
+    // exactly this version's tags: `v1.2.3.lock` and `v1.2.3-beta.N.lock` (a lock of `v1.2.34` is not ours)
+    const mine = new RegExp(`^${releaseTagOf(version).replace(/\./g, '\\.')}(?:-beta\\.[1-9][0-9]*)?\\.lock$`);
+    if (existsSync(tags)) for (const name of readdirSync(tags)) if (mine.test(name)) stale(join(tags, name));
+    // back to the commit the step began at (a commit the killed script made on the way is dropped), not just to wherever HEAD is now; a tag it made is left for the next step to see
+    await git(wt, ['reset', '--hard', '--quiet', before ?? 'HEAD'], { fail: false });
     await git(wt, ['clean', '-fdq'], { fail: false });
   } catch {
     // the next step will say what is wrong with the tree
@@ -335,9 +345,14 @@ async function merge(clone: string, id: ReleaseIdentity, args: string[]): Promis
   }
 }
 
-/** What stands for main in the worktree: the remote's main, or local main's commit when there is no remote; null when there is neither. */
+/**
+ * What stands for main in the worktree: the remote's main, or local main's commit ONLY when the repository has no `origin` at all. A repository that has an origin whose main
+ * could not be read has no known main: the person's local main may be anything (ahead, or not what was reviewed), so it is refused instead of used.
+ */
 async function mainBase(clone: string): Promise<string | null> {
-  return (await exists(clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(clone, 'refs/heads/main')) ? 'refs/heads/main' : null;
+  if (await exists(clone, 'refs/remotes/origin/main')) return 'refs/remotes/origin/main';
+  if (await ok(clone, ['remote', 'get-url', 'origin'])) return null;
+  return (await exists(clone, 'refs/heads/main')) ? 'refs/heads/main' : null;
 }
 
 async function open(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> {

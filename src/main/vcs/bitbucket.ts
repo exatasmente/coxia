@@ -163,6 +163,19 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     };
   };
 
+  // Bitbucket names the commit of a pull request by a 12-character hash. A head is compared exactly and as a full name everywhere a merge is decided, so the full one is read
+  // from the commit itself (`GET commit/<hash>`); one that cannot be read stays as it is, and then no comparison with it can succeed (it fails closed).
+  const FULL = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+  async function withFullSha(project: string, mr: VcsMr): Promise<VcsMr> {
+    if (!mr.sha || FULL.test(mr.sha) || !/^[0-9a-f]{4,39}$/i.test(mr.sha)) return mr;
+    try {
+      const full = (await c.getJson<{ hash?: string }>(`${repo(project)}/commit/${mr.sha}`)).hash ?? '';
+      return FULL.test(full) && full.toLowerCase().startsWith(mr.sha.toLowerCase()) ? { ...mr, sha: full } : mr;
+    } catch {
+      return mr;
+    }
+  }
+
   function approvalsOf(pr: BbPr): VcsApprovals {
     const rev = (pr.participants ?? []).filter((p) => p.role === 'REVIEWER' || p.approved);
     const by = rev.filter((p) => p.approved).map((p) => nick(p.user));
@@ -322,7 +335,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       checkIid(iid);
       const pr = await c.getJson<BbPr>(`${repo(project)}/pullrequests/${iid}`, undefined, `#${iid}`);
       const mr = mrOf(pr);
-      return { ...mr, project: mr.project || project, ci: await ciOf(project, iid) };
+      return { ...(await withFullSha(mr.project || project, mr)), project: mr.project || project, ci: await ciOf(project, iid) };
     },
 
     async linkedMrs(project, iid) {
@@ -347,10 +360,12 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         // i18n-ignore: query language of the code host
         c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `destination.branch.name="${branch}" AND state="${state}"`, sort: '-updated_on' }, maxPages: pages });
       const [open, merged] = await Promise.all([ask('OPEN', 5), ask('MERGED', Math.ceil((opts.limit ?? 100) / 100) || 1)]);
-      return [...open, ...merged.slice(0, opts.limit ?? 100)].map((r) => {
+      const all = [...open, ...merged.slice(0, opts.limit ?? 100)].map((r) => {
         const m = mrOf(r);
         return { ...m, project: m.project || project };
       });
+      // Only the open ones are merge candidates: their commit is read in full (a merged one is history).
+      return Promise.all(all.map((m) => (m.state === 'open' ? withFullSha(project, m) : m)));
     },
 
     // Bitbucket has no release objects (a tag is a tag, and downloads are not releases): a release run on it cannot see a beta published.

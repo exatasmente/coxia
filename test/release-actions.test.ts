@@ -79,7 +79,7 @@ afterAll(() => {
 
 /** The person accepted a plan that read the pull request 7 at `head`: the run knows it, and froze it. */
 function planned(head: string): void {
-  runStore().update(RUN, (r) => recordSubject(r, { activities: [{ pr: 7, title: 'Add the x', url: 'u', head, state: 'open', approved: true, issue: null }] }, '2026-10-03T10:30:00.000Z'));
+  runStore().update(RUN, (r) => recordSubject(r, { activities: [{ pr: 7, title: 'Add the x', url: 'u', head, state: 'open', approved: true, issue: null }], seen: { '7': head } }, '2026-10-03T10:30:00.000Z'));
   runStore().update(RUN, (r) => freezePlan(r, '2026-10-03T10:31:00.000Z'));
 }
 
@@ -216,8 +216,12 @@ describe('approving a step', () => {
     expect((await attempt('a4', { checks: 'unreadable' })).output).toMatch(/checks .* are running/);
     // no checks at all, on a pull request that was updated a minute ago, may be checks that have not started: still running; long ago, there are none to wait for
     expect((await attempt('a4b', { updatedAt: new Date(Date.now() - 60_000).toISOString() })).output).toMatch(/checks .* are running/);
+    // a time the host did not give, one that is not a time, and one in the future (its clock is ahead) are all "just now": the doubt waits
+    expect((await attempt('a4c', { updatedAt: null })).output).toMatch(/checks .* are running/);
+    expect((await attempt('a4d', { updatedAt: 'sometime' })).output).toMatch(/checks .* are running/);
+    expect((await attempt('a4e', { updatedAt: new Date(Date.now() + 3_600_000).toISOString() })).output).toMatch(/checks .* are running/);
     expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
-    expect((await attempt('a5', { approval: { association: 'COLLABORATOR' }, updatedAt: new Date(Date.now() - 3_600_000).toISOString() })).state).toBe('done');
+    expect((await attempt('a5', { approval: { association: 'COLLABORATOR' } })).state).toBe('done');
   });
 
   it('judges the stored unit again: an action edited on disk to name a path or a flag fails and runs nothing', async () => {

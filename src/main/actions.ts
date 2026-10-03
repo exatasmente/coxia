@@ -987,7 +987,14 @@ async function releaseContextOf(unit: ReleaseUnit): Promise<ReleaseContext> {
 // that requires them would be merged unchecked. (Whether the repository requires checks is not asked: that needs rights the app does not have.)
 const CHECKS_START_MS = 10 * 60_000;
 
-const checksOf = (ci: { status: string } | null, updatedAt: string | null = null): ReleasePr['checks'] => (!ci ? (updatedAt && Date.now() - Date.parse(updatedAt) < CHECKS_START_MS ? 'running' : 'none') : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
+// A time the host did not give, or gave in a form that is none, counts as just now (running), and so does one in the future (the host's clock is ahead of ours): the doubt goes to the
+// side that waits. The limits: a CI queue that takes longer than this to start still shows "none" and passes, and a clock far behind ours would let a fresh push through.
+const justPushed = (updatedAt: string | null): boolean => {
+  const at = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  return Number.isNaN(at) || Date.now() - at < CHECKS_START_MS;
+};
+
+const checksOf = (ci: { status: string } | null, updatedAt: string | null = null): ReleasePr['checks'] => (!ci ? (justPushed(updatedAt) ? 'running' : 'none') : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
 
 /** One release step, run and audited. The unit is read again from what was stored: nothing in it is believed until it passes `parseReleaseUnit` here. */
 async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {

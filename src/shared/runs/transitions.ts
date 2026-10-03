@@ -72,6 +72,8 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
   run.wait = null;
   const base = { author: app, stage: stageId } as const;
   if (stage.type === 'gate') {
+    // The plan gate of a release shows the person the heads the run had read when it got there; this snapshot is the only thing the gate freezes (see `freezeAtPlanGate`).
+    if (run.subject && planGateOf(flow)?.id === stageId) run.subject.seen = headsOf(run.subject);
     run.status = 'gate';
     rec.status = 'waiting';
     log(run, at, 'stage-started', stageId, 'app');
@@ -289,9 +291,13 @@ const waitAccept = (flow: FlowStage[], stageId: string): ForumDraft => ({ kind: 
 // it) clears them, so the next acceptance of the plan freezes again; a later gate never freezes or clears.
 const planGateOf = (flow: FlowStage[]): FlowStage | undefined => flow.find((s) => s.type === 'gate');
 
+const headsOf = (subject: RunSubject): Record<string, string> => Object.fromEntries(subject.activities.map((a) => [String(a.pr), a.head]));
+
+// What the gate freezes is what the run recorded on entering it (`seen`), never the activities as they stand at the click: a sweep rewrites those, and the click could freeze a head
+// the person never saw. A pull request pushed to during the wait is not in `seen`, so it fails closed. A run with no snapshot freezes nothing (every merge is then refused).
 function freezeAtPlanGate(out: Run, flow: FlowStage[]): void {
   if (!out.subject || out.subject.planned || planGateOf(flow)?.id !== out.stage) return;
-  out.subject.planned = Object.fromEntries(out.subject.activities.map((a) => [String(a.pr), a.head]));
+  out.subject.planned = { ...(out.subject.seen ?? {}) };
 }
 
 function clearPlanBefore(out: Run, flow: FlowStage[], toStage: string): void {
@@ -859,7 +865,7 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
 // ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
 
 /** What a release run learns about its subject: where its tracking issue is, and the activities of the version as last read. A run with no subject is refused. */
-export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities'>>, at: string): Transition {
+export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities' | 'seen'>>, at: string): Transition {
   if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
   const out = clone(run, at);
   out.subject = { ...(out.subject as RunSubject), ...structuredClone(patch) };
@@ -867,7 +873,7 @@ export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'trackin
 }
 
 /**
- * The heads of the pull requests the run has read are frozen as the plan's (once, until the run is sent back to the plan). The gates do this themselves in their own
+ * The heads the run saw on entering the plan gate (`seen`) are frozen as the plan's (once, until the run is sent back to the plan). The gates do this themselves in their own
  * transition (`gateApprove`, `gateSkip` at the plan gate); this is the same step on its own. What a merge
  * brings in is checked against them, so a commit pushed to a pull request after the plan was approved is not merged by the agent.
  */
@@ -875,7 +881,7 @@ export function freezePlan(run: Run, at: string): Transition {
   if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
   if (run.subject.planned) return { run, messages: [] };
   const out = clone(run, at);
-  (out.subject as RunSubject).planned = Object.fromEntries(run.subject.activities.map((a) => [String(a.pr), a.head]));
+  (out.subject as RunSubject).planned = { ...(run.subject.seen ?? {}) };
   return { run: out, messages: [] };
 }
 

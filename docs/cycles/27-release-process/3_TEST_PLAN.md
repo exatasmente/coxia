@@ -45,7 +45,8 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 1. After a pull request that changes `scripts/release.sh` was merged into the release branch (a throwaway one that only writes a file), ask the agent to open the same version again: it is refused ("already exists") and the file is not written. Open another version: the worktree stands on `origin/main` first, and the file is not written either.
 2. Set `git config push.followTags true` and an extra `remote.origin.push` in your clone, cut a beta, then say yes to *push the release branch*: `git ls-remote --tags origin` shows no beta tag, and no other local branch went.
 3. Create the stable tag by hand as a lightweight tag (`git tag v0.2.0 release/0.2.0` in the steps worktree) and say yes to the push of `main`: it is refused.
-4. Automated: `test/release-git.test.ts` ("open runs main's script", "a push sends the one ref", "main goes out only with the stable tag").
+4. At the plan gate, the panel lists each pull request with the short commit the plan was written for. Push another commit to one of them while the gate waits, and wait for the 5-minute sweep: the panel says it moved; accept the plan and ask for its merge: it is refused ("was not in the plan you approved at this commit"), and sending the run back to the plan and accepting it again lets it through.
+5. Automated: `test/release-git.test.ts` ("open runs main's script", "a push sends the one ref", "main goes out only with the stable tag").
 
 ### 4. The unit is judged again, and an agent cannot reach `--emergency`
 

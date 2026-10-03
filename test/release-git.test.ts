@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ReleasePr, latestBetaTag, previewRelease, releaseCommandLine, runReleaseOp } from '../src/main/releaseGit';
@@ -495,6 +496,15 @@ describe('what runs, and when', () => {
     await expect(runReleaseOp(unit({ op: 'open' }), { clone: w.dir, worktree: join(w.root, 'blocker', 'steps'), identity: AUTHOR, env: w.scriptEnv() })).rejects.toThrow();
   });
 
+  it('does not take a worktree whose folder is gone but that is locked, and says what to do', async () => {
+    const w = new ReleaseWorld();
+    w.git('worktree', 'add', '--detach', '-q', w.stepsDir, 'main');
+    w.git('worktree', 'lock', w.stepsDir);
+    rmSync(w.stepsDir, { recursive: true, force: true });
+    await expect(open(w)(unit({ op: 'open' }))).rejects.toThrow(/worktree unlock/);
+    expect(w.argv()).toEqual([]);
+  });
+
   it('runs without the hooks of the repository: not when the worktree is made, not when a branch is switched to, and not for the script\'s own commits', async () => {
     const w = new ReleaseWorld();
     const marker = join(w.root, 'hook-ran');
@@ -712,6 +722,21 @@ describe('a step ends with the script, not with what the script left holding its
     }
   });
 
+  it('ends what the script left running in its own group when it exits', async () => {
+    const w = new ReleaseWorld();
+    const pidFile = join(w.root, 'background.pid');
+    const real = readFileSync(join(w.dir, 'scripts', 'release.sh'), 'utf8');
+    writeFileSync(join(w.dir, 'scripts', 'release.sh'), real.replace('exec bash', `sleep 40 & echo $! > "${pidFile}"\nexec bash`));
+    w.commit('script', 'chore: a script that leaves a check running');
+    w.git('push', '-q', 'origin', 'main');
+    const started = Date.now();
+    await open(w)(unit({ op: 'open' }));
+    expect(Date.now() - started).toBeLessThan(15_000);
+    const pid = Number(readFileSync(pidFile, 'utf8').trim());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
+
   it('gives the script a git that has the file-system monitor switched off', async () => {
     const w = new ReleaseWorld();
     const seen = join(w.root, 'fsmonitor.txt');
@@ -739,14 +764,43 @@ describe('a killed script\'s locks', () => {
     const past = new Date(Date.now() - 3_600_000);
     utimesSync(older, past, past);
     writeFileSync(join(w.root, 'hang'), '');
+    const before = w.steps.git('rev-parse', 'HEAD');
     await expect(runReleaseOp(unit({ op: 'beta' }), { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), scriptTimeoutMs: 700 })).rejects.toThrow(/ran past its limit/);
+    // the commit the script made on the way is dropped: the branch is back where the step found it
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    expect(w.steps.git('log', '-1', '--format=%s')).not.toBe('halfway');
     const gitDir = w.steps.git('rev-parse', '--git-dir');
     expect(existsSync(join(w.stepsDir, gitDir.startsWith('/') ? gitDir : gitDir, 'HEAD.lock'))).toBe(false);
     expect(existsSync(join(w.dir, common, 'refs', 'heads', 'release', '0.5.0.lock'))).toBe(false);
     expect(existsSync(join(w.dir, common, 'refs', 'tags', 'v0.5.0-beta.1.lock'))).toBe(false);
     expect(existsSync(older)).toBe(true);
+    // new locks that are not this version's tags (`v0.5.0-rc.1`, `v0.5.01`) are not touched, though a prefix match would have taken them
+    expect(existsSync(join(w.dir, common, 'refs', 'tags', 'v0.5.0-rc.1.lock'))).toBe(true);
+    expect(existsSync(join(w.dir, common, 'refs', 'tags', 'v0.5.01.lock'))).toBe(true);
     rmSync(older);
+    rmSync(join(w.dir, common, 'refs', 'tags', 'v0.5.0-rc.1.lock'));
+    rmSync(join(w.dir, common, 'refs', 'tags', 'v0.5.01.lock'));
     rmSync(join(w.root, 'hang'));
     await expect(run(unit({ op: 'beta' }))).resolves.toMatchObject({ tag: 'v0.5.0-beta.1' });
+  });
+});
+
+describe('what stands for main', () => {
+  it('is the person\'s local main only when the repository has no origin at all: with an origin whose main cannot be read, open and stable are refused', async () => {
+    const w = new ReleaseWorld();
+    // an origin that has no main (and none was ever fetched): the local main may be anything
+    spawnSync('git', ['--git-dir', w.origin, 'update-ref', '-d', 'refs/heads/main'], { env: w.env });
+    w.git('update-ref', '-d', 'refs/remotes/origin/main');
+    await expect(open(w)(unit({ op: 'open' }))).rejects.toThrow(/branch main does not exist/);
+    await expect(open(w)(unit({ op: 'stable' }))).rejects.toThrow(/branch main does not exist/);
+    expect(w.argv()).toEqual([]);
+  });
+
+  it('is local main\'s commit when there is no origin', async () => {
+    const w = new ReleaseWorld();
+    w.git('remote', 'remove', 'origin');
+    const r = await open(w)(unit({ op: 'open' }));
+    expect(r.before).toBe(w.git('rev-parse', 'main'));
+    expect(w.steps.branch).toBe('release/0.5.0');
   });
 });

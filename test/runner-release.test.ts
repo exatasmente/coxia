@@ -1,7 +1,7 @@
 // The run of a release. A run whose subject is a version goes through the release flow with a scripted Release manager, against a real temporary repository
 // (the repository's own release script runs) and a fake host with a memory: the real provider, the real list of writes, the real door (proposals in Actions, the
 // audit log, the refusal of a test workspace). Every write the host received is checked, and so is every one it did not.
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyTemplate, releaseFlow } from '../src/shared/cycles';
@@ -187,11 +187,22 @@ describe('starting a release', () => {
 });
 
 describe('the release from the plan to the stable', () => {
+  /** The pull request the plan is written for: somebody pushes the branch the release opened and aims a pull request at it while the plan stage runs. */
+  async function aPullRequestAppears(pr: { head: string }, over: Partial<NonNullable<Forge['pr']>> = {}): Promise<void> {
+    for (let i = 0; i < 200 && !(existsSync(join(w.stepsDir, '.git')) && w.steps.branch === 'release/0.5.0'); i++) await new Promise((r) => setTimeout(r, 20));
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    pr.head = w.pushedBranch('feat/x', 'release/0.5.0');
+    forge.others.push({ number: 7, branch: 'feat/x', head: pr.head, base: 'release/0.5.0', files: [], approved: true, title: 'Add the x', body: 'Closes #12', ...over });
+  }
+
   /** Everything the Release manager says, stage by stage; the calls of the tool are what each stage does. */
   function script(b: Boot, pr: { head: string }): void {
     b.engine.script(
       'release-manager',
-      () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN }),
+      async () => {
+        await aPullRequestAppears(pr);
+        return work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN });
+      },
       async (call) => {
         const merged = await call.release!({ op: 'merge-pr', version: '0.5.0', pr: 7, head: pr.head });
         return work(`Assembled. ${merged}`, { comment: STEP('What was merged') });
@@ -213,11 +224,15 @@ describe('the release from the plan to the stable', () => {
 
   it('does not merge a pull request that moved after the plan was accepted, whatever head the agent names', async () => {
     const asked: string[] = [];
+    const seen = { head: '' };
     const { b, run } = await start({
       script: (x) =>
         x.engine.script(
           'release-manager',
-          () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN }),
+          async () => {
+            await aPullRequestAppears(seen, { body: '' });
+            return work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN });
+          },
           async (call) => {
             const head = forge.others[0].head;
             for (const named of [head, 'f'.repeat(40)]) {
@@ -231,14 +246,16 @@ describe('the release from the plan to the stable', () => {
           },
         ),
     });
-    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
-    const planned = w.pushedBranch('feat/x', 'release/0.5.0');
-    forge.others.push({ number: 7, branch: 'feat/x', head: planned, base: 'release/0.5.0', files: [], approved: true, title: 'Add the x', body: '' });
+    const planned = seen.head;
+    expect(current(b, run).status).toBe('gate');
+    expect(current(b, run).subject?.seen).toEqual({ '7': planned });
+    // the author pushes again after the plan was written, and a sweep reads the host before the person says yes to it: the activities have the new head, what the gate
+    // shows and freezes is still the one the run entered it with
+    forge.others[0].head = 'a'.repeat(40);
     await b.runner.sweep();
     await b.settle();
-    expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7 })]);
-    // the author pushes again after the plan was written and before the person says yes to it
-    forge.others[0].head = 'a'.repeat(40);
+    expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7, head: 'a'.repeat(40) })]);
+    expect(current(b, run).subject?.seen).toEqual({ '7': planned });
     // a call the gate refuses (no reason for a skip, an action that is none) freezes nothing
     expect(() => b.runner.gate(run.id, 'skip', '')).toThrow();
     expect(() => b.runner.gate(run.id, 'bogus' as never)).toThrow();
@@ -259,10 +276,7 @@ describe('the release from the plan to the stable', () => {
     // the person's checkout: nothing a release does may change it
     const before = w.snapshot();
     const { b, run } = await start({ script: (x) => script(x, pr) });
-    // the person pushes the branch the release opened, and a pull request is aimed at it
-    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
-    pr.head = w.pushedBranch('feat/x', 'release/0.5.0');
-    forge.others.push({ number: 7, branch: 'feat/x', head: pr.head, base: 'release/0.5.0', files: [], approved: true, title: 'Add the x', body: 'Closes #12' });
+    // (a pull request was aimed at the branch the release opened while the plan was written: the plan has it)
 
     // the plan ends: its document is written, its comment is on the tracking issue, and the run waits at the first gate
     await b.runner.sweep();
