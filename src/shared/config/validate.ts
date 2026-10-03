@@ -3,7 +3,8 @@ import { promptFamilies } from '../cycles/prompts';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA } from './schema';
-import { CONFIG_SCHEMA_VERSION, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { isSystemId } from './team';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
 export interface ConfigIssue {
   path: string;
@@ -39,6 +40,35 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
 }
 
+function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const team = c.agents.team;
+  const providers = new Set(c.llm.providers.map((p) => p.id));
+  const stageIds = new Set(c.devCycle.stages.map((s) => s.id));
+  for (const id of duplicates(team.map((a) => a.id))) errors.push({ path: 'agents.team', message: `duplicate agent id "${id}"` });
+  for (const role of LLM_ROLES) if (!team.some((a) => a.id === role && a.system)) errors.push({ path: 'agents.team', message: `the built-in agent "${role}" is missing` });
+  team.forEach((a, i) => {
+    const at = (field: string) => `agents.team[${i}].${field}`;
+    if (isSystemId(a.id) && !a.system) errors.push({ path: at('system'), message: `the id "${a.id}" belongs to a built-in agent` });
+    if (a.system && !isSystemId(a.id)) errors.push({ path: at('system'), message: 'only the built-in agents are system agents' });
+    a.stages.forEach((s, j) => {
+      if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
+    });
+    if (a.model.role === null) {
+      if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
+      if (!a.model.model.trim()) errors.push({ path: at('model.model'), message: 'is required when the agent names no role' });
+    } else if (a.model.provider || a.model.model) {
+      warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
+    }
+  });
+  const agentIds = new Set(team.map((a) => a.id));
+  c.devCycle.stages.forEach((s, i) => {
+    if (!s.agentId) return;
+    if (s.human) errors.push({ path: `devCycle.stages[${i}].agentId`, message: 'a gate waits for the person and has no agent' });
+    else if (!agentIds.has(s.agentId)) errors.push({ path: `devCycle.stages[${i}].agentId`, message: `unknown agent "${s.agentId}"` });
+    else if (!team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
+  });
+}
+
 function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
@@ -46,6 +76,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     if (!providers.has(rm.provider)) errors.push({ path: `llm.roles.${role}.provider`, message: `unknown provider "${rm.provider}"` });
   }
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
+  teamRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });
   for (const id of duplicates(c.projects.repos.map((r) => r.id))) errors.push({ path: 'projects.repos', message: `duplicate repo id "${id}"` });

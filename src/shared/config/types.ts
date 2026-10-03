@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 3): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 4): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 3;
+export const CONFIG_SCHEMA_VERSION = 4;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -174,6 +174,12 @@ export interface StageDef {
   kind: StageKind;
   /** Position in the flow: higher is closer to done. */
   rank: number;
+  /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. */
+  agentId?: string;
+  /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */
+  artifacts?: string[];
+  /** A gate: the stage waits for the person, so it has no agent. */
+  human?: boolean;
 }
 
 export interface PhaseFile {
@@ -397,6 +403,37 @@ export interface AgentToolsConfig {
   subagents: boolean;
 }
 
+/** What an agent of the team may do to the files of its run: read them, or also change them inside the run's worktree and nowhere else. */
+export const AGENT_PERMISSIONS = ['read', 'worktree'] as const;
+export type AgentPermission = (typeof AGENT_PERMISSIONS)[number];
+
+export interface AgentModel {
+  /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
+  role: LlmRole | null;
+  /** An LlmProvider id; empty while `role` is set. */
+  provider: string;
+  /** Model id as the provider spells it; empty while `role` is set. */
+  model: string;
+}
+
+/** A member of the agent team: who works which stages of a run, with which model and which permission. */
+export interface AgentDef {
+  /** Lowercase letters, digits, "-" and "_"; also the name an @mention uses. */
+  id: string;
+  /** A catalog key or a literal. */
+  name: string;
+  /** What the agent does, in a sentence or two. A catalog key or a literal. */
+  job: string;
+  model: AgentModel;
+  /** Ids of the `devCycle.stages` the agent works. */
+  stages: string[];
+  permission: AgentPermission;
+  /** Appended to the agent's system prompt. A catalog key or a literal. */
+  instructions: string;
+  /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
+  system: boolean;
+}
+
 export interface AgentsConfig {
   tools: AgentToolsConfig;
   /** Appended to every agent, before the role's own text. */
@@ -404,6 +441,8 @@ export interface AgentsConfig {
   /** Persona or tone shared by every agent; a role's own persona comes after it. */
   persona: string;
   roles: Record<LlmRole, AgentRoleConfig>;
+  /** The agent team. Always holds the five system agents, one per LLM role. */
+  team: AgentDef[];
 }
 
 export const VOICE_ENGINES = ['edge', 'kokoro'] as const;

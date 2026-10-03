@@ -563,5 +563,15 @@
   "cycle.voice.call": "Call",
   "cycle.voice.call.novoice": "Conversa",
   "cycle.voice.answered": "por voz (a transcrição pode ter erros)",
-  "cycle.voice.answered.novoice": "por escrito"
+  "cycle.voice.answered.novoice": "por escrito",
+  "cycle.team.system.turn.name": "Agente do turno",
+  "cycle.team.system.turn.job": "Prepara a fala de cada atividade na pré-daily.",
+  "cycle.team.system.reply.name": "Agente da conversa",
+  "cycle.team.system.reply.job": "Responde ao que a pessoa diz na conversa e registra as decisões.",
+  "cycle.team.system.deep.name": "Agente de investigação",
+  "cycle.team.system.deep.job": "Investiga uma atividade a fundo: desbloqueio e conflitos de merge.",
+  "cycle.team.system.teams.name": "Agente do resumo",
+  "cycle.team.system.teams.job": "Escreve o resumo da reunião para a equipe.",
+  "cycle.team.system.fix.name": "Agente de ajustes",
+  "cycle.team.system.fix.job": "Faz ajustes curtos: corrige diagramas e reescreve textos pequenos."
 }

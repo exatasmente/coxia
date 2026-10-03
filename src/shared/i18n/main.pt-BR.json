@@ -721,5 +721,10 @@
   "main.priority.noLabel": "nenhum",
   "main.priority.saved.proposal": "proposta criada em Ações",
   "main.priority.saved.duplicate": "já existe uma proposta igual em Ações",
-  "main.priority.saved.failed": "proposta não criada: {reason}"
+  "main.priority.saved.failed": "proposta não criada: {reason}",
+  "main.team.unknown": "O agente \"{id}\" não existe.",
+  "main.team.invalidId": "O id \"{id}\" não vale: use letras minúsculas, números, \"-\" e \"_\".",
+  "main.team.reserved": "O id \"{id}\" pertence a um agente nativo.",
+  "main.team.duplicate": "Já existe um agente com o id \"{id}\".",
+  "main.team.systemLocked": "O agente \"{id}\" é nativo: dá para editar, não para remover."
 }

@@ -1,14 +1,16 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
-import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 3). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 4). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
 export const SECRET_REF = '^[a-z0-9][a-z0-9._-]{0,63}$';
 export const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
 const NO_NUL = '^[^\\u0000]*$';
+const ARTIFACT = '^[A-Za-z0-9][A-Za-z0-9._-]*$';
+const PROVIDER_OR_EMPTY = '^([a-z0-9][a-z0-9_-]{0,47})?$';
 
 const string = (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: 'string', description, maxLength: 4000, pattern: NO_NUL, ...extra });
 const nullableString = (description: string): JsonSchema => ({ type: ['string', 'null'], description, maxLength: 4000, pattern: NO_NUL });
@@ -97,6 +99,9 @@ const stage = object(
     match: strings('Case-insensitive regular expressions tested against the card stage or issue status.'),
     kind: enumOf('What the stage means.', STAGE_KINDS),
     rank: integer('Position in the flow: higher is closer to done.', 0, 100),
+    agentId: string('The agent of agents.team that works this stage in a run; it wins over the stages list of the agents.', { pattern: ID }),
+    artifacts: list('Files, in the cycle folder, that this stage must produce: plain names, none starting with a dot.', string('File name.', { pattern: ARTIFACT, maxLength: 100 }), { maxItems: 20, uniqueItems: true }),
+    human: boolean('A gate: the stage waits for the person, so it has no agent.'),
   },
   ['id', 'kind'],
 );
@@ -142,6 +147,27 @@ const agentRole = object(
       mcp: boolean('MCP config files.'),
     }),
   },
+);
+
+const agentModel = object('Which model an agent uses.', {
+  role: { type: ['string', 'null'], description: 'Borrow the provider and model of this llm.roles entry; null: use provider and model.', enum: [...LLM_ROLES, null] },
+  provider: string('A provider id; empty while role is set.', { pattern: PROVIDER_OR_EMPTY }),
+  model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
+});
+
+const agentDef = object(
+  'A member of the agent team.',
+  {
+    id: string('Lowercase letters, digits, "-" and "_"; also the name an @mention uses.', { pattern: ID }),
+    name: string('Name shown to the person (a catalog key or a literal).', { minLength: 1, maxLength: 80 }),
+    job: string('What the agent does (a catalog key or a literal).', { maxLength: 2000 }),
+    model: agentModel,
+    stages: list('Ids of the devCycle.stages the agent works.', string('A stage id.', { pattern: ID }), { maxItems: 60, uniqueItems: true }),
+    permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
+    instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
+    system: boolean('One of the five built-in agents: it can be edited and never removed.'),
+  },
+  ['id', 'name'],
 );
 
 const stageRule = object(
@@ -202,7 +228,7 @@ const command = { enabled: boolean('The integration is on.'), command: string('E
 
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $id: 'urn:coxia:schema:workspace-config:2',
+  $id: 'urn:coxia:schema:workspace-config:4',
   title: 'Coxia workspace configuration',
   ...object(
     'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
@@ -291,6 +317,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
         persona: string('Persona or tone shared by every agent.', { maxLength: 2000 }),
         roles: byRole('Per agent role.', agentRole),
+        team: list('The agent team: who works which stages of a run. The five built-in agents (one per LLM role) are always present.', agentDef, { maxItems: 40 }),
       }),
       voice: object('Speech.', {
         enabled: boolean('Voice is on; off turns calls into text conversations.'),

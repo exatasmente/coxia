@@ -12,7 +12,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 
 | O quê | Onde | Escopo |
 |---|---|---|
-| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 3`) | por workspace |
+| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 4`) | por workspace |
 | Segredos (referências resolvidas) | `<dados>/secrets.json` (modo 0600), por `secretRef` | máquina; **nunca exportado** |
 | Acesso pelo navegador | `<dados>/web.json` | máquina (todos os workspaces) |
 | Marcador da migração | `<dados>/config-migration.json` | máquina |
@@ -35,14 +35,20 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `docs` | fontes de contexto no estilo Claude Code: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` acrescenta `~/.claude` e `<projeto>/.claude` |
 | `userName`, `userArticle` | como os agentes chamam a pessoa e o artigo português que acompanha o nome (`o`, `a` ou vazio) |
 | `devCycle` | o ciclo de desenvolvimento: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `priority`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. Tudo em [`cycles.md`](cycles.md) |
-| `agents` | `tools`, `extraInstructions` e `persona` (todos), `roles[papel]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: quais fontes de `docs` o papel lê) |
+| `agents` | `tools`, `extraInstructions` e `persona` (todos), `roles[papel]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: quais fontes de `docs` o papel lê), `team[]` = o time de agentes (veja abaixo) |
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled` e os ajustes que já existiam |
 | `claudeSdk` | `{ installed, version, path }`: de onde sai o Claude Agent SDK |
 | `externalTools` | integrações **opcionais**, todas desligadas até serem configuradas: `cardSource` (comando que lista os cartões do dia), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
 
 Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil. O acesso pelo navegador (host, porta, URL pública) é da máquina e fica em `web.json`.
 
-Histórico do esquema: **v1** (sem `schemaVersion`) eram as configurações soltas do app antes da configuração existir; **v2** é o `WorkspaceConfig`; **v3** acrescenta `devCycle.priority` e os campos de cartão `priority` e `milestone`. A migração de v2 para v3 (`v2ToV3` em `migrations.ts`) cria `priority: { labels: [] }` e acrescenta os dois campos à lista `enrichment.cardFields` que o arquivo já tinha, sem tocar no resto. Um `config.json` v3 não abre em um app que só conhece o v2 (ele recusa, como qualquer arquivo de um app mais novo).
+Histórico do esquema: **v1** (sem `schemaVersion`) eram as configurações soltas do app antes da configuração existir; **v2** é o `WorkspaceConfig`; **v3** acrescenta `devCycle.priority` e os campos de cartão `priority` e `milestone`; **v4** acrescenta `agents.team` e, em uma etapa, `agentId`, `artifacts` e `human`. A migração de v2 para v3 (`v2ToV3` em `migrations.ts`) cria `priority: { labels: [] }` e acrescenta os dois campos à lista `enrichment.cardFields` que o arquivo já tinha, sem tocar no resto. A migração de v3 para v4 (`v3ToV4`) cria o time com os cinco agentes nativos, tirando de `agents.roles` o papel de modelo e as instruções extras de cada um, e não toca no resto. Um `config.json` v4 não abre em um app que só conhece o v3 (ele recusa, como qualquer arquivo de um app mais novo).
+
+#### O time de agentes (`agents.team`)
+
+Cada item é um agente: `{ id, name, job, model, stages, permission, instructions, system }`. O `id` é também o nome que uma menção usa (`@developer`). `name`, `job` e `instructions` são chave de catálogo ou texto livre. `model` é `{ role, provider, model }`: com `role` preenchido o agente usa o provedor e o modelo daquele papel de `llm.roles`; com `role: null` precisa de um provedor que exista e de um modelo. `stages` lista as etapas do `devCycle` que ele trabalha e `permission` diz o que ele pode fazer nos arquivos da sua execução: `read` (só lê) ou `worktree` (também altera arquivos dentro do worktree da execução, e em nenhum outro lugar; quem aplica isso é o executor, que ainda não existe).
+
+Os cinco agentes nativos (`system: true`) têm os ids dos papéis de modelo (`turn`, `reply`, `deep`, `teams`, `fix`), são os que as cerimônias chamam hoje, podem ser editados e nunca removidos: um arquivo que os deixe de fora recebe-os de volta ao ser lido. Editar um agente nativo pelas funções de `src/shared/config/team.ts` (`updateAgent`) grava também `agents.roles[papel]` (`modelRole`, `extraInstructions`), que é o que as cerimônias leem. A validação recusa ids repetidos, o id de um agente nativo em um agente comum, etapa inexistente em `stages`, `stage.agentId` que não aponta para um agente (e etapa `human`, um gate, que aponte para um) e um modelo sem provedor conhecido. O agente de uma etapa é o que `stage.agentId` nomeia; sem ele, o primeiro agente do time que lista a etapa; sem nenhum, a etapa não começa e diz isso.
 
 ### Instalação nova × instalação existente
 
@@ -123,7 +129,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 
 | What | Where | Scope |
 |---|---|---|
-| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 3`) | per workspace |
+| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 4`) | per workspace |
 | Secrets (resolved references) | `<data>/secrets.json` (mode 0600), by `secretRef` | machine; **never exported** |
 | Browser access | `<data>/web.json` | machine (every workspace) |
 | Migration marker | `<data>/config-migration.json` | machine |
@@ -146,14 +152,20 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `docs` | Claude Code style context sources: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` adds `~/.claude` and `<project>/.claude` |
 | `userName`, `userArticle` | what the agents call the person, and the Portuguese article that goes with the name (`o`, `a` or empty) |
 | `devCycle` | the development cycle: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `priority`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. All in [`cycles.md`](cycles.md) |
-| `agents` | `tools`, `extraInstructions` and `persona` (all), `roles[role]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: which `docs` sources the role reads) |
+| `agents` | `tools`, `extraInstructions` and `persona` (all), `roles[role]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: which `docs` sources the role reads), `team[]` = the agent team (below) |
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled`, plus the settings that already existed |
 | `claudeSdk` | `{ installed, version, path }`: where the Claude Agent SDK comes from |
 | `externalTools` | **optional** integrations, all off until configured: `cardSource` (command that lists the day's cards), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
 
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 
-Schema history: **v1** (no `schemaVersion`) was the app's loose settings before configuration existed; **v2** is `WorkspaceConfig`; **v3** adds `devCycle.priority` and the card fields `priority` and `milestone`. The v2 to v3 migration (`v2ToV3` in `migrations.ts`) creates `priority: { labels: [] }` and appends the two fields to the `enrichment.cardFields` list the file already had, touching nothing else. A v3 `config.json` does not open in an app that only knows v2 (it refuses, like any file from a newer app).
+Schema history: **v1** (no `schemaVersion`) was the app's loose settings before configuration existed; **v2** is `WorkspaceConfig`; **v3** adds `devCycle.priority` and the card fields `priority` and `milestone`; **v4** adds `agents.team` and, on a stage, `agentId`, `artifacts` and `human`. The v2 to v3 migration (`v2ToV3` in `migrations.ts`) creates `priority: { labels: [] }` and appends the two fields to the `enrichment.cardFields` list the file already had, touching nothing else. The v3 to v4 migration (`v3ToV4`) creates the team with the five built-in agents, taking each one's model role and extra instructions from `agents.roles`, and touches nothing else. A v4 `config.json` does not open in an app that only knows v3 (it refuses, like any file from a newer app).
+
+#### The agent team (`agents.team`)
+
+Each item is an agent: `{ id, name, job, model, stages, permission, instructions, system }`. The `id` is also the name a mention uses (`@developer`). `name`, `job` and `instructions` are a catalog key or free text. `model` is `{ role, provider, model }`: with `role` set the agent uses the provider and model of that `llm.roles` entry; with `role: null` it needs a provider that exists and a model. `stages` lists the `devCycle` stages it works, and `permission` says what it may do to the files of its run: `read` (only reads) or `worktree` (also changes files inside the run's worktree, nowhere else; the executor that enforces this does not exist yet).
+
+The five built-in agents (`system: true`) have the ids of the model roles (`turn`, `reply`, `deep`, `teams`, `fix`), are what the ceremonies call today, and can be edited but never removed: a file that leaves them out gets them back when it is read. Editing a built-in agent through the functions of `src/shared/config/team.ts` (`updateAgent`) also writes `agents.roles[role]` (`modelRole`, `extraInstructions`), which is what the ceremonies read. Validation refuses repeated ids, a built-in id on an ordinary agent, a stage in `stages` that does not exist, a `stage.agentId` that names no agent (and a `human` stage, a gate, that names one) and a model with no known provider. The agent of a stage is the one `stage.agentId` names; without it, the first agent of the team that lists the stage; with none, the stage cannot start and says so.
 
 ### Fresh install vs existing install
 

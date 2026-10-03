@@ -721,5 +721,10 @@
   "main.priority.noLabel": "none",
   "main.priority.saved.proposal": "proposal created in Actions",
   "main.priority.saved.duplicate": "an identical proposal already exists in Actions",
-  "main.priority.saved.failed": "proposal not created: {reason}"
+  "main.priority.saved.failed": "proposal not created: {reason}",
+  "main.team.unknown": "The agent \"{id}\" does not exist.",
+  "main.team.invalidId": "The id \"{id}\" is not valid: use lowercase letters, digits, \"-\" and \"_\".",
+  "main.team.reserved": "The id \"{id}\" belongs to a built-in agent.",
+  "main.team.duplicate": "There is already an agent with the id \"{id}\".",
+  "main.team.systemLocked": "The agent \"{id}\" is built in: it can be edited, not removed."
 }

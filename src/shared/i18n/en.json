@@ -563,5 +563,15 @@
   "cycle.voice.call": "Call",
   "cycle.voice.call.novoice": "Chat",
   "cycle.voice.answered": "by voice (the transcript may have errors)",
-  "cycle.voice.answered.novoice": "in writing"
+  "cycle.voice.answered.novoice": "in writing",
+  "cycle.team.system.turn.name": "Turn agent",
+  "cycle.team.system.turn.job": "Prepares each activity's turn in the daily.",
+  "cycle.team.system.reply.name": "Conversation agent",
+  "cycle.team.system.reply.job": "Answers what the person says in the conversation and records the decisions.",
+  "cycle.team.system.deep.name": "Investigation agent",
+  "cycle.team.system.deep.job": "Digs into an activity: unblocking and merge conflicts.",
+  "cycle.team.system.teams.name": "Summary agent",
+  "cycle.team.system.teams.job": "Writes the meeting summary for the team.",
+  "cycle.team.system.fix.name": "Quick-fix agent",
+  "cycle.team.system.fix.job": "Makes short fixes: repairs diagrams and rewrites small texts."
 }

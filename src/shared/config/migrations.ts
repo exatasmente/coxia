@@ -2,12 +2,14 @@
 import { mergeDeep, neutralConfig, withConfigDefaults } from './defaults';
 import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
+import { systemAgents } from './team';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type WorkspaceConfig } from './types';
 
 // config.json history:
 //   v1  no schemaVersion; the flat "Settings" of the app before configuration existed (models, tools, schedule, voice, ...; web lived in it too).
 //   v2  WorkspaceConfig (types.ts).
 //   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
+//   v4  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -88,8 +90,19 @@ function v2ToV3(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   };
 }
 
+// The team starts as the five system agents, one per role, taking each role's model and extra instructions: nothing the ceremonies do changes.
+// A file with no agents section is left to the defaults, which hold the same five.
+function v3ToV4(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const agents = pick(old.agents);
+  if (!Object.keys(agents).length || Array.isArray(agents.team)) return { ...old, schemaVersion: 4 };
+  const roles = pick(agents.roles);
+  const seeds = Object.fromEntries(LLM_ROLES.map((r) => [r, pick(roles[r])]));
+  notes.push('agent team created with the five built-in agents, taken from agents.roles');
+  return { ...old, schemaVersion: 4, agents: { ...agents, team: systemAgents(seeds) } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
