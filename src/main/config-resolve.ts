@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
-import type { CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import type { AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { t } from '../shared/i18n';
 
 // Turns a WorkspaceConfig into what the rest of the main process needs: absolute paths, the optional integrations that are on, the
@@ -94,6 +94,8 @@ export interface ResolvedConfig {
   cloneRoots: string[];
   isOn(ceremony: CeremonyId): boolean;
   role(role: LlmRole): ResolvedRole;
+  /** The provider and model of a team agent: a borrowed role, or an explicit provider and model. `label` is the role the call is reported under. */
+  agentModel(model: AgentModel, label?: LlmRole): ResolvedRole;
   provider(id: string): LlmProvider | undefined;
 }
 
@@ -119,6 +121,30 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
   const card = c.externalTools.cardSource;
   const sync = c.externalTools.releaseSync;
   const time = c.externalTools.timeExport;
+
+  const target = (role: LlmRole, modelRole: LlmRole, providerId: string, model: string): ResolvedRole => {
+    const p = c.llm.providers.find((q) => q.id === providerId);
+    if (!p) throw new Error(t('main.config.noProvider', { provider: providerId, role }));
+    return {
+      role,
+      modelRole,
+      providerId: p.id,
+      kind: p.kind,
+      engine: p.engine,
+      baseUrl: p.baseUrl,
+      model,
+      secretRef: p.secretRef,
+      envFile: xn(p.envFile),
+      options: p.options,
+      capabilities: p.capabilities,
+      structured: p.structured,
+      headers: p.headers,
+      maxOutputTokens: p.maxOutputTokens,
+      temperature: p.temperature,
+      timeoutMs: p.timeoutMs,
+      legacyCustomEndpoint: p.legacyCustomEndpoint,
+    };
+  };
 
   return {
     home: ctx.home,
@@ -147,27 +173,14 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
     role(role) {
       const modelRole = c.agents.roles[role]?.modelRole ?? role;
       const rm = c.llm.roles[modelRole] ?? c.llm.roles[role];
-      const p = c.llm.providers.find((q) => q.id === rm.provider);
-      if (!p) throw new Error(t('main.config.noProvider', { provider: rm.provider, role }));
-      return {
-        role,
-        modelRole,
-        providerId: p.id,
-        kind: p.kind,
-        engine: p.engine,
-        baseUrl: p.baseUrl,
-        model: rm.model,
-        secretRef: p.secretRef,
-        envFile: xn(p.envFile),
-        options: p.options,
-        capabilities: p.capabilities,
-        structured: p.structured,
-        headers: p.headers,
-        maxOutputTokens: p.maxOutputTokens,
-        temperature: p.temperature,
-        timeoutMs: p.timeoutMs,
-        legacyCustomEndpoint: p.legacyCustomEndpoint,
-      };
+      return target(role, modelRole, rm.provider, rm.model);
+    },
+    agentModel(model, label = 'deep') {
+      if (model.role) {
+        const rm = c.llm.roles[model.role];
+        return target(label, model.role, rm.provider, rm.model);
+      }
+      return target(label, label, model.provider, model.model);
     },
   };
 }

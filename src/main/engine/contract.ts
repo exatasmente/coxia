@@ -35,6 +35,14 @@ export interface ShellPolicy {
   patterns: RegExp[];
 }
 
+/** What an agent that writes is confined to: only a stage of a run whose agent has the `worktree` permission carries one. */
+export interface Confinement {
+  /** The run's worktree: the only folder the agent may change, and its working directory. */
+  root: string;
+  /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
+  hooks: NonNullable<Options['hooks']>;
+}
+
 export interface EngineRequest {
   role: LlmRole;
   prompt: string;
@@ -53,6 +61,10 @@ export interface EngineRequest {
   shell: ShellPolicy;
   /** Per-call options of the Claude Agent SDK: resume, maxTurns, tools. Other engines read maxTurns and resume and may ignore the rest. */
   extra: Partial<Options>;
+  /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
+  confine?: Confinement;
+  /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
+  abort?: AbortController;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
 }
