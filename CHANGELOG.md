@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - For contributors: the test of cancelling the voice install could fail under load (it read the fake tool's pid file before the pid was written and then probed pid 0); it now waits for a complete pid and expects the tool to be gone as soon as the cancel settles.
+- For contributors: running the tests on a fresh clone no longer downloads the Electron binary. The tests get a stub for the `electron` package, so a first `npx vitest run` after `npm ci` does not reach the network, and CI no longer fetches the binary before them.
 
 ## [0.4.2] - 2026-10-03
 
