@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-03
+
 ### Added
 
 - A workspace setting chooses which issues become cards: the ones assigned to you (the default, so nothing changes for an existing workspace), every open issue of the issue project, or the open issues of the issue project that carry any of a list of labels. It works on GitHub and GitLab; Bitbucket offers the first two (its issues have no labels). It is edited in the integrations step of the setup wizard, next to the issue project; without an issue project, with no labels listed, or on Bitbucket with labels, the issues assigned to you apply and the wizard says so. A card source command keeps deciding its own cards. The merge and pull request cards, the call's agenda of 8 and its "left out" list are unchanged. The workspace configuration moves to schema 4 (two new fields in the issue project, written with today's behavior by the migration); an older app refuses a version 4 file.
@@ -59,7 +61,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/exatasmente/coxia/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/exatasmente/coxia/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/exatasmente/coxia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/exatasmente/coxia/compare/v0.1.0...v0.2.0
