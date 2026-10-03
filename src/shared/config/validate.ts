@@ -73,6 +73,14 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     }
     if (r.source === 'field' && !r.name.trim()) warnings.push({ path: `devCycle.stageMapping[${i}].name`, message: 'a board field rule needs the field name' });
   });
+  c.devCycle.priority.labels.forEach((l, i) => {
+    try {
+      new RegExp(l, 'i');
+    } catch {
+      errors.push({ path: `devCycle.priority.labels[${i}]`, message: 'not a valid regular expression' });
+    }
+  });
+  for (const l of duplicates(c.devCycle.priority.labels)) warnings.push({ path: 'devCycle.priority.labels', message: `"${l}" is listed twice: only its first position ranks` });
   const families = promptFamilies('pt-BR');
   for (const [role, family] of Object.entries(c.devCycle.prompts)) {
     if (!families[family]) warnings.push({ path: `devCycle.prompts.${role}`, message: `no prompt family "${family}": the "sdd" texts are used` });
@@ -90,7 +98,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   if (c.externalTools.cardSource.enabled && !c.externalTools.cardSource.reportArgs.length) warnings.push({ path: 'externalTools.cardSource.reportArgs', message: 'is empty: the command runs with no arguments' });
 }
 
-/** Validates a v2 document: schema first, then the cross references the schema cannot express. Does not migrate (see migrations.ts). */
+/** Validates a current-schema document: schema first, then the cross references the schema cannot express. Does not migrate (see migrations.ts). */
 export function validateConfig(raw: unknown): ValidationResult {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, errors: [{ path: '', message: 'expected an object' }], warnings: [], config: null };
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;

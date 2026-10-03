@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
 import { isBlockedStage } from '../shared/cycles/stages';
+import { priorityOf } from '../shared/priority';
 import { cycle, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
 import { rc } from './workspaceConfig';
@@ -52,6 +53,7 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
     if (it.kind !== 'mr') continue;
     for (const ref of it.issue_refs ?? []) mrsByIssue.set(String(ref), [...(mrsByIssue.get(String(ref)) ?? []), it]);
   }
+  const levels = cycle().priority.labels;
   const cards: Card[] = report.items
     .filter((it) => it.kind === 'issue')
     .map((it) => {
@@ -70,6 +72,11 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
         changes: [...it.changes.map((c) => describe(c)), ...mrs.flatMap((m) => m.changes.map((c) => describe(c, `${m.ref} `)))],
         note: it.manual_note,
         url: it.web_url,
+        labels: it.labels ?? [],
+        milestone: it.milestone ?? null,
+        updatedAt: it.updated_at ?? null,
+        project: it.project,
+        priority: priorityOf(it.labels, levels),
       };
     });
   cards.sort(compareCards);

@@ -2,7 +2,7 @@
 import type { JsonSchema } from './jsonSchema';
 import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
-// The JSON Schema of WorkspaceConfig v2. It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 3). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -263,6 +263,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           cardFields: list('Fields of the card the agent sees.', enumOf('Card field.', CARD_FIELDS), { maxItems: 20, uniqueItems: true }),
           extraFiles: strings('Documents the card names when they exist (relative to the spec folder, or "./" for the projects root).'),
         }),
+        priority: object('How the tracker priority reaches a card.', { labels: list('Labels that say how urgent an issue is, highest first; each is a case-insensitive regular expression. A priority is written back only to an entry that is a plain label name.', { type: 'string', minLength: 1, maxLength: 200, pattern: NO_NUL }, { maxItems: 20 }) }),
         prompts: object('Which prompt family each role uses.', Object.fromEntries(PROMPT_ROLES.map((r) => [r, string(`Prompt family of the ${r} prompts.`, { pattern: '^[a-z][a-z0-9-]{0,31}$' })]))),
         promptOverrides: { type: 'object', description: 'Replaces single prompt texts, by prompt id (e.g. "turn.main"), per language.', additionalProperties: promptOverride },
         pipelineSkill: string('Name of the skill that describes the team pipeline; empty: none.', { maxLength: 100 }),

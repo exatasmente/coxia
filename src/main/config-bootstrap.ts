@@ -6,7 +6,7 @@ import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../shared/config/ty
 import { ATA_FILE, REGISTRY_FILE, WEB_FILE, WORKSPACE_DIRS, WORKSPACE_FILES, readRegistry, workspaceDir, workspacesDir } from './workspaces-core';
 
 // Runs once per start, before anything reads a config: decides which workspaces belong to an install that existed before the
-// configuration did (they get the legacy profile when the person has one, else the neutral defaults) and writes every workspace's config.json as v2.
+// configuration did (they get the legacy profile when the person has one, else the neutral defaults) and writes every workspace's config.json at the current schema version.
 
 export const CONFIG_FILE = 'config.json';
 export const V1_BACKUP_FILE = 'config.v1.json';

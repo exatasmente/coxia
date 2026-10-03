@@ -82,8 +82,8 @@ describe('after the previous app profile is applied', () => {
     expect(specInfo('99999')).toBeNull();
   });
 
-  it('the config file of the workspace is v2 on disk', async () => {
+  it('the config file of the workspace is at the current schema on disk', async () => {
     const { readConfigFile } = await import('../src/main/config-bootstrap');
-    expect((readConfigFile(ATAS) as { schemaVersion: number }).schemaVersion).toBe(2);
+    expect((readConfigFile(ATAS) as { schemaVersion: number }).schemaVersion).toBe(3);
   });
 });

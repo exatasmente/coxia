@@ -17,7 +17,7 @@ import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchang
 import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
-import { cardContext, cycle, decisionLogRef, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
+import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { GLAB_READ, gitlabHint, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
@@ -551,6 +551,7 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
     words: pre.speechWords,
     questionLine: c.meanings.question.enabled ? cp('turn.questionOn', { question: cycleWord(c.meanings.question.text) }) : cp('turn.questionOff'),
     meanings: meaningsLine(),
+    priorityLine: priorityLine(card),
   };
   const prompt = day ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day), delta: deltaText(day) }) : cp('turn.main', common);
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });

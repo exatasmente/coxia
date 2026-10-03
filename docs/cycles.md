@@ -20,6 +20,7 @@ O Coxia deixou de assumir um processo só. O que as cerimônias fazem (quais exi
 | `meanings` | o que é "bloqueio" (`stageKinds` + texto), "pergunta para mim" (liga/desliga + texto) e "pronto para o QA" (`stageKinds`, `requiresSpec`, texto) |
 | `enrichment` | o que o agente recebe de cada cartão: `specFolder` (procura a pasta da issue), `cardFields` (quais campos do cartão), `extraFiles` (documentos que o cartão cita quando existem) |
 | `specLayout` | onde ficam os documentos: `folderPrefix`, `phaseFiles` (o arquivo que mais avançou diz a fase), `planFiles`, `gateFiles` (artefato de cada gate), `decisionLog.heading` (a seção do plano onde as decisões vão; vazio: nunca escreve no plano), `documents` |
+| `priority` | as labels que dizem a urgência de uma issue (`labels`, da mais alta para a mais baixa, cada uma uma expressão regular sem diferenciar maiúsculas); vazio: o workspace não tem labels de prioridade |
 | `prompts` | a família de texto de cada papel (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | troca um único texto por id e idioma (ver abaixo) |
 | `pipelineSkill`, `releaseLabelPattern`, `qa.user` | a skill que descreve o pipeline do time, a label de versão e a conta de QA: tudo opcional |
@@ -39,6 +40,14 @@ Um texto do ciclo (rótulo, nome, estilo) é uma **chave do catálogo** (`cycle.
 Todos produzem um app útil sem arquivo de spec: os cartões vêm do provedor de VCS (ou da fonte de cartões), e as etapas são lidas por `stageMapping`. O SDD é o comportamento que o app já tinha, sem empresa: a conta de QA, o prefixo das issues, as skills do playbook e a ferramenta de release vêm de campos da configuração, preenchidos pelo perfil migrado (`legacy.ts`).
 
 A disponibilidade final de uma cerimônia é "ligada no ciclo **e** com o que ela precisa": o gate exige a pasta de specs e artefatos nomeados; a passagem ao QA exige a pasta de specs.
+
+### Prioridade
+
+O cartão leva o que o tracker diz da issue: as labels, o milestone, o projeto e a hora da última atualização (`updatedAt`). A **prioridade** do cartão é a primeira entrada de `devCycle.priority.labels` que casa com alguma label da issue; guarda a posição (`rank`, 0 é a mais alta) e a label da issue que casou. Sem entradas, ou sem casamento, o cartão não tem prioridade. Ela aparece no cartão da tela Hoje (e no detalhe, junto com o milestone) e na call; o agente do turno lê `priority` e `milestone` quando `enrichment.cardFields` os lista, e é instruído a citá-los só quando mudam o que importa agora. O milestone é só contexto: não entra na ordem. Uma fonte de cartões por comando (`externalTools.cardSource`) pode informar `labels`, `milestone` e `updated_at` nos itens de issue; sem eles o cartão não tem prioridade.
+
+```json
+{ "devCycle": { "priority": { "labels": ["^P0$", "^P1$", "^P2$"] } } }
+```
 
 ### Prompts e idiomas
 
@@ -116,6 +125,7 @@ Coxia no longer assumes a single process. What the ceremonies do (which ones exi
 | `meanings` | what a "blocker" is (`stageKinds` + text), a "question for me" (on/off + text) and "ready for QA" (`stageKinds`, `requiresSpec`, text) |
 | `enrichment` | what the agent gets about each card: `specFolder` (looks up the issue folder), `cardFields` (which card fields), `extraFiles` (documents the card names when they exist) |
 | `specLayout` | where the documents live: `folderPrefix`, `phaseFiles` (the most advanced file present says the phase), `planFiles`, `gateFiles` (each gate's artifact), `decisionLog.heading` (the plan section decisions go to; empty: never written to the plan), `documents` |
+| `priority` | the labels that say how urgent an issue is (`labels`, highest first, each a case-insensitive regular expression); empty: the workspace has no priority labels |
 | `prompts` | the text family of each role (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | replaces one text by id and language (see below) |
 | `pipelineSkill`, `releaseLabelPattern`, `qa.user` | the skill that describes the team's pipeline, the version label and the QA account: all optional |
@@ -135,6 +145,14 @@ A text of the cycle (label, name, style) is a **catalog key** (`cycle.sdd.name`)
 All of them produce a useful app without a spec file: cards come from the VCS provider (or the card source), and stages are read through `stageMapping`. SDD is the behavior the app already had, with the company left out: the QA account, the issue prefix, the playbook skills and the release tool come from configuration fields, filled by the migrated profile (`legacy.ts`).
 
 The final availability of a ceremony is "on in the cycle **and** with what it needs": the gate needs the specs folder and named artifacts; the QA hand-off needs the specs folder.
+
+### Priority
+
+The card carries what the tracker says about the issue: its labels, milestone, project and the time of its last update (`updatedAt`). The card's **priority** is the first entry of `devCycle.priority.labels` that matches one of the issue's labels; it keeps the position (`rank`, 0 is the highest) and the issue's own label that matched. With no entries, or no match, the card has no priority. It shows on the card in Today (and in its detail, with the milestone) and in the call; the turn agent reads `priority` and `milestone` when `enrichment.cardFields` lists them, and is told to mention them only when they change what matters now. The milestone is context only: it does not enter the order. A command card source (`externalTools.cardSource`) may report `labels`, `milestone` and `updated_at` on its issue items; without them the card has no priority.
+
+```json
+{ "devCycle": { "priority": { "labels": ["^P0$", "^P1$", "^P2$"] } } }
+```
 
 ### Prompts and languages
 

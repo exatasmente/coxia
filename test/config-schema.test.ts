@@ -69,7 +69,7 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 3 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: 4 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
   });
@@ -84,8 +84,21 @@ describe('config schema', () => {
     expect(paths).toEqual(expect.arrayContaining(['llm.roles.turn.provider', 'projects.repos[0].vcsId', 'devCycle.stages[0].match[0]', 'externalTools.cardSource.command']));
   });
 
+  it('checks the priority labels: a pattern that does not compile is an error, a repeated one a warning, and none is the default', () => {
+    expect(neutralConfig().devCycle.priority).toEqual({ labels: [] });
+    const c = neutralConfig();
+    c.devCycle.priority.labels = ['^P0$', '[', '^P0$'];
+    const r = validateConfig(c);
+    expect(r.errors.map((e) => e.path)).toEqual(['devCycle.priority.labels[1]']);
+    c.devCycle.priority.labels = ['^P0$', '^P1$', '^P0$'];
+    expect(validateConfig(c).warnings.map((w) => w.path)).toContain('devCycle.priority.labels');
+    c.devCycle.priority.labels = Array.from({ length: 21 }, (_, i) => `P${i}`);
+    expect(validateConfig(c).errors[0].path).toBe('devCycle.priority.labels');
+    expect(validateConfig({ ...neutralConfig(), devCycle: { ...neutralConfig().devCycle, priority: { labels: ['P0'], extra: 1 } } }).ok).toBe(false);
+  });
+
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 2, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: 3, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);

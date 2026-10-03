@@ -110,11 +110,22 @@ export function cardContext(card: Card): string {
   const { spec, ...rest } = card;
   const enrich = cycle().enrichment;
   const fields = new Set<string>(enrich.cardFields as CardField[]);
-  const shown = Object.fromEntries(Object.entries(rest).filter(([key]) => fields.has(key)));
+  // A card with no priority or milestone says nothing about them, rather than a null the agent has to read around.
+  const shown = Object.fromEntries(Object.entries(rest).filter(([key, value]) => fields.has(key) && !((key === 'priority' || key === 'milestone') && value == null)));
   const where = enrich.specFolder ? (spec ? prompt('card.whereSpec', { folder: spec.folder, phase: spec.phase }) : prompt('card.whereNone')) : '';
   const files = cardFiles(card);
   const named = files.length ? prompt('card.files', { files: files.join(', ') }) : '';
   return prompt('card.context', { origin: origin(), card: JSON.stringify(shown), where: [where, named].filter(Boolean).join(' ') });
+}
+
+/** What the turn agent is told about a card's tracker priority and milestone, or "" (the line then disappears) when it has neither. */
+export function priorityLine(card: Card): string {
+  if (!cycle().enrichment.cardFields.some((f) => f === 'priority' || f === 'milestone')) return '';
+  const signals = [
+    card.priority && cycle().enrichment.cardFields.includes('priority') ? prompt('turn.priority.level', { label: card.priority.label }) : '',
+    card.milestone && cycle().enrichment.cardFields.includes('milestone') ? prompt('turn.priority.milestone', { milestone: card.milestone }) : '',
+  ].filter(Boolean);
+  return signals.length ? prompt('turn.priority', { signals: joinList(signals, language()) }) : '';
 }
 
 /** Where the agent is told to look when it investigates: "spec, rules and GitLab" for a team with specs and rules, shorter for others. */

@@ -6,13 +6,13 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` v2. Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 3). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
 | O quê | Onde | Escopo |
 |---|---|---|
-| Configuração | `<dados>/workspaces/<id>/config.json` (v2, `schemaVersion: 2`) | por workspace |
+| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 3`) | por workspace |
 | Segredos (referências resolvidas) | `<dados>/secrets.json` (modo 0600), por `secretRef` | máquina; **nunca exportado** |
 | Acesso pelo navegador | `<dados>/web.json` | máquina (todos os workspaces) |
 | Marcador da migração | `<dados>/config-migration.json` | máquina |
@@ -34,7 +34,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `vcs[]` | integrações `gitlab` / `github` / `bitbucket`: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | fontes de contexto no estilo Claude Code: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` acrescenta `~/.claude` e `<projeto>/.claude` |
 | `userName`, `userArticle` | como os agentes chamam a pessoa e o artigo português que acompanha o nome (`o`, `a` ou vazio) |
-| `devCycle` | o ciclo de desenvolvimento: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. Tudo em [`cycles.md`](cycles.md) |
+| `devCycle` | o ciclo de desenvolvimento: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `priority`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. Tudo em [`cycles.md`](cycles.md) |
 | `agents` | `tools`, `extraInstructions` e `persona` (todos), `roles[papel]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: quais fontes de `docs` o papel lê) |
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled` e os ajustes que já existiam |
 | `claudeSdk` | `{ installed, version, path }`: de onde sai o Claude Agent SDK |
@@ -42,10 +42,12 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 
 Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil. O acesso pelo navegador (host, porta, URL pública) é da máquina e fica em `web.json`.
 
+Histórico do esquema: **v1** (sem `schemaVersion`) eram as configurações soltas do app antes da configuração existir; **v2** é o `WorkspaceConfig`; **v3** acrescenta `devCycle.priority` e os campos de cartão `priority` e `milestone`. A migração de v2 para v3 (`v2ToV3` em `migrations.ts`) cria `priority: { labels: [] }` e acrescenta os dois campos à lista `enrichment.cardFields` que o arquivo já tinha, sem tocar no resto. Um `config.json` v3 não abre em um app que só conhece o v2 (ele recusa, como qualquer arquivo de um app mais novo).
+
 ### Instalação nova × instalação existente
 
 - **Nova** (pasta de dados vazia): configuração neutra, `setupComplete: false`. Nenhum host, repositório, usuário de QA, ferramenta externa ou caminho de projeto. O modelo padrão é a API da Anthropic (`haiku`/`sonnet`), com a chave referenciada por `llm.anthropic`. Sem projeto configurado, o agente trabalha na pasta do workspace, nunca na home.
-- **Existente** (uma instalação anterior à configuração, com `config.json` v1): a migração (`src/shared/config/migrations.ts`, `legacy.ts`) constrói o v2 a partir das configurações antigas (agenda, voz, ferramentas, notificações). Vale para **todos** os workspaces que existiam, mesmo sem `config.json`. O arquivo antigo fica em `config.v1.json`. O que o app antigo tinha fixo no código (host, repositórios, ferramentas, prompts) o app novo não conhece: quem quiser levar isso junto aponta a variável `COXIA_LEGACY_PROFILE` para um arquivo JSON **fora do repositório** (formato em [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` é um patch sobre os padrões neutros, `web` vai para o `web.json` se ele não existir, `secrets` registra fontes `command`, `migratedModels` diz a que provedor pertencem os modelos do arquivo v1). Sem esse arquivo a instalação migra para os padrões neutros com `setupComplete: false` e o assistente roda. Workspaces criados depois da atualização são neutros.
+- **Existente** (uma instalação anterior à configuração, com `config.json` v1): a migração (`src/shared/config/migrations.ts`, `legacy.ts`) constrói a configuração atual a partir das configurações antigas (agenda, voz, ferramentas, notificações). Vale para **todos** os workspaces que existiam, mesmo sem `config.json`. O arquivo antigo fica em `config.v1.json`. O que o app antigo tinha fixo no código (host, repositórios, ferramentas, prompts) o app novo não conhece: quem quiser levar isso junto aponta a variável `COXIA_LEGACY_PROFILE` para um arquivo JSON **fora do repositório** (formato em [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` é um patch sobre os padrões neutros, `web` vai para o `web.json` se ele não existir, `secrets` registra fontes `command`, `migratedModels` diz a que provedor pertencem os modelos do arquivo v1). Sem esse arquivo a instalação migra para os padrões neutros com `setupComplete: false` e o assistente roda. Workspaces criados depois da atualização são neutros.
 - Um campo inválido num arquivo antigo é trocado pelo padrão (com nota no log), nunca trava o workspace. Um arquivo escrito por uma versão mais nova do app é recusado.
 
 Decisões do produto já refletidas:
@@ -115,13 +117,13 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` v2. Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 3). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
 | What | Where | Scope |
 |---|---|---|
-| Configuration | `<data>/workspaces/<id>/config.json` (v2, `schemaVersion: 2`) | per workspace |
+| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 3`) | per workspace |
 | Secrets (resolved references) | `<data>/secrets.json` (mode 0600), by `secretRef` | machine; **never exported** |
 | Browser access | `<data>/web.json` | machine (every workspace) |
 | Migration marker | `<data>/config-migration.json` | machine |
@@ -143,7 +145,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `vcs[]` | `gitlab` / `github` / `bitbucket` integrations: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | Claude Code style context sources: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`; `autoDetect` adds `~/.claude` and `<project>/.claude` |
 | `userName`, `userArticle` | what the agents call the person, and the Portuguese article that goes with the name (`o`, `a` or empty) |
-| `devCycle` | the development cycle: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. All in [`cycles.md`](cycles.md) |
+| `devCycle` | the development cycle: `templateId`, `ceremonies`, `ceremonyParams`, `stages[]`, `stageMapping[]`, `meanings`, `enrichment`, `specLayout`, `prompts`, `promptOverrides`, `priority`, `pipelineSkill`, `qa.user`, `releaseLabelPattern`. All in [`cycles.md`](cycles.md) |
 | `agents` | `tools`, `extraInstructions` and `persona` (all), `roles[role]` = `{ modelRole, extraInstructions, promptOverride, persona, maxTurns, docs }` (`docs`: which `docs` sources the role reads) |
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled`, plus the settings that already existed |
 | `claudeSdk` | `{ installed, version, path }`: where the Claude Agent SDK comes from |
@@ -151,10 +153,12 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 
+Schema history: **v1** (no `schemaVersion`) was the app's loose settings before configuration existed; **v2** is `WorkspaceConfig`; **v3** adds `devCycle.priority` and the card fields `priority` and `milestone`. The v2 to v3 migration (`v2ToV3` in `migrations.ts`) creates `priority: { labels: [] }` and appends the two fields to the `enrichment.cardFields` list the file already had, touching nothing else. A v3 `config.json` does not open in an app that only knows v2 (it refuses, like any file from a newer app).
+
 ### Fresh install vs existing install
 
 - **Fresh** (empty data folder): neutral config, `setupComplete: false`. No host, repository, QA user, external tool or project path. The default model is the Anthropic API (`haiku`/`sonnet`), with the key referenced as `llm.anthropic`. With no project configured the agent works in the workspace folder, never in the home folder.
-- **Existing** (an install that predates the configuration, with a v1 `config.json`): the migration (`src/shared/config/migrations.ts`, `legacy.ts`) builds v2 from the old settings (schedule, voice, tools, notifications). It covers **every** workspace that existed, even one with no `config.json`. The old file is kept as `config.v1.json`. What the old app hardcoded (host, repositories, tools, prompts) the new app does not know: to carry it along, point the `COXIA_LEGACY_PROFILE` variable at a JSON file **outside the repository** (shape in [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` is a patch over the neutral defaults, `web` goes to `web.json` when that file does not exist, `secrets` registers `command` sources, `migratedModels` says which provider the models of the v1 file belong to). Without that file the install migrates to the neutral defaults with `setupComplete: false` and the setup assistant runs. Workspaces created after the update are neutral.
+- **Existing** (an install that predates the configuration, with a v1 `config.json`): the migration (`src/shared/config/migrations.ts`, `legacy.ts`) builds the current configuration from the old settings (schedule, voice, tools, notifications). It covers **every** workspace that existed, even one with no `config.json`. The old file is kept as `config.v1.json`. What the old app hardcoded (host, repositories, tools, prompts) the new app does not know: to carry it along, point the `COXIA_LEGACY_PROFILE` variable at a JSON file **outside the repository** (shape in [`examples/legacy-profile.example.json`](examples/legacy-profile.example.json): `config` is a patch over the neutral defaults, `web` goes to `web.json` when that file does not exist, `secrets` registers `command` sources, `migratedModels` says which provider the models of the v1 file belong to). Without that file the install migrates to the neutral defaults with `setupComplete: false` and the setup assistant runs. Workspaces created after the update are neutral.
 - An invalid field in an old file is replaced by its default (with a note in the log) and never locks a workspace out. A file written by a newer app is refused.
 
 Product decisions reflected here:

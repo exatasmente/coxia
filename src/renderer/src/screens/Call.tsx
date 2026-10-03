@@ -288,7 +288,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 <div key={x.ref} className={`queue-item ${nowItem ? 'now' : ''} ${done ? 'done' : ''}`}>
                   <div className="chip chip-sm" style={{ background: c.colorOf(x.ref) }}>{shortRef(x.ref)}</div>
                   <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-                    <div className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>#{x.iid}</div>
+                    <div className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>#{x.iid}{x.priority ? ` · ${x.priority.label}` : ''}</div>
                     <div className="t">{x.title}</div>
                     {c.marks[x.ref]?.kind !== undefined && c.marks[x.ref].kind !== 'new' && c.marks[x.ref].since && (
                       <div className="small faint">{t(c.marks[x.ref].kind === 'unchanged' ? 'sameDay.mark.unchanged' : 'sameDay.mark.changed', { time: clockOf(c.marks[x.ref].since as string, getLanguage()) })}</div>
@@ -323,7 +323,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                         <div style={{ minWidth: 0 }}>
                           <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
                             <span className="mono" style={{ color: 'var(--on-night-muted)' }}>#{card.iid}</span>
-                            <span className="small" style={{ color: 'var(--on-night-muted)' }}>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ')}</span>
+                            <span className="small" style={{ color: 'var(--on-night-muted)' }}>{[card.stage, card.spec?.phase, card.priority && t('ui.call.priority', { label: card.priority.label }), card.milestone && t('ui.call.milestone', { milestone: card.milestone })].filter(Boolean).join(' · ')}</span>
                           </div>
                           <div style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25 }}>{card.title}</div>
                           <div className="small" style={{ color: 'var(--on-night-muted)', marginTop: 4 }}>

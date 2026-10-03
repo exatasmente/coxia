@@ -7,6 +7,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 // config.json history:
 //   v1  no schemaVersion; the flat "Settings" of the app before configuration existed (models, tools, schedule, voice, ...; web lived in it too).
 //   v2  WorkspaceConfig (types.ts).
+//   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -68,8 +69,27 @@ function dropUndefined<T>(v: T): T {
   return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => [k, dropUndefined(x)])) as T;
 }
 
+// A stored v2 file lists its card fields explicitly, so the two new ones are appended: without that an existing workspace would never show them to the agent.
+function v2ToV3(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const cycle = pick(old.devCycle);
+  if (!Object.keys(cycle).length) return { ...old, schemaVersion: 3 };
+  const enrichment = pick(cycle.enrichment);
+  const fields = Array.isArray(enrichment.cardFields) ? (enrichment.cardFields as unknown[]) : null;
+  const added = fields ? ['priority', 'milestone'].filter((f) => !fields.includes(f)) : [];
+  if (added.length) notes.push(`card fields ${added.join(', ')} added to what the agents see`);
+  return {
+    ...old,
+    schemaVersion: 3,
+    devCycle: {
+      ...cycle,
+      priority: isObject(cycle.priority) ? cycle.priority : { labels: [] },
+      ...(fields && added.length ? { enrichment: { ...enrichment, cardFields: [...fields, ...added] } } : {}),
+    },
+  };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

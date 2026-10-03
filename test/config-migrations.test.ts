@@ -44,12 +44,12 @@ beforeEach(() => {
 });
 
 describe('migrateConfig', () => {
-  it('turns a v1 settings file into a v2 config with the legacy profile, keeping every value the user had', () => {
+  it('turns a v1 settings file into a current config with the legacy profile, keeping every value the user had', () => {
     const r = migrateConfig({ ...V1_SETTINGS, models: { turn: 'a/b', reply: 'c/d', deep: 'e/f', teams: 'g/h' }, schedule: { ...V1_SETTINGS.schedule, preDaily: '10:15' }, notifications: false }, { legacyInstall: false, profile: exampleProfile() });
     expect(r.fromVersion).toBe(1);
     expect(r.changed).toBe(true);
     const c = r.config;
-    expect(c.schemaVersion).toBe(2);
+    expect(c.schemaVersion).toBe(3);
     expect(c.setupComplete).toBe(true);
     expect(c.llm.roles).toEqual({ turn: { provider: 'openrouter', model: 'a/b' }, reply: { provider: 'openrouter', model: 'c/d' }, deep: { provider: 'openrouter', model: 'e/f' }, teams: { provider: 'openrouter', model: 'g/h' }, fix: { provider: 'openrouter', model: 'c/d' } });
     expect(c.schedule.preDaily).toBe('10:15');
@@ -101,6 +101,40 @@ describe('migrateConfig', () => {
     expect(validateConfig(r.config).ok).toBe(true);
   });
 
+  it('a schema 2 file gets the priority section and the two card fields the agents read, keeping what the person chose', () => {
+    const v2 = { ...neutralConfig(), schemaVersion: 2 } as Record<string, any>;
+    delete v2.devCycle.priority;
+    v2.devCycle.enrichment.cardFields = ['ref', 'title', 'blockers'];
+    const r = migrateConfig(v2, { legacyInstall: false });
+    expect(r.fromVersion).toBe(2);
+    expect(r.changed).toBe(true);
+    expect(r.config.schemaVersion).toBe(3);
+    expect(r.config.devCycle.priority).toEqual({ labels: [] });
+    expect(r.config.devCycle.enrichment.cardFields).toEqual(['ref', 'title', 'blockers', 'priority', 'milestone']);
+    expect(r.notes.join(' ')).toContain('priority, milestone');
+    expect(validateConfig(r.config).ok).toBe(true);
+  });
+
+  it('keeps a priority list already written, does not repeat a field, and leaves a file with no cycle to the defaults', () => {
+    const v2 = { ...neutralConfig(), schemaVersion: 2 } as Record<string, any>;
+    v2.devCycle.priority = { labels: ['^P0$', '^P1$'] };
+    v2.devCycle.enrichment.cardFields = ['ref', 'milestone'];
+    const r = migrateConfig(v2, { legacyInstall: false });
+    expect(r.config.devCycle.priority.labels).toEqual(['^P0$', '^P1$']);
+    expect(r.config.devCycle.enrichment.cardFields).toEqual(['ref', 'milestone', 'priority']);
+    const bare = migrateConfig({ schemaVersion: 2, language: 'en' }, { legacyInstall: false });
+    expect(bare.config.language).toBe('en');
+    expect(bare.config.devCycle.priority).toEqual({ labels: [] });
+    expect(bare.config.devCycle.enrichment.cardFields).toEqual(neutralConfig().devCycle.enrichment.cardFields);
+  });
+
+  it('a v1 file ends at the current schema with the new fields in place', () => {
+    const r = migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() });
+    expect(r.config.schemaVersion).toBe(3);
+    expect(r.config.devCycle.priority).toEqual({ labels: [] });
+    expect(r.config.devCycle.enrichment.cardFields).toEqual(expect.arrayContaining(['priority', 'milestone']));
+  });
+
   it('leaves a current document alone and refuses a newer one', () => {
     const c = neutralConfig();
     c.language = 'en';
@@ -112,7 +146,7 @@ describe('migrateConfig', () => {
 });
 
 describe('startup on the real current layout', () => {
-  it('flat data dir: becomes the "Testes" workspace with a v2 config that has the profile and the old settings; the v1 file is kept', () => {
+  it('flat data dir: becomes the "Testes" workspace with a current config that has the profile and the old settings; the v1 file is kept', () => {
     flatLayout();
     const { resolved, existing, boot } = startUp();
     expect(existing).toBe(true);
@@ -120,7 +154,7 @@ describe('startup on the real current layout', () => {
     expect(boot.migrated).toEqual(['testes']);
     const dir = workspaceDir(root, 'testes');
     const config = readConfigFile(dir) as Record<string, unknown>;
-    expect(config.schemaVersion).toBe(2);
+    expect(config.schemaVersion).toBe(3);
     expect(validateConfig(config).ok).toBe(true);
     const v = validateConfig(config).config;
     expect(v?.vcs[0].host).toBe('git.acme.test');

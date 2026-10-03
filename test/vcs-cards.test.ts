@@ -125,6 +125,16 @@ describe('the card report from a provider', () => {
     expect(report.generated_at).toBe(NOW.toISOString());
   });
 
+  it('carries the labels, the milestone and the update time of each issue, which is what a priority is read from', async () => {
+    const { report } = await buildCardReport(glRuntime().provider, opts);
+    const issues = report.items.filter((i) => i.kind === 'issue');
+    expect(issues.map((i) => [i.labels, i.milestone, i.updated_at])).toEqual([
+      [['STAGE:: Doing', 'bug'], 'v1.2', '2026-09-30T09:00:00Z'],
+      [['STAGE:: Code Review OK'], null, '2026-10-01T09:00:00Z'],
+    ]);
+    expect(report.items.filter((i) => i.kind === 'mr').every((m) => m.milestone === undefined)).toBe(true);
+  });
+
   it('says what blocks and what waits, in the workspace language', async () => {
     const { report } = await buildCardReport(glRuntime().provider, opts);
     const mr7 = report.items.find((i) => i.ref === 'app!7');

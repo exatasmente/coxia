@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeDeep, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
 import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
@@ -129,6 +129,14 @@ describe('applying a template', () => {
     expect(applyTemplate(legacy, sdd, { keepReleaseLabelPattern: true }).devCycle.releaseLabelPattern).toBe('^web-(\\d+\\.\\d+\\.\\d+)$');
   });
 
+  it('keeps the priority labels of the workspace when the template names none, and takes the template\'s when it does', () => {
+    const own = neutralConfig();
+    own.devCycle.priority.labels = ['^P0$', '^P1$'];
+    expect(applyTemplate(own, sdd).devCycle.priority.labels).toEqual(['^P0$', '^P1$']);
+    const withLabels = { ...sdd, devCycle: { ...sdd.devCycle, priority: { labels: ['^high$'] } } };
+    expect(applyTemplate(own, withLabels).devCycle.priority.labels).toEqual(['^high$']);
+  });
+
   it('is idempotent', () => {
     const once = apply('sdd');
     expect(applyTemplate(once, sdd)).toEqual(once);
@@ -181,9 +189,10 @@ describe('the example profile is the SDD template with the team specifics', () =
         qa: { user: 'qa.acme' },
       },
     };
-    const r = validateConfig(old);
-    expect(r.errors).toEqual([]);
-    const c = r.config!;
+    const r = migrateConfig(old, { legacyInstall: false });
+    expect(r.fromVersion).toBe(2);
+    expect(validateConfig(r.config).errors).toEqual([]);
+    const c = r.config;
     expect([c.userName, c.userArticle]).toEqual(['', '']);
     expect(c.devCycle.specLayout.decisionLog.heading).toBe('');
     expect(c.devCycle.ceremonyParams.preDaily.summaryTarget).toBe('');
@@ -213,6 +222,14 @@ describe('template files', () => {
     expect(check.errors).toEqual([]);
     const target = applyTemplate(neutralConfig(), check.template!);
     expect(target.devCycle).toEqual({ ...source.devCycle, templateId: 'my-team' });
+  });
+
+  it('leave the priority labels out of the file: they are the tracker conventions of the team', () => {
+    const source = neutralConfig();
+    source.devCycle.priority.labels = ['^P0$', '^P1$'];
+    const text = exportTemplateText(templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' }), now);
+    expect(text).not.toContain('^P0$');
+    expect(source.devCycle.priority.labels).toEqual(['^P0$', '^P1$']);
   });
 
   it('leave the QA account out of the file', () => {

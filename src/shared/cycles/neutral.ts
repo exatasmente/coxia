@@ -36,6 +36,7 @@ export function neutralDevCycle(): DevCycleConfig {
     stageMapping: [],
     meanings: defaultMeanings(),
     enrichment: { specFolder: true, cardFields: [...CARD_FIELDS], extraFiles: [] },
+    priority: { labels: [] },
     prompts: sameFamily('sdd'),
     promptOverrides: {},
     pipelineSkill: '',

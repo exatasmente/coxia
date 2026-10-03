@@ -24,6 +24,8 @@ export function cycleOf(template: CycleTemplate): DevCycleConfig {
 export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, options: ApplyOptions = {}): WorkspaceConfig {
   const next = cycleOf(template);
   if (options.keepQaUser !== false && config.devCycle.qa.user && !next.qa.user) next.qa = { ...next.qa, user: config.devCycle.qa.user };
+  // The priority labels are the team's tracker conventions, like the QA account: a template that names none leaves the workspace's alone.
+  if (!next.priority.labels.length) next.priority = structuredClone(config.devCycle.priority);
   if (options.keepReleaseLabelPattern) next.releaseLabelPattern = config.devCycle.releaseLabelPattern;
   return { ...structuredClone(config), devCycle: next };
 }
@@ -44,12 +46,13 @@ export interface TemplateMeta {
 }
 
 /**
- * The workspace's cycle as a template to share. The QA account is left out (it belongs to the team), and so is anything the neutral cycle
+ * The workspace's cycle as a template to share. The QA account and the priority labels are left out (they belong to the team), and so is anything the neutral cycle
  * already says, so the file stays readable.
  */
 export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta): CycleTemplate {
   const cycle = structuredClone(config.devCycle);
   cycle.qa = { user: null };
+  cycle.priority = { labels: [] };
   return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle) };
 }
 

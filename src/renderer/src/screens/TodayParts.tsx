@@ -145,6 +145,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <span className="act-title">{card.title}</span>
           <span className="act-sub">{stageLabel(card)} · {mrLabel(card.mrs.length)}</span>
         </span>
+        {card.priority && <span className="badge badge-prio" title={t('ui.today.row.priorityTitle', { label: card.priority.label })}>{card.priority.label}</span>}
         {markText && <span className={`badge ${mark?.kind === 'unchanged' ? 'badge-quiet' : 'badge-ask'}`}>{markText}</span>}
         {blocked && <span className="badge badge-block">{t('ui.today.row.blocker')}</span>}
         {!blocked && asking && <span className="badge badge-ask">{t('ui.today.row.question')}</span>}
@@ -158,6 +159,18 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <dl className="act-facts">
             <dt>{t('ui.today.row.stage')}</dt>
             <dd>{[card.stage, card.spec?.phase].filter(Boolean).join(' · ') || t('today.noStage')}</dd>
+            {card.priority && (
+              <>
+                <dt>{t('ui.today.row.priorityLabel')}</dt>
+                <dd>{card.priority.label}</dd>
+              </>
+            )}
+            {card.milestone && (
+              <>
+                <dt>{t('ui.today.row.milestoneLabel')}</dt>
+                <dd>{card.milestone}</dd>
+              </>
+            )}
             <dt /* i18n-ignore */>MRs</dt>
             <dd>{card.mrs.join(' · ') || t('ui.today.noMr')}</dd>
             {blocked && (

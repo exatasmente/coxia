@@ -21,6 +21,9 @@ export interface CardItem {
   changes: { field: string; from: unknown; to: unknown }[];
   manual_note: string | null;
   labels?: string[];
+  // Issue items only
+  milestone?: string | null;
+  updated_at?: string | null;
   // Merge request items only
   state?: string;
   roles?: string[];
@@ -159,6 +162,8 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
       changes: diff(baseline[ref], snap),
       manual_note: null,
       labels: issue.labels,
+      milestone: issue.milestone,
+      updated_at: issue.updatedAt,
       project_id: issue.project,
     });
   }

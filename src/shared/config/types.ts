@@ -1,8 +1,8 @@
-// WorkspaceConfig v2: everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 3): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 2;
+export const CONFIG_SCHEMA_VERSION = 3;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -236,7 +236,7 @@ export const PROMPT_ROLES = ['turn', 'reply', 'deep', 'teams', 'gate', 'qa', 're
 export type PromptRole = (typeof PROMPT_ROLES)[number];
 
 /** Fields of a card that the agent is shown. */
-export const CARD_FIELDS = ['ref', 'iid', 'title', 'stage', 'mrs', 'mrPaths', 'blockers', 'pending', 'changes', 'note', 'url'] as const;
+export const CARD_FIELDS = ['ref', 'iid', 'title', 'stage', 'mrs', 'mrPaths', 'blockers', 'pending', 'changes', 'note', 'url', 'priority', 'milestone'] as const;
 export type CardField = (typeof CARD_FIELDS)[number];
 
 /** Parameters of each ceremony. A text parameter is a catalog key or a literal, in the language of the team. */
@@ -322,6 +322,16 @@ export interface QuickTransitionRule {
   removable: string[];
 }
 
+/** How the tracker's priority reaches a card. */
+export interface PriorityConfig {
+  /**
+   * The labels that say how urgent an issue is, highest first. Each is a case-insensitive regular expression tested against the issue's labels,
+   * like StageDef.match. A priority can be written back to the tracker only to an entry that is a plain label name (optionally anchored with ^ and $).
+   * Empty: the workspace has no priority labels; a priority decision then stays in the minutes.
+   */
+  labels: string[];
+}
+
 export interface DevCycleConfig {
   /** Template this section was filled from ("none", "sdd", "scrum", "kanban", "github-flow", "minimal", or a custom one). Informational once edited. */
   templateId: string;
@@ -333,6 +343,7 @@ export interface DevCycleConfig {
   /** What blocker, question for me and ready for QA mean here. */
   meanings: CycleMeanings;
   enrichment: CardEnrichment;
+  priority: PriorityConfig;
   /** Which prompt family each role uses ("sdd", "scrum", "kanban", "flow"); a prompt the family does not have falls back to "sdd". */
   prompts: Record<PromptRole, string>;
   /** Replaces one prompt text, per language, by its id (e.g. "turn.main"); the placeholders are the ones of the built-in text. */

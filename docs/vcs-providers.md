@@ -71,7 +71,7 @@ Limites por provedor: status de issue do GitLab depende dos ids de status da ins
 
 ### Cartões e estágios
 
-Sem `externalTools.cardSource`, os cartões vêm do provedor (`vcs/cards.ts`): uma issue por issue atribuída a você, MRs ligados por `Closes #n` no texto, no nome da branch ou pelo que o host diz. O estágio vem do mapeamento do workspace (`devCycle.stages`: `match` contra o status e as labels, o de maior `rank` vence). Com `devCycle.stages` vazio valem padrões por provedor (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" e equivalentes em inglês; sem sinal nenhum, o estágio sai do que os MRs fazem (rascunho, aberto, aprovado, mergeado). O que mudou desde o começo do dia fica em `vcs-cards.json` do workspace.
+Sem `externalTools.cardSource`, os cartões vêm do provedor (`vcs/cards.ts`): uma issue por issue atribuída a você, MRs ligados por `Closes #n` no texto, no nome da branch ou pelo que o host diz. O estágio vem do mapeamento do workspace (`devCycle.stages`: `match` contra o status e as labels, o de maior `rank` vence). Com `devCycle.stages` vazio valem padrões por provedor (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" e equivalentes em inglês; sem sinal nenhum, o estágio sai do que os MRs fazem (rascunho, aberto, aprovado, mergeado). O item de issue leva também as labels, o milestone e a hora da última atualização (`updated_at`), de onde saem a prioridade do cartão e a ordem da lista ([`cycles.md`](cycles.md#prioridade)). O que mudou desde o começo do dia fica em `vcs-cards.json` do workspace.
 
 ### Leitura dos agentes
 
@@ -167,7 +167,7 @@ Limits per provider: GitLab issue status depends on the instance's status ids (e
 
 ### Cards and stages
 
-Without `externalTools.cardSource`, cards come from the provider (`vcs/cards.ts`): one card per issue assigned to you, MRs linked by `Closes #n` in their text, the branch name or what the host says. The stage comes from the workspace mapping (`devCycle.stages`: `match` against the status and labels, the highest `rank` wins). With `devCycle.stages` empty, per-provider defaults apply (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" and equivalents; with no signal at all the stage comes from what the MRs are doing (draft, open, approved, merged). What changed since the day began is kept in the workspace's `vcs-cards.json`.
+Without `externalTools.cardSource`, cards come from the provider (`vcs/cards.ts`): one card per issue assigned to you, MRs linked by `Closes #n` in their text, the branch name or what the host says. The stage comes from the workspace mapping (`devCycle.stages`: `match` against the status and labels, the highest `rank` wins). With `devCycle.stages` empty, per-provider defaults apply (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" and equivalents; with no signal at all the stage comes from what the MRs are doing (draft, open, approved, merged). An issue item also carries the labels, the milestone and the time of the last update (`updated_at`), which is where a card's priority and the order of the list come from ([`cycles.md`](cycles.md#priority)). What changed since the day began is kept in the workspace's `vcs-cards.json`.
 
 ### What agents may read
 

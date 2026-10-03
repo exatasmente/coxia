@@ -18,6 +18,10 @@ export interface ReportItem {
   pending: string[];
   changes: { field: string; from: unknown; to: unknown }[];
   manual_note: string | null;
+  // The tracker's own data about an issue; a card source that does not report it leaves them out.
+  labels?: string[];
+  milestone?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Report {

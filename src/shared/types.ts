@@ -4,6 +4,12 @@ export interface SpecInfo {
   planFile: string | null;
 }
 
+/** The tracker's priority of an issue, read through devCycle.priority: rank 0 is the highest configured level, label is the issue's own label. */
+export interface CardPriority {
+  rank: number;
+  label: string;
+}
+
 export interface Card {
   ref: string;
   iid: string;
@@ -17,12 +23,22 @@ export interface Card {
   changes: string[];
   note: string | null;
   url: string;
+  // The tracker's own data, absent on a card saved before it was carried, or from a card source that does not report it.
+  labels?: string[];
+  milestone?: string | null;
+  // ISO time of the issue's last update.
+  updatedAt?: string | null;
+  // The project the issue lives in, needed to write a label back.
+  project?: string;
+  priority?: CardPriority | null;
 }
 
 export interface CardsResult {
   generatedAt: string;
   total: number;
   cards: Card[];
+  // The cards that did not fit the call, in the same order; `total` counts these too.
+  rest?: Card[];
 }
 
 export type VoiceEngine = 'edge' | 'kokoro';
