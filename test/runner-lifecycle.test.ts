@@ -268,6 +268,21 @@ describe('a stage that goes wrong', () => {
     expect(b.engine.calls[0].prompt).toContain('with no internal reference');
   });
 
+  it('stops at a question for the person when an agent marks a decision as theirs and writes no question, instead of taking the stage for done', async () => {
+    const b = await boot({ configure: (c) => (c.language = 'en') });
+    easy(b);
+    b.engine.script('refiner', () => work('The scope is unclear: it could mean A or B.', { artifacts: [doc('1_SPEC.md')], question: null, needsPerson: true }));
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const now = b.runner.get(run.id)!;
+    expect(now).toMatchObject({ status: 'question', stage: 'refine', question: { by: 'refiner', holder: null, kind: 'agent' } });
+    expect(now.question!.text).toContain('did not write the question');
+    expect(now.question!.text).toContain('The scope is unclear: it could mean A or B.');
+    // the person answers, and the same stage goes on with the answer
+    b.runner.answer(run.id, 'A.');
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'working', stage: 'refine' });
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);

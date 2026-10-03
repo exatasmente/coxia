@@ -173,9 +173,13 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
   const o = record(raw);
   const findings = kind === 'review' ? list(o.findings).flatMap((f) => readFinding(f) ?? []) : [];
   const blocks = findings.some((f) => f.severity === 'blocking');
+  const summary = text(o.summary);
+  const asked = text(o.question);
+  // "A decision only the person can take" with no question written: the stage cannot go on and the person has nothing to answer, so the question is made of what the agent said.
+  const question = asked || (o.needsPerson === true && !text(o.reporterQuestion) && summary ? t('main.runner.needsPerson.question', { summary: summary.slice(0, 4000) }) : '');
   const verdict = kind === 'review' ? (o.verdict === 'changes' || blocks ? 'changes' : 'approved') : null;
   return {
-    summary: text(o.summary),
+    summary,
     commit: text(o.commit, 200),
     artifacts: list(o.artifacts).flatMap((a) => {
       const x = record(a);
@@ -183,7 +187,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
       return ARTIFACT_NAME.test(name) && typeof x.content === 'string' ? [{ name, content: x.content }] : [];
     }),
     handoff: text(o.handoff),
-    question: text(o.question),
+    question,
     needsPerson: o.needsPerson === true,
     reporterQuestion: text(o.reporterQuestion),
     priority: text(o.priority, 200),

@@ -861,6 +861,7 @@
   "main.runner.limit.text": "A etapa {stage} devolveu o trabalho {rounds} vezes e ainda não aprova.\n\nO que se pediu para mudar na última rodada:\n{asked}\n\nO que o desenvolvimento fez:\n{did}\n\nO que continua em aberto:\n{open}\n\nA sua resposta volta para o desenvolvimento como orientação, e as rodadas recomeçam.",
   "main.runner.limit.none": "(nada registrado)",
   "main.runner.limit.item": "- {where} — {body}",
+  "main.runner.needsPerson.question": "O agente marcou que isto é uma decisão sua, mas não escreveu a pergunta. O que ele disse:\n\n{summary}",
   "main.runner.denied.no-path": "caminho ausente ou inválido",
   "main.runner.denied.traversal": "o caminho tem \"..\"",
   "main.runner.denied.outside": "fora da pasta de trabalho",

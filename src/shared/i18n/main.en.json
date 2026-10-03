@@ -861,6 +861,7 @@
   "main.runner.limit.text": "The {stage} stage sent the work back {rounds} times and still does not approve.\n\nWhat was asked to change in the last round:\n{asked}\n\nWhat the developer did:\n{did}\n\nWhat is still open:\n{open}\n\nYour answer goes back to the developer as guidance, and the rounds start again.",
   "main.runner.limit.none": "(nothing recorded)",
   "main.runner.limit.item": "- {where}: {body}",
+  "main.runner.needsPerson.question": "The agent marked this as a decision for you but did not write the question. What it said:\n\n{summary}",
   "main.runner.denied.no-path": "path missing or not valid",
   "main.runner.denied.traversal": "the path has \"..\"",
   "main.runner.denied.outside": "outside the working directory",

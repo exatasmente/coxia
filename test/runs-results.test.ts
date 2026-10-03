@@ -107,6 +107,20 @@ describe('the answer of a stage', () => {
     expect(readOutput({ summary: 's', verdict: 'approved' }, 'work').verdict).toBeNull();
   });
 
+  it('turns "a decision for the person" with no question into a question made of the summary, and leaves every other case alone', () => {
+    setLanguage('en');
+    const made = readOutput({ summary: 'Scope is unclear: both readings are plausible.', question: null, needsPerson: true }, 'work');
+    expect(made.needsPerson).toBe(true);
+    expect(made.question).toBe('The agent marked this as a decision for you but did not write the question. What it said:\n\nScope is unclear: both readings are plausible.');
+    // a question that was written stays as it was
+    expect(readOutput({ summary: 's', question: 'Which scope?', needsPerson: true }, 'work').question).toBe('Which scope?');
+    // not marked, or a question for the reporter, or nothing said at all: nothing is made up
+    expect(readOutput({ summary: 's', question: null, needsPerson: false }, 'work').question).toBe('');
+    expect(readOutput({ summary: 's', reporterQuestion: 'Which browser?', needsPerson: true }, 'work').question).toBe('');
+    expect(readOutput({ summary: '', question: null, needsPerson: true }, 'work').question).toBe('');
+    setLanguage('pt-BR');
+  });
+
   it('reads scenarios, keeping the ones that have a name', () => {
     const o = readOutput({ summary: 's', scenarios: [{ name: 'a', result: 'pass', detail: 'ok' }, { name: 'b', result: 'maybe' }, { result: 'pass' }] }, 'qa');
     expect(o.scenarios).toEqual([{ name: 'a', result: 'pass', severity: 'blocking', detail: 'ok' }, { name: 'b', result: 'not-run', severity: 'blocking', detail: '' }]);
