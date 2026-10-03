@@ -65,6 +65,8 @@ export interface EngineRequest {
   confine?: Confinement;
   /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
   abort?: AbortController;
+  /** Called at every sign of life from the model: a piece of text, a tool call, a usage report, a message of the SDK. */
+  beat?: () => void;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
 }

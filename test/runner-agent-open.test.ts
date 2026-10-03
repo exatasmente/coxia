@@ -84,6 +84,24 @@ describe('runAgent on the open engine', () => {
     }
   });
 
+  it('reports a sign of life for every piece of the model\'s work, so a stage that keeps working never runs out of idle time', async () => {
+    const live = await fakeOpenAI((req) => (req.n === 1 ? toolStep([{ id: 'g', name: 'Glob', args: { pattern: '*' } }]) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }])));
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'local3', kind: 'openai-compatible', baseUrl: live.url, structured: 'tool' }));
+        return c;
+      });
+      const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local3', model: 'qwen3:8b' } });
+      let beats = 0;
+      await runAgent({ agent: reader, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, beat: () => void beats++ });
+      // at least: the session, two model calls with their usage and the tool call and its result
+      expect(beats).toBeGreaterThanOrEqual(5);
+    } finally {
+      await live.close();
+    }
+  });
+
   it('serves a reader with no Write, no Edit and no shell', async () => {
     const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local', model: 'qwen3:8b' } });
     fake.requests.length = 0;

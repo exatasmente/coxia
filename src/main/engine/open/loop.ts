@@ -44,6 +44,8 @@ export interface RunEvents {
   onToolResult?: (name: string, isError: boolean) => void;
   onUsage?: (u: UsageRecord & { sessionId: string; role: string; model: string }) => void;
   onText?: (text: string) => void;
+  // A piece of the model's reasoning stream: a sign of life while it thinks before it says anything.
+  onReasoning?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
 }
@@ -331,7 +333,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     let compacted = false;
     for (;;) {
       try {
-        const c = await client.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText });
+        const c = await client.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning });
         const u: UsageRecord = c.usage
           ? { promptTokens: c.usage.promptTokens, completionTokens: c.usage.completionTokens, cachedTokens: c.usage.cachedTokens }
           : {

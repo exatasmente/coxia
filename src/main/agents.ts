@@ -422,8 +422,18 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     signal: req.abort?.signal,
     describeTool: source,
     events: {
-      onSession: (id) => noteSession(id, req.role, req.prompt),
-      onToolUse: (name, input) => req.activity?.tool(source(name, input)),
+      onSession: (id) => {
+        req.beat?.();
+        noteSession(id, req.role, req.prompt);
+      },
+      onToolUse: (name, input) => {
+        req.beat?.();
+        req.activity?.tool(source(name, input));
+      },
+      onToolResult: () => req.beat?.(),
+      onUsage: () => req.beat?.(),
+      onText: () => req.beat?.(),
+      onReasoning: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
@@ -452,6 +462,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     },
   });
   for await (const m of q) {
+    req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
@@ -833,6 +844,8 @@ export interface AgentCall {
   label: string;
   maxTurns: number;
   abort?: AbortController;
+  /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
+  beat?: () => void;
 }
 
 // What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
@@ -869,6 +882,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       activity,
       confine: call.confine,
       abort: call.abort,
+      beat: call.beat,
     });
     activity.status('finished');
     return r;

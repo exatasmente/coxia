@@ -151,7 +151,56 @@ describe('a stage that goes wrong', () => {
     await b.settle();
     expect(b.runner.get(run.id)).toMatchObject({ status: 'failed', error: { code: 'stage-failed' } });
     expect(b.runner.get(run.id)!.error?.detail).toMatch(/1 min/);
+    expect(b.runner.get(run.id)!.error?.detail).toMatch(/sem dar sinal/);
     expect(aborted).toBe(true);
+  });
+
+  it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
+    const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
+    easy(b);
+    b.engine.script('refiner', async (call) => {
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 40));
+        call.beat?.();
+      }
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    // 320 ms in all, more than three times the idle limit, and no failure
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'gate', stage: 'gate1' });
+  });
+
+  it('fails an agent that goes silent for the idle limit, even long before the cap, and stops it', async () => {
+    const b = await boot({ limits: { idleMs: 80, maxMs: 60_000 } });
+    easy(b);
+    let aborted = false;
+    b.engine.script('refiner', async (call) => {
+      call.abort?.signal.addEventListener('abort', () => (aborted = true));
+      call.beat?.();
+      return never();
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'failed', error: { code: 'stage-failed' } });
+    expect(b.runner.get(run.id)!.error?.detail).toMatch(/sem dar sinal/);
+    expect(aborted).toBe(true);
+  });
+
+  it('fails an agent that never finishes with the wall-clock cap, though it keeps talking', async () => {
+    const b = await boot({ limits: { idleMs: 5_000, maxMs: 150 } });
+    easy(b);
+    b.engine.script('refiner', async (call) => {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 20));
+        if (call.abort?.signal.aborted) return never();
+        call.beat?.();
+      }
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'failed' });
+    expect(b.runner.get(run.id)!.error?.detail).toMatch(/no total/);
   });
 
   it('fails, without taking a half answer for a finished stage, when the documents are missing, the answer is empty or the turns ran out', async () => {

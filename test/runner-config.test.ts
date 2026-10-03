@@ -9,7 +9,7 @@ const errorsOf = (c: WorkspaceConfig): string[] => validateConfig(c).errors.map(
 
 describe('the runner section', () => {
   it('is off by default, with the label "coxia", one run at a time, the repository\'s own commands and no identity of its own', () => {
-    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageTimeoutMs: 1_800_000, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' });
+    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' });
     expect(validateConfig(neutralConfig()).ok).toBe(true);
   });
 
@@ -52,10 +52,14 @@ describe('the runner section', () => {
     expect(r.warnings.map((w) => w.path)).toContain('runner.enabled');
   });
 
-  it('bounds the concurrency and the stage timeout', () => {
+  it('bounds the concurrency and the stage limits, and warns when the silence limit is longer than the cap', () => {
     expect(errorsOf(withRunner({ maxConcurrentRuns: 0 })).join(' ')).toContain('runner.maxConcurrentRuns');
     expect(errorsOf(withRunner({ maxConcurrentRuns: 11 })).join(' ')).toContain('runner.maxConcurrentRuns');
-    expect(errorsOf(withRunner({ stageTimeoutMs: 5 })).join(' ')).toContain('runner.stageTimeoutMs');
+    expect(errorsOf(withRunner({ stageIdleMs: 5 })).join(' ')).toContain('runner.stageIdleMs');
+    expect(errorsOf(withRunner({ stageMaxMs: 5 })).join(' ')).toContain('runner.stageMaxMs');
+    expect(errorsOf(withRunner({ stageMaxMs: 90_000_000 })).join(' ')).toContain('runner.stageMaxMs');
+    expect(validateConfig(withRunner({ stageIdleMs: 3_600_000, stageMaxMs: 600_000 })).warnings.map((w) => w.path)).toContain('runner.stageIdleMs');
+    expect(validateConfig(neutralConfig()).warnings.map((w) => w.path)).not.toContain('runner.stageIdleMs');
   });
 
   it('puts its commands and its folder in what an import preview shows', () => {
@@ -79,7 +83,7 @@ describe('the migration to schema 5', () => {
     const r = migrateConfig(before, { legacyInstall: false });
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(7);
+    expect(r.config.schemaVersion).toBe(8);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -93,12 +97,12 @@ describe('the migration to schema 5', () => {
 
   it('carries a v3 file through both steps', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(7);
+    expect(r.config.schemaVersion).toBe(8);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 8 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 9 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

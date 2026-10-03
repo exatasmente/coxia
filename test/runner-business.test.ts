@@ -193,7 +193,7 @@ describe('an issue through the agent cycle', () => {
     const started = await b.runner.start('app#101');
     const run = await through(b, started);
     const refine = run.flow!.stages.find((s) => s.id === 'refine')!;
-    const agent = b.runner.get(run.id) && b.deps.config().agents.team.find((a) => a.id === 'product-owner')!;
+    const agent = b.deps.config().agents.team.find((a) => a.id === 'product-owner')!;
     const end = { stage: refine, agent, kind: 'work' as const, output: readOutput({ summary: 'Spec.', priority: 'P1' }, 'work'), autonomous: true };
     await b.deps.publisher!.stageEnded(run.id, end);
     expect(b.thread(run).filter((m) => m.code === 'runner.priority.duplicate')).toHaveLength(1);

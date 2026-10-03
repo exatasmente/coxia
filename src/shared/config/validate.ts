@@ -117,6 +117,7 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
     else if (COMMAND_OPERATORS.test(cmd)) errors.push({ path: `runner.commands[${i}]`, message: 'must be one plain command: no pipe, ;, && or redirect' });
   });
   for (const id of duplicates(r.commands ?? [])) warnings.push({ path: 'runner.commands', message: `"${id}" is listed twice` });
+  if (r.stageIdleMs > r.stageMaxMs) warnings.push({ path: 'runner.stageIdleMs', message: 'is longer than runner.stageMaxMs: the cap ends the stage first' });
   if (!r.commitMessage.includes('{summary}')) errors.push({ path: 'runner.commitMessage', message: 'must contain {summary}' });
   if (/[\n\r]/.test(r.commitMessage)) errors.push({ path: 'runner.commitMessage', message: 'must be one line' });
   const { name, email } = r.identity;

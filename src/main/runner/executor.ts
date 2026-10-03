@@ -19,7 +19,7 @@ import { type CommentAsk, type StageInput, stagePrompt, systemText } from './pro
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -41,8 +41,10 @@ export interface ExecutorDeps {
   forum: ForumStore;
   /** The identity of a repository, when the workspace names none. */
   identity?: (wt: string) => Promise<Identity | null>;
-  /** Replaces `runner.stageTimeoutMs` (tests). */
+  /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
+  /** Replaces one limit or the other (tests). */
+  limits?: Partial<Limits>;
 }
 
 export interface StageRun {
@@ -98,23 +100,68 @@ export function pendingAnswer(thread: ForumMessage[], agent: string, stage: stri
   return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t(answered.author.type === 'app' ? 'main.runner.author.app' : 'main.runner.author.person') };
 }
 
-export async function withLimit<T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  work.catch(() => undefined);
-  const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new StageError('timeout', { minutes: Math.max(1, Math.round(ms / 60_000)) }));
-      abort.abort();
-    }, ms);
-    // Cancelled from outside: the run stops waiting for an agent that may not notice.
-    abort.signal.addEventListener('abort', () => reject(new StageError('cancelled')));
-  });
-  try {
-    return await Promise.race([work, late]);
-  } finally {
-    clearTimeout(timer);
-  }
+/** How long an agent may be silent, and how long a call may take in all. */
+export interface Limits {
+  idleMs: number;
+  maxMs: number;
 }
+
+const minutes = (ms: number): number => Math.max(1, Math.round(ms / 60_000));
+
+/** The limits of the workspace; what the deps give (tests) replaces them: `timeoutMs` both, `limits` one by one. */
+export const limitsOf = (config: WorkspaceConfig, over: { timeoutMs?: number; limits?: Partial<Limits> } = {}): Limits => ({
+  idleMs: over.limits?.idleMs ?? over.timeoutMs ?? config.runner.stageIdleMs,
+  maxMs: over.limits?.maxMs ?? over.timeoutMs ?? config.runner.stageMaxMs,
+});
+
+export interface Watchdog {
+  /** The agent showed a sign of life (a model event): the idle limit starts again. */
+  beat(): void;
+  /** Resolves with `work`, or rejects when the agent was silent for the idle limit, the call ran past its cap, or the call was cancelled. */
+  guard<T>(work: Promise<T>): Promise<T>;
+}
+
+/**
+ * Watches one agent call: the idle limit counts from the last `beat` (a call that keeps working never trips it) and the cap from the start, and both stop the
+ * agent. Cancelling from outside makes the run stop waiting for an agent that may not notice.
+ */
+export function watchdog(abort: AbortController, limits: Limits): Watchdog {
+  let idle: NodeJS.Timeout | undefined;
+  let cap: NodeJS.Timeout | undefined;
+  let fail: ((e: StageError) => void) | null = null;
+  const stop = (e: StageError): void => {
+    fail?.(e);
+    abort.abort();
+  };
+  const arm = (): void => {
+    clearTimeout(idle);
+    idle = setTimeout(() => stop(new StageError('timeout', { minutes: minutes(limits.idleMs) })), limits.idleMs);
+  };
+  return {
+    beat: () => {
+      if (fail) arm();
+    },
+    async guard<T>(work: Promise<T>): Promise<T> {
+      work.catch(() => undefined);
+      const late = new Promise<never>((_, reject) => {
+        fail = reject;
+        arm();
+        cap = setTimeout(() => stop(new StageError('too-long', { minutes: minutes(limits.maxMs) })), limits.maxMs);
+        abort.signal.addEventListener('abort', () => reject(new StageError('cancelled')));
+      });
+      try {
+        return await Promise.race([work, late]);
+      } finally {
+        clearTimeout(idle);
+        clearTimeout(cap);
+        fail = null;
+      }
+    },
+  };
+}
+
+/** The old shape, for a caller with one number: that long of silence, and that long in all. */
+export const withLimit = <T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> => watchdog(abort, { idleMs: ms, maxMs: ms }).guard(work);
 
 export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController): Promise<StageRun> {
   const config = d.config();
@@ -193,10 +240,12 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     maxTurns: writes ? TURNS.write : TURNS.read,
     abort,
   };
+  const watch = watchdog(abort, limitsOf(config, d));
+  call.beat = watch.beat;
 
   let data: unknown;
   try {
-    data = (await withLimit(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)), abort, d.timeoutMs ?? config.runner.stageTimeoutMs)).data;
+    data = (await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)))).data;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     throw e;

@@ -9,9 +9,9 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageTimeoutMs: 90 * 60_000, identity: { name: 'Bot', email: 'bot@example.com' }, commitMessage: 'fix: {summary} {iid}' };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, identity: { name: 'Bot', email: 'bot@example.com' }, commitMessage: 'fix: {summary} {iid}' };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
-    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', timeoutMinutes: 90 });
+    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90 });
   });
 
   it('no commands list means the repository\'s own scripts, and an empty list means none', () => {
@@ -40,9 +40,12 @@ describe('the problems of the runner draft', () => {
     expect(keys({ ...base(), maxConcurrentRuns: 0 })).toEqual(['error:concurrent']);
     expect(keys({ ...base(), maxConcurrentRuns: 11 })).toEqual(['error:concurrent']);
     expect(keys({ ...base(), maxConcurrentRuns: 2.5 })).toEqual(['error:concurrent']);
-    expect(keys({ ...base(), timeoutMinutes: 0.5 })).toEqual(['error:timeout']);
-    expect(keys({ ...base(), timeoutMinutes: 361 })).toEqual(['error:timeout']);
-    expect(keys({ ...base(), timeoutMinutes: 360 })).toEqual([]);
+    expect(keys({ ...base(), idleMinutes: 0.5 })).toEqual(['error:idle']);
+    expect(keys({ ...base(), idleMinutes: 361 })).toEqual(['error:idle', 'warning:idleLonger']);
+    expect(keys({ ...base(), idleMinutes: 360, maxMinutes: 1440 })).toEqual([]);
+    expect(keys({ ...base(), maxMinutes: 0.5 })).toEqual(['error:max', 'warning:idleLonger']);
+    expect(keys({ ...base(), maxMinutes: 1441 })).toEqual(['error:max']);
+    expect(keys({ ...base(), idleMinutes: 30, maxMinutes: 20 })).toEqual(['warning:idleLonger']);
   });
 
   it('wants plain commands, one each', () => {
@@ -88,7 +91,8 @@ describe('the problems of the runner draft', () => {
       { commitMessage: 'nope' },
       { commitMessage: '{summary}\nx' },
       { maxConcurrentRuns: 0 },
-      { timeoutMinutes: 0.01 },
+      { idleMinutes: 0.01 },
+      { maxMinutes: 0.01 },
       {},
       { enabled: true },
       { commandsMode: 'custom', commands: ['npm test'] },

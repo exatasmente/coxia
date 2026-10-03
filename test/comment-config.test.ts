@@ -127,7 +127,7 @@ describe('the migration to schema 6', () => {
     const r = migrateConfig(v5((c) => (c.devCycle.templateId = 'agent-flow')), { legacyInstall: false });
     expect(r.fromVersion).toBe(5);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(7);
+    expect(r.config.schemaVersion).toBe(8);
     expect(r.config.devCycle.comments).toEqual(agentFlow().devCycle.comments);
     expect(r.notes.join(' ')).toContain('comment templates');
     expect(validateConfig(r.config).ok).toBe(true);
@@ -149,8 +149,8 @@ describe('the migration to schema 6', () => {
 
   it('carries an old file all the way, and does not open one from a newer app', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en', devCycle: { templateId: 'agent-flow' } }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(7);
+    expect(r.config.schemaVersion).toBe(8);
     expect(Object.keys(r.config.devCycle.comments)).toContain('review');
-    expect(() => migrateConfig({ schemaVersion: 8 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 9 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

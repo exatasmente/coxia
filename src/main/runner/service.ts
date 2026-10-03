@@ -81,7 +81,7 @@ import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
-import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, pickAgent, withLimit } from './executor';
+import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
@@ -147,8 +147,10 @@ export interface RunnerDeps {
   now?(): Date;
   newId?(): string;
   identity?(wt: string): Promise<Identity | null>;
-  /** Replaces `runner.stageTimeoutMs` (tests). */
+  /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
+  /** Replaces one limit or the other (tests). */
+  limits?: Partial<{ idleMs: number; maxMs: number }>;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -204,7 +206,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs };
+  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -717,7 +719,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       try {
         const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd });
         const abort = new AbortController();
-        const r = await withLimit(withActivityContext(`run:${runId}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
+          const watch = watchdog(abort, limitsOf(config, deps));
+        call.beat = watch.beat;
+        const r = await watch.guard(withActivityContext(`run:${runId}`, () => deps.engine(call, [])));
         const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
         if (!text) throw new StageError('empty-answer');
         deps.forum.append(threadId, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
@@ -787,7 +791,9 @@ export function createRunner(deps: RunnerDeps): Runner {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
         const abort = new AbortController();
         chainAborts.set(id, abort);
-        const r = await withLimit(withActivityContext(`run:${id}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
+        const watch = watchdog(abort, limitsOf(config, deps));
+        call.beat = watch.beat;
+        const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
         answer = readChain(r.data);
         if (!answer) failure = 'empty-answer';
       } catch (e) {
@@ -849,7 +855,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
       const abort = new AbortController();
       chainAborts.set(id, abort);
-      const r = await withLimit(withActivityContext(`run:${id}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
+      const watch = watchdog(abort, limitsOf(config, deps));
+        call.beat = watch.beat;
+        const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
       answer = readRequestAnswer(r.data);
       if (!answer) failure = 'empty-answer';
     } catch (e) {

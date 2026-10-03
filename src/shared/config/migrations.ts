@@ -17,6 +17,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v7  the stages of an agent cycle are a flow: `type` (work, gate, wait), `produces` (was `artifacts`), `returnsTo` and `roundLimit` (the review and QA rules the
 //       runner used to have built in), and the order of the list is the order of the run (it used to be the rank). The agent cycle itself grew a business team
 //       (support, product owner, tech lead, customer success): a workspace still on its untouched default gets it, any other keeps what it has.
+//   v8  `runner.stageTimeoutMs` (one wall-clock limit) is two: `stageIdleMs` (no sign of life from the agent) and `stageMaxMs` (the cap on a stage).
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -187,8 +188,23 @@ function withBusinessTeam(doc: Doc, stages: Doc[], notes: string[]): Doc {
   return { ...doc, agents: { ...agents, team: [...team, ...brought] }, devCycle: { ...cycle, stages: structuredClone(AGENT_FLOW_STAGES), comments, ...(Object.keys(layout).length ? { specLayout: { ...layout, phaseFiles } } : {}) } };
 }
 
+// The stage timeout used to be one wall-clock limit (`runner.stageTimeoutMs`, 30 minutes by default). It is two now: an idle limit (no sign of life from the
+// agent for that long) and a generous wall-clock cap. A value the person set keeps being the longest a stage may take (the cap, and the idle limit too when it
+// is shorter than the default idle limit); the old default becomes the new defaults.
+const OLD_STAGE_TIMEOUT_MS = 30 * 60_000;
+function v7ToV8(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  if (runner.stageTimeoutMs === undefined) return { ...old, schemaVersion: 8 };
+  const { stageTimeoutMs, ...rest } = runner;
+  const own = typeof stageTimeoutMs === 'number' && stageTimeoutMs !== OLD_STAGE_TIMEOUT_MS ? stageTimeoutMs : null;
+  const idle = neutralRunner().stageIdleMs;
+  if (own !== null) notes.push(`runner.stageTimeoutMs (${own} ms) is now runner.stageMaxMs, the cap on a stage; the idle limit is runner.stageIdleMs`);
+  else notes.push('runner.stageTimeoutMs became two limits: runner.stageIdleMs (no sign of life from the agent) and runner.stageMaxMs (the cap on a stage), with their defaults');
+  return { ...old, schemaVersion: 8, runner: { ...rest, ...(own !== null ? { stageMaxMs: own, ...(own < idle ? { stageIdleMs: own } : {}) } : {}) } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

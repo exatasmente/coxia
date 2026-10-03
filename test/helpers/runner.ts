@@ -181,6 +181,8 @@ export interface BootOptions {
   issues?: FakeIssues;
   dir?: string;
   timeoutMs?: number;
+  /** Replaces the idle limit and the cap of a stage one by one. */
+  limits?: { idleMs?: number; maxMs?: number };
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -215,6 +217,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     updateConfig,
     notify: (n) => notices.push({ title: n.title, body: n.body, onClick: n.onClick }),
     timeoutMs: options.timeoutMs,
+    limits: options.limits,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

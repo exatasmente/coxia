@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
-import { draftOfRunner, MAX_TIMEOUT_MINUTES, MIN_TIMEOUT_MINUTES, runnerOf, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
+import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MIN_CAP_MINUTES, MIN_IDLE_MINUTES, runnerOf, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 
 /** Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as. */
@@ -76,9 +76,14 @@ export function RunnerSection({ config, save }: SectionProps) {
         )}
       </fieldset>
 
-      <Labeled label={t('ui.runner.timeout')} hint={t('ui.runner.timeoutHint', { min: MIN_TIMEOUT_MINUTES, max: MAX_TIMEOUT_MINUTES })} error={at('timeout')}>
-        {(id) => <input id={id} type="number" min={MIN_TIMEOUT_MINUTES} max={MAX_TIMEOUT_MINUTES} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.timeoutMinutes) ? '' : draft.timeoutMinutes} onChange={(e) => set({ timeoutMinutes: num(e.target.value) })} />}
-      </Labeled>
+      <div className="wz-two">
+        <Labeled label={t('ui.runner.idle')} hint={t('ui.runner.idleHint', { min: MIN_IDLE_MINUTES, max: MAX_IDLE_MINUTES })} error={at('idle')}>
+          {(id) => <input id={id} type="number" min={MIN_IDLE_MINUTES} max={MAX_IDLE_MINUTES} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.idleMinutes) ? '' : draft.idleMinutes} onChange={(e) => set({ idleMinutes: num(e.target.value) })} />}
+        </Labeled>
+        <Labeled label={t('ui.runner.cap')} hint={t('ui.runner.capHint', { min: MIN_CAP_MINUTES, max: MAX_CAP_MINUTES })} error={at('max')}>
+          {(id) => <input id={id} type="number" min={MIN_CAP_MINUTES} max={MAX_CAP_MINUTES} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.maxMinutes) ? '' : draft.maxMinutes} onChange={(e) => set({ maxMinutes: num(e.target.value) })} />}
+        </Labeled>
+      </div>
 
       <fieldset className="wz-fieldset">
         <legend className="wz-label">{t('ui.runner.identity')}</legend>

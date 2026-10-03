@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 7;
+export const CONFIG_SCHEMA_VERSION = 8;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -658,8 +658,10 @@ export interface RunnerConfig {
    * null: the test and typecheck scripts the repository declares (`npm test`, `npm run typecheck`). []: none.
    */
   commands: string[] | null;
-  /** A stage that has not finished after this long fails (and can be retried). */
-  stageTimeoutMs: number;
+  /** An agent that shows no sign of life (no model event: text, tool call, usage report) for this long fails the stage, which can be retried. */
+  stageIdleMs: number;
+  /** A stage still going after this long fails whatever the agent shows: the cap on a run that keeps talking and never finishes. */
+  stageMaxMs: number;
   identity: RunnerIdentity;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
