@@ -12,7 +12,7 @@
 #   --date <date>    date written in the changelog heading (default: today, YYYY-MM-DD)
 #   --skip-checks    do not run tsc, tests, theme audit, i18n lint and the build (the public audit always runs)
 #   --allow-branch   skip the branch rules (a beta on release/X.Y.Z only, a stable on main only); loud
-#   --emergency      a stable for a hotfix that cannot wait for a beta: skips the beta and merge rules; loud, and written in the tag
+#   --emergency      a stable for a hotfix that cannot wait for a beta: skips the beta, merge and remote rules; loud, and written in the tag
 #   --dry-run        validate and print the plan; change nothing
 #
 # Order: refuse a dirty tree, apply the branch and version rules, run the checks, bump package.json and package-lock.json (npm version
@@ -59,7 +59,10 @@ done
 [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--date must be YYYY-MM-DD"
 
 # ---- what git knows (all local: the script never fetches) ------------------------------------------------------------------------------------
-STABLE_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
+# Each number is 0 or has no leading zero: 0.06.0 would make the tag v0.06.0 and a package.json that says 0.6.0.
+NUM='(0|[1-9][0-9]*)'
+STABLE_RE="^$NUM\\.$NUM\\.$NUM\$"
+TAG_RE="^v$NUM\\.$NUM\\.$NUM\$"
 has_tag() { git rev-parse -q --verify "refs/tags/$1" >/dev/null; }
 tag_commit() { git rev-parse -q --verify "refs/tags/$1^{commit}"; }
 is_ancestor() { git merge-base --is-ancestor "$1" "$2"; }
@@ -71,9 +74,9 @@ ver_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail
 stable_tag() {
   local line="${1:-}" tags
   if [ -n "$line" ]; then
-    tags="$(git tag --list "v$line.*" | grep -E "^v${line//./\\.}\.[0-9]+$" || true)"
+    tags="$(git tag --list "v$line.*" | grep -E "^v${line//./\\.}\.$NUM\$" || true)"
   else
-    tags="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+    tags="$(git tag --list 'v*' | grep -E "$TAG_RE" || true)"
   fi
   if [ -n "$tags" ]; then printf '%s\n' "$tags" | sort -V | tail -n1; fi
 }
@@ -103,9 +106,21 @@ release_refs() {
   done
 }
 
+# The highest version main carries: its package.json and every stable or beta tag reachable from it. Empty when main does not exist.
+main_version() {
+  local pkg="" tags=""
+  ref_exists refs/heads/main || return 0
+  pkg="$(git show main:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version" 2>/dev/null || true)"
+  tags="$(git tag --merged main --list 'v*' | sed -E 's/^v//; s/-.*$//' | grep -E "^$NUM\.$NUM\.$NUM\$" || true)"
+  { echo "${pkg%%-*}"; printf '%s\n' "$tags"; } | grep -E "^$NUM\.$NUM\.$NUM\$" | sort -V | tail -n1 || true
+}
+
+# The two checks against the remote that need a tracking ref: one line when they cannot run (the script never fetches).
+origin_skipped() { warn "no $1: the checks against the remote were skipped; this script never fetches, so run git fetch origin first"; }
+
 # ---- open ---------------------------------------------------------------------------------------------------------------------------------
 cmd_open() {
-  local v="${ARGS[1]:-}" branch tag mm z floor line_tag base base_desc behind fv
+  local v="${ARGS[1]:-}" branch tag mm z floor line_tag base base_desc behind fv carried
   [ "${#ARGS[@]}" -le 2 ] || die "open takes one version"
   [[ "$v" =~ $STABLE_RE ]] || die "open needs a stable version X.Y.Z, without a suffix or a leading v (got '${v:-nothing}')"
   [ "$EMERGENCY" -eq 0 ] || die "--emergency applies to a stable cut, not to open"
@@ -118,11 +133,16 @@ cmd_open() {
   line_tag="$(stable_tag "$mm")"
 
   if [ -n "$FROM" ]; then
-    [[ "$FROM" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--from takes a stable tag such as v$mm.0 (got '$FROM')"
+    [[ "$FROM" =~ $TAG_RE ]] || die "--from takes a stable tag such as v$mm.0 (got '$FROM')"
     has_tag "$FROM" || die "tag $FROM does not exist"
     fv="${FROM#v}"
     [ "${fv%.*}" = "$mm" ] || die "--from is for a patch: $FROM is not a $mm.x version"
+    [ "$FROM" = "$line_tag" ] || die "--from must be the latest stable of $mm.x, $line_tag (got $FROM)"
     [ "${fv##*.}" -lt "$z" ] || die "$v is not above $FROM"
+    carried="$(main_version)"
+    if [ -n "$carried" ] && [ "${carried%.*}" != "$mm" ] && ver_gt "${carried%.*}.0" "$mm.0"; then
+      die "main already carries a newer line ($carried) than $v: hotfixing an older line while main has moved on is not supported by this flow (RELEASING.md says what to do instead)"
+    fi
     base="$FROM"; base_desc="the tag $FROM"
   else
     ref_exists refs/heads/main || die "there is no local main to cut from"
@@ -137,6 +157,12 @@ cmd_open() {
     base="main"; base_desc="main ($(git rev-parse --short main))"
   fi
   if [ -n "$floor" ] && ! ver_gt "$v" "${floor#v}"; then die "$v is not above the latest stable ${floor#v}"; fi
+  if [ -z "$FROM" ]; then
+    carried="$(main_version)"
+    if [ -n "$carried" ] && ver_gt "$carried" "$v"; then
+      die "$v is below $carried, which main already carries (its package.json or a tag reachable from it): take a version above it"
+    fi
+  fi
 
   echo "release: open $branch from $base_desc"
   if [ "$DRY" -eq 1 ]; then echo "release: dry run, nothing changed"; exit 0; fi
@@ -162,7 +188,7 @@ ARG="${ARGS[0]}"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 CURRENT="$(node -p "require('./package.json').version")"
 BRANCH_CORE=""
-if [[ "$BRANCH" =~ ^release/([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then BRANCH_CORE="${BASH_REMATCH[1]}"; fi
+if [[ "$BRANCH" =~ ^release/($NUM\.$NUM\.$NUM)$ ]]; then BRANCH_CORE="${BASH_REMATCH[1]}"; fi
 
 case "$ARG" in
   beta)
@@ -174,12 +200,12 @@ case "$ARG" in
   *) VERSION="$ARG" ;;
 esac
 
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] || die "'$VERSION' is not a semver version without the leading v (0.2.0, 0.2.0-beta.1), nor beta, stable or open"
+[[ "$VERSION" =~ ^$NUM\.$NUM\.$NUM(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] || die "'$VERSION' is not a semver version without the leading v (0.2.0, 0.2.0-beta.1), nor beta, stable or open"
 CORE="${VERSION%%-*}"
 KIND=stable
 if [[ "$VERSION" == *-* ]]; then
   KIND=beta
-  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*$ ]] || die "a pre-release is ${CORE}-beta.N with N a positive integer (got $VERSION): only the beta channel is wired into the app"
+  [[ "$VERSION" =~ ^$NUM\.$NUM\.$NUM-beta\.[1-9][0-9]*$ ]] || die "a pre-release is ${CORE}-beta.N with N a positive integer (got $VERSION): only the beta channel is wired into the app"
 fi
 if [ "$EMERGENCY" -eq 1 ] && [ "$KIND" != stable ]; then die "--emergency applies to a stable cut, not to a beta: a beta is the short path already"; fi
 
@@ -221,6 +247,12 @@ if [ "$KIND" = beta ]; then
   N="${VERSION##*.}"
   if [ "$N" -le "$LAST_BETA" ]; then die "beta.$N is not above the latest beta of $CORE, beta.$LAST_BETA: the next is $CORE-beta.$((LAST_BETA + 1))"; fi
   if [ "$N" -gt $((LAST_BETA + 1)) ]; then warn "beta.$N skips a number: the next in line is beta.$((LAST_BETA + 1))"; fi
+  # What the remote has on the release branch must be in HEAD, or the tag would sit on a commit that the push of the branch is rejected for.
+  if ref_exists "refs/remotes/origin/release/$CORE"; then
+    is_ancestor "refs/remotes/origin/release/$CORE" HEAD || die "origin/release/$CORE has commits that $BRANCH lacks (behind or diverged): git fetch origin, then merge or fast-forward it before the beta"
+  else
+    origin_skipped "origin/release/$CORE"
+  fi
 fi
 
 # A stable is a tested beta: a beta tag exists, it is in main, and the release branch holds nothing newer than it.
@@ -235,6 +267,11 @@ if [ "$KIND" = stable ]; then
     BETA_TAG="v$CORE-beta.$LAST_BETA"
     BETA_SHA="$(tag_commit "$BETA_TAG")"
     is_ancestor "$BETA_SHA" HEAD || PROBLEMS+=("$BETA_TAG is not in $BRANCH: merge release/$CORE into it first")
+  fi
+  if ref_exists refs/remotes/origin/main; then
+    is_ancestor refs/remotes/origin/main HEAD || PROBLEMS+=("origin/main has commits that $BRANCH lacks (behind or diverged): git fetch origin, then merge or fast-forward it first")
+  else
+    origin_skipped "origin/main"
   fi
   REFS="$(release_refs "$CORE")"
   if [ -z "$REFS" ]; then
@@ -277,7 +314,7 @@ fi
 loud() {
   if [ "${#LOUD[@]}" -eq 0 ] && [ "${#SKIPPED[@]}" -eq 0 ]; then return 0; fi
   echo "release: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
-  if [ "${#SKIPPED[@]}" -gt 0 ]; then echo "release: !! EMERGENCY: this stable skips the beta rules" >&2; fi
+  if [ "${#SKIPPED[@]}" -gt 0 ]; then echo "release: !! EMERGENCY: this stable skips the beta and remote rules" >&2; fi
   for l in ${LOUD[@]+"${LOUD[@]}"}; do echo "release: !! $l" >&2; done
   for s in ${SKIPPED[@]+"${SKIPPED[@]}"}; do echo "release: !! skipped: $s" >&2; done
   echo "release: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
@@ -336,7 +373,7 @@ else
 fi
 TAG_MSG=(-m "Coxia $VERSION")
 if [ "${#SKIPPED[@]}" -gt 0 ]; then
-  TAG_MSG=(-m "Coxia $VERSION (emergency: the beta rules were skipped)")
+  TAG_MSG=(-m "Coxia $VERSION (emergency: rules were skipped)")
   for s in "${SKIPPED[@]}"; do TAG_MSG+=(-m "skipped: $s"); done
 fi
 git "${GIT_ID[@]}" tag -a "$TAG" "${TAG_MSG[@]}"

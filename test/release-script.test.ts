@@ -32,14 +32,18 @@ interface Run {
   err: string;
 }
 
+const ID = ['-c', 'user.name=t', '-c', 'user.email=t@example.test'];
+
 class World {
   readonly dir: string;
+  readonly root: string;
   private readonly env: NodeJS.ProcessEnv;
 
   /** A repository with `v0.4.0` tagged on its first commit; `moved` adds an unreleased entry on `main` after the tag. */
   constructor(moved = true, audit = 0) {
     const root = mkdtempSync(join(tmpdir(), 'coxia-release-'));
     roots.push(root);
+    this.root = root;
     this.dir = join(root, 'repo');
     mkdirSync(join(this.dir, 'scripts'), { recursive: true });
     mkdirSync(join(root, 'home'));
@@ -89,7 +93,11 @@ class World {
   }
 
   run(...args: string[]): Run {
-    const r = spawnSync('bash', [join(this.dir, 'scripts', 'release.sh'), ...args], { cwd: this.dir, env: this.env, encoding: 'utf8', timeout: 60_000 });
+    return this.runWith({}, ...args);
+  }
+
+  runWith(env: NodeJS.ProcessEnv, ...args: string[]): Run {
+    const r = spawnSync('bash', [join(this.dir, 'scripts', 'release.sh'), ...args], { cwd: this.dir, env: { ...this.env, ...env }, encoding: 'utf8', timeout: 60_000 });
     return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
   }
 
@@ -100,6 +108,37 @@ class World {
 
   snapshot(): string {
     return [this.git('status', '--porcelain'), this.git('rev-parse', 'HEAD'), this.git('branch', '--list'), this.git('tag', '--list'), readFileSync(join(this.dir, 'package.json'), 'utf8'), readFileSync(join(this.dir, 'CHANGELOG.md'), 'utf8')].join('\n--\n');
+  }
+
+  /** A bare repository as `origin` with every branch and tag pushed: the remote-tracking refs the script reads (the script never fetches). */
+  addOrigin(): string {
+    const bare = join(this.root, 'origin.git');
+    spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { env: this.env });
+    this.git('remote', 'add', 'origin', bare);
+    this.pushAll();
+    return bare;
+  }
+
+  pushAll(): void {
+    this.git('push', '-q', 'origin', '--all');
+    this.git('push', '-q', 'origin', '--tags');
+  }
+
+  /** Another person pushes a commit to `branch` of origin, and this repository fetches it. */
+  elsewhere(branch: string): void {
+    const other = join(this.root, `other-${branch.replace('/', '-')}`);
+    const env = this.env;
+    const sh = (...args: string[]) => {
+      const r = spawnSync('git', args, { cwd: other, env, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    };
+    spawnSync('git', ['clone', '-q', join(this.root, 'origin.git'), other], { env });
+    sh('checkout', '-q', branch);
+    writeFileSync(join(other, 'theirs.txt'), 'someone else\n');
+    sh('add', '-A');
+    sh(...ID, 'commit', '-q', '-m', 'theirs');
+    sh('push', '-q', 'origin', branch);
+    this.git('fetch', '-q', 'origin');
   }
 
   file(name: string): string {
@@ -361,7 +400,9 @@ describe('release.sh stable', () => {
     expect(w.git('rev-parse', 'v0.5.0^{commit}')).toBe(w.git('rev-parse', 'HEAD'));
     expect(r.out).toContain('git push origin v0.5.0');
     expect(r.out).toContain('git push origin --delete release/0.5.0');
-    expect(r.err).toBe('');
+    expect(r.err).not.toContain('!!');
+    expect(r.err.trim().split('\n')).toHaveLength(1);
+    expect(r.err).toContain('the checks against the remote were skipped');
   });
 
   it('folds the beta sections of the version into the stable section', () => {
@@ -440,6 +481,224 @@ describe('release.sh stable', () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain('nothing was skipped');
     expect(r.err).not.toContain('EMERGENCY');
+  });
+});
+
+describe('release.sh against the remote', () => {
+  const mergedWithOrigin = (): World => {
+    const w = World.withBeta();
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    w.addOrigin();
+    return w;
+  };
+
+  it('refuses a stable when origin/main has commits that main lacks, and --emergency skips it loudly', () => {
+    const w = mergedWithOrigin();
+    w.elsewhere('main');
+    const r = w.cut('0.5.0');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('origin/main has commits that main lacks');
+    expect(w.git('tag', '--list', 'v0.5.0')).toBe('');
+    const forced = w.cut('0.5.0', '--emergency');
+    expect(forced.code).toBe(0);
+    expect(forced.err).toContain('skipped: origin/main has commits that main lacks');
+    expect(forced.err).toContain('EMERGENCY');
+    expect(w.git('for-each-ref', '--format=%(contents)', 'refs/tags/v0.5.0')).toContain('skipped: origin/main has commits');
+  });
+
+  it('accepts a stable when origin/main is an ancestor of HEAD, pushed or not, with no warning about the remote', () => {
+    const w = mergedWithOrigin();
+    const level = w.cut('stable', '--dry-run');
+    expect(level.code).toBe(0);
+    expect(level.err).not.toContain('skipped');
+    w.change('Fixed', 'unpushed on main');
+    const ahead = w.cut('stable');
+    expect(ahead.code).toBe(0);
+    expect(ahead.err).not.toContain('skipped');
+  });
+
+  it('warns once that the remote checks were skipped when there is no origin', () => {
+    const w = World.withBeta();
+    const beta = w.run('--dry-run', 'beta', '--author', AUTHOR);
+    expect(beta.err.match(/remote were skipped/g)).toHaveLength(1);
+    expect(beta.err).toContain('never fetches');
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    const stable = w.run('--dry-run', 'stable', '--author', AUTHOR);
+    expect(stable.err.match(/remote were skipped/g)).toHaveLength(1);
+    expect(stable.err).toContain('origin/main');
+  });
+
+  it('refuses a beta when origin/release/X.Y.Z has commits that the branch lacks, and accepts one that it carries', () => {
+    const w = World.withBeta();
+    w.addOrigin();
+    w.change('Fixed', 'a fix for the second beta');
+    w.pushAll();
+    const ok = w.cut('beta');
+    expect(ok.code).toBe(0);
+    expect(ok.err).not.toContain('skipped');
+    w.pushAll();
+    w.change('Fixed', 'another fix');
+    w.git('push', '-q', 'origin', 'release/0.5.0');
+    w.elsewhere('release/0.5.0');
+    const refused = w.cut('beta');
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain('origin/release/0.5.0 has commits that release/0.5.0 lacks');
+    expect(refused.err).toContain('git fetch origin');
+    expect(w.cut('beta', '--emergency').code).toBe(1);
+  });
+
+  it('reads origin/release/X.Y.Z when the local release branch is gone', () => {
+    const w = World.withBeta();
+    w.addOrigin();
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    w.git('branch', '-q', '-D', 'release/0.5.0');
+    w.git('push', '-q', 'origin', 'main');
+    expect(w.run('--dry-run', '0.5.0', '--author', AUTHOR).code).toBe(0);
+    w.elsewhere('release/0.5.0');
+    const r = w.cut('0.5.0');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('origin/release/0.5.0 is not merged into main');
+  });
+});
+
+describe('release.sh version numbers', () => {
+  it.each([
+    ['open', ['open', '0.06.0']],
+    ['the patch number of open', ['open', '0.6.00']],
+    ['the major of open', ['open', '00.6.0']],
+    ['a stable', ['0.05.0']],
+    ['a beta', ['0.05.0-beta.1', '--allow-branch']],
+    ['a beta number', ['0.5.0-beta.01', '--allow-branch']],
+  ])('refuses leading zeros in %s', (_name, args) => {
+    const w = new World();
+    const r = w.cut(...args);
+    expect(r.code).toBe(1);
+    expect(w.git('tag', '--list')).toBe('v0.4.0');
+    expect(w.git('branch', '--list', 'release/*')).toBe('');
+  });
+
+  it('refuses a --from tag with leading zeros and a release branch with them', () => {
+    const w = new World();
+    expect(w.run('open', '0.4.1', '--from', 'v0.04.0').err).toContain('--from takes a stable tag');
+    w.git('checkout', '-q', '-b', 'release/0.05.0');
+    w.entry('Fixed', 'x');
+    const r = w.cut('beta');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('a beta is cut on release/X.Y.Z');
+  });
+});
+
+describe('release.sh open and the lines main carries', () => {
+  const released = (): World => {
+    const w = new World();
+    w.run('open', '0.5.0');
+    w.change('Fixed', 'on the branch');
+    w.cut('beta');
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    expect(w.cut('0.5.0').code).toBe(0);
+    return w;
+  };
+
+  it('refuses a hotfix of an older line once main carries a newer one, and takes one of the current line', () => {
+    const w = released();
+    const old = w.run('open', '0.4.1', '--from', 'v0.4.0');
+    expect(old.code).toBe(1);
+    expect(old.err).toContain('main already carries a newer line (0.5.0)');
+    expect(old.err).toContain('not supported');
+    expect(w.branch).toBe('main');
+    const current = w.run('open', '0.5.1', '--from', 'v0.5.0');
+    expect(current.code).toBe(0);
+    expect(w.branch).toBe('release/0.5.1');
+  });
+
+  it('refuses a version below what main carries, from main', () => {
+    const w = new World();
+    w.run('open', '0.6.0');
+    w.change('Fixed', 'on the branch');
+    w.cut('beta');
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.6.0');
+    const r = w.run('open', '0.5.0');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('0.5.0 is below 0.6.0, which main already carries');
+  });
+
+  it('wants --from to be the latest stable of that line', () => {
+    const w = new World();
+    w.git(...ID, 'tag', '-a', 'v0.4.1', '-m', 'second stable');
+    const r = w.run('open', '0.4.2', '--from', 'v0.4.0');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('--from must be the latest stable of 0.4.x, v0.4.1');
+    expect(w.run('open', '0.4.2', '--from', 'v0.4.1').code).toBe(0);
+  });
+});
+
+describe('release.sh remaining rules', () => {
+  it('refuses a version lower than the current package.json', () => {
+    const w = new World();
+    w.run('open', '0.5.0');
+    writeFileSync(join(w.dir, 'package.json'), '{ "name": "demo", "version": "0.9.0" }\n');
+    w.git('add', '-A');
+    w.git(...ID, 'commit', '-q', '-m', 'odd version');
+    w.entry('Fixed', 'x');
+    w.git('add', '-A');
+    w.git(...ID, 'commit', '-q', '-m', 'x');
+    const r = w.cut('beta');
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('0.5.0-beta.1 is lower than the current 0.9.0');
+  });
+
+  it('cuts for real on a branch that is not a release branch with --allow-branch, loudly', () => {
+    const w = new World();
+    w.git('checkout', '-q', '-b', 'feat-thing');
+    const r = w.cut('0.5.0-beta.1', '--allow-branch');
+    expect(r.code).toBe(0);
+    expect(w.git('cat-file', '-t', 'v0.5.0-beta.1')).toBe('tag');
+    expect(r.err.match(/--allow-branch: 0.5.0-beta.1 is cut on 'feat-thing'/g)).toHaveLength(2);
+  });
+
+  it('reads the identity from RELEASE_AUTHOR when --author is not given', () => {
+    const w = new World();
+    w.run('open', '0.5.0');
+    const r = w.runWith({ RELEASE_AUTHOR: 'Env Person <env@example.test>' }, 'beta', '--skip-checks');
+    expect(r.code).toBe(0);
+    expect(w.git('log', '-1', '--format=%an <%ae>')).toBe('Env Person <env@example.test>');
+    expect(w.git('for-each-ref', '--format=%(taggername) %(taggeremail)', 'refs/tags/v0.5.0-beta.1')).toBe('Env Person <env@example.test>');
+    expect(w.runWith({ RELEASE_AUTHOR: 'not an identity' }, 'beta', '--skip-checks').err).toContain('--author');
+  });
+});
+
+describe('verify-release-origin.sh', () => {
+  const run = (w: World, ...args: string[]) => {
+    const r = spawnSync('bash', [join(SCRIPTS, 'verify-release-origin.sh'), ...args], { cwd: w.dir, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: join(w.root, 'home'), GIT_CONFIG_GLOBAL: '/dev/null' } });
+    return { code: r.status ?? -1, err: r.stderr, out: r.stdout };
+  };
+
+  it('accepts a stable commit that origin/main has and a beta commit that origin/release/X.Y.Z has', () => {
+    const w = World.withBeta();
+    w.addOrigin();
+    expect(run(w, '0.5.0-beta.1').code).toBe(0);
+    expect(run(w, '0.5.0-beta.1', 'v0.5.0-beta.1').out).toContain('is on origin/release/0.5.0');
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    w.git('push', '-q', 'origin', 'main');
+    expect(run(w, '0.5.0').out).toContain('is on origin/main');
+  });
+
+  it('refuses a commit that only exists locally, and a branch that is not on the remote', () => {
+    const w = World.withBeta();
+    w.addOrigin();
+    w.git('checkout', '-q', 'main');
+    w.git('merge', '-q', '--ff-only', 'release/0.5.0');
+    const stable = run(w, '0.5.0');
+    expect(stable.code).toBe(1);
+    expect(stable.err).toContain('not on origin/main');
+    expect(run(w, '0.6.0-beta.1').err).toContain('origin/release/0.6.0 does not exist');
+    expect(run(w).code).toBe(2);
   });
 });
 
