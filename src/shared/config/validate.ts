@@ -1,5 +1,6 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
 import { promptFamilies } from '../cycles/prompts';
+import { effectiveCardScope } from '../cardScope';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA } from './schema';
@@ -39,6 +40,12 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
 }
 
+const CARD_SCOPE_FALLBACK = {
+  noProject: 'this scope needs the issue project; until it is set, only the issues assigned to you become cards',
+  noLabels: 'the labels scope has no labels; until some are listed, only the issues assigned to you become cards',
+  noLabelSupport: 'the issue tracker of this host has no labels; only the issues assigned to you become cards',
+} as const;
+
 function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
@@ -53,6 +60,11 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     if (r.vcsId && !vcsIds.has(r.vcsId)) errors.push({ path: `projects.repos[${i}].vcsId`, message: `unknown integration "${r.vcsId}"` });
   });
   if (c.projects.issues.vcsId && !vcsIds.has(c.projects.issues.vcsId)) errors.push({ path: 'projects.issues.vcsId', message: `unknown integration "${c.projects.issues.vcsId}"` });
+  const tracker = c.vcs.find((v) => v.id === c.projects.issues.vcsId) ?? c.vcs[0] ?? null;
+  const cards = c.projects.issues;
+  const fallback = effectiveCardScope({ scope: cards.cardScope, labels: cards.cardLabels, project: cards.project, kind: tracker?.kind ?? null }).fallback;
+  if (fallback) warnings.push({ path: 'projects.issues.cardScope', message: CARD_SCOPE_FALLBACK[fallback] });
+  for (const l of duplicates(cards.cardLabels.map((x) => x.toLowerCase()))) warnings.push({ path: 'projects.issues.cardLabels', message: `"${l}" is listed twice` });
   for (const id of duplicates(c.devCycle.stages.map((s) => s.id))) errors.push({ path: 'devCycle.stages', message: `duplicate stage id "${id}"` });
   c.devCycle.stages.forEach((s, i) =>
     s.match.forEach((m, j) => {

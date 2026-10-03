@@ -103,6 +103,9 @@ export interface RepoConfig {
   projectPath: string | null;
 }
 
+export const CARD_SCOPES = ['assigned', 'all', 'labels'] as const;
+export type CardScope = (typeof CARD_SCOPES)[number];
+
 export interface IssueProjectConfig {
   /** A VcsIntegration id; null: no issue tracker. */
   vcsId: string | null;
@@ -112,6 +115,10 @@ export interface IssueProjectConfig {
   projectId: number | null;
   /** Prefix of a card ref, e.g. "app#" for "app#101". Empty: refs are bare numbers. */
   refPrefix: string;
+  /** Which open issues of the tracker become cards: mine, all of the issue project, or those of the issue project with any of `cardLabels`. */
+  cardScope: CardScope;
+  /** The labels of the `labels` scope: an issue carrying any of them is a card. */
+  cardLabels: string[];
 }
 
 export interface ProjectsConfig {

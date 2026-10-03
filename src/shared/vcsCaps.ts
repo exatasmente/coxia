@@ -15,10 +15,12 @@ export interface VcsCaps {
   conflictFlag: boolean;
   /** The host can list issues assigned to me. */
   issues: boolean;
+  /** Issues carry labels the card source can filter by (Bitbucket's tracker has none). */
+  issueLabels: boolean;
 }
 
 export const VCS_CAPS: Record<VcsKind, VcsCaps> = {
-  gitlab: { issueStatus: true, resolvableThreads: true, manualJobs: true, draftToggle: true, conflictFlag: true, issues: true },
-  github: { issueStatus: false, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: true, issues: true },
-  bitbucket: { issueStatus: true, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: false, issues: true },
+  gitlab: { issueStatus: true, resolvableThreads: true, manualJobs: true, draftToggle: true, conflictFlag: true, issues: true, issueLabels: true },
+  github: { issueStatus: false, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: true, issues: true, issueLabels: true },
+  bitbucket: { issueStatus: true, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: false, issues: true, issueLabels: false },
 };

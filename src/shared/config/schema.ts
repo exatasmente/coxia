@@ -1,6 +1,6 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
-import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, CARD_SCOPES } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 3). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -9,6 +9,8 @@ export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
 export const SECRET_REF = '^[a-z0-9][a-z0-9._-]{0,63}$';
 export const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
 const NO_NUL = '^[^\\u0000]*$';
+// A card label is looked up in the query language of each host: no separator, quote or escape may reach it, and no space at the ends.
+const CARD_LABEL = '^\\S(?:[^,"\\\\\\u0000-\\u001f]*\\S)?$';
 
 const string = (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: 'string', description, maxLength: 4000, pattern: NO_NUL, ...extra });
 const nullableString = (description: string): JsonSchema => ({ type: ['string', 'null'], description, maxLength: 4000, pattern: NO_NUL });
@@ -238,6 +240,8 @@ export const CONFIG_SCHEMA: JsonSchema = {
           project: nullableString('"group/name" of the issue project.'),
           projectId: { type: ['integer', 'null'], description: 'Numeric id of the issue project.' },
           refPrefix: string('Prefix of a card ref, e.g. "app#".', { maxLength: 40 }),
+          cardScope: enumOf('Which open issues become cards: assigned (mine, the default), all (every open issue of the issue project) or labels (those of the issue project with any of cardLabels).', CARD_SCOPES),
+          cardLabels: list('Labels of the "labels" scope: an issue with any of them is a card. No comma, quote, backslash or control character; at most 10.', { type: 'string', maxLength: 100, pattern: CARD_LABEL }, { maxItems: 10 }),
         }),
       }),
       vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),

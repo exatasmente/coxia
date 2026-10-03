@@ -35,7 +35,7 @@ async function configure(token: string) {
   await installEnvSecret('vcs.gitlab-test', 'COXIA_TEST_GITLAB_TOKEN', token);
   const c = structuredClone(getConfig());
   c.vcs = [{ id: 'gitlab-test', kind: 'gitlab', host: 'gitlab.test', apiUrl: `${host.url}/api/v4`, user: '', secretRef: 'vcs.gitlab-test', cliPreference: 'api', cliCommand: null }];
-  c.projects.issues = { vcsId: 'gitlab-test', project: 'acme/app', projectId: null, refPrefix: '' };
+  c.projects.issues = { vcsId: 'gitlab-test', project: 'acme/app', projectId: null, refPrefix: '', cardScope: 'assigned', cardLabels: [] };
   saveConfig(c);
   return getConfig().vcs[0];
 }

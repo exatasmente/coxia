@@ -26,7 +26,7 @@ function sample(): WorkspaceConfig {
   c.language = 'en';
   c.projects.roots = ['~/work'];
   c.projects.repos = [{ id: 'api', path: '~/work/api', remoteUrl: 'git@github.com:acme/api.git', vcsId: 'gh', projectPath: 'acme/api' }];
-  c.projects.issues = { vcsId: 'gh', project: 'acme/api', projectId: null, refPrefix: 'API-' };
+  c.projects.issues = { vcsId: 'gh', project: 'acme/api', projectId: null, refPrefix: 'API-', cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] };
   c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: 'ana', secretRef: 'vcs.github', cliPreference: 'auto', cliCommand: null }];
   c.llm.providers.push(newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', models: ['qwen3:8b'], structured: 'tool' }));
   c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
