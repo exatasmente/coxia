@@ -310,8 +310,9 @@ describe('relaunch', () => {
 
   // The app's own open files (inside the AppImage mount) and its debugging socket must not reach the new instance.
   // The script lists its own descriptors with a glob, in the shell itself: a pipeline or a command substitution would hold pipe ends open in the shell
-  // while it is read, and under load the listing caught them. The glob's own directory handle is in the list too, so the same script started with
-  // nothing inherited gives the baseline to compare with.
+  // while it is read, and under load the listing caught them. The glob holds one directory handle while it lists, the lowest free descriptor: 3 in a
+  // process that inherited nothing, higher when something leaked. The expected list is fixed, not taken from a process the test starts, because that
+  // process would inherit whatever the test runner leaves open (a CI runner does).
   it('does not pass on the descriptors it inherited', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cerimonias-relaunch-'));
     const listing = (out: string): string => `#!/usr/bin/env bash\nfds=(/proc/$$/fd/*)\nprintf '%s ' "\${fds[@]##*/}" > "${out}.tmp" && mv "${out}.tmp" "${out}"\n`;
@@ -319,12 +320,7 @@ describe('relaunch', () => {
       for (let i = 0; i < 100 && !existsSync(out); i++) await new Promise((r) => setTimeout(r, 100));
       return readFileSync(out, 'utf8').trim().split(/\s+/).sort();
     };
-    const baseOut = join(dir, 'fds-base');
-    const base = join(dir, 'base.sh');
-    writeFileSync(base, listing(baseOut));
-    chmodSync(base, 0o755);
-    spawn(base, [], { stdio: 'ignore' });
-    const expected = await fdsIn(baseOut);
+    const expected = ['0', '1', '2', '255', '3'];
     const out = join(dir, 'fds');
     const app = join(dir, 'app.sh');
     writeFileSync(app, listing(out));
