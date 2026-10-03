@@ -17,6 +17,10 @@ const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)
 // the release sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 
+// forum:* (list, read, post, create) read and write the workspace's own thread files and nothing else, so a paired browser may use them: the
+// phone is where a person answers a question. A mention only calls on an agent that reads (never one that writes), and a post is never mirrored to
+// the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
+
 // push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.
 // They take the same path as every other call: session cookie, X-Cerimonias header, this policy.
 

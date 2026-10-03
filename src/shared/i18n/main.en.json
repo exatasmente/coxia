@@ -751,5 +751,12 @@
   "main.forum.code.review.limit": "The review found problems in {rounds} rounds without approving. The run stopped and waits for your decision.",
   "main.forum.code.gate.approved": "{stage}: approved.",
   "main.forum.code.gate.rejected": "{stage}: sent back. The reason:",
-  "main.forum.code.gate.skipped": "{stage}: skipped. The reason:"
+  "main.forum.code.gate.skipped": "{stage}: skipped. The reason:",
+  "main.forum.generalTitle": "General",
+  "main.forum.error.bad-thread": "\"{id}\" is not the name of a thread.",
+  "main.forum.error.unknown-thread": "The thread \"{id}\" does not exist.",
+  "main.forum.error.empty": "The message is empty.",
+  "main.forum.error.too-long": "The message is longer than {max} characters.",
+  "main.forum.error.bad-title": "Give the thread a title of up to 120 characters.",
+  "main.forum.error.bad-author": "The message does not say who wrote it."
 }

@@ -119,7 +119,21 @@ export const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const runThreadId = (runId: string): string => `run-${runId}`;
 
 /** The text of a message as a person reads it: what the author wrote, or the app's own wording of its `code`. */
-export function messageText(m: Pick<ForumDraft, 'text' | 'code' | 'params'>): string {
+export function messageText(m: { text?: string; code?: string | null; params?: Record<string, ParamValue> }): string {
   const own = m.code ? t(`main.forum.code.${m.code}`, m.params) : '';
   return [own, m.text ?? ''].filter(Boolean).join(m.code && m.text ? '\n' : '');
+}
+
+/**
+ * The agents a person addressed: `@developer` names the agent with that id (case does not matter). Only ids the team has count, so an unknown
+ * `@word`, an address like `ana@example.com` or a path stays plain text. Each agent once, in the order named.
+ */
+export function parseMentions(text: string, agentIds: readonly string[]): string[] {
+  const known = new Set(agentIds);
+  const found: string[] = [];
+  for (const m of text.matchAll(/(^|[^\w@/.-])@([A-Za-z0-9][A-Za-z0-9_-]*)/g)) {
+    const id = m[2].toLowerCase();
+    if (known.has(id) && !found.includes(id)) found.push(id);
+  }
+  return found;
 }

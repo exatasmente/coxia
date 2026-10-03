@@ -751,5 +751,12 @@
   "main.forum.code.review.limit": "A revisão apontou problemas em {rounds} rodadas sem aprovar. A execução parou e espera sua decisão.",
   "main.forum.code.gate.approved": "{stage}: aprovado.",
   "main.forum.code.gate.rejected": "{stage}: devolvido. O motivo:",
-  "main.forum.code.gate.skipped": "{stage}: pulado. O motivo:"
+  "main.forum.code.gate.skipped": "{stage}: pulado. O motivo:",
+  "main.forum.generalTitle": "Geral",
+  "main.forum.error.bad-thread": "\"{id}\" não é o nome de uma conversa.",
+  "main.forum.error.unknown-thread": "A conversa \"{id}\" não existe.",
+  "main.forum.error.empty": "A mensagem está vazia.",
+  "main.forum.error.too-long": "A mensagem passa de {max} caracteres.",
+  "main.forum.error.bad-title": "Dê um título à conversa, de até 120 caracteres.",
+  "main.forum.error.bad-author": "A mensagem não diz quem a escreveu."
 }

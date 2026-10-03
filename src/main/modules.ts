@@ -9,6 +9,7 @@ import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
 import { errorlog } from './errorlog';
 import { register as feedback } from './feedback';
+import { forumModule } from './forum';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
@@ -37,6 +38,7 @@ export const MODULES: Module[] = [
   efeitos,
   errorlog,
   feedback,
+  forumModule,
   gitlabQuick,
   glossary,
   minutes,
