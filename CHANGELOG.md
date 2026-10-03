@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Buttons and texts name the integration the workspace has instead of GitLab: GitHub and Bitbucket workspaces read "PR", `app#7` and, on GitHub, "checks"; the agents are told the same, and are no longer sent to `glab` on a host that has no CLI. What a host does not have is hidden (the issue status block of Quick actions, the tracker MCP switch without a server, "Continue in Claude Code" for open-engine sessions, the Help entries of ceremonies the cycle does not have), and the texts that named the daily ceremony, the retro window or the summary target follow the cycle. On a GitLab workspace the prompts the agents get are unchanged.
 
+## [0.2.1] - 2026-10-03
+
+### Fixed
+
+- "Resolve conflict" now shows on Today and in the unblock screen for cards built from a code-host integration (GitHub, GitLab): a merge request the host reports as conflicting is offered whatever the language, instead of only for the wording of an external card-source command.
+
 ## [0.2.0] - 2026-10-03
 
 ### Added
@@ -47,6 +53,7 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/exatasmente/coxia/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/exatasmente/coxia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/exatasmente/coxia/releases/tag/v0.1.0

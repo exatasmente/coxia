@@ -96,6 +96,13 @@ describe('what the turn agent reads', () => {
     expect(prompts.priorityLine(card)).toBe('No tracker, esta atividade tem prioridade "P0" e marco "v2.0". Cite isso na fala só se mudar o que importa agora (o próximo passo ou o bloqueio); não repita o que não mudou.');
   });
 
+  it('never tells the agent which merge requests conflict', async () => {
+    reportMock.items = [issue(7), { ...issue(70), kind: 'mr', ref: 'app!70', issue_refs: ['7'], has_conflicts: true, blockers: ['Conflicts with the target branch'] } as ReportItem];
+    const card = (await loadCards(10)).cards.find((c) => c.ref === 'app#7')!;
+    expect(card.mrConflicts).toEqual(['app!70']);
+    expect(prompts.cardContext(card)).not.toContain('mrConflicts');
+  });
+
   it('says nothing about a card with neither, so its prompt is the one it always was', async () => {
     const card = await load({ labels: ['bug'] });
     expect(prompts.cardContext(card)).not.toMatch(/priority|milestone/);

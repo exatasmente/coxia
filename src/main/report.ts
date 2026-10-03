@@ -18,6 +18,8 @@ export interface ReportItem {
   pending: string[];
   changes: { field: string; from: unknown; to: unknown }[];
   manual_note: string | null;
+  // The host says the request conflicts with its target; a card source command may omit it and write only the blocker text.
+  has_conflicts?: boolean;
   // The tracker's own data about an issue; a card source that does not report it leaves them out.
   labels?: string[];
   milestone?: string | null;

@@ -4,7 +4,7 @@ import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
 import { intlLocale, useT } from '../i18n';
-import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
+import { type AgoraPlan, type NeedItem, type NeedTarget, mrLabel, stageLabel } from '../dashboard';
 import { returnedFromQa } from '../../../shared/cycles/stages';
 import { showQuickActions } from '../../../shared/cycles/view';
 import type { Card } from '../../../shared/types';
@@ -110,7 +110,7 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
                 )}
                 {n.conflictCard && (
                   <div className="need-extra">
-                    <ResolveConflict card={n.conflictCard} go={go} place="need" only={conflictMrs(n.conflictCard).find((m) => n.title.startsWith(`${m.ref}:`))?.ref} />
+                    <ResolveConflict card={n.conflictCard} go={go} place="need" only={n.conflictRef} />
                   </div>
                 )}
               </li>
