@@ -79,7 +79,8 @@ async function gitlabCards(conflicts: boolean): Promise<Card[]> {
 }
 
 const hosts: [string, (conflicts: boolean) => Promise<Card[]>, string, string][] = [
-  ['GitHub', githubCards, 'app#12', 'app!7'],
+  // a pull request of GitHub is written app#7, a merge request of GitLab app!7
+  ['GitHub', githubCards, 'app#12', 'app#7'],
   ['GitLab', gitlabCards, 'app#101', 'app!7'],
 ];
 
@@ -88,7 +89,7 @@ describe.each(hosts)('%s card source: the conflict button', (_name, build, issue
     setLanguage(language);
     const card = (await build(true)).find((c) => c.ref === issueRef)!;
     expect(card.mrConflicts).toEqual([mrRef]);
-    expect(card.blockers.some((b) => /^app!7: /.test(b) && !/MR com conflitos/.test(b))).toBe(true);
+    expect(card.blockers.some((b) => b.startsWith(`${mrRef}: `) && !/MR com conflitos/.test(b))).toBe(true);
     expect(conflictMrs(card).map((m) => m.ref)).toEqual([mrRef]);
     const row = needsYou({ cards: [card], ...EMPTY_NEEDS }).find((n) => n.id === `blocked:${card.ref}`);
     expect(row?.conflictCard).toBe(card);
