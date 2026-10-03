@@ -41,6 +41,8 @@ import {
   newRunId,
   passQuestion,
   producerOf,
+  defaultSendBackTarget,
+  sendBackTo,
   recordQa,
   recordReview,
   recordUsage,
@@ -177,6 +179,12 @@ export interface Runner {
   undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
   skipWait(id: string, reason: string): Run;
+  /**
+   * The person sends the run back to an earlier work stage of its flow, from a wait, a gate, a stage that waits to start or to be accepted, a failure, a question
+   * or the end (which reopens the run). `stageId` empty: the default of `defaultSendBackTarget`. The note is the person's handoff to that stage's agent, with what
+   * the review and QA left open; it may be empty when something is open.
+   */
+  sendBack(id: string, stageId: string, note: string): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
   migrateFlow(id: string): Run;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
@@ -618,6 +626,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       return deps.publisher.undo(id, key);
     },
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
+    sendBack(id, stageId, note) {
+      const before = need(id);
+      // A reopened run is an active one again: it cannot be while another run of the issue is going.
+      if (before.status === 'done' && deps.runs.activeFor(before.issue.ref)) throw new RunError('duplicate', { issue: before.issue.ref });
+      const flow = flowFor(before);
+      const writers = new Set(deps.config().agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
+      const target = stageId.trim() || defaultSendBackTarget(flow, before.stage, (a) => writers.has(a))?.id;
+      if (!target) throw new RunError('unknown-stage', { stage: '' });
+      const run = move(id, (r, f, at) => sendBackTo(r, f, { toStage: target, note }, at));
+      // A question that was going from agent to agent is not answered any more.
+      chainAborts.get(id)?.abort();
+      return run;
+    },
     migrateFlow(id) {
       const config = deps.config();
       // The flow a run moves to is its squad's (the workspace's when it has none).

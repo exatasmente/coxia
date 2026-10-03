@@ -3,6 +3,7 @@ import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
+import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
 import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type StageUsage, type Transition } from './types';
 
@@ -524,6 +525,45 @@ export function returnStage(run: Run, flow: FlowStage[], note: string, at: strin
   ];
   finishStage(out, at, 'rejected');
   enter(out, flow, run.stage, at, messages, true);
+  return { run: out, messages };
+}
+
+export interface SendBackInput {
+  /** The work stage the run goes back to: one of `sendBackTargets`. */
+  toStage: string;
+  /** What the person asks of it; may be empty when the review or QA left something open. */
+  note: string;
+}
+
+/**
+ * The person sends the run back to an earlier work stage, from a wait, a gate, a stage that waits to start or to be accepted, a failure, a question, or the end
+ * (which reopens the run). The note, with what the review and QA left open, is a handoff from the person to that stage's agent; the stage starts again at once
+ * as a new attempt, and the stages after it run again in order. Nothing is counted against the review limit: this is the person's decision, not a round.
+ */
+export function sendBackTo(run: Run, flow: FlowStage[], input: SendBackInput, at: string): Transition {
+  if (run.status === 'cancelled') throw new RunError('not-active', { status: run.status });
+  need(run, ...SEND_BACK_STATUSES);
+  if (!canSendBack(run)) throw new RunError('wrong-state', { status: run.status });
+  const target = sendBackTargets(flow, run.stage).find((s) => s.id === input.toStage);
+  if (!target) throw new RunError('unknown-stage', { stage: input.toStage });
+  const note = input.note.trim();
+  const text = sendBackText(run, target.id, note);
+  if (!text) throw new RunError('empty-reason');
+  const out = clone(run, at);
+  const from = stageOf(flow, run.stage);
+  const rec = record(out, run.stage);
+  const reopened = run.status === 'done';
+  // The stage the run leaves keeps how it ended when it did end (done, failed); a wait is skipped, anything that was waiting for the person is turned down.
+  if (rec && !reopened && rec.status !== 'failed') finishStage(out, at, from.type === 'wait' ? 'skipped' : 'rejected');
+  out.question = null;
+  out.pending = null;
+  if (reopened) log(out, at, 'reopened', run.stage, 'person', note || null);
+  log(out, at, 'sent-back', run.stage, 'person', `${target.id}${note ? `: ${note}` : ''}`);
+  const messages: ForumDraft[] = [
+    { kind: 'decision', author: person, code: reopened ? 'run.reopened' : 'run.sentBack', params: { stage: target.label }, text: note, stage: run.stage, public: true },
+    { kind: 'handoff', author: person, text, to: target.agent, stage: run.stage },
+  ];
+  enter(out, flow, target.id, at, messages, true);
   return { run: out, messages };
 }
 
