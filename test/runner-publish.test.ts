@@ -6,7 +6,9 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { checkComment, type Run } from '../src/shared/runs';
+import { messageText } from '../src/shared/forum';
 import { setLanguage } from '../src/shared/i18n';
+import { commitFallback } from '../src/main/runner/git';
 import { git } from './helpers/conflictRepos';
 import { type Forge, HEAD, makeForge } from './helpers/fakeForge';
 import { type Boot, boot, doc, work } from './helpers/runner';
@@ -256,6 +258,28 @@ describe('a run whose agents are all autonomous', () => {
     expect(issueNotes()[3][1]).toContain('### The question\n\nShould it also handle Y?');
     const final = b.runner.get(run.id)!;
     expect(Object.keys(final.comments).sort()).toEqual(['decision-gate1-1', 'decision-gate1-2', 'plan', 'question-plan-1', 'refine']);
+  });
+
+  it('words the stage in the language of the workspace: the decision comment, the forum and what the agent is sent', async () => {
+    setLanguage('pt-BR');
+    try {
+      forge = makeForge();
+      setVcsRuntimeForTests(forge.runtime());
+      const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'pt-BR') });
+      script(b);
+      const run = await start(b);
+      const end = await through(b, run);
+      expect(end).toMatchObject({ status: 'done', stage: 'ready' });
+      const first = issueNotes()[1][1].split('\n')[0];
+      expect(first).toBe('**Portão 1: aprovado**');
+      expect(b.thread(run).map((m) => messageText(m)).join('\n')).toContain('Etapa Plano');
+      expect(b.engine.calls.find((c) => c.agent.id === 'planner')!.system).toContain('na etapa "Plano"');
+      expect(b.engine.calls.find((c) => c.agent.id === 'planner')!.prompt).toContain('Etapa "Plano"');
+      // the commits of the repository stay in English
+      expect(commitFallback(b.runner.get(run.id)!.flow!.stages.find((st) => st.id === 'plan')!.label, false)).toBe('add the plan documents');
+    } finally {
+      setLanguage('en');
+    }
   });
 
   it('finds a stage comment by its marker when the run lost the note, and edits it instead of posting another', async () => {

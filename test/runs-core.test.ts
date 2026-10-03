@@ -98,7 +98,7 @@ describe('starting a run', () => {
       startRun(startInput(), flowOf(c), AT);
     } catch (e) {
       expect((e as RunError).code).toBe('no-agent');
-      expect((e as RunError).message).toContain('Review');
+      expect((e as RunError).message).toContain('Revisão');
     }
     expect(() => startRun(startInput(), [], AT)).toThrow(expect.objectContaining({ code: 'no-flow' }));
   });
@@ -484,7 +484,7 @@ describe('agents that wait for the person', () => {
     const d = upToPlan();
     expect(d.run).toMatchObject({ status: 'to-start', stage: 'plan' });
     expect(stage(d, 'plan')).toMatchObject({ agent: 'planner', status: 'waiting', attempts: 1, startedAt: null, autonomous: false });
-    expect(d.messages.at(-1)).toMatchObject({ kind: 'system', code: 'run.stage.waitStart', params: { stage: 'Plan', agent: 'planner' } });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'system', code: 'run.stage.waitStart', params: { stage: 'cycle.agentFlow.stage.plan', agent: 'planner' } });
     expect(d.run.history.at(-1)).toMatchObject({ type: 'stage-waiting', stage: 'plan' });
     expect(() => stageDone(d.run, d.flow, done('2_PLAN'), at(9))).toThrow(expect.objectContaining({ code: 'wrong-state' }));
     const tr = d.do((r, t) => startStage(r, d.flow, t));

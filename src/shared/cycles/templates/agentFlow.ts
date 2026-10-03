@@ -12,29 +12,29 @@ import { agentFlowComments } from './agentFlowComments';
 // was before they were added, and what a workspace that already had it keeps.
 
 export const ENGINEERING_FLOW_STAGES: StageDef[] = [
-  { id: 'refine', label: 'Refine', match: ['^Refin'], kind: 'backlog', rank: 1, type: 'work', agentId: 'refiner', produces: ['1_SPEC.md'] },
-  { id: 'gate1', label: 'Gate 1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, type: 'gate' },
-  { id: 'plan', label: 'Plan', match: ['^Plan'], kind: 'development', rank: 3, type: 'work', agentId: 'planner', produces: ['2_PLAN.md'] },
-  { id: 'gate2', label: 'Gate 2', match: ['^Gate 2$'], kind: 'development', rank: 4, type: 'gate' },
-  { id: 'implement', label: 'Implement', match: ['^Implement'], kind: 'development', rank: 5, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
-  { id: 'review', label: 'Review', match: ['^Review'], kind: 'review', rank: 6, type: 'work', agentId: 'reviewer', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
-  { id: 'qa', label: 'QA', match: ['^QA$'], kind: 'qa', rank: 7, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
+  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 1, type: 'work', agentId: 'refiner', produces: ['1_SPEC.md'] },
+  { id: 'gate1', label: 'cycle.agentFlow.stage.gate1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, type: 'gate' },
+  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 3, type: 'work', agentId: 'planner', produces: ['2_PLAN.md'] },
+  { id: 'gate2', label: 'cycle.agentFlow.stage.gate2', match: ['^Gate 2$'], kind: 'development', rank: 4, type: 'gate' },
+  { id: 'implement', label: 'cycle.agentFlow.stage.implement', match: ['^Implement'], kind: 'development', rank: 5, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
+  { id: 'review', label: 'cycle.agentFlow.stage.review', match: ['^Review'], kind: 'review', rank: 6, type: 'work', agentId: 'reviewer', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
+  { id: 'qa', label: 'cycle.agentFlow.stage.qa', match: ['^QA$'], kind: 'qa', rank: 7, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
   // Where the run ends: no agent works it.
-  { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8, type: 'work' },
+  { id: 'ready', label: 'cycle.agentFlow.stage.ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8, type: 'work' },
 ];
 
 export const AGENT_FLOW_STAGES: StageDef[] = [
-  { id: 'triage', label: 'Triage', match: ['^Triage'], kind: 'backlog', rank: 1, type: 'work', agentId: 'support', produces: ['0_TRIAGE.md'] },
-  { id: 'refine', label: 'Refine', match: ['^Refin'], kind: 'backlog', rank: 2, type: 'work', agentId: 'product-owner', produces: ['1_SPEC.md'] },
-  { id: 'gate1', label: 'Gate 1', match: ['^Gate 1$'], kind: 'backlog', rank: 3, type: 'gate' },
-  { id: 'plan', label: 'Plan', match: ['^Plan'], kind: 'development', rank: 4, type: 'work', agentId: 'tech-lead', produces: ['2_PLAN.md'] },
-  { id: 'gate2', label: 'Gate 2', match: ['^Gate 2$'], kind: 'development', rank: 5, type: 'gate' },
-  { id: 'implement', label: 'Implement', match: ['^Implement'], kind: 'development', rank: 6, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
-  { id: 'review', label: 'Review', match: ['^Review'], kind: 'review', rank: 7, type: 'work', agentId: 'tech-lead', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
-  { id: 'qa', label: 'QA', match: ['^QA$'], kind: 'qa', rank: 8, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
+  { id: 'triage', label: 'cycle.agentFlow.stage.triage', match: ['^Triage'], kind: 'backlog', rank: 1, type: 'work', agentId: 'support', produces: ['0_TRIAGE.md'] },
+  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 2, type: 'work', agentId: 'product-owner', produces: ['1_SPEC.md'] },
+  { id: 'gate1', label: 'cycle.agentFlow.stage.gate1', match: ['^Gate 1$'], kind: 'backlog', rank: 3, type: 'gate' },
+  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 4, type: 'work', agentId: 'tech-lead', produces: ['2_PLAN.md'] },
+  { id: 'gate2', label: 'cycle.agentFlow.stage.gate2', match: ['^Gate 2$'], kind: 'development', rank: 5, type: 'gate' },
+  { id: 'implement', label: 'cycle.agentFlow.stage.implement', match: ['^Implement'], kind: 'development', rank: 6, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
+  { id: 'review', label: 'cycle.agentFlow.stage.review', match: ['^Review'], kind: 'review', rank: 7, type: 'work', agentId: 'tech-lead', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
+  { id: 'qa', label: 'cycle.agentFlow.stage.qa', match: ['^QA$'], kind: 'qa', rank: 8, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
   // The pull request is merged by a person: the run waits for it, and its stage is where the watcher looks at the pull request.
-  { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 9, type: 'wait', waitsFor: { kind: 'pr-merged' } },
-  { id: 'communicate', label: 'Communicate', match: ['^Communicat'], kind: 'done', rank: 10, type: 'work', agentId: 'customer-success', produces: ['6_RELEASE_NOTE.md'] },
+  { id: 'ready', label: 'cycle.agentFlow.stage.ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 9, type: 'wait', waitsFor: { kind: 'pr-merged' } },
+  { id: 'communicate', label: 'cycle.agentFlow.stage.communicate', match: ['^Communicat'], kind: 'done', rank: 10, type: 'work', agentId: 'customer-success', produces: ['6_RELEASE_NOTE.md'] },
 ];
 
 const member = (id: string, key: string, stages: string[], permission: AgentDef['permission'], turnsTo: string | null): AgentDef =>

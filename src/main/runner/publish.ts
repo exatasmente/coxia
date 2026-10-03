@@ -209,6 +209,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   };
 
   const checkOptions = (run: Run, config: WorkspaceConfig) => ({ worktree: run.worktree, agentIds: config.agents.team.map((a) => a.id), redact: (text: string) => redact(text) });
+  const stageName = (label: string): string => cycleText(label, lang());
   const titleOf = (tpl: CommentTemplate): string => cycleText(tpl.title, lang());
   const stageAutonomy = (run: Run, stage: string): boolean => run.stages.find((s) => s.stage === stage)?.autonomous ?? false;
   const problemsText = (problems: { code: string; sample: string }[]): string => problems.map((p) => (p.sample ? `${p.code} (${p.sample})` : p.code)).join(', ');
@@ -380,7 +381,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!tpl) return;
     const run = need(runId);
     const marker = markerOf(run.id, end.stage.id);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: end.stage.label, round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true });
   }
@@ -395,7 +396,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const key = `question-${e.stage.id}-${n}`.slice(0, 48);
     const marker = markerOf(run.id, key);
     const content: StageComment = { sections: [{ heading: '', body: e.question }], technical: '' };
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: e.stage.label }, content, { marker });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(e.stage.label) }, content, { marker });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     await deliver(runId, { key, stage: e.stage.id, kinds: ['question'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: e.agent.id, autonomous: e.autonomous, announce: false });
   }
@@ -412,7 +413,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const decision = tr(`main.runner.comment.decision.${e.action === 'approve' ? 'approved' : e.action === 'reject' ? 'rejected' : 'skipped'}`);
     const link = producer ? run.comments[producer.id]?.url : null;
     const content: StageComment | null = e.reason.trim() ? { sections: [{ heading: '', body: e.reason.trim() }], technical: '' } : null;
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: e.stage.label, decision }, content, { marker, tail: link ? tr('main.runner.comment.decisionLink', { url: link }) : undefined });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(e.stage.label), decision }, content, { marker, tail: link ? tr('main.runner.comment.decisionLink', { url: link }) : undefined });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     // The decision was the person's; whether it goes out by itself follows the agent whose work it judged.
     await deliver(runId, { key, stage: e.stage.id, kinds: ['decision'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: producer?.agent ?? 'app', autonomous: e.autonomous, announce: false });
@@ -438,7 +439,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const title = `${titleOf(tpl)} (${round})`;
     if (run.comments[key]?.status === 'published') return;
     const marker = markerOf(run.id, 'review', round);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: end.stage.label, round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
     const hash = hashOf(rendered.body);
     run = moveRun(d, runId, (r) => recordCommentDraft(r, key, { target: 'mr', bodyHash: hash, body: rendered.body, headline: rendered.status, title }, now()));
     await publishReview(runId, round, { autonomous: end.autonomous, by: end.agent.id });
@@ -562,7 +563,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (pr) {
       const marker = markerOf(run.id, 'pr');
       const closes = closesOf(run);
-      const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: end.stage.label }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
+      const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
       moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
@@ -801,7 +802,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!commands.length) return;
     const attempt = run.stages.find((s) => s.stage === e.stage.id)?.attempts ?? 1;
     const key = `status:${runId}:${e.stage.id}:${attempt}`;
-    const summary = tr('main.runner.status.summary', { label: add ?? remove ?? '', stage: e.stage.label });
+    const summary = tr('main.runner.status.summary', { label: add ?? remove ?? '', stage: stageName(e.stage.label) });
     // The agent of the stage lets it go out by itself; a gate or a wait has no agent to speak for it, so it waits for a "yes".
     if (!e.autonomous) {
       const created = door.propose({ key, issue: run.issue.iid, issueTitle: run.issue.title, summary, unit: { runId, purpose: 'status', stage: e.stage.id }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);

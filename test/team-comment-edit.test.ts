@@ -13,7 +13,7 @@ describe('which templates a cycle can have', () => {
   it('lists the comment of each work stage, then the three events', () => {
     const t = commentTargets(c.devCycle.stages, c.devCycle.comments);
     expect(t.map((x) => `${x.kind}:${x.key}`)).toEqual(['stage:refine', 'stage:plan', 'stage:implement', 'stage:review', 'stage:qa', 'stage:ready', 'event:gate', 'event:question', 'event:pr']);
-    expect(t.find((x) => x.key === 'refine')).toMatchObject({ has: true, label: 'Refine' });
+    expect(t.find((x) => x.key === 'refine')).toMatchObject({ has: true, label: 'Refinamento' });
     expect(t.find((x) => x.key === 'ready')?.has).toBe(false);
   });
 

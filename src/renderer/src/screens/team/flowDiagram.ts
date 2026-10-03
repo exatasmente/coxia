@@ -1,5 +1,6 @@
 import type { AgentDef, StageDef } from '../../../../shared/config/types';
 import { flowOf } from '../../../../shared/runs/flow';
+import { shown } from './text';
 
 // The flow as a mermaid flowchart: forward arrows solid, returns dashed, a gate drawn as a hexagon and a wait as a rounded pill. Only shapes and line
 // styles tell them apart (no colors, so the theme stays the diagram's own).
@@ -20,7 +21,7 @@ export function flowDiagram(stages: StageDef[], team: AgentDef[], agentLabel: (a
   const lines = ['flowchart TD']; // i18n-ignore: mermaid syntax
   flow.forEach((s, i) => {
     const agent = s.agent ? team.find((a) => a.id === s.agent) : undefined;
-    const text = clean(s.label) + (agent ? `<br/>${clean(agentLabel(agent))}` : '');
+    const text = clean(shown(s.label || s.id)) + (agent ? `<br/>${clean(agentLabel(agent))}` : '');
     const node = s.type === 'gate' ? `n${i}{{"${text}"}}` : s.type === 'wait' ? `n${i}(["${text}"])` : `n${i}["${text}"]`;
     lines.push(`  ${node}`);
   });

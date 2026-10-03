@@ -1,3 +1,4 @@
+import { withStageName } from './cycles/text';
 import { t } from './i18n';
 
 // The forum: one thread per run plus general threads. Messages are what agents and people say about an activity; the stores are in
@@ -135,7 +136,7 @@ export const squadChannelId = (squadId: string): string => `squad-${squadId}`;
 
 /** The text of a message as a person reads it: what the author wrote, or the app's own wording of its `code`. */
 export function messageText(m: { text?: string; code?: string | null; params?: Record<string, ParamValue> }): string {
-  const own = m.code ? t(`main.forum.code.${m.code}`, m.params) : '';
+  const own = m.code ? t(`main.forum.code.${m.code}`, m.params && withStageName(m.params)) : '';
   return [own, m.text ?? ''].filter(Boolean).join(m.code && m.text ? '\n' : '');
 }
 

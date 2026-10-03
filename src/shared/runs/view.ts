@@ -1,4 +1,5 @@
 import type { RepoConfig } from '../config/types';
+import { shownText } from '../cycles/text';
 import { sameFinding } from './output';
 import { type FlowStage, type Run, type RunStatus, isTerminal } from './types';
 
@@ -39,9 +40,9 @@ export function runOfCard<T extends { issue: { ref: string }; status: string; cr
   return [...mine].sort((a, b) => rank(b) - rank(a) || b.createdAt.localeCompare(a.createdAt))[0] ?? null;
 }
 
-/** The label of the stage the run is in, from the flow the run keeps (the stage id when the run has no copy). */
+/** The name of the stage the run is in, from the flow the run keeps (the stage id when the run has no copy), in the language in force. */
 export function stageLabelOf(run: Pick<Run, 'stage' | 'flow'>): string {
-  return run.flow?.stages.find((s) => s.id === run.stage)?.label ?? run.stage;
+  return shownText(run.flow?.stages.find((s) => s.id === run.stage)?.label ?? run.stage);
 }
 
 /** The flow stage of a run's current stage, when the run keeps a copy or `flow` is given. */

@@ -368,7 +368,7 @@
    "refine",
    "run.stage.started",
    {
-    "stage": "Refine",
+    "stage": "cycle.agentFlow.stage.refine",
     "agent": "refiner"
    },
    "",
@@ -419,7 +419,7 @@
    "gate1",
    "run.stage.gate",
    {
-    "stage": "Gate 1"
+    "stage": "cycle.agentFlow.stage.gate1"
    },
    "",
    null,
@@ -453,7 +453,7 @@
    "gate1",
    "gate.approved",
    {
-    "stage": "Gate 1"
+    "stage": "cycle.agentFlow.stage.gate1"
    },
    "Looks right.",
    null,
@@ -469,7 +469,7 @@
    "plan",
    "run.stage.started",
    {
-    "stage": "Plan",
+    "stage": "cycle.agentFlow.stage.plan",
     "agent": "planner"
    },
    "",
@@ -523,7 +523,7 @@
    "gate2",
    "run.stage.gate",
    {
-    "stage": "Gate 2"
+    "stage": "cycle.agentFlow.stage.gate2"
    },
    "",
    null,
@@ -557,7 +557,7 @@
    "gate2",
    "gate.approved",
    {
-    "stage": "Gate 2"
+    "stage": "cycle.agentFlow.stage.gate2"
    },
    "",
    null,
@@ -573,7 +573,7 @@
    "implement",
    "run.stage.started",
    {
-    "stage": "Implement",
+    "stage": "cycle.agentFlow.stage.implement",
     "agent": "developer"
    },
    "",
@@ -627,7 +627,7 @@
    "review",
    "run.stage.started",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -708,7 +708,7 @@
    "implement",
    "run.stage.started",
    {
-    "stage": "Implement",
+    "stage": "cycle.agentFlow.stage.implement",
     "agent": "developer"
    },
    "",
@@ -761,7 +761,7 @@
    "review",
    "run.stage.started",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -831,7 +831,7 @@
    "qa",
    "run.stage.started",
    {
-    "stage": "QA",
+    "stage": "cycle.agentFlow.stage.qa",
     "agent": "qa"
    },
    "",
@@ -884,7 +884,7 @@
    "ready",
    "run.completed",
    {
-    "stage": "Ready"
+    "stage": "cycle.agentFlow.stage.ready"
    },
    "",
    null,

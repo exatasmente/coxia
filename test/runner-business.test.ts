@@ -138,7 +138,7 @@ describe('an issue through the agent cycle', () => {
     await b.settle();
     const run = b.runner.get(started.id)!;
     expect(run.status).toBe('done');
-    expect(b.thread(run).at(-1)).toMatchObject({ kind: 'system', code: 'run.completed.noAgent', params: { stage: 'Communicate' } });
+    expect(b.thread(run).at(-1)).toMatchObject({ kind: 'system', code: 'run.completed.noAgent', params: { stage: 'cycle.agentFlow.stage.communicate' } });
     expect(heads().some((h) => h.includes('Change delivered'))).toBe(false);
   });
 

@@ -43,7 +43,9 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
     expect(r.config.schemaVersion).toBe(7);
     expect(validateConfig(r.config).ok).toBe(true);
     // the same stages the engineering cycle template has now: gates are typed, the review and QA return to the developer's stage after two rounds
-    expect(r.config.devCycle.stages.filter((s) => s.id !== 'extra')).toEqual(ENGINEERING_FLOW_STAGES);
+    // (the labels a stored file has are literals and stay as they were written: only the template's own are catalog keys)
+    const written = new Map(V6_STAGES.map((s) => [s.id, s.label]));
+    expect(r.config.devCycle.stages.filter((s) => s.id !== 'extra')).toEqual(ENGINEERING_FLOW_STAGES.map((s) => ({ ...s, label: written.get(s.id) })));
     expect(r.notes.join(' ')).toContain('became a flow');
     expect(r.notes.join(' ')).toContain('left as they are');
     expect(r.config.agents.team.map((a) => a.id)).not.toContain('tech-lead');

@@ -33,7 +33,7 @@ function describeTemplate(t: CycleTemplate, builtIn: boolean, language: Language
     needs: t.needs,
     patch: { devCycle: cycle },
     ceremonies: cycle.ceremonies,
-    stages: cycle.stages.map((s) => ({ id: s.id, label: s.label })),
+    stages: cycle.stages.map((s) => ({ id: s.id, label: cycleText(s.label, language) })),
     team: t.team ?? [],
   };
 }

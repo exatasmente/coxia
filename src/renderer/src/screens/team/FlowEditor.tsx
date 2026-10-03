@@ -104,10 +104,10 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
   const move = (from: number, to: number) => {
     if (from === to) return;
     edit(moveStage(stages, from, to));
-    setAnnounce(t('ui.flow.moved', { name: stages[from].label || stages[from].id, position: to + 1, total: stages.length }));
+    setAnnounce(t('ui.flow.moved', { name: shown(stages[from].label) || stages[from].id, position: to + 1, total: stages.length }));
   };
   const duplicate = (id: string) => {
-    const made = duplicateStage(stages, id, t('ui.flow.copyOf', { name: stages.find((s) => s.id === id)?.label ?? id }));
+    const made = duplicateStage(stages, id, t('ui.flow.copyOf', { name: shown(stages.find((s) => s.id === id)?.label ?? id) }));
     edit(made.stages);
     setSelected(made.id);
   };
@@ -237,7 +237,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
                 const agent = f?.agent ? team.find((a) => a.id === f.agent) : undefined;
                 const issues = rowIssues(s.id);
                 const type = s.type ?? 'work';
-                const name = s.label || s.id;
+                const name = shown(s.label) || s.id;
                 return (
                   <li key={s.id} className="tm-gap-wrap">
                     <div
@@ -258,7 +258,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
                             {type === 'work' && <span>{agent ? agentName(agent) : t('ui.flow.row.noAgent')}</span>}
                             {type === 'wait' && s.waitsFor && <span>{t(WAIT_LABEL[s.waitsFor.kind])}</span>}
                             {s.produces?.length ? <span className="mono">{s.produces.join(', ')}</span> : null}
-                            {f?.returnsTo && (type === 'gate' || s.returnsTo !== undefined || s.kind === 'review' || s.kind === 'qa') ? <span>{t('ui.flow.row.returns', { stage: stages.find((x) => x.id === f.returnsTo)?.label || f.returnsTo })}</span> : null}
+                            {f?.returnsTo && (type === 'gate' || s.returnsTo !== undefined || s.kind === 'review' || s.kind === 'qa') ? <span>{t('ui.flow.row.returns', { stage: shown(stages.find((x) => x.id === f.returnsTo)?.label ?? '') || f.returnsTo })}</span> : null}
                           </span>
                         </span>
                       </button>

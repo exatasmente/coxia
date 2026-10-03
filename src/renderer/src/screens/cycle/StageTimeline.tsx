@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
+import { shownText } from '../../../../shared/cycles/text';
 import { type FlowStage, type Run } from '../../../../shared/runs';
 import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
@@ -110,7 +111,7 @@ function Row({ run, row, comments, config, web, go, view }: { run: Run; row: Sta
       <span className="cy-dot" aria-hidden="true" />
       <div className="cy-stage-body">
         <div className="row cy-stage-head">
-          <h3 className="cy-stage-name">{stage.label}</h3>
+          <h3 className="cy-stage-name">{shownText(stage.label)}</h3>
           <span className="badge badge-quiet">{t(TYPE_KEY[stage.type])}</span>
           <span className={`cy-stage-state cy-s-${state}`}>{t(STATE_KEY[state])}</span>
           {record && record.attempts > 1 && <span className="faint small">{t('ui.cycle.stage.attempts', { count: record.attempts })}</span>}

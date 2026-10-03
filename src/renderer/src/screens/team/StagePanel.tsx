@@ -7,7 +7,7 @@ import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
 import { DEFAULT_ROUND, stageFieldProblems } from './flowEdit';
 import { KIND_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
-import { agentName } from './text';
+import { agentName, shown } from './text';
 import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
 // The side panel of one stage: every field of the stage, the checks of the flow that are about it, and the agent made in place.
@@ -72,10 +72,10 @@ export function StagePanel(p: StagePanelProps) {
   };
 
   return (
-    <SidePanel label={t('ui.flow.panel.title', { name: stage.label || stage.id })} onClose={p.onClose}>
+    <SidePanel label={t('ui.flow.panel.title', { name: shown(stage.label) || stage.id })} onClose={p.onClose}>
       <div className="wz-stack">
         <Labeled label={t('ui.flow.f.name')}>
-          {(id) => <input id={id} className="text-input" maxLength={100} value={stage.label} onChange={(e) => p.onPatch({ label: e.target.value })} />}
+          {(id) => <input id={id} className="text-input" maxLength={100} value={shown(stage.label)} onChange={(e) => p.onPatch({ label: e.target.value })} />}
         </Labeled>
         <Labeled label={t('ui.flow.f.id')} hint={t('ui.flow.f.idHint')} error={msg('id')}>
           {(id) => (
@@ -183,7 +183,7 @@ export function StagePanel(p: StagePanelProps) {
             <select id={id} className="text-input" value={stage.next === undefined ? '::default' : stage.next === null ? '::end' : stage.next} onChange={(e) => p.onPatch({ next: e.target.value === '::default' ? undefined : e.target.value === '::end' ? null : e.target.value })}>
               <option value={'::default'}>{t('ui.flow.f.nextDefault')}</option>
               <option value={'::end'}>{t('ui.flow.f.nextEnd')}</option>
-              {others.map((s) => <option key={s.id} value={s.id}>{s.label || s.id}</option>)}
+              {others.map((s) => <option key={s.id} value={s.id}>{shown(s.label) || s.id}</option>)}
               {typeof stage.next === 'string' && !others.some((s) => s.id === stage.next) && <option value={stage.next}>{stage.next}</option>}
             </select>
           )}
@@ -195,7 +195,7 @@ export function StagePanel(p: StagePanelProps) {
               {(id) => (
                 <select id={id} className="text-input" value={stage.returnsTo ?? ''} onChange={(e) => p.onPatch({ returnsTo: e.target.value || undefined })}>
                   <option value="">{t('ui.flow.f.returnsDefault')}</option>
-                  {others.filter(isWork).map((s) => <option key={s.id} value={s.id}>{s.label || s.id}</option>)}
+                  {others.filter(isWork).map((s) => <option key={s.id} value={s.id}>{shown(s.label) || s.id}</option>)}
                   {stage.returnsTo && !others.some((s) => s.id === stage.returnsTo) && <option value={stage.returnsTo}>{stage.returnsTo}</option>}
                 </select>
               )}

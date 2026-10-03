@@ -1,4 +1,5 @@
 import type { StageDef, StageMappingRule, VcsKind } from '../../shared/config/types';
+import { shownText } from '../../shared/cycles/text';
 import { t } from '../../shared/i18n';
 import { stageOf, stagesFor } from './stages';
 import type { VcsIssue, VcsMr, VcsProvider } from './types';
@@ -149,7 +150,9 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
 
   for (const issue of issues) {
     const linked = byIssue.get(issue.iid) ?? [];
-    const stage = stageOf(issue, linked, stages, o.stageMapping, o.kind)?.label ?? null;
+    const found = stageOf(issue, linked, stages, o.stageMapping, o.kind);
+    // The name a card carries is the one it is shown with; matchStage knows a template's stage by its name in either language.
+    const stage = found ? shownText(found.label) : null;
     const ref = issueRef(issue, o);
     const snap: CardSnapshot = { stage, pipeline: null, draft: false, conflicts: false, state: issue.state };
     current[ref] = snap;

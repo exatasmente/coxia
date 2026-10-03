@@ -2,6 +2,7 @@ import { agentFlowComments } from '../../../../shared/cycles/templates/agentFlow
 import { cycleText } from '../../../../shared/cycles/text';
 import { COMMENT_EVENT_KEYS, type CommentSection, type CommentTemplate, type Language, type StageDef } from '../../../../shared/config/types';
 import { renderComment } from '../../../../shared/runs/comment';
+import { shown } from './text';
 
 // The comment template editor, as pure functions: which templates a cycle can have, the edits of one template, what is wrong with it, and the sample comment
 // it renders. The rendering is the runner's own (`renderComment`), so the preview is the comment that would be posted.
@@ -31,7 +32,7 @@ export function commentTargets(stages: StageDef[], comments: Record<string, Comm
   for (const s of stages) {
     if (s.type === 'gate') continue;
     const key = s.comment === undefined ? s.id : s.comment || null;
-    if (key) add({ key, kind: 'stage', label: s.label || s.id });
+    if (key) add({ key, kind: 'stage', label: shown(s.label) || s.id });
   }
   for (const key of COMMENT_EVENT_KEYS) add({ key, kind: 'event', label: key });
   for (const key of Object.keys(comments)) add({ key, kind: 'other', label: key });

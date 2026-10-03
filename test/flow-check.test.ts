@@ -45,7 +45,7 @@ describe('a flow that is fine', () => {
 describe('the errors', () => {
   it('a work stage with no agent: the stage and the field to mark', () => {
     const issues = check((c) => orphan(c, 'plan'));
-    expect(issues).toContainEqual({ severity: 'error', code: 'work-no-agent', stage: 'plan', agent: null, field: 'agentId', params: { stage: 'Plan' } });
+    expect(issues).toContainEqual({ severity: 'error', code: 'work-no-agent', stage: 'plan', agent: null, field: 'agentId', params: { stage: 'cycle.agentFlow.stage.plan' } });
     // an agent that lists the stage works it, though the stage does not name it
     expect(check((c) => { delete byId(c, 'plan').agentId; })).toEqual([]);
   });
@@ -56,7 +56,7 @@ describe('the errors', () => {
   });
 
   it('a next and a returns-to that point nowhere, and a return to something that is not work', () => {
-    expect(check((c) => (byId(c, 'plan').next = 'ghost'))).toContainEqual(expect.objectContaining({ code: 'next-nowhere', stage: 'plan', field: 'next', params: { stage: 'Plan', target: 'ghost' } }));
+    expect(check((c) => (byId(c, 'plan').next = 'ghost'))).toContainEqual(expect.objectContaining({ code: 'next-nowhere', stage: 'plan', field: 'next', params: { stage: 'cycle.agentFlow.stage.plan', target: 'ghost' } }));
     expect(check((c) => (byId(c, 'review').returnsTo = 'ghost'))).toContainEqual(expect.objectContaining({ code: 'returns-nowhere', stage: 'review', field: 'returnsTo' }));
     expect(codes(check((c) => (byId(c, 'review').returnsTo = 'gate2')))).toEqual(['E:returns-to-non-work:review']);
   });
@@ -89,7 +89,7 @@ describe('the errors', () => {
     expect(codes(check((c) => (byId(c, 'plan').reads = ['3_IMPLEMENTATION.md'])))).toEqual(['E:artifact-unproduced:plan']);
     expect(check((c) => (byId(c, 'plan').reads = ['1_SPEC.md', '0_ISSUE.md']))).toEqual([]);
     const dup = check((c) => (byId(c, 'plan').produces = ['1_SPEC.md']));
-    expect(dup).toContainEqual(expect.objectContaining({ code: 'artifact-duplicate', stage: 'plan', field: 'produces', params: { stage: 'Plan', file: '1_SPEC.md', other: 'Refine' } }));
+    expect(dup).toContainEqual(expect.objectContaining({ code: 'artifact-duplicate', stage: 'plan', field: 'produces', params: { stage: 'cycle.agentFlow.stage.plan', file: '1_SPEC.md', other: 'cycle.agentFlow.stage.refine' } }));
   });
 
   it('a wait with no event, or with half of one', () => {

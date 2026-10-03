@@ -1,7 +1,7 @@
 import { isShared, liaisonFor, scopedTeam, turnTarget } from '../config/squads';
 import type { AgentDef, SquadDef, StageDef } from '../config/types';
 import { t as translate, type Translate } from '../i18n';
-import { checkFlow, FLOW_ERRORS, FLOW_WARNINGS, type FlowIssue, type FlowIssueCode, type FlowIssueField } from './flowCheck';
+import { checkFlow, flowIssueText, FLOW_ERRORS, FLOW_WARNINGS, type FlowIssue, type FlowIssueCode, type FlowIssueField } from './flowCheck';
 
 // The one check of the squads: pure, over the squads, the team and the flows, with stable codes and the params of each message, shared by the config
 // validator, the runner (before it starts a run in a squad) and the squad editor. Like the flow check, nothing here words a message: `squadIssueText` does.
@@ -195,7 +195,7 @@ export const isFlowIssue = (i: Pick<SquadIssue, 'code'>): boolean => FLOW_CODES.
 
 /** The message of an issue, in the language of the translator it is given (the active language by default). */
 export function squadIssueText(issue: Pick<SquadIssue, 'code' | 'params' | 'flow'>, tr: Translate = translate): string {
-  if (issue.flow) return tr('squad.check.inFlow', { squad: issue.params.squad ?? '', detail: tr(`flow.check.${issue.code}`, issue.params) });
+  if (issue.flow) return tr('squad.check.inFlow', { squad: issue.params.squad ?? '', detail: flowIssueText({ code: issue.code as FlowIssueCode, params: issue.params }, tr) });
   return tr(`squad.check.${issue.code}`, issue.params);
 }
 

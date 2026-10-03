@@ -1,4 +1,5 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
+import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
 import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type Transition } from './types';
@@ -14,7 +15,7 @@ export class RunError extends Error {
     readonly code: RunErrorCode,
     readonly params: Record<string, string | number> = {},
   ) {
-    super(t(`main.runs.error.${code}`, params));
+    super(t(`main.runs.error.${code}`, withStageName(params)));
     this.name = 'RunError';
   }
 }

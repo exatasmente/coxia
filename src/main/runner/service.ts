@@ -257,7 +257,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!deps.notify || !deps.config().notifications) return;
     const key = ({ gate: 'gate', question: 'question', failed: 'failed', 'to-start': 'toStart', 'to-accept': 'toAccept', done: 'done' } as Record<string, string>)[run.status];
     if (!key) return;
-    const params = { ref: run.issue.ref, title: run.issue.title, stage: flowFor(run).find((s) => s.id === run.stage)?.label ?? run.stage };
+    const params = { ref: run.issue.ref, title: run.issue.title, stage: cycleText(flowFor(run).find((s) => s.id === run.stage)?.label ?? run.stage, deps.config().language) };
     const onClick: AppEvent = { type: 'open', screen: { name: 'run', id: run.id } };
     deps.notify({ title: t(`main.runner.notice.${key}.title`, params), body: t(`main.runner.notice.${key}.body`, params), onClick });
   }

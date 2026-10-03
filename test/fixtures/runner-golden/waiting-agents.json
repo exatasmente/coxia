@@ -410,7 +410,7 @@
    "refine",
    "run.stage.started",
    {
-    "stage": "Refine",
+    "stage": "cycle.agentFlow.stage.refine",
     "agent": "refiner"
    },
    "",
@@ -461,7 +461,7 @@
    "gate1",
    "run.stage.gate",
    {
-    "stage": "Gate 1"
+    "stage": "cycle.agentFlow.stage.gate1"
    },
    "",
    null,
@@ -495,7 +495,7 @@
    "gate1",
    "gate.approved",
    {
-    "stage": "Gate 1"
+    "stage": "cycle.agentFlow.stage.gate1"
    },
    "",
    null,
@@ -511,7 +511,7 @@
    "plan",
    "run.stage.waitStart",
    {
-    "stage": "Plan",
+    "stage": "cycle.agentFlow.stage.plan",
     "agent": "planner"
    },
    "",
@@ -546,7 +546,7 @@
    "plan",
    "run.stage.started",
    {
-    "stage": "Plan",
+    "stage": "cycle.agentFlow.stage.plan",
     "agent": "planner"
    },
    "",
@@ -582,7 +582,7 @@
    "plan",
    "run.stage.waitAccept",
    {
-    "stage": "Plan"
+    "stage": "cycle.agentFlow.stage.plan"
    },
    "",
    null,
@@ -614,7 +614,7 @@
    "plan",
    "stage.accepted",
    {
-    "stage": "Plan"
+    "stage": "cycle.agentFlow.stage.plan"
    },
    "ok",
    null,
@@ -630,7 +630,7 @@
    "gate2",
    "run.stage.gate",
    {
-    "stage": "Gate 2"
+    "stage": "cycle.agentFlow.stage.gate2"
    },
    "",
    null,
@@ -646,7 +646,7 @@
    "gate2",
    "gate.approved",
    {
-    "stage": "Gate 2"
+    "stage": "cycle.agentFlow.stage.gate2"
    },
    "",
    null,
@@ -662,7 +662,7 @@
    "implement",
    "run.stage.started",
    {
-    "stage": "Implement",
+    "stage": "cycle.agentFlow.stage.implement",
     "agent": "developer"
    },
    "",
@@ -714,7 +714,7 @@
    "review",
    "run.stage.waitStart",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -765,7 +765,7 @@
    "review",
    "run.stage.started",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -797,7 +797,7 @@
    "review",
    "run.stage.waitAccept",
    {
-    "stage": "Review"
+    "stage": "cycle.agentFlow.stage.review"
    },
    "",
    null,
@@ -829,7 +829,7 @@
    "review",
    "stage.accepted",
    {
-    "stage": "Review"
+    "stage": "cycle.agentFlow.stage.review"
    },
    "ok",
    null,
@@ -860,7 +860,7 @@
    "implement",
    "run.stage.started",
    {
-    "stage": "Implement",
+    "stage": "cycle.agentFlow.stage.implement",
     "agent": "developer"
    },
    "",
@@ -896,7 +896,7 @@
    "review",
    "run.stage.waitStart",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -947,7 +947,7 @@
    "review",
    "run.stage.started",
    {
-    "stage": "Review",
+    "stage": "cycle.agentFlow.stage.review",
     "agent": "reviewer"
    },
    "",
@@ -983,7 +983,7 @@
    "review",
    "run.stage.waitAccept",
    {
-    "stage": "Review"
+    "stage": "cycle.agentFlow.stage.review"
    },
    "",
    null,
@@ -1015,7 +1015,7 @@
    "review",
    "stage.accepted",
    {
-    "stage": "Review"
+    "stage": "cycle.agentFlow.stage.review"
    },
    "ok",
    null,
@@ -1031,7 +1031,7 @@
    "qa",
    "run.stage.started",
    {
-    "stage": "QA",
+    "stage": "cycle.agentFlow.stage.qa",
     "agent": "qa"
    },
    "",
@@ -1067,7 +1067,7 @@
    "ready",
    "run.completed",
    {
-    "stage": "Ready"
+    "stage": "cycle.agentFlow.stage.ready"
    },
    "",
    null,

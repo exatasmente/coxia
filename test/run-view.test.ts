@@ -113,7 +113,8 @@ describe('who a run waits for', () => {
 
   it('names the stage from the run\'s own flow, and the agent that works it', () => {
     const d = until('plan');
-    expect(stageLabelOf(d.run)).toBe(d.flow.find((s) => s.id === 'plan')?.label);
+    expect(d.flow.find((s) => s.id === 'plan')?.label).toBe('cycle.agentFlow.stage.plan');
+    expect(stageLabelOf(d.run)).toBe('Plano');
     expect(currentAgent(d.run, d.flow)).toBe(d.flow.find((s) => s.id === 'plan')?.agent);
     expect(stageLabelOf({ stage: 'x', flow: undefined })).toBe('x');
   });

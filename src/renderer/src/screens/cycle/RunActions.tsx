@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../../../shared/config/types';
+import { shownText } from '../../../../shared/cycles/text';
 import { autonomousOf, squadOf } from '../../../../shared/config/squads';
 import { type FlowStage, type Run, type RunFailure } from '../../../../shared/runs';
 import { type RunAction, type RunActionId, currentAgent, currentStage, runActions } from '../../../../shared/runs/view';
@@ -72,7 +73,7 @@ function Waiting({ run, flow, config }: { run: Run; flow: readonly FlowStage[]; 
   const agent = currentAgent(run, flow);
   return (
     <>
-      <p className="cy-now">{t(NOW_KEY[run.status], { stage: stage?.label ?? run.stage, agent: agent ? agentName(team, agent) : '' })}</p>
+      <p className="cy-now">{t(NOW_KEY[run.status], { stage: shownText(stage?.label ?? run.stage), agent: agent ? agentName(team, agent) : '' })}</p>
       {run.status === 'question' && q && (
         <blockquote className="cy-question">
           <span className="cy-question-by">

@@ -4,6 +4,7 @@ import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../.
 import type { AgentDef, AgentModel, AgentPermission, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
+import { shown } from './text';
 
 // The agent editor, as pure functions: the draft a person types into, the checks shown while typing, and the config the draft makes.
 
@@ -139,7 +140,7 @@ export function stagesLosingAgent(config: WorkspaceConfig, id: string): LostStag
     for (const s of before) {
       if ((s.type ?? 'work') !== 'work') continue;
       if (stageAgent(config.agents.team, before, s.id)?.id !== id) continue;
-      if (!stageAgent(after.agents.team, now, s.id)) lost.push({ stage: s.id, label: s.label || s.id, squad });
+      if (!stageAgent(after.agents.team, now, s.id)) lost.push({ stage: s.id, label: shown(s.label) || s.id, squad });
     }
   }
   return lost;

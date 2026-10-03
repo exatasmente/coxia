@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { cycleText } from '../../shared/cycles/text';
 import { git } from '../conflictGit';
 
 // What the runner does to a repository, all of it local: a worktree on a new branch, the app's own commits, the diff a reviewer reads, and the
@@ -96,6 +97,14 @@ export function commitSummary(summary: string, fallback: string): string {
   const line = summary.split('\n')[0].trim().replace(/\.+$/, '');
   const use = line && !ATTRIBUTION.test(line) ? line : fallback;
   return (use.charAt(0).toLowerCase() + use.slice(1)).slice(0, 72).trim();
+}
+
+/** The summary a stage's commit gets when its agent wrote none. English whatever the workspace's language, like the rest of the repository's history: the stage is named in English too. */
+export function commitFallback(stageLabel: string, writes: boolean): string {
+  // i18n-ignore-start: the subject of a commit in the repository's history
+  const name = cycleText(stageLabel, 'en').toLowerCase();
+  return writes ? `apply the ${name} changes` : `add the ${name} documents`;
+  // i18n-ignore-end
 }
 
 /** The message from the repository's template; `{summary}` and `{iid}` are replaced. */

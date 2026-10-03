@@ -77,7 +77,7 @@ export function systemText(i: StageInput): string {
     : cp('runner.rules.read', { folder });
   const agents = i.config.agents;
   return [
-    cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: i.stage.label }),
+    cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
     cp('runner.rules.data'),
@@ -121,7 +121,7 @@ export function stagePrompt(i: StageInput): string {
   if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
   if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text), from: i.answer.by }));
   return cp('runner.stage', {
-    stage: i.stage.label,
+    stage: cycleWord(i.stage.label),
     ref: i.run.issue.ref,
     attempt: i.attempt,
     folder: i.run.cycleFolder,

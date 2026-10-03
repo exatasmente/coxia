@@ -11,7 +11,7 @@ import { MaxTurnsError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
-import { type Identity, branchDiff, branchStat, commitAll, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
+import { type Identity, branchDiff, branchStat, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
@@ -214,9 +214,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
 
   const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (d.identity ?? repoIdentity)(wt);
   if (!identity) throw new StageError('no-identity');
-  // i18n-ignore-start: the subject of a commit in the repository's history: English, like the rest of its commits
-  const fallback = writes ? `apply the ${stage.label.toLowerCase()} changes` : `add the ${stage.label.toLowerCase()} documents`;
-  // i18n-ignore-end
+  const fallback = commitFallback(stage.label, writes);
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, commitSummary(output.commit, fallback), run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked };
 }

@@ -20,14 +20,14 @@ describe('the diagram of a flow', () => {
     const lines = code.split('\n');
     expect(lines[0]).toBe('flowchart TD');
     expect(lines.filter((l) => /^ {2}n\d+[[{(]/.test(l))).toHaveLength(8);
-    expect(code).toContain('n1{{"Gate 1"}}');
+    expect(code).toContain('n1{{"Portão 1"}}');
     const business = applyTemplate(neutralConfig(), agentFlow);
-    expect(flowDiagram(business.devCycle.stages, business.agents.team, label, words)).toContain('(["Ready');
+    expect(flowDiagram(business.devCycle.stages, business.agents.team, label, words)).toContain('(["Pronto');
   });
 
   it('puts the agent under the name of a stage that has one', () => {
-    expect(code).toContain('n0["Refine<br/>refiner"]');
-    expect(code).toContain('n7["Ready"]');
+    expect(code).toContain('n0["Refinamento<br/>refiner"]');
+    expect(code).toContain('n7["Pronto"]');
   });
 
   it('draws the forward arrows solid and the returns dashed, from a gate, a review and a QA pass', () => {

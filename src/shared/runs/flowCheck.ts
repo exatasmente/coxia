@@ -174,5 +174,12 @@ export function checkFlow(input: FlowInput, options: FlowCheckOptions = {}): Flo
 /** Only the issues that stop a run. */
 export const flowErrors = (input: FlowInput, options: FlowCheckOptions = {}): FlowIssue[] => checkFlow(input, options).filter((i) => i.severity === 'error');
 
-/** The message of an issue, in the language of the translator it is given (the active language by default). */
-export const flowIssueText = (issue: Pick<FlowIssue, 'code' | 'params'>, t: Translate = translate): string => t(`flow.check.${issue.code}`, issue.params);
+/**
+ * The message of an issue, in the language of the translator it is given (the active language by default). The stage names in its params are catalog keys
+ * for a template's stages: the same translator puts them in words (a literal is not in the catalog and stays as it is).
+ */
+export function flowIssueText(issue: Pick<FlowIssue, 'code' | 'params'>, t: Translate = translate): string {
+  const params = { ...issue.params };
+  for (const name of ['stage', 'target', 'other']) if (params[name]) params[name] = t(params[name]);
+  return t(`flow.check.${issue.code}`, params);
+}
