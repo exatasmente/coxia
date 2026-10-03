@@ -5,6 +5,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import type { Ceremony } from '../ceremony';
 import { jobs, useJobs } from '../useJobs';
+import { SquadScope } from './cycle/SquadPicker';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
 import { ChangeSummary, DayPanel, DeleteSheet, type MinutesView, VersionPanel, VersionSwitcher, versionTitle } from './MinutesParts';
@@ -107,6 +108,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
             </div>
             <h1 style={{ fontSize: 30, fontWeight: 700 }}>{t('ui.ata.title')}</h1>
             {currentN !== null && <div className="small" style={{ fontWeight: 600 }}>{versionTitle(currentN, date)}</div>}
+            <div><SquadScope squad={m.squad} /></div>
             <div className="muted">
               {t((c.cards?.cards.length ?? 0) === 1 ? 'ui.ata.subtitleOne' : 'ui.ata.subtitleOther', {
                 date: new Date(m.startedAt).toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' }),

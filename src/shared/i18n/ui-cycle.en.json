@@ -1,4 +1,8 @@
 {
+  "ui.ceremony.squad.label": "For which squad",
+  "ui.ceremony.squad.scope": "Squad {squad}",
+  "ui.ceremony.squad.scopeWhole": "Whole workspace",
+  "ui.ceremony.squad.whole": "The whole workspace",
   "ui.cycle.action.accept": "Accept the result",
   "ui.cycle.action.answer": "Answer",
   "ui.cycle.action.approve": "Approve",

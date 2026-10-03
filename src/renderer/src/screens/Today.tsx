@@ -12,6 +12,7 @@ import { BellIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
 import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
 import { RunNeeds } from './cycle/RunNeeds';
+import { SquadPicker } from './cycle/SquadPicker';
 import { useRuns } from './cycle/runsApi';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
@@ -229,6 +230,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         <div className="cer">
           <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : t('ui.today.preDaily')}</h3>
           <p className="small muted">{c.cards ? t('ui.today.agentsReady', { ready, total: cards.length }) : t('ui.today.buildingCards')}</p>
+          <SquadPicker value={c.squad} onChange={(squad) => void c.setSquad(squad)} disabled={!!c.startedAt && !c.callEnded} />
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
             {c.startedAt && !c.callEnded ? tv('call.back') : tv('call.enter')}
           </button>
