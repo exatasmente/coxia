@@ -92,3 +92,14 @@ export function writeArtifact(wt: string, folder: string, name: string, content:
   if (!check.ok) throw new Error(`document refused (${check.code}): ${name}`);
   writeFileSync(check.path, content.endsWith('\n') ? content : `${content}\n`);
 }
+
+const VIEW_MAX = 200_000;
+
+/** One document of the cycle folder as text for the run screen, secrets masked; null when the name is not a document, the file is not there, or the path leaves the folder. */
+export function readArtifact(wt: string, folder: string, name: string): { text: string; clipped: boolean } | null {
+  if (!ARTIFACT_NAME.test(name)) return null;
+  const check = checkPath(wt, join(folder, name), { read: true });
+  if (!check.ok || !existsSync(check.path) || !statSync(check.path).isFile()) return null;
+  const raw = readFileSync(check.path, 'utf8');
+  return { text: redact(raw.slice(0, VIEW_MAX)), clipped: raw.length > VIEW_MAX };
+}

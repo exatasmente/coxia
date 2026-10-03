@@ -197,6 +197,23 @@ export function whereOf(f: Pick<Finding, 'path' | 'line' | 'endLine'>): string {
   return f.line === null ? f.path : f.endLine !== null ? `${f.path}:${f.line}-${f.endLine}` : `${f.path}:${f.line}`;
 }
 
+const words = (text: string): Set<string> => new Set(text.toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu) ?? []);
+
+/**
+ * Whether two findings (from different rounds) say the same thing: the same file and either the same words or a good deal of them, or the same
+ * replacement. The line is not compared: code moves between rounds.
+ */
+export function sameFinding(a: Finding, b: Finding): boolean {
+  if (a.path !== b.path) return false;
+  if (a.suggestion && b.suggestion && a.suggestion.trim() === b.suggestion.trim()) return true;
+  const x = words(a.body);
+  const y = words(b.body);
+  if (!x.size || !y.size) return a.body.trim() === b.body.trim();
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / (x.size + y.size - shared) >= 0.5;
+}
+
 /** One finding as a line of the thread and of the handoff to the developer: severity, where, what, and the suggested replacement when there is one. */
 export function findingText(f: Finding): string {
   const head = t(f.severity === 'blocking' ? 'main.runner.finding.blocking' : 'main.runner.finding.suggestion', { where: whereOf(f), body: f.body });

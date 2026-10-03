@@ -4,8 +4,10 @@ import { useT } from '../i18n';
 // i18n-ignore-next-line: CSS selector
 const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
+const WIDE = 'sheet sheet-wide'; // i18n-ignore: CSS classes
+
 // Bottom sheet: Esc and the backdrop close it, Tab stays inside, focus goes back to what opened it.
-export function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ label, onClose, children, wide }: { label: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -41,7 +43,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose: ()
 
   return (
     <div className="sheet-backdrop" onClick={() => onClose()}>
-      <div ref={box} className="sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
+      <div ref={box} className={wide ? WIDE : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" aria-hidden="true" />
         <div className="row spread">
           <h2 className="sheet-title">{label}</h2>

@@ -6,6 +6,7 @@ import type { Module } from '../module';
 import { runStore } from '../runs';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
+import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone } from './door';
 import { createPublisher } from './publish';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
@@ -68,6 +69,11 @@ export const runsModule: Module = (ctx) => {
 
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
+  // A document a stage produced, for the run screen to show: read only, from the run's own cycle folder, and open to a paired browser like the thread beside it.
+  ctx.handle('runs:artifact', (run: unknown, name: unknown) => {
+    const found = typeof run === 'string' ? r.get(run) : null;
+    return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
+  });
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
   ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run)));
   ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note)));
