@@ -58,3 +58,43 @@
   .tm-path { grid-template-columns: minmax(0, 1fr) auto; }
   .tm-path select { grid-column: 1 / -1; }
 }
+
+/* The flow editor: the stages as a list, the diagram and the stage panel beside it. */
+.tm-split.tm-flow, .tm-split.tm-flow[data-open='true'] { grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr); }
+.tm-flow-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tm-flow-side .tm-panel { position: static; max-height: none; overflow: visible; }
+.tm-diagram-box { position: sticky; top: 8px; z-index: 2; max-height: 45dvh; overflow: auto; padding: 8px; border-radius: 12px; background: var(--ground); }
+.tm-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.tm-bar-item { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.tm-bar-item .text-input { width: 100%; min-width: 0; font-size: 16px; }
+.tm-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.tm-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+.tm-gap-wrap { display: flex; flex-direction: column; min-width: 0; }
+.tm-gap { display: flex; justify-content: center; padding: 2px 0; }
+.tm-add { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; opacity: 0.7; }
+.tm-add:hover, .tm-add:focus-within { opacity: 1; }
+.tm-add-btn { border-style: dashed; color: var(--muted); }
+.tm-mini { min-height: 32px; min-width: 32px; padding: 0 10px; font-size: 13px; }
+
+.tm-row { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); min-width: 0; cursor: grab; }
+.tm-row.tm-on { border-color: var(--teal); background: var(--teal-soft); }
+.tm-row.tm-bad { border-color: var(--red-line); }
+.tm-row.tm-drop { box-shadow: 0 -3px 0 0 var(--teal); }
+.tm-row-main { flex: 1 1 200px; min-width: 0; display: flex; gap: 10px; align-items: center; text-align: left; background: transparent; border: 0; padding: 4px; color: inherit; font: inherit; cursor: pointer; min-height: 44px; border-radius: 8px; }
+.tm-row-main:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tm-row-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--chip-quiet-bg); color: var(--ink-2); }
+.tm-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tm-row-name { font-weight: 600; overflow-wrap: anywhere; }
+.tm-row-sub { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; overflow-wrap: anywhere; }
+.tm-type-gate { background: var(--amber-soft); color: var(--amber-ink); }
+.tm-type-wait { background: var(--blue-chip); color: var(--blue-ink); }
+.tm-row-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.tm-row-issues { flex: 1 1 100%; }
+.tm-savebar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; position: sticky; bottom: 0; padding: 10px 0; background: var(--ground); border-top: 1px solid var(--line); }
+
+@media (max-width: 760px) {
+  .tm-split.tm-flow, .tm-split.tm-flow[data-open='true'] { grid-template-columns: minmax(0, 1fr); }
+  .tm-diagram-box { position: static; max-height: none; }
+  .tm-row { cursor: default; }
+}

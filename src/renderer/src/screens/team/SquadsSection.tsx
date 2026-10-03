@@ -8,7 +8,7 @@ import { slugOf, uniqueId } from './agentEdit';
 import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel, type SquadDraft } from './squadEdit';
 import { teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
-import { Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
+import { ChipsInput, Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -201,7 +201,7 @@ function SquadPanel({ config, initial, isNew, save, reload, openFlow, onClose }:
               ))}
             </div>
           )}
-          <TagInput label={t('ui.squads.f.labels')} hint={t('ui.squads.f.labelsHint')} addLabel={t('ui.squads.f.labelAdd')} values={draft.labels} onChange={(labels) => set({ labels })} />
+          <ChipsInput label={t('ui.squads.f.labels')} hint={t('ui.squads.f.labelsHint')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(label) => t('ui.squads.f.labelRemove', { label })} values={draft.labels} onChange={(labels) => set({ labels })} add={withLabel} />
           <PathRows config={config} paths={draft.paths} onChange={(paths) => set({ paths })} error={fieldError('paths')} />
           <label className="tm-check">
             <input type="checkbox" checked={draft.unclaimed} onChange={(e) => set({ unclaimed: e.target.checked })} />
@@ -270,35 +270,6 @@ function SquadPanel({ config, initial, isNew, save, reload, openFlow, onClose }:
         </div>
       </form>
     </SidePanel>
-  );
-}
-
-function TagInput({ label, hint, addLabel, values, onChange }: { label: string; hint: string; addLabel: string; values: string[]; onChange: (next: string[]) => void }) {
-  const t = useT();
-  const [text, setText] = useState('');
-  const add = () => {
-    onChange(withLabel(values, text));
-    setText('');
-  };
-  return (
-    <Labeled label={label} hint={hint}>
-      {(id) => (
-        <>
-          <div className="tm-tags">
-            {values.map((v) => (
-              <span key={v} className="tm-tag">
-                <span className="mono">{v}</span>
-                <button type="button" className="tm-tag-x" aria-label={t('ui.squads.f.labelRemove', { label: v })} onClick={() => onChange(values.filter((x) => x !== v))}>×</button>
-              </span>
-            ))}
-          </div>
-          <div className="row" style={{ flexWrap: 'nowrap', gap: 8 }}>
-            <input id={id} className="text-input mono" spellCheck={false} maxLength={100} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
-            <button type="button" className="btn" disabled={!text.trim()} onClick={add}>{addLabel}</button>
-          </div>
-        </>
-      )}
-    </Labeled>
   );
 }
 

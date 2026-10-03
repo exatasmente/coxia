@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { useT } from '../../i18n';
 import { Sheet } from '../Sheet';
@@ -102,4 +102,33 @@ export interface SectionProps {
   config: WorkspaceConfig;
   save: (next: WorkspaceConfig) => Promise<void>;
   reload: () => void;
+}
+
+/** A list of short texts (labels, file names) that grows with an Add button or Enter and shrinks with the x on each chip. `add` decides what a new text does to the list (trim, no duplicates). */
+export function ChipsInput({ label, hint, addLabel, removeLabel, values, onChange, add, error }: { label: string; hint?: string; addLabel: string; removeLabel: (value: string) => string; values: string[]; onChange: (next: string[]) => void; add: (values: string[], text: string) => string[]; error?: string }) {
+  const [text, setText] = useState('');
+  const push = () => {
+    onChange(add(values, text));
+    setText('');
+  };
+  return (
+    <Labeled label={label} hint={hint} error={error}>
+      {(id) => (
+        <>
+          <div className="tm-tags">
+            {values.map((v) => (
+              <span key={v} className="tm-tag">
+                <span className="mono">{v}</span>
+                <button type="button" className="tm-tag-x" aria-label={removeLabel(v)} onClick={() => onChange(values.filter((x) => x !== v))}>×</button>
+              </span>
+            ))}
+          </div>
+          <div className="row" style={{ flexWrap: 'nowrap', gap: 8 }}>
+            <input id={id} className="text-input mono" spellCheck={false} maxLength={100} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); push(); } }} />
+            <button type="button" className="btn" disabled={!text.trim()} onClick={push}>{addLabel}</button>
+          </div>
+        </>
+      )}
+    </Labeled>
+  );
 }

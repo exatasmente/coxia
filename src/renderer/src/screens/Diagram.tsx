@@ -27,7 +27,8 @@ function cleanCode(code: string): string {
   return code.replace(/^```(?:mermaid)?\s*/i, '').replace(/```\s*$/, '').trim();
 }
 
-export function Diagram({ code, title }: { code: string; title?: string }) {
+/** `repair` false: a diagram the app drew itself is never sent to a model to be fixed. */
+export function Diagram({ code, title, repair = true }: { code: string; title?: string; repair?: boolean }) {
   const t = useT();
   const rawId = useId();
   const id = `d${rawId.replace(/[^\w]/g, '')}`;
@@ -63,7 +64,7 @@ export function Diagram({ code, title }: { code: string; title?: string }) {
       } catch (e) {
         first = e;
       }
-      if (known !== null || !alive) {
+      if (known !== null || !alive || !repair) {
         if (alive) setError(short(first));
         return;
       }
@@ -86,7 +87,7 @@ export function Diagram({ code, title }: { code: string; title?: string }) {
     return () => {
       alive = false;
     };
-  }, [code, id, themeTick]);
+  }, [code, id, themeTick, repair]);
 
   if (error) {
     return (
