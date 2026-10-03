@@ -333,6 +333,21 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       return rows.map((r) => mrOf(r));
     },
 
+    async listMrsByTarget(project, branch, opts = {}) {
+      if (!/^[\w][\w./-]{0,200}$/.test(branch) || branch.includes('..')) throw new VcsError('invalid', { detail: branch });
+      // i18n-ignore: query language of the code host
+      const rows = await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `destination.branch.name="${branch}" AND (state="OPEN" OR state="MERGED")`, sort: '-updated_on' }, maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
+      return rows.slice(0, opts.limit ?? 100).map((r) => {
+        const m = mrOf(r);
+        return { ...m, project: m.project || project };
+      });
+    },
+
+    // Bitbucket has no release objects (a tag is a tag, and downloads are not releases): a release run on it cannot see a beta published.
+    async getRelease() {
+      return null;
+    },
+
     async listMrCommits(project, iid) {
       const rows = await c.values<{ hash: string; date: string }>(`${repo(project)}/pullrequests/${checkIid(iid)}/commits`, { maxPages: 1 });
       return rows.map((r) => ({ sha: r.hash, date: r.date }));
@@ -444,6 +459,8 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         }
         case 'deleteNote':
           return [call('DELETE', `${repo(op.project)}/${op.target === 'issue' ? 'issues' : 'pullrequests'}/${checkIid(op.iid)}/comments/${checkIid(Number(op.noteId))}`)];
+        case 'closeIssue':
+          return [call('PUT', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
         case 'createIssue':
           // Bitbucket's issues have no labels: the squad's label is left out (the request is linked in the run and in the description).
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), content: { raw: op.body } })];

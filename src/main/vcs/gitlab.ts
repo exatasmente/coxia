@@ -389,6 +389,23 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
       return rows.map((m) => mrOf(m, project));
     },
 
+    async listMrsByTarget(project, branch, opts = {}) {
+      const rows = await tr.pages<GlMr>(`${repoPath(project)}/merge_requests?target_branch=${enc(branch)}&state=all&order_by=updated_at&sort=desc`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
+      return rows.map((m) => mrOf(m, /^\d+$/.test(project) ? undefined : project)).filter((m) => m.state !== 'closed').slice(0, opts.limit ?? 100);
+    },
+
+    async getRelease(project, tag) {
+      try {
+        const r = await tr.get<{ tag_name: string; name?: string | null; released_at?: string | null; upcoming_release?: boolean; _links?: { self?: string } }>(`${repoPath(project)}/releases/${enc(tag)}`);
+        // An upcoming release has a release date in the future: it is not published yet.
+        const published = !r.upcoming_release && !!r.released_at;
+        return { tag: r.tag_name, name: r.name || r.tag_name, draft: !published, prerelease: false, publishedAt: published ? iso(r.released_at) : null, webUrl: r._links?.self ?? `${web}/${project}/-/releases/${enc(tag)}` };
+      } catch (e) {
+        if (e instanceof VcsError && e.code === 'not_found') return null;
+        throw e;
+      }
+    },
+
     async listMrCommits(project, iid) {
       checkIid(iid);
       const rows = await tr.get<{ id: string; committed_date: string }[]>(`${repoPath(project)}/merge_requests/${iid}/commits?per_page=50`);
@@ -517,6 +534,8 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
         case 'deleteNote':
           // A comment of a review is a note of a discussion: the same resource as any note of the merge request.
           return [rest('DELETE', `${repoPath(op.project)}/${op.target === 'issue' ? 'issues' : 'merge_requests'}/${checkIid(op.iid)}/notes/${noteNum(op.noteId)}`, {})];
+        case 'closeIssue':
+          return [rest('PUT', `${repoPath(op.project)}/issues/${checkIid(op.iid)}`, { state_event: 'close' })];
         case 'createIssue':
           return [rest('POST', `${repoPath(op.project)}/issues`, { title: checkTitle(op.title), description: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel).join(',') } : {}) })];
         case 'createMr':

@@ -388,6 +388,22 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
       );
     },
 
+    async listMrsByTarget(project, branch, opts = {}) {
+      const rows = await tr.pages<GhPull>(`${repo(project)}/pulls?base=${enc(checkBranch(branch))}&state=all&sort=updated&direction=desc`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
+      return rows.map((pr) => mrOf(pr, project)).filter((m) => m.state !== 'closed').slice(0, opts.limit ?? 100);
+    },
+
+    async getRelease(project, tag) {
+      try {
+        const r = await tr.get<{ tag_name: string; name?: string | null; draft?: boolean; prerelease?: boolean; published_at?: string | null; html_url: string }>(`${repo(project)}/releases/tags/${enc(checkBranch(tag))}`);
+        return { tag: r.tag_name, name: r.name || r.tag_name, draft: Boolean(r.draft), prerelease: Boolean(r.prerelease), publishedAt: iso(r.published_at), webUrl: r.html_url };
+      } catch (e) {
+        // A tag with no published release (a draft is not shown here either) is a 404: it has none.
+        if (e instanceof VcsError && e.code === 'not_found') return null;
+        throw e;
+      }
+    },
+
     async listMrCommits(project, iid) {
       const rows = await tr.get<{ sha: string; commit: { committer?: { date?: string }; author?: { date?: string } } }[]>(`${repo(project)}/pulls/${checkIid(iid)}/commits?per_page=50`);
       return rows.map((c) => ({ sha: c.sha, date: c.commit.committer?.date ?? c.commit.author?.date ?? '' }));
@@ -527,6 +543,8 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           };
           return [call('POST', `${repo(op.project)}/pulls/${n}/reviews`, review), ...onFiles.map((c) => call('POST', `${repo(op.project)}/pulls/${n}/comments`, { body: c.body, commit_id: sha, path: c.path, subject_type: 'file' }))];
         }
+        case 'closeIssue':
+          return [call('PATCH', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
         case 'createIssue':
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
         case 'createMr':
