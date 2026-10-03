@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { promptFamilies, termsFor } from '../src/shared/cycles';
+import { BASE_FAMILY, catalogKey, familyOf } from '../src/shared/cycles/prompts';
 import { CATALOGS, resetTerms, setLanguage, setTerms, setVoiceEnabled, t } from '../src/shared/i18n';
 import type { Language, VcsKind } from '../src/shared/config/types';
 import { hostConfig } from './helpers/config';
@@ -17,7 +18,10 @@ const GITLAB_WORDS = [/gitlab/i, /\bglab\b|\bMRs?\b|\w!\d|!\{/, /merge requests?
 // What only GitHub says.
 const GITHUB_WORDS = [/github/i, /\bgh\b|\bPRs?\b/, /pull requests?/i];
 
-const leaks = (text: string, kind: VcsKind): boolean => (kind === 'gitlab' ? GITHUB_WORDS : GITLAB_WORDS).some((re) => re.test(text));
+// What GitHub says differently: its CI is "checks", the other two hosts say "pipeline".
+const NOT_ON_GITHUB = [/\bpipelines?\b/i];
+
+const leaks = (text: string, kind: VcsKind): boolean => (kind === 'gitlab' ? GITHUB_WORDS : kind === 'github' ? [...GITLAB_WORDS, ...NOT_ON_GITHUB] : GITLAB_WORDS).some((re) => re.test(text));
 
 // Keys that name another host on purpose.
 const ALLOWED_HOSTS: Record<string, string> = {
@@ -39,7 +43,15 @@ const ALLOWED_HOSTS: Record<string, string> = {
   'vcs.probe.mrs': 'the wizard test result names both nouns (merge/pull request): it is shown before the host is known to be right',
   'vcs.probe.sampleMrs': 'the wizard test result names both nouns (merge/pull request): it is shown before the host is known to be right',
   'updates.reason.feed-unsupported': 'about the update feed provider (github or generic), not the code host of the workspace',
-  'main.retro.digest.mudancas_gitlab': 'the name of a field of the retro digest the agent reads, kept so the prompts of a GitLab workspace stay byte for byte',
+  'vcs.card.ciManual': 'a manual job waits in a pipeline: GitLab only (VCS_CAPS.manualJobs), a card of another host never has it',
+  'main.quick.runJobIn': 'proposes running a manual job in a pipeline: only built on GitLab (VCS_CAPS.manualJobs)',
+  'main.actions.noteProposed': 'the QA "pipelines" comment, an artifact of the release flow of the sdd cycle, not the CI word of the host',
+  'ui.actions.what.qaComment.edit': 'the QA "pipelines" comment, an artifact of the release flow of the sdd cycle, not the CI word of the host',
+  'ui.qa.take.text': 'names the pipelines of the release branch the release tool of the team opens, not the CI word of the host',
+  'ui.reentry.cycleNote': 'names the agent-pipeline skill of the team, which is a name and not the CI word',
+  'prompt.sdd.conflict.comment': 'names the QA "pipelines" comment, an artifact of the release flow of the sdd cycle, not the CI word of the host',
+  'prompt.sdd.qa.prepare': 'names the QA "pipelines" comment, an artifact of the release flow of the sdd cycle, not the CI word of the host',
+  'prompt.sdd.reentry.main': 'names the QA "pipelines" comment, an artifact of the release flow of the sdd cycle, not the CI word of the host',
   'main.errorlog.hint.cliMissing': 'an error hint that names both CLIs: it does not know which integration failed',
   'main.errorlog.hint.accessRefused': 'an error hint that names both CLIs: it does not know which integration failed',
   'main.errorlog.hint.networkVpn': 'an error hint that lists the hosts: it does not know which integration failed',
@@ -95,37 +107,63 @@ describe('no leak of another host in the catalogs', () => {
 describe('no leak of another host in the prompts', () => {
   const ids = [...new Set(Object.values(promptFamilies('pt-BR')).flat())].filter((id) => !/\.(novoice|on-\w+)$/.test(id));
   // The read paths of a host are only rendered for that host (readPolicy.ts): the same allow-list as the catalog.
-  const ALLOWED_IDS = new Set(['vcs.hint.gitlab', 'vcs.read.gitlab', 'vcs.changes.gitlab', 'vcs.hint.github', 'vcs.read.github', 'vcs.changes.github', 'conflict.comment.pipelinesHint']);
+  const READ_PATH = 'the read path of a host: only rendered while the workspace is on that host';
+  const QA_PIPELINES = 'names the QA "pipelines" comment, an artifact of the release flow of the sdd cycle (the pipelines of the release branches), not the CI word of the host';
+  const ALLOWED_IDS: Record<string, string> = {
+    'vcs.hint.gitlab': READ_PATH,
+    'vcs.read.gitlab': READ_PATH,
+    'vcs.changes.gitlab': READ_PATH,
+    'vcs.hint.github': READ_PATH,
+    'vcs.read.github': READ_PATH,
+    'vcs.changes.github': READ_PATH,
+    'conflict.comment.pipelinesHint': 'a glab command, passed only on GitLab with its CLI (agents.ts)',
+    'conflict.comment': QA_PIPELINES,
+    'qa.prepare': QA_PIPELINES,
+    'reentry.main': QA_PIPELINES,
+  };
+  const leaked = new Set<string>();
+
+  // Whether the catalogs hold a text for the id in this cycle: the family of its role, else the base family.
+  const hasText = (c: { devCycle: Parameters<typeof familyOf>[0] }, id: string, language: Language): boolean =>
+    [catalogKey(familyOf(c.devCycle, id), id), catalogKey(BASE_FAMILY, id)].some((key) => key in CATALOGS[language]);
 
   it('every prompt of every template renders without the words of another host, voice on and off', async () => {
     const { saveConfig } = await import('../src/main/workspaceConfig');
     const { prompt } = await import('../src/main/cyclePrompts');
     const bad: string[] = [];
     let rendered = 0;
+    let expected = 0;
     for (const template of ['sdd', 'scrum', 'kanban', 'github-flow', 'minimal']) {
       for (const kind of ['github', 'bitbucket', 'gitlab'] as const) {
         for (const language of LANGUAGES) {
           for (const voice of [true, false]) {
             const c = hostConfig(kind, { language, template });
+            // what must be rendered here: every id the catalogs hold a text for in this cycle, counted from the catalogs and not from the renderer
+            if (voice) expected += ids.filter((id) => hasText(c, id, language)).length * 2;
             c.voice.enabled = voice;
             saveConfig(c);
             for (const id of ids) {
-              let text: string;
-              try {
-                text = prompt(id);
-              } catch {
-                // an id of a family this template does not have
+              // An id of a family this template does not use has no text (prompt() throws "unknown prompt"): that is the only error let through.
+              if (!hasText(c, id, language)) {
+                expect(() => prompt(id), `${template} ${id}`).toThrow(/^unknown prompt: /);
                 continue;
               }
+              const text = prompt(id);
               rendered += 1;
-              if (!ALLOWED_IDS.has(id) && leaks(text, kind)) bad.push(`${template}/${kind}/${language}/${voice ? 'voice' : 'text'} ${id}: ${text.slice(0, 100).replace(/\n/g, ' ⏎ ')}`);
+              if (leaks(text, kind)) leaked.add(id);
+              if (!(id in ALLOWED_IDS) && leaks(text, kind)) bad.push(`${template}/${kind}/${language}/${voice ? 'voice' : 'text'} ${id}: ${text.slice(0, 100).replace(/\n/g, ' ⏎ ')}`);
             }
           }
         }
       }
     }
+    // every id with a text, for each of the 5 templates x 3 hosts x 2 languages x voice on and off, was rendered
+    expect(rendered).toBe(expected);
     expect(rendered).toBeGreaterThan(ids.length * 5);
     expect(bad).toEqual([]);
+    // the allow-list cannot rot: every entry still leaks somewhere, and says why
+    expect(Object.keys(ALLOWED_IDS).filter((id) => !leaked.has(id))).toEqual([]);
+    for (const [id, reason] of Object.entries(ALLOWED_IDS)) expect(reason.length, id).toBeGreaterThan(20);
     resetTerms();
   });
 });

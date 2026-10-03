@@ -706,6 +706,8 @@
   "main.retro.digest.rodadas": "rodadas",
   "main.retro.digest.erros": "erros",
   "main.retro.digest.mudancas_gitlab": "mudancas_gitlab",
+  "main.retro.digest.mudancas_gitlab.on-github": "mudancas_no_host",
+  "main.retro.digest.mudancas_gitlab.on-bitbucket": "mudancas_no_host",
   "main.teams.field.titulo": "titulo",
   "main.teams.field.estagio": "estagio",
   "main.teams.field.bloqueios": "bloqueios",
