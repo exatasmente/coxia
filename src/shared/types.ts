@@ -118,13 +118,38 @@ export interface TurnOptions {
 }
 
 // A ceremony saved before the card note had its own name holds another value for it: anything that is not 'spec' or 'ata' reads as a note.
-export type DecisionTarget = 'spec' | 'note' | 'ata';
+// 'priority' is a change of the tracker's priority label: it is always in the minutes and, when the workspace can write it, also a proposal in Actions.
+export type DecisionTarget = 'spec' | 'note' | 'ata' | 'priority';
+
+/** Why a priority decision is not written to the tracker (it stays in the minutes). */
+export type PriorityNoWrite = 'unconfigured' | 'unmapped' | 'same' | 'unidentified' | 'unsupported';
+
+/** What a priority decision means for the tracker, resolved against the workspace's priority labels when it was taken. */
+export interface PriorityChange {
+  // What the person asked for: "first", "later", or one of the configured labels.
+  to: string;
+  // The priority label the card had (null: none).
+  from: string | null;
+  // The priority label the card ends up with (null when the request does not map to one).
+  label: string | null;
+  // What to change on the issue: the label to put on (null when it already has it) and the priority labels to take off.
+  add: string | null;
+  remove: string[];
+  // The reason nothing is written; null when a label change can be proposed.
+  noWrite: PriorityNoWrite | null;
+  // The issue to change.
+  project: string | null;
+  iid: number | null;
+  title: string;
+}
 
 export interface Decision {
   ref: string;
   text: string;
   target: DecisionTarget;
   dest: string;
+  // Only on a decision of target 'priority'.
+  priority?: PriorityChange;
 }
 
 export interface Effect {
@@ -136,6 +161,8 @@ export interface Effect {
 export interface ReplyResult {
   ack: string;
   decision: Decision | null;
+  // A change of priority the person asked for, as a decision of target 'priority'.
+  priority?: Decision | null;
   effect: Effect | null;
   needsDeepDive: boolean;
   options?: string[];

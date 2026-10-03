@@ -367,7 +367,7 @@
   "prompt.sdd.turn.priority.level": "priority \"{label}\"",
   "prompt.sdd.turn.priority.milestone": "milestone \"{milestone}\"",
   "prompt.sdd.turn.doc.logEntry": "- {date} ({ceremony}, {mode}): {text}",
-  "prompt.sdd.reply.main": "{intro}\n{TheUser} answered {answered}: «{text}»\n\"ack\": up to 25 words confirming what you understood.\n\"decisao\" (decision): what was decided, or null. \"alvo\" (target): {targets}\n\"efeito\" (effect): an external action that {theUser} will have to run later with confirmation (push, MR, status, comment, pipeline, reviewer, new issue), or null.\n\"desbloqueio\" (unblock): true if {he} asked to go deeper or if the answer calls for an investigation.\n{optionsRule} Here, possible next steps after this answer.\n{speechRules}",
+  "prompt.sdd.reply.main": "{intro}\n{TheUser} answered {answered}: «{text}»\n\"ack\": up to 25 words confirming what you understood.\n\"decisao\" (decision): what was decided, or null. \"alvo\" (target): {targets}\n\"efeito\" (effect): an external action that {theUser} will have to run later with confirmation (push, MR, status, comment, pipeline, reviewer, new issue), or null.\n\"desbloqueio\" (unblock): true if {he} asked to go deeper or if the answer calls for an investigation.\n{priorityRule}\n{optionsRule} Here, possible next steps after this answer.\n{speechRules}",
   "prompt.sdd.reply.intro": "{card}\nYour speech was: {speech}",
   "prompt.sdd.reply.targetSpec": "\"spec\" if it changes the scope or the plan of the issue and it has a spec",
   "prompt.sdd.reply.targetNote": "\"note\" if it is a personal reminder about the activity",

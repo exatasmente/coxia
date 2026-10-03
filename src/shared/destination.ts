@@ -14,6 +14,6 @@ export interface DestinationLabels {
 
 export function destination(card: Card, target: DecisionTarget, labels: DestinationLabels): string {
   if (target === 'spec' && card.spec && labels.heading) return `${card.spec.planFile ?? card.spec.folder} › ${labels.heading}`;
-  if (target !== 'spec' && target !== 'ata') return labels.noteTool ? `${labels.noteTool} note ${card.ref}` : `${labels.noteFallback} ${card.ref}`;
+  if (target !== 'spec' && target !== 'ata' && target !== 'priority') return labels.noteTool ? `${labels.noteTool} note ${card.ref}` : `${labels.noteFallback} ${card.ref}`;
   return labels.minutes;
 }

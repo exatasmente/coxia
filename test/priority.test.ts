@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agendaOrder, bringIntoAgenda } from '../src/shared/sameDay';
-import { compareCards, priorityOf, sortCards } from '../src/shared/priority';
+import { compareCards, literalLabel, priorityOf, resolvePriority, sortCards, writableLabels } from '../src/shared/priority';
 import type { Card, CardsResult } from '../src/shared/types';
 
 describe('priorityOf', () => {
@@ -96,5 +96,48 @@ describe('bringing a left out card into the agenda', () => {
     expect(bringIntoAgenda(input, 'a#1', 0)).toBe(input);
     bringIntoAgenda(input, 'a#4', 0);
     expect(input.rest).toHaveLength(2);
+  });
+});
+
+describe('the labels a priority can be written to', () => {
+  it('are the levels that are plain names, with or without anchors', () => {
+    expect([literalLabel('P0'), literalLabel('^P1$'), literalLabel('priority::high'), literalLabel('^prio-2')]).toEqual(['P0', 'P1', 'priority::high', 'prio-2']);
+    expect([literalLabel('^P[01]$'), literalLabel('urgent|asap'), literalLabel('P0.'), literalLabel('^$'), literalLabel('')]).toEqual([null, null, null, null, null]);
+    expect(writableLabels(['^P0$', '^P[12]$', 'P3'])).toEqual(['P0', 'P3']);
+  });
+});
+
+describe('resolvePriority', () => {
+  const levels = ['^P0$', '^P1$', '^P2$'];
+  const base = (over: Partial<Card> = {}) => card('app#12', { project: 'acme/app', labels: ['bug', 'P1'], priority: { rank: 1, label: 'P1' }, ...over });
+
+  it('"first" is the highest level and the old priority label goes away while the other labels stay', () => {
+    expect(resolvePriority(base(), 'first', levels)).toEqual({ to: 'first', from: 'P1', label: 'P0', add: 'P0', remove: ['P1'], noWrite: null, project: 'acme/app', iid: 12, title: 'app#12' });
+  });
+
+  it('"later" is the lowest, and a configured label is itself, whatever its case', () => {
+    expect(resolvePriority(base(), 'later', levels)).toMatchObject({ add: 'P2', remove: ['P1'], noWrite: null });
+    expect(resolvePriority(base(), 'p0', levels)).toMatchObject({ add: 'P0', remove: ['P1'] });
+  });
+
+  it('takes off every priority label the issue has, not only the one that ranked it', () => {
+    expect(resolvePriority(base({ labels: ['P2', 'bug', 'P1'] }), 'first', levels)).toMatchObject({ add: 'P0', remove: ['P2', 'P1'] });
+  });
+
+  it('puts a label on a card that had none, and does not add what the issue already has', () => {
+    expect(resolvePriority(base({ labels: ['bug'], priority: null }), 'first', levels)).toMatchObject({ from: null, label: 'P0', add: 'P0', remove: [] });
+    expect(resolvePriority(base({ labels: ['P0', 'P1'] }), 'first', levels)).toMatchObject({ label: 'P0', add: null, remove: ['P1'], noWrite: null });
+  });
+
+  it('writes nothing when the card already has that priority, with the reason', () => {
+    expect(resolvePriority(base({ labels: ['bug', 'P1'] }), 'p1', levels)).toMatchObject({ label: 'P1', add: null, remove: [], noWrite: 'same' });
+  });
+
+  it('writes nothing, with the reason, with no levels, a level that is a pattern, a label that is not a level or an issue that is not known', () => {
+    expect(resolvePriority(base(), 'first', []).noWrite).toBe('unconfigured');
+    expect(resolvePriority(base(), 'first', ['^P[01]$', '^P2$']).noWrite).toBe('unmapped');
+    expect(resolvePriority(base(), 'urgent', levels).noWrite).toBe('unmapped');
+    expect(resolvePriority(base({ project: undefined }), 'first', levels)).toMatchObject({ noWrite: 'unidentified', label: 'P0' });
+    expect(resolvePriority(base({ iid: 'x' }), 'first', levels).noWrite).toBe('unidentified');
   });
 });

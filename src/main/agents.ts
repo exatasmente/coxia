@@ -17,6 +17,7 @@ import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchang
 import { claudeSdkEnv, providerSecret } from './llm';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
+import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
@@ -586,7 +587,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     .join('; ');
   const prompt = cp(
     'reply.main',
-    { intro: turn.sessionId ? '' : cp('reply.intro', { card: cardContext(card), speech: turn.speech }), text, targets },
+    { intro: turn.sessionId ? '' : cp('reply.intro', { card: cardContext(card), speech: turn.speech }), text, targets, priorityRule: priorityRule(card) },
     { keepEmpty: ['intro'] },
   );
   const schema = obj({
@@ -594,6 +595,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     decisao: { anyOf: [{ type: 'null' }, obj({ texto: str, alvo: { enum: ['spec', 'note', 'ata'] } })] },
     efeito: { anyOf: [{ type: 'null' }, obj({ texto: str, repo: str })] },
     desbloqueio: { type: 'boolean' },
+    prioridade: { anyOf: [{ type: 'null' }, obj({ para: { enum: priorityChoices() } })] },
     opcoes: OPTIONS,
   });
   type Out = {
@@ -601,6 +603,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     decisao: { texto: string; alvo: DecisionTarget } | null;
     efeito: { texto: string; repo: string } | null;
     desbloqueio: boolean;
+    prioridade: { para: string } | null;
     opcoes: string[];
   };
   const r = await run<Out>('reply', prompt, schema, { maxTurns: 3, ...(turn.sessionId ? { resume: turn.sessionId } : {}) });
@@ -610,6 +613,7 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
   return {
     ack: r.data.ack,
     decision,
+    priority: r.data.prioridade ? priorityDecision(card, r.data.prioridade.para) : null,
     effect: r.data.efeito ? { ref: card.ref, text: r.data.efeito.texto, repo: r.data.efeito.repo } : null,
     needsDeepDive: r.data.desbloqueio,
     options: options(r.data.opcoes),

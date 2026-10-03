@@ -699,5 +699,20 @@
   "main.teams.field.bloqueios": "bloqueios",
   "main.teams.field.mudou": "mudou",
   "main.quick.runJobIn": "Rodar o job {job} ({project}, pipeline {run})",
-  "main.engine.text.search.limited": "… (limitado a {count} linhas; refine a busca)"
+  "main.engine.text.search.limited": "… (limitado a {count} linhas; refine a busca)",
+  "prompt.sdd.reply.priority": "\"prioridade\": só se {theUser} pediu para mudar a prioridade desta atividade (\"esta vai primeiro\", \"deixa para a semana que vem\", \"sobe a prioridade\"); senão, null. {levels}",
+  "prompt.sdd.reply.priority.levels": "\"para\" é \"first\" (o nível mais alto), \"later\" (o mais baixo) ou exatamente um destes rótulos, do mais alto ao mais baixo: {labels}. \"Sobe\" e \"desce\" movem um nível a partir do atual ({current}).",
+  "prompt.sdd.reply.priority.noLevels": "\"para\" é \"first\" (vai primeiro) ou \"later\" (fica para depois). Este tracker não tem rótulos de prioridade configurados: a decisão só vai para a ata.",
+  "prompt.sdd.reply.priority.none": "nenhum",
+  "main.priority.text.change": "Prioridade de {ref}: {from} → {to}",
+  "main.priority.text.set": "Prioridade de {ref}: passa a {to}",
+  "main.priority.text.first": "Prioridade de {ref}: vai primeiro",
+  "main.priority.text.later": "Prioridade de {ref}: fica para depois",
+  "main.priority.text.other": "Prioridade de {ref}: {to}",
+  "main.priority.dest.proposal": "proposta de troca de rótulo em Ações, à espera do seu \"sim\"",
+  "main.priority.dest.unconfigured": "ata (não gravado no tracker: este workspace não tem rótulos de prioridade configurados)",
+  "main.priority.dest.unmapped": "ata (não gravado no tracker: esse nível de prioridade não é um nome de rótulo)",
+  "main.priority.dest.same": "ata (nada a mudar no tracker: a issue já tem {label})",
+  "main.priority.dest.unidentified": "ata (não gravado no tracker: a issue deste cartão não foi identificada)",
+  "main.priority.dest.unsupported": "ata (não gravado no tracker: este host não permite trocar rótulos por aqui)"
 }

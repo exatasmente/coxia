@@ -699,5 +699,20 @@
   "main.teams.field.bloqueios": "blockers",
   "main.teams.field.mudou": "changed",
   "main.quick.runJobIn": "Run the job {job} ({project}, pipeline {run})",
-  "main.engine.text.search.limited": "… (limited to {count} lines; refine the search)"
+  "main.engine.text.search.limited": "… (limited to {count} lines; refine the search)",
+  "prompt.sdd.reply.priority": "\"prioridade\" (priority): only if {theUser} asked to change the priority of this activity (\"this one goes first\", \"leave it for next week\", \"raise the priority\"); otherwise null. {levels}",
+  "prompt.sdd.reply.priority.levels": "\"para\" (to) is \"first\" (the highest level), \"later\" (the lowest) or exactly one of these labels, from the highest to the lowest: {labels}. \"Raise\" and \"lower\" move one level from the current one ({current}).",
+  "prompt.sdd.reply.priority.noLevels": "\"para\" (to) is \"first\" (it goes first) or \"later\" (it waits). This tracker has no priority labels configured: the decision only goes to the minutes.",
+  "prompt.sdd.reply.priority.none": "none",
+  "main.priority.text.change": "Priority of {ref}: {from} → {to}",
+  "main.priority.text.set": "Priority of {ref}: becomes {to}",
+  "main.priority.text.first": "Priority of {ref}: goes first",
+  "main.priority.text.later": "Priority of {ref}: waits",
+  "main.priority.text.other": "Priority of {ref}: {to}",
+  "main.priority.dest.proposal": "a label change proposal in Actions, waiting for your \"yes\"",
+  "main.priority.dest.unconfigured": "minutes (not written to the tracker: this workspace has no priority labels configured)",
+  "main.priority.dest.unmapped": "minutes (not written to the tracker: that priority level is not a label name)",
+  "main.priority.dest.same": "minutes (nothing to change in the tracker: the issue already has {label})",
+  "main.priority.dest.unidentified": "minutes (not written to the tracker: the issue of this card was not identified)",
+  "main.priority.dest.unsupported": "minutes (not written to the tracker: this host does not allow changing labels from here)"
 }

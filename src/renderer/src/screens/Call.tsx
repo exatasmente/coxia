@@ -208,6 +208,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       const r = await api.reply(card, turn, text);
       cc.addLog(`#${card.iid}`, r.ack, cc.colorOf(card.ref));
       if (r.decision) cc.addDecision(r.decision);
+      if (r.priority) cc.addDecision(r.priority);
       if (r.effect) cc.addEffect(r.effect);
       cc.markAnswered(card.ref);
       setFollowUps((f) => ({ ...f, [card.ref]: r.options ?? [] }));
@@ -410,6 +411,12 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 )}
               </div>
             )}
+            {card && c.decisions.filter((d) => d.target === 'priority' && d.ref === card.ref).slice(-1).map((d) => (
+              <div key={d.text} className="item small" role="status">
+                <div>{d.text}</div>
+                <div className="dest">→ {d.dest}</div>
+              </div>
+            ))}
             {hint && <div className="item ask small">{hint}</div>}
             {error && <div className="error">{error}</div>}
 

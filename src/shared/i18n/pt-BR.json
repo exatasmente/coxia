@@ -367,7 +367,7 @@
   "prompt.sdd.turn.priority.level": "prioridade \"{label}\"",
   "prompt.sdd.turn.priority.milestone": "marco \"{milestone}\"",
   "prompt.sdd.turn.doc.logEntry": "- {date} ({ceremony} {mode}): {text}",
-  "prompt.sdd.reply.main": "{intro}\n{TheUser} respondeu {answered}: «{text}»\n\"ack\": até 25 palavras confirmando o que você entendeu.\n\"decisao\": o que ficou decidido, ou null. \"alvo\": {targets}\n\"efeito\": ação externa que {theUser} terá de executar depois com confirmação (push, MR, status, comentário, pipeline, reviewer, issue nova), ou null.\n\"desbloqueio\": true se {he} pediu para aprofundar ou se a resposta pede investigação.\n{optionsRule} Aqui, próximos passos possíveis depois desta resposta.\n{speechRules}",
+  "prompt.sdd.reply.main": "{intro}\n{TheUser} respondeu {answered}: «{text}»\n\"ack\": até 25 palavras confirmando o que você entendeu.\n\"decisao\": o que ficou decidido, ou null. \"alvo\": {targets}\n\"efeito\": ação externa que {theUser} terá de executar depois com confirmação (push, MR, status, comentário, pipeline, reviewer, issue nova), ou null.\n\"desbloqueio\": true se {he} pediu para aprofundar ou se a resposta pede investigação.\n{priorityRule}\n{optionsRule} Aqui, próximos passos possíveis depois desta resposta.\n{speechRules}",
   "prompt.sdd.reply.intro": "{card}\nSua fala foi: {speech}",
   "prompt.sdd.reply.targetSpec": "\"spec\" se muda escopo ou plano da issue e ela tem spec",
   "prompt.sdd.reply.targetNote": "\"note\" se é lembrete pessoal sobre a atividade",
