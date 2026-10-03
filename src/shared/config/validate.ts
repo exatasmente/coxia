@@ -2,11 +2,12 @@
 import { createTranslator } from '../i18n';
 import { isFlowCycle } from '../runs/flow';
 import { checkFlow, flowIssueText } from '../runs/flowCheck';
+import { checkSquads, squadIssueText } from '../runs/squadCheck';
 import { promptFamilies } from '../cycles/prompts';
 import { catalogText } from '../cycles/text';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
-import { CONFIG_SCHEMA } from './schema';
+import { CONFIG_SCHEMA, ID } from './schema';
 import { isSystemId } from './team';
 import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
@@ -47,7 +48,8 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
 function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const team = c.agents.team;
   const providers = new Set(c.llm.providers.map((p) => p.id));
-  const stageIds = new Set(c.devCycle.stages.map((s) => s.id));
+  // A stage of a squad's own flow is a stage an agent may list too.
+  const stageIds = new Set([...c.devCycle.stages, ...Object.values(c.devCycle.flows ?? {}).flat()].map((s) => s.id));
   for (const id of duplicates(team.map((a) => a.id))) errors.push({ path: 'agents.team', message: `duplicate agent id "${id}"` });
   for (const role of LLM_ROLES) if (!team.some((a) => a.id === role && a.system)) errors.push({ path: 'agents.team', message: `the built-in agent "${role}" is missing` });
   team.forEach((a, i) => {
@@ -73,12 +75,35 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
 // The flow of the cycle and the chain of who turns to whom: one check, shared with the editor and the runner (runs/flowCheck.ts).
 function flowRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerate: boolean): void {
   const en = createTranslator('en');
-  for (const issue of checkFlow({ stages: c.devCycle.stages, team: c.agents.team })) {
+  for (const issue of checkFlow({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() })) {
     const i = issue.stage ? c.devCycle.stages.findIndex((s) => s.id === issue.stage) : -1;
     const a = issue.agent ? c.agents.team.findIndex((x) => x.id === issue.agent) : -1;
     const path = a >= 0 ? `agents.team[${a}].${issue.field}` : i >= 0 ? `devCycle.stages[${i}].${issue.field}` : 'devCycle.stages';
     // A stored config is never refused for the problems of its flow (the runner will not start on them and the editor shows them), only a saved one is.
     (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: flowIssueText(issue, en) });
+  }
+}
+
+// The squads: their model (who belongs where, the liaison, the chains) and the flow each follows, with the one check the runner and the editor use too.
+function squadRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerate: boolean): void {
+  const en = createTranslator('en');
+  const squads = c.squads ?? [];
+  const flows = c.devCycle.flows ?? {};
+  for (const key of Object.keys(flows)) if (!new RegExp(ID).test(key)) errors.push({ path: `devCycle.flows.${key}`, message: 'the key must be a squad id' });
+  const repos = c.projects.autoDiscover ? undefined : c.projects.repos.map((r) => r.id);
+  for (const issue of checkSquads({ squads, team: c.agents.team, stages: c.devCycle.stages, flows, repos }, { checkSharedFlow: isFlowCycle(c.devCycle.stages) })) {
+    const q = issue.squad ? squads.findIndex((s) => s.id === issue.squad) : -1;
+    const a = issue.agent ? c.agents.team.findIndex((x) => x.id === issue.agent) : -1;
+    let path = 'squads';
+    if (issue.flow) {
+      const own = issue.squad ? flows[issue.squad] : undefined;
+      const j = own && issue.stage ? own.findIndex((s) => s.id === issue.stage) : -1;
+      path = own && j >= 0 ? `devCycle.flows.${issue.squad}[${j}].${issue.field}` : q >= 0 ? `squads[${q}]` : 'squads';
+    } else if (q >= 0 && ['liaison', 'scope', 'id'].includes(issue.field)) path = `squads[${q}].${issue.field}`;
+    else if (a >= 0) path = `agents.team[${a}].${issue.field}`;
+    else if (issue.field === 'flows') path = `devCycle.flows.${issue.params.squad ?? ''}`;
+    else if (q >= 0) path = `squads[${q}]`;
+    (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: squadIssueText(issue, en) });
   }
 }
 
@@ -133,6 +158,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
   flowRules(c, errors, warnings, tolerateFlow);
+  squadRules(c, errors, warnings, tolerateFlow);
   runnerRules(c, errors, warnings);
   commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));

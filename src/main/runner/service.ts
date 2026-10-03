@@ -41,12 +41,15 @@ import {
   reviewReturn,
   stageDone,
   stageFailed,
+  squadErrors,
+  squadIssueText,
   startRun,
   startStage as startMove,
   waitDone,
   waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
+import { squadsOf } from '../../shared/config/squads';
 import { updateAgent } from '../../shared/config/team';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
@@ -402,6 +405,9 @@ export function createRunner(deps: RunnerDeps): Runner {
     assertStartable(flow);
     const broken = flowErrors({ stages: config.devCycle.stages, team: config.agents.team }, { asFlow: true });
     if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+
+    const squadBroken = squadErrors({ squads: squadsOf(config), team: config.agents.team, stages: config.devCycle.stages, flows: config.devCycle.flows }, { checkSharedFlow: true });
+    if (squadBroken.length) throw new RunError('invalid-flow', { detail: squadBroken.slice(0, 3).map((i) => squadIssueText(i)).join(' ') });
 
     const { issue, comments } = await deps.issues.get(iid);
     if (issue.state === 'closed') throw new RunnerError('issue-closed', { ref });

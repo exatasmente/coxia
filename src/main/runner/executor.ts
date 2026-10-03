@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
@@ -64,8 +65,11 @@ export interface Picked {
   kind: OutputKind;
 }
 
-/** The agent a question of `agent` goes to first: the one it turns to, when that is another agent of the team. */
-export const askTarget = (config: WorkspaceConfig, agent: AgentDef): string | null => (agent.turnsTo && agent.turnsTo !== agent.id && config.agents.team.some((a) => a.id === agent.turnsTo) ? agent.turnsTo : null);
+/**
+ * The agent a question of `agent` goes to first: the one it turns to, when that is another agent of the team; for a member of a squad that turns to the
+ * person, its liaison (`turnTarget`).
+ */
+export const askTarget = (config: WorkspaceConfig, agent: AgentDef): string | null => turnTarget(config, agent);
 
 export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]): Picked {
   const stage = flow.find((s) => s.id === run.stage);

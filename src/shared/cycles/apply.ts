@@ -29,6 +29,8 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
   // The priority labels are the team's tracker conventions, like the QA account: a template that names none leaves the workspace's alone.
   if (!next.priority.labels.length) next.priority = structuredClone(config.devCycle.priority);
   if (options.keepReleaseLabelPattern) next.releaseLabelPattern = config.devCycle.releaseLabelPattern;
+  // The flows of the squads are the workspace's own (squads are not part of a template): a new cycle for the workspace leaves them as they are.
+  if (config.devCycle.flows && Object.keys(config.devCycle.flows).length) next.flows = structuredClone(config.devCycle.flows);
   const out = { ...structuredClone(config), devCycle: next };
   out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], next);
   return out;
@@ -36,9 +38,10 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
 
 // The agents the person already has stay exactly as they are; the template adds the ones that are missing. A stage the new cycle does not have
 // is dropped from every agent, so the swap leaves no dangling reference.
-export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages'>): WorkspaceConfig['agents']['team'] {
+export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages' | 'flows'>): WorkspaceConfig['agents']['team'] {
   const have = new Set(current.map((a) => a.id));
-  const added = brought.filter((a) => !have.has(a.id)).map((a) => newAgent({ ...structuredClone(a), system: false }));
+  // A template has no squads: an agent it brings is shared until the person puts it in one.
+  const added = brought.filter((a) => !have.has(a.id)).map((a) => newAgent({ ...structuredClone(a), system: false, squad: undefined }));
   return pruneAgentStages([...current, ...added], cycle);
 }
 
@@ -63,9 +66,13 @@ export interface TemplateMeta {
  */
 export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta): CycleTemplate {
   const cycle = structuredClone(config.devCycle);
+  delete cycle.flows;
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
-  const team = config.agents.team.filter((a) => !a.system).map((a) => structuredClone(a));
+  const team = config.agents.team.filter((a) => !a.system).map((a) => {
+    const { squad: _squad, ...rest } = structuredClone(a);
+    return rest;
+  });
   return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
 }
 

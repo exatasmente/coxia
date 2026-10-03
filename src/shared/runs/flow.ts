@@ -5,7 +5,7 @@ import type { FlowSnapshot, FlowStage, Run } from './types';
 /** The name of the file the issue is copied into at the start of a run: the input of the first stage, readable by every one after it. */
 export const ISSUE_RECORD = '0_ISSUE.md';
 
-type FlowConfig = Pick<WorkspaceConfig, 'agents'> & { devCycle: Pick<DevCycleConfig, 'stages'> };
+type FlowConfig = { agents: Pick<WorkspaceConfig['agents'], 'team'>; devCycle: Pick<DevCycleConfig, 'stages'> };
 
 /** A cycle whose stages carry any of the flow fields (a type, an agent, what it produces, where it goes on or back, what it waits for) is a flow a run follows; any other is a cycle of the ceremonies only. */
 export const isFlowCycle = (stages: Pick<StageDef, 'type' | 'agentId' | 'produces' | 'reads' | 'next' | 'returnsTo' | 'waitsFor' | 'roundLimit' | 'trackerStatus'>[]): boolean =>

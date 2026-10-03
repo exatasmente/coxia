@@ -44,6 +44,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     permission: partial.permission ?? 'read',
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
+    ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };
@@ -109,11 +110,15 @@ export function removeAgent(config: WorkspaceConfig, id: string): WorkspaceConfi
   const next = structuredClone(config);
   next.agents.team = next.agents.team.filter((x) => x.id !== id);
   for (const s of next.devCycle.stages) if (s.agentId === id) delete s.agentId;
+  for (const flow of Object.values(next.devCycle.flows ?? {})) for (const s of flow) if (s.agentId === id) delete s.agentId;
+  // A squad whose liaison leaves has none until the person picks another (validation says so).
+  next.squads = (next.squads ?? []).map((q) => (q.liaison === id ? { ...q, liaison: null } : q));
   return next;
 }
 
 /** Drops from every agent the stage ids the cycle does not have, so a cycle swap leaves no dangling reference. */
-export function pruneAgentStages(team: AgentDef[], cycle: Pick<DevCycleConfig, 'stages'>): AgentDef[] {
-  const ids = new Set(cycle.stages.map((s) => s.id));
+export function pruneAgentStages(team: AgentDef[], cycle: Pick<DevCycleConfig, 'stages' | 'flows'>): AgentDef[] {
+  // The stages of a squad's own flow count too: an agent of that squad works them.
+  const ids = new Set([...cycle.stages, ...Object.values(cycle.flows ?? {}).flat()].map((s) => s.id));
   return team.map((a) => (a.stages.every((s) => ids.has(s)) ? a : { ...a, stages: a.stages.filter((s) => ids.has(s)) }));
 }

@@ -196,8 +196,39 @@ const agentDef = object(
     permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
+    squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
+  },
+  ['id', 'name'],
+);
+
+const squadPath = object(
+  'A folder of a repository.',
+  {
+    repo: string('A projects.repos id.', { pattern: ID }),
+    prefix: string('The folder, relative to the repository root ("services/billing").', { minLength: 1, maxLength: 300 }),
+  },
+  ['repo', 'prefix'],
+);
+
+const squadScope = object('Which work is the squad\'s.', {
+  repos: list('Repositories of the workspace (projects.repos ids) the squad owns.', string('A repository id.', { pattern: ID }), { maxItems: 50, uniqueItems: true }),
+  labels: list('Issue labels the squad takes (case does not matter).', string('A label.', { minLength: 1, maxLength: 200 }), { maxItems: 50, uniqueItems: true }),
+  paths: list('Folders of a repository the squad owns: an issue that mentions a file under one is the squad\'s.', squadPath, { maxItems: 100 }),
+  unclaimed: boolean('The squad takes the issues no scope claims.'),
+});
+
+const squad = object(
+  'A squad: agents with a scope, a flow and a liaison of their own.',
+  {
+    id: string('Lowercase letters, digits, "-" and "_".', { pattern: ID }),
+    name: string('Name shown to the person (a catalog key or a literal).', { minLength: 1, maxLength: 80 }),
+    mission: string('What the squad is for, in a sentence the agents read.', { maxLength: 2000 }),
+    scope: squadScope,
+    liaison: { type: ['string', 'null'], description: 'The member that speaks for the squad to the other squads: questions and requests from them arrive to it, and its members\' questions about another squad leave through it.', pattern: ID },
+    autonomy: boolean('A squad-wide switch: off makes every member wait for the person (each agent\'s own switch applies when it is on).'),
+    label: nullableString('A label the issue gets on the tracker when a run starts in the squad; null: none.'),
   },
   ['id', 'name'],
 );
@@ -314,6 +345,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
         ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
+        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
         stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
         meanings,
         enrichment: object('What the agent is given about each card.', {
@@ -352,6 +384,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         roles: byRole('Per agent role.', agentRole),
         team: list('The agent team: who works which stages of a run. The five built-in agents (one per LLM role) are always present.', agentDef, { maxItems: 40 }),
       }),
+      squads: list('The squads of the workspace; empty: the workspace is one team.', squad, { maxItems: 20 }),
       voice: object('Speech.', {
         enabled: boolean('Voice is on; off turns calls into text conversations.'),
         engine: enumOf('Text-to-speech engine.', VOICE_ENGINES),

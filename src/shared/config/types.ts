@@ -405,6 +405,11 @@ export interface DevCycleConfig {
   ceremonies: Record<CeremonyId, boolean>;
   ceremonyParams: CeremonyParams;
   stages: StageDef[];
+  /**
+   * The flow of a squad that has one of its own, by squad id (`squads`): the stages its runs follow. A squad with no entry follows `stages`. The agents of a
+   * squad's flow come from the one team, limited to the squad's members and the shared agents.
+   */
+  flows?: Record<string, StageDef[]>;
   /** How a provider's states and labels map to the stages above, first match wins; StageDef.match is the fallback on free text. */
   stageMapping: StageMappingRule[];
   /** What blocker, question for me and ready for QA mean here. */
@@ -503,10 +508,50 @@ export interface AgentDef {
    * answers when it can and otherwise passes the question on, and the chain ends at the person. A chain that comes back to where it began is refused.
    */
   turnsTo: string | null;
+  /**
+   * The squad the agent belongs to (a `squads` id). Absent or null: a shared agent, which works for every squad (the front door, the one that writes the
+   * release note). An agent belongs to one squad at most.
+   */
+  squad?: string | null;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
   system: boolean;
+}
+
+/** A folder of a repository: an issue that mentions a file under it is the squad's (a monorepo split by folders). */
+export interface SquadPath {
+  /** A `projects.repos` id. */
+  repo: string;
+  /** The folder, relative to the repository root ("services/billing"). */
+  prefix: string;
+}
+
+/** Which work is a squad's: the repositories it owns, the issue labels it takes, the folders it owns, and whether it takes whatever nobody claims. */
+export interface SquadScope {
+  /** `projects.repos` ids. */
+  repos: string[];
+  /** Issue labels (case does not matter). */
+  labels: string[];
+  paths: SquadPath[];
+  /** The squad takes the issues no scope claims. */
+  unclaimed: boolean;
+}
+
+/** A squad: agents with a scope of their own, a flow of their own and one agent, the liaison, that speaks for them to the other squads. */
+export interface SquadDef {
+  /** Lowercase letters, digits, "-" and "_". */
+  id: string;
+  name: string;
+  /** What the squad is for, in a sentence the agents read. */
+  mission: string;
+  scope: SquadScope;
+  /** The member that is the point of contact: questions and requests from other squads reach it, and its members' questions about another squad's area leave through it. */
+  liaison: string | null;
+  /** A squad-wide switch: off makes every member wait for the person (each agent's own switch applies when it is on). */
+  autonomy: boolean;
+  /** A label the issue gets on the tracker when a run starts in the squad (and the squad's own requests carry). null: none. */
+  label: string | null;
 }
 
 export interface AgentsConfig {
@@ -662,6 +707,8 @@ export interface WorkspaceConfig {
   docs: DocsConfig;
   devCycle: DevCycleConfig;
   agents: AgentsConfig;
+  /** The squads of the workspace. Empty: the workspace is one team, as it always was. */
+  squads?: SquadDef[];
   voice: VoiceConfig;
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;

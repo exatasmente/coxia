@@ -1,5 +1,6 @@
 // i18n-lint: allow-file default values of the config: model names, commands and ids, not prose
 import { neutralDevCycle } from '../cycles/neutral';
+import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type RunnerConfig, type WorkspaceConfig } from './types';
 
@@ -46,6 +47,7 @@ export function neutralConfig(): WorkspaceConfig {
       roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '', persona: '', maxTurns: null, docs: { claudeMd: true, skills: true, rules: true, agents: true, knowledge: true, mcp: true } })),
       team: systemAgents(),
     },
+    squads: [],
     voice: { enabled: false, engine: 'edge', sttModel: 'small', depsInstalled: false, kokoroDir: null, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
     claudeSdk: { installed: false, version: null, path: null },
     externalTools: {
@@ -97,6 +99,7 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
     devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })), comments: Object.fromEntries(Object.entries(c.devCycle.comments ?? {}).map(([id, tpl]) => [id, { ...tpl, sections: tpl.sections ?? [], technicalDetail: tpl.technicalDetail ?? false }])) },
+    squads: Array.isArray(c.squads) ? c.squads.map(newSquad) : [],
     agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
   };
 }

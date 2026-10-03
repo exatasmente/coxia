@@ -29,6 +29,8 @@ export interface FlowIssue {
 export interface FlowInput {
   stages: StageDef[];
   team: AgentDef[];
+  /** The stages of the flows squads have of their own: they are not checked here, but an agent that works one of them is not idle. */
+  extraStages?: StageDef[];
 }
 
 export interface FlowCheckOptions {
@@ -127,7 +129,7 @@ function stageIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): vo
   }
 }
 
-function teamIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): void {
+function teamIssues(stages: StageDef[], team: AgentDef[], extra: StageDef[], out: FlowIssue[]): void {
   const ids = new Set(team.map((a) => a.id));
   const agentIssue = (severity: FlowIssue['severity'], code: FlowIssueCode, a: AgentDef, field: FlowIssueField, params: Record<string, string> = {}): void => {
     out.push({ severity, code, stage: null, agent: a.id, field, params: { agent: a.id, ...params } });
@@ -154,7 +156,7 @@ function teamIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): voi
       }
     }
   }
-  const named = new Set(stages.flatMap((s) => (s.agentId ? [s.agentId] : [])));
+  const named = new Set([...stages, ...extra].flatMap((s) => (s.agentId ? [s.agentId] : [])));
   for (const a of team) if (a.autonomous && !a.stages.length && !named.has(a.id)) agentIssue('warning', 'agent-idle', a, 'autonomous');
 }
 
@@ -165,7 +167,7 @@ function teamIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): voi
 export function checkFlow(input: FlowInput, options: FlowCheckOptions = {}): FlowIssue[] {
   const out: FlowIssue[] = [];
   if (options.asFlow || isFlowCycle(input.stages)) stageIssues(input.stages, input.team, out);
-  teamIssues(input.stages, input.team, out);
+  teamIssues(input.stages, input.team, input.extraStages ?? [], out);
   return out;
 }
 
