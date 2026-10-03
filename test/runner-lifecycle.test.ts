@@ -247,6 +247,16 @@ describe('a stage that goes wrong', () => {
     expect(dev.prompt).toContain('Say what this pass ran or saw working, and what it did not run');
   });
 
+  it('tells an agent to look around with Read, Glob and Grep instead of ls, find and pwd', async () => {
+    const b = await boot({ configure: (c) => (c.language = 'en') });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const dev = b.engine.calls.find((c) => c.agent.id === 'developer')!;
+    expect(dev.system).toContain('To look around use the Read, Glob and Grep tools, not ls, find or pwd: those commands are not on the list');
+    expect(b.engine.calls.find((c) => c.agent.id === 'refiner')!.system).toContain('To look around use the Read, Glob and Grep tools, not ls, find or pwd.');
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);
