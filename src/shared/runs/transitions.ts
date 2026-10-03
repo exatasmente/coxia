@@ -392,9 +392,8 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   if (q?.kind === 'review-limit') {
     const producer = producerOf(flow, run.stage);
     if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
-    // The budget of the stage the work was going back to starts again.
-    const back = stageOf(flow, run.stage).returnsTo;
-    if (back) out.returns[back] = 0;
+    // The budget of the stage that stopped starts again; the other returning stage's is its own.
+    out.returns[run.stage] = 0;
     sendBack(out, flow, producer, person, said, at, messages, true);
   } else {
     out.status = 'working';
@@ -403,12 +402,13 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   return { run: out, messages };
 }
 
-// The work goes back to an earlier stage. A review pass counts toward the limit: at the limit the run stops and asks the person instead.
+// The work goes back to an earlier stage. A review pass counts toward the limit of the stage that sends it back (the review and QA each have their own
+// budget, `roundLimit`): at the limit the run stops and asks the person instead.
 function applyReturn(out: Run, flow: FlowStage[], p: PendingResult, at: string, messages: ForumDraft[]): void {
   const target = flow.find((x) => x.id === p.toStage);
   if (!target) throw new RunError('unknown-stage', { stage: p.toStage ?? '' });
   if (p.countRound) {
-    const rounds = (out.returns[target.id] = (out.returns[target.id] ?? 0) + 1);
+    const rounds = (out.returns[out.stage] = (out.returns[out.stage] ?? 0) + 1);
     if (rounds >= stageOf(flow, out.stage).roundLimit) {
       out.status = 'question';
       out.question = { by: 'app', kind: 'review-limit', text: p.text, askedAt: at, stage: out.stage };

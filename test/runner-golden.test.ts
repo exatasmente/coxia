@@ -134,11 +134,10 @@ describe('the agent cycle, as before the flow was generalized', () => {
     pin('qa-fail-once', trace(b, run));
   });
 
-  it('a review and then a QA failure share the budget of two: the run asks the person, and the answer goes back a stage', async () => {
+  it('a review that sends the work back twice reaches its own limit: the run asks the person, and the answer goes back a stage', async () => {
     const b = await scenario();
     b.engine.script('developer', built(1), built(2), built(3));
-    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
-    b.engine.script('qa', () => work('Broke.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'fail', detail: 'a 500' }], comment: comment([['Scenarios verified and their result', 'login: failed.']]) }), () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'login: passed.']]) }));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Still a point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Still wrong.']]), findings: [finding({ body: 'Still wrong.' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
     const run = await start(b);
     let now = await through(b, run);
     expect(now.status).toBe('question');
@@ -146,6 +145,18 @@ describe('the agent cycle, as before the flow was generalized', () => {
     now = await through(b, run);
     expect(now.status).toBe('done');
     pin('review-limit', trace(b, run));
+  });
+
+  it('a review sent back once and a QA failure sent back once spend a round of their own each: the run does not stop', async () => {
+    const b = await scenario();
+    b.engine.script('developer', built(1), built(2), built(3));
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'Wrong.']]), findings: [finding()] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+    b.engine.script('qa', () => work('Broke.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'fail', detail: 'a 500' }], comment: comment([['Scenarios verified and their result', 'login: failed.']]) }), () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'login: passed.']]) }));
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    expect(end.returns).toEqual({ review: 1, qa: 1 });
+    pin('review-and-qa-once', trace(b, run));
   });
 
   it('a gate rejected, a gate skipped, and an agent that asks the person', async () => {

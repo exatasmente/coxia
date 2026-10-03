@@ -249,7 +249,7 @@ describe('the review loop', () => {
     const d = atReview();
     expect(d.run.stage).toBe('review');
     const first = d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F1: no test', handoff: 'add the test for F1' }, t));
-    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { implement: 1 } });
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { review: 1 } });
     expect(stage(d, 'review').status).toBe('rejected');
     expect(stage(d, 'implement').attempts).toBe(2);
     expect(first.messages.map((m) => [m.kind, m.to ?? null])).toEqual([['post', null], ['handoff', 'developer'], ['system', null]]);
@@ -257,7 +257,7 @@ describe('the review loop', () => {
     d.do((r, t) => stageDone(r, d.flow, done('3_IMPLEMENTATION'), t));
     expect(d.run.stage).toBe('review');
     const second = d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F2: naming' }, t));
-    expect(d.run).toMatchObject({ status: 'question', question: { by: 'app', kind: 'review-limit', text: 'F2: naming', stage: 'review' }, returns: { implement: 2 } });
+    expect(d.run).toMatchObject({ status: 'question', question: { by: 'app', kind: 'review-limit', text: 'F2: naming', stage: 'review' }, returns: { review: 2 } });
     expect(second.messages.map((m) => [m.kind, m.code ?? null])).toEqual([['post', null], ['question', 'review.limit']]);
   });
 
@@ -267,7 +267,7 @@ describe('the review loop', () => {
     d.do((r, t) => stageDone(r, d.flow, done('3_IMPLEMENTATION'), t));
     d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F2' }, t));
     const tr = d.do((r, t) => answer(r, d.flow, 'just rename it and move on', t));
-    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', question: null, returns: { implement: 0 } });
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', question: null, returns: { review: 0 } });
     expect(tr.messages.map((m) => [m.kind, m.to ?? null])).toEqual([['answer', null], ['handoff', 'developer'], ['system', null]]);
     expect(tr.messages[1].text).toBe('just rename it and move on');
   });
@@ -593,7 +593,7 @@ describe('agents that wait for the person', () => {
     expect(d.run).toMatchObject({ status: 'to-accept', stage: 'review', returns: {}, pending: { kind: 'return', toStage: 'implement', countRound: true, text: 'F1: no test', handoff: 'add the test' } });
     expect(tr.messages.map((m) => [m.kind, m.code ?? null])).toEqual([['post', null], ['system', 'run.stage.waitAccept']]);
     const acc = d.do((r, t) => acceptStage(r, d.flow, t));
-    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { implement: 1 }, pending: null });
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { review: 1 }, pending: null });
     expect(acc.messages.map((m) => [m.kind, m.code ?? m.to ?? null])).toEqual([['decision', 'stage.accepted'], ['handoff', 'developer'], ['system', 'run.stage.started']]);
     expect(stage(d, 'review').status).toBe('rejected');
     // The second pass with findings, accepted, reaches the limit and asks the person.
@@ -601,7 +601,7 @@ describe('agents that wait for the person', () => {
     d.do((r, t) => startStage(r, d.flow, t));
     d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F2' }, t));
     d.do((r, t) => acceptStage(r, d.flow, t));
-    expect(d.run).toMatchObject({ status: 'question', question: { kind: 'review-limit', text: 'F2' }, returns: { implement: 2 } });
+    expect(d.run).toMatchObject({ status: 'question', question: { kind: 'review-limit', text: 'F2' }, returns: { review: 2 } });
   });
 
   it('what goes back into an agent that is not autonomous waits to be started, unless the person is the one sending it', () => {

@@ -94,10 +94,10 @@ describe('where work goes back to', () => {
     const d = drive(flow);
     until(d, 'review');
     d.do((r, at) => reviewReturn(r, flow, { by: 'reviewer', findings: 'F1: naming' }, at));
-    expect(d.run).toMatchObject({ status: 'question', question: { kind: 'review-limit' }, returns: { plan: 1 } });
+    expect(d.run).toMatchObject({ status: 'question', question: { kind: 'review-limit' }, returns: { review: 1 } });
   });
 
-  it('a security review added after the review returns to implement, and its rounds are counted with the others that go there', () => {
+  it('a security review added after the review returns to implement, and each reviewing stage counts its own rounds', () => {
     const flow = flowFrom((c) => {
       const at = c.devCycle.stages.findIndex((s) => s.id === 'review');
       c.devCycle.stages.splice(at + 1, 0, stageDef('security', { kind: 'review', agentId: 'qa', produces: ['4B_SECURITY.md'], returnsTo: 'implement' }));
@@ -108,10 +108,14 @@ describe('where work goes back to', () => {
     d.do((r, at) => stageDone(r, flow, done('review'), at));
     expect(d.run).toMatchObject({ status: 'working', stage: 'security' });
     d.do((r, at) => handBack(r, flow, { by: 'qa', toStage: 'implement', text: 'secret in the log', countRound: true }, at));
-    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { implement: 1 } });
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { security: 1 } });
     until(d, 'review');
     d.do((r, at) => reviewReturn(r, flow, { by: 'reviewer', findings: 'F2' }, at));
-    expect(d.run).toMatchObject({ status: 'question', returns: { implement: 2 } });
+    // the security review's round did not spend the review's: both are at one of two
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { security: 1, review: 1 } });
+    until(d, 'security');
+    d.do((r, at) => handBack(r, flow, { by: 'qa', toStage: 'implement', text: 'still a secret in the log', countRound: true }, at));
+    expect(d.run).toMatchObject({ status: 'question', stage: 'security', returns: { security: 2, review: 1 } });
   });
 
   it('refuses to send work to a gate or to a stage the flow does not have', () => {

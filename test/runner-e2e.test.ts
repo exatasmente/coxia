@@ -97,7 +97,7 @@ describe('a run from refine to ready', () => {
     expect(engine.calls.map((c) => c.agent.id)).toEqual(['refiner', 'planner', 'planner', 'developer', 'reviewer', 'developer', 'reviewer']);
     expect(run.reviews.map((r) => [r.round, r.verdict, r.findings.length])).toEqual([[1, 'changes', 1], [2, 'approved', 0]]);
     expect(run.reviews[0].findings[0]).toMatchObject({ path: 'src/feature.ts', line: 1, severity: 'blocking', suggestion: 'export const feature = 2;' });
-    expect(run.returns).toEqual({ implement: 1 });
+    expect(run.returns).toEqual({ review: 1 });
 
     // what the developer could and could not do
     expect(seen).toMatchObject({ inside: null, npmTest: null });

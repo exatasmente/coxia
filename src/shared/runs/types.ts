@@ -261,7 +261,7 @@ export interface Run {
   question: PendingQuestion | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
-  /** How many times the work went back to each stage (by the stage it went back to) since the person last answered the limit's question. */
+  /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */
   returns: Record<string, number>;
   /** What the run waits for while its status is `waiting`; null otherwise. */
   wait: WaitState | null;

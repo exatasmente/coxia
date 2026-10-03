@@ -199,7 +199,7 @@ export const RUN_SCHEMA: JsonSchema = object(
       type: ['object', 'null'],
     },
     pending,
-    returns: { type: 'object', description: 'How many times the work went back to each stage, by that stage.', additionalProperties: { type: 'integer', minimum: 0, maximum: 1000 } },
+    returns: { type: 'object', description: 'How many times each stage sent the work back (review and QA count apart), by that stage, since the person last answered its limit.', additionalProperties: { type: 'integer', minimum: 0, maximum: 1000 } },
     wait: { ...object('What the run waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time.', minimum: 1, maximum: 525_600 }, since: time('Since when.'), by: string('The agent that asked.', { maxLength: 48 }) }, ['kind', 'since']), type: ['object', 'null'] },
     squad: { type: ['string', 'null'], description: 'The squad the run works in; absent or null: none.', pattern: ID },
     routedBy: { type: ['string', 'null'], description: 'How the run came to be in its squad.', enum: [...ROUTED_BY, null] },

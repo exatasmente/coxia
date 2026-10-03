@@ -292,12 +292,12 @@ describe('the review limit and QA', () => {
     b.engine.script('reviewer', () => work('Still wrong.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding('Still wrong.')] }), () => work('Still wrong.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding('Still wrong.')] }), () => work('Fine now.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved' }));
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'review');
-    expect(run).toMatchObject({ status: 'question', stage: 'review', returns: { implement: 2 } });
+    expect(run).toMatchObject({ status: 'question', stage: 'review', returns: { review: 2 } });
     expect(run.question).toMatchObject({ by: 'app', kind: 'review-limit' });
     expect(b.engine.calls.map((c) => c.agent.id).filter((a) => a === 'developer')).toHaveLength(2);
     b.runner.answerPost(`run-${run.id}`, 'Accept it as it is, the finding is a style choice.');
     run = await reach(b, b.runner.get(run.id)!, 'ready');
-    expect(run).toMatchObject({ status: 'done', returns: { implement: 0 } });
+    expect(run).toMatchObject({ status: 'done', returns: { review: 0 } });
     expect(run.reviews).toHaveLength(3);
   });
 
@@ -312,7 +312,7 @@ describe('the review limit and QA', () => {
     expect(b.engine.calls[5].prompt).toContain('login');
     expect(b.engine.calls[5].prompt).toContain('a 500 on login');
     expect(run.qa.map((q) => q.scenarios[0].result)).toEqual(['fail', 'pass']);
-    expect(run.returns).toEqual({ implement: 1 });
+    expect(run.returns).toEqual({ qa: 1 });
   });
 
   it('does not send the work back for a QA failure that does not block: it is reported in the thread and the run goes on', async () => {

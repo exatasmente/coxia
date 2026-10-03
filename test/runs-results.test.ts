@@ -151,10 +151,10 @@ describe('handing the work back counts as a review round only when asked to', ()
   it('a hand back that counts takes a round, and at the limit the run stops and asks the person', () => {
     const d = until('qa');
     d.do((r, at) => handBack(r, d.flow, { by: 'qa', toStage: 'implement', text: 'scenario b fails', countRound: true }, at));
-    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { implement: 1 } });
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', returns: { qa: 1 } });
     while (d.run.stage !== 'qa') d.do((r, at) => stageDone(r, d.flow, done(r.stage), at));
     d.do((r, at) => handBack(r, d.flow, { by: 'qa', toStage: 'implement', text: 'still fails', countRound: true }, at));
-    expect(d.run).toMatchObject({ status: 'question', stage: 'qa', returns: { implement: 2 } });
+    expect(d.run).toMatchObject({ status: 'question', stage: 'qa', returns: { qa: 2 } });
     expect(d.run.question).toMatchObject({ by: 'app', kind: 'review-limit', text: 'still fails' });
   });
 });

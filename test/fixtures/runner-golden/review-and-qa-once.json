@@ -65,7 +65,7 @@
    [
     "5_TEST_PLAN.md"
    ],
-   1,
+   2,
    true
   ],
   [
@@ -286,13 +286,19 @@
    "review",
    "review",
    "reviewer",
-   "2: changes"
+   "2: approved"
   ],
   [
-   "question",
+   "stage-done",
    "review",
+   "reviewer",
+   null
+  ],
+  [
+   "stage-started",
+   "qa",
    "app",
-   "review-limit"
+   "qa"
   ],
   [
    "comment",
@@ -307,16 +313,34 @@
    "published"
   ],
   [
-   "answer",
-   "review",
-   "person",
-   "Go on, ship it as it is."
+   "qa",
+   "qa",
+   "qa",
+   "fail"
+  ],
+  [
+   "handback",
+   "qa",
+   "qa",
+   "implement"
   ],
   [
    "stage-started",
    "implement",
    "app",
    "developer"
+  ],
+  [
+   "comment",
+   "qa",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "qa",
+   "app",
+   "published"
   ],
   [
    "stage-done",
@@ -879,25 +903,30 @@
    "review",
    null,
    {},
-   "Still a point.\n\n[blocks] src/feature.ts:1: Still wrong.",
+   "Fine.",
    null,
    true,
-   [],
+   [
+    {
+     "path": "4_REVIEW.md"
+    }
+   ],
    "mr"
   ],
   [
-   "question",
+   "system",
    {
     "type": "app"
    },
-   "review",
-   "review.limit",
+   "qa",
+   "run.stage.started",
    {
-    "rounds": 2
+    "stage": "cycle.agentFlow.stage.qa",
+    "agent": "qa"
    },
    "",
    null,
-   true,
+   false,
    [],
    null
   ],
@@ -919,28 +948,34 @@
    null
   ],
   [
-   "answer",
+   "post",
    {
-    "type": "person"
+    "type": "agent",
+    "id": "qa"
    },
-   "review",
+   "qa",
    null,
    {},
-   "Go on, ship it as it is.",
+   "Broke.\n\nScenario that failed: login. a 500",
    null,
    true,
-   [],
-   null
+   [
+    {
+     "path": "5_TEST_PLAN.md"
+    }
+   ],
+   "issue"
   ],
   [
    "handoff",
    {
-    "type": "person"
+    "type": "agent",
+    "id": "qa"
    },
-   "review",
+   "qa",
    null,
    {},
-   "Go on, ship it as it is.",
+   "Broke.\n\nScenario that failed: login. a 500",
    "developer",
    false,
    [],
@@ -956,6 +991,24 @@
    {
     "stage": "cycle.agentFlow.stage.implement",
     "agent": "developer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "runner.comment.posted",
+   {
+    "target": "the issue",
+    "title": "QA",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5009"
    },
    "",
    null,
@@ -1078,7 +1131,7 @@
    "runner.review.posted",
    {
     "round": 3,
-    "url": "https://example.test/group/project/pull/7#pullrequestreview-5011"
+    "url": "https://example.test/group/project/pull/7#pullrequestreview-5010"
    },
    "",
    null,
@@ -1127,11 +1180,11 @@
     "type": "app"
    },
    "ready",
-   "runner.comment.posted",
+   "runner.comment.edited",
    {
     "target": "the issue",
     "title": "QA",
-    "url": "https://example.test/group/project/issues/101#issuecomment-5012"
+    "url": "https://example.test/group/project/issues/101#issuecomment-5009"
    },
    "",
    null,
@@ -1218,17 +1271,17 @@
    "POST",
    "repos/group/project/pulls/7/reviews",
    {
-    "event": "REQUEST_CHANGES",
-    "body": "**Review: changes requested (round 2)**\n\n### Findings that block\n\nStill wrong.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=2 -->\n",
+    "event": "COMMENT",
+    "body": "**Review: approved (round 2)**\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=review round=2 -->\n",
     "commit_id": "<sha>",
-    "comments": [
-     {
-      "path": "src/feature.ts",
-      "body": "**Blocks the change.** Still wrong.\n\n<!-- coxia:run=<run> stage=review round=2 finding=0 -->",
-      "line": 1,
-      "side": "RIGHT"
-     }
-    ]
+    "comments": []
+   }
+  ],
+  [
+   "POST",
+   "repos/group/project/issues/101/comments",
+   {
+    "body": "**QA: some scenarios failed**\n\n### Scenarios verified and their result\n\nlogin: failed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
    }
   ],
   [
@@ -1236,20 +1289,6 @@
    "repos/group/project/issues/comments/5004",
    {
     "body": "**Implementation ready for review**\n\n### What changed for the person using it\n\nThe feature exists (3).\n\n### How to verify\n\nUse the feature and see X.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=implement -->\n"
-   }
-  ],
-  [
-   "POST",
-   "repos/group/project/pulls/7/comments/5009/replies",
-   {
-    "body": "Fixed in the latest changes."
-   }
-  ],
-  [
-   "POST",
-   "graphql",
-   {
-    "query": "mutation { resolveReviewThread(input: { threadId: \"PRRT_kwDOforge5009\" }) { thread { isResolved } } }"
    }
   ],
   [
@@ -1263,10 +1302,17 @@
    }
   ],
   [
+   "PATCH",
+   "repos/group/project/issues/comments/5009",
+   {
+    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nlogin: passed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+   }
+  ],
+  [
    "POST",
    "repos/group/project/issues/101/comments",
    {
-    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nThe thing does X: passed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+    "body": "QA: all scenarios passed. The full comment: https://example.test/group/project/issues/101#issuecomment-5009\n\n<!-- coxia:run=<run> stage=qa-notice -->\n"
    }
   ]
  ],
@@ -1317,19 +1363,19 @@
    "mr",
    "published",
    5008,
-   "Review: changes requested (round 2)"
-  ],
-  "review-3": [
-   "mr",
-   "published",
-   5011,
-   "Review: approved (round 3)"
+   "Review: approved (round 2)"
   ],
   "qa": [
    "issue",
    "published",
-   5012,
+   5009,
    "QA: all scenarios passed"
+  ],
+  "review-3": [
+   "mr",
+   "published",
+   5010,
+   "Review: approved (round 3)"
   ]
  },
  "proposals": [
