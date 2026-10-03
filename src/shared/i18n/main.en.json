@@ -805,7 +805,7 @@
   "prompt.sdd.runner.section.diffNone": "The branch has no change outside the cycle folder yet.",
   "prompt.sdd.runner.section.diffClipped": "(cut here: the diff is longer; read the rest in the files)",
   "prompt.sdd.runner.section.rounds": "The review passes before this one, oldest first (what each found, and the verdict):\n<data>\n{text}\n</data>",
-  "prompt.sdd.runner.section.commands": "The app ran these commands in the worktree, on the delivered code, before your stage. They are real results; you run nothing. Confirm only what they and your reading show, and say what was left unverified:\n<data>\n{text}\n</data>",
+  "prompt.sdd.runner.section.commands": "The app ran these commands just now, in this worktree, on the delivered code, before your stage. They are real results, observed in this stage; you run nothing. Report their result as observed in this stage, not as \"the result registered for the delivery\". Confirm only what they and your reading show, and say what was left unverified:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.commandsNone": "The app ran no command before your stage (the workspace lists none): the behaviour was not exercised, only read. Say so, and do not claim something works only because the code looks right.",
   "prompt.sdd.runner.commands.exit": "$ {command}  (exit {code})",
   "prompt.sdd.runner.commands.timeout": "$ {command}  (stopped for taking too long)",

@@ -649,7 +649,7 @@
   "cycle.agentFlow.comment.qa.title": "QA",
   "cycle.agentFlow.comment.qa.status": "QA: {result}",
   "cycle.agentFlow.comment.qa.s1.heading": "Scenarios verified and their result",
-  "cycle.agentFlow.comment.qa.s1.guidance": "Each scenario with what was done and what was seen. A scenario that was only read in the code says it was only read; what a command ran gives its result.",
+  "cycle.agentFlow.comment.qa.s1.guidance": "Each scenario with what was done and what was seen. A scenario that was only read in the code says it was only read; what a command ran gives its result. When the app ran commands before this stage, their result was observed in this stage: write that the app ran them just now, with the result, and never that nothing was run in this stage.",
   "cycle.agentFlow.comment.qa.s2.heading": "What was not verified",
   "cycle.agentFlow.comment.qa.s2.guidance": "Everything this stage did not run or see, and why, including what the commands do not cover. Do not leave it empty when nothing was exercised.",
   "cycle.agentFlow.comment.gate.title": "Gate decision",

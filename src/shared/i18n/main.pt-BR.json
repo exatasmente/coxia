@@ -805,7 +805,7 @@
   "prompt.sdd.runner.section.diffNone": "A branch ainda não tem alteração fora da pasta do ciclo.",
   "prompt.sdd.runner.section.diffClipped": "(cortado aqui: o diff é maior; leia o resto nos arquivos)",
   "prompt.sdd.runner.section.rounds": "As passagens de revisão anteriores a esta, da mais antiga à mais nova (o que cada uma achou e o veredito):\n<data>\n{text}\n</data>",
-  "prompt.sdd.runner.section.commands": "O app rodou estes comandos no worktree, com o código da entrega, antes da sua etapa. São resultados reais; você não roda nada. Confirme só o que eles e a sua leitura mostram, e diga o que ficou sem verificar:\n<data>\n{text}\n</data>",
+  "prompt.sdd.runner.section.commands": "O app rodou estes comandos agora há pouco, neste worktree, com o código da entrega, antes da sua etapa. São resultados reais, observados nesta etapa; você não roda nada. Relate o resultado deles como observado nesta etapa, e não como \"o resultado registrado para a entrega\". Confirme só o que eles e a sua leitura mostram, e diga o que ficou sem verificar:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.commandsNone": "O app não rodou nenhum comando antes da sua etapa (o workspace não lista nenhum): o comportamento não foi exercitado, só lido. Diga isso, e não afirme que algo funciona só porque o código parece certo.",
   "prompt.sdd.runner.commands.exit": "$ {command}  (saiu com {code})",
   "prompt.sdd.runner.commands.timeout": "$ {command}  (interrompido por passar do tempo)",

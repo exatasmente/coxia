@@ -82,6 +82,8 @@ describe('what QA is given', () => {
     expect(text).toContain('$ npm run slow  (interrompido por passar do tempo)');
     expect(text).toContain('$ nope  (não chegou a rodar)');
     expect(text).toContain('você não roda nada');
+    expect(text).toContain('agora há pouco, neste worktree');
+    expect(text).toContain('observados nesta etapa');
     expect(commandsSection([])).toContain('não rodou nenhum comando');
   });
 });

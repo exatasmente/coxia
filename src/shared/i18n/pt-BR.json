@@ -649,7 +649,7 @@
   "cycle.agentFlow.comment.qa.title": "QA",
   "cycle.agentFlow.comment.qa.status": "QA: {result}",
   "cycle.agentFlow.comment.qa.s1.heading": "Cenários verificados e o resultado",
-  "cycle.agentFlow.comment.qa.s1.guidance": "Cada cenário com o que foi feito e o que foi visto. Um cenário que só foi lido no código diz que foi só lido; o que um comando rodou diz o resultado dele.",
+  "cycle.agentFlow.comment.qa.s1.guidance": "Cada cenário com o que foi feito e o que foi visto. Um cenário que só foi lido no código diz que foi só lido; o que um comando rodou diz o resultado dele. Quando o app rodou comandos antes desta etapa, o resultado deles foi observado nesta etapa: escreva que o app os rodou agora, com o resultado, e nunca que nada foi rodado nesta etapa.",
   "cycle.agentFlow.comment.qa.s2.heading": "O que não foi verificado",
   "cycle.agentFlow.comment.qa.s2.guidance": "Tudo o que esta etapa não rodou nem viu, e por quê, inclusive o que os comandos não cobrem. Não deixe vazio quando nada foi exercitado.",
   "cycle.agentFlow.comment.gate.title": "Decisão do gate",
