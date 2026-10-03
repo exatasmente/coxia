@@ -2,7 +2,7 @@
 
 Reads with [`1_SPEC.md`](1_SPEC.md) (section numbers and "D" decisions point there). Checked against the code as of `0.5.0-beta.1` (`package.json`, the tags `v0.4.3` and `v0.5.0-beta.1`, config schema 10).
 
-**Part 1** is the process (spec section 3): done in the branch `feat-release-process`. **Part 2** is the release as a runner cycle (spec section 4): not started, briefed at the end of this file.
+**Part 1** is the process (spec section 3): done in the branch `feat-release-process` (commits at the end of this file). **Part 2** is the release as a runner cycle (spec section 4): not started, briefed at the end of this file.
 
 ## What gets built
 
@@ -39,7 +39,7 @@ Model: the file is split at the first `## [` line into a head, the sections (`he
 The file keeps its shape: usage comment, `set -euo pipefail`, `die`, option loop, the checks, the plan, the dry-run exit, the checks run, the bump, the commit, the tag, the instructions. What changes:
 
 - A mode is chosen right after the options: `open`, `beta`, `stable`, or a version (`*-beta.N` or stable). A suffix other than `beta.N` is refused on a release branch.
-- Helpers (all `git`, no network): `latest_stable_tag` (highest `vX.Y.Z` by `sort -V`), `max_beta CORE` (highest `N` of `vCORE-beta.N`), `release_refs CORE` (the local branch and `origin/` branch that exist), `is_ancestor`, `commit_of TAG`.
+- Helpers (all `git`, no network): `stable_tag [MAJOR.MINOR]` (highest `vX.Y.Z` by `sort -V`, of one line or overall), `floor_tag VERSION` (the stable a version must be above: its own line's latest, else the repository's), `max_beta CORE` (highest `N` of `vCORE-beta.N`, 0 when none), `release_refs CORE` (the local branch and `origin/` branch that exist), `is_ancestor`, `tag_commit`.
 - `open` is a function of its own, runs before the author check (it commits nothing), and ends with `git switch -c release/X.Y.Z <base>` (not on a dry run).
 - A rule that fails is collected as a *problem*. Branch rules die at once; the three stable rules go in a list so `--emergency` can name every one it skips. Loud means: a banner on standard error, one line per skipped rule, the same lines at the end of the output, and the tag message.
 - Changelog: `status` and `cut` of section 1 replace the awk; the stable's "empty" test counts the beta sections as content.
@@ -56,17 +56,17 @@ Cases: every refusal of the three tables of spec 3.2, the numbering (`beta.1`, `
 
 `test/release-changelog.test.ts`: the fold (two betas and an unreleased, merge order, unknown headings, preamble), the links, the round trip on the real file, the empty cases.
 
-`test/release-workflow.test.ts`: reads `release.yml`, takes the `jq` filter of the lookup, and runs it (`jq` is not assumed: the filter is applied by a small JS evaluator of the exact predicate, or the test is skipped when `jq` is missing) against a recorded list of drafts (an `untagged-…` pre-release draft named `v0.6.0-beta.1`, an older published release with the same name, a draft of another version): only the first is picked. It also asserts `ci.yml` lists `release/**` for both events.
+`test/release-workflow.test.ts`: reads `release.yml`, extracts the `jq` program of the two lookups (they must be identical) and runs it with the real `jq` (skipped when `jq` is missing; CI's runner has it) against a recorded list of releases (an `untagged-…` pre-release draft named `v0.6.0-beta.1`, a published release with the same name, a draft of another version, a draft whose tag is already linked): only the two drafts are picked, in order. It asserts `ci.yml` lists `release/**` for both events, and runs `scripts/verify-release-files.sh` over temporary files to pin the feed rule (a beta with `beta-linux.yml` passes; with `latest-linux.yml` beside it, or instead of it, it fails; a final version wants `latest-linux.yml`).
 
 ## 4. The workflow fix (part 1)
 
-Both steps that used `select(.draft and .tag_name == "$TAG")` use one filter:
+Both steps that used `select(.draft and .tag_name == "$TAG")` use one filter, to get the **id** of the newest matching draft:
 
 ```
-.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG))
+.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id
 ```
 
-`$ENV.TAG` instead of shell interpolation (the tag is already validated against `package.json`, but a value should not be spliced into a program). The first match is used (the API lists newest first). The assets step is extended: a pre-release draft must hold `<channel>-linux.yml` and **no** `latest-linux.yml`; a final draft must hold `latest-linux.yml` and no `<other>-linux.yml`.
+`$ENV.TAG` instead of shell interpolation (the tag is already validated against `package.json`, but a value should not be spliced into a program); `sed -n 1p` (not `head`, which can SIGPIPE `gh` under `pipefail`) takes the first, and the assets step reads that release by id. The assets step is extended: a pre-release draft must hold `<channel>-linux.yml` and **no** `latest-linux.yml`; a final draft must hold `latest-linux.yml` and no `<other>-linux.yml`.
 
 Checked in the code (not by a build, which needs the network): `computeChannelNames` in `app-builder-lib` returns only `[currentChannel]` when the publisher is GitHub, so a beta writes `beta-linux.yml` and never `latest-linux.yml`; `GitHubPublisher` looks a draft up by `tag_name === tag` only, so a draft that GitHub shows as `untagged-…` is not reused on a re-run (which is why a failed run's draft is deleted before the next push of the tag: `RELEASING.md` says so).
 
@@ -123,3 +123,15 @@ Read the spec's section 4 first; D5 and D6 there are the maintainer's to confirm
 - The prompt goldens (`test/runner-golden.test.ts`) must not change for existing templates; a new family needs its own prompts or falls back to `sdd`.
 - No test may reach a host: use `test/helpers/fakeHost.ts` and `vcs.ts`.
 - Do not run `npm run dist`.
+
+## 8. Part 1: what shipped
+
+| Commit | What |
+|---|---|
+| `feat: add the spec and plan of the release process #27` | this document and the spec |
+| `feat: open release branches and cut betas and the stable from release.sh #27` | `scripts/release.sh`, `scripts/release-changelog.mjs`, `test/release-script.test.ts` (36 cases), `test/release-changelog.test.ts` |
+| `feat: run ci for pull requests and pushes to release branches #27` | `ci.yml` |
+| `fix: find the untagged draft of a pre-release by name in the release workflow #27` | `release.yml`, `test/release-workflow.test.ts` |
+| `feat: document the release branch, beta and stable flow #27` | `RELEASING.md`, `CONTRIBUTING.md`, `docs/updates.md`, `CHANGELOG.md` |
+
+Not verified: the workflow on GitHub (the lookup against the real API, the pre-release flag, the checks of the feed); the branch protection settings suggested in `RELEASING.md`. The real `0.5.0` line: `v0.5.0-beta.1` was cut on `main` before this process existed, so `scripts/release.sh open 0.5.0` is refused ("already has a beta tag") on purpose; continue that line with a plain `git switch -c release/0.5.0` and cut `beta` from it, or fold it into a stable with `scripts/release.sh 0.5.0 --emergency` if nobody needs a second beta.

@@ -65,13 +65,13 @@ Modes are told by the first argument: `open`, `beta`, `stable`, or an explicit v
 
 **`stable` or `X.Y.Z`** (on `main`)
 
-| Rule | Refused when (and `--emergency` skips only these four) |
+| Rule | Refused when (`--emergency` skips only the three marked *beta rule*) |
 |---|---|
 | On `main` | any other branch (`--allow-branch`, loudly) |
-| The version passed the beta | no `vX.Y.Z-beta.*` tag exists |
-| The beta is in `main` | the latest beta's commit is not an ancestor of `HEAD` |
-| The release branch is merged and untouched | `release/X.Y.Z` exists (locally or on `origin`) and its tip is not an ancestor of `HEAD`, or it is ahead of the latest beta (a commit after the last beta was never tried by anyone: cut another beta first). A branch that no longer exists is not an error: the beta tag stands for it, and the output says so |
-| Always | the version is above the highest stable tag; `stable` alone reads the version from `package.json`'s pre-release (`0.6.0-beta.2` gives `0.6.0`) and refuses a `package.json` that is already stable |
+| The version passed the beta (*beta rule*) | no `vX.Y.Z-beta.*` tag exists |
+| The beta is in `main` (*beta rule*) | the latest beta's commit is not an ancestor of `HEAD` |
+| The release branch is merged and untouched (*beta rule*) | `release/X.Y.Z` exists (locally or on `origin`) and its tip is not an ancestor of `HEAD`, or it is ahead of the latest beta (a commit after the last beta was never tried by anyone: cut another beta first). A branch that no longer exists is not an error: the beta tag stands for it, and the output says so |
+| Always | the version is not above the latest stable of its own major.minor (of the whole repository when that line has none); `stable` alone reads the version from `package.json`'s pre-release (`0.6.0-beta.2` gives `0.6.0`) and refuses a `package.json` that is already stable |
 
 **`--emergency`** is for a hotfix that cannot wait for a beta. It skips the three "passed the beta / in `main` / merged and untouched" rules, prints each rule it skipped on standard error behind a banner, repeats them at the end, and writes them in the tag's message (`Coxia X.Y.Z (emergency: no beta)`), so the history says it. It does **not** skip the checks, the audit, the changelog or the version-order rule, and it works only for a stable on `main`.
 
