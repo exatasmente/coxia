@@ -66,7 +66,11 @@ function CommentLine({ run, row, web, go }: { run: Run; row: CommentRow; web: bo
           <span className="faint"> · {t(row.record.target === 'mr' ? 'ui.cycle.comment.onPr' : 'ui.cycle.comment.onIssue')}</span>
         </span>
         {status === 'proposed' && <button type="button" className="btn cy-mini" onClick={() => go({ name: 'actions' })}>{t('ui.cycle.comment.seeActions')}</button>}
-        {canUndoPost(row) && !web && step !== 'confirm' && <button type="button" className="btn cy-mini" disabled={step === 'busy'} onClick={() => setStep('confirm')}>{t('ui.cycle.comment.undo')}</button>}
+        {canUndoPost(row) && step !== 'confirm' && (
+          <button type="button" className="btn cy-mini" disabled={step === 'busy' || web} title={web ? t('ui.cycle.desktopOnly') : undefined} onClick={() => setStep('confirm')}>
+            {t('ui.cycle.comment.undo')}
+          </button>
+        )}
         {step === 'confirm' && (
           <>
             <button type="button" className="btn btn-red cy-mini" onClick={() => void undo()}>{t('ui.cycle.comment.undoConfirm')}</button>
