@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
 import { autonomousOf, squadOf } from '../../../../shared/config/squads';
-import { type FlowStage, type Run, type RunFailure } from '../../../../shared/runs';
-import { type RunAction, type RunActionId, currentAgent, currentStage, runActions } from '../../../../shared/runs/view';
+import { type FlowStage, type Run, type RunFailure, defaultSendBackTarget, looksLikeSendBack, sendBackTargets } from '../../../../shared/runs';
+import { type RunAction, type RunActionId, currentAgent, currentStage, runActions, skipWaitOutcome } from '../../../../shared/runs/view';
 import type { Card, ReleaseAction } from '../../../../shared/types';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { RunBadge } from './RunBadge';
-import { WAIT_KEY, agentName, agentOf, squadName } from './names';
+import { SKIP_WAIT_KEY, WAIT_KEY, agentName, agentOf, squadName } from './names';
 import { patchRun, reloadConfig, runsApi } from './runsApi';
 
 // What the person can do for a run in the state it is in: the question or the decision that waits, the buttons of `runActions`, and the switches of the agent
@@ -37,6 +37,7 @@ const ACTION_LABEL: Record<RunActionId, string> = {
   answer: 'ui.cycle.action.answer',
   chooseSquad: 'ui.cycle.action.chooseSquad',
   skipWait: 'ui.cycle.action.skipWait',
+  sendBack: 'ui.cycle.action.sendBack',
   retry: 'ui.cycle.action.retry',
   cancel: 'ui.cycle.action.cancel',
 };
@@ -61,6 +62,8 @@ interface Props {
   card?: Card;
   actions: readonly ReleaseAction[];
   go: (s: Screen) => void;
+  /** Changes when something else on the screen (the thread's hint) asks for the form that sends the work back. */
+  sendBackAsk?: number;
 }
 
 /** The text the person reads about what the run waits for, by state. */
@@ -160,13 +163,64 @@ function Autonomy({ run, agent, config, busy, call }: { run: Run; agent: AgentDe
   );
 }
 
-export function RunActions({ run, flow, config, card, actions, go }: Props) {
+/** The form that sends the work back: the stage it goes to (the default is the one the flow and the team say), what to ask, and the one click that does it. */
+function SendBackForm({ run, flow, config, note, onNote, target, onTarget, offered, busy, onSend, onSkipAnyway, onClose }: { run: Run; flow: readonly FlowStage[]; config: WorkspaceConfig | null; note: string; onNote: (v: string) => void; target: string; onTarget: (v: string) => void; offered: boolean; busy: boolean; onSend: () => void; onSkipAnyway: () => void; onClose: () => void }) {
+  const t = useT();
+  const targets = sendBackTargets(flow, run.stage);
+  const chosen = targets.find((s) => s.id === target);
+  return (
+    <div className="cy-sendback" role="group" aria-label={t('ui.cycle.sendBack.title')}>
+      <h3 className="section-title">{t('ui.cycle.sendBack.title')}</h3>
+      {offered && <p className="small cy-sendback-offer" role="note">{t('ui.cycle.sendBack.offer')}</p>}
+      <label className="cy-field">
+        <span className="small muted">{t('ui.cycle.sendBack.to')}</span>
+        <select className="text-input" value={target} disabled={busy} onChange={(e) => onTarget(e.target.value)}>
+          {targets.map((s) => (
+            <option key={s.id} value={s.id}>{t('ui.cycle.sendBack.option', { stage: shownText(s.label), agent: s.agent ? agentName(config?.agents.team, s.agent) : '' })}</option>
+          ))}
+        </select>
+      </label>
+      <label className="cy-field">
+        <span className="small muted">{t('ui.cycle.sendBack.note')}</span>
+        <textarea className="text-input cy-textarea" rows={3} value={note} onChange={(e) => onNote(e.target.value)} disabled={busy} />
+      </label>
+      <p className="small muted">{t(run.status === 'done' ? 'ui.cycle.sendBack.hintDone' : 'ui.cycle.sendBack.hint')}</p>
+      <div className="row">
+        <button type="button" className="btn btn-dark" disabled={busy || !chosen} onClick={onSend}>
+          {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.cycle.sendBack.confirm', { stage: chosen ? shownText(chosen.label) : '' })}
+        </button>
+        {offered && <button type="button" className="btn" disabled={busy || !note.trim()} onClick={onSkipAnyway}>{t('ui.cycle.sendBack.skipAnyway')}</button>}
+        <button type="button" className="btn" disabled={busy} onClick={onClose}>{t('ui.cycle.sendBack.keep')}</button>
+      </div>
+    </div>
+  );
+}
+
+export function RunActions({ run, flow, config, card, actions, go, sendBackAsk = 0 }: Props) {
   const t = useT();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const available = runActions(run);
+  const [sending, setSending] = useState(false);
+  const [offered, setOffered] = useState(false);
+  const [sendNote, setSendNote] = useState('');
+  const [target, setTarget] = useState('');
+  const available = runActions(run, flow);
+  const team = config?.agents.team;
+  const targets = sendBackTargets(flow, run.stage);
+  const preferred = (defaultSendBackTarget(flow, run.stage, (a) => agentOf(team, a)?.permission === 'worktree') ?? targets[targets.length - 1])?.id ?? '';
+  const openSendBack = (note: string, offer: boolean) => {
+    setSendNote(note);
+    setTarget(preferred);
+    setOffered(offer);
+    setSending(true);
+  };
+  // The thread's hint asks for the form: it opens with what was typed nowhere yet.
+  useEffect(() => {
+    if (sendBackAsk > 0 && runActions(run, flow).some((a) => a.id === 'sendBack')) openSendBack('', false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendBackAsk]);
   const agentId = run.status === 'done' || run.status === 'cancelled' ? null : currentAgent(run, flow);
   const agent = agentId ? agentOf(config?.agents.team, agentId) : undefined;
   const proposals = actions.filter((a) => a.state === 'pending' && a.unit?.runId === run.id).length;
@@ -179,6 +233,8 @@ export function RunActions({ run, flow, config, card, actions, go }: Props) {
         if (result && typeof result === 'object' && 'rev' in result) patchRun(result as Run);
         setText('');
         setConfirmCancel(false);
+        setSending(false);
+        setOffered(false);
         setBusy(false);
       },
       (e) => {
@@ -198,14 +254,16 @@ export function RunActions({ run, flow, config, card, actions, go }: Props) {
       case 'reject': return call(() => runsApi.gate(run.id, 'reject', note));
       case 'skip': return call(() => runsApi.gate(run.id, 'skip', note));
       case 'answer': return call(() => runsApi.answer(run.id, note));
-      case 'skipWait': return call(() => runsApi.skipWait(run.id, note));
+      case 'skipWait': return looksLikeSendBack(note, (team ?? []).map((x) => x.id)) ? openSendBack(note, true) : call(() => runsApi.skipWait(run.id, note));
+      case 'sendBack': return openSendBack(note, false);
       case 'retry': return call(() => runsApi.retry(run.id));
       case 'cancel': return confirmCancel ? call(() => runsApi.cancel(run.id)) : setConfirmCancel(true);
       case 'chooseSquad': return undefined;
     }
   };
 
-  const needsText = available.some((a) => a.input !== 'none');
+  const needsText = available.some((a) => a.id !== 'sendBack' && a.input !== 'none');
+  const outcome = run.status === 'waiting' ? skipWaitOutcome(run, flow) : null;
   const gateQuiz = run.status === 'gate' && card;
 
   return (
@@ -230,6 +288,14 @@ export function RunActions({ run, flow, config, card, actions, go }: Props) {
           <textarea className="text-input cy-textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} disabled={busy} />
         </label>
       )}
+      {outcome && (
+        <p className="small muted cy-skip-next">
+          {outcome.kind === 'stage' && t('ui.cycle.skipWait.next', { stage: shownText(outcome.stage.label) })}
+          {outcome.kind === 'end' && t('ui.cycle.skipWait.end')}
+          {outcome.kind === 'resume' && t('ui.cycle.skipWait.resume', { agent: outcome.agent ? agentName(team, outcome.agent) : '' })}
+          {available.some((a) => a.id === 'sendBack') && ` ${t('ui.cycle.skipWait.sendBackHint')}`}
+        </p>
+      )}
       {available.length > 0 && (
         <div className="row">
           {available.filter((a) => a.id !== 'chooseSquad').map((a) => {
@@ -243,7 +309,7 @@ export function RunActions({ run, flow, config, card, actions, go }: Props) {
                 disabled={busy || missing}
                 onClick={() => doIt(a)}
               >
-                {busy && !confirming ? <span className="spinner" aria-hidden="true" /> : null} {confirming ? t('ui.cycle.action.cancelConfirm') : t(ACTION_LABEL[a.id])}
+                {busy && !confirming ? <span className="spinner" aria-hidden="true" /> : null} {confirming ? t('ui.cycle.action.cancelConfirm') : t(a.id === 'skipWait' && run.wait ? SKIP_WAIT_KEY[run.wait.kind] : ACTION_LABEL[a.id])}
               </button>
             );
           })}
@@ -254,6 +320,25 @@ export function RunActions({ run, flow, config, card, actions, go }: Props) {
             <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: run.issue.ref, card })}>{t('ui.cycle.action.quiz')}</button>
           )}
         </div>
+      )}
+      {sending && (
+        <SendBackForm
+          run={run}
+          flow={flow}
+          config={config}
+          note={sendNote}
+          onNote={setSendNote}
+          target={target}
+          onTarget={setTarget}
+          offered={offered}
+          busy={busy}
+          onSend={() => call(() => runsApi.sendBack(run.id, target, sendNote.trim()))}
+          onSkipAnyway={() => call(() => runsApi.skipWait(run.id, sendNote.trim()))}
+          onClose={() => {
+            setSending(false);
+            setOffered(false);
+          }}
+        />
       )}
       {confirmCancel && <p className="small muted">{t('ui.cycle.action.cancelHint')}</p>}
       {error && <div className="error" role="alert">{error}</div>}

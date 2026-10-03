@@ -88,6 +88,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
   const t = useT();
   const narrow = useNarrow();
   const [tab, setTab] = useState<'cycle' | 'forum'>(initialTab);
+  const [sendBackAsk, setSendBackAsk] = useState(0);
   const threads = useThreads();
   const seen = useSeen();
   const run = useRun(id);
@@ -158,7 +159,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
         <div className="cy-cols">
           {(!narrow || tab === 'cycle') && (
             <div className="cy-main" id="cy-panel-cycle" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-cycle' : undefined}>
-              <RunActions run={run} flow={flow} config={config} card={card} actions={actions} go={go} />
+              <RunActions run={run} flow={flow} config={config} card={card} actions={actions} go={go} sendBackAsk={sendBackAsk} />
               {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
               <StageTimeline run={run} flow={flow} config={config} go={go} />
               <ReviewRounds run={run} config={config} />
@@ -166,7 +167,16 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           )}
           {(!narrow || tab === 'forum') && (
             <div className="cy-side" id="cy-panel-forum" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-forum' : undefined}>
-              <Thread thread={runThreadId(run.id)} run={run} team={config?.agents.team} title={t('ui.cycle.forum')} />
+              <Thread
+                thread={runThreadId(run.id)}
+                run={run}
+                team={config?.agents.team}
+                title={t('ui.cycle.forum')}
+                onSendBack={() => {
+                  setTab('cycle');
+                  setSendBackAsk((n) => n + 1);
+                }}
+              />
             </div>
           )}
         </div>

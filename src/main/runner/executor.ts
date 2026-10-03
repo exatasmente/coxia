@@ -12,7 +12,8 @@ import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
-import { type CommandResult, type CommandRunner, runCommand, runCommands } from './commands';
+import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
+import { ensureDependencies } from './dependencies';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
@@ -174,6 +175,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
+  // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too.
+  if (writes || kind === 'qa') await ensureDependencies(d, run, stage.id);
   const commands = writes ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
@@ -205,6 +208,9 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   if (ran?.length) {
     const list = ran.map((r) => `${r.command} (${r.timedOut ? 'timeout' : (r.exitCode ?? '—')})`).join(', ');
     d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.commands', params: { list }, stage: stage.id });
+    // A command the environment could not start is said in the thread as such, so the person sees it was not the code that failed.
+    const missed = notRunReport(ran);
+    if (missed) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.notRun', params: { list: missed.list }, stage: stage.id });
   }
 
   const input: StageInput = {

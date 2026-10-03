@@ -22,6 +22,7 @@ export interface RunnerDraft {
   identityName: string;
   identityEmail: string;
   commitMessage: string;
+  linkDependencies: boolean;
 }
 
 export function draftOfRunner(r: RunnerConfig): RunnerDraft {
@@ -39,6 +40,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     identityName: r.identity.name,
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
+    linkDependencies: r.linkDependencies !== false,
   };
 }
 
@@ -54,6 +56,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     turns: { read: d.turnsRead, write: d.turnsWrite },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     commitMessage: d.commitMessage,
+    linkDependencies: d.linkDependencies,
   };
 }
 

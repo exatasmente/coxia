@@ -680,6 +680,11 @@ export interface RunnerConfig {
   identity: RunnerIdentity;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
+  /**
+   * A run's worktree gets a symbolic link to each dependency folder (`node_modules`, `.venv`) the repository's own clone has and the worktree lacks, so the
+   * commands the app runs there find their tools. A config stored without it reads as true.
+   */
+  linkDependencies: boolean;
 }
 
 export interface ScheduleConfig {

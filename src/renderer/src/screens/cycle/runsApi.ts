@@ -33,6 +33,7 @@ export const runsApi = {
   retry: (id: string) => api.invoke<Run>('runs:retry', id),
   cancel: (id: string) => api.invoke<Run>('runs:cancel', id),
   skipWait: (id: string, reason: string) => api.invoke<Run>('runs:skipWait', id, reason),
+  sendBack: (id: string, stage: string, note: string) => api.invoke<Run>('runs:sendBack', id, stage, note),
   migrateFlow: (id: string) => api.invoke<Run>('runs:migrateFlow', id),
   undoPost: (id: string, key: string) => api.invoke<UndoResult>('runs:undoPost', id, key),
   setSquad: (id: string, squad: string | null) => api.invoke<Run>('runs:setSquad', id, squad),

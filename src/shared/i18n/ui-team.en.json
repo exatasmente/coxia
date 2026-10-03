@@ -204,6 +204,8 @@
   "ui.runner.identityNone": "The identity the repository already has",
   "ui.runner.idle": "Longest the agent may be silent (minutes)",
   "ui.runner.idleHint": "From {min} to {max}. If the agent shows no sign of life (text, a tool, model usage) for that long, the stage fails and can be retried. One that keeps working never reaches it.",
+  "ui.runner.linkDeps": "Give each run the dependencies of the clone",
+  "ui.runner.linkDepsHint": "A run's worktree starts with no node_modules or .venv, so the tests cannot run. On, the app links the ones your clone has (never committed); the commands it runs there use the clone's dependencies.",
   "ui.runner.saved": "Runner settings saved.",
   "ui.runner.trigger": "Label that asks for a run",
   "ui.runner.triggerHint": "Case does not matter.",

@@ -83,6 +83,7 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
   ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
   ctx.handle('runs:skipWait', (run: unknown, reason: unknown) => r.skipWait(id(run), text(reason)));
+  ctx.handle('runs:sendBack', (run: unknown, stage: unknown, note: unknown) => r.sendBack(id(run), text(stage), text(note)));
   ctx.handle('runs:migrateFlow', (run: unknown) => r.migrateFlow(id(run)));
   ctx.handle('runs:undoPost', (run: unknown, key: unknown) => r.undoPost(id(run), text(key)));
   ctx.handle('runs:setSquad', (run: unknown, squad: unknown) => r.setSquad(id(run), typeof squad === 'string' && squad ? squad : null));

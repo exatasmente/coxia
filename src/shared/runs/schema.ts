@@ -112,7 +112,7 @@ const qaRecord = object(
     commands: {
       type: 'array',
       description: 'The commands the app ran before this pass.',
-      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' } }, ['command', 'exitCode', 'timedOut']),
+      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' }, notRun: { type: 'boolean', description: 'It could not be started (not found, not executable): not a result of the code.' } }, ['command', 'exitCode', 'timedOut']),
       maxItems: 20,
     },
   },

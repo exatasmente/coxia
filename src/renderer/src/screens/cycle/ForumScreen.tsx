@@ -123,7 +123,7 @@ export function ForumScreen({ go, thread }: { go: (s: Screen) => void; thread?: 
         {phone && <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.backToList')}</button>}
         {selected?.runId && <button type="button" className="btn" onClick={() => go({ name: 'run', id: selected.runId as string })}>{t('ui.forum.openRun')}</button>}
       </div>
-      <Thread thread={thread} team={config?.agents.team} title={selected?.title} channel={selected?.kind === 'channel' || selected?.kind === 'general'} run={selected?.runId ? (runs?.find((r) => r.id === selected.runId) ?? null) : null} />
+      <Thread thread={thread} team={config?.agents.team} title={selected?.title} channel={selected?.kind === 'channel' || selected?.kind === 'general'} run={selected?.runId ? (runs?.find((r) => r.id === selected.runId) ?? null) : null} onSendBack={selected?.runId ? () => go({ name: 'run', id: selected.runId as string, tab: 'cycle' }) : undefined} />
     </div>
   ) : (
     <p className="dash-calm cy-forum-pick">{t('ui.forum.pick')}</p>

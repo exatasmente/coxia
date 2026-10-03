@@ -37,6 +37,9 @@
 .cy-field { display: flex; flex-direction: column; gap: 6px; }
 .cy-textarea { min-height: 80px; padding: 10px 14px; resize: vertical; line-height: 1.45; }
 .cy-squad-choice { display: flex; flex-direction: column; gap: 8px; }
+.cy-sendback { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; border: 1px solid var(--line-2); }
+.cy-sendback-offer { padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); line-height: 1.4; }
+.cy-skip-next { line-height: 1.4; }
 
 .cy-autonomy { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-2); }
 .cy-switch-row { display: flex; align-items: center; gap: 12px; }

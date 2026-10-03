@@ -127,6 +127,9 @@ export function RunnerSection({ config, save }: SectionProps) {
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
       </Labeled>
 
+      <Toggle checked={draft.linkDependencies} onChange={(linkDependencies) => set({ linkDependencies })} label={t('ui.runner.linkDeps')} />
+      <p className="small muted">{t('ui.runner.linkDepsHint')}</p>
+
       <Problems items={warnings} />
       {error && <div className="error" role="alert">{error}</div>}
       <div className="tm-savebar">

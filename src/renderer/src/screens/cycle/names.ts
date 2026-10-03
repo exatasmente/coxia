@@ -36,3 +36,12 @@ export const WAIT_KEY: Record<WaitKind, string> = {
   'linked-done': 'ui.cycle.wait.linkedDone',
   time: 'ui.cycle.wait.time',
 };
+
+/** The button that leaves a wait, worded by what it stops waiting for: it moves forward, and says so. */
+export const SKIP_WAIT_KEY: Record<WaitKind, string> = {
+  'pr-merged': 'ui.cycle.action.skipWait.prMerged',
+  'reporter-reply': 'ui.cycle.action.skipWait.reporterReply',
+  label: 'ui.cycle.action.skipWait.label',
+  'linked-done': 'ui.cycle.action.skipWait.linkedDone',
+  time: 'ui.cycle.action.skipWait.time',
+};
