@@ -77,7 +77,7 @@ scripts/release.sh open 0.6.0
 git push -u origin release/0.6.0
 ```
 
-It creates `release/0.6.0` from `main` and switches to it. It refuses a branch or a tag that exists, a version that is not above the latest stable, a `main` that is behind `origin/main`, and a dirty tree. A **patch** of a released version (`0.5.1` after `0.5.0`) is cut from the stable tag, not from whatever `main` holds now: `scripts/release.sh open 0.5.1 --from v0.5.0` ([Hotfix](#hotfix)).
+It creates `release/0.6.0` from `main` and switches to it. It refuses a branch or a tag that exists, a version that is not above the latest stable, a `main` that is behind `origin/main`, and a dirty tree. It also refuses a version below what `main` already carries (its `package.json`, or a stable or beta tag reachable from it). A **patch** of a released version (`0.5.1` after `0.5.0`) is cut from the stable tag, not from whatever `main` holds now: `scripts/release.sh open 0.5.1 --from v0.5.0` ([Hotfix](#hotfix)).
 
 ### 2. Develop into it
 
@@ -85,7 +85,7 @@ Every issue has its own branch, and its pull request targets `release/0.6.0`, no
 
 ### 3. Close the release: the beta
 
-On `release/0.6.0`, clean and with CI green:
+On `release/0.6.0`, clean and with CI green. **Fetch first** (`git fetch origin`): the script never touches the network, and it compares your branch with the `origin/release/0.6.0` it already has. If the remote has commits your branch lacks it refuses, so the tag cannot sit on a commit that the push of the branch would be rejected for.
 
 ```bash
 scripts/release.sh beta --author "Your Name <12345+you@users.noreply.github.com>"
@@ -93,7 +93,7 @@ git push origin release/0.6.0
 git push origin v0.6.0-beta.1
 ```
 
-The number is the next one after the highest `v0.6.0-beta.N` tag (`beta.1` the first time). An explicit `scripts/release.sh 0.6.0-beta.2` is accepted when it follows the latest beta. The script refuses to run anywhere but on `release/X.Y.Z`, and refuses a version whose number is not the branch's (`release/0.6.0` cuts `0.6.0-beta.N`, never `0.7.0-beta.1`). What it does, in order: refuses a dirty tree, a tag that exists and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`) and the public audit (`scripts/public-audit.mjs`, which always runs, even with `--skip-checks` and in a dry run); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.6.0-beta.1] - <today>`; commits with `feat: release 0.6.0-beta.1`; creates the annotated tag. **It stops there and prints the push commands**; review the commit and the tag (`git show v0.6.0-beta.1`) first.
+The number is the next one after the highest `v0.6.0-beta.N` tag (`beta.1` the first time). An explicit `scripts/release.sh 0.6.0-beta.2` is accepted when it follows the latest beta. The script refuses to run anywhere but on `release/X.Y.Z`, and refuses a version whose number is not the branch's (`release/0.6.0` cuts `0.6.0-beta.N`, never `0.7.0-beta.1`). What it does, in order: refuses a dirty tree, a tag that exists and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`) and the public audit (`scripts/public-audit.mjs`, which always runs, even with `--skip-checks` and in a dry run); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.6.0-beta.1] - <today>`; commits with `feat: release 0.6.0-beta.1`; creates the annotated tag. **It stops there and prints the push commands**; review the commit and the tag (`git show v0.6.0-beta.1`) first. Push the branch **before** the tag: the workflow refuses a beta tag whose commit is not on `origin/release/0.6.0`. When there is no `origin/release/0.6.0` yet (the branch was never pushed), the script says on one line that the remote checks were skipped.
 
 The tag triggers the workflow ([below](#what-a-tag-triggers)); it makes a **draft pre-release**. The feed is `beta-linux.yml` (the first identifier after the dash names the channel: `-rc.1` would give `rc-linux.yml`, but only `beta` is wired into the app's settings) and no `latest-linux.yml` is produced, so people on the stable channel never see it. After you [verify](#verifying-a-draft) and [publish](#publishing) it, people who pick *Beta* in Settings › Updates receive it ([how to join](docs/updates.md#joining-the-beta-channel)). The app never moves anyone to an older version when they switch channels.
 
@@ -103,19 +103,21 @@ A fix goes into the same release branch (its own branch, a pull request into `re
 
 ### 5. Stable
 
-When the beta is good, merge the release branch into `main` and cut the stable version there:
+When the beta is good, **fetch** (`git fetch origin`), merge the release branch into `main` and cut the stable version there:
 
 ```bash
+git fetch origin
 git switch main
-git merge --ff-only release/0.6.0        # or --no-ff, below, when main has moved
+git merge --ff-only origin/main          # main must not be behind the remote
+git merge --ff-only release/0.6.0        # or a merge commit with your identity (Merging locally), when main has moved
 scripts/release.sh stable --author "Your Name <12345+you@users.noreply.github.com>"
 git push origin main
 git push origin v0.6.0
 ```
 
-`stable` reads the version from the pre-release in `package.json` (`0.6.0-beta.2` gives `0.6.0`); `scripts/release.sh 0.6.0` says the same. It refuses unless **a `v0.6.0-beta.*` tag exists**, **the latest beta is in `main`**, and **`release/0.6.0` (when it still exists, here or on `origin`) is merged and holds nothing newer than that beta**: a commit after the last beta was tried by nobody, so cut another beta first. The version must also be above the latest stable. Then the draft is built, checked and published like a beta's, and everyone on the stable channel receives it. The script ends by printing, not running, the commands that delete the release branch (`git branch -d release/0.6.0`, `git push origin --delete release/0.6.0`): run them after the draft is published.
+`stable` reads the version from the pre-release in `package.json` (`0.6.0-beta.2` gives `0.6.0`); `scripts/release.sh 0.6.0` says the same. It refuses unless **a `v0.6.0-beta.*` tag exists**, **the latest beta is in `main`**, and **`release/0.6.0` (when it still exists, here or on `origin`) is merged and holds nothing newer than that beta**: a commit after the last beta was tried by nobody, so cut another beta first. It also refuses when `origin/main` has commits that your `main` lacks (behind or diverged), so the tag cannot sit on a commit that the push of `main` would be rejected for. The version must also be above the latest stable of its own line. When the release branch has already been deleted, **only the beta tag stands for it**: the script checks that the latest beta is in `main`, and cannot see commits that landed on `main` after that beta, so look at `git log v0.6.0-beta.2..main` before cutting. Push `main` **before** the tag: the workflow refuses a stable tag whose commit is not on `origin/main`. Then the draft is built, checked and published like a beta's, and everyone on the stable channel receives it. The script ends by printing, not running, the commands that delete the release branch (`git branch -d release/0.6.0`, `git push origin --delete release/0.6.0`): run them after the draft is published.
 
-The first release (`0.1.0`) was a special case: `package.json` and the changelog already said `0.1.0`, so `scripts/release.sh 0.1.0 --author "..."` only ran the checks and created the tag. The same shortcut applies whenever the version and its changelog section are already in place.
+The first release (`0.1.0`) was a special case: `package.json` and the changelog already said `0.1.0`, so `scripts/release.sh 0.1.0 --author "..."` only ran the checks and created the tag. The same shortcut applies whenever the version and its changelog section are already in place, but it skips only the version bump and the changelog move: the branch, beta, merge and remote rules above still apply (a first stable with no beta needs `--emergency`, written in the tag).
 
 ## Merging locally
 
@@ -141,19 +143,23 @@ git push -u origin release/0.6.1
 # the fix: its own branch, a pull request into release/0.6.1, a local merge
 scripts/release.sh beta --author "..."           # 0.6.1-beta.1; push the branch and the tag
 # when somebody has tried it:
-git switch main && git merge --no-ff release/0.6.1   # main may have moved on: use a merge commit
+git fetch origin && git switch main
+git -c user.name="Your Name" -c user.email="12345+you@users.noreply.github.com" \
+  merge --no-ff -m "Merge release/0.6.1" release/0.6.1   # a merge commit, with your identity ("Merging locally")
 scripts/release.sh stable --author "..."
 ```
 
-`--from` takes a stable tag of the same major.minor and a version above it; anything else is refused.
+`--from` must be **the latest stable tag of that major.minor** (`v0.6.0`, once `v0.6.1` exists, `v0.6.1` for `0.6.2`) and the version above it; anything else is refused.
 
-**When even a beta cannot wait** (an incident), `scripts/release.sh 0.6.1 --emergency --author "..."` on `main` cuts the stable without the beta rules. It is loud on purpose: a banner on standard error naming every rule it skipped, the same lines again at the end, and the skipped rules written in the tag's message (`git show v0.6.1`). It never skips the checks, the public audit, the changelog or the version order. Do not make it a habit; a rule you have to skip twice a month is a rule to change.
+**Not supported: hotfixing an older line while `main` has moved to a newer one.** Once `main` carries `0.7.0` (its `package.json`, or a stable or beta tag reachable from it), `open 0.6.2 --from v0.6.1` is refused: the stable of the old line is cut on `main`, and merging an old line into a newer `main` would bring back the old version number. Do the fix on the current line instead (it goes out as the next version of `main`'s line, with a short beta), or, if a real support line is needed, do that release by hand outside this script and say so in the release notes. This flow does not model support branches.
+
+**When even a beta cannot wait** (an incident), `scripts/release.sh 0.6.1 --emergency --author "..."` on `main` cuts the stable without the beta, merge and remote rules. It is loud on purpose: a banner on standard error naming every rule it skipped, the same lines again at the end, and the skipped rules written in the tag's message (`git show v0.6.1`). It never skips the checks, the public audit, the changelog or the version order. Do not make it a habit; a rule you have to skip twice a month is a rule to change.
 
 ## What a tag triggers
 
 The tag triggers **Release** (`.github/workflows/release.yml`):
 
-1. **Check the version.** The tag must equal `v` + `package.json` version, or the run fails before building anything.
+1. **Check the version.** The tag must equal `v` + `package.json` version, and the tag's commit must be on the branch it belongs to on the remote (`origin/main` for a stable, `origin/release/X.Y.Z` for a beta; `scripts/verify-release-origin.sh`), or the run fails before building anything. Push the branch first, then the tag.
 2. **Linux job.** `npm ci`, then `npm run dist:public -- --publish always` with `GITHUB_TOKEN`: builds `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb` without the SDK, writes the feed (`latest-linux.yml`, or `beta-linux.yml` for a beta), and creates a **draft** release named after the tag, with the `CHANGELOG.md` section as its body, attaching the files. It then runs `scripts/verify-release-files.sh` (names, version and sha512 of the AppImage against the feed; a pre-release must not produce `latest-linux.yml`), marks a beta's draft as a pre-release and checks that the draft holds the three files and **only its own channel's feed**.
 3. Nothing else. Windows and macOS are off unless you ask for them ([below](#dry-runs-and-experimental-platforms)).
 

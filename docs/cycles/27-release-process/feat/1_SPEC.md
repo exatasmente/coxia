@@ -48,10 +48,10 @@ Modes are told by the first argument: `open`, `beta`, `stable`, or an explicit v
 
 | Rule | Refused when |
 |---|---|
-| The version is a stable semver | it has a suffix or a leading `v` |
+| The version is a stable semver, each number `0` or without a leading zero (`0.06.0` would make the tag `v0.06.0` and a `package.json` that says `0.6.0`; every version, tag and branch number is checked this way) | it has a suffix or a leading `v` |
 | The tree is clean and the branch does not exist | `release/X.Y.Z` exists locally or on `origin`; a tag `vX.Y.Z` or `vX.Y.Z-beta.*` exists |
-| From `main` (no `--from`) | `main` does not exist; `origin/main` has commits `main` lacks (update it first); the version is not above the highest stable tag; the version is a **patch** (a stable `vX.Y.*` exists) and `main` is not exactly at that stable tag, which is how a patch is told from "everything merged on `main` since" |
-| `--from vA.B.C` | the tag is not an existing stable tag; `X.Y` differs from `A.B` (`--from` is only for a patch); `Z` is not above `C` |
+| From `main` (no `--from`) | `main` does not exist; `origin/main` has commits `main` lacks (update it first); the version is not above the highest stable tag, or is below the version `main` already carries (its `package.json` core, or any stable or beta tag reachable from it); the version is a **patch** (a stable `vX.Y.*` exists) and `main` is not exactly at that stable tag, which is how a patch is told from "everything merged on `main` since" |
+| `--from vA.B.C` | the tag is not an existing stable tag; `X.Y` differs from `A.B` (`--from` is only for a patch); the tag is not the **latest stable of that minor**; `Z` is not above `C`; `main` already carries a newer line (a larger major.minor) than the hotfix: hotfixing an older line while `main` has moved on is not modelled (decision D9) |
 
 **`beta` or `X.Y.Z-beta.N`** (on a branch)
 
@@ -61,19 +61,21 @@ Modes are told by the first argument: `open`, `beta`, `stable`, or an explicit v
 | The number matches | the version's `X.Y.Z` is not the branch's: `release/0.6.0` cuts `0.6.0-beta.N` only |
 | `beta` takes the next number | — (it is the highest existing `vX.Y.Z-beta.N` plus one, 1 when none) |
 | An explicit `-beta.N` | the suffix is not exactly `beta.<positive integer>`; the tag exists; `N` is below the highest existing; a gap above the next number only warns |
+| The remote | `origin/release/X.Y.Z` exists and has commits `HEAD` lacks (behind or diverged); not skippable. With no tracking ref, one warning line says the remote checks were skipped and that the script never fetches |
 | The common checks | dirty tree; an empty `[Unreleased]` with no section for the version; a version below `package.json`'s (core compared) |
 
 **`stable` or `X.Y.Z`** (on `main`)
 
-| Rule | Refused when (`--emergency` skips only the three marked *beta rule*) |
+| Rule | Refused when (`--emergency` skips only those marked *skippable*) |
 |---|---|
 | On `main` | any other branch (`--allow-branch`, loudly) |
-| The version passed the beta (*beta rule*) | no `vX.Y.Z-beta.*` tag exists |
-| The beta is in `main` (*beta rule*) | the latest beta's commit is not an ancestor of `HEAD` |
-| The release branch is merged and untouched (*beta rule*) | `release/X.Y.Z` exists (locally or on `origin`) and its tip is not an ancestor of `HEAD`, or it is ahead of the latest beta (a commit after the last beta was never tried by anyone: cut another beta first). A branch that no longer exists is not an error: the beta tag stands for it, and the output says so |
+| The version passed the beta (*skippable*) | no `vX.Y.Z-beta.*` tag exists |
+| The beta is in `main` (*skippable*) | the latest beta's commit is not an ancestor of `HEAD` |
+| The remote is not ahead (*skippable*) | `origin/main` exists and is not an ancestor of `HEAD` (behind or diverged): the tag would sit on a commit the push of `main` is rejected for. With no `origin/main`, one warning line says the remote checks were skipped |
+| The release branch is merged and untouched (*skippable*) | `release/X.Y.Z` exists (locally or on `origin`) and its tip is not an ancestor of `HEAD`, or it is ahead of the latest beta (a commit after the last beta was never tried by anyone: cut another beta first). A branch that no longer exists is not an error: the beta tag stands for it, and the output says so |
 | Always | the version is not above the latest stable of its own major.minor (of the whole repository when that line has none); `stable` alone reads the version from `package.json`'s pre-release (`0.6.0-beta.2` gives `0.6.0`) and refuses a `package.json` that is already stable |
 
-**`--emergency`** is for a hotfix that cannot wait for a beta. It skips the three "passed the beta / in `main` / merged and untouched" rules, prints each rule it skipped on standard error behind a banner, repeats them at the end, and writes them in the tag's message (`Coxia X.Y.Z (emergency: no beta)`), so the history says it. It does **not** skip the checks, the audit, the changelog or the version-order rule, and it works only for a stable on `main`.
+**`--emergency`** is for a hotfix that cannot wait for a beta. It skips the four *skippable* rules (passed the beta, in `main`, merged and untouched, the remote not ahead), prints each rule it skipped on standard error behind a banner, repeats them at the end, and writes them in the tag's message (the subject `Coxia X.Y.Z (emergency: rules were skipped)` and one `skipped: <rule>` paragraph per rule), so the history says it. It does **not** skip the checks, the audit, the changelog or the version-order rule, and it works only for a stable on `main`.
 
 ### 3.3 The changelog
 
@@ -84,7 +86,7 @@ The **stable folds**: `## [X.Y.Z] - <date>` gathers, per subsection (`Added`, `C
 ### 3.4 CI and the workflow
 
 - `ci.yml` runs for pull requests and pushes to `main` and `release/**`.
-- `release.yml` finds the draft **by name** among drafts (`.name == "v<version>"`, or the tag when GitHub already linked it), in both the step that keeps a pre-release a pre-release and the step that checks the assets; the checks now also assert that a pre-release draft holds `<channel>-linux.yml` and **not** `latest-linux.yml`, and that a final draft holds `latest-linux.yml` and no `<channel>` feed. `RELEASING.md` also says that a draft left from a failed run has to be deleted before the tag is pushed again (electron-builder reuses a draft only by tag, and an untagged one is not found).
+- `release.yml` first checks that the tag's commit is reachable from `origin/main` (a stable) or `origin/release/X.Y.Z` (a beta), through `scripts/verify-release-origin.sh` over a checkout with `fetch-depth: 0`, so a tag from a local-only or stale commit publishes nothing; and finds the draft **by name** among drafts (`.name == "v<version>"`, or the tag when GitHub already linked it), in both the step that keeps a pre-release a pre-release and the step that checks the assets; the checks now also assert that a pre-release draft holds `<channel>-linux.yml` and **not** `latest-linux.yml`, and that a final draft holds `latest-linux.yml` and no `<channel>` feed. `RELEASING.md` also says that a draft left from a failed run has to be deleted before the tag is pushed again (electron-builder reuses a draft only by tag, and an untagged one is not found).
 - What cannot be verified here: that GitHub still names the pre-release draft `untagged-…` and that the new lookup finds it; the workflow is checked by reading it and by a script test of the `jq` filter against a recorded shape. It is said in `RELEASING.md`.
 
 ### 3.5 Docs
@@ -176,12 +178,14 @@ Both are read-only checks run by the same 5-minute pass as the other waits; both
 | # | Decision | Status |
 |---|---|---|
 | D1 | The stable **folds** the betas' changelog sections into `[X.Y.Z]` and removes them; the alternative is keeping the sections and summarising by hand | taken in part 1 (recommended; reversible: `release-changelog.mjs`) |
-| D2 | `--emergency` skips the beta rules only, in a stable on `main`; it is written in the tag | taken in part 1 |
+| D2 | `--emergency` skips the beta, merge and remote rules only, in a stable on `main`; it is written in the tag | taken in part 1 |
 | D3 | `stable` also accepts being the keyword (version read from `package.json`) | taken in part 1 |
 | D4 | The branch's merge is checked with the beta tag **and** the release branch when it still exists; a branch deleted earlier is not an error | taken in part 1 |
 | D5 | Part 2 uses a **run kind** (`subject`), not a release issue | recommended; **maintainer to confirm before part 2** |
 | D6 | Pushes and tags always wait for a person, even for an autonomous Release manager | recommended; **maintainer to confirm** |
 | D7 | The merge of a pull request is a `git merge --no-ff` in the app's clone, not the host's API | follows the issue; recorded here |
+| D9 | Hotfixing an older line while `main` carries a newer one is **not supported**; `open --from` refuses it and `RELEASING.md` says what to do instead (the current line, or by hand outside the flow) | taken in the review of part 1 |
+| D10 | The script compares `HEAD` with the remote-tracking refs it has and never fetches: a stable needs `origin/main` to be an ancestor of `HEAD` (skippable with `--emergency`), a beta needs the same of `origin/release/X.Y.Z` (not skippable) | taken in the review of part 1 |
 | D8 | The issue's "first use" (the pending work of #26 as `0.4.1-beta.1`) has been overtaken: `0.5.0-beta.1` was cut straight on `main` before the process existed, so the first real use is the next version, and `0.5.0` itself folds that beta into its stable | recorded |
 
 ## 7. Out of scope
