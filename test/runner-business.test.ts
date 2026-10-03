@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { removeAgent } from '../src/shared/config/team';
 import { setLanguage } from '../src/shared/i18n';
-import type { Run } from '../src/shared/runs';
+import { type Run, readOutput } from '../src/shared/runs';
 import { type Forge, makeForge } from './helpers/fakeForge';
 import { type Boot, boot, doc, work } from './helpers/runner';
 
@@ -160,6 +160,44 @@ describe('an issue through the agent cycle', () => {
     expect(waiting[0]).toContain('Should archived items be covered?');
     expect(b.thread(run).filter((m) => m.kind === 'question' && m.public).map((m) => [m.author.type === 'agent' ? m.author.id : '', m.to])).toEqual([['product-owner', 'person']]);
     expect(b.thread(run).find((m) => m.kind === 'question' && m.public)?.published).toMatchObject({ target: 'issue' });
+  });
+
+  it('proposes the priority only from the stage that owns it: triage may suggest a level but its proposal is said not to have been taken', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    script(b);
+    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+    // the support agent returns a priority anyway (the schema does not ask for it); the product owner's, in the next stage, is the one that counts
+    b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], priority: 'P0', comment: comment([['How it was understood', 'X.']]) }));
+    const started = await b.runner.start('app#101');
+    const run = await through(b, started);
+    const [triage, refine] = [b.engine.calls.find((c) => c.agent.id === 'support')!, b.engine.calls.find((c) => c.agent.id === 'product-owner')!];
+    expect(Object.keys((triage.schema as { properties: object }).properties)).not.toContain('priority');
+    expect(triage.prompt).toContain('proposed by the product refinement stage');
+    expect(triage.prompt).toContain('P0, P1, P2');
+    expect(Object.keys((refine.schema as { properties: object }).properties)).toEqual(expect.arrayContaining(['priority', 'milestone']));
+    const codes = b.thread(run).filter((m) => m.code?.startsWith('runner.priority')).map((m) => [m.code, m.stage]);
+    expect(codes).toEqual([['runner.priority.notOwner', 'triage'], ['runner.priority.milestone', 'refine'], ['runner.priority.proposed', 'refine']]);
+    const proposals = actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'priority');
+    expect(proposals.map((a) => [a.key, a.summary])).toEqual([[`priority:${run.id}:refine:1`, 'Priority P1 for app#101']]);
+  });
+
+  it('says so when the same stage would propose the same priority again, and keeps the first proposal', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    script(b);
+    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+    b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'X.']]) }));
+    const started = await b.runner.start('app#101');
+    const run = await through(b, started);
+    const refine = run.flow!.stages.find((s) => s.id === 'refine')!;
+    const agent = b.runner.get(run.id) && b.deps.config().agents.team.find((a) => a.id === 'product-owner')!;
+    const end = { stage: refine, agent, kind: 'work' as const, output: readOutput({ summary: 'Spec.', priority: 'P1' }, 'work'), autonomous: true };
+    await b.deps.publisher!.stageEnded(run.id, end);
+    expect(b.thread(run).filter((m) => m.code === 'runner.priority.duplicate')).toHaveLength(1);
+    expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'priority')).toHaveLength(1);
   });
 
   it('starts the flow of a workspace only when it has no problem: the agent cycle as delivered is fine', async () => {

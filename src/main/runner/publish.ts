@@ -16,6 +16,7 @@ import {
   findMarked,
   flowOfRun,
   markerOf,
+  priorityStageOf,
   pushStageOf,
   readMarker,
   recordCommentDraft,
@@ -739,20 +740,26 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const config = deps.config();
     const run = need(runId);
     const levels = config.devCycle.priority.labels;
+    // Only the stage that owns the priority proposes it: a level any other stage returned is said not to have been taken.
+    const flow = flowOfRun(run, config);
+    const owner = priorityStageOf(flow);
+    if (owner?.id !== end.stage.id) return say(run, 'runner.priority.notOwner', { agent: end.agent.id, to, owner: owner?.agent ?? '—' }, end.stage.id);
     if (end.output.milestone) say(run, 'runner.priority.milestone', { milestone: end.output.milestone, agent: end.agent.id }, end.stage.id);
     if (door.refusal()) return say(run, 'runner.priority.refused', { to }, end.stage.id);
     const provider = door.provider();
-    if (!provider) return;
+    if (!provider) return say(run, 'runner.priority.noHost', { to }, end.stage.id);
     const { issue } = projects(run);
     const labels = (await provider.getIssue(issue, run.issue.iid)).labels;
     const change = resolvePriority({ labels, priority: priorityOf(labels, levels), project: issue, iid: String(run.issue.iid), title: run.issue.title }, to, levels);
     if (change.noWrite || !change.label) return say(run, 'runner.priority.noWrite', { to, reason: tr(`main.runner.priority.noWrite.${change.noWrite ?? 'unmapped'}`) }, end.stage.id);
     const commands = await provider.planWrite({ op: 'setIssueLabels', project: issue, iid: run.issue.iid, add: change.add ? [change.add] : [], remove: change.remove });
-    if (!commands.length) return;
+    if (!commands.length) return say(run, 'runner.priority.unsupported', { to: change.label }, end.stage.id);
     const summary = tr('main.runner.priority.summary', { label: change.label, ref: run.issue.ref });
     const detail = [tr('main.runner.priority.detail', { agent: end.agent.id, label: change.label }), end.output.milestone ? tr('main.runner.priority.detailMilestone', { milestone: end.output.milestone }) : '', end.output.summary].filter(Boolean).join('\n\n');
-    const created = door.propose({ key: `priority:${runId}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail, unit: { runId, purpose: 'priority', key: 'priority', stage: end.stage.id }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
-    if (created) say(run, 'runner.priority.proposed', { label: change.label, agent: end.agent.id }, end.stage.id);
+    // One proposal per stage and attempt: the key a stage's earlier proposal (or another stage's) holds is not the next one's.
+    const attempt = run.stages.find((x) => x.stage === end.stage.id)?.attempts ?? 1;
+    const created = door.propose({ key: `priority:${runId}:${end.stage.id}:${attempt}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail, unit: { runId, purpose: 'priority', key: 'priority', stage: end.stage.id }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+    say(run, created ? 'runner.priority.proposed' : 'runner.priority.duplicate', created ? { label: change.label, agent: end.agent.id } : { to: change.label }, end.stage.id);
   }
 
   // ---- what a waiting run waits for -----------------------------------------------------------------------------------------------

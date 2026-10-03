@@ -50,6 +50,8 @@ export interface StageInput {
   routing?: { squads: SquadDef[]; why: RoutingWhy };
   /** The labels the agent may propose as the issue's priority (the ones that can be written to the tracker); empty or absent: it proposes none. */
   priority?: string[];
+  /** The levels a stage before the one that owns the priority may suggest in its documents (not propose). */
+  priorityHint?: string[];
 }
 
 const MESSAGE_MAX = 1500;
@@ -140,6 +142,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

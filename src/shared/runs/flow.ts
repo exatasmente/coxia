@@ -105,3 +105,12 @@ export function pushStageOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowS
   const found = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
   return found.length ? found[found.length - 1] : null;
 }
+
+/**
+ * The stage that owns the issue's priority: the last work stage of the backlog that has an agent (the product owner's refinement; a flow with one backlog
+ * stage has that one). The stages before it may suggest a level in their documents, but only this one proposes it.
+ */
+export function priorityStageOf(flow: FlowStage[]): FlowStage | null {
+  const found = flow.filter((s) => s.type === 'work' && s.kind === 'backlog' && s.agent);
+  return found.length ? found[found.length - 1] : null;
+}

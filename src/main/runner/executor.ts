@@ -4,7 +4,7 @@ import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, pushStageOf, readOutput } from '../../shared/runs';
+import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
@@ -138,8 +138,11 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // The first stage of a flow is where an issue comes in: the agent that works it may ask the person who reported it what is missing.
   const reporter = kind === 'work' && flow[0]?.id === stage.id;
   // A stage before development (intake, refinement) may propose the priority, from the levels the workspace can write to the tracker.
+  // Only the stage that owns the priority proposes it; the earlier ones are told the levels and may suggest one in their documents.
   const levels = stage.kind === 'backlog' && kind === 'work' ? writableLabels(config.devCycle.priority.labels) : [];
-  const priority = levels.length ? levels : undefined;
+  const owns = priorityStageOf(flow)?.id === stage.id;
+  const priority = levels.length && owns ? levels : undefined;
+  const priorityHint = levels.length && !owns ? levels : undefined;
   const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
   // The front door of a run whose squad is not decided proposes it: the squads it may name, and why the scope rules left it open.
   const candidates = run.routing && flow[0]?.id === stage.id ? squadsOf(config).filter((q) => run.routing?.candidates.includes(q.id)) : [];
@@ -162,6 +165,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     pr,
     reporter,
     priority,
+    priorityHint,
     routing,
     squad: squadOf(config, run.squad),
     turnsTo: askTarget(config, agent),
