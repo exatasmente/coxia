@@ -1,4 +1,5 @@
 import type { VcsKind } from '../../shared/config/types';
+import type { VcsCaps } from '../../shared/vcsCaps';
 import type { VcsCommand } from '../../shared/types';
 
 // The neutral shapes every provider (GitLab, GitHub, Bitbucket Cloud) returns, and the interface the rest of the app talks to.
@@ -144,19 +145,7 @@ export interface VcsRepo {
   webUrl: string;
 }
 
-export interface VcsCaps {
-  /** The tracker has a workflow status separate from labels. */
-  issueStatus: boolean;
-  /** MR discussions can be marked resolved. */
-  resolvableThreads: boolean;
-  /** CI jobs that wait for a person (GitLab manual jobs). */
-  manualJobs: boolean;
-  draftToggle: boolean;
-  /** The host exposes whether the branch conflicts with the target. */
-  conflictFlag: boolean;
-  /** The host can list issues assigned to me. */
-  issues: boolean;
-}
+export type { VcsCaps };
 
 export type VcsTransport = 'cli' | 'api';
 

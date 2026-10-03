@@ -1,7 +1,10 @@
 import type { CycleMeanings, Language, StageDef, WorkspaceConfig } from '../config/types';
 import type { DestinationLabels } from '../destination';
+import type { Terms } from '../i18n/terms';
 import { availability, type Availability, type CeremonyContext } from './ceremonies';
+import { hostFacts, type HostFacts } from './host';
 import { builtInName } from './names';
+import { termsFor } from './terms';
 import { cycleText, userTerms } from './text';
 
 // What the screens need to know about the cycle, as plain data: which ceremonies to show, what the stages are, how to call the person.
@@ -26,6 +29,10 @@ export interface CycleView {
   meanings: Pick<CycleMeanings, 'blocker' | 'readyForQa'>;
   /** Words a decision's destination is written with. */
   destination: DestinationLabels;
+  /** The standard placeholders of the workspace ({vcsName}, {cr}, {ceremony}...): the renderer fills its catalog texts from them. */
+  terms: Terms;
+  /** What the configured host, tools and engines can do: what the screens hide. */
+  host: HostFacts;
 }
 
 export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): CycleView {
@@ -46,5 +53,7 @@ export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): Cycle
       noteFallback: cycleText('cycle.noteFallback', language),
       minutes: cycleText('cycle.minutes', language),
     },
+    terms: termsFor(config, language),
+    host: hostFacts(config),
   };
 }

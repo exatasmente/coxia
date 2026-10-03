@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
 import type { CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import { configuredCli } from '../shared/cycles/terms';
 import { t } from '../shared/i18n';
 
 // Turns a WorkspaceConfig into what the rest of the main process needs: absolute paths, the optional integrations that are on, the
@@ -97,8 +98,6 @@ export interface ResolvedConfig {
   provider(id: string): LlmProvider | undefined;
 }
 
-const DEFAULT_CLI: Partial<Record<VcsKind, string>> = { gitlab: 'glab', github: 'gh' };
-
 export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): ResolvedConfig {
   const x = (p: string): string => expandHome(p, ctx.home);
   const xn = (p: string | null): string | null => (p?.trim() ? x(p) : null);
@@ -112,7 +111,7 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
     apiUrl: v.apiUrl || (v.kind === 'github' ? 'https://api.github.com' : v.kind === 'gitlab' ? `https://${v.host}/api/v4` : ''),
     user: v.user,
     secretRef: v.secretRef,
-    cli: v.cliPreference === 'api' ? null : (v.cliCommand ?? DEFAULT_CLI[v.kind] ?? null),
+    cli: configuredCli(v),
   }));
   const primaryVcs = vcs.find((v) => v.id === c.projects.issues.vcsId) ?? vcs[0] ?? null;
 

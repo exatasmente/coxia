@@ -1,5 +1,5 @@
 import type { Language, WorkspaceConfig } from '../config/types';
-import { CATALOGS, FALLBACK_LANGUAGE, NOVOICE_SUFFIX, voiceEnabled, type Params } from '../i18n';
+import { CATALOGS, FALLBACK_LANGUAGE, fillTemplate, keyCandidates, voiceEnabled, type Params } from '../i18n';
 
 // Text of the development cycle: catalog keys or literals, placeholders, and the way the agents address the person.
 
@@ -8,13 +8,16 @@ export function catalogText(key: string, language: Language): string | undefined
   return CATALOGS[language]?.[key] ?? CATALOGS[FALLBACK_LANGUAGE][key];
 }
 
-export function fill(template: string, params?: Params): string {
-  return params ? template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : template;
-}
+/** Fills `{name}` placeholders from the params, then from the workspace's terms (host name, change-request noun, ceremony name). */
+export const fill = fillTemplate;
 
-/** The catalog text of a key that has a wording for a conversation without voice: the ".novoice" one while voice is off. */
+/** The catalog text of a key, in the wording that fits: the ".novoice" one while voice is off, and the host's variant when there is one. */
 export function voiceText(key: string, language: Language, voice: boolean = voiceEnabled()): string {
-  return (voice ? undefined : catalogText(`${key}${NOVOICE_SUFFIX}`, language)) ?? catalogText(key, language) ?? key;
+  for (const candidate of keyCandidates(key, voice)) {
+    const found = catalogText(candidate, language);
+    if (found !== undefined) return found;
+  }
+  return key;
 }
 
 /** A text of the cycle config: a catalog key resolves to the catalog's text in `language`, anything else is a literal. Placeholders are filled either way. */

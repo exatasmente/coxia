@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { RestTransport } from './transport';
 import type {
@@ -34,7 +35,7 @@ const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|wip:)\s*/i;
 const BOT = /^k8s|_bot_|bot$/i;
 const ISSUE_PAGE_LIMIT = 5;
 
-export const GITLAB_CAPS: VcsCaps = { issueStatus: true, resolvableThreads: true, manualJobs: true, draftToggle: true, conflictFlag: true, issues: true };
+export const GITLAB_CAPS: VcsCaps = VCS_CAPS.gitlab;
 
 export function undrafted(title: string): string {
   return title.replace(DRAFT_PREFIX, '');

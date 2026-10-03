@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseLegacyProfile, type LegacyProfile } from '../../src/shared/config/legacy';
 import { migrateConfig } from '../../src/shared/config/migrations';
-import type { DevCycleConfig, StageDef, WorkspaceConfig } from '../../src/shared/config/types';
+import { neutralConfig } from '../../src/shared/config';
+import type { DevCycleConfig, Language, StageDef, VcsKind, WorkspaceConfig } from '../../src/shared/config/types';
+import { applyTemplate, builtInTemplate } from '../../src/shared/cycles';
 
 // The fictional profile of an install that predates the configuration (org "acme", repo "acme/web", people Ana and Bruno). The same file is
 // the documented example for COXIA_LEGACY_PROFILE.
@@ -44,3 +46,15 @@ export async function installEnvSecret(ref: string, name = 'COXIA_TEST_KEY', val
 
 /** The development cycle of the example profile: the SDD template with the fictional team's specifics. */
 export const exampleCycle = (): DevCycleConfig => exampleProfile().config.devCycle as DevCycleConfig;
+
+/** A workspace on the generic cycle of a template, with one integration of the given kind (null: none): what the host-aware tests render. */
+export function hostConfig(kind: VcsKind | null, options: { language?: Language; template?: string } = {}): WorkspaceConfig {
+  const c = applyTemplate(neutralConfig(), builtInTemplate(options.template ?? 'sdd')!);
+  c.language = options.language ?? 'en';
+  c.docs.autoDetect = false;
+  if (kind) {
+    c.vcs = [{ id: 'host', kind, host: kind === 'gitlab' ? 'gitlab.example.com' : kind === 'github' ? 'github.com' : 'bitbucket.org', apiUrl: '', user: '', secretRef: null, cliPreference: 'auto', cliCommand: null }];
+    c.projects.issues.vcsId = 'host';
+  }
+  return c;
+}

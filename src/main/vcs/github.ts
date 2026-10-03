@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { RestTransport } from './transport';
 import type {
@@ -26,7 +27,7 @@ import { checkIid, enc, iso, issueRefsOf, num, pool, worstCi } from './util';
 // thread is resolved, resolving it, and the draft state of a pull request. Issues are GitHub issues (no separate workflow status:
 // the card stage comes from labels and from the pull request).
 
-export const GITHUB_CAPS: VcsCaps = { issueStatus: false, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: true, issues: true };
+export const GITHUB_CAPS: VcsCaps = VCS_CAPS.github;
 
 /** The GraphQL writes a GitHub proposal may carry: resolve a review thread, mark a pull request ready or back to draft. */
 export const GITHUB_MUTATION =

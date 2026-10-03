@@ -3,6 +3,7 @@ import en from './en.json';
 import minutesEn from './minutes.en.json';
 import minutesPtBR from './minutes.pt-BR.json';
 import ptBR from './pt-BR.json';
+import { defaultTerms, type Terms } from './terms';
 import mainEn from './main.en.json';
 import mainPtBR from './main.pt-BR.json';
 import wizardEn from './wizard.en.json';
@@ -14,6 +15,8 @@ import wizardPtBR from './wizard.pt-BR.json';
 //   t('history.count', { count: 3 })         -> uses "history.count_one" / "history.count_other" when they exist (count === 1 picks _one)
 // A key missing in the active language falls back to pt-BR (the source language); a key missing everywhere returns the key itself,
 // so a gap is visible on screen and in `npm run i18n:lint`, never a crash.
+// A placeholder the call does not pass is looked up in the workspace's terms (host name, change-request noun, ceremony name...): see ./terms.
+// A key may also have a variant for the host (`key.github`), which wins over the plain key while the workspace uses that host.
 
 export type Catalog = Record<string, string>;
 export type Params = Record<string, string | number>;
@@ -43,8 +46,28 @@ export function normalizeLanguage(value: unknown): Language {
   return FALLBACK_LANGUAGE;
 }
 
-function format(template: string, params?: Params): string {
-  return params ? template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : template;
+// The workspace's terms, set next to the language by whoever loads the configuration. Until then: no integration, the app's own words.
+let terms: Terms = defaultTerms('pt-BR');
+let termsSet = false;
+let termsVersion = 0;
+
+/** Fills `{name}` placeholders: the call's params first, then the workspace's terms. An unknown placeholder stays, so a typo is visible. */
+export function fillTemplate(template: string, params?: Params): string {
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => (params && name in params ? String(params[name]) : name in terms.words ? terms.words[name] : whole));
+}
+
+/** The host kind whose key variants are in force (null: none). */
+export function termsKind(): string | null {
+  return terms.kind;
+}
+
+/**
+ * The catalog keys a text may be stored under, most specific first: with voice off the ".novoice" ones, and for each the host's variant
+ * (".github") before the plain key.
+ */
+export function keyCandidates(key: string, voice: boolean, kind: string | null = termsKind()): string[] {
+  const withKind = (k: string) => (kind ? [`${k}.${kind}`, k] : [k]);
+  return [...(voice ? [] : withKind(`${key}${NOVOICE_SUFFIX}`)), ...withKind(key)];
 }
 
 /** Voice-aware translator: with voice off it prefers `<key>.novoice` and falls back to the plain key (most strings are the same either way). */
@@ -55,13 +78,17 @@ export function createVoiceTranslator(language: Language, voice: boolean, catalo
   return (key, params) => base(hasVariant(key) ? `${key}${NOVOICE_SUFFIX}` : key, params);
 }
 
-export function createTranslator(language: Language, catalogs: Record<Language, Catalog> = CATALOGS): Translate {
+export function createTranslator(language: Language, catalogs: Record<Language, Catalog> = CATALOGS, kind: () => string | null = termsKind): Translate {
   const active = catalogs[language] ?? {};
   const base = catalogs[FALLBACK_LANGUAGE] ?? {};
-  return (key, params) => {
+  const find = (key: string, params?: Params): string | undefined => {
     const plural = params && typeof params.count === 'number' ? `${key}_${params.count === 1 ? 'one' : 'other'}` : null;
-    const template = (plural && (active[plural] ?? base[plural])) ?? active[key] ?? base[key];
-    return template === undefined ? key : format(template, params);
+    return (plural && (active[plural] ?? base[plural])) ?? active[key] ?? base[key];
+  };
+  return (key, params) => {
+    const k = kind();
+    const template = (k ? find(`${key}.${k}`, params) : undefined) ?? find(key, params);
+    return template === undefined ? key : fillTemplate(template, params);
   };
 }
 
@@ -82,7 +109,30 @@ function rebuild(): void {
 export function setLanguage(language: Language): void {
   if (language === current) return;
   current = language;
+  // Terms nobody has set yet are the defaults of the language; set ones are the owner's to rebuild.
+  if (!termsSet) terms = defaultTerms(language);
   rebuild();
+}
+
+/** The workspace's terms (host, change request, ceremony name...): call it after setLanguage whenever the configuration loads or changes. */
+export function setTerms(next: Terms): void {
+  if (termsSet && JSON.stringify(next) === JSON.stringify(terms)) return;
+  terms = next;
+  termsSet = true;
+  termsVersion += 1;
+  rebuild();
+}
+
+/** Back to the defaults of the language, as before any workspace set its terms. */
+export function resetTerms(): void {
+  termsSet = false;
+  terms = defaultTerms(current);
+  termsVersion += 1;
+  rebuild();
+}
+
+export function getTerms(): Terms {
+  return terms;
 }
 
 export function getLanguage(): Language {
@@ -120,13 +170,13 @@ export function lazyLabels<K extends string>(keys: readonly K[], prefix: string)
   return out;
 }
 
-/** For useSyncExternalStore: re-render when the language or the voice mode changes. */
+/** For useSyncExternalStore: re-render when the language, the voice mode or the workspace's terms change. */
 export function subscribeLanguage(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
 
-/** Snapshot for useSyncExternalStore: changes whenever the language or the voice mode does. */
+/** Snapshot for useSyncExternalStore: changes whenever the language, the voice mode or the terms do. */
 export function i18nSnapshot(): string {
-  return `${current}|${voice ? 'voice' : 'novoice'}`;
+  return `${current}|${voice ? 'voice' : 'novoice'}|${termsVersion}`;
 }

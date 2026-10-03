@@ -1,5 +1,5 @@
 import type { DevCycleConfig, Language, PromptRole } from '../config/types';
-import { CATALOGS, NOVOICE_SUFFIX, voiceEnabled, type Params } from '../i18n';
+import { CATALOGS, keyCandidates, voiceEnabled, type Params } from '../i18n';
 import { catalogText, renderLines, type RenderOptions } from './text';
 
 // The prompts of the ceremonies. Every text lives in the i18n catalogs under `prompt.<family>.<id>` (pt-BR and en); a cycle picks the family of
@@ -125,7 +125,8 @@ export function promptTemplate(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOv
   const override = cycle.promptOverrides[id]?.[language];
   if (override !== undefined) return override;
   // With voice off a text may have its own wording (the key plus ".novoice"): the one that says nothing about speaking or listening.
-  const find = (key: string): string | undefined => (voice ? undefined : catalogText(`${key}${NOVOICE_SUFFIX}`, language)) ?? catalogText(key, language);
+  // For a host it may have one more (the key plus ".github"), which comes before the plain text.
+  const find = (key: string): string | undefined => keyCandidates(key, voice).reduce<string | undefined>((found, candidate) => found ?? catalogText(candidate, language), undefined);
   return find(catalogKey(familyOf(cycle, id), id)) ?? find(catalogKey(BASE_FAMILY, id));
 }
 

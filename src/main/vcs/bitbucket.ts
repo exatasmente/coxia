@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { HttpClient } from './http';
 import type {
@@ -24,7 +25,7 @@ import { checkIid, enc, iso, issueRefsOf, pool, splitUnifiedDiff, worstCi } from
 // the HTTP transport. Its issue tracker is optional (a repository may have it off): a repository without one simply has no issues.
 // Pull request lists are per user across workspaces; the reviewer role and the issues are looked up in the repositories in `repos`.
 
-export const BITBUCKET_CAPS: VcsCaps = { issueStatus: true, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: false, issues: true };
+export const BITBUCKET_CAPS: VcsCaps = VCS_CAPS.bitbucket;
 
 // i18n-ignore: query language of the code host
 const ISSUE_OPEN = '(state="new" OR state="open" OR state="on hold")';

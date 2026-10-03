@@ -1,10 +1,12 @@
 import { createElement, Fragment, type ReactNode, useSyncExternalStore } from 'react';
 import type { Language } from '../../shared/config/types';
-import { i18nSnapshot, intlLocale, normalizeLanguage, type Params, setLanguage, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import { getLanguage, i18nSnapshot, intlLocale, normalizeLanguage, type Params, setLanguage, setTerms, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import type { Terms } from '../../shared/i18n/terms';
 import { api } from './api';
 
 const KEY = 'cerimonias.language';
 const VOICE_KEY = 'cerimonias.voice';
+const TERMS_KEY = 'cerimonias.terms';
 
 export { intlLocale, t, tv };
 
@@ -28,13 +30,25 @@ export function applyVoiceMode(enabled: boolean): void {
   }
 }
 
-// The last language and voice mode come from localStorage so the first paint is already right; the workspace config confirms them.
+/** The workspace's terms (host name, change-request noun, ceremony name...): the texts of the screens are filled from them. */
+export function applyTerms(terms: Terms): void {
+  setTerms(terms);
+  try {
+    localStorage.setItem(TERMS_KEY, JSON.stringify({ language: getLanguage(), terms }));
+  } catch {
+    // storage may be unavailable; the cycle view confirms the terms on every load
+  }
+}
+
+// The last language, voice mode and terms come from localStorage so the first paint is already right; the workspace config confirms them.
 export function initLanguage(): void {
   try {
     const last = localStorage.getItem(KEY);
     if (last) applyLanguage(normalizeLanguage(last));
     const voice = localStorage.getItem(VOICE_KEY);
     if (voice) setVoiceEnabled(voice === '1');
+    const cached = JSON.parse(localStorage.getItem(TERMS_KEY) ?? 'null') as { language?: string; terms?: Terms } | null;
+    if (cached?.terms && cached.language === getLanguage()) setTerms(cached.terms);
   } catch {
     // keep the default
   }
