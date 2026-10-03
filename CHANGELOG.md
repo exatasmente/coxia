@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-03
+
 ### Changed
 
 - Runs and the team and cycle settings can be managed from the paired browser (the phone companion), not only from the app window: starting a run or a stage, accepting or sending back a result, deciding a gate, retrying, cancelling, taking a comment back, choosing a squad, the autonomy switches and moving a run to the current flow (every `runs:*` channel is now open), and, in Settings › Team and cycle, the team, the squads, the flow, the comment templates and the runner's plain settings (on or off, label, runs at a time, turns, timeouts, commit message). The browser saves through a new channel, `config:cycle-save`, which accepts a change only when every path that differs from the stored configuration is one of those (the difference is computed in the app, so a full config with another change in it is refused); `config:save` stays desktop-only.
@@ -121,7 +123,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/exatasmente/coxia/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/exatasmente/coxia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/exatasmente/coxia/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/exatasmente/coxia/compare/v0.2.1...v0.2.2
