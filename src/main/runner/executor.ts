@@ -11,7 +11,7 @@ import { MaxTurnsError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
-import { type Identity, branchDiff, branchStat, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
+import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
@@ -52,6 +52,8 @@ export interface StageRun {
   written: string[];
   /** The commit this attempt made; null when nothing changed. */
   commit: string | null;
+  /** An agent that changes files ended the pass with no change outside the cycle folder. */
+  noCodeChange?: boolean;
   /** The branch's commit the agent looked at, before the app committed what the attempt produced: what a review or a QA pass is about. */
   head: string | null;
 }
@@ -215,8 +217,11 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
 
   const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (d.identity ?? repoIdentity)(wt);
   if (!identity) throw new StageError('no-identity');
-  const fallback = commitFallback(stage.label, writes);
-  const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, commitSummary(output.commit, fallback), run.issue.iid), identity);
-  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked };
+  // A pass of an agent that writes that changed no code is a pass of documents: what the agent said it fixed is not in the diff, and the commit does not claim it.
+  const noCodeChange = writes && !(await changedOutside(wt, run.cycleFolder));
+  if (noCodeChange) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.noCodeChange', params: { agent: agent.id }, stage: stage.id });
+  const fallback = commitFallback(stage.label, writes && !noCodeChange);
+  const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, noCodeChange ? fallback : commitSummary(output.commit, fallback), run.issue.iid), identity);
+  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}) };
 }
 

@@ -121,6 +121,11 @@ export async function commitAll(wt: string, message: string, identity: Identity)
   return out(wt, ['rev-parse', 'HEAD']);
 }
 
+/** Whether the worktree has a change (tracked or not) outside `exclude`, the cycle folder: what a pass that writes code leaves before the app commits it. */
+export async function changedOutside(wt: string, exclude: string): Promise<boolean> {
+  return !!(await git(wt, ['status', '--porcelain', '--', '.', `:(exclude)${exclude}`], { fail: false })).stdout.trim();
+}
+
 /** What the branch changed since it was cut, outside `exclude` (the cycle folder), as a reviewer reads it: no external diff or text conversion program runs. */
 export async function branchDiff(wt: string, base: string | null, exclude: string): Promise<string> {
   if (!base) return '';

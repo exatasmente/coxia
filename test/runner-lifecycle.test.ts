@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { applyTemplate, kanban } from '../src/shared/cycles';
+import { messageText } from '../src/shared/forum';
 import { RunError, type Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { git } from './helpers/conflictRepos';
@@ -340,6 +341,31 @@ describe('the review limit and QA', () => {
     expect(reviews[1].prompt).toContain('[suggestion] src/feature.ts:1: Consider a clearer name.');
     expect(reviews[1].prompt).toContain('This is round 2 of the review');
     expect(reviews[1].prompt).toContain('does not become blocking because you look again');
+  });
+
+  it('says so when a developer pass changes no code, and the commit does not claim the fix', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('developer', async () => work('Fixed the constant.', { commit: 'fix the constant', artifacts: [doc('3_IMPLEMENTATION.md')] }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const noted = b.thread(run).filter((m) => m.code === 'runner.noCodeChange');
+    expect(noted).toHaveLength(1);
+    expect(noted[0]).toMatchObject({ stage: 'implement', params: { agent: 'developer' } });
+    expect(messageText(noted[0])).toContain('sem mudar nenhum código');
+    const subjects = git(run.worktree, 'log', '--format=%s').split('\n');
+    expect(subjects).toContain('feat: add the implement documents #101');
+    expect(subjects.join('\n')).not.toContain('fix the constant');
+  });
+
+  it('does not say so for a pass that changes code, nor for an agent that only reads', async () => {
+    const b = await boot();
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(b.thread(run).filter((m) => m.code === 'runner.noCodeChange')).toEqual([]);
+    expect(git(run.worktree, 'log', '--format=%s').split('\n')).toContain('feat: add the feature #101');
   });
 
   it('asks the person at the limit of QA with its own account: the scenarios that failed, not the agent text', async () => {
