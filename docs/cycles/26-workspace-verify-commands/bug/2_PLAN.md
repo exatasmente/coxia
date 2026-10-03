@@ -63,20 +63,20 @@ Mirrors are listed as today, only while the release tool is on (`rc().releaseSyn
 `src/main/verify-move.ts`, Electron-free, with its dependencies injected (`root`, `home`, `log`, a mirror lister, `now`). Called once from `workspaceConfig.ts:load()` right after `bootstrapConfigs` (so every config is already at schema 5) and before the active config is read.
 
 1. No `<root>/conflict-verify.json`: nothing to do (this is what makes a second run a no-op).
-2. Read it. Not JSON or not an object: rename it to the backup, log, stop (the bytes are kept, nothing read it anyway). Entries are the string values that are not blank.
+2. Read it. An error **reading** it (I/O) is `deferred`: the file stays and the next start retries. Not JSON or not an object: rename it to the backup, log, stop (the bytes are kept, nothing read it anyway). Entries are the string values that are not blank; a value the schema refuses (over 2000 characters, or with a NUL) is never copied, it goes to the unclaimed ones, because a stored value the schema refuses would make the config invalid and `repair()` would reset the whole map on load.
 3. For every workspace of the registry (an unreadable registry stops the move with the file untouched):
    - read its `config.json` and validate it. **Missing file**: nothing to claim, not a blocker (a workspace folder with no config yet). **Invalid or unreadable**: the workspace is `deferred`; it is not touched.
    - claimed here = entries whose key is in `ownVerifyProjects(config, mirrors)`.
-   - copy those into `projects.verifyCommands` **without replacing a key the workspace already has** (what a person set in the workspace wins), and write the config only when something was added (atomic write, the same one `bootstrapConfigs` uses).
+   - copy those into `projects.verifyCommands` (the merged config is validated first; if it would be invalid the workspace is `deferred` and not written) **without replacing a key the workspace already has** (what a person set in the workspace wins), and write the config only when something was added (atomic write, the same one `bootstrapConfigs` uses).
 4. An entry claimed by two workspaces is copied into both (each workspace owns its copy from then on).
-5. **No workspace deferred**: rename the file to `conflict-verify.json.migrated` (if that name exists, `.migrated-<timestamp>`; nothing is overwritten), write the entries no workspace claimed to `conflict-verify.unclaimed.json` (removed when there are none), and log one line per workspace and one for the unclaimed projects (names, never commands). **Some workspace deferred**: leave the file where it is and log why; the next start tries again. Running again is safe because step 3 never replaces a key; the one cost is that a command a person deleted from a healthy workspace could come back while another workspace stays invalid, and that is recorded here as accepted.
+5. **No workspace deferred**: rename the file to `conflict-verify.json.migrated` (if that name exists, `.migrated-<timestamp>`; nothing is overwritten), write the entries no workspace claimed to `conflict-verify.unclaimed.json` (merged into an existing sidecar, never removed by the move; an entry already there is kept as it is and a differing later one is logged), and log one line per workspace and one for the unclaimed projects (names, never commands). **Some workspace deferred**: leave the file where it is and log why; the next start tries again. Running again is safe because step 3 never replaces a key; the one cost is that a command a person deleted from a healthy workspace could come back while another workspace stays invalid, and that is recorded here as accepted.
 6. A failure writing one config is logged and counts as `deferred` for that workspace; it never throws out of the move (the app must start).
 
 The move never deletes a command: the original bytes are in the `.migrated` file, copies are in the configs, orphans are in the sidecar.
 
 ### Unclaimed commands (decision D7)
 
-A command whose project no workspace lists (a repo that is gone, a path typed by hand, a project of a workspace that was deleted) cannot be copied anywhere honestly. It stays in three places: the `.migrated` backup (everything, as it was), the sidecar `conflict-verify.unclaimed.json` (`{ "group/project": "command" }`) and the log (`migration.log` of the workspaces folder and the console: project names only). The section shows them in a note, "Commands of the earlier shared file that no workspace listed", with a "Use here" button per project that puts the command in the field (saved with the usual "Save commands"). A project disappears from the note as soon as the active workspace has a command for it. The sidecar is a global file (not part of any workspace), and the note names no project of a workspace, only projects nobody owns, so it leaks nothing across workspaces.
+A command whose project no workspace lists (a repo that is gone, a path typed by hand, a project of a workspace that was deleted) cannot be copied anywhere honestly. It stays in three places: the `.migrated` backup (everything, as it was), the sidecar `conflict-verify.unclaimed.json` (`{ "group/project": "command" }`) and the log (`migration.log` of the workspaces folder and the console: project names only). The section shows them in a note, "Commands of the earlier shared file that no workspace listed", with a "Use here" button per project that puts the command in the field (saved with the usual "Save commands"). A project disappears from the note as soon as the active workspace has a command for it. An entry that no workspace ever adopts stays in the note: a way to dismiss it is a follow-up (F3). The sidecar is a global file (not part of any workspace), and the note names no project of a workspace, only projects nobody owns, so it leaks nothing across workspaces.
 
 Not chosen: showing them in Saúde (that screen reports the health of jobs and dependencies, a one-time data note does not fit it), or dropping them after a delay (a command is a person's work).
 
@@ -113,6 +113,8 @@ Not chosen: showing them in Saúde (that screen reports the health of jobs and d
 | Crash between the config writes and the rename | the next start repeats the move; no key is replaced, so it converges |
 | The user restores the old global file by hand | it is migrated again at next start; the `.migrated` name is never overwritten |
 | A workspace config that the screen's save would invalidate | the setter validates through `saveConfig`; a message names the key |
+| The setter replaces the whole map from the screen's snapshot | a command added meanwhile by an import or from another window is dropped by that save; the screen reloads the list after saving, and the window of the race is the time the screen stays open. Accepted: the same shape every settings section has |
+| Mirrors are listed with synchronous reads | `readdirSync` of the mirrors folder, at startup (the move, once per workspace with the tool on) and on every `conflicts:verify-get`; a slow or huge folder would block the main process for that time. Accepted: it is what the screen did before, and the folder holds one entry per mirrored repo |
 
 ## Decision log
 
@@ -131,6 +133,9 @@ Not chosen: showing them in Saúde (that screen reports the health of jobs and d
 | D11 | No test-workspace gate | the command runs locally and the issue says a test workspace behaves as before |
 | D12 | `VERIFY_SUGGESTION` stays as is | it is the "Suggestion (Node)" button; the issue keeps it |
 | D13 | `INTENDED` in the catalog test learns a `languages` field | the Help text changes in both languages; the test allowed pt-BR only, for the gender fix |
+| D14 | The move copies only what the schema accepts and validates the merged config before writing | a refused value stored in a config makes `repair()` reset the whole map on load, losing unrelated commands; such a value goes to the unclaimed ones instead |
+| D15 | A read error on the old file defers; only a parse error or a non-object is renamed aside | an I/O error is transient and must not move a good file out of the way |
+| D16 | The sidecar is merged, never removed by the move, and an entry already there wins | a command put aside earlier is never replaced by a later file; the later one stays in its backup and the log says so |
 
 ## Follow-ups (not part of this change)
 
@@ -138,3 +143,4 @@ Not chosen: showing them in Saúde (that screen reports the health of jobs and d
 |---|---|---|
 | F1 | Detect the project type (Node, PHP, Go) to offer other suggestions | the issue asks for the existing suggestion only |
 | F2 | Let the wizard's projects step edit the commands | the Settings section is where they are edited today |
+| F3 | A way to dismiss an unclaimed entry from the note | today it leaves the note only when a workspace gets a command for the project |
