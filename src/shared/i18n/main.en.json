@@ -1065,5 +1065,8 @@
   "main.forum.code.runner.request.linkedChannel": "The request from {origin} became the issue {issue} of the squad {squad} (run {run}).",
   "main.forum.code.runner.request.proposed": "The issue \"{title}\" for the squad {squad} waits for a \"yes\" in Actions.",
   "main.forum.code.runner.request.refused": "This workspace does not write to the code host: the issue \"{title}\" was not created.",
-  "main.forum.code.runner.request.issueFailed": "Could not create the issue \"{title}\": {reason}"
+  "main.forum.code.runner.request.issueFailed": "Could not create the issue \"{title}\": {reason}",
+  "main.ata.squad": "Scope: squad {squad}",
+  "main.ata.wholeWorkspace": "Scope: the whole workspace",
+  "main.retro.digest.squad": "squad"
 }

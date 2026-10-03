@@ -1065,5 +1065,8 @@
   "main.forum.code.runner.request.linkedChannel": "O pedido de {origin} virou a issue {issue} do squad {squad} (execução {run}).",
   "main.forum.code.runner.request.proposed": "A issue \"{title}\" para o squad {squad} espera um \"sim\" nas Ações.",
   "main.forum.code.runner.request.refused": "Este workspace não escreve no host do código: a issue \"{title}\" não foi criada.",
-  "main.forum.code.runner.request.issueFailed": "Não foi possível criar a issue \"{title}\": {reason}"
+  "main.forum.code.runner.request.issueFailed": "Não foi possível criar a issue \"{title}\": {reason}",
+  "main.ata.squad": "Escopo: squad {squad}",
+  "main.ata.wholeWorkspace": "Escopo: o workspace inteiro",
+  "main.retro.digest.squad": "squad"
 }

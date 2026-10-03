@@ -227,12 +227,12 @@ export interface OpenedVersion {
 }
 
 /** Finds (or creates) the version the minutes being saved belong to. Nothing is written to the minutes yet. */
-export function openVersion(date: string, ceremonyId: string | undefined, m: Pick<Minutes, 'startedAt' | 'endedAt' | 'decisions' | 'effects' | 'unanswered'>): OpenedVersion {
+export function openVersion(date: string, ceremonyId: string | undefined, m: Pick<Minutes, 'squad' | 'startedAt' | 'endedAt' | 'decisions' | 'effects' | 'unanswered'>): OpenedVersion {
   const index = ensureDay(date);
   const startedAt = Date.parse(m.startedAt);
   let rec = (ceremonyId ? index.versions.find((v) => v.ceremonyId === ceremonyId) : undefined) ?? index.versions.find((v) => v.startedAt === startedAt);
   if (!rec) {
-    rec = { n: Math.max(0, ...index.versions.map((v) => v.n)) + 1, ceremonyId: ceremonyId ?? '', startedAt, endedAt: Date.parse(m.endedAt), savedAt: null, file: null, teams: null, written: [], snapshot: { decisions: m.decisions, effects: m.effects, unanswered: m.unanswered, covered: [] } };
+    rec = { n: Math.max(0, ...index.versions.map((v) => v.n)) + 1, ceremonyId: ceremonyId ?? '', ...(m.squad ? { squad: m.squad } : {}), startedAt, endedAt: Date.parse(m.endedAt), savedAt: null, file: null, teams: null, written: [], snapshot: { decisions: m.decisions, effects: m.effects, unanswered: m.unanswered, covered: [] } };
     index.versions.push(rec);
     writeIndex(index);
   }

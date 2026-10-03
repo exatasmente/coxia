@@ -10,7 +10,7 @@ import { ceremonyLabel, decisionLogHeading, formatClock, prompt as cp, text as c
 import { dateOfId } from './historyFiles';
 import { commitVersion, openVersion, recordSelfWrite, writeVersionFile } from './minutesStore';
 import { externalRefusal } from './workspace';
-import { rc } from './workspaceConfig';
+import { getConfig, rc } from './workspaceConfig';
 import { upperFirst } from '../shared/cycles/text';
 import { modeText } from './agentVoice';
 import { t } from '../shared/i18n';
@@ -23,10 +23,21 @@ function today(): string {
   return new Date().toLocaleDateString('sv-SE');
 }
 
-function minutesMarkdown(m: Minutes, teams: string): string {
+// Which squad the ceremony was held for, or the whole workspace; a workspace with no squads says nothing, as before.
+function scopeLine(m: Minutes): string[] {
+  const config = getConfig();
+  if (m.squad) {
+    const squad = (config.squads ?? []).find((q) => q.id === m.squad);
+    return [t('main.ata.squad', { squad: squad ? cycleWord(squad.name || squad.id) : m.squad }), ''];
+  }
+  return config.squads?.length ? [t('main.ata.wholeWorkspace'), ''] : [];
+}
+
+export function minutesMarkdown(m: Minutes, teams: string): string {
   const lines = [
     t('main.ata.heading', { ceremony: upperFirst(ceremonyLabel()), from: formatClock(new Date(m.startedAt)), to: formatClock(new Date(m.endedAt)) }),
     '',
+    ...scopeLine(m),
     t('main.ata.decisions'),
     ...(m.decisions.length ? m.decisions.map((d) => `- ${d.ref}: ${d.text} → ${d.dest}`) : [`- ${t('main.ata.none')}`]),
     '',

@@ -186,6 +186,8 @@ export interface DeepOption {
 }
 
 export interface Minutes {
+  /** The squad the ceremony was held for (its runs and cards only); null or absent: the whole workspace. */
+  squad?: string | null;
   startedAt: string;
   endedAt: string;
   decisions: Decision[];
@@ -233,6 +235,8 @@ export interface DeepState {
 export interface SavedCeremony {
   version: 1;
   id: string;
+  /** The squad the ceremony is held for; null or absent: the whole workspace. */
+  squad?: string | null;
   kind: 'pre-daily';
   date: string;
   cards: CardsResult | null;
@@ -255,6 +259,8 @@ export interface SavedCeremony {
 export interface HistoryEntry {
   id: string;
   kind: 'pre-daily';
+  /** The squad it was held for; null: the whole workspace. */
+  squad?: string | null;
   date: string;
   startedAt: number | null;
   endedAt: number | null;
@@ -353,7 +359,10 @@ export interface Improvement {
 }
 
 export interface Retro {
+  /** Its date; a retro held for one squad has the squad after it ("2026-10-02-core"). */
   id: string;
+  /** The squad it was held for; null or absent: the whole workspace. */
+  squad?: string | null;
   from: string;
   to: string;
   sessionId: string | null;
@@ -436,7 +445,8 @@ export interface Api {
   saveState(state: SavedCeremony): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
   getHistory(id: string): Promise<SavedCeremony | null>;
-  loadCards(limit: number, refresh?: boolean): Promise<CardsResult>;
+  /** `squad`: only the cards of that squad (its runs and the issues its scope claims); absent or null: the whole workspace. */
+  loadCards(limit: number, refresh?: boolean, squad?: string | null): Promise<CardsResult>;
   prepareTurn(card: Card, options?: TurnOptions): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;
   deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer>;
@@ -480,8 +490,9 @@ export interface Api {
   getQa(iid: string): Promise<QaHandoff | null>;
   askQa(iid: string, question: string): Promise<QaHandoff>;
   writeQaChecklist(iid: string): Promise<QaHandoff>;
-  prepareRetro(): Promise<Retro>;
-  latestRetro(): Promise<Retro | null>;
+  /** `squad`: the retro of one squad (its ceremonies and its runs' issues); absent or null: the whole workspace. */
+  prepareRetro(squad?: string | null): Promise<Retro>;
+  latestRetro(squad?: string | null): Promise<Retro | null>;
   askRetro(id: string, question: string): Promise<Retro>;
   onEvent(cb: (event: AppEvent) => void): () => void;
 }

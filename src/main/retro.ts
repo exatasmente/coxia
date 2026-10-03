@@ -1,17 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { squadOf } from '../shared/config/squads';
+import { refsOfSquad } from '../shared/squadCards';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
 import { askAgent, obj, str } from './agents';
-import { cycle, formatDate, formatTime, language, prompt as cp } from './cyclePrompts';
+import { cycle, formatDate, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
-import { rc } from './workspaceConfig';
+import { runStore } from './runs';
+import { getConfig, rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 import { t } from '../shared/i18n';
 
 const DIR = join(ATAS, 'retros');
-const ID = /^\d{4}-\d{2}-\d{2}$/;
+// A retro is named for its day; one held for a squad has the squad after the day.
+const ID = /^\d{4}-\d{2}-\d{2}(?:-[a-z0-9][a-z0-9_-]{0,47})?$/;
+const WHOLE = /^\d{4}-\d{2}-\d{2}\.json$/;
 
 function now(): string {
   return formatTime(new Date());
@@ -34,9 +39,11 @@ function read(id: string): Retro | null {
   }
 }
 
-export function latestRetro(): Retro | null {
+/** The latest retro of the whole workspace, or, with a squad, the latest one held for it. */
+export function latestRetro(squad: string | null = null): Retro | null {
   if (!existsSync(DIR)) return null;
-  const last = readdirSync(DIR).filter((f) => f.endsWith('.json')).sort().pop();
+  const mine = (f: string): boolean => (squad ? f.endsWith(`-${squad}.json`) && ID.test(f.slice(0, -5)) : WHOLE.test(f));
+  const last = readdirSync(DIR).filter(mine).sort().pop();
   return last ? read(last.replace(/\.json$/, '')) : null;
 }
 
@@ -44,10 +51,14 @@ export function latestRetro(): Retro | null {
 const k = (name: string): string => t(`main.retro.digest.${name}`);
 
 // What happened in the last days, from the files the app and the card source already keep. No model involved.
-function weekDigest(since: Date): Record<string, unknown> {
+function weekDigest(since: Date, squad: string | null = null): Record<string, unknown> {
   const inWeek = (iso: string | number | null | undefined) => !!iso && new Date(iso) >= since;
+  // A retro held for a squad looks at the ceremonies held for it, and at the issues its runs work (the release actions, the gates and the changes of those).
+  const refs = squad ? refsOfSquad(squad, { runs: runStore().list() }) : null;
+  const iids = refs ? new Set([...refs].map((r) => Number(r.split('#').pop()))) : null;
 
   const ceremonies = listHistory()
+    .filter((e) => !squad || e.squad === squad)
     .filter((e) => inWeek(e.startedAt ?? e.date))
     .map((e) => {
       const s = getHistory(e.id);
@@ -62,7 +73,7 @@ function weekDigest(since: Date): Record<string, unknown> {
     });
 
   const actions = listActions()
-    .filter((a) => inWeek(a.createdAt))
+    .filter((a) => inWeek(a.createdAt) && (!iids || iids.has(a.issue)))
     .map((a) => ({ [k('tipo')]: a.kind, issue: a.issue, [k('estado')]: a.state, release: a.release, [k('reteste')]: a.retest, [k('arquivos')]: a.files.length }));
 
   const gatesDir = join(ATAS, 'gates');
@@ -70,7 +81,7 @@ function weekDigest(since: Date): Record<string, unknown> {
     ? readdirSync(gatesDir)
         .filter((f) => f.endsWith('.json'))
         .map((f) => JSON.parse(readFileSync(join(gatesDir, f), 'utf8')))
-        .filter((g) => inWeek(g.createdAt))
+        .filter((g) => inWeek(g.createdAt) && (!refs || refs.has(g.ref)))
         .map((g) => ({
           issue: g.ref,
           gate: g.gate,
@@ -87,11 +98,12 @@ function weekDigest(since: Date): Record<string, unknown> {
         .split('\n')
         .filter(Boolean)
         .map((l) => JSON.parse(l) as { at: string; ref: string; field: string; from: unknown; to: unknown })
-        .filter((c) => inWeek(c.at) && ['stage', 'has_conflicts', 'pipeline', 'estado', 'approved'].includes(c.field))
+        .filter((c) => inWeek(c.at) && ['stage', 'has_conflicts', 'pipeline', 'estado', 'approved'].includes(c.field) && (!refs || refs.has(c.ref)))
         .map((c) => `${c.at.slice(0, 10)} ${c.ref} ${c.field}: ${String(c.from)} → ${String(c.to)}`)
     : [];
 
-  return { [k('cerimonias')]: ceremonies, [k('acoes_de_release')]: actions, gates, [k('mudancas_gitlab')]: changes.slice(-200) };
+  const named = squad ? squadOf(getConfig(), squad) : null;
+  return { ...(named ? { [k('squad')]: cycleWord(named.name || named.id) } : {}), [k('cerimonias')]: ceremonies, [k('acoes_de_release')]: actions, gates, [k('mudancas_gitlab')]: changes.slice(-200) };
 }
 
 // What the retro is based on, in words: only what this cycle has (release actions, gate quizzes, the card source's change history).
@@ -107,11 +119,12 @@ function baseOf(): string {
   return joinList(parts, language());
 }
 
-export async function prepareRetro(): Promise<Retro> {
+export async function prepareRetro(squad: string | null = null): Promise<Retro> {
+  if (squad && !squadOf(getConfig(), squad)) throw new Error(t('main.squad.unknown', { id: squad }));
   const to = new Date();
   const params = cycle().ceremonyParams.retro;
   const from = new Date(to.getTime() - params.windowDays * 86_400_000);
-  const digest = weekDigest(from);
+  const digest = weekDigest(from, squad);
   const item = obj({ titulo: str, evidencia: str });
   const r = await askAgent<{
     fala: string;
@@ -144,7 +157,8 @@ export async function prepareRetro(): Promise<Retro> {
   );
   const map = (xs: { titulo: string; evidencia: string }[]) => xs.map((x) => ({ title: x.titulo, evidence: x.evidencia }));
   return write({
-    id: to.toLocaleDateString('sv-SE'),
+    id: squad ? `${to.toLocaleDateString('sv-SE')}-${squad}` : to.toLocaleDateString('sv-SE'),
+    ...(squad ? { squad } : {}),
     from: from.toISOString(),
     to: to.toISOString(),
     sessionId: r.sessionId || null,

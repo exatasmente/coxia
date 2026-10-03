@@ -3,9 +3,13 @@ import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
 import { isBlockedStage } from '../shared/cycles/stages';
 import { priorityOf, sortCards } from '../shared/priority';
+import { squadOf, squadsOf } from '../shared/config/squads';
+import { t } from '../shared/i18n';
+import { cardsOfSquad } from '../shared/squadCards';
 import { cycle, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
-import { rc } from './workspaceConfig';
+import { runStore } from './runs';
+import { getConfig, rc } from './workspaceConfig';
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -37,7 +41,15 @@ function describe(c: { field: string; from: unknown; to: unknown }, prefix = '')
   return `${prefix}${c.field}: ${String(c.from)} → ${String(c.to)}`;
 }
 
-export async function loadCards(limit: number, refresh = false): Promise<CardsResult> {
+/** The cards of one squad: its runs' issues, and the issues its scope claims (see `squadsOfCard`). */
+function ofSquad(cards: Card[], squadId: string): Card[] {
+  const config = getConfig();
+  if (!squadOf(config, squadId)) throw new Error(t('main.squad.unknown', { id: squadId }));
+  return cardsOfSquad(cards, squadsOf(config), squadId, { runs: runStore().list(), repos: rc().repos });
+}
+
+/** The cards of the day. With `squad`, only that squad's (a ceremony held for one squad); without, the whole workspace's. */
+export async function loadCards(limit: number, refresh = false, squad: string | null = null): Promise<CardsResult> {
   const report = await readReport({ refresh });
   const mrsByIssue = new Map<string, ReportItem[]>();
   for (const it of report.items) {
@@ -70,7 +82,7 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
         priority: priorityOf(it.labels, levels),
       };
     });
-  const ordered = sortCards(cards);
+  const ordered = sortCards(squad ? ofSquad(cards, squad) : cards);
   const rest = ordered.slice(limit);
   return { generatedAt: report.generated_at, total: ordered.length, cards: ordered.slice(0, limit), ...(rest.length ? { rest } : {}) };
 }
