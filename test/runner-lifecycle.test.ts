@@ -294,6 +294,14 @@ describe('the review limit and QA', () => {
     run = await reach(b, run, 'review');
     expect(run).toMatchObject({ status: 'question', stage: 'review', returns: { review: 2 } });
     expect(run.question).toMatchObject({ by: 'app', kind: 'review-limit' });
+    // a readable account of the rounds, not the reviewer's text: what was asked, what the developer did, what is still open
+    const text = run.question!.text;
+    expect(text).toContain('devolveu o trabalho 2 vezes');
+    expect(text).toMatch(/O que se pediu para mudar na última rodada:\n- src\/feature\.ts:1 — Still wrong\./);
+    expect(text).toMatch(/O que o desenvolvimento fez:\nDone\./);
+    expect(text).toMatch(/O que continua em aberto:\n- src\/feature\.ts:1 — Still wrong\./);
+    expect(text).not.toContain('[bloqueia]');
+    expect(b.thread(run).find((m) => m.code === 'review.limit')?.text).toBe(text);
     expect(b.engine.calls.map((c) => c.agent.id).filter((a) => a === 'developer')).toHaveLength(2);
     b.runner.answerPost(`run-${run.id}`, 'Accept it as it is, the finding is a style choice.');
     run = await reach(b, b.runner.get(run.id)!, 'ready');
@@ -313,6 +321,18 @@ describe('the review limit and QA', () => {
     expect(b.engine.calls[5].prompt).toContain('a 500 on login');
     expect(run.qa.map((q) => q.scenarios[0].result)).toEqual(['fail', 'pass']);
     expect(run.returns).toEqual({ qa: 1 });
+  });
+
+  it('asks the person at the limit of QA with its own account: the scenarios that failed, not the agent text', async () => {
+    const b = await boot();
+    easy(b);
+    const fails = () => work('Broke again.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'fail', detail: 'a 500 on login' }] });
+    b.engine.script('qa', fails, fails);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'qa');
+    expect(run).toMatchObject({ status: 'question', stage: 'qa', returns: { qa: 2 } });
+    expect(run.question!.text).toMatch(/O que continua em aberto:\n- login — a 500 on login/);
+    expect(run.question!.text).not.toContain('Cenário que falhou');
   });
 
   it('does not send the work back for a QA failure that does not block: it is reported in the thread and the run goes on', async () => {

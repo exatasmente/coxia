@@ -116,6 +116,8 @@ export interface PendingResult {
   toStage: string | null;
   /** The return is a review pass: it counts toward the limit. */
   countRound: boolean;
+  /** The question the person gets when this return reaches the limit, written from the rounds' records; absent: the findings as text. */
+  limit?: string;
 }
 
 export const SEVERITIES = ['blocking', 'suggestion'] as const;

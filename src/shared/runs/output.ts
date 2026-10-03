@@ -243,3 +243,34 @@ export function notesText(scenarios: Scenario[]): string {
   const notes = scenarios.filter(scenarioNotes);
   return notes.length ? [t('main.runner.scenario.notesHead'), ...notes.map((s) => t('main.runner.scenario.note', { name: s.name, detail: s.detail || '—' }))].join('\n') : '';
 }
+
+export interface LimitInput {
+  /** The label of the stage that sent the work back. */
+  stage: string;
+  /** How many times it sent it back. */
+  rounds: number;
+  /** What the previous round asked to change, one line each. */
+  asked: string[];
+  /** What the producer said it did since (its latest summary). */
+  did: string;
+  /** What the latest round still finds, one line each. */
+  open: string[];
+}
+
+const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s);
+
+/** A blocking finding as one line of the limit's question. */
+export const findingLine = (f: Finding): string => t('main.runner.limit.item', { where: whereOf(f), body: clip(f.body.replace(/\s+/g, ' '), 300) });
+
+/** A failed scenario as one line of the limit's question. */
+export const scenarioLine = (s: Scenario): string => t('main.runner.limit.item', { where: s.name, body: clip((s.detail || '—').replace(/\s+/g, ' '), 300) });
+
+/**
+ * The question the person gets when a stage has sent the work back as many times as it may: what was asked, what the producer did about it and what is
+ * still open, each from the records of the rounds (not the reviewer's whole text).
+ */
+export function limitText(i: LimitInput): string {
+  const none = t('main.runner.limit.none');
+  const list = (lines: string[]): string => (lines.length ? lines.join('\n') : none);
+  return t('main.runner.limit.text', { stage: i.stage, rounds: i.rounds, asked: list(i.asked), did: i.did.trim() ? clip(i.did.trim().replace(/\n{3,}/g, '\n\n'), 800) : none, open: list(i.open) });
+}

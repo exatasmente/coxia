@@ -895,7 +895,7 @@
    {
     "rounds": 2
    },
-   "",
+   "The Review stage sent the work back 2 times and still does not approve.\n\nWhat was asked to change in the last round:\n- src/feature.ts:1: The constant must be 2.\n\nWhat the developer did:\nBuilt.\n\nWhat is still open:\n- src/feature.ts:1: Still wrong.\n\nYour answer goes back to the developer as guidance, and the rounds start again.",
    null,
    true,
    [],

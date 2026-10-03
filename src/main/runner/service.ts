@@ -43,6 +43,9 @@ import {
   producerOf,
   recordQa,
   recordReview,
+  findingLine,
+  limitText,
+  scenarioLine,
   notesText,
   scenarioBlocks,
   resumeAfterRestart,
@@ -368,7 +371,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const recorded = moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
       const text = findingsText(out.summary, out.findings);
       if (out.verdict === 'changes') {
-        apply((x) => reviewReturn(x, flow, { by, findings: text, handoff: text }, now()));
+        apply((x) => reviewReturn(x, flow, { by, findings: text, handoff: text, limit: limitOf(recorded, flow, flowStage) }, now()));
         ended(recorded.reviews.length);
         return;
       }
@@ -384,7 +387,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (failed && back && back.type === 'work') {
         const text = failuresText(out.summary, out.scenarios);
         post(text);
-        apply((x) => handBack(x, flow, { by, toStage: back.id, text, countRound: true }, now()));
+        apply((x) => handBack(x, flow, { by, toStage: back.id, text, countRound: true, limit: limitOf(deps.runs.get(run.id) ?? run, flow, flowStage) }, now()));
         ended();
         return;
       }
@@ -392,6 +395,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     const notes = r.kind === 'qa' ? notesText(out.scenarios) : '';
     apply((x) => stageDone(x, flow, { summary: [out.summary, notes].filter(Boolean).join('\n\n'), handoff: out.handoff, artifacts: r.written }, now()));
     ended();
+  }
+
+  // What the person is asked when a stage has sent the work back as many times as it may: the earlier round's asks, what the producer did since and what the
+  // latest round still finds, from the records of the rounds.
+  function limitOf(run: Run, flow: FlowStage[], stage: FlowStage): string {
+    const config = deps.config();
+    const producer = flow.find((s) => s.id === stage.returnsTo);
+    const mine = stage.kind === 'qa' ? run.qa.filter((q) => q.stage === stage.id) : run.reviews.filter((r) => r.stage === stage.id);
+    const items = (rec: (typeof mine)[number] | undefined): string[] => (!rec ? [] : 'findings' in rec ? rec.findings.filter((f) => f.severity === 'blocking').map(findingLine) : rec.scenarios.filter(scenarioBlocks).map(scenarioLine));
+    const posts = deps.forum.read(runThreadId(run.id), 0, 2000)?.messages ?? [];
+    const did = [...posts].reverse().find((m) => m.kind === 'post' && m.author.type === 'agent' && !!producer && m.stage === producer.id);
+    return limitText({ stage: cycleText(stage.label, config.language), rounds: (run.returns[stage.id] ?? 0) + 1, asked: items(mine.at(-2)), did: did?.text ?? '', open: items(mine.at(-1)) });
   }
 
   // ---- starting a run ---------------------------------------------------------------------------------------------------------------

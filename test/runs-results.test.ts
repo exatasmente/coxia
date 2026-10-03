@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
-import { ARTIFACT_NAME, failuresText, notesText, scenarioBlocks, scenarioNotes, findingsText, gateApprove, handBack, outputKindOf, outputSchema, parseRun, readFinding, readOutput, recordQa, recordReview, stageDone, whereOf } from '../src/shared/runs';
+import { ARTIFACT_NAME, failuresText, limitText, notesText, scenarioBlocks, scenarioNotes, findingsText, gateApprove, handBack, outputKindOf, outputSchema, parseRun, readFinding, readOutput, recordQa, recordReview, stageDone, whereOf } from '../src/shared/runs';
 import { drive } from './helpers/runs';
 
 const done = (name: string) => ({ summary: `${name} done`, handoff: '', artifacts: [`${name}.md`] });
@@ -138,6 +138,25 @@ describe('the findings as text', () => {
     expect(failuresText('Mixed.', [{ name: 'login', result: 'fail', detail: 'a 500' }, { name: 'edge', result: 'fail', severity: 'non-blocking', detail: 'odd input' }])).toBe('Mixed.\n\nScenario that failed: login. a 500\n\nWhat QA noted that does not block the delivery:\n- edge: odd input');
     expect(notesText([{ name: 'login', result: 'fail', detail: 'a 500' }])).toBe('');
     setLanguage('pt-BR');
+  });
+});
+
+describe('the question at the limit of rounds', () => {
+  it('says what was asked, what was done and what is open, with a placeholder where there is nothing', () => {
+    setLanguage('en');
+    const text = limitText({ stage: 'QA', rounds: 2, asked: ['- login: a 500'], did: 'Fixed the 500.', open: [] });
+    expect(text).toBe(['The QA stage sent the work back 2 times and still does not approve.', 'What was asked to change in the last round:\n- login: a 500', 'What the developer did:\nFixed the 500.', 'What is still open:\n(nothing recorded)', 'Your answer goes back to the developer as guidance, and the rounds start again.'].join('\n\n'));
+    expect(limitText({ stage: 'Review', rounds: 1, asked: [], did: '  ', open: ['- a'] })).toContain('What was asked to change in the last round:\n(nothing recorded)\n\nWhat the developer did:\n(nothing recorded)');
+    setLanguage('pt-BR');
+  });
+
+  it('is what the run asks when the transition is given it, and the findings as they came when it is not', () => {
+    const d = until('qa');
+    d.do((r, at) => handBack(r, d.flow, { by: 'qa', toStage: 'implement', text: 'raw failures', countRound: true, limit: 'readable account' }, at));
+    while (d.run.stage !== 'qa') d.do((r, at) => stageDone(r, d.flow, done(r.stage), at));
+    d.do((r, at) => handBack(r, d.flow, { by: 'qa', toStage: 'implement', text: 'raw failures again', countRound: true, limit: 'readable account again' }, at));
+    expect(d.run.question).toMatchObject({ kind: 'review-limit', text: 'readable account again' });
+    expect(d.messages.at(-1)).toMatchObject({ code: 'review.limit', text: 'readable account again' });
   });
 });
 

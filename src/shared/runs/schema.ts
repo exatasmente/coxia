@@ -112,6 +112,7 @@ const pending = {
       handoff: string('What the next stage is to do.', { maxLength: 20_000 }),
       toStage: { type: ['string', 'null'], description: 'The stage the work goes back to.', maxLength: 48 },
       countRound: { type: 'boolean', description: 'The return is a review pass.' },
+      limit: string('The question the person gets if this return reaches the limit.', { maxLength: 20_000 }),
     },
     ['kind', 'by', 'text', 'handoff', 'toStage', 'countRound'],
   ),

@@ -411,10 +411,12 @@ function applyReturn(out: Run, flow: FlowStage[], p: PendingResult, at: string, 
     const rounds = (out.returns[out.stage] = (out.returns[out.stage] ?? 0) + 1);
     if (rounds >= stageOf(flow, out.stage).roundLimit) {
       out.status = 'question';
-      out.question = { by: 'app', kind: 'review-limit', text: p.text, askedAt: at, stage: out.stage };
+      // The question is the readable account the runner wrote from the rounds, when it wrote one; otherwise the findings as they came.
+      const text = p.limit?.trim() || p.text;
+      out.question = { by: 'app', kind: 'review-limit', text, askedAt: at, stage: out.stage };
       (record(out, out.stage) as StageRecord).status = 'waiting';
       log(out, at, 'question', out.stage, 'app', 'review-limit');
-      messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds }, stage: out.stage, public: true });
+      messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds }, text: p.limit?.trim() ? text : undefined, stage: out.stage, public: true });
       return;
     }
   }
@@ -436,14 +438,14 @@ function returnWork(run: Run, flow: FlowStage[], p: PendingResult, post: ForumDr
 }
 
 /** The agent hands the work back to an earlier stage. */
-export function handBack(run: Run, flow: FlowStage[], input: { by: string; toStage: string; text: string; /** The hand back counts toward the review limit (QA that failed). */ countRound?: boolean }, at: string): Transition {
+export function handBack(run: Run, flow: FlowStage[], input: { by: string; toStage: string; text: string; /** The hand back counts toward the review limit (QA that failed). */ countRound?: boolean; /** What the person is asked when it reaches the limit. */ limit?: string }, at: string): Transition {
   need(run, 'working');
   const i = flow.findIndex((s) => s.id === run.stage);
   const j = flow.findIndex((s) => s.id === input.toStage);
   if (i < 0 || j < 0 || j === i || flow[j].type !== 'work') throw new RunError('unknown-stage', { stage: input.toStage });
   const text = input.text.trim();
   if (!text) throw new RunError('empty-text');
-  return returnWork(run, flow, { kind: 'return', by: input.by, text: input.countRound ? text : '', handoff: text, toStage: input.toStage, countRound: !!input.countRound }, null, at);
+  return returnWork(run, flow, { kind: 'return', by: input.by, text: input.countRound ? text : '', handoff: text, toStage: input.toStage, countRound: !!input.countRound, ...(input.limit ? { limit: input.limit } : {}) }, null, at);
 }
 
 export interface ReviewReturnInput {
@@ -452,6 +454,8 @@ export interface ReviewReturnInput {
   findings: string;
   /** What must change; defaults to the findings. */
   handoff?: string;
+  /** What the person is asked when this return reaches the limit: the rounds so far as text. */
+  limit?: string;
 }
 
 /**
@@ -465,7 +469,7 @@ export function reviewReturn(run: Run, flow: FlowStage[], input: ReviewReturnInp
   const producer = flow.find((s) => s.id === stageOf(flow, run.stage).returnsTo);
   if (!producer || producer.type !== 'work') throw new RunError('unknown-stage', { stage: run.stage });
   const post: ForumDraft = { kind: 'post', author: agent(input.by), text: findings, stage: run.stage, public: true };
-  return returnWork(run, flow, { kind: 'return', by: input.by, text: findings, handoff: input.handoff?.trim() || findings, toStage: producer.id, countRound: true }, post, at);
+  return returnWork(run, flow, { kind: 'return', by: input.by, text: findings, handoff: input.handoff?.trim() || findings, toStage: producer.id, countRound: true, ...(input.limit ? { limit: input.limit } : {}) }, post, at);
 }
 
 /** The person starts a stage whose agent is not autonomous. The flag counts as it is now: a change takes effect at a stage start. */
