@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 9;
+export const CONFIG_SCHEMA_VERSION = 10;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -482,6 +482,17 @@ export interface AgentToolsConfig {
 export const AGENT_PERMISSIONS = ['read', 'worktree'] as const;
 export type AgentPermission = (typeof AGENT_PERMISSIONS)[number];
 
+/** Whether an agent of a run may read the code host (issues, comments, pull requests). Never a write: writes keep going through the door of Actions. */
+export const AGENT_TRACKERS = ['none', 'read'] as const;
+export type AgentTracker = (typeof AGENT_TRACKERS)[number];
+
+/**
+ * What an agent of a run may execute. `none`: no shell. `allowlist`: the commands of `runner.commands`, exactly as written (only with the `worktree`
+ * permission). `sandbox`: any command, inside a sandbox the app builds for the stage (see `runner.sandbox`); offered only where one works.
+ */
+export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox'] as const;
+export type AgentShell = (typeof AGENT_SHELLS)[number];
+
 export interface AgentModel {
   /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
   role: LlmRole | null;
@@ -503,6 +514,10 @@ export interface AgentDef {
   /** Ids of the `devCycle.stages` the agent works. */
   stages: string[];
   permission: AgentPermission;
+  /** Code host reads for this agent's stages. Absent in a file written before the field existed: `none`. */
+  tracker: AgentTracker;
+  /** Commands this agent's stages may run. Absent in a file written before the field existed: `allowlist` for an agent that writes, else `none`. */
+  shell: AgentShell;
   /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
@@ -656,6 +671,36 @@ export interface RunnerTurns {
   write: number;
 }
 
+/** How far a sandbox reaches the network: nowhere, or only the listed package registries through the app's filtering proxy. */
+export const SANDBOX_NETWORKS = ['off', 'registry'] as const;
+export type SandboxNetwork = (typeof SANDBOX_NETWORKS)[number];
+
+/** What one command and one stage of a sandbox may use. */
+export interface SandboxLimits {
+  /** Longest one command may run (ms). */
+  commandMs: number;
+  /** Total command time of one stage (ms). */
+  stageMs: number;
+  /** Data memory of one process (MiB; `RLIMIT_DATA`). */
+  memoryMb: number;
+  /** Processes inside the sandbox (`RLIMIT_NPROC`). */
+  processes: number;
+  /** Largest file one process may write (MiB). */
+  fileMb: number;
+  /** Largest tree an agent that only reads is given a copy of (MiB). */
+  copyMb: number;
+}
+
+/** What the sandbox of an agent's commands may reach. Desktop only: a paired browser cannot change any of it. */
+export interface RunnerSandbox {
+  network: SandboxNetwork;
+  /** Exact host names the registry switch lets through (HTTPS, port 443). */
+  registryHosts: string[];
+  /** Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands): a toolchain installed in the home, say. */
+  readOnlyPaths: string[];
+  limits: SandboxLimits;
+}
+
 /** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
 export interface RunnerConfig {
   /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
@@ -678,6 +723,7 @@ export interface RunnerConfig {
   /** How many steps (model turns) an agent may take in one pass: `read` for an agent that only reads and writes its documents, `write` for one that changes files. */
   turns: RunnerTurns;
   identity: RunnerIdentity;
+  sandbox: RunnerSandbox;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
 }

@@ -1111,5 +1111,16 @@
   "main.forum.code.runner.request.issueFailed": "Could not create the issue \"{title}\": {reason}",
   "main.ata.squad": "Scope: squad {squad}",
   "main.ata.wholeWorkspace": "Scope: the whole workspace",
-  "main.retro.digest.squad": "squad"
+  "main.retro.digest.squad": "squad",
+  "main.sandbox.reason.platform": "this system has no sandbox the app can use (only Linux with bubblewrap is supported)",
+  "main.sandbox.reason.no-bwrap": "bubblewrap (bwrap) is not installed",
+  "main.sandbox.reason.refused": "bubblewrap could not make a sandbox here: the system may not allow user namespaces",
+  "main.sandbox.reason.no-prlimit": "the prlimit program (util-linux) is missing",
+  "main.sandbox.reason.no-timeout": "the timeout program (coreutils) is missing",
+  "main.sandbox.error.unavailable": "This computer cannot make a sandbox: {reason}.",
+  "main.sandbox.error.no-node": "The sandbox needs the node program to reach the package registry, and it is not on the sandbox path. Install Node in the system folders, list its folder under the sandbox read-only folders, or turn the registry switch off.",
+  "main.sandbox.error.copy-too-big": "The worktree is too large to copy for an agent that only reads (the limit is {mb} MiB). Raise the limit in the runner settings or give the agent no sandbox.",
+  "main.sandbox.error.path-missing": "The folder {path}, listed for the sandbox, does not exist.",
+  "main.sandbox.error.path-refused": "The folder {path}, listed for the sandbox, cannot be shared: it is the home folder, the app data, or looks like a place that holds secrets.",
+  "main.sandbox.error.start-failed": "The sandbox did not start: {detail}"
 }

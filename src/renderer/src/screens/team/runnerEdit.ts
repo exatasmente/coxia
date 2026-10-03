@@ -1,4 +1,5 @@
-import type { RunnerConfig } from '../../../../shared/config/types';
+import type { RunnerConfig, RunnerSandbox } from '../../../../shared/config/types';
+import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
 // The runner settings, as pure functions: the draft a person types into, the checks shown while typing (the ones the config validator holds, in words of this
 // screen), and the config the draft makes.
@@ -22,6 +23,8 @@ export interface RunnerDraft {
   identityName: string;
   identityEmail: string;
   commitMessage: string;
+  /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
+  sandbox: RunnerSandbox;
 }
 
 export function draftOfRunner(r: RunnerConfig): RunnerDraft {
@@ -39,6 +42,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     identityName: r.identity.name,
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
+    sandbox: structuredClone(r.sandbox),
   };
 }
 
@@ -53,6 +57,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     stageMaxMs: Math.round(d.maxMinutes * 60_000),
     turns: { read: d.turnsRead, write: d.turnsWrite },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
+    sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()) },
     commitMessage: d.commitMessage,
   };
 }
@@ -62,10 +67,10 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * the commits are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox) };
 }
 
-export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage';
+export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxLimits';
 
 export interface RunnerProblem {
   severity: 'error' | 'warning';
@@ -115,6 +120,18 @@ export function runnerProblems(d: RunnerDraft, cycleIsFlow: boolean): RunnerProb
   if (!d.commitMessage.includes('{summary}')) error('commitMessage', 'ui.runner.err.commitSummary');
   if (/[\n\r]/.test(d.commitMessage)) error('commitMessage', 'ui.runner.err.commitLine');
   if (d.commitMessage.length > 200) error('commitMessage', 'ui.runner.err.commitLong');
+  for (const h of d.sandbox.registryHosts) if (!isRegistryHost(h.trim().toLowerCase())) error('sandboxHosts', 'ui.runner.err.sandboxHost', { host: h });
+  if (d.sandbox.registryHosts.length > MAX_REGISTRY_HOSTS) error('sandboxHosts', 'ui.runner.err.sandboxHostCount', { max: String(MAX_REGISTRY_HOSTS) });
+  for (const p of d.sandbox.readOnlyPaths) {
+    const why = readOnlyPathProblem(p);
+    if (why) error('sandboxPaths', why === 'secret' ? 'ui.runner.err.sandboxPathSecret' : 'ui.runner.err.sandboxPath', { path: p });
+  }
+  if (d.sandbox.readOnlyPaths.length > MAX_READ_ONLY_PATHS) error('sandboxPaths', 'ui.runner.err.sandboxPathCount', { max: String(MAX_READ_ONLY_PATHS) });
+  for (const [key, [min, max]] of Object.entries(SANDBOX_LIMIT_RANGES)) {
+    const v = d.sandbox.limits[key as keyof typeof d.sandbox.limits];
+    if (!Number.isInteger(v) || v < min || v > max) error('sandboxLimits', 'ui.runner.err.sandboxLimit', { min: String(min), max: String(max) });
+  }
+  if (d.sandbox.network === 'registry') out.push({ severity: 'warning', field: 'sandboxHosts', key: 'ui.runner.warn.registryOn' });
   if (d.enabled && !cycleIsFlow) out.push({ severity: 'warning', field: 'triggerLabel', key: 'ui.runner.warn.notFlow' });
   if (d.idleMinutes > d.maxMinutes) out.push({ severity: 'warning', field: 'idle', key: 'ui.runner.warn.idleLonger' });
   if (d.commandsMode === 'custom' && d.commands.length === 0) out.push({ severity: 'warning', field: 'commands', key: 'ui.runner.warn.noCommands' });

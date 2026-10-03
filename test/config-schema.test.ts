@@ -69,7 +69,7 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 10 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: 11 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
   });
@@ -98,7 +98,7 @@ describe('config schema', () => {
   });
 
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 9, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: 10, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);

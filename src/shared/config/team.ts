@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { ID } from './schema';
-import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
+import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type AgentShell, type AgentTracker, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
 
 // The agent team: the five built-in (system) agents, the helpers that keep them in place, and the pure edits Settings makes.
 // Everything here takes a config and returns a new one; validation is the caller's (saveConfig).
@@ -21,6 +21,8 @@ export function systemAgent(role: LlmRole, seed: RoleSeed = {}): AgentDef {
     model: { role: modelRole, provider: '', model: '' },
     stages: [],
     permission: 'read',
+    tracker: 'none',
+    shell: 'none',
     autonomous: false,
     turnsTo: null,
     instructions: typeof seed.extraInstructions === 'string' ? seed.extraInstructions : '',
@@ -42,6 +44,9 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     model: m ? { role: m.role ?? null, provider: m.provider ?? '', model: m.model ?? '' } : { role: 'deep', provider: '', model: '' },
     stages: partial.stages ?? [],
     permission: partial.permission ?? 'read',
+    // What an agent could do before the two fields existed: an agent that writes ran the commands of the workspace, one that reads ran none and had no say about the host.
+    tracker: partial.tracker ?? 'none',
+    shell: partial.shell ?? ((partial.permission ?? 'read') === 'worktree' ? 'allowlist' : 'none'),
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
@@ -121,4 +126,63 @@ export function pruneAgentStages(team: AgentDef[], cycle: Pick<DevCycleConfig, '
   // The stages of a squad's own flow count too: an agent of that squad works them.
   const ids = new Set([...cycle.stages, ...Object.values(cycle.flows ?? {}).flat()].map((s) => s.id));
   return team.map((a) => (a.stages.every((s) => ids.has(s)) ? a : { ...a, stages: a.stages.filter((s) => ids.has(s)) }));
+}
+
+/** How far each permission reaches, lowest first: a change to a higher value gives an agent more than it had. */
+const SHELL_RANK: Record<AgentShell, number> = { none: 0, allowlist: 1, sandbox: 2 };
+const TRACKER_RANK: Record<AgentTracker, number> = { none: 0, read: 1 };
+
+/** Whether `to` lets an agent run more than `from` did. */
+export const shellRaised = (from: AgentShell, to: AgentShell): boolean => SHELL_RANK[to] > SHELL_RANK[from];
+
+/** Whether `to` lets an agent read more of the code host than `from` did. */
+export const trackerRaised = (from: AgentTracker, to: AgentTracker): boolean => TRACKER_RANK[to] > TRACKER_RANK[from];
+
+/** The shell a value comes to where no sandbox works: `sandbox` is lowered to what the agent could do before it (`allowlist` when it writes, else `none`). */
+export const withoutSandbox = (shell: AgentShell, permission: AgentDef['permission']): AgentShell => (shell === 'sandbox' ? (permission === 'worktree' ? 'allowlist' : 'none') : shell);
+
+/** What each agent of the shipped teams is recommended to have, by id (the roles of the agent cycle and of the engineering cycle). */
+export const RECOMMENDED: Record<string, { tracker: AgentTracker; shell: AgentShell }> = {
+  support: { tracker: 'none', shell: 'none' },
+  'product-owner': { tracker: 'read', shell: 'none' },
+  'tech-lead': { tracker: 'read', shell: 'sandbox' },
+  developer: { tracker: 'none', shell: 'sandbox' },
+  qa: { tracker: 'none', shell: 'sandbox' },
+  'customer-success': { tracker: 'none', shell: 'none' },
+  refiner: { tracker: 'read', shell: 'none' },
+  planner: { tracker: 'read', shell: 'sandbox' },
+  reviewer: { tracker: 'read', shell: 'sandbox' },
+};
+
+export interface Recommendation {
+  id: string;
+  tracker: AgentTracker;
+  shell: AgentShell;
+  /** What the agent has now. */
+  from: { tracker: AgentTracker; shell: AgentShell };
+}
+
+/**
+ * The agents of the team whose permissions differ from the recommendation of their role. Nothing here is applied: the team editor offers it. Where no sandbox works
+ * the shell recommended is the one the agent could have before sandboxes (`allowlist` for one that writes, else `none`).
+ */
+export function recommendations(config: WorkspaceConfig, sandbox: boolean): Recommendation[] {
+  const out: Recommendation[] = [];
+  for (const a of config.agents.team) {
+    const want = RECOMMENDED[a.id];
+    if (!want || a.system) continue;
+    const shell = sandbox ? want.shell : withoutSandbox(want.shell, a.permission);
+    if (a.tracker !== want.tracker || a.shell !== shell) out.push({ id: a.id, tracker: want.tracker, shell, from: { tracker: a.tracker, shell: a.shell } });
+  }
+  return out;
+}
+
+/** The team with the recommendation applied to the agents it names (the editor's one button). */
+export function applyRecommendations(config: WorkspaceConfig, list: Recommendation[]): WorkspaceConfig {
+  const next = structuredClone(config);
+  for (const r of list) {
+    const a = next.agents.team.find((x) => x.id === r.id);
+    if (a) Object.assign(a, { tracker: r.tracker, shell: r.shell });
+  }
+  return next;
 }

@@ -2,13 +2,15 @@
 import { mergeDeep, neutralConfig } from '../config/defaults';
 import type { AgentDef, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
-import { newAgent, pruneAgentStages } from '../config/team';
+import { newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
 
 // Applying a template, turning a workspace's cycle back into a template, and the file a template travels in.
 
 export interface ApplyOptions {
+  /** A sandbox works on this machine: the agents a template brings keep `shell: sandbox`. Without it they get what they could do before sandboxes (default: no). */
+  sandbox?: boolean;
   /** Keep the QA account the workspace already has (default). The account is the team's, not the template's. */
   keepQaUser?: boolean;
   /** Keep the label pattern that marks a shipped issue (default: take the template's). */
@@ -32,16 +34,21 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
   // The flows of the squads are the workspace's own (squads are not part of a template): a new cycle for the workspace leaves them as they are.
   if (config.devCycle.flows && Object.keys(config.devCycle.flows).length) next.flows = structuredClone(config.devCycle.flows);
   const out = { ...structuredClone(config), devCycle: next };
-  out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], next);
+  out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], next, { sandbox: options.sandbox === true });
   return out;
 }
 
 // The agents the person already has stay exactly as they are; the template adds the ones that are missing. A stage the new cycle does not have
 // is dropped from every agent, so the swap leaves no dangling reference.
-export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages' | 'flows'>): WorkspaceConfig['agents']['team'] {
+export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages' | 'flows'>, options: { sandbox?: boolean } = {}): WorkspaceConfig['agents']['team'] {
   const have = new Set(current.map((a) => a.id));
-  // A template has no squads: an agent it brings is shared until the person puts it in one.
-  const added = brought.filter((a) => !have.has(a.id)).map((a) => newAgent({ ...structuredClone(a), system: false, squad: undefined }));
+  // A template has no squads: an agent it brings is shared until the person puts it in one. A sandbox it asks for is only given where one works.
+  const added = brought
+    .filter((a) => !have.has(a.id))
+    .map((a) => {
+      const agent = newAgent({ ...structuredClone(a), system: false, squad: undefined });
+      return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
+    });
   return pruneAgentStages([...current, ...added], cycle);
 }
 

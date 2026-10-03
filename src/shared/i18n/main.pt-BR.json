@@ -1111,5 +1111,16 @@
   "main.forum.code.runner.request.issueFailed": "Não foi possível criar a issue \"{title}\": {reason}",
   "main.ata.squad": "Escopo: squad {squad}",
   "main.ata.wholeWorkspace": "Escopo: o workspace inteiro",
-  "main.retro.digest.squad": "squad"
+  "main.retro.digest.squad": "squad",
+  "main.sandbox.reason.platform": "este sistema não tem uma sandbox que o app consiga usar (só há suporte a Linux com bubblewrap)",
+  "main.sandbox.reason.no-bwrap": "o bubblewrap (bwrap) não está instalado",
+  "main.sandbox.reason.refused": "o bubblewrap não conseguiu criar uma sandbox aqui: o sistema pode não permitir user namespaces",
+  "main.sandbox.reason.no-prlimit": "falta o programa prlimit (util-linux)",
+  "main.sandbox.reason.no-timeout": "falta o programa timeout (coreutils)",
+  "main.sandbox.error.unavailable": "Este computador não consegue criar uma sandbox: {reason}.",
+  "main.sandbox.error.no-node": "A sandbox precisa do programa node para chegar ao registro de pacotes, e ele não está no caminho da sandbox. Instale o Node nas pastas do sistema, liste a pasta dele entre as pastas somente leitura da sandbox, ou desligue a chave do registro.",
+  "main.sandbox.error.copy-too-big": "O worktree é grande demais para copiar para um agente que só lê (o limite é {mb} MiB). Aumente o limite nas configurações do executor ou tire a sandbox do agente.",
+  "main.sandbox.error.path-missing": "A pasta {path}, listada para a sandbox, não existe.",
+  "main.sandbox.error.path-refused": "A pasta {path}, listada para a sandbox, não pode ser compartilhada: é a pasta pessoal, os dados do app, ou parece um lugar que guarda segredos.",
+  "main.sandbox.error.start-failed": "A sandbox não iniciou: {detail}"
 }

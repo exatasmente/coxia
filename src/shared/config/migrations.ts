@@ -1,5 +1,5 @@
 // i18n-lint: allow-file English diagnostics of the config migration, written to the log
-import { mergeDeep, neutralConfig, neutralRunner, withConfigDefaults } from './defaults';
+import { mergeDeep, neutralConfig, neutralRunner, neutralSandbox, withConfigDefaults } from './defaults';
 import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
 import { agentFlowComments } from '../cycles/templates/agentFlowComments';
@@ -20,6 +20,9 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //       runner used to have built in), and the order of the list is the order of the run (it used to be the rank). The agent cycle itself grew a business team
 //       (support, product owner, tech lead, customer success): a workspace still on its untouched default gets it, any other keeps what it has.
 //   v9  `runner.stageTimeoutMs` (one wall-clock limit) is two: `stageIdleMs` (no sign of life from the agent) and `stageMaxMs` (the cap on a stage).
+//   v10 `agents.team[].tracker` and `.shell` (what an agent of a run may read from the code host and run), and `runner.sandbox` (what the sandbox of an agent set to
+//       `shell: sandbox` may reach and use). Nothing is raised: an agent that writes keeps its commands (`allowlist`, or `none` when the workspace lists none), an agent
+//       that only reads keeps no commands and keeps the code host read it had when the workspace switches for it were on.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -217,8 +220,25 @@ function v8ToV9(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 9, runner: { ...rest, ...(own !== null ? { stageMaxMs: own, ...(own < idle ? { stageIdleMs: own } : {}) } : {}) } };
 }
 
+// Every agent gets the two permissions it effectively had: they are written down, not guessed from the permission each time, so a later default never moves them.
+// A reader had the code host read of the ceremonies (a workspace-wide switch) and ran no command; an agent that writes ran the commands of `runner.commands` and had
+// no host read. The migration raises nothing; the new defaults per role are offered by the team editor, never applied here.
+function v9ToV10(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const agents = pick(old.agents);
+  const tools = pick(agents.tools);
+  const reads = tools.vcsCli === true || tools.trackerMcp === true;
+  const runner = pick(old.runner);
+  const none = Array.isArray(runner.commands) && runner.commands.length === 0;
+  const team = (Array.isArray(agents.team) ? (agents.team as unknown[]).filter(isObject) : []).map((a) => {
+    const writes = a.permission === 'worktree';
+    return { ...a, tracker: a.tracker ?? (writes ? 'none' : reads ? 'read' : 'none'), shell: a.shell ?? (writes && !none ? 'allowlist' : 'none') };
+  });
+  notes.push('agents got "tracker" and "shell": nothing was raised (an agent that writes keeps the commands of the runner, one that only reads keeps the code host read the workspace gave it and runs nothing); the team editor offers the recommended permissions of each role, and the new runner.sandbox is closed (no network, no extra folder)');
+  return { ...old, schemaVersion: 10, agents: { ...agents, team }, runner: { ...runner, sandbox: runner.sandbox ?? neutralSandbox() } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

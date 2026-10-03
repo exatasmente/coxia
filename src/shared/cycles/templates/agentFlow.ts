@@ -1,5 +1,5 @@
 // i18n-lint: allow-file cycle template data: stage names and file names, whose texts are catalog keys
-import { newAgent } from '../../config/team';
+import { RECOMMENDED, newAgent } from '../../config/team';
 import { CARD_FIELDS, type AgentDef, type StageDef, type SpecLayout } from '../../config/types';
 import { defaultCeremonyParams, sameFamily } from '../neutral';
 import type { CycleTemplate } from '../types';
@@ -37,8 +37,10 @@ export const AGENT_FLOW_STAGES: StageDef[] = [
   { id: 'communicate', label: 'cycle.agentFlow.stage.communicate', match: ['^Communicat'], kind: 'done', rank: 10, type: 'work', agentId: 'customer-success', produces: ['6_RELEASE_NOTE.md'] },
 ];
 
+// What each role is given besides its files: the Product Owner and the Tech Lead read the tracker, and the roles that check or build run commands in a sandbox
+// (RECOMMENDED in config/team.ts is the same table, by id: the editor offers it to a team that already exists).
 const member = (id: string, key: string, stages: string[], permission: AgentDef['permission'], turnsTo: string | null): AgentDef =>
-  newAgent({ id, name: `cycle.agentFlow.team.${key}.name`, job: `cycle.agentFlow.team.${key}.job`, instructions: `cycle.agentFlow.team.${key}.instructions`, stages, permission, autonomous: true, turnsTo, model: { role: 'deep' } });
+  newAgent({ id, name: `cycle.agentFlow.team.${key}.name`, job: `cycle.agentFlow.team.${key}.job`, instructions: `cycle.agentFlow.team.${key}.instructions`, stages, permission, tracker: RECOMMENDED[id].tracker, shell: RECOMMENDED[id].shell, autonomous: true, turnsTo, model: { role: 'deep' } });
 
 /**
  * The default team of the agent cycle: the roles of a product team, all autonomous (the person is at the two gates), and only the developer may change files,

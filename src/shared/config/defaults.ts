@@ -2,7 +2,7 @@
 import { neutralDevCycle } from '../cycles/neutral';
 import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type RunnerConfig, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type RunnerConfig, type RunnerSandbox, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -16,8 +16,18 @@ function roles<T>(make: (role: LlmRole) => T): Record<LlmRole, T> {
   return Object.fromEntries(LLM_ROLES.map((r) => [r, make(r)])) as Record<LlmRole, T>;
 }
 
+/** A sandbox that reaches nothing: no network, no folder beyond the worktree, and limits a test run fits in. */
+export function neutralSandbox(): RunnerSandbox {
+  return {
+    network: 'off',
+    registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'],
+    readOnlyPaths: [],
+    limits: { commandMs: 5 * 60_000, stageMs: 30 * 60_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 },
+  };
+}
+
 export function neutralRunner(): RunnerConfig {
-  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' };
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), commitMessage: 'feat: {summary} #{iid}' };
 }
 
 export function neutralConfig(): WorkspaceConfig {

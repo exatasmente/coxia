@@ -6,6 +6,7 @@ import { checkSquads, squadIssueText } from '../runs/squadCheck';
 import { promptFamilies } from '../cycles/prompts';
 import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
+import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
@@ -60,6 +61,8 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     a.stages.forEach((s, j) => {
       if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
     });
+    // Commands run in the real worktree could leave files that the app then commits for an agent that promised only to read; a reader runs them in a sandbox.
+    if (a.shell === 'allowlist' && a.permission !== 'worktree') errors.push({ path: at('shell'), message: '"allowlist" needs the "worktree" permission: an agent that only reads runs commands only in a sandbox' });
     if (a.model.role === null) {
       if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
       if (!a.model.model.trim()) errors.push({ path: at('model.model'), message: 'is required when the agent names no role' });
@@ -125,6 +128,29 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   if (!!name.trim() !== !!email.trim()) errors.push({ path: 'runner.identity', message: 'needs both a name and an email, or neither' });
   else if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+$/.test(email.trim())) errors.push({ path: 'runner.identity.email', message: 'is not an email address' });
   if (r.enabled && !isFlowCycle(c.devCycle.stages)) warnings.push({ path: 'runner.enabled', message: 'the runner only works with a cycle whose stages have a type (the agent cycle)' });
+  sandboxRules(r.sandbox, errors, warnings);
+}
+
+// What a sandbox may reach: the hosts of the registry switch, the folders it may read, and the limits. The facts that need the machine (the data folder, the home
+// folder itself) are checked where a sandbox is built.
+function sandboxRules(s: WorkspaceConfig['runner']['sandbox'], errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  s.registryHosts.forEach((h, i) => {
+    if (!isRegistryHost(h)) errors.push({ path: `runner.sandbox.registryHosts[${i}]`, message: 'must be a host name such as registry.example.com: no scheme, port, path or wildcard' });
+  });
+  if (s.registryHosts.length > MAX_REGISTRY_HOSTS) errors.push({ path: 'runner.sandbox.registryHosts', message: `at most ${MAX_REGISTRY_HOSTS} hosts` });
+  for (const h of duplicates(s.registryHosts)) warnings.push({ path: 'runner.sandbox.registryHosts', message: `"${h}" is listed twice` });
+  if (s.network === 'registry' && !s.registryHosts.length) warnings.push({ path: 'runner.sandbox.network', message: 'the registry switch is on and no host is listed: nothing can be reached' });
+  s.readOnlyPaths.forEach((p, i) => {
+    const why = readOnlyPathProblem(p);
+    if (why) errors.push({ path: `runner.sandbox.readOnlyPaths[${i}]`, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
+  });
+  if (s.readOnlyPaths.length > MAX_READ_ONLY_PATHS) errors.push({ path: 'runner.sandbox.readOnlyPaths', message: `at most ${MAX_READ_ONLY_PATHS} folders` });
+  for (const p of duplicates(s.readOnlyPaths)) warnings.push({ path: 'runner.sandbox.readOnlyPaths', message: `"${p}" is listed twice` });
+  for (const [key, [min, max]] of Object.entries(SANDBOX_LIMIT_RANGES)) {
+    const v = s.limits[key as keyof typeof s.limits];
+    if (!Number.isInteger(v) || v < min || v > max) errors.push({ path: `runner.sandbox.limits.${key}`, message: `must be a whole number between ${min} and ${max}` });
+  }
+  if (s.limits.stageMs < s.limits.commandMs) warnings.push({ path: 'runner.sandbox.limits.stageMs', message: 'is shorter than one command may run: the stage budget ends it first' });
 }
 
 const COMMENT_PLACEHOLDERS = new Set(['stage', 'round', 'result', 'decision', 'ref']);
