@@ -29,9 +29,11 @@ Standard placeholders (names chosen so none collides with `{mr}` = a ref, `{host
 | `{retroDays}` | `retro.windowDays` | same | same | 7 |
 | `{cli}` | glab | gh | the VcsRead tool | empty |
 
+Two more were needed while rewording: `{CrLongs}` ("Merge requests", for a heading) and `{anCr}` ("an MR" / "a PR" in English, the bare noun in Portuguese: the English article depends on the sound of the noun, and the sdd English golden says "an MR"), and `{ci}` ("pipeline", "checks" on GitHub) for a word in a list.
+
 ### 2. Kind variants for sentences, not words
 
-A sentence whose content changes with the host gets a key variant `<key>.<kind>` (same idea as `.novoice`): lookup order `key + voice + kind`, `key + voice`, `key + kind`, `key`. Used for the CI word only (decision 2): GitHub says "checks", GitLab and Bitbucket say "pipeline". GitLab text is the plain key, so it stays as it is.
+A sentence whose content changes with the host gets a key variant `<key>.on-<kind>` (same idea as `.novoice`; the plain `.<kind>` would collide with keys such as `wizard.vcs.scopes.gitlab`): lookup order `key + voice + kind`, `key + voice`, `key + kind`, `key`. Used for the CI word only (decision 2): GitHub says "checks", GitLab and Bitbucket say "pipeline". GitLab text is the plain key, so it stays as it is.
 
 ### 3. How the renderer gets the terms
 
@@ -64,13 +66,13 @@ Changed (by commit below): `src/shared/i18n/index.ts`, `src/shared/cycles/text.t
 
 One logical change per commit, tests in the same commit.
 
-1. **Terms.** `terms.ts` (both), `setTerms`, central fill, `CycleView.terms` and `host`, wiring in `workspaceConfig.ts` and `cycleApi.ts`; `test/terms.test.ts`; the leak test, with an allow-list that holds every current offender so it starts green and each later commit shrinks it.
+1. **Terms.** `terms.ts` (both), `setTerms`, central fill, `CycleView.terms` and `host`, wiring in `workspaceConfig.ts` and `cycleApi.ts`; `test/terms.test.ts`. (The leak test was written first to drive the work, and committed after the rewording with a short allow-list instead of one that shrinks.)
 2. **Host name and change-request noun in the catalogs** (families a and b): `{vcsName}`, `{cr}`, `{crs}`, `{crLong}`, `{crMark}`, the CI variants, the pt-BR gender normalisation, the Today button and `MRs` label, the refresh button and footer, the glossary's spoken ref, the `'MR'` fallback in `actions.ts`.
 3. **Refs.** `crRef`, the parsers, `{crMark}` in the effects text; `test/cr-ref.test.ts`, a GitHub case in `test/vcs-cards.test.ts`.
 4. **Hide.** `host` predicates and their use: Quick actions issue-status block, Settings tool switches, "Continue in Claude Code", `quickTransitions` documented as GitLab-only; the agent-side leaks of 7 with a `vcs-read-policy` test; `test/host-view.test.ts`.
 5. **Cycle words** (families e and f): `{ceremony}` in the screens, the Help list from `cycle.ceremonies`, neutral generic strings, the retro window, the summary target, `ui.retro.improvements.hint` outside the sdd template, the retro digest field name.
 6. **Docs and changelog**: the standard placeholders in `docs/cycles.md` and rule 3 of `docs/i18n.md`, what each host shows in `docs/vcs-providers.md`, and a `### Fixed` line under `## [Unreleased]`.
-7. **Test plan** (`3_TEST_PLAN.md`): how a person verifies with a GitHub and a Bitbucket workspace.
+7. **Leak test** (`test/host-terms-leak.test.ts`) and, last, the **test plan** (`3_TEST_PLAN.md`): how a person verifies with a GitHub and a Bitbucket workspace.
 
 ## Test plan
 
@@ -118,3 +120,8 @@ Defaults taken for the open questions of the investigation; the maintainer may r
 9. **"Paste it into the team chat" texts** show the configured `summaryTarget` when set, and the generic wording otherwise.
 10. **Agent-facing host leaks are in scope:** the shell refusal in `agents.ts` and the open engine's Bash tool description follow the active read path.
 11. **Terms follow the process language.** `fill()` ignores a language argument that differs from the process's: every caller passes the workspace language today.
+12. **Kind variants are `.on-<kind>`**, not `.<kind>`: a key that merely ends in a host's name (`wizard.vcs.scopes.gitlab`) is its own key.
+13. **`cycle.decisionLog.ref` ("o {heading} do Plan") and the retro digest field `mudancas_gitlab` were left as they are:** both are in the legacy and English prompt goldens, so changing them would change what a GitLab workspace tells its agents. Renaming them is a follow-up that regenerates those goldens on purpose.
+14. **The pt-BR articles around `{ceremony}` stay as written** ("da {ceremony}", "na {ceremony}"): the prompts already read that way and the gender of a free label is unknown.
+15. **Parity of placeholders between the catalogs** now compares the set of names without case or count (`{Ceremony}` in English where Portuguese has `{ceremony}`, two `{cr}` where the other language has one).
+16. **Where the tracker has separate numbering (Bitbucket)** a pull request whose short ref equals an issue's gets its full project path as ref, instead of colliding.
