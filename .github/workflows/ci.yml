@@ -1,10 +1,11 @@
 name: CI
 
+# main and the open release branches (release/X.Y.Z, RELEASING.md): a pull request into a release branch is checked like one into main.
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
 
 permissions:
   contents: read
