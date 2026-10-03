@@ -14,7 +14,7 @@ import {
   type Finding,
   type Run,
 } from '../src/shared/runs';
-import { RUN_FILTERS, RUN_TONE, filterCounts, inFilter, listRuns, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, stageLabelOf, stageRows } from '../src/shared/runs/view';
+import { RUN_FILTERS, RUN_TONE, filterCounts, inFilter, listRuns, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, stageLabelOf, stageRows, usageParams } from '../src/shared/runs/view';
 import { RUN_STATUSES } from '../src/shared/runs';
 import { drive, flowWithAutonomy, at } from './helpers/runs';
 
@@ -274,5 +274,15 @@ describe('the list of runs', () => {
       const groups = RUN_FILTERS.filter((f) => f !== 'all' && inFilter(r, f));
       expect(groups.length, status).toBe(status === 'failed' ? 2 : 1);
     }
+  });
+});
+
+describe('what a stage used, as the timeline says it', () => {
+  it('formats the numbers in the reader\'s locale and shows a cost only when one was reported', () => {
+    const u = { promptTokens: 1_234_567, completionTokens: 8_900, cachedTokens: 400_000, calls: 12, costUsd: null };
+    expect(usageParams(u, 'en')).toEqual({ calls: '12', prompt: '1,234,567', cached: '400,000', completion: '8,900', cost: null });
+    expect(usageParams(u, 'pt-BR').prompt).toBe('1.234.567');
+    expect(usageParams({ ...u, costUsd: 0.0318 }, 'en').cost).toBe('$0.0318');
+    expect(usageParams({ ...u, costUsd: 2 }, 'en').cost).toBe('$2.00');
   });
 });

@@ -47,6 +47,8 @@ export interface Usage {
   completion_tokens?: number;
   prompt_tokens_details?: { cached_tokens?: number };
   prompt_cache_hit_tokens?: number;
+  // What the provider says the call cost, in US dollars (OpenRouter does).
+  cost?: number;
 }
 
 export interface ChatChunk {
@@ -86,7 +88,7 @@ export interface Completion {
   reasoning: string;
   toolCalls: ToolCall[];
   finishReason: string | null;
-  usage: { promptTokens: number; completionTokens: number; cachedTokens: number } | null;
+  usage: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd?: number } | null;
   // The upstream field the reasoning came in, when any.
   reasoningField: 'reasoning_content' | 'reasoning' | null;
 }

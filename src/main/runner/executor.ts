@@ -4,7 +4,7 @@ import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
+import { type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
@@ -160,7 +160,10 @@ export function watchdog(abort: AbortController, limits: Limits): Watchdog {
 /** The old shape, for a caller with one number: that long of silence, and that long in all. */
 export const withLimit = <T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> => watchdog(abort, { idleMs: ms, maxMs: ms }).guard(work);
 
-export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController): Promise<StageRun> {
+/**
+ * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
+ */
+export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
@@ -239,6 +242,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   };
   const watch = watchdog(abort, limitsOf(config, d));
   call.beat = watch.beat;
+  call.onUsage = usage;
 
   let data: unknown;
   try {

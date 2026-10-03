@@ -1,7 +1,7 @@
 import type { RepoConfig } from '../config/types';
 import { shownText } from '../cycles/text';
 import { sameFinding } from './output';
-import { type FlowStage, type Run, type RunStatus, isTerminal } from './types';
+import { type FlowStage, type Run, type RunStatus, type StageUsage, isTerminal } from './types';
 
 // What the run screens decide from a run, as plain data: which badge a card carries, who a run waits for, which runs a card has. The screens only draw it.
 // Pure: nothing here reads the disk, the config's secrets or the DOM.
@@ -238,3 +238,12 @@ export function listRuns<T extends Pick<Run, 'status' | 'question' | 'squad' | '
 /** How many runs each filter has, for the chips. */
 export const filterCounts = (runs: readonly Pick<Run, 'status' | 'question'>[]): Record<RunFilter, number> =>
   Object.fromEntries(RUN_FILTERS.map((f) => [f, runs.filter((r) => inFilter(r, f)).length])) as Record<RunFilter, number>;
+
+// ---- what a stage's model calls used --------------------------------------------------------------------------------------------------
+
+/** The numbers of a stage's use as the timeline says them, in the reader's locale. The cost is only there when a provider or the SDK reported one. */
+export function usageParams(u: StageUsage, locale: string): { calls: string; prompt: string; cached: string; completion: string; cost: string | null } {
+  const n = new Intl.NumberFormat(locale);
+  const money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return { calls: n.format(u.calls), prompt: n.format(u.promptTokens), cached: n.format(u.cachedTokens), completion: n.format(u.completionTokens), cost: u.costUsd === null ? null : money.format(u.costUsd) };
+}

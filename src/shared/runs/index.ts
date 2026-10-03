@@ -6,6 +6,7 @@ export * from './squadCheck';
 export * from './routing';
 export * from './schema';
 export * from './transitions';
+export * from './usage';
 export * from './types';
 
 /** A run id from a time and four random lowercase letters or digits: `r-<base36 ms>-<rand>`. */

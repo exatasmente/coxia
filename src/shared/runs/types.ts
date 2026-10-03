@@ -31,6 +31,19 @@ export interface StageRecord {
   attempts: number;
   /** Whether the agent was autonomous when the stage was entered: a change of the flag never applies in the middle of a stage. */
   autonomous: boolean;
+  /** What its model calls used, over all attempts; absent for a stage that ran before this was recorded (and for a gate). */
+  usage?: StageUsage;
+}
+
+/** What the model calls of a stage used, over all its attempts. `costUsd` is what a provider or the SDK reported, null when none did. */
+export interface StageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  /** Of the prompt tokens, the ones served from the provider's cache. */
+  cachedTokens: number;
+  /** Model calls. */
+  calls: number;
+  costUsd: number | null;
 }
 
 export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;

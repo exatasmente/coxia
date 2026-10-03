@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
-import { type FlowStage, type Run } from '../../../../shared/runs';
-import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows } from '../../../../shared/runs/view';
+import { type FlowStage, type Run, type StageUsage, hasUsage } from '../../../../shared/runs';
+import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows, usageParams } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
@@ -99,6 +99,13 @@ function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 }
 
+/** What the stage's model calls used, over its attempts: calls and tokens, and the cost when a provider reported one (a token count never becomes a price here). */
+function Usage({ usage }: { usage: StageUsage }) {
+  const t = useT();
+  const p = usageParams(usage, intlLocale());
+  return <p className="faint small cy-usage">{t(p.cost === null ? 'ui.cycle.stage.usage' : 'ui.cycle.stage.usageCost', { ...p, cost: p.cost ?? '' })}</p>;
+}
+
 function Row({ run, row, comments, config, web, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; web: boolean; go: (s: Screen) => void; view: (name: string) => void }) {
   const t = useT();
   const { stage, record, state } = row;
@@ -125,6 +132,7 @@ function Row({ run, row, comments, config, web, go, view }: { run: Run; row: Sta
         )}
         {stage.type === 'wait' && stage.waitsFor && <p className="small faint">{t(WAIT_KEY[stage.waitsFor.kind], { label: stage.waitsFor.label ?? '', minutes: stage.waitsFor.minutes ?? 0 })}</p>}
         {record?.startedAt && <p className="faint small">{t('ui.cycle.stage.since', { when: when(record.startedAt) })}{record.endedAt ? ` · ${t('ui.cycle.stage.until', { when: when(record.endedAt) })}` : ''}</p>}
+        {record && hasUsage(record.usage) && <Usage usage={record.usage} />}
         {record && record.artifacts.length > 0 && (
           <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.artifacts')}>
             {record.artifacts.map((name) => (

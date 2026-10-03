@@ -169,6 +169,30 @@ describe('a stage that goes wrong', () => {
     expect(Object.fromEntries(c.engine.calls.map((x) => [x.agent.id, x.maxTurns]))).toEqual({ refiner: 7, planner: 7, developer: 11, reviewer: 7, qa: 7 });
   });
 
+  it('records what each stage\'s model calls used, over its attempts, and keeps what a stage that failed had used', async () => {
+    const b = await boot({ timeoutMs: 60 });
+    easy(b);
+    b.engine.script('refiner', (call) => {
+      call.onUsage?.({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, costUsd: 0.002 });
+      return never();
+    }, (call) => {
+      call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0 });
+      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001 });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+    });
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    // the first attempt was stopped for silence, and its use is kept
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'failed' });
+    expect(b.runner.get(run.id)!.stages[0].usage).toEqual({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, calls: 1, costUsd: 0.002 });
+    b.runner.retry(run.id);
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    expect(run.stages[0]).toMatchObject({ attempts: 2, usage: { promptTokens: 1200, completionTokens: 120, cachedTokens: 100, calls: 3, costUsd: 0.003 } });
+    // a stage whose engine reported nothing has no usage
+    expect(run.stages.find((s) => s.stage === 'gate1')?.usage).toBeUndefined();
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);

@@ -9,6 +9,8 @@ export interface UsageRecord {
   promptTokens: number;
   completionTokens: number;
   cachedTokens: number;
+  // What the provider said the call cost, in US dollars, when it said.
+  costUsd?: number;
   // True when the server sent no usage and the numbers are estimates.
   estimated?: boolean;
 }

@@ -177,7 +177,7 @@ export class ChunkFolder {
 
 function foldUsage(u: Usage): NonNullable<Completion['usage']> {
   const cached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0;
-  return { promptTokens: u.prompt_tokens ?? 0, completionTokens: u.completion_tokens ?? 0, cachedTokens: cached };
+  return { promptTokens: u.prompt_tokens ?? 0, completionTokens: u.completion_tokens ?? 0, cachedTokens: cached, ...(typeof u.cost === 'number' && u.cost >= 0 ? { costUsd: u.cost } : {}) };
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

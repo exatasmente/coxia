@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
+import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { AgentDef } from '../shared/config/types';
 import type { ModelRole } from '../shared/settings';
@@ -431,7 +432,10 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
         req.activity?.tool(source(name, input));
       },
       onToolResult: () => req.beat?.(),
-      onUsage: () => req.beat?.(),
+      onUsage: (u) => {
+        req.beat?.();
+        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd } : {}), ...(u.estimated ? { estimated: true } : {}) });
+      },
       onText: () => req.beat?.(),
       onReasoning: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
@@ -461,11 +465,20 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
     },
   });
+  const counted = new Set<string>();
   for await (const m of q) {
     req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
+      // Each content block of one response is a message of its own with the same id: its use is counted once.
+      const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
+      const id = (m.message as { id?: string }).id;
+      if (used && (!id || !counted.has(id))) {
+        if (id) counted.add(id);
+        const cached = used.cache_read_input_tokens ?? 0;
+        req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
+      }
       for (const block of m.message.content) {
         if (block.type === 'text') req.activity?.text(block.text);
         if (block.type !== 'tool_use') continue;
@@ -481,6 +494,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     }
     if (m.type === 'result') {
       sessionId = m.session_id;
+      // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
+      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       // i18n-ignore: developer error from the SDK result
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
@@ -846,6 +861,8 @@ export interface AgentCall {
   abort?: AbortController;
   /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
   beat?: () => void;
+  /** Called once per model call with what it used, and what it cost when the provider or the SDK said. */
+  onUsage?: (usage: UsageReport) => void;
 }
 
 // What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
@@ -883,6 +900,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       confine: call.confine,
       abort: call.abort,
       beat: call.beat,
+      onUsage: call.onUsage,
     });
     activity.status('finished');
     return r;

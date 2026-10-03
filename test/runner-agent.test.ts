@@ -45,6 +45,27 @@ const writer = newAgent({ id: 'developer', permission: 'worktree' });
 const schema = obj({ fala: str });
 
 describe('runAgent on the Claude SDK', () => {
+  it('reports the use of each response once, even when its blocks come as several messages, and the cost the SDK gives at the end', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agent-usage-'));
+    const use = { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 300, cache_creation_input_tokens: 10 };
+    script = [
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      { type: 'assistant', session_id: 's1', message: { id: 'm1', usage: use, content: [{ type: 'text', text: 'looking' }] } },
+      { type: 'assistant', session_id: 's1', message: { id: 'm1', usage: use, content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'a' } }] } },
+      { type: 'assistant', session_id: 's1', message: { id: 'm2', usage: { input_tokens: 50, output_tokens: 5 }, content: [{ type: 'text', text: 'done' }] } },
+      { type: 'result', subtype: 'success', session_id: 's1', structured_output: { fala: 'ok' }, total_cost_usd: 0.0123 },
+    ];
+    const reports: unknown[] = [];
+    let beats = 0;
+    await runAgent({ agent: reader, prompt: 'p', schema, system: 'sys', cwd, label: 'refiner', maxTurns: 7, onUsage: (u) => void reports.push(u), beat: () => void beats++ });
+    expect(reports).toEqual([
+      { promptTokens: 410, completionTokens: 20, cachedTokens: 300 },
+      { promptTokens: 50, completionTokens: 5, cachedTokens: 0 },
+      { promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.0123 },
+    ]);
+    expect(beats).toBe(5);
+  });
+
   it('gives a reader the tools of the ceremonies: no Edit, no Write, no network', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'agent-read-'));
     const r = await runAgent<{ fala: string }>({ agent: reader, prompt: 'p', schema, system: 'sys', cwd, label: 'refiner', maxTurns: 7 });

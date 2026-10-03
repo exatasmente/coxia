@@ -102,6 +102,28 @@ describe('runAgent on the open engine', () => {
     }
   });
 
+  it('reports what every model call used, and what the provider says it cost when it says', async () => {
+    const metered = await fakeOpenAI((req) =>
+      req.n === 1 ? toolStep([{ id: 'g', name: 'Glob', args: { pattern: '*' } }], { usageTokens: [1000, 200], cost: 0.0004 }) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }], { usageTokens: [1500, 50], cost: 0.0006 }),
+    );
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'local4', kind: 'openai-compatible', baseUrl: metered.url, structured: 'tool' }));
+        return c;
+      });
+      const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local4', model: 'qwen3:8b' } });
+      const reports: unknown[] = [];
+      await runAgent({ agent: reader, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, onUsage: (u) => void reports.push(u) });
+      expect(reports).toEqual([
+        { promptTokens: 1000, completionTokens: 200, cachedTokens: 0, costUsd: 0.0004 },
+        { promptTokens: 1500, completionTokens: 50, cachedTokens: 0, costUsd: 0.0006 },
+      ]);
+    } finally {
+      await metered.close();
+    }
+  });
+
   it('serves a reader with no Write, no Edit and no shell', async () => {
     const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local', model: 'qwen3:8b' } });
     fake.requests.length = 0;

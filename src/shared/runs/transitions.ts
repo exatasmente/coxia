@@ -3,7 +3,8 @@ import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type Transition } from './types';
+import { mergeUsage } from './usage';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -837,6 +838,14 @@ export function recordCommentRefused(run: Run, key: string, target: CommentTarge
 // ---- what the agents found --------------------------------------------------------------------------------------------------------------
 // The structured result of a review or a QA pass is kept in the run, as given, so publishing it (line comments on the pull request, the stage's
 // comment) is a matter of reading it back. Like the comment records, these apply in any status.
+
+/** What a stage's model calls used in one attempt is added to the stage's record. Applies in any status: the use happened whatever became of the stage. */
+export function recordUsage(run: Run, stageId: string, usage: StageUsage, at: string): Transition {
+  const out = clone(run, at);
+  const rec = record(out, stageId);
+  if (rec) rec.usage = mergeUsage(rec.usage, usage);
+  return { run: out, messages: [] };
+}
 
 /** A review pass ended. The round number is the next one; the record is kept even when the pass approved. */
 export function recordReview(run: Run, input: Omit<ReviewRecord, 'round' | 'at'>, at: string): Transition {

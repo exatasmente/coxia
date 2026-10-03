@@ -29,6 +29,17 @@ const stageRecord = object(
     endedAt: { type: ['string', 'null'], description: 'End of the latest attempt.', maxLength: 40 },
     attempts: { type: 'integer', description: 'How many times the stage was entered.', minimum: 0, maximum: 10_000 },
     autonomous: { type: 'boolean', description: 'Whether the agent was autonomous when the stage was entered.' },
+    usage: object(
+      'What the stage\'s model calls used, over all attempts.',
+      {
+        promptTokens: { type: 'integer', description: 'Tokens sent.', minimum: 0 },
+        completionTokens: { type: 'integer', description: 'Tokens received.', minimum: 0 },
+        cachedTokens: { type: 'integer', description: 'Of the tokens sent, the ones the provider served from its cache.', minimum: 0 },
+        calls: { type: 'integer', description: 'Model calls.', minimum: 0 },
+        costUsd: { type: ['number', 'null'], description: 'What a provider or the SDK said it cost; null when none did.', minimum: 0 },
+      },
+      ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
+    ),
   },
   ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts', 'autonomous'],
 );

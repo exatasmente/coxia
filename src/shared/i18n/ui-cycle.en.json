@@ -161,6 +161,8 @@
   "ui.cycle.stage.toStart": "waits for you to start",
   "ui.cycle.stage.until": "until {when}",
   "ui.cycle.stage.upcoming": "not reached yet",
+  "ui.cycle.stage.usage": "{calls} model calls · {prompt} tokens in ({cached} from cache) · {completion} out",
+  "ui.cycle.stage.usageCost": "{calls} model calls · {prompt} tokens in ({cached} from cache) · {completion} out · {cost} reported by the provider",
   "ui.cycle.stage.waiting": "waiting for an event",
   "ui.cycle.stage.waitsForYou": "waits for you",
   "ui.cycle.stages.other": "Other comments",

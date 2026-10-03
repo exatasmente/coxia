@@ -24,7 +24,7 @@ export interface Fake {
   close: () => Promise<void>;
 }
 
-export const usage = (prompt: number, completion: number) => ({ prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion });
+export const usage = (prompt: number, completion: number, cost?: number) => ({ prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion, ...(cost !== undefined ? { cost } : {}) });
 
 const chunk = (delta: object, finish: string | null = null) => ({ choices: [{ index: 0, delta, finish_reason: finish }] });
 
@@ -46,7 +46,7 @@ export interface FakeCall {
 }
 
 // A streamed answer with tool calls: id and name first, then the arguments in two pieces, like OpenAI.
-export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?: [number, number]; finish?: string } = {}): Step {
+export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?: [number, number]; cost?: number; finish?: string } = {}): Step {
   const chunks: object[] = [chunk({ role: 'assistant', content: opts.text ?? null })];
   calls.forEach((c, index) => {
     const args = typeof c.args === 'string' ? c.args : JSON.stringify(c.args);
@@ -56,7 +56,7 @@ export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?:
     chunks.push(chunk({ tool_calls: [{ index, function: { arguments: args.slice(mid) } }] }));
   });
   chunks.push(chunk({}, opts.finish ?? 'tool_calls'));
-  if (opts.usageTokens) chunks.push({ choices: [], usage: usage(...opts.usageTokens) });
+  if (opts.usageTokens) chunks.push({ choices: [], usage: usage(opts.usageTokens[0], opts.usageTokens[1], opts.cost) });
   return { chunks };
 }
 

@@ -43,6 +43,10 @@ import {
   producerOf,
   recordQa,
   recordReview,
+  recordUsage,
+  addReport,
+  emptyUsage,
+  hasUsage,
   findingLine,
   limitText,
   scenarioLine,
@@ -308,12 +312,21 @@ export function createRunner(deps: RunnerDeps): Runner {
     aborts.set(run.id, abort);
     let result: StageRun | null = null;
     let failure: unknown = null;
+    let used = emptyUsage();
     try {
-      result = await executeStage(exec, run, flowFor(run), abort);
+      result = await executeStage(exec, run, flowFor(run), abort, (u) => void (used = addReport(used, u)));
     } catch (e) {
       failure = e;
     } finally {
       aborts.delete(run.id);
+    }
+    // What the model calls used is kept whatever became of the stage: a failed, stopped or cancelled attempt cost it all the same.
+    if (hasUsage(used)) {
+      try {
+        moveRun(d, run.id, (r) => recordUsage(r, run.stage, used, now()));
+      } catch (e) {
+        console.error('[runner] could not record usage', run.id, e instanceof Error ? e.message : e);
+      }
     }
     // The person may have cancelled while the agent worked: what it did is kept in the worktree, and the run stays as the person left it.
     const current = deps.runs.get(run.id);
