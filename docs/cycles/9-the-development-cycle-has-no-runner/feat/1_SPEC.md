@@ -119,6 +119,133 @@ The reviewer reviews like a person does on the code host: on the lines, not in a
 - A finding whose line left the diff is posted as a file or general comment, never on a wrong line.
 - The review never approves the pull request.
 
+## A whole team, not only engineering
+
+The agent cycle's default team covers the roles a product team has, each with its stage, its job and who it turns to when it cannot decide.
+
+| Agent | Stage(s) | Job | Permission | Turns to |
+|---|---|---|---|---|
+| Support | triage | reads a new issue as the person who reported it would: classifies it (bug, feature, question, duplicate), checks it can be reproduced or understood, asks the reporter on the issue for what is missing, links duplicates, writes `0_TRIAGE.md` | reads | Product Owner |
+| Product Owner | refine (and priority) | writes the functional spec in the product's words: what changes for the person using it, acceptance, out of scope; proposes the issue's priority and milestone (#8's priority labels) | reads | the person |
+| Tech Lead | plan, review | writes the technical plan; reviews the pull request on its lines; answers the developer's and QA's technical questions | reads | Product Owner for scope, the person otherwise |
+| Developer | implement | changes the code and the tests in the worktree, only with the allowed commands | writes in the worktree | Tech Lead |
+| QA | qa | turns the acceptance into scenarios, runs what can be run, reports results; sends the work back on a failure | reads | Tech Lead |
+| Customer Success | communicate | after the pull request is merged: writes the release note of the change for the people who use it and answers the reporter on the issue with what changed and how to use it | reads | Product Owner |
+
+The flow becomes `triage → refine → gate 1 → plan → gate 2 → implement → review → qa → ready → communicate`. `communicate` starts when the run's pull request is merged (the runner watches its state); until then the run waits in `ready`.
+
+### Agents talk before they ask the person
+
+A question goes first to the agent the asker turns to, in the run's forum thread. That agent answers when it can, from the artifacts, the issue and the code (read-only); when it cannot, or when the question is a decision only the person can take (scope, priority, a risk to accept), it passes the question on, up to the person. Every step is a forum message, so the person sees who asked whom and why it reached them. Gates are never decided by an agent.
+
+- Each agent has `turnsTo`: another agent's id, or the person. A chain ends at the person; a loop is refused by validation.
+- An agent's answer to another agent is a forum *answer* (internal); only what the person decides, and what the agents publish per the comment templates, goes to the tracker.
+- A question that reaches the person is also posted on the issue when the workspace says so (as today).
+
+### Everyone is editable
+
+These are the defaults of the agent cycle, not fixed roles: the person renames them, changes their jobs, stages, models, autonomy and who they turn to, removes them, or adds others (a Designer for a refine step, a Security reviewer for review, a Release Manager). A stage names one agent; an agent may work several stages.
+
+### Acceptance (additions)
+
+- A new issue goes through triage: Support classifies it, asks the reporter for missing information on the issue (as a published comment under its autonomy), and the run waits for the reporter's reply before refine.
+- The Developer's question goes to the Tech Lead, who answers it in the thread without the person; a scope question goes from the Tech Lead to the Product Owner, then to the person; the thread shows the chain.
+- After the pull request is merged, Customer Success writes the release note and answers the reporter on the issue.
+- Removing the Customer Success agent leaves `communicate` without an agent: the run ends at `ready` and says so; validation warns.
+- A `turnsTo` loop is refused by validation.
+
+## The cycle is the person's: a flow editor
+
+The flow of the cycle is data the person edits, not code: which stages exist, in what order, who works each one, where a stage sends the work back, what each one produces and publishes. The agent cycle (`agent-flow`) is only the starting point.
+
+### What a stage is
+
+| Field | Meaning |
+|---|---|
+| name, id | how it is shown; the id names its folder files and comment marker |
+| type | **work** (an agent produces something), **gate** (the person decides), **wait** (the run waits for an event) |
+| agent | the agent that works it (work stages only) |
+| produces | the artifact files it must write (`1_SPEC.md`…) |
+| reads | which earlier artifacts and inputs it is given (default: all earlier ones) |
+| next | the stage that follows (default: the next in the list) |
+| returns to | where the work goes back: on a gate rejection, a review with blocking findings, a QA failure (default: the stage that produced what is being judged) |
+| round limit | how many returns before the run stops and asks the person (default 2) |
+| waits for | wait stages only: pull request merged, reporter's reply on the issue, a label, a time |
+| comment | its tracker comment template (or none) |
+| tracker status | optionally, the label/status the issue gets on the tracker when the run enters the stage (a write, published under the agent's autonomy; a gate's under the person's decision) |
+
+### The editor
+
+A screen in Settings › Cycle (and from the Cycle screen, "edit this flow"):
+
+- **The stages as a list**, in order, each a row with its type, agent, what it produces and where it returns to; drag to reorder; add a stage (work, gate, wait) between any two; duplicate; remove.
+- **A side panel for the selected stage** with every field above: agent picker (with "create agent" in place), artifact names, inputs, next and returns-to pickers limited to existing stages, round limit, wait event, comment template editor with a preview of a rendered comment, tracker status.
+- **A live diagram** of the flow next to the list (forward arrows, return arrows dashed, gates and waits drawn differently), so a loop or a dead end is visible at once.
+- **Checks while editing**, shown on the row and blocking save when they are errors: a work stage without an agent; a returns-to or next pointing nowhere; a stage nothing reaches; a flow with no end; a gate first; an artifact that no stage produces but a later stage reads; two stages producing the same file; a wait with no event. Warnings: an autonomous agent working no stage, a gate after the last work stage.
+- **Templates:** start from a built-in flow (agent cycle, a shorter one without gates, the SDD one), save the edited flow as the workspace's, export it as a file and import one (no secrets in it, like the config export).
+- **Runs in progress are not broken:** a run keeps the flow it started with (a copy in the run); the edited flow applies to new runs; the Cycle screen of an old run says it follows an earlier version and offers to move it to the new flow when its current stage still exists.
+
+### What changes underneath
+
+- The runner follows the stage's `type`, `next`, `returnsTo`, `roundLimit` and `waitsFor` instead of the fixed order and the fixed review/QA rules of phase 2a; the agent cycle's defaults reproduce today's behavior exactly (a test pins that).
+- Validation of the flow lives in one shared function used by the config validator, the editor and the runner.
+- The run stores the flow version it follows.
+
+### Acceptance (additions)
+
+- Adding a "security review" work stage after review with its own agent, returning to implement, makes new runs go through it; existing runs keep their flow.
+- Removing gate 2 makes new runs go from plan straight to implement; the diagram and the checks update as the person edits.
+- A returns-to pointing to a removed stage blocks saving with the reason on the row.
+- Export then import of a flow on another workspace gives the same flow; the file holds no secrets.
+- The default agent cycle, run through the generalized runner, produces exactly the same sequence as before the generalization.
+
+## Squads
+
+Agents work in squads. A squad has its own scope, its own members, its own flow and one agent that speaks for it to the other squads.
+
+### What a squad is
+
+| Field | Meaning |
+|---|---|
+| name, mission | what the squad is for, in a sentence the agents read |
+| scope | which work is the squad's: repositories of the workspace, issue labels, paths in a repository (a monorepo split by folders), or "anything not claimed" |
+| members | its agents; an agent belongs to one squad, or to none (a **shared** agent, such as Support at the front door or Customer Success, works for every squad) |
+| flow | the cycle flow its runs follow (the workspace's by default; the flow editor edits per squad) |
+| liaison | the member that is the squad's point of contact: questions and requests from other squads arrive to it, and its own members' questions about another squad's area leave through it |
+| forum | the squad's channel (general talk, its runs' threads listed under it) |
+| autonomy | a squad-wide switch that, when off, makes every member wait for the person (each agent's own switch applies when it is on) |
+
+A workspace with no squads behaves as one squad holding every agent and every repository, so nothing changes for whoever does not use them.
+
+### How work reaches a squad
+
+1. A new issue enters through **triage** (a shared Support agent, or the squad's own when the issue's repository already names one squad).
+2. The scope rules pick the squad: repository, then label, then path of the files the issue mentions. One match: the run starts in that squad. Several or none: Support proposes one and the decision is posted in the triage thread; with Support not autonomous, the person picks.
+3. The run follows the squad's flow with the squad's agents; the issue gets the squad's label on the tracker when the workspace configures one.
+
+### How squads talk
+
+- **Inside a squad,** the `turnsTo` chain works as before, ending at the squad's liaison and then the person.
+- **Between squads,** only liaisons talk, in a shared *squads* channel of the forum. An agent that needs something from another squad's area (a question about their code, a change in their repository, a decision of theirs) asks its liaison; the liaison posts a **request** to the other squad's liaison, who answers it, declines it with a reason, or turns it into an issue of its squad (a new run linked to the first, so each thread shows the other).
+- A run that depends on another squad's issue waits for it (a wait stage on "linked issue done"), and the ceremonies report the dependency as a blocker.
+- The person sees every request and answer, can step into any channel, and is the last stop of every chain.
+
+### Ceremonies per squad
+
+The pre-daily, the retro and the other ceremonies can be run for one squad (its runs and cards only) or for the whole workspace; the minutes say which.
+
+### Acceptance (additions)
+
+- With two squads scoped by repository, an issue of each repository starts its run in its squad, with that squad's flow and agents.
+- An issue matching both squads stops at triage with Support's proposal; the person's choice starts the run there.
+- A Developer of squad A asks about squad B's API: the question goes A's Developer → A's liaison → B's liaison (in the squads channel) → answered back down the chain, without the person; a request for a change in B's repository becomes a linked run in B, and A's run waits for it.
+- A workspace with no squads runs exactly as a single team.
+- An agent cannot be a member of two squads; a squad without a liaison is refused when it has members; removing a squad moves its runs to "no squad" only after the person confirms.
+
+## Undoing an automatic post
+
+Every comment an autonomous agent posted can be removed from the run's screen: "delete" becomes an action waiting for the person's "yes" (a new provider write, `deleteNote`, on the three hosts), recorded in the audit log. The run keeps the record of what was posted and removed.
+
 ## Out of scope
 
 Merging, releases, suggesting new agents (#5), the conversation directing the next cycle (#6), the radar taking action (#7), moving the gate out of the ceremonies (#8 items).
