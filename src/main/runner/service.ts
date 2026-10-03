@@ -196,8 +196,10 @@ export interface Runner {
   tick(): Promise<Run[]>;
   /** A proposal of the runner was carried out in Actions (a comment, a review, the push, the pull request): the run goes on from there. */
   actionDone(action: ReleaseAction, responses: unknown[]): void;
-  /** Posts the reviews that waited for their pull request, for the runs whose pull request exists by now. */
+  /** Posts the reviews that waited for their pull request, for the runs whose pull request exists by now. Resolves when those are posted, not when the stages that are working end. */
   flush(): Promise<void>;
+  /** What the scheduler's job does every few minutes: scan, tick and flush, one sweep at a time (a call while one is going gets that sweep's promise). It never waits for a stage to end. */
+  sweep(): Promise<void>;
   /** After a restart: a run that was in the middle of a stage starts that stage over, and every run that can go on does. */
   resume(): void;
   /** Resolves when nothing is running: stages, mentions and what they started. */
@@ -237,6 +239,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   const starting = new Set<string>();
   let scanning: Promise<Run[]> | null = null;
   let ticking: Promise<Run[]> | null = null;
+  let sweeping: Promise<void> | null = null;
 
   const need = (id: string): Run => {
     const run = deps.runs.get(id);
@@ -689,11 +692,30 @@ export function createRunner(deps: RunnerDeps): Runner {
       publish(id, (p) => p.actionDone(action, responses));
     },
     async flush() {
+      // Only what this call queued is awaited: the stages that are working, the questions and the mentions go on by themselves and are not its business, so a run
+      // that is slow does not hold back the waits the same sweep has to look at.
+      const queued: Promise<void>[] = [];
       for (const run of deps.runs.list()) {
-        if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
+        if (run.status === 'cancelled' || !Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) continue;
+        publish(run.id, (p) => p.flushReviews(run.id));
+        const work = publishing.get(run.id);
+        if (work) queued.push(work);
       }
-      await api.idle();
+      await Promise.allSettled(queued);
     },
+    sweep: () =>
+      (sweeping ??= (async () => {
+        // The three looks are independent: one that fails (the host is down) does not keep the others from happening; the first failure is still told to the caller.
+        let first: unknown = null;
+        for (const look of [api.scan, api.tick, api.flush]) {
+          try {
+            await look();
+          } catch (e) {
+            first ??= e;
+          }
+        }
+        if (first !== null) throw first;
+      })().finally(() => (sweeping = null))),
     resume() {
       for (const run of deps.runs.list().reverse()) {
         if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));

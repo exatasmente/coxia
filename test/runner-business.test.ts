@@ -8,7 +8,7 @@ import { removeAgent } from '../src/shared/config/team';
 import { setLanguage } from '../src/shared/i18n';
 import { type Run, readOutput } from '../src/shared/runs';
 import { type Forge, makeForge } from './helpers/fakeForge';
-import { type Boot, boot, doc, work } from './helpers/runner';
+import { type Boot, boot, doc, issue, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -198,6 +198,56 @@ describe('an issue through the agent cycle', () => {
     await b.deps.publisher!.stageEnded(run.id, end);
     expect(b.thread(run).filter((m) => m.code === 'runner.priority.duplicate')).toHaveLength(1);
     expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'priority')).toHaveLength(1);
+  });
+
+  it('looks at what the waiting runs wait for while another run\'s stage is still working, and never waits for that stage', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    script(b);
+    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+    b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'X.']]) }));
+    const first = await b.runner.start('app#101');
+    await through(b, first);
+    expect(b.runner.get(first.id)).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' } });
+    // another run whose first agent never answers: its stage is in flight for as long as the test lasts
+    b.issues.add(issue(102));
+    let stuck = false;
+    b.engine.script('support', () => { stuck = true; return new Promise(() => undefined); });
+    const second = await b.runner.start('app#102');
+    for (let i = 0; i < 50 && !stuck; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(b.runner.get(second.id)).toMatchObject({ status: 'working', stage: 'triage' });
+
+    forge.pr!.merged = true;
+    const swept = await Promise.race([b.runner.sweep().then(() => 'swept'), new Promise((r) => setTimeout(() => r('blocked'), 3_000))]);
+    expect(swept).toBe('swept');
+    // the merge was seen and the first run went on to its last stage, while the second is still where it was
+    expect(b.runner.get(first.id)!.stage).toBe('communicate');
+    expect(b.runner.get(second.id)).toMatchObject({ status: 'working', stage: 'triage' });
+  });
+
+  it('runs one sweep at a time, and tells the first failure only after the other two looks were made', async () => {
+    const b = await boot({ flow: 'business', configure: configure() });
+    let scans = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    b.issues.triggered = async () => {
+      scans++;
+      await gate;
+      throw new Error('host down');
+    };
+    b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, enabled: true } }));
+    const a = b.runner.sweep();
+    const again = b.runner.sweep();
+    expect(again).toBe(a);
+    release();
+    await expect(a).rejects.toThrow('host down');
+    expect(scans).toBe(1);
+    // after it ended a new sweep is a new one
+    const next = b.runner.sweep();
+    expect(next).not.toBe(a);
+    await expect(next).rejects.toThrow('host down');
+    expect(scans).toBe(2);
   });
 
   it('starts the flow of a workspace only when it has no problem: the agent cycle as delivered is fine', async () => {

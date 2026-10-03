@@ -103,13 +103,9 @@ export const runsModule: Module = (ctx) => {
     everyMin: 5,
     workHoursOnly: false,
     enabled: () => getConfig().runner.enabled && isFlowCycle(getConfig().devCycle.stages) && vcsReady(),
-    run: async () => {
-      await r.scan();
-      // The runs that wait for a merged pull request, a reply, a label or the time are looked at on the same tick.
-      await r.tick();
-      // A review that waited for its pull request goes out once the pull request exists (the person may have opened it by hand).
-      await r.flush();
-    },
+    // Looks for new issues, for what the waiting runs wait for (a merged pull request, a reply, a label, the time) and for the reviews that waited for their pull
+    // request. It never waits for a stage to end, and a sweep that is still going is not started twice.
+    run: () => r.sweep(),
   });
   // A run that was in the middle of a stage when the app closed starts that stage over; the others go on where they were.
   setTimeout(() => r.resume(), 2_000);
