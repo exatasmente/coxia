@@ -13,7 +13,7 @@ import type {
   Voice,
 } from '../../shared/types';
 import { buildMinutes } from '../../shared/minutes';
-import type { SameDayMark } from '../../shared/sameDay';
+import { type SameDayMark, agendaOrder } from '../../shared/sameDay';
 import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
 import { minutesApi } from './minutesApi';
@@ -188,12 +188,19 @@ export function useCeremony() {
     void minutesApi.agenda(cards.cards, id).then((a) => setMarks(a.marks), () => undefined);
   }, [restored, cards, id]);
 
-  // A status check refreshes the GitLab data of the cards already on the agenda; turns stay as they were.
+  // A status check refreshes the GitLab data of the cards already on the agenda; turns stay as they were. Until the call starts the agenda
+  // is put in order again from the fresh data (a card that just became blocked moves up); once it started the order does not move under the call.
+  const startedRef = useRef(startedAt);
+  startedRef.current = startedAt;
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
   const mergeStatus = useCallback((result: CardsResult, checkedAt: string) => {
     setStatusAt(checkedAt);
-    setCards((prev) =>
-      prev ? { ...prev, generatedAt: result.generatedAt, cards: prev.cards.map((c) => result.cards.find((x) => x.ref === c.ref) ?? c) } : prev,
-    );
+    setCards((prev) => {
+      if (!prev) return prev;
+      const merged = prev.cards.map((c) => result.cards.find((x) => x.ref === c.ref) ?? c);
+      return { ...prev, generatedAt: result.generatedAt, cards: startedRef.current ? merged : agendaOrder(merged, marksRef.current) };
+    });
   }, []);
 
   const getTurn = useCallback((card: Card, options: { deepen?: boolean } = {}): Promise<AgentTurn> => {

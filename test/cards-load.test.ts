@@ -45,6 +45,22 @@ describe('loadCards', () => {
 });
 
 
+describe('the order of the cards', () => {
+  it('is blocked first, then priority, then the most recently updated, and the ref breaks no tie', async () => {
+    reportMock.items = [
+      issue(10, { updated_at: '2026-10-01T09:00:00Z' }),
+      issue(9, { labels: ['P1'], updated_at: '2026-09-01T09:00:00Z' }),
+      issue(8, { blockers: ['waiting for the API'], updated_at: '2026-08-01T09:00:00Z' }),
+      issue(7, { labels: ['P0'], updated_at: '2026-09-01T09:00:00Z' }),
+      issue(6, { updated_at: '2026-10-02T09:00:00Z' }),
+      issue(5),
+      issue(4),
+    ];
+    const { cards } = await loadCards(10);
+    expect(cards.map((c) => c.iid)).toEqual(['8', '7', '9', '6', '10', '5', '4']);
+  });
+});
+
 describe('what the turn agent reads', () => {
   const load = async (over: Partial<ReportItem>) => {
     reportMock.items = [issue(7, over)];

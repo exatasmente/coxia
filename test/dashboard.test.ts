@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
-import { TEST_STAGES } from './helpers/config';
-import { builtInTemplate, cycleOf, type CycleTemplate } from '../src/shared/cycles';
 import { setLanguage } from '../src/shared/i18n';
 import type { WatcherAlert } from '../src/shared/watchers';
 import {
@@ -13,9 +11,7 @@ import {
   needsYou,
   pendingQuestions,
   retroDue,
-  sortByUrgency,
   stageLabel,
-  urgencyRank,
   tempoSegments,
   type AgoraInput,
 } from '../src/renderer/src/dashboard';
@@ -149,27 +145,6 @@ describe('needsYou', () => {
   });
 });
 
-describe('sortByUrgency', () => {
-  it('puts blocked, then pending questions, then QA returns, then near QA, keeping the incoming order inside a rank', () => {
-    const plain1 = card('1');
-    const plain2 = card('2');
-    const ask = card('3');
-    const ask2 = card('9');
-    const fail = card('4', { stage: 'Test Fail' });
-    const ready = card('5', { stage: 'Ready To Test' });
-    const block = card('6', { blockers: ['x'] });
-    const turns = { [ask.ref]: turn(ask.ref, { question: '?' }), [ask2.ref]: turn(ask2.ref, { question: '?' }) };
-    const sorted = sortByUrgency([plain1, ready, plain2, fail, ask, block, ask2], turns, { [ask2.ref]: true }, TEST_STAGES);
-    expect(sorted.map((c) => c.iid)).toEqual(['6', '3', '4', '5', '1', '2', '9']);
-  });
-
-  it('does not mutate the input', () => {
-    const input = [card('1'), card('2', { blockers: ['x'] })];
-    sortByUrgency(input, {}, {}, TEST_STAGES);
-    expect(input.map((c) => c.iid)).toEqual(['1', '2']);
-  });
-});
-
 describe('small helpers', () => {
   it('greets by the hour', () => {
     expect([3, 9, 12, 17, 18, 23].map(greeting)).toEqual(['Boa noite', 'Bom dia', 'Boa tarde', 'Boa tarde', 'Boa noite', 'Boa noite']);
@@ -222,10 +197,6 @@ describe('MR conflicts', () => {
 });
 
 describe('the dashboard follows the cycle', () => {
-  const scrum = cycleOf(builtInTemplate('scrum') as CycleTemplate).stages;
-  const kanban = cycleOf(builtInTemplate('kanban') as CycleTemplate).stages;
-  const flow = cycleOf(builtInTemplate('github-flow') as CycleTemplate).stages;
-
   it('calls the daily preparation what the cycle calls it', () => {
     const p = agoraPlan({ ...base, label: 'daily scrum' });
     expect(p.title).toBe('Daily scrum');
@@ -234,21 +205,6 @@ describe('the dashboard follows the cycle', () => {
     expect(agoraPlan({ ...base, callEnded: true, saved: true, resumed: true, label: 'standup' }).hint).toBe('A standup de hoje já foi encerrada e a ata está gravada.');
     // Without a label it is what it always was.
     expect(agoraPlan(base).title).toBe('Pré-daily');
-  });
-
-  it('ranks the urgency by the stages of the cycle: a blocked card first, then the rest in the order they came', () => {
-    const blocked = card('1', { blockers: ['x'] });
-    const doing = card('2', { stage: 'In Progress' });
-    const fresh = card('3', { stage: 'Backlog' });
-    expect(sortByUrgency([fresh, doing, blocked], {}, {}, scrum).map((c) => c.iid)).toEqual(['1', '3', '2']);
-    // A cycle with no QA stages has nothing "back from QA": the stage is just a stage.
-    expect(urgencyRank(card('4', { stage: 'Test Fail' }), undefined, false, kanban)).toBe(4);
-  });
-
-  it('gives each cycle its own meaning to a stage, instead of the words of one company', () => {
-    expect(urgencyRank(card('5', { stage: 'Test Fail' }), undefined, false, TEST_STAGES)).toBe(2);
-    expect(urgencyRank(card('5', { stage: 'Changes requested' }), undefined, false, flow)).toBe(2);
-    expect(urgencyRank(card('6', { stage: 'Approved' }), undefined, false, flow)).toBe(3);
   });
 
   it('greets in the language of the screen', () => {

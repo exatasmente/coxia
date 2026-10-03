@@ -313,7 +313,8 @@ describe('the agenda of a later meeting', () => {
     expect(Object.fromEntries(Object.entries(marks).map(([ref, m]) => [ref, m.kind]))).toEqual({ 'acme#1': 'unchanged', 'acme#2': 'changed', 'acme#3': 'unchanged', 'acme#4': 'new' });
     expect(marks['acme#1'].since).toBe(new Date('2026-10-02T09:40:00').toISOString());
     expect(marks['acme#1'].version).toBe(1);
-    expect(cards.map((c) => c.ref)).toEqual(['acme#2', 'acme#3', 'acme#4', 'acme#1']);
+    // Blocked first (the shared order), then what moved and what is new in the order they came; the card nothing happened to goes last.
+    expect(cards.map((c) => c.ref)).toEqual(['acme#3', 'acme#2', 'acme#4', 'acme#1']);
   });
 
   it('leaves the first meeting of the day as it is', () => {

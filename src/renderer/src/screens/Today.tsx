@@ -5,7 +5,7 @@ import type { Screen } from '../App';
 import { api } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
-import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue, sortByUrgency } from '../dashboard';
+import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue } from '../dashboard';
 import { useIsPhone } from '../useIsPhone';
 import { useWatcherAlerts } from '../watchersApi';
 import { BellIcon } from './dashIcons';
@@ -30,7 +30,6 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const cycle = useCycle();
-  const stages = useMemo(() => cycle?.stages ?? [], [cycle]);
   const on = cycle?.ceremonies;
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
@@ -41,11 +40,11 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
   const ready = cards.filter((card) => c.turns[card.ref]).length;
-  const sorted = useMemo(() => sortByUrgency(cards, c.turns, c.answered, stages), [cards, c.turns, c.answered, stages]);
-  const blocked = sorted.filter((card) => card.blockers.length);
-  const asking = pendingQuestions(sorted, c.turns, c.answered);
+  // `cards` is already in the agenda's order (blocked, priority, last update): Today lists them as the call will, without sorting again.
+  const blocked = cards.filter((card) => card.blockers.length);
+  const asking = pendingQuestions(cards, c.turns, c.answered);
   const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
-  const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : sorted;
+  const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
   const visible = listOpen || filter !== 'all' ? shown : shown.slice(0, TOP);
   const needs = needsYou({ cards, turns: c.turns, answered: c.answered, actions, alerts });
   const colors = useMemo(() => new Map(cards.map((card) => [`#${card.iid}`, c.colorOf(card.ref)])), [cards, c.colorOf]);
@@ -189,7 +188,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
       </ul>
       {c.cards && !visible.length && <p className="dash-calm">{t('ui.today.noActivities')}</p>}
 
-      {c.cards && (sorted.length > TOP || filter !== 'all') && (
+      {c.cards && (cards.length > TOP || filter !== 'all') && (
         <button
           type="button"
           className="btn dash-more"
@@ -201,7 +200,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             } else setListOpen(true);
           }}
         >
-          {listOpen || filter !== 'all' ? t('ui.today.showUrgent') : t('ui.today.seeAll', { count: sorted.length })}
+          {listOpen || filter !== 'all' ? t('ui.today.showUrgent') : t('ui.today.seeAll', { count: cards.length })}
         </button>
       )}
 

@@ -1,11 +1,10 @@
-import type { StageDef } from '../../shared/config/types';
-import { stageDisplay, stageUrgency } from '../../shared/cycles/stages';
+import { stageDisplay } from '../../shared/cycles/stages';
 import { intlLocale, t, tv } from '../../shared/i18n';
 import type { AgentTurn, Card, ReleaseAction } from '../../shared/types';
 import type { TempoIssue } from '../../shared/tempo';
 import type { WatcherAlert } from '../../shared/watchers';
 
-// Pure rules behind the Hoje dashboard: what the main card offers, what needs the person, how activities are ordered.
+// Pure rules behind the Hoje dashboard: what the main card offers, what needs the person.
 
 export function greeting(hour: number): string {
   if (hour < 5) return t('today.greeting.night');
@@ -243,21 +242,6 @@ export function needsYou(i: NeedsInput): NeedItem[] {
 
   items.push(...i.alerts.filter((a) => a.kind !== 'rejections').map(watcherItem));
   return items;
-}
-
-/** Lower is more urgent: blocked, then waiting for an answer, then back from QA, then close to QA, then the rest. The stages come from the cycle. */
-export function urgencyRank(card: Card, turn: AgentTurn | undefined, answered: boolean, stages: StageDef[]): number {
-  if (card.blockers.length) return 0;
-  if (turn?.question && !answered) return 1;
-  return stageUrgency({ stages }, card.stage);
-}
-
-/** Stable: equal ranks keep the order the cards came in. */
-export function sortByUrgency(cards: Card[], turns: Record<string, AgentTurn>, answered: Record<string, boolean>, stages: StageDef[]): Card[] {
-  return cards
-    .map((card, index) => ({ card, index, rank: urgencyRank(card, turns[card.ref], !!answered[card.ref], stages) }))
-    .sort((a, b) => a.rank - b.rank || a.index - b.index)
-    .map((x) => x.card);
 }
 
 export function mrLabel(n: number): string {

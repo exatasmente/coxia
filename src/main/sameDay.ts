@@ -1,4 +1,4 @@
-import { type SameDayMark, type SeenChange, clockOf, diffSeen, orderAgenda } from '../shared/sameDay';
+import { type SameDayMark, type SeenChange, agendaOrder, clockOf, diffSeen } from '../shared/sameDay';
 import { voiceText } from '../shared/cycles/text';
 import type { AgentTurn, Card, CardSeen, Decision, Effect, SameDayInfo, SavedCeremony } from '../shared/types';
 import { prompt as cp, language, text as word } from './cyclePrompts';
@@ -209,5 +209,5 @@ export function agendaMarks(cards: Card[], currentId: string | undefined, now = 
 
 export function agenda(cards: Card[], currentId: string | undefined): { cards: Card[]; marks: Record<string, SameDayMark> } {
   const marks = agendaMarks(cards, currentId);
-  return { cards: orderAgenda(cards, marks), marks };
+  return { cards: agendaOrder(cards, marks), marks };
 }

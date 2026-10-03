@@ -2,7 +2,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
 import { isBlockedStage } from '../shared/cycles/stages';
-import { priorityOf } from '../shared/priority';
+import { priorityOf, sortCards } from '../shared/priority';
 import { cycle, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
 import { rc } from './workspaceConfig';
@@ -35,15 +35,6 @@ export function withStageBlocker(stage: string | null, blockers: string[]): stri
 
 function describe(c: { field: string; from: unknown; to: unknown }, prefix = ''): string {
   return `${prefix}${c.field}: ${String(c.from)} → ${String(c.to)}`;
-}
-
-// Blocked first, then with pending items, then by ref.
-export function compareCards(a: Card, b: Card): number {
-  return (
-    Number(!a.blockers.length) - Number(!b.blockers.length) ||
-    Number(!a.pending.length) - Number(!b.pending.length) ||
-    a.ref.localeCompare(b.ref)
-  );
 }
 
 export async function loadCards(limit: number, refresh = false): Promise<CardsResult> {
@@ -79,6 +70,6 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
         priority: priorityOf(it.labels, levels),
       };
     });
-  cards.sort(compareCards);
-  return { generatedAt: report.generated_at, total: cards.length, cards: cards.slice(0, limit) };
+  const ordered = sortCards(cards);
+  return { generatedAt: report.generated_at, total: ordered.length, cards: ordered.slice(0, limit) };
 }

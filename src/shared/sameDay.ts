@@ -1,3 +1,4 @@
+import { sortCards } from './priority';
 import type { Card, CardSeen } from './types';
 
 // Pure rules for the meetings of one day: what moved on a card since an earlier meeting, and how the agenda of a later meeting is ordered.
@@ -74,6 +75,11 @@ export function diffSeen(prev: CardSeen, cur: CardSeen, own: SelfWrites = NO_SEL
 export function orderAgenda(cards: Card[], marks: Record<string, SameDayMark>): Card[] {
   const rest = (c: Card): number => (marks[c.ref]?.kind === 'unchanged' && !c.blockers.length ? 1 : 0);
   return cards.map((c, i) => ({ c, i })).sort((a, b) => rest(a.c) - rest(b.c) || a.i - b.i).map((x) => x.c);
+}
+
+/** The order every screen lists the agenda in: the comparator Today and the call share (blocked, priority, last update), then the same-day rule. */
+export function agendaOrder(cards: Card[], marks: Record<string, SameDayMark>): Card[] {
+  return orderAgenda(sortCards(cards), marks);
 }
 
 /** Local "HH:MM" of an ISO instant. */

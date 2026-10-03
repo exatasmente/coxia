@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareCards } from '../src/main/cards';
 import { checkConvention, issueOf, parseWorktrees } from '../src/main/worktrees';
-import type { Card } from '../src/shared/types';
 
 describe('branch convention', () => {
   it.each([
@@ -95,41 +93,5 @@ describe('parseWorktrees', () => {
 
   it('returns nothing for an empty output', () => {
     expect(parseWorktrees('')).toEqual([]);
-  });
-});
-
-const card = (ref: string, over: Partial<Card> = {}): Card => ({
-  ref,
-  iid: ref,
-  title: ref,
-  stage: null,
-  spec: null,
-  mrs: [],
-  mrPaths: [],
-  blockers: [],
-  pending: [],
-  changes: [],
-  note: null,
-  url: '',
-  ...over,
-});
-
-describe('card ordering', () => {
-  it('puts blocked first, then with pending items, then the rest, each group by ref', () => {
-    const cards = [
-      card('web#5'),
-      card('web#3', { pending: ['revisar'] }),
-      card('web#4', { blockers: ['x'] }),
-      card('web#1'),
-      card('web#2', { pending: ['y'], blockers: ['z'] }),
-      card('web#0', { pending: ['w'] }),
-    ];
-    cards.sort(compareCards);
-    expect(cards.map((c) => c.ref)).toEqual(['web#2', 'web#4', 'web#0', 'web#3', 'web#1', 'web#5']);
-  });
-
-  it('is stable for equal cards and does not mutate them', () => {
-    const a = card('a#1', { blockers: ['x'] });
-    expect(compareCards(a, { ...a })).toBe(0);
   });
 });
