@@ -17,6 +17,16 @@ export interface GitResult {
 }
 
 const ENV = { GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no', GIT_EDITOR: 'true' };
+// What the app's environment could say about who commits. The app names its identity on the command line of each commit (`identityArgs`), and
+// an author or committer inherited from the shell that started it, which git would put above that, never reaches a git command.
+const INHERITED_IDENTITY = ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'EMAIL'];
+
+function gitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...ENV };
+  for (const key of INHERITED_IDENTITY) delete env[key];
+  return env;
+}
+
 const REF = /^[\w][\w./-]*$/;
 
 function checkRef(ref: string, what: string): string {
@@ -26,7 +36,7 @@ function checkRef(ref: string, what: string): string {
 
 export async function git(cwd: string, args: string[], options: { fail?: boolean } = {}): Promise<GitResult> {
   try {
-    const { stdout, stderr } = await run('git', ['-C', cwd, ...args], { env: { ...process.env, ...ENV }, timeout: 10 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    const { stdout, stderr } = await run('git', ['-C', cwd, ...args], { env: gitEnv(), timeout: 10 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     return { stdout, stderr, code: 0 };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; code?: number | string; message: string };
@@ -109,7 +119,7 @@ function emptyHunk(file: string, index: number): ConflictHunk {
 const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8000).includes(0);
 
 async function stage(wt: string, n: 1 | 2 | 3, path: string): Promise<string | null> {
-  const r = await run('git', ['-C', wt, 'show', `:${n}:${path}`], { env: { ...process.env, ...ENV }, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }).catch(() => null);
+  const r = await run('git', ['-C', wt, 'show', `:${n}:${path}`], { env: gitEnv(), maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }).catch(() => null);
   if (!r) return null;
   if (isBinary(r.stdout)) throw new Error(t('main.conflictGit.binary', { path }));
   return r.stdout.toString('utf8');
@@ -145,6 +155,24 @@ export async function readConflicts(wt: string): Promise<ConflictFile[]> {
   return files;
 }
 
+/** Who a commit of the app is made as. */
+export interface Identity {
+  name: string;
+  email: string;
+}
+
+/**
+ * The options that make one git command commit as `identity`, both author and committer. They are the only identity a commit of the app has: nothing is
+ * written to a git config, and what the global configuration or the environment says is never used (an empty half is refused, never filled in by git).
+ */
+export function identityArgs(identity: Identity): string[] {
+  const name = identity.name.trim();
+  const email = identity.email.trim();
+  // i18n-ignore-next-line: developer error: the callers resolve the identity and refuse a run without one first
+  if (!name || !email) throw new Error('a commit needs both a name and an email');
+  return ['-c', `user.name=${name}`, '-c', `user.email=${email}`, '-c', 'user.useConfigOnly=true'];
+}
+
 export interface Prepared {
   worktree: string;
   syncBranch: string;
@@ -153,7 +181,9 @@ export interface Prepared {
   files: ConflictFile[];
 }
 
-export async function prepareWorktree(p: { clone: string; branch: string; target: string; iid: number; dest: string }): Promise<Prepared> {
+// The merge is started as `identity` too: git wants to know who would commit it even when it stops before the commit.
+export async function prepareWorktree(p: { clone: string; branch: string; target: string; iid: number; dest: string; identity: Identity }): Promise<Prepared> {
+  const as = identityArgs(p.identity);
   const branch = checkRef(p.branch, t('main.conflictGit.branch'));
   const target = checkRef(p.target, t('main.conflictGit.targetBranch'));
   const syncBranch = `sync/${Number(p.iid)}`;
@@ -172,7 +202,7 @@ export async function prepareWorktree(p: { clone: string; branch: string; target
   mkdirSync(dirname(p.dest), { recursive: true });
   await git(p.clone, ['worktree', 'add', '--no-track', '-B', syncBranch, p.dest, `refs/remotes/origin/${branch}`]);
   try {
-    await git(p.dest, ['-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
+    await git(p.dest, [...as, '-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
     const merging = (await git(p.dest, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { fail: false })).code === 0;
     if (!merging) throw new Error(t('main.conflictGit.mergeNotStarted', { target, branch }));
     const files = await readConflicts(p.dest);
@@ -303,14 +333,11 @@ export function mergeMessage(branch: string): string {
   return `Merge branch 'main' into '${branch}'`;
 }
 
-// Commits the merge with the identity the clone already has. Nothing is written to any git config.
-export async function commitMerge(wt: string, branch: string, mainSha: string): Promise<string> {
-  const ident = await git(wt, ['var', 'GIT_COMMITTER_IDENT'], { fail: false });
-  if (ident.code !== 0) {
-    throw new Error(t('main.conflictGit.noIdentity'));
-  }
+// Commits the merge as `identity`. Nothing is written to any git config.
+export async function commitMerge(wt: string, branch: string, mainSha: string, identity: Identity): Promise<string> {
+  const as = identityArgs(identity);
   if ((await unmergedPaths(wt)).length) throw new Error(t('main.conflictGit.unresolved'));
-  await git(wt, ['commit', '--no-verify', '-m', mergeMessage(branch)]);
+  await git(wt, [...as, 'commit', '--no-verify', '-m', mergeMessage(branch)]);
   const sha = (await git(wt, ['rev-parse', 'HEAD'])).stdout.trim();
   const parents = (await git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD'])).stdout.trim().split(' ').slice(1);
   if (parents.length !== 2 || parents[1] !== mainSha) throw new Error(t('main.conflictGit.notMerge'));
