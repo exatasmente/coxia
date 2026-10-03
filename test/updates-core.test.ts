@@ -309,18 +309,30 @@ describe('relaunch', () => {
   }, 20_000);
 
   // The app's own open files (inside the AppImage mount) and its debugging socket must not reach the new instance.
+  // The script lists its own descriptors with a glob, in the shell itself: a pipeline or a command substitution would hold pipe ends open in the shell
+  // while it is read, and under load the listing caught them. The glob's own directory handle is in the list too, so the same script started with
+  // nothing inherited gives the baseline to compare with.
   it('does not pass on the descriptors it inherited', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cerimonias-relaunch-'));
-    const app = join(dir, 'app.sh');
+    const listing = (out: string): string => `#!/usr/bin/env bash\nfds=(/proc/$$/fd/*)\nprintf '%s ' "\${fds[@]##*/}" > "${out}.tmp" && mv "${out}.tmp" "${out}"\n`;
+    const fdsIn = async (out: string): Promise<string[]> => {
+      for (let i = 0; i < 100 && !existsSync(out); i++) await new Promise((r) => setTimeout(r, 100));
+      return readFileSync(out, 'utf8').trim().split(/\s+/).sort();
+    };
+    const baseOut = join(dir, 'fds-base');
+    const base = join(dir, 'base.sh');
+    writeFileSync(base, listing(baseOut));
+    chmodSync(base, 0o755);
+    spawn(base, [], { stdio: 'ignore' });
+    const expected = await fdsIn(baseOut);
     const out = join(dir, 'fds');
-    writeFileSync(app, `#!/usr/bin/env bash\nls /proc/$$/fd | tr '\\n' ' ' > "${out}"\n`);
+    const app = join(dir, 'app.sh');
+    writeFileSync(app, listing(out));
     chmodSync(app, 0o755);
     const leaked = openSync(join(dir, 'leaked'), 'w');
     const old = spawn('sleep', ['0.3'], { stdio: 'ignore' });
     const helper = spawn('bash', ['-c', RELAUNCH_SCRIPT, 'relaunch', String(old.pid), app], { stdio: ['ignore', 'ignore', 'ignore', leaked, leaked] });
-    for (let i = 0; i < 60 && !existsSync(out); i++) await new Promise((r) => setTimeout(r, 100));
-    const open = readFileSync(out, 'utf8').trim().split(/\s+/);
-    expect(open.filter((fd) => !['0', '1', '2', '255'].includes(fd))).toEqual([]);
+    expect(await fdsIn(out)).toEqual(expected);
     helper.kill();
     closeSync(leaked);
   }, 20_000);

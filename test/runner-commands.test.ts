@@ -1,7 +1,7 @@
 // The commands the app runs for QA: real processes here (a node one-liner, no network), the environment they get, what is kept of their output.
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createLoginPath, loginEnv } from '../src/main/loginPath';
 import { OUTPUT_LIMIT, createCommandRunner, notRunReport, outcomeOf, runCommand, runCommands, tail } from '../src/main/runner/commands';
@@ -100,7 +100,8 @@ describe('the commands of a run in an app that was not started from a terminal',
   script('fakenpm', 'echo "fakenpm ran with $@"');
   script('needs-vitest', 'echo "sh: 1: vitest: not found" >&2; exit 127');
   script('not-executable', 'echo no', 0o644);
-  const appEnv = { PATH: '/usr/bin:/bin' } as NodeJS.ProcessEnv;
+  // node is not in /usr/bin on every machine (CI installs it elsewhere): the app's PATH keeps the folder of the node running the tests.
+  const appEnv = { PATH: `/usr/bin:/bin:${dirname(process.execPath)}` } as NodeJS.ProcessEnv;
   const withLogin = (path: string | null) => createCommandRunner(() => loginEnv(appEnv, createLoginPath({ env: { SHELL: '/bin/fakeshell' }, run: async () => (path === null ? Promise.reject(new Error('no shell')) : `motd\n__coxia_path_start__${path}__coxia_path_end__`) })));
 
   it('finds a tool that only the login shell\'s PATH has, and does not find it without that PATH', async () => {
