@@ -1,7 +1,8 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a cycle template file
 import { mergeDeep, neutralConfig } from '../config/defaults';
-import type { DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
+import type { AgentDef, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
+import { newAgent, pruneAgentStages } from '../config/team';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
 
@@ -27,7 +28,17 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
   // The priority labels are the team's tracker conventions, like the QA account: a template that names none leaves the workspace's alone.
   if (!next.priority.labels.length) next.priority = structuredClone(config.devCycle.priority);
   if (options.keepReleaseLabelPattern) next.releaseLabelPattern = config.devCycle.releaseLabelPattern;
-  return { ...structuredClone(config), devCycle: next };
+  const out = { ...structuredClone(config), devCycle: next };
+  out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], next);
+  return out;
+}
+
+// The agents the person already has stay exactly as they are; the template adds the ones that are missing. A stage the new cycle does not have
+// is dropped from every agent, so the swap leaves no dangling reference.
+export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages'>): WorkspaceConfig['agents']['team'] {
+  const have = new Set(current.map((a) => a.id));
+  const added = brought.filter((a) => !have.has(a.id)).map((a) => newAgent({ ...structuredClone(a), system: false }));
+  return pruneAgentStages([...current, ...added], cycle);
 }
 
 /** What the template still needs from the workspace: derived from what it switches on and the fields that are empty. */
@@ -53,7 +64,8 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   const cycle = structuredClone(config.devCycle);
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
-  return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle) };
+  const team = config.agents.team.filter((a) => !a.system).map((a) => structuredClone(a));
+  return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
 }
 
 function withoutNeutral(cycle: DevCycleConfig): DeepPartial<DevCycleConfig> {
@@ -106,8 +118,15 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     needs: Array.isArray(t.needs) ? (t.needs.filter((n) => typeof n === 'string') as TemplateNeed[]) : [],
     devCycle: t.devCycle as DeepPartial<DevCycleConfig>,
   };
-  const checked = validateConfig({ ...neutralConfig(), devCycle: cycleOf(template) });
-  const prefix = (list: ConfigIssue[]) => list.map((i) => ({ ...i, path: i.path.replace(/^devCycle/, 'template.devCycle') }));
+  if (t.team !== undefined) {
+    if (!Array.isArray(t.team) || !t.team.every(isObject)) return fail('template.team', 'expected a list of agents');
+    if (t.team.some((a) => (a as Record<string, unknown>).system === true)) return fail('template.team', 'a template cannot define built-in agents');
+    template.team = t.team as unknown as AgentDef[];
+  }
+  // Checked as it would be applied: over a neutral workspace, the template's own agents (as written) next to the built-in ones.
+  const base = neutralConfig();
+  const checked = validateConfig({ ...base, devCycle: cycleOf(template), agents: { ...base.agents, team: [...base.agents.team, ...(template.team ?? [])] } });
+  const prefix = (list: ConfigIssue[]) => list.map((i) => ({ ...i, path: i.path.replace(/^devCycle/, 'template.devCycle').replace(/^agents\.team/, 'template.team') }));
   const issues = prefix(checked.errors);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: prefix(checked.warnings) };
 }

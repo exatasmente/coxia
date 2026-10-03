@@ -1,4 +1,4 @@
-import type { CeremonyId, DeepPartial, DevCycleConfig, Language, StageDef, VcsKind } from '../config/types';
+import type { AgentDef, CeremonyId, DeepPartial, DevCycleConfig, Language, StageDef, VcsKind } from '../config/types';
 
 // A development-cycle template: the process a team follows, as data. Applying one fills `devCycle` of the workspace config (and nothing else),
 // so a workspace config exported with `config:export` already carries the cycle, and a template file is just that section with a name.
@@ -25,6 +25,8 @@ export interface CycleTemplate {
   needs: TemplateNeed[];
   /** The cycle: every field left out takes the neutral default. */
   devCycle: DeepPartial<DevCycleConfig>;
+  /** The agents the cycle brings. Applying the template adds those the workspace lacks (by id) and never touches one it already has. Never a system agent. */
+  team?: AgentDef[];
 }
 
 /** The file a template is exported to and imported from. */

@@ -8,6 +8,7 @@ const NAMES: Record<string, string> = {
   kanban: 'cycle.kanban.name',
   'github-flow': 'cycle.githubFlow.name',
   minimal: 'cycle.minimal.name',
+  'agent-flow': 'cycle.agentFlow.name',
 };
 
 /** The name of a built-in template in a language; a custom template's id is returned as it is. */

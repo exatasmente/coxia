@@ -3,7 +3,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { expandHome, shrinkHome } from '../shared/config/paths';
-import type { CeremonyId, VcsIntegration } from '../shared/config/types';
+import type { AgentDef, CeremonyId, VcsIntegration } from '../shared/config/types';
 import { CEREMONY_IDS } from '../shared/config/types';
 import { type CycleTemplateInfo, type DocsFound, type ScannedRepo, type SdkEvent, type VcsTestResult, type WizardProgress, emptyProgress, parseProgress, parseRemote, uniqueId } from '../shared/wizard';
 
@@ -352,6 +352,7 @@ export function normalizeTemplates(raw: unknown): CycleTemplateInfo[] {
       ceremonies,
       stages: stagesRaw.filter(isRecord).map((s) => ({ id: String(s.id ?? ''), label: String(s.label ?? s.id ?? '') })).filter((s) => s.id),
       ...(Array.isArray(item.needs) ? { needs: item.needs.filter((n): n is string => typeof n === 'string') } : {}),
+      ...(Array.isArray(item.team) && item.team.some(isRecord) ? { team: item.team.filter(isRecord) as unknown as AgentDef[] } : {}),
     });
   }
   return out;

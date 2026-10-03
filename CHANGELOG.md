@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A priority decision becomes a label change proposal when the minutes are saved: it waits in Actions for its own approval, like every other write to the tracker. A test workspace refuses it; without priority labels (or on Bitbucket) it stays in the minutes with a line saying it was not written.
 - The call says how many activities did not fit its agenda of 8 and lists them after the queue, each with a button to bring it in; Today shows the count.
 - An agent team in the workspace configuration (`agents.team`): each agent has a name, a job, a model (an LLM role to borrow, or a provider and model), the stages it works, a permission (`read`, or `worktree`) and instructions. The five agents the ceremonies use are built in: they can be edited, never removed. Stages gain `agentId`, `artifacts` and `human`. The configuration moves to schema 4; existing files migrate on first start and keep every setting.
+- A new cycle template, the agent cycle (`agent-flow`): refine, gate 1, plan, gate 2, implement, review, QA and ready, with the files each stage produces and a default team (Refiner, Planner, Developer, Reviewer, QA; only the developer may change files, inside its run's worktree). Applying it keeps the agents you already have; a template file carries its agents. The runner that executes the stages comes in a later change.
 
 ### Changed
 

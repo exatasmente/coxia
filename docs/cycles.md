@@ -15,7 +15,7 @@ O Coxia deixou de assumir um processo só. O que as cerimônias fazem (quais exi
 | `templateId` | de qual modelo veio (informativo depois de editado) |
 | `ceremonies` | liga ou desliga cada cerimônia: `preDaily`, `unblock`, `gate`, `qaHandoff`, `retro`, `releaseConflicts` |
 | `ceremonyParams` | parâmetros de cada uma: nome do time para a preparação do dia (`label`), palavras da fala, leituras do spec, para onde vai o resumo (`summaryTarget`) e como é escrito (`summaryStyle`); número de perguntas e tipos do quiz do gate; dias da janela da retro |
-| `stages` | o vocabulário de etapas: `id`, `label`, `match` (expressões regulares), `kind` (`backlog`, `development`, `review`, `reviewApproved`, `qa`, `qaApproved`, `returned`, `done`, `blocked`), `rank` |
+| `stages` | o vocabulário de etapas: `id`, `label`, `match` (expressões regulares), `kind` (`backlog`, `development`, `review`, `reviewApproved`, `qa`, `qaApproved`, `returned`, `done`, `blocked`), `rank`; e, para o ciclo de agentes, `agentId` (o agente que trabalha a etapa), `artifacts` (arquivos que a etapa produz na pasta do ciclo) e `human` (um gate: espera a pessoa) |
 | `stageMapping` | regras que ligam o que o provedor informa a uma etapa: `{ provider, source, name, pattern, stage }`; `source` é `label`, `status`, `field` (campo de quadro, ex.: `Status` do GitHub Projects), `state` ou `column`. A primeira regra que casa vence; o que sobra cai nos `match` das etapas |
 | `meanings` | o que é "bloqueio" (`stageKinds` + texto), "pergunta para mim" (liga/desliga + texto) e "pronto para o QA" (`stageKinds`, `requiresSpec`, texto) |
 | `enrichment` | o que o agente recebe de cada cartão: `specFolder` (procura a pasta da issue), `cardFields` (quais campos do cartão), `extraFiles` (documentos que o cartão cita quando existem) |
@@ -36,10 +36,19 @@ Um texto do ciclo (rótulo, nome, estilo) é uma **chave do catálogo** (`cycle.
 | Kanban (`kanban`) | standup, desbloqueio, retro de fluxo | Backlog, Ready, In Progress, Blocked, Review, Done | nenhum |
 | GitHub Flow simples (`github-flow`) | standup, desbloqueio | Open, In progress, Blocked, In review, Changes requested, Approved, Merged | nenhum |
 | Mínimo (`minimal`) | pré-daily e desbloqueio | To do, Doing, Blocked, Done | nenhum |
+| Ciclo de agentes (`agent-flow`) | pré-daily, desbloqueio, gate, retro | Refine, Gate 1, Plan, Gate 2, Implement, Review, QA, Ready | `1_SPEC.md` a `5_TEST_PLAN.md` na pasta do ciclo |
 
 Todos produzem um app útil sem arquivo de spec: os cartões vêm do provedor de VCS (ou da fonte de cartões), e as etapas são lidas por `stageMapping`. O SDD é o comportamento que o app já tinha, sem empresa: a conta de QA, o prefixo das issues, as skills do playbook e a ferramenta de release vêm de campos da configuração, preenchidos pelo perfil migrado (`legacy.ts`).
 
 A disponibilidade final de uma cerimônia é "ligada no ciclo **e** com o que ela precisa": o gate exige a pasta de specs e artefatos nomeados; a passagem ao QA exige a pasta de specs.
+
+### O ciclo de agentes
+
+O modelo `agent-flow` descreve o trabalho de um time de agentes, não os status do tracker. As etapas são `refine`, `gate1`, `plan`, `gate2`, `implement`, `review`, `qa` e `ready`; as de trabalho nomeiam o agente (`agentId`) e os arquivos que devem produzir (`artifacts`: `1_SPEC.md`, `2_PLAN.md`, `3_IMPLEMENTATION.md`, `4_REVIEW.md`, `5_TEST_PLAN.md`, direto na pasta do ciclo, sem subpasta), os dois gates têm `human: true` (esperam a pessoa) e `ready` é o fim. O `specLayout` casa com isso: os gates leem a spec e o plano, e a fase do cartão é o último arquivo presente. `stageMapping` fica vazio: a etapa do tracker não é movida pelo ciclo.
+
+O modelo traz um time padrão (`team` do modelo): Refinador, Planejador, Desenvolvedor, Revisor e QA, com as permissões `read`, `read`, `worktree`, `read`, `read`. Só o desenvolvedor pode alterar arquivos, e só dentro do worktree da execução. Aplicar o modelo a um workspace que já tem agentes **mantém os agentes da pessoa**: o que já existe com o mesmo `id` não é tocado, os que faltam são acrescentados, e as etapas que o novo ciclo não tem saem da lista `stages` de cada agente. Um arquivo de modelo exportado leva os agentes que não são nativos. As definições do time, do `agentId` e da permissão estão em [`configuration.md`](configuration.md).
+
+O executor que leva uma issue por essas etapas ainda não existe.
 
 ### Prioridade
 
@@ -130,7 +139,7 @@ Coxia no longer assumes a single process. What the ceremonies do (which ones exi
 | `templateId` | which template it came from (informational once edited) |
 | `ceremonies` | switches each ceremony: `preDaily`, `unblock`, `gate`, `qaHandoff`, `retro`, `releaseConflicts` |
 | `ceremonyParams` | each one's parameters: what the team calls the daily preparation (`label`), words of the speech, spec reads, where the summary goes (`summaryTarget`) and how it is written (`summaryStyle`); the gate quiz's question count and kinds; the retro's window in days |
-| `stages` | the stage vocabulary: `id`, `label`, `match` (regular expressions), `kind` (`backlog`, `development`, `review`, `reviewApproved`, `qa`, `qaApproved`, `returned`, `done`, `blocked`), `rank` |
+| `stages` | the stage vocabulary: `id`, `label`, `match` (regular expressions), `kind` (`backlog`, `development`, `review`, `reviewApproved`, `qa`, `qaApproved`, `returned`, `done`, `blocked`), `rank`; and, for the agent cycle, `agentId` (the agent that works the stage), `artifacts` (files the stage produces in the cycle folder) and `human` (a gate: waits for the person) |
 | `stageMapping` | rules that tie what a provider reports to a stage: `{ provider, source, name, pattern, stage }`; `source` is `label`, `status`, `field` (a board field, e.g. GitHub Projects' `Status`), `state` or `column`. The first matching rule wins; what is left falls to the stages' `match` patterns |
 | `meanings` | what a "blocker" is (`stageKinds` + text), a "question for me" (on/off + text) and "ready for QA" (`stageKinds`, `requiresSpec`, text) |
 | `enrichment` | what the agent gets about each card: `specFolder` (looks up the issue folder), `cardFields` (which card fields), `extraFiles` (documents the card names when they exist) |
@@ -151,10 +160,19 @@ A text of the cycle (label, name, style) is a **catalog key** (`cycle.sdd.name`)
 | Kanban (`kanban`) | standup, unblock, flow retro | Backlog, Ready, In Progress, Blocked, Review, Done | none |
 | Simple GitHub Flow (`github-flow`) | standup, unblock | Open, In progress, Blocked, In review, Changes requested, Approved, Merged | none |
 | Minimal (`minimal`) | pre-daily and unblock | To do, Doing, Blocked, Done | none |
+| Agent cycle (`agent-flow`) | pre-daily, unblock, gate, retro | Refine, Gate 1, Plan, Gate 2, Implement, Review, QA, Ready | `1_SPEC.md` to `5_TEST_PLAN.md` in the cycle folder |
 
 All of them produce a useful app without a spec file: cards come from the VCS provider (or the card source), and stages are read through `stageMapping`. SDD is the behavior the app already had, with the company left out: the QA account, the issue prefix, the playbook skills and the release tool come from configuration fields, filled by the migrated profile (`legacy.ts`).
 
 The final availability of a ceremony is "on in the cycle **and** with what it needs": the gate needs the specs folder and named artifacts; the QA hand-off needs the specs folder.
+
+### The agent cycle
+
+The `agent-flow` template describes the work of a team of agents, not tracker statuses. The stages are `refine`, `gate1`, `plan`, `gate2`, `implement`, `review`, `qa` and `ready`; the work stages name their agent (`agentId`) and the files they must produce (`artifacts`: `1_SPEC.md`, `2_PLAN.md`, `3_IMPLEMENTATION.md`, `4_REVIEW.md`, `5_TEST_PLAN.md`, directly in the cycle folder, no sub-folder), the two gates have `human: true` (they wait for the person) and `ready` is the end. `specLayout` matches: the gates read the spec and the plan, and a card's phase is the latest file present. `stageMapping` is empty: the cycle does not move the tracker's stage.
+
+The template brings a default team (the template's `team`): Refiner, Planner, Developer, Reviewer and QA, with permissions `read`, `read`, `worktree`, `read`, `read`. Only the developer may change files, and only inside the run's worktree. Applying the template to a workspace that already has agents **keeps the person's agents**: one with the same `id` is not touched, missing ones are added, and the stages the new cycle lacks are dropped from every agent's `stages`. An exported template file carries the agents that are not built in. The definitions of the team, `agentId` and the permission are in [`configuration.md`](configuration.md).
+
+The executor that takes an issue through these stages does not exist yet.
 
 ### Priority
 

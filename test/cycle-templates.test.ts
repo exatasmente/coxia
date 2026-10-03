@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
+import { BUILT_IN_TEMPLATES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { CATALOGS } from '../src/shared/i18n';
@@ -9,7 +9,7 @@ const apply = (id: string) => applyTemplate(neutralConfig(), builtInTemplate(id)
 
 describe('the shipped templates', () => {
   it('are the five the wizard lists, in order', () => {
-    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal']);
+    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow']);
   });
 
   it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s produces a valid workspace config', (id) => {
@@ -266,5 +266,118 @@ describe('template files', () => {
     const r = parseTemplate({ id: 'x', name: 'X', devCycle: { ceremony: true } });
     expect(r.ok).toBe(false);
     expect(r.errors[0].path).toBe('template.devCycle.ceremony');
+  });
+});
+
+describe('the agent cycle template', () => {
+  const flow = builtInTemplate('agent-flow')!;
+  const applied = () => applyTemplate(neutralConfig(), flow);
+
+  it('produces a valid config whose stages run from refine to ready, with the person at the two gates', () => {
+    const c = applied();
+    expect(validateConfig(c).errors).toEqual([]);
+    expect(c.devCycle.templateId).toBe('agent-flow');
+    const stages = [...c.devCycle.stages].sort((a, b) => a.rank - b.rank);
+    expect(stages.map((s) => s.id)).toEqual(['refine', 'gate1', 'plan', 'gate2', 'implement', 'review', 'qa', 'ready']);
+    expect(stages.filter((s) => s.human).map((s) => s.id)).toEqual(['gate1', 'gate2']);
+    expect(stages.filter((s) => s.agentId).map((s) => [s.id, s.agentId])).toEqual([['refine', 'refiner'], ['plan', 'planner'], ['implement', 'developer'], ['review', 'reviewer'], ['qa', 'qa']]);
+    expect(stages.find((s) => s.id === 'ready')).toMatchObject({ kind: 'reviewApproved' });
+    expect(stages.flatMap((s) => s.artifacts ?? [])).toEqual(['1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md']);
+  });
+
+  it('brings the default team: only the developer writes, and each agent works its own stage', () => {
+    const team = applied().agents.team.filter((a) => !a.system);
+    expect(team.map((a) => [a.id, a.permission, a.stages])).toEqual([
+      ['refiner', 'read', ['refine']],
+      ['planner', 'read', ['plan']],
+      ['developer', 'worktree', ['implement']],
+      ['reviewer', 'read', ['review']],
+      ['qa', 'read', ['qa']],
+    ]);
+    expect(applied().agents.team.filter((a) => a.system)).toHaveLength(5);
+  });
+
+  it('lays the cycle folder out as the artifacts say: the gates read the spec and the plan, the phase is the latest file', () => {
+    const layout = applied().devCycle.specLayout;
+    expect(layout.gateFiles.map((g) => [g.sub, g.gate, g.files[0][0]])).toEqual([['', 1, '1_SPEC.md'], ['', 2, '2_PLAN.md']]);
+    expect(layout.phaseFiles.map((p) => p.file)).toEqual(['5_TEST_PLAN.md', '4_REVIEW.md', '3_IMPLEMENTATION.md', '2_PLAN.md', '1_SPEC.md']);
+    expect(layout.planFiles).toEqual(['2_PLAN.md']);
+    expect(CEREMONY_IDS.filter((c) => applied().devCycle.ceremonies[c])).toEqual(['preDaily', 'unblock', 'gate', 'retro']);
+  });
+
+  it('has every text in both catalogs, the agents\' too', () => {
+    const keys = [
+      ...flow.team!.flatMap((a) => [a.name, a.job, a.instructions]),
+      cycleOf(flow).meanings.blocker.text,
+      cycleOf(flow).specLayout.decisionLog.heading,
+      ...cycleOf(flow).specLayout.phaseFiles.map((p) => p.label),
+      ...cycleOf(flow).specLayout.gateFiles.flatMap((g) => g.files.map(([, l]) => l)),
+    ];
+    for (const key of keys) for (const l of ['pt-BR', 'en'] as const) expect(CATALOGS[l][key], `${l} ${key}`).toBeTruthy();
+  });
+
+  it('keeps the agents the person already has, adds the missing ones, and never touches a system agent', () => {
+    const own = neutralConfig();
+    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', instructions: 'careful', system: false });
+    own.agents.team.find((a) => a.id === 'turn')!.instructions = 'short';
+    const next = applyTemplate(own, flow);
+    expect(next.agents.team.find((a) => a.id === 'developer')).toEqual(own.agents.team.find((a) => a.id === 'developer'));
+    expect(next.agents.team.map((a) => a.id)).toEqual(expect.arrayContaining(['refiner', 'planner', 'reviewer', 'qa']));
+    expect(next.agents.team.filter((a) => a.id === 'developer')).toHaveLength(1);
+    expect(next.agents.team.find((a) => a.id === 'turn')?.instructions).toBe('short');
+    // The stage names the agent, so the person's developer still works "implement" even though it does not list it.
+    expect(validateConfig(next).errors).toEqual([]);
+    expect(validateConfig(next).warnings.map((w) => w.path)).toContain('devCycle.stages[4].agentId');
+  });
+
+  it('is idempotent', () => {
+    const once = applied();
+    expect(applyTemplate(once, flow)).toEqual(once);
+  });
+
+  it('keeps the agents when another template replaces the cycle, dropping the stages they worked', () => {
+    const c = applyTemplate(applied(), builtInTemplate('scrum')!);
+    expect(validateConfig(c).errors).toEqual([]);
+    const developer = c.agents.team.find((a) => a.id === 'developer')!;
+    expect(developer.permission).toBe('worktree');
+    expect(developer.stages).toEqual([]);
+    expect(c.devCycle.stages.some((s) => s.agentId)).toBe(false);
+  });
+
+  it('travels in a template file: the agents of a workspace are exported and read back, the system ones left out', () => {
+    const source = applied();
+    const template = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(template.team?.map((a) => a.id)).toEqual(['refiner', 'planner', 'developer', 'reviewer', 'qa']);
+    const check = parseTemplate(JSON.parse(exportTemplateText(template, new Date('2026-10-02T12:00:00Z'))));
+    expect(check.errors).toEqual([]);
+    expect(applyTemplate(neutralConfig(), check.template!)).toEqual({ ...source, devCycle: { ...source.devCycle, templateId: 'mine' } });
+    expect(templateFromConfig(neutralConfig(), { id: 'plain', name: 'Plain', description: '' }).team).toBeUndefined();
+  });
+
+  it('refuses a file whose team is not coherent: a built-in agent, an unknown stage, a stage that names a missing agent', () => {
+    const base = { id: 'x', name: 'X', devCycle: { stages: [{ id: 'a', label: 'A', match: [], kind: 'development', rank: 1 }] } };
+    expect(parseTemplate({ ...base, team: [{ id: 'turn', name: 'T', system: true }] }).ok).toBe(false);
+    expect(parseTemplate({ ...base, team: 'nobody' }).ok).toBe(false);
+    const unknownStage = parseTemplate({ ...base, team: [{ id: 'w', name: 'W', stages: ['ghost'] }] });
+    expect(unknownStage.errors.map((e) => e.path)).toEqual(['template.team[5].stages[0]']);
+    const missingAgent = parseTemplate({ ...base, devCycle: { stages: [{ id: 'a', label: 'A', match: [], kind: 'development', rank: 1, agentId: 'ghost' }] } });
+    expect(missingAgent.errors.map((e) => e.path)).toEqual(['template.devCycle.stages[0].agentId']);
+    expect(parseTemplate({ ...base, team: [{ id: 'w', name: 'W', stages: ['a'] }] }).ok).toBe(true);
+  });
+
+  it('lists in the setup wizard with its team', async () => {
+    const { listCycleTemplates } = await import('../src/main/cycles');
+    const entry = listCycleTemplates('en').find((t) => t.id === 'agent-flow')!;
+    expect(entry).toMatchObject({ name: 'Agent cycle', builtIn: true, needs: ['issueProject'] });
+    expect(entry.team.map((a) => a.id)).toEqual(['refiner', 'planner', 'developer', 'reviewer', 'qa']);
+    expect(entry.stages.map((s) => s.id)).toContain('gate1');
+  });
+
+  it('merges into a team by id for the wizard too: the person\'s agents stay, the stages the cycle lacks are dropped', () => {
+    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', instructions: '', system: false }]);
+    const merged = mergeTemplateTeam(own, flow.team!, cycleOf(flow));
+    expect(merged.find((a) => a.id === 'developer')).toMatchObject({ name: 'Dev', permission: 'read', stages: ['implement'] });
+    expect(merged.map((a) => a.id).filter((id) => id === 'developer')).toHaveLength(1);
+    expect(merged.map((a) => a.id)).toContain('qa');
   });
 });
