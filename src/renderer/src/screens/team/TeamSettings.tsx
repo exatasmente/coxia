@@ -4,6 +4,7 @@ import { isWeb } from '../../platform';
 import { Notice } from '../../wizard/ui';
 import { CommentsEditor } from './CommentsEditor';
 import { FlowEditor } from './FlowEditor';
+import { RunnerSection } from './RunnerSection';
 import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
 import { teamApi, useConfigView } from './teamApi';
@@ -20,7 +21,7 @@ const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow:
   squads: (p) => <SquadsSection {...p} />,
   flow: (p) => <FlowEditor {...p} />,
   comments: (p) => <CommentsEditor {...p} />,
-  runner: null,
+  runner: (p) => <RunnerSection {...p} />,
 };
 
 export function TeamSettings() {
