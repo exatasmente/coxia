@@ -2,7 +2,7 @@
 import type { JsonSchema } from './jsonSchema';
 import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 5). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 6). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -104,6 +104,17 @@ const stage = object(
     human: boolean('A gate: the stage waits for the person, so it has no agent.'),
   },
   ['id', 'kind'],
+);
+
+const commentTemplate = object(
+  'What a comment the runner leaves on the tracker looks like.',
+  {
+    title: string('What the comment is called where the app lists it (a catalog key or a literal).', { minLength: 1, maxLength: 200 }),
+    status: string('The first line of the comment; it may use {stage}, {round}, {result}, {decision} and {ref} (a catalog key or a literal).', { minLength: 1, maxLength: 400 }),
+    sections: list('The sections after the status, in order; one with nothing to say is left out.', object('One section.', { heading: string('Its heading (a catalog key or a literal).', { minLength: 1, maxLength: 200 }), guidance: string('What it must say, as the agent is told (a catalog key or a literal).', { maxLength: 2000 }) }, ['heading']), { maxItems: 20 }),
+    technicalDetail: boolean('Ends the comment with a collapsed technical section: file, function and line names go only there.'),
+  },
+  ['title', 'status'],
 );
 
 const phaseFile = object('A document whose presence says where an issue is.', { file: string('Base name of the document.', { minLength: 1 }), label: string('Phase text shown on the card.') }, ['file']);
@@ -229,7 +240,7 @@ const command = { enabled: boolean('The integration is on.'), command: string('E
 
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $id: 'urn:coxia:schema:workspace-config:5',
+  $id: 'urn:coxia:schema:workspace-config:6',
   title: 'Coxia workspace configuration',
   ...object(
     'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
@@ -303,6 +314,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           decisionLog: object('Where the decisions of the ceremonies are recorded in the plan.', { heading: text('Heading text (catalog key or literal); empty: decisions stay in the minutes.') }),
           documents: object('Names of the documents the app writes.', { gateQuiz: string('Gate quiz record.', { minLength: 1 }), completion: string('Issue completion record.', { minLength: 1 }), qaChecklist: string('QA checklist.', { minLength: 1 }) }),
         }),
+        comments: { type: 'object', description: 'The comments the runner leaves on the tracker, by stage id and by event (gate, question, pr). A stage with no entry posts nothing.', additionalProperties: commentTemplate },
         quickTransitions: list('Status changes the quick actions of a card offer on GitLab.', quickTransition, { maxItems: 20 }),
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
       }),

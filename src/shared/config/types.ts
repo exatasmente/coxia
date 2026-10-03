@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 5): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 6): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 5;
+export const CONFIG_SCHEMA_VERSION = 6;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -338,6 +338,28 @@ export interface PriorityConfig {
   labels: string[];
 }
 
+/** One section of a tracker comment: its heading and what it must say. Both are catalog keys or literals in the team's language. */
+export interface CommentSection {
+  heading: string;
+  guidance: string;
+}
+
+/**
+ * What a comment the runner leaves on the tracker looks like. `title` names it where the app lists it (Actions, the thread); the comment itself opens
+ * with `status`, a text that may use {stage}, {round}, {result}, {decision} and {ref}. `sections` come next, in this order, each only when it has
+ * something to say; `technicalDetail` adds the collapsed section at the end.
+ */
+export interface CommentTemplate {
+  title: string;
+  status: string;
+  sections: CommentSection[];
+  technicalDetail: boolean;
+}
+
+/** The keys of `devCycle.comments` that are not stage ids: a gate decision, an agent's question, and the pull request description. */
+export const COMMENT_EVENT_KEYS = ['gate', 'question', 'pr'] as const;
+export type CommentEventKey = (typeof COMMENT_EVENT_KEYS)[number];
+
 export interface DevCycleConfig {
   /** Template this section was filled from ("none", "sdd", "scrum", "kanban", "github-flow", "minimal", or a custom one). Informational once edited. */
   templateId: string;
@@ -359,6 +381,8 @@ export interface DevCycleConfig {
   /** Regular expression for the label that says an issue shipped in a version. Group 1, when present, is the version shown. */
   releaseLabelPattern: string;
   specLayout: SpecLayout;
+  /** The comments the runner leaves on the tracker, by stage id and by event (`gate`, `question`, `pr`). A stage with no entry posts nothing. */
+  comments: Record<string, CommentTemplate>;
   /** Status changes the card's quick actions offer on GitLab (custom status ids differ per instance, so each workspace lists its own). Empty: none. */
   quickTransitions: QuickTransitionRule[];
   qa: {

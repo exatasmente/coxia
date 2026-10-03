@@ -3,6 +3,7 @@ import { newAgent } from '../../config/team';
 import { CARD_FIELDS, type AgentDef, type StageDef } from '../../config/types';
 import { defaultCeremonyParams, sameFamily } from '../neutral';
 import type { CycleTemplate } from '../types';
+import { agentFlowComments } from './agentFlowComments';
 
 // The agent cycle: the stages are work done by a team of agents, with the person at the two gates. An issue goes refine, gate 1, plan, gate 2,
 // implement, review, QA, ready; each work stage names its agent and the files it must produce in the cycle folder (no sub-folder: one flow
@@ -55,6 +56,7 @@ export const agentFlow: CycleTemplate = {
     promptOverrides: {},
     pipelineSkill: '',
     releaseLabelPattern: '^v?(\\d+\\.\\d+\\.\\d+)$',
+    comments: agentFlowComments(),
     specLayout: {
       folderPrefix: '{iid}-',
       phaseFiles: [

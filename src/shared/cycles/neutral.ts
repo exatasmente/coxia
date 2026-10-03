@@ -49,6 +49,7 @@ export function neutralDevCycle(): DevCycleConfig {
       decisionLog: { heading: '' },
       documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
     },
+    comments: {},
     quickTransitions: [],
     qa: { user: null },
   };

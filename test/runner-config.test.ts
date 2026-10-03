@@ -79,7 +79,7 @@ describe('the migration to schema 5', () => {
     const r = migrateConfig(before, { legacyInstall: false });
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(5);
+    expect(r.config.schemaVersion).toBe(6);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -93,12 +93,12 @@ describe('the migration to schema 5', () => {
 
   it('carries a v3 file through both steps', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(5);
+    expect(r.config.schemaVersion).toBe(6);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 6 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 7 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

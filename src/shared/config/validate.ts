@@ -1,10 +1,11 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
 import { promptFamilies } from '../cycles/prompts';
+import { catalogText } from '../cycles/text';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA } from './schema';
 import { isSystemId } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
 export interface ConfigIssue {
   path: string;
@@ -91,6 +92,30 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   if (r.enabled && c.devCycle.templateId !== 'agent-flow') warnings.push({ path: 'runner.enabled', message: 'the runner only works with the agent cycle (devCycle.templateId "agent-flow")' });
 }
 
+const COMMENT_PLACEHOLDERS = new Set(['stage', 'round', 'result', 'decision', 'ref']);
+const COMMENT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+
+// The templates of the comments the runner leaves on the tracker. A key names a stage or an event; a template for anything else is kept (a template file may
+// travel between cycles) but said so, because nothing will ever use it.
+function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const stages = new Map(c.devCycle.stages.map((s) => [s.id, s]));
+  const events = new Set<string>(COMMENT_EVENT_KEYS);
+  for (const [key, tpl] of Object.entries(c.devCycle.comments)) {
+    const at = (field: string) => `devCycle.comments.${key}.${field}`;
+    if (!COMMENT_KEY.test(key)) {
+      errors.push({ path: `devCycle.comments.${key}`, message: 'the key must be a stage id or one of gate, question, pr' });
+      continue;
+    }
+    const stage = stages.get(key);
+    if (!stage && !events.has(key)) warnings.push({ path: `devCycle.comments.${key}`, message: `no stage "${key}" and not one of ${COMMENT_EVENT_KEYS.join(', ')}: this template is never used` });
+    if (stage && events.has(key) && key !== 'pr') warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is both a stage and an event: the template serves the event, pick another id for the stage` });
+    if (stage?.human) warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is a gate: its decision is posted from the "gate" template` });
+    const status = catalogText(tpl.status, 'pt-BR') ?? tpl.status;
+    for (const m of status.matchAll(/\{(\w+)\}/g)) if (!COMMENT_PLACEHOLDERS.has(m[1])) warnings.push({ path: at('status'), message: `{${m[1]}} is not a placeholder of a status: use ${[...COMMENT_PLACEHOLDERS].map((p) => `{${p}}`).join(', ')}` });
+    for (const h of duplicates(tpl.sections.map((x) => (catalogText(x.heading, 'pt-BR') ?? x.heading).trim().toLowerCase()))) warnings.push({ path: at('sections'), message: `two sections are headed "${h}"` });
+  }
+}
+
 function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
@@ -100,6 +125,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
   runnerRules(c, errors, warnings);
+  commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });
   for (const id of duplicates(c.projects.repos.map((r) => r.id))) errors.push({ path: 'projects.repos', message: `duplicate repo id "${id}"` });

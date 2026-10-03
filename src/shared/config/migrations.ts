@@ -2,6 +2,7 @@
 import { mergeDeep, neutralConfig, neutralRunner, withConfigDefaults } from './defaults';
 import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
+import { agentFlowComments } from '../cycles/templates/agentFlowComments';
 import { systemAgents } from './team';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type WorkspaceConfig } from './types';
 
@@ -11,6 +12,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
 //   v4  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
 //   v5  runner (the section that takes an issue through the agent cycle by itself), off by default.
+//   v6  devCycle.comments (the templates of the comments the runner leaves on the tracker): the agent cycle's own, none for any other cycle.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -109,8 +111,18 @@ function v4ToV5(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 5, runner: neutralRunner() };
 }
 
+// A workspace on the agent cycle gets that cycle's comment templates (the runner then has something to post); any other cycle brings none, so nothing
+// is ever posted for it. A file that already carries templates keeps them.
+function v5ToV6(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const cycle = pick(old.devCycle);
+  if (!Object.keys(cycle).length || isObject(cycle.comments)) return { ...old, schemaVersion: 6 };
+  const own = cycle.templateId === 'agent-flow';
+  if (own) notes.push('comment templates of the agent cycle added to devCycle');
+  return { ...old, schemaVersion: 6, devCycle: { ...cycle, comments: own ? agentFlowComments() : {} } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

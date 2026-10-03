@@ -20,6 +20,7 @@ O Coxia deixou de assumir um processo só. O que as cerimônias fazem (quais exi
 | `meanings` | o que é "bloqueio" (`stageKinds` + texto), "pergunta para mim" (liga/desliga + texto) e "pronto para o QA" (`stageKinds`, `requiresSpec`, texto) |
 | `enrichment` | o que o agente recebe de cada cartão: `specFolder` (procura a pasta da issue), `cardFields` (quais campos do cartão), `extraFiles` (documentos que o cartão cita quando existem) |
 | `specLayout` | onde ficam os documentos: `folderPrefix`, `phaseFiles` (o arquivo que mais avançou diz a fase), `planFiles`, `gateFiles` (artefato de cada gate), `decisionLog.heading` (a seção do plano onde as decisões vão; vazio: nunca escreve no plano), `documents` |
+| `comments` | os modelos dos comentários que o runner deixa na tracker, por id de etapa e por evento (`gate`, `question`, `pr`): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. Sem modelo para uma etapa, nada é postado (veja abaixo) |
 | `priority` | as labels que dizem a urgência de uma issue (`labels`, da mais alta para a mais baixa, cada uma uma expressão regular sem diferenciar maiúsculas); vazio: o workspace não tem labels de prioridade |
 | `prompts` | a família de texto de cada papel (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | troca um único texto por id e idioma (ver abaixo) |
@@ -49,6 +50,17 @@ O modelo `agent-flow` descreve o trabalho de um time de agentes, não os status 
 O modelo traz um time padrão (`team` do modelo): Refinador, Planejador, Desenvolvedor, Revisor e QA, todos autônomos, com as permissões `read`, `read`, `worktree`, `read`, `read`. Só o desenvolvedor pode alterar arquivos, e só dentro do worktree da execução. Cada agente liga ou desliga a própria autonomia, então o ciclo pode ser híbrido: agentes autônomos, gates da pessoa e agentes que esperam por ela. Aplicar o modelo a um workspace que já tem agentes **mantém os agentes da pessoa**: o que já existe com o mesmo `id` não é tocado, os que faltam são acrescentados, e as etapas que o novo ciclo não tem saem da lista `stages` de cada agente. Um arquivo de modelo exportado leva os agentes que não são nativos. As definições do time, do `agentId` e da permissão estão em [`configuration.md`](configuration.md).
 
 O executor que leva uma issue por essas etapas é o [runner](runner.md).
+
+#### Modelos de comentário (`devCycle.comments`)
+
+O que cada etapa deixa na tracker é decidido pelo ciclo, não pelo código: `comments` tem um modelo por id de etapa de trabalho e por evento (`gate`: uma decisão de gate, `question`: uma pergunta de agente, `pr`: a descrição do pull request). Um modelo é `{ title, status, sections, technicalDetail }`:
+
+- `title`: como o comentário se chama onde o app o lista (Ações, conversa); não aparece no corpo.
+- `status`: a **primeira linha** do comentário, com `{stage}`, `{round}`, `{result}`, `{decision}` e `{ref}` (por exemplo `Revisão: {result} (rodada {round})`).
+- `sections`: as seções depois do status, na ordem, cada uma com `heading` e `guidance` (o que ela deve dizer, o texto que o agente recebe). Uma seção sem nada a dizer sai do comentário. As primeiras seções são para quem não lê código (produto, suporte, quem abriu a issue): comportamento, não implementação.
+- `technicalDetail`: acrescenta, por último, a seção recolhida "Detalhe técnico" (`<details>`), onde ficam os nomes de arquivo, função e linha.
+
+Os textos são chaves do catálogo (`cycle.agentFlow.comment.<id>.*`) ou literais, como os outros textos do ciclo, e o idioma do comentário é o do workspace. O ciclo de agentes traz os modelos de refine, plan, implement, review, qa, gate, question e pr; **os outros ciclos não trazem nenhum**, e uma etapa sem modelo não posta nada. Trocar de ciclo troca os modelos; exportar um ciclo leva os dele. O que o runner faz com eles (como escreve, confere e publica) está em [`runner.md`](runner.md).
 
 ### Execuções
 
@@ -158,6 +170,7 @@ Coxia no longer assumes a single process. What the ceremonies do (which ones exi
 | `meanings` | what a "blocker" is (`stageKinds` + text), a "question for me" (on/off + text) and "ready for QA" (`stageKinds`, `requiresSpec`, text) |
 | `enrichment` | what the agent gets about each card: `specFolder` (looks up the issue folder), `cardFields` (which card fields), `extraFiles` (documents the card names when they exist) |
 | `specLayout` | where the documents live: `folderPrefix`, `phaseFiles` (the most advanced file present says the phase), `planFiles`, `gateFiles` (each gate's artifact), `decisionLog.heading` (the plan section decisions go to; empty: never written to the plan), `documents` |
+| `comments` | the templates of the comments the runner leaves on the tracker, by stage id and by event (`gate`, `question`, `pr`): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. A stage with no template posts nothing (see below) |
 | `priority` | the labels that say how urgent an issue is (`labels`, highest first, each a case-insensitive regular expression); empty: the workspace has no priority labels |
 | `prompts` | the text family of each role (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | replaces one text by id and language (see below) |
@@ -187,6 +200,17 @@ The `agent-flow` template describes the work of a team of agents, not tracker st
 The template brings a default team (the template's `team`): Refiner, Planner, Developer, Reviewer and QA, all autonomous, with permissions `read`, `read`, `worktree`, `read`, `read`. Only the developer may change files, and only inside the run's worktree. Each agent switches its own autonomy on or off, so a cycle can be hybrid: autonomous agents, the person's gates and agents that wait for the person. Applying the template to a workspace that already has agents **keeps the person's agents**: one with the same `id` is not touched, missing ones are added, and the stages the new cycle lacks are dropped from every agent's `stages`. An exported template file carries the agents that are not built in. The definitions of the team, `agentId` and the permission are in [`configuration.md`](configuration.md).
 
 The executor that takes an issue through these stages is the [runner](runner.md).
+
+#### Comment templates (`devCycle.comments`)
+
+What each stage leaves on the tracker is decided by the cycle, not by code: `comments` holds one template per work-stage id and per event (`gate`: a gate decision, `question`: an agent's question, `pr`: the pull request description). A template is `{ title, status, sections, technicalDetail }`:
+
+- `title`: what the comment is called where the app lists it (Actions, the thread); it does not appear in the body.
+- `status`: the **first line** of the comment, which may use `{stage}`, `{round}`, `{result}`, `{decision}` and `{ref}` (for example `Review: {result} (round {round})`).
+- `sections`: the sections after the status, in order, each with a `heading` and a `guidance` (what it must say, the text the agent is given). A section with nothing to say is left out. The first sections are for people who do not read code (product, support, whoever opened the issue): behavior, not implementation.
+- `technicalDetail`: adds, last, the collapsed "Technical detail" section (`<details>`), where file, function and line names go.
+
+The texts are catalog keys (`cycle.agentFlow.comment.<id>.*`) or literals, like the cycle's other texts, and the comment's language is the workspace's. The agent cycle brings templates for refine, plan, implement, review, qa, gate, question and pr; **the other cycles bring none**, and a stage with no template posts nothing. Switching cycle switches the templates; exporting a cycle takes its own along. What the runner does with them (how it writes, checks and publishes) is in [`runner.md`](runner.md).
 
 ### Runs
 

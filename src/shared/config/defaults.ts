@@ -96,7 +96,7 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
     llm: { ...c.llm, providers: c.llm.providers.map(completeProvider) },
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
-    devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) },
+    devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })), comments: Object.fromEntries(Object.entries(c.devCycle.comments ?? {}).map(([id, tpl]) => [id, { ...tpl, sections: tpl.sections ?? [], technicalDetail: tpl.technicalDetail ?? false }])) },
     agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
   };
 }
