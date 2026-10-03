@@ -34,7 +34,7 @@ describe('the main process catalogs (main.*.json)', () => {
     }
     // Names, codes and one-word terms are the same in both languages; a sentence never is.
     const same = Object.keys(pt).filter((key) => pt[key] === en[key] && /\s/.test(pt[key].trim()));
-    expect(same.sort()).toEqual(['main.efeitos.issueFound', 'main.efeitos.mrFound', 'main.tempo.gateN', 'main.web.json'].sort());
+    expect(same.sort()).toEqual(['main.efeitos.issueFound', 'main.efeitos.mrFound', 'main.runner.release.milestone.item', 'main.runner.release.record.title', 'main.tempo.gateN', 'main.web.json'].sort());
   });
 
   it('answer every key the code asks for through t(): a typo would show the key on screen', () => {
