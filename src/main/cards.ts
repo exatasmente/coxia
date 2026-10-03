@@ -58,6 +58,7 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
         spec: /^\d+$/.test(iid) ? specInfo(iid) : null,
         mrs: mrs.map((m) => m.ref),
         mrPaths: mrs.map((m) => ({ ref: m.ref, project: m.project, iid: m.iid })),
+        mrConflicts: mrs.filter((m) => m.has_conflicts === true).map((m) => m.ref),
         blockers: withStageBlocker(it.stage, [...it.blockers, ...mrs.flatMap((m) => m.blockers.map((b) => `${m.ref}: ${b}`))]),
         pending: [...it.pending, ...mrs.flatMap((m) => m.pending.map((p) => `${m.ref}: ${p}`))],
         changes: [...it.changes.map((c) => describe(c)), ...mrs.flatMap((m) => m.changes.map((c) => describe(c, `${m.ref} `)))],
