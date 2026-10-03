@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,6 +11,31 @@ export const IDENTITY = {
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1',
 };
+
+/** The identity the machine would hand git by itself: a global config and the author and committer variables. No commit of the app may carry it. */
+export const MACHINE = { name: 'Machine Person', email: 'machine@example.com' };
+
+/** Runs `fn` with `MACHINE` in a global git config and in the environment, as a person's computer would have it, and puts the environment back. */
+export async function withMachineIdentity<T>(fn: () => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), 'cerimonias-gitconfig-'));
+  const file = join(dir, 'gitconfig');
+  writeFileSync(file, `[user]\n\tname = ${MACHINE.name}\n\temail = ${MACHINE.email}\n`);
+  const saved = { ...process.env };
+  Object.assign(process.env, {
+    GIT_CONFIG_GLOBAL: file,
+    GIT_AUTHOR_NAME: MACHINE.name,
+    GIT_AUTHOR_EMAIL: MACHINE.email,
+    GIT_COMMITTER_NAME: MACHINE.name,
+    GIT_COMMITTER_EMAIL: MACHINE.email,
+    EMAIL: MACHINE.email,
+  });
+  try {
+    return await fn();
+  } finally {
+    process.env = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 export function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-C', cwd, ...args], { env: { ...process.env, ...IDENTITY }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();

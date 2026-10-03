@@ -659,7 +659,7 @@ export interface ExternalToolsConfig {
   claudeCli: ClaudeCliConfig;
 }
 
-/** Who the app's commits in a run's worktree are made as. Both empty: the identity the repository already has. */
+/** Who the app's commits are made as (a run's, and the merge that resolves a conflict). Both empty: the one in the repository's own `.git/config`, never the global one; with neither, the app does not commit. */
 export interface RunnerIdentity {
   name: string;
   email: string;

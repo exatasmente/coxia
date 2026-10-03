@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleaseAction } from '../src/shared/types';
-import { type Fixture, IDENTITY, cloneSnapshot, git, makeFixture, originSha } from './helpers/conflictRepos';
+import { type Fixture, IDENTITY, MACHINE, cloneSnapshot, git, makeFixture, originSha, withMachineIdentity } from './helpers/conflictRepos';
 
 const proposeSpy = vi.hoisted(() => vi.fn());
 
@@ -17,7 +17,12 @@ const { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDi
 const { saveVerifyCommands } = await import('../src/main/conflictVerify');
 const { ATAS } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
+const { updateConfig } = await import('../src/main/workspaceConfig');
 await installLegacyConfig();
+
+// Who the merge is made as: the runner's identity of the workspace (the fixture's own identity, in the environment, is not one the app commits as).
+const RUNNER = { name: 'Runner Test', email: 'runner@example.test' };
+const setIdentity = (identity: { name: string; email: string }): void => void updateConfig((c) => ({ ...c, runner: { ...c.runner, identity } }));
 
 const ACTIONS = join(ATAS, 'acoes.json');
 const AUDIT = join(ATAS, 'auditoria.jsonl');
@@ -90,6 +95,7 @@ beforeEach(() => {
   proposeSpy.mockReset();
   combineStub();
   saveVerifyCommands({});
+  setIdentity(RUNNER);
 });
 
 afterEach(() => {
@@ -136,6 +142,18 @@ describe('prepare', () => {
     git(f.clone, 'branch', 'sync/1234', 'HEAD');
     await expect(conflictPrepare(id)).rejects.toThrow(/não é deste app/);
     expect(existsSync(join(ATAS, 'conflicts', 'proj-1234'))).toBe(false);
+  });
+
+  it('does not start the merge without an identity of the runner or the clone, whatever the machine has', async () => {
+    const id = seed(f);
+    setIdentity({ name: '', email: '' });
+    const before = cloneSnapshot(f);
+    await withMachineIdentity(async () => {
+      await expect(conflictPrepare(id)).rejects.toThrow(/Sem identidade para o commit do merge/);
+    });
+    expect(existsSync(join(ATAS, 'conflicts', 'proj-1234'))).toBe(false);
+    expect(cloneSnapshot(f)).toEqual(before);
+    expect(get(id).state).toBe('pending');
   });
 });
 
@@ -223,7 +241,7 @@ describe('apply, verify and commit', () => {
     expect(get(id).resolve?.appliedAt).toBeNull();
   });
 
-  it('runs the configured command in the worktree, logs it, and commits the merge with the clone identity', async () => {
+  it('runs the configured command in the worktree, logs it, and commits the merge as the runner\'s identity', async () => {
     saveVerifyCommands({ [f.project]: 'echo "clone=$CLONE_DIR"; grep -c from-main app.js; test ! -e old.txt' });
     const id = seed(f);
     await toProposed(id);
@@ -238,7 +256,7 @@ describe('apply, verify and commit', () => {
     const wt = r?.worktree as string;
     expect(git(wt, 'log', '-1', '--format=%s')).toBe("Merge branch 'main' into 'release/bugfix/1234'");
     expect(git(wt, 'log', '-1', '--format=%B')).not.toMatch(/Co-Authored|Generated/i);
-    expect(git(wt, 'log', '-1', '--format=%an <%ae>')).toBe('Fixture Dev <fixture@example.test>');
+    expect(git(wt, 'log', '-1', '--format=%an <%ae>|%cn <%ce>')).toBe('Runner Test <runner@example.test>|Runner Test <runner@example.test>');
     expect(git(wt, 'rev-parse', 'HEAD^2')).toBe(r?.mainSha);
     expect(git(wt, 'rev-parse', 'HEAD^1')).toBe(r?.originSha);
     expect(readFileSync(join(wt, 'app.js'), 'utf8')).toBe(
@@ -314,27 +332,25 @@ describe('apply, verify and commit', () => {
     expect(listActions().find((x) => x.kind === 'conflict-push')?.output).toContain('código 1');
   });
 
-  it('stops with a clear message when the clone has no git identity, and never writes config', async () => {
+  it('stops with a clear message when neither the runner nor the clone names an identity, whatever the machine has, and never writes config', async () => {
     const id = seed(f);
     await toProposed(id);
     decideAll(id);
-    const saved = { ...process.env };
-    for (const k of Object.keys(IDENTITY)) if (k.includes('NAME') && (k.includes('AUTHOR') || k.includes('COMMITTER')) || k.includes('EMAIL')) delete process.env[k];
-    process.env.GIT_CONFIG_COUNT = '1';
-    process.env.GIT_CONFIG_KEY_0 = 'user.useConfigOnly';
-    process.env.GIT_CONFIG_VALUE_0 = 'true';
+    setIdentity({ name: '', email: '' });
     const before = cloneSnapshot(f).config;
-    try {
-      await expect(conflictApply(id, { skipTests: true })).rejects.toThrow(/identidade git/);
-    } finally {
-      process.env = saved;
-    }
-    expect(get(id).resolve?.appliedAt).toBeTruthy();
-    expect(get(id).resolve?.commit).toBeNull();
-    expect(cloneSnapshot(f).config).toBe(before);
-    // Identity back: the commit goes through from the same state.
-    const done = await conflictCommit(id);
-    expect(done.resolve?.commit).toBeTruthy();
+    await withMachineIdentity(async () => {
+      await expect(conflictApply(id, { skipTests: true })).rejects.toThrow(/Sem identidade para o commit do merge/);
+      expect(get(id).resolve?.appliedAt).toBeTruthy();
+      expect(get(id).resolve?.commit).toBeNull();
+      expect(cloneSnapshot(f).config).toBe(before);
+      // the clone's own identity, written the way a person would have: the merge goes through from the same state, as it
+      writeFileSync(join(f.clone, '.git', 'config'), `${before}[user]\n\tname = Clone Owner\n\temail = owner@example.test\n`);
+      const done = await conflictCommit(id);
+      expect(done.resolve?.commit).toBeTruthy();
+      const wt = done.resolve?.worktree as string;
+      expect(git(wt, 'log', '-1', '--format=%an <%ae>|%cn <%ce>')).toBe('Clone Owner <owner@example.test>|Clone Owner <owner@example.test>');
+      expect(git(wt, 'log', '-1', '--format=%ae %ce')).not.toContain(MACHINE.email);
+    });
   });
 });
 

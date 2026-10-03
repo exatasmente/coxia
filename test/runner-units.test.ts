@@ -6,9 +6,9 @@ import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
 import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
-import { WorktreeError, branchDiff, branchStat, commitAll, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
+import { WorktreeError, branchDiff, branchStat, commitAll, commitIdentity, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
-import { git } from './helpers/conflictRepos';
+import { MACHINE, git, withMachineIdentity } from './helpers/conflictRepos';
 import { comment, issue, makeRepo } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -120,6 +120,29 @@ describe('git, as the runner uses it', () => {
     expect(await repoIdentity(repo.clone)).toBeNull();
     writeFileSync(join(repo.clone, '.git/config'), `${readFileSync(join(repo.clone, '.git/config'), 'utf8')}[user]\n\tname = Owner\n\temail = owner@example.test\n`);
     expect(await repoIdentity(repo.clone)).toEqual({ name: 'Owner', email: 'owner@example.test' });
+  });
+
+  it('commits as the runner\'s identity, else the repository\'s own, and never as the one the machine has', async () => {
+    const repo = makeRepo();
+    const none = { name: '', email: '' };
+    await withMachineIdentity(async () => {
+      // the global config and the environment name someone: that is not an identity of the repository, and the app does not commit as it
+      expect(await repoIdentity(repo.clone)).toBeNull();
+      expect(await commitIdentity(none, repo.clone)).toBeNull();
+      expect(await commitIdentity({ name: ' Runner ', email: ' runner@example.test ' }, repo.clone)).toEqual({ name: 'Runner', email: 'runner@example.test' });
+      writeFileSync(join(repo.clone, '.git/config'), `${readFileSync(join(repo.clone, '.git/config'), 'utf8')}[user]\n\tname = Owner\n\temail = owner@example.test\n`);
+      expect(await commitIdentity(none, repo.clone)).toEqual({ name: 'Owner', email: 'owner@example.test' });
+      expect(await commitIdentity({ name: 'Runner', email: 'runner@example.test' }, repo.clone)).toEqual({ name: 'Runner', email: 'runner@example.test' });
+
+      const dest = join(repo.worktrees, 'app', '1-x');
+      await createWorktree({ clone: repo.clone, dest, branch: 'cycle/1-x' });
+      writeFileSync(join(dest, 'src/new.ts'), 'export {};\n');
+      await commitAll(dest, 'feat: add a file #1', { name: 'Runner', email: 'runner@example.test' });
+      expect(git(dest, 'log', '-1', '--format=%an|%ae|%cn|%ce')).toBe('Runner|runner@example.test|Runner|runner@example.test');
+      writeFileSync(join(dest, 'src/other.ts'), 'export {};\n');
+      await expect(commitAll(dest, 'feat: add another #1', none)).rejects.toThrow(/name and an email/);
+      expect(git(dest, 'log', '--format=%ae|%ce')).not.toContain(MACHINE.email);
+    });
   });
 
   it('gives the branch\'s diff without the cycle folder, and its summary', async () => {

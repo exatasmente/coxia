@@ -11,7 +11,7 @@ import { MaxTurnsError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
-import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
+import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitIdentity, commitMessage, commitSummary, declaredCommands, headSha } from './git';
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
@@ -44,7 +44,7 @@ export interface ExecutorDeps {
   engine: StageEngine;
   config(): WorkspaceConfig;
   forum: ForumStore;
-  /** The identity of a repository, when the workspace names none. */
+  /** The identity of a repository, when the workspace names none: its own `.git/config` by default (`repoIdentity`), never the global one. */
   identity?: (wt: string) => Promise<Identity | null>;
   /** Runs the commands QA is given the results of (the real one by default). */
   commandRunner?: CommandRunner;
@@ -382,7 +382,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });
 
-  const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (d.identity ?? repoIdentity)(wt);
+  const identity = await commitIdentity(config.runner.identity, wt, d.identity);
   if (!identity) throw new StageError('no-identity');
   // A pass of an agent that writes that changed no code is a pass of documents: what the agent said it fixed is not in the diff, and the commit does not claim it.
   const noCodeChange = writes && !(await changedOutside(wt, run.cycleFolder));

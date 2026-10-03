@@ -23,7 +23,10 @@ const { ATAS } = await import('../src/main/env');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { fakeGitlabRuntime } = await import('./helpers/vcs');
 const { installLegacyConfig } = await import('./helpers/config');
+const { updateConfig } = await import('../src/main/workspaceConfig');
 await installLegacyConfig();
+// The merge of a conflict is made as the runner's identity of the workspace: never the one the machine or the environment has.
+updateConfig((c) => ({ ...c, runner: { ...c.runner, identity: { name: 'Runner Test', email: 'runner@example.test' } } }));
 
 let f: Fixture;
 let reads: string[];

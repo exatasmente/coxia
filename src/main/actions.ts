@@ -38,7 +38,8 @@ import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
-import { issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
+import { type Identity, commitIdentity } from './runner/git';
+import { getConfig, issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
 
 /** The workspace's word for a change request (MR, PR), for a notification of an action that has no ref. */
@@ -667,6 +668,14 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   return action;
 }
 
+// Who the merge of a conflict is made as: the identity the runner's commits use, or the clone's own; never the global one, which may be another
+// job's address. Asked when the merge starts, so a missing one stops the work before the person resolves anything, and again at the commit.
+async function mergeIdentity(clone: string): Promise<Identity> {
+  const identity = await commitIdentity(getConfig().runner.identity, clone);
+  if (!identity) throw new Error(t('main.actions.noCommitIdentity'));
+  return identity;
+}
+
 export async function conflictPrepare(id: string): Promise<ReleaseAction> {
   return withStep(id, t('main.actions.stepPreparing'), async () => {
     const { a, r } = conflictOf(id);
@@ -680,7 +689,7 @@ export async function conflictPrepare(id: string): Promise<ReleaseAction> {
     const clone = await findClone(project, conflictHooks.cloneRoots, requireVcsHost());
     if (!clone) throw new Error(t('main.actions.noClone', { project, roots: conflictHooks.cloneRoots.join(', ') }));
     const target = u.target_branch ?? 'main';
-    const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`) });
+    const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`), identity: await mergeIdentity(clone) });
     for (const f of p.files) for (const h of f.hunks) h.sensitive = secretPath(f.path);
     return update(id, (x) => ({
       ...x,
@@ -807,7 +816,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     const { a, r } = resolved(id);
     if (!r.appliedAt) throw new Error(t('main.actions.applyFirst'));
     if (r.commit) throw new Error(t('main.actions.alreadyCommitted'));
-    const sha = await commitMerge(r.worktree, r.branch, r.mainSha);
+    const sha = await commitMerge(r.worktree, r.branch, r.mainSha, await mergeIdentity(r.clone));
     const push = blank({
       key: `conflict-push:${a.id}:${sha}`,
       kind: 'conflict-push',

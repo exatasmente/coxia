@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { cycleText } from '../../shared/cycles/text';
-import { git } from '../conflictGit';
+import { type Identity, git, identityArgs } from '../conflictGit';
+import type { RunnerIdentity } from '../../shared/config/types';
+
+export type { Identity };
 
 // What the runner does to a repository, all of it local: a worktree on a new branch, the app's own commits, the diff a reviewer reads, and the
 // commands a repository declares. Nothing here pushes or talks to a code host.
@@ -72,16 +75,26 @@ export async function createWorktree(w: WorktreeRequest): Promise<Worktree> {
   return { baseRef, baseSha: await out(w.dest, ['rev-parse', 'HEAD']) };
 }
 
-export interface Identity {
-  name: string;
-  email: string;
+/**
+ * The identity a repository names for itself in its own `.git/config`. Only that file is read: the person's global and system configuration (which
+ * may be another job's address), the environment and what git would guess from the machine are not an identity the app commits as. Nothing is ever
+ * written to a git config.
+ */
+export async function repoIdentity(cwd: string): Promise<Identity | null> {
+  const read = async (key: string): Promise<string> => (await git(cwd, ['config', '--local', '--get', key], { fail: false })).stdout.trim();
+  const name = await read('user.name');
+  const email = await read('user.email');
+  return name && email ? { name, email } : null;
 }
 
-/** The identity a repository already has, read from its own configuration. Nothing is ever written to a git config. */
-export async function repoIdentity(cwd: string): Promise<Identity | null> {
-  const name = (await git(cwd, ['config', '--get', 'user.name'], { fail: false })).stdout.trim();
-  const email = (await git(cwd, ['config', '--get', 'user.email'], { fail: false })).stdout.trim();
-  return name && email ? { name, email } : null;
+/**
+ * Who the app's commits for a repository are made as: the workspace's `runner.identity`, else the repository's own (`repoIdentity`). Null when neither
+ * names one, and the app does not commit then: it never falls back to the global identity.
+ */
+export async function commitIdentity(configured: RunnerIdentity, repo: string, own: (cwd: string) => Promise<Identity | null> = repoIdentity): Promise<Identity | null> {
+  const name = configured.name.trim();
+  const email = configured.email.trim();
+  return name && email ? { name, email } : own(repo);
 }
 
 export const headSha = async (wt: string): Promise<string | null> => ((await git(wt, ['rev-parse', '--verify', '--quiet', 'HEAD'], { fail: false })).stdout.trim() || null);
@@ -130,13 +143,13 @@ export function commitFallback(stageLabel: string, writes: boolean): string {
 export const commitMessage = (template: string, summary: string, iid: number): string => template.replace(/\{summary\}/g, summary).replace(/\{iid\}/g, String(iid));
 
 /**
- * Commits everything changed in the worktree as `identity`, with the repository's hooks, signing and file-system monitor switched off for this one
- * command. Returns the new commit, or null when there was nothing to commit.
+ * Commits everything changed in the worktree as `identity` and nothing else (`identityArgs`), with the repository's hooks, signing and file-system
+ * monitor switched off for this one command. Returns the new commit, or null when there was nothing to commit.
  */
 export async function commitAll(wt: string, message: string, identity: Identity): Promise<string | null> {
   await git(wt, ['add', '-A', '--', '.', ...DEPENDENCY_EXCLUDES]);
   if (!(await out(wt, ['status', '--porcelain', '--', '.', ...DEPENDENCY_EXCLUDES]))) return null;
-  await git(wt, [...SAFE, '-c', `user.name=${identity.name}`, '-c', `user.email=${identity.email}`, 'commit', '--no-verify', '--quiet', '-m', message]);
+  await git(wt, [...SAFE, ...identityArgs(identity), 'commit', '--no-verify', '--quiet', '-m', message]);
   return out(wt, ['rev-parse', 'HEAD']);
 }
 

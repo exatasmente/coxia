@@ -7,7 +7,7 @@ import { applyTemplate, kanban } from '../src/shared/cycles';
 import { messageText } from '../src/shared/forum';
 import { RunError, type Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
-import { git } from './helpers/conflictRepos';
+import { git, withMachineIdentity } from './helpers/conflictRepos';
 import { type Boot, boot, doc, fakeCommands, fakeEngine, fakeIssues, issue, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -76,18 +76,22 @@ describe('starting a run', () => {
     expect(existsSync(join(c.repo.worktrees))).toBe(false);
   });
 
-  it('is refused when the repository has no identity and the runner has none, and uses the repository\'s own when it has one', async () => {
+  it('is refused when the repository has no identity and the runner has none, whatever the machine has, and uses the repository\'s own when it has one', async () => {
     const b = await boot();
     easy(b);
     b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, identity: { name: '', email: '' } } }));
-    await expect(b.runner.start('app#101')).rejects.toMatchObject({ code: 'no-identity' });
-    expect(existsSync(b.repo.worktrees)).toBe(false);
-    expect(git(b.repo.clone, 'branch', '--list', 'cycle/*')).toBe('');
-    // the repository's own configuration, written the way a person would have: the app never writes it
-    appendFileSync(join(b.repo.clone, '.git', 'config'), '[user]\n\tname = Repo Owner\n\temail = owner@example.test\n');
-    const run = await b.runner.start('app#101');
-    await b.settle();
-    expect(git(run.worktree, 'log', '-1', '--format=%an <%ae>')).toBe('Repo Owner <owner@example.test>');
+    await withMachineIdentity(async () => {
+      await expect(b.runner.start('app#101')).rejects.toMatchObject({ code: 'no-identity' });
+      expect(existsSync(b.repo.worktrees)).toBe(false);
+      expect(git(b.repo.clone, 'branch', '--list', 'cycle/*')).toBe('');
+      // the repository's own configuration, written the way a person would have: the app never writes it
+      appendFileSync(join(b.repo.clone, '.git', 'config'), '[user]\n\tname = Repo Owner\n\temail = owner@example.test\n');
+      const run = await b.runner.start('app#101');
+      await b.settle();
+      expect(git(run.worktree, 'log', '-1', '--format=%an <%ae>')).toBe('Repo Owner <owner@example.test>');
+      // every commit of the run, author and committer
+      expect(new Set(git(run.worktree, 'log', '--format=%ae|%ce', `${run.base}..HEAD`).split('\n'))).toEqual(new Set(['owner@example.test|owner@example.test']));
+    });
     expect(readFileSync(join(b.repo.clone, '.git', 'config'), 'utf8')).not.toContain('Runner Test');
   });
 

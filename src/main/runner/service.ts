@@ -90,7 +90,7 @@ import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
 import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
-import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
+import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
@@ -520,7 +520,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       assertStartable(startFlow);
       squad = { id: routed.squad, name: cycleText(squadOf(config, routed.squad)?.name ?? routed.squad, config.language), rule: routed.rule };
     }
-    const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (deps.identity ?? repoIdentity)(repo.path);
+    const identity = await commitIdentity(config.runner.identity, repo.path, deps.identity);
     if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
 
     const slug = slugOf(issue.title);
