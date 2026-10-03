@@ -68,7 +68,7 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 }
 
 const finding = obj({ path: str, line: intOrNull, endLine: intOrNull, side: { enum: ['new', 'old'] }, severity: { enum: ['blocking', 'suggestion'] }, body: str, suggestion: strOrNull });
-const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, detail: str });
+const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str });
 
 const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sections: { type: 'array', items: obj({ heading: str, body: str }) }, technical: str });
 
@@ -142,8 +142,14 @@ export function readScenario(raw: unknown): Scenario | null {
   const s = record(raw);
   const name = text(s.name, 500);
   if (!name) return null;
-  return { name, result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run', detail: text(s.detail, 8000) };
+  return { name, result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run', severity: s.severity === 'non-blocking' ? 'non-blocking' : 'blocking', detail: text(s.detail, 8000) };
 }
+
+/** A failed scenario that sends the work back: any failure that is not marked non-blocking. */
+export const scenarioBlocks = (s: Pick<Scenario, 'result' | 'severity'>): boolean => s.result === 'fail' && s.severity !== 'non-blocking';
+
+/** A failed scenario that is only reported. */
+export const scenarioNotes = (s: Pick<Scenario, 'result' | 'severity'>): boolean => s.result === 'fail' && s.severity === 'non-blocking';
 
 export function readComment(raw: unknown): StageComment | null {
   const c = record(raw);
@@ -226,8 +232,14 @@ export function findingsText(summary: string, findings: Finding[]): string {
   return [summary, ...order.map(findingText)].filter(Boolean).join('\n\n');
 }
 
-/** What QA found wrong, as text for the developer. */
+/** What QA found wrong that blocks, as text for the developer; what it noted without blocking comes after, said so. */
 export function failuresText(summary: string, scenarios: Scenario[]): string {
-  const failed = scenarios.filter((s) => s.result === 'fail').map((s) => t('main.runner.scenario.failed', { name: s.name, detail: s.detail || '—' }));
-  return [summary, ...failed].filter(Boolean).join('\n\n');
+  const failed = scenarios.filter(scenarioBlocks).map((s) => t('main.runner.scenario.failed', { name: s.name, detail: s.detail || '—' }));
+  return [summary, ...failed, notesText(scenarios)].filter(Boolean).join('\n\n');
+}
+
+/** What QA saw fail without blocking the delivery, one line each; empty when there is none. */
+export function notesText(scenarios: Scenario[]): string {
+  const notes = scenarios.filter(scenarioNotes);
+  return notes.length ? [t('main.runner.scenario.notesHead'), ...notes.map((s) => t('main.runner.scenario.note', { name: s.name, detail: s.detail || '—' }))].join('\n') : '';
 }

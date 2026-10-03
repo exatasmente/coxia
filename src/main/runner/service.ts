@@ -43,6 +43,8 @@ import {
   producerOf,
   recordQa,
   recordReview,
+  notesText,
+  scenarioBlocks,
   resumeAfterRestart,
   retry as retryMove,
   routeIssue,
@@ -376,7 +378,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     if (r.kind === 'qa') {
       moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head }, now()));
-      const failed = out.scenarios.some((s) => s.result === 'fail');
+      // Only a failure that blocks sends the work back; what QA noted without blocking is reported with its result.
+      const failed = out.scenarios.some(scenarioBlocks);
       const back = flow.find((s) => s.id === flowStage.returnsTo);
       if (failed && back && back.type === 'work') {
         const text = failuresText(out.summary, out.scenarios);
@@ -386,7 +389,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         return;
       }
     }
-    apply((x) => stageDone(x, flow, { summary: out.summary, handoff: out.handoff, artifacts: r.written }, now()));
+    const notes = r.kind === 'qa' ? notesText(out.scenarios) : '';
+    apply((x) => stageDone(x, flow, { summary: [out.summary, notes].filter(Boolean).join('\n\n'), handoff: out.handoff, artifacts: r.written }, now()));
     ended();
   }
 

@@ -2,6 +2,7 @@ import type { ArtifactRef, ForumDraft } from '../forum';
 import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
+import { scenarioBlocks } from './output';
 import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
@@ -846,7 +847,7 @@ export function recordReview(run: Run, input: Omit<ReviewRecord, 'round' | 'at'>
 export function recordQa(run: Run, input: Omit<QaRecord, 'at'>, at: string): Transition {
   const out = clone(run, at);
   out.qa.push({ ...structuredClone(input), at });
-  log(out, at, 'qa', input.stage, input.by, input.scenarios.every((s) => s.result === 'pass') ? 'pass' : 'fail');
+  log(out, at, 'qa', input.stage, input.by, input.scenarios.some(scenarioBlocks) ? 'fail' : 'pass');
   return { run: out, messages: [] };
 }
 

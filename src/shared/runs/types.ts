@@ -157,10 +157,15 @@ export interface ReviewRecord {
 export const SCENARIO_RESULTS = ['pass', 'fail', 'not-run'] as const;
 export type ScenarioResult = (typeof SCENARIO_RESULTS)[number];
 
+/** Whether a failed scenario sends the work back (`blocking`) or is only reported (`non-blocking`). A scenario recorded before the field existed blocks. */
+export const SCENARIO_SEVERITIES = ['blocking', 'non-blocking'] as const;
+export type ScenarioSeverity = (typeof SCENARIO_SEVERITIES)[number];
+
 export interface Scenario {
   name: string;
   result: ScenarioResult;
   detail: string;
+  severity?: ScenarioSeverity;
 }
 
 /** What the QA agent checked. */

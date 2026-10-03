@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -94,7 +94,7 @@ const qaRecord = object(
     scenarios: {
       type: 'array',
       description: 'The scenarios checked.',
-      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }) }, ['name', 'result', 'detail']),
+      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }), severity: enumOf('Whether a failure sends the work back; absent: blocking.', SCENARIO_SEVERITIES) }, ['name', 'result', 'detail']),
       maxItems: 200,
     },
     head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },

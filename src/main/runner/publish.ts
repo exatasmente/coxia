@@ -24,6 +24,8 @@ import {
   recordCommentRefused,
   recordCommentRemoved,
   renderComment,
+  scenarioBlocks,
+  scenarioNotes,
 } from '../../shared/runs';
 import type { ReleaseAction, VcsCommand } from '../../shared/types';
 import { priorityOf, resolvePriority } from '../../shared/priority';
@@ -370,9 +372,16 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (end.kind === 'review') return tr(`main.runner.comment.result.${end.output.verdict === 'changes' ? 'changes' : 'approved'}`);
     if (end.kind === 'qa') {
       const s = end.output.scenarios;
-      return tr(`main.runner.comment.result.${s.some((x) => x.result === 'fail') ? 'fail' : s.some((x) => x.result === 'not-run') ? 'partial' : 'pass'}`);
+      return tr(`main.runner.comment.result.${s.some(scenarioBlocks) ? 'fail' : s.some((x) => x.result === 'not-run') ? 'partial' : s.some(scenarioNotes) ? 'passNotes' : 'pass'}`);
     }
     return undefined;
+  };
+
+  // What QA saw fail without blocking goes into its comment as a section of its own, after the template's sections.
+  const notesTail = (end: StageEnd): string | undefined => {
+    const notes = end.kind === 'qa' ? end.output.scenarios.filter(scenarioNotes) : [];
+    if (!notes.length) return undefined;
+    return `### ${tr('main.runner.scenario.notesTitle')}\n\n${notes.map((s) => tr('main.runner.scenario.note', { name: s.name, detail: s.detail || '—' })).join('\n')}`;
   };
 
   async function stageComment(runId: string, end: StageEnd): Promise<void> {
@@ -381,7 +390,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!tpl) return;
     const run = need(runId);
     const marker = markerOf(run.id, end.stage.id);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary });
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary, tail: notesTail(end) });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true });
   }

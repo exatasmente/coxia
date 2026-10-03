@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
-import { ARTIFACT_NAME, failuresText, findingsText, gateApprove, handBack, outputKindOf, outputSchema, parseRun, readFinding, readOutput, recordQa, recordReview, stageDone, whereOf } from '../src/shared/runs';
+import { ARTIFACT_NAME, failuresText, notesText, scenarioBlocks, scenarioNotes, findingsText, gateApprove, handBack, outputKindOf, outputSchema, parseRun, readFinding, readOutput, recordQa, recordReview, stageDone, whereOf } from '../src/shared/runs';
 import { drive } from './helpers/runs';
 
 const done = (name: string) => ({ summary: `${name} done`, handoff: '', artifacts: [`${name}.md`] });
@@ -109,7 +109,21 @@ describe('the answer of a stage', () => {
 
   it('reads scenarios, keeping the ones that have a name', () => {
     const o = readOutput({ summary: 's', scenarios: [{ name: 'a', result: 'pass', detail: 'ok' }, { name: 'b', result: 'maybe' }, { result: 'pass' }] }, 'qa');
-    expect(o.scenarios).toEqual([{ name: 'a', result: 'pass', detail: 'ok' }, { name: 'b', result: 'not-run', detail: '' }]);
+    expect(o.scenarios).toEqual([{ name: 'a', result: 'pass', severity: 'blocking', detail: 'ok' }, { name: 'b', result: 'not-run', severity: 'blocking', detail: '' }]);
+  });
+
+  it('reads the severity of a scenario: only non-blocking is kept, anything else blocks', () => {
+    const o = readOutput({ summary: 's', scenarios: [{ name: 'a', result: 'fail', severity: 'non-blocking', detail: 'd' }, { name: 'b', result: 'fail', severity: 'whatever' }, { name: 'c', result: 'fail' }] }, 'qa');
+    expect(o.scenarios.map((s) => s.severity)).toEqual(['non-blocking', 'blocking', 'blocking']);
+    expect(o.scenarios.map(scenarioBlocks)).toEqual([false, true, true]);
+    expect(o.scenarios.map(scenarioNotes)).toEqual([true, false, false]);
+    expect(scenarioBlocks({ result: 'fail' })).toBe(true);
+  });
+
+  it('asks QA for the severity of each scenario', () => {
+    const qa = outputSchema('qa') as { properties: { scenarios: { items: { properties: Record<string, { enum?: string[] }>; required: string[] } } } };
+    expect(qa.properties.scenarios.items.properties.severity.enum).toEqual(['blocking', 'non-blocking']);
+    expect(qa.properties.scenarios.items.required).toContain('severity');
   });
 });
 
@@ -121,6 +135,8 @@ describe('the findings as text', () => {
     expect(text).toBe(['Two things.', '[blocks] src/a.ts:3-5: Wrong.\nSuggested replacement for exactly those lines:\nfixed();', '[suggestion] src/a.ts:9: Nicer name.'].join('\n\n'));
     expect(whereOf({ path: 'a.ts', line: null, endLine: null })).toBe('a.ts');
     expect(failuresText('One broke.', [{ name: 'login', result: 'fail', detail: 'a 500' }, { name: 'logout', result: 'pass', detail: '' }])).toBe('One broke.\n\nScenario that failed: login. a 500');
+    expect(failuresText('Mixed.', [{ name: 'login', result: 'fail', detail: 'a 500' }, { name: 'edge', result: 'fail', severity: 'non-blocking', detail: 'odd input' }])).toBe('Mixed.\n\nScenario that failed: login. a 500\n\nWhat QA noted that does not block the delivery:\n- edge: odd input');
+    expect(notesText([{ name: 'login', result: 'fail', detail: 'a 500' }])).toBe('');
     setLanguage('pt-BR');
   });
 });

@@ -315,6 +315,21 @@ describe('the review limit and QA', () => {
     expect(run.returns).toEqual({ implement: 1 });
   });
 
+  it('does not send the work back for a QA failure that does not block: it is reported in the thread and the run goes on', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('qa', () => work('Passes, with a remark.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'login', result: 'pass', detail: '' }, { name: 'punctuation between letters', result: 'fail', severity: 'non-blocking', detail: 'the spec does not cover it' }] }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(b.engine.calls.map((c) => c.agent.id)).toEqual(['refiner', 'planner', 'developer', 'reviewer', 'qa']);
+    expect(run.returns).toEqual({});
+    expect(run.qa[0].scenarios[1].severity).toBe('non-blocking');
+    const post = b.thread(run).find((m) => m.kind === 'post' && m.stage === 'qa');
+    expect(post?.text).toContain('Passes, with a remark.');
+    expect(post?.text).toContain('punctuation between letters');
+  });
+
   it('records the findings of an approving review that only suggests, and goes on', async () => {
     const b = await boot();
     easy(b);

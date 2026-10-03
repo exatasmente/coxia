@@ -324,6 +324,25 @@ describe('a run whose agents are all autonomous', () => {
   });
 });
 
+describe('a QA failure that does not block', () => {
+  it('is a section of the QA comment and its headline says nothing blocks, and the work is not sent back', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    script(b);
+    b.engine.script('qa', () => work('Passes with a remark.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '' }, { name: 'edge', result: 'fail', severity: 'non-blocking', detail: 'not in the spec' }], comment: comment([['Scenarios verified and their result', 'a: passed.']]) }));
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    expect(b.engine.calls.filter((c) => c.agent.id === 'developer')).toHaveLength(1);
+    const qa = issueNotes().filter(([, body]) => body.includes('stage=qa -->'));
+    expect(qa).toHaveLength(1);
+    expect(qa[0][1].split('\n')[0]).toBe('**QA: nothing blocks; there are notes**');
+    expect(qa[0][1]).toContain('Notes that do not block');
+    expect(qa[0][1]).toContain('- edge: not in the spec');
+  });
+});
+
 describe('what waits for the person', () => {
   it('keeps the comments of an agent that waits in Actions, posts them once approved, and edits them in place afterwards', async () => {
     forge = makeForge();
