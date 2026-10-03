@@ -643,6 +643,12 @@ export interface RunnerIdentity {
   email: string;
 }
 
+/** The turn caps of an agent of the runner, by what it may do. */
+export interface RunnerTurns {
+  read: number;
+  write: number;
+}
+
 /** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
 export interface RunnerConfig {
   /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
@@ -662,6 +668,8 @@ export interface RunnerConfig {
   stageIdleMs: number;
   /** A stage still going after this long fails whatever the agent shows: the cap on a run that keeps talking and never finishes. */
   stageMaxMs: number;
+  /** How many steps (model turns) an agent may take in one pass: `read` for an agent that only reads and writes its documents, `write` for one that changes files. */
+  turns: RunnerTurns;
   identity: RunnerIdentity;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;

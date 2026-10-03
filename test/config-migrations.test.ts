@@ -165,6 +165,12 @@ describe('migrateConfig', () => {
       expect(validateConfig(short.config).ok).toBe(true);
     });
 
+    it('gives the turn caps the runner always had, since a file of schema 7 has none', () => {
+      const r = migrateConfig(v7({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
+      expect(r.config.runner.turns).toEqual({ read: 30, write: 80 });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
     it('touches nothing else, and a file with no runner section gets the defaults', () => {
       const r = migrateConfig(v7({ stageTimeoutMs: 1_800_000, enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 }), { legacyInstall: false });
       expect(r.config.runner).toMatchObject({ enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 });

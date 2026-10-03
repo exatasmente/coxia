@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
-import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MIN_CAP_MINUTES, MIN_IDLE_MINUTES, runnerOf, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
+import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 
 /** Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as. */
@@ -82,6 +82,15 @@ export function RunnerSection({ config, save }: SectionProps) {
         </Labeled>
         <Labeled label={t('ui.runner.cap')} hint={t('ui.runner.capHint', { min: MIN_CAP_MINUTES, max: MAX_CAP_MINUTES })} error={at('max')}>
           {(id) => <input id={id} type="number" min={MIN_CAP_MINUTES} max={MAX_CAP_MINUTES} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.maxMinutes) ? '' : draft.maxMinutes} onChange={(e) => set({ maxMinutes: num(e.target.value) })} />}
+        </Labeled>
+      </div>
+
+      <div className="wz-two">
+        <Labeled label={t('ui.runner.turnsRead')} hint={t('ui.runner.turnsReadHint', { min: MIN_TURNS, max: MAX_TURNS })} error={at('turns')}>
+          {(id) => <input id={id} type="number" min={MIN_TURNS} max={MAX_TURNS} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.turnsRead) ? '' : draft.turnsRead} onChange={(e) => set({ turnsRead: num(e.target.value) })} />}
+        </Labeled>
+        <Labeled label={t('ui.runner.turnsWrite')} hint={t('ui.runner.turnsWriteHint', { min: MIN_TURNS, max: MAX_TURNS })}>
+          {(id) => <input id={id} type="number" min={MIN_TURNS} max={MAX_TURNS} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.turnsWrite) ? '' : draft.turnsWrite} onChange={(e) => set({ turnsWrite: num(e.target.value) })} />}
         </Labeled>
       </div>
 

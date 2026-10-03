@@ -60,9 +60,6 @@ export interface StageRun {
   head: string | null;
 }
 
-// Turns an agent may take in one attempt: a stage that changes code needs many more than one that reads and writes a document.
-const TURNS = { write: 80, read: 30 };
-
 export interface Picked {
   agent: AgentDef;
   stage: FlowStage;
@@ -237,7 +234,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,
     label: agent.id,
-    maxTurns: writes ? TURNS.write : TURNS.read,
+    maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
   };
   const watch = watchdog(abort, limitsOf(config, d));

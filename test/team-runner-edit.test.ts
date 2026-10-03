@@ -9,9 +9,9 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, identity: { name: 'Bot', email: 'bot@example.com' }, commitMessage: 'fix: {summary} {iid}' };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, commitMessage: 'fix: {summary} {iid}' };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
-    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90 });
+    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
   });
 
   it('no commands list means the repository\'s own scripts, and an empty list means none', () => {
@@ -46,6 +46,14 @@ describe('the problems of the runner draft', () => {
     expect(keys({ ...base(), maxMinutes: 0.5 })).toEqual(['error:max', 'warning:idleLonger']);
     expect(keys({ ...base(), maxMinutes: 1441 })).toEqual(['error:max']);
     expect(keys({ ...base(), idleMinutes: 30, maxMinutes: 20 })).toEqual(['warning:idleLonger']);
+  });
+
+  it('keeps the turn caps whole numbers from 1 to 500', () => {
+    expect(keys({ ...base(), turnsRead: 0 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsWrite: 501 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsWrite: 2.5 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsRead: 1, turnsWrite: 500 })).toEqual([]);
+    expect(runnerOf({ ...base(), turnsRead: 5, turnsWrite: 9 }).turns).toEqual({ read: 5, write: 9 });
   });
 
   it('wants plain commands, one each', () => {

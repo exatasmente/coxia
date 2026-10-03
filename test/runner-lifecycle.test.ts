@@ -155,6 +155,20 @@ describe('a stage that goes wrong', () => {
     expect(aborted).toBe(true);
   });
 
+  it('gives an agent the turns the workspace allows: 30 to one that reads and 80 to one that writes, unless the config says otherwise', async () => {
+    const b = await boot();
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const turns = Object.fromEntries(b.engine.calls.map((c) => [c.agent.id, c.maxTurns]));
+    expect(turns).toEqual({ refiner: 30, planner: 30, developer: 80, reviewer: 30, qa: 30 });
+    const c = await boot({ configure: (cfg) => (cfg.runner.turns = { read: 7, write: 11 }) });
+    easy(c);
+    const second = await c.runner.start('app#101');
+    await reach(c, second, 'ready');
+    expect(Object.fromEntries(c.engine.calls.map((x) => [x.agent.id, x.maxTurns]))).toEqual({ refiner: 7, planner: 7, developer: 11, reviewer: 7, qa: 7 });
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);

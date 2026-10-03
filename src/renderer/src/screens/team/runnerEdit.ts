@@ -16,6 +16,9 @@ export interface RunnerDraft {
   idleMinutes: number;
   /** The cap on a stage, whatever the agent shows. */
   maxMinutes: number;
+  /** Steps an agent that only reads may take in a pass, and one that changes files. */
+  turnsRead: number;
+  turnsWrite: number;
   identityName: string;
   identityEmail: string;
   commitMessage: string;
@@ -31,6 +34,8 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     commands: [...(r.commands ?? [])],
     idleMinutes: r.stageIdleMs / 60_000,
     maxMinutes: r.stageMaxMs / 60_000,
+    turnsRead: r.turns.read,
+    turnsWrite: r.turns.write,
     identityName: r.identity.name,
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
@@ -46,12 +51,13 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     commands: d.commandsMode === 'repo' ? null : d.commands,
     stageIdleMs: Math.round(d.idleMinutes * 60_000),
     stageMaxMs: Math.round(d.maxMinutes * 60_000),
+    turns: { read: d.turnsRead, write: d.turnsWrite },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     commitMessage: d.commitMessage,
   };
 }
 
-export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'identity' | 'commitMessage';
+export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage';
 
 export interface RunnerProblem {
   severity: 'error' | 'warning';
@@ -67,6 +73,8 @@ const EMAIL = /^[^\s@<>]+@[^\s@<>]+$/;
 
 export const MIN_IDLE_MINUTES = 1;
 export const MAX_IDLE_MINUTES = 360;
+export const MIN_TURNS = 1;
+export const MAX_TURNS = 500;
 export const MIN_CAP_MINUTES = 1;
 export const MAX_CAP_MINUTES = 1440;
 
@@ -83,6 +91,7 @@ export function runnerProblems(d: RunnerDraft, cycleIsFlow: boolean): RunnerProb
   if (!Number.isInteger(d.maxConcurrentRuns) || d.maxConcurrentRuns < 1 || d.maxConcurrentRuns > 10) error('maxConcurrentRuns', 'ui.runner.err.concurrent');
   if (!(d.idleMinutes >= MIN_IDLE_MINUTES && d.idleMinutes <= MAX_IDLE_MINUTES)) error('idle', 'ui.runner.err.idle', { min: String(MIN_IDLE_MINUTES), max: String(MAX_IDLE_MINUTES) });
   if (!(d.maxMinutes >= MIN_CAP_MINUTES && d.maxMinutes <= MAX_CAP_MINUTES)) error('max', 'ui.runner.err.max', { min: String(MIN_CAP_MINUTES), max: String(MAX_CAP_MINUTES) });
+  for (const n of [d.turnsRead, d.turnsWrite]) if (!Number.isInteger(n) || n < MIN_TURNS || n > MAX_TURNS) error('turns', 'ui.runner.err.turns', { min: String(MIN_TURNS), max: String(MAX_TURNS) });
   if (d.commandsMode === 'custom') {
     d.commands.forEach((c) => {
       if (!c.trim() || c !== c.trim()) error('commands', 'ui.runner.err.commandBlank');

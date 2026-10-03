@@ -9,8 +9,15 @@ const errorsOf = (c: WorkspaceConfig): string[] => validateConfig(c).errors.map(
 
 describe('the runner section', () => {
   it('is off by default, with the label "coxia", one run at a time, the repository\'s own commands and no identity of its own', () => {
-    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' });
+    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' });
     expect(validateConfig(neutralConfig()).ok).toBe(true);
+  });
+
+  it('bounds the turn caps, and a file that has none gets the caps the runner always had', () => {
+    expect(errorsOf(withRunner({ turns: { read: 0, write: 80 } })).join(' ')).toContain('runner.turns.read');
+    expect(errorsOf(withRunner({ turns: { read: 30, write: 501 } })).join(' ')).toContain('runner.turns.write');
+    expect(withConfigDefaults({ runner: { enabled: true } } as unknown as Doc).runner.turns).toEqual({ read: 30, write: 80 });
+    expect(withConfigDefaults({ runner: { turns: { write: 120 } } } as unknown as Doc).runner.turns).toEqual({ read: 30, write: 120 });
   });
 
   it('fills what a stored file leaves out, field by field', () => {

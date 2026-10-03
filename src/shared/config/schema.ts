@@ -424,6 +424,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         commands: { type: ['array', 'null'], description: 'The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, ;, && or redirect). null: the test and typecheck scripts the repository declares. []: none.', items: string('One command.', { minLength: 1, maxLength: 300 }), maxItems: 20 },
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
+        turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
         identity: object('Who the app\'s commits in a worktree are made as; both empty: the identity the repository already has.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
       }),
