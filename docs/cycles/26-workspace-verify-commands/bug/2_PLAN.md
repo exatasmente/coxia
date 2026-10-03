@@ -136,6 +136,7 @@ Not chosen: showing them in Saúde (that screen reports the health of jobs and d
 | D14 | The move copies only what the schema accepts and validates the merged config before writing | a refused value stored in a config makes `repair()` reset the whole map on load, losing unrelated commands; such a value goes to the unclaimed ones instead |
 | D15 | A read error on the old file defers; only a parse error or a non-object is renamed aside | an I/O error is transient and must not move a good file out of the way |
 | D16 | The sidecar is merged, never removed by the move, and an entry already there wins | a command put aside earlier is never replaced by a later file; the later one stays in its backup and the log says so |
+| D17 | The port to the 0.5.0 line renumbered the migration to v10 to v11 (`v10ToV11`, `CONFIG_SCHEMA_VERSION` 11) | the plan was written and reviewed on 0.3.0, where the schema was 4 and the step was v4 to v5; the other releases took v5 to v10 in between. Everything else in this plan holds as written, with "schema 5" read as 11 |
 
 ## Follow-ups (not part of this change)
 
