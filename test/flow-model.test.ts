@@ -91,7 +91,7 @@ describe('the fields of a stage', () => {
   it('are accepted when they say something and refused when they say nonsense', () => {
     const c = edit((s) => {
       s[0].reads = [];
-      s[0].next = 'plan';
+      s[0].next = 'gate1';
       s[2].roundLimit = 3;
       s[7] = { ...s[7], type: 'wait', waitsFor: { kind: 'time', minutes: 30 }, comment: null, trackerStatus: 'coxia-ready' };
     });

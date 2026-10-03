@@ -1,5 +1,7 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
+import { createTranslator } from '../i18n';
 import { isFlowCycle } from '../runs/flow';
+import { checkFlow, flowIssueText } from '../runs/flowCheck';
 import { promptFamilies } from '../cycles/prompts';
 import { catalogText } from '../cycles/text';
 import { withConfigDefaults } from './defaults';
@@ -62,17 +64,22 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
       warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
     }
   });
-  const named = new Set(c.devCycle.stages.flatMap((s) => (s.agentId ? [s.agentId] : [])));
-  team.forEach((a, i) => {
-    if (a.autonomous && !a.stages.length && !named.has(a.id)) warnings.push({ path: `agents.team[${i}].autonomous`, message: 'the agent works no stage, so there is nothing for it to run by itself' });
-  });
   const agentIds = new Set(team.map((a) => a.id));
   c.devCycle.stages.forEach((s, i) => {
-    if (!s.agentId) return;
-    if (s.type && s.type !== 'work') errors.push({ path: `devCycle.stages[${i}].agentId`, message: 'only a work stage has an agent' });
-    else if (!agentIds.has(s.agentId)) errors.push({ path: `devCycle.stages[${i}].agentId`, message: `unknown agent "${s.agentId}"` });
-    else if (!team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
+    if (s.agentId && agentIds.has(s.agentId) && (s.type ?? 'work') === 'work' && !team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
   });
+}
+
+// The flow of the cycle and the chain of who turns to whom: one check, shared with the editor and the runner (runs/flowCheck.ts).
+function flowRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerate: boolean): void {
+  const en = createTranslator('en');
+  for (const issue of checkFlow({ stages: c.devCycle.stages, team: c.agents.team })) {
+    const i = issue.stage ? c.devCycle.stages.findIndex((s) => s.id === issue.stage) : -1;
+    const a = issue.agent ? c.agents.team.findIndex((x) => x.id === issue.agent) : -1;
+    const path = a >= 0 ? `agents.team[${a}].${issue.field}` : i >= 0 ? `devCycle.stages[${i}].${issue.field}` : 'devCycle.stages';
+    // A stored config is never refused for the problems of its flow (the runner will not start on them and the editor shows them), only a saved one is.
+    (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: flowIssueText(issue, en) });
+  }
 }
 
 const COMMAND_OPERATORS = /[;&|<>`$\\\n\r]/;
@@ -117,7 +124,7 @@ function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Confi
   }
 }
 
-function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerateFlow: boolean): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
   for (const [role, rm] of Object.entries(c.llm.roles)) {
@@ -125,6 +132,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   }
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
+  flowRules(c, errors, warnings, tolerateFlow);
   runnerRules(c, errors, warnings);
   commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
@@ -181,7 +189,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
 }
 
 /** Validates a current-schema document: schema first, then the cross references the schema cannot express. Does not migrate (see migrations.ts). */
-export function validateConfig(raw: unknown): ValidationResult {
+export function validateConfig(raw: unknown, options: { tolerateFlow?: boolean } = {}): ValidationResult {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, errors: [{ path: '', message: 'expected an object' }], warnings: [], config: null };
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
   if (typeof version === 'number' && version > CONFIG_SCHEMA_VERSION) {
@@ -191,7 +199,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const warnings: ConfigIssue[] = [];
   if (errors.length) return { ok: false, errors, warnings, config: null };
   const config = withConfigDefaults(raw as Record<string, unknown>);
-  semantic(config, errors, warnings);
+  semantic(config, errors, warnings, !!options.tolerateFlow);
   return errors.length ? { ok: false, errors, warnings, config: null } : { ok: true, errors, warnings, config };
 }
 

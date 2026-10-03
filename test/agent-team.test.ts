@@ -128,7 +128,7 @@ describe('validating the team', () => {
 
   it('describes every agent field in the schema', () => {
     const team = CONFIG_SCHEMA.properties?.agents.properties?.team;
-    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'autonomous', 'instructions', 'system']);
+    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'autonomous', 'turnsTo', 'instructions', 'system']);
     expect(team?.items?.required).toEqual(['id', 'name']);
   });
 });
@@ -221,7 +221,9 @@ describe('editing the team', () => {
     const c = removeAgent(base(), 'planner');
     expect(c.agents.team.some((a) => a.id === 'planner')).toBe(false);
     expect(c.devCycle.stages[0].agentId).toBeUndefined();
-    expect(validateConfig(c).errors).toEqual([]);
+    // the stage it worked is left with no agent, which the flow check refuses to save
+    expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['devCycle.stages[0].agentId']);
+    expect(validateConfig(c, { tolerateFlow: true }).errors).toEqual([]);
     for (const role of LLM_ROLES) expect(() => removeAgent(c, role)).toThrow(/built in|nativo/);
     expect(() => removeAgent(c, 'ghost')).toThrow();
   });

@@ -195,6 +195,7 @@ const agentDef = object(
     stages: list('Ids of the devCycle.stages the agent works.', string('A stage id.', { pattern: ID }), { maxItems: 60, uniqueItems: true }),
     permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
+    turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },

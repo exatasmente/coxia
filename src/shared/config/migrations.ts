@@ -210,10 +210,10 @@ export function migrateConfig(raw: unknown, ctx: MigrationContext): MigrationRes
     version++;
     changed = true;
   }
-  let result = validateConfig(doc);
+  let result = validateConfig(doc, { tolerateFlow: true });
   if (!result.ok) {
     doc = repair(doc, ctx.legacyInstall || fromVersion < CONFIG_SCHEMA_VERSION ? baseOf(ctx) : neutralConfig(), result.errors, notes);
-    result = validateConfig(doc);
+    result = validateConfig(doc, { tolerateFlow: true });
     changed = true;
   }
   if (!result.ok || !result.config) {

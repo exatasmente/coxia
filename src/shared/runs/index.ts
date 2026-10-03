@@ -1,5 +1,6 @@
 export * from './comment';
 export * from './flow';
+export * from './flowCheck';
 export * from './schema';
 export * from './transitions';
 export * from './types';

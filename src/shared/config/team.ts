@@ -22,6 +22,7 @@ export function systemAgent(role: LlmRole, seed: RoleSeed = {}): AgentDef {
     stages: [],
     permission: 'read',
     autonomous: false,
+    turnsTo: null,
     instructions: typeof seed.extraInstructions === 'string' ? seed.extraInstructions : '',
     system: true,
   };
@@ -42,6 +43,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     stages: partial.stages ?? [],
     permission: partial.permission ?? 'read',
     autonomous: partial.autonomous ?? false,
+    turnsTo: partial.turnsTo ?? null,
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };

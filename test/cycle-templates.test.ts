@@ -325,7 +325,7 @@ describe('the agent cycle template', () => {
 
   it('keeps the agents the person already has, adds the missing ones, and never touches a system agent', () => {
     const own = neutralConfig();
-    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', autonomous: false, instructions: 'careful', system: false });
+    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', autonomous: false, turnsTo: null, instructions: 'careful', system: false });
     own.agents.team.find((a) => a.id === 'turn')!.instructions = 'short';
     const next = applyTemplate(own, flow);
     expect(next.agents.team.find((a) => a.id === 'developer')).toEqual(own.agents.team.find((a) => a.id === 'developer'));
@@ -381,7 +381,7 @@ describe('the agent cycle template', () => {
   });
 
   it('merges into a team by id for the wizard too: the person\'s agents stay, the stages the cycle lacks are dropped', () => {
-    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', autonomous: false, instructions: '', system: false }]);
+    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', autonomous: false, turnsTo: null, instructions: '', system: false }]);
     const merged = mergeTemplateTeam(own, flow.team!, cycleOf(flow));
     expect(merged.find((a) => a.id === 'developer')).toMatchObject({ name: 'Dev', permission: 'read', stages: ['implement'] });
     expect(merged.map((a) => a.id).filter((id) => id === 'developer')).toHaveLength(1);

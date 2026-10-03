@@ -61,10 +61,15 @@ describe('starting a run', () => {
     expect(first.issue.ref).toBe('app#101');
 
     const c = await boot();
-    c.deps.updateConfig((cfg) => ({ ...cfg, agents: { ...cfg.agents, team: cfg.agents.team.filter((a) => a.id !== 'developer') }, devCycle: { ...cfg.devCycle, stages: cfg.devCycle.stages.map((s) => {
-      const { agentId, ...rest } = s;
-      return s.id === 'implement' || !agentId ? rest : s;
-    }) } }));
+    // a flow the app opened with a stage that lost its agent (saving one is refused, a stored one is kept as it was)
+    const stored = structuredClone(c.deps.config());
+    stored.agents.team = stored.agents.team.filter((a) => a.id !== 'developer');
+    delete stored.devCycle.stages.find((s) => s.id === 'implement')!.agentId;
+    const { writeConfigFile } = await import('../src/main/config-bootstrap');
+    const { reloadConfig } = await import('../src/main/workspaceConfig');
+    const { ATAS } = await import('../src/main/env');
+    writeConfigFile(ATAS, stored);
+    reloadConfig();
     await expect(c.runner.start('app#101')).rejects.toMatchObject({ code: 'no-agent' });
     await expect(c.runner.start('app#101')).rejects.toThrow(/Implement/);
     expect(existsSync(join(c.repo.worktrees))).toBe(false);

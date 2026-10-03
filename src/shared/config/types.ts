@@ -498,6 +498,11 @@ export interface AgentDef {
    * wait for the person. The ceremonies ignore it. A change takes effect at the next stage start or publication, never in the middle of a stage.
    */
   autonomous: boolean;
+  /**
+   * Who the agent turns to when it cannot decide: another agent's id, or null for the person. A question goes to that agent first, in the run's thread; it
+   * answers when it can and otherwise passes the question on, and the chain ends at the person. A chain that comes back to where it began is refused.
+   */
+  turnsTo: string | null;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */

@@ -7,8 +7,9 @@ export const ISSUE_RECORD = '0_ISSUE.md';
 
 type FlowConfig = Pick<WorkspaceConfig, 'agents'> & { devCycle: Pick<DevCycleConfig, 'stages'> };
 
-/** A cycle whose stages carry a `type` is a flow a run follows; any other is a cycle of the ceremonies only. */
-export const isFlowCycle = (stages: Pick<StageDef, 'type'>[]): boolean => stages.some((s) => !!s.type);
+/** A cycle whose stages carry any of the flow fields (a type, an agent, what it produces, where it goes on or back, what it waits for) is a flow a run follows; any other is a cycle of the ceremonies only. */
+export const isFlowCycle = (stages: Pick<StageDef, 'type' | 'agentId' | 'produces' | 'reads' | 'next' | 'returnsTo' | 'waitsFor' | 'roundLimit' | 'trackerStatus'>[]): boolean =>
+  stages.some((s) => !!s.type || !!s.agentId || !!s.produces?.length || !!s.reads || s.next !== undefined || !!s.returnsTo || !!s.waitsFor || s.roundLimit !== undefined || !!s.trackerStatus);
 
 /** Every stage but a gate or a wait is work: a stage of a flow with no type is work. */
 export const isWork = (s: { type?: StageDef['type'] }): boolean => (s.type ?? 'work') === 'work';
