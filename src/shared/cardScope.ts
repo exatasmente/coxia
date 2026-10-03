@@ -1,4 +1,4 @@
-import type { CardScope, VcsKind } from './config/types';
+import { CARD_SCOPES, type CardScope, type VcsKind } from './config/types';
 import { VCS_CAPS } from './vcsCaps';
 
 // What a stored "which issues become cards" choice really does. The card source, the configuration warnings and the wizard note all ask
@@ -51,4 +51,9 @@ export function effectiveCardScope(i: CardScopeInput): EffectiveCardScope {
 /** The labels field of the wizard: names separated by commas; quotes and backslashes (which the configuration refuses) are dropped as they are typed. */
 export function parseLabelsField(text: string): string[] {
   return cleanLabels(text.replace(/["\\\u0000-\u001f]/g, '').split(','));
+}
+
+/** The scopes the wizard offers for the tracker of this integration; a `labels` already stored stays listed so the choice is not hidden from its owner. */
+export function scopesOffered(kind: VcsKind | null, current: CardScope): CardScope[] {
+  return CARD_SCOPES.filter((s) => s !== 'labels' || current === 'labels' || kind === null || VCS_CAPS[kind].issueLabels);
 }

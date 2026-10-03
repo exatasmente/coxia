@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CATALOGS } from '../src/shared/i18n';
-import { CEREMONY_IDS, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, VCS_KINDS, VOICE_ENGINES } from '../src/shared/config/types';
+import { CARD_SCOPES, CEREMONY_IDS, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, VCS_KINDS, VOICE_ENGINES } from '../src/shared/config/types';
 import { SECRET_SOURCE_TYPES } from '../src/shared/secrets';
 import { TEMPLATE_NEEDS } from '../src/shared/cycles/types';
 import { DOCS_KEYS, OPEN_PRESETS, WIZARD_STEPS } from '../src/shared/wizard';
@@ -34,6 +34,8 @@ const FAMILIES: [string, string[]][] = [
   ['wizard.stageKind.', [...STAGE_KINDS]],
   ['wizard.status.', ['done', 'skipped']],
   ['wizard.step.', [...WIZARD_STEPS]],
+  ['wizard.vcs.issuesScope.', [...CARD_SCOPES]],
+  ['wizard.vcs.issuesScopeNote.', ['noProject', 'noLabels', 'noLabelSupport']],
   ['wizard.vcs.scopes.', [...VCS_KINDS]],
   ['wizard.vcs.', [...VCS_KINDS]],
   ['wizard.voice.engine.', [...VOICE_ENGINES]],

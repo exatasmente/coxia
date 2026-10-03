@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanLabels, effectiveCardScope, parseLabelsField } from '../src/shared/cardScope';
+import { cleanLabels, effectiveCardScope, parseLabelsField, scopesOffered } from '../src/shared/cardScope';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { migrateConfig } from '../src/shared/config/migrations';
 import type { VcsKind } from '../src/shared/config/types';
@@ -132,5 +132,15 @@ describe('the stored fields', () => {
     const c = neutralConfig();
     c.projects.issues.cardLabels = ['bug', 'Bug'];
     expect(validateConfig(c).warnings.some((w) => w.path === 'projects.issues.cardLabels')).toBe(true);
+  });
+});
+
+describe('the scopes a tracker offers', () => {
+  it('offers labels only where issues have them, unless one is already stored', () => {
+    expect(scopesOffered('github', 'assigned')).toEqual(['assigned', 'all', 'labels']);
+    expect(scopesOffered('gitlab', 'all')).toEqual(['assigned', 'all', 'labels']);
+    expect(scopesOffered(null, 'assigned')).toEqual(['assigned', 'all', 'labels']);
+    expect(scopesOffered('bitbucket', 'assigned')).toEqual(['assigned', 'all']);
+    expect(scopesOffered('bitbucket', 'labels')).toEqual(['assigned', 'all', 'labels']);
   });
 });
