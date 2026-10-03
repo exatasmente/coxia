@@ -75,6 +75,16 @@ Give QA **Sandbox** and let a run reach QA.
 
 Turn the registry switch on in Settings › Runner (the default hosts), give the developer Sandbox, and ask it in the issue to run `npm install` in a project with one small dependency. Check that the install works, that `curl https://example.org` still fails, and that the thread shows one line per request the proxy decided on (allowed for `registry.npmjs.org`, refused for anything else). **Nobody has run this yet**: report what you see in the pull request.
 
+### 9. Hostile leftovers (security review)
+
+Automated, in `test/sandbox-hardening.test.ts` (the real-`bwrap` ones skip without it). By hand, with a developer set to Sandbox, put these in the issue as the commands to run and watch the thread:
+
+1. `ln -s ~/.ssh/id_rsa /coxia/out/out.2` then any next command: its output says "output unavailable" and nothing of the key is in the thread or the audit log. `mkfifo /coxia/out/out.5` then four more commands: the fifth ends at the command time limit and the app stays responsive.
+2. `ln -s ../.. .husky` in the worktree, then let a later stage (QA) start: it fails with "`.husky` in the worktree is a symbolic link..." and shares no folder.
+3. `echo x > /dev/foo` fails; `/dev/shm` is no larger than the `/tmp` cap.
+4. In Settings › Runner list a folder that holds a git checkout as an extra read-only folder: the next stage's thread says so. `/var`, `/tmp` and `/run` are refused when typed.
+5. From a paired browser: the check button is not there, and changing a reader that has a sandbox to "Changes files" is refused.
+
 ## What the suite does not prove
 
 Everything about the sandbox that depends on this machine's kernel and security settings (the real-`bwrap` test shows it here), a real model's use of `Shell`, the real SDK's handling of the in-process tool, and the registry mode against a real registry.
