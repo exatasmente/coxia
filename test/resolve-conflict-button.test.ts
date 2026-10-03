@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
-import { type Language, setLanguage } from '../src/shared/i18n';
+import type { Language } from '../src/shared/config/types';
+import { setLanguage } from '../src/shared/i18n';
 import type { Card } from '../src/shared/types';
 import { conflictMrs, needsYou } from '../src/renderer/src/dashboard';
 import { buildCardReport } from '../src/main/vcs/cards';
