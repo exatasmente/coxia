@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The call says how many activities did not fit its agenda of 8 and lists them after the queue, each with a button to bring it in; Today shows the count.
 - An agent team in the workspace configuration (`agents.team`): each agent has a name, a job, a model (an LLM role to borrow, or a provider and model), the stages it works, a permission (`read`, or `worktree`) and instructions. The five agents the ceremonies use are built in: they can be edited, never removed. Stages gain `agentId`, `artifacts` and `human`. The configuration moves to schema 4; existing files migrate on first start and keep every setting.
 - A new cycle template, the agent cycle (`agent-flow`): refine, gate 1, plan, gate 2, implement, review, QA and ready, with the files each stage produces and a default team (Refiner, Planner, Developer, Reviewer, QA; only the developer may change files, inside its run's worktree). Applying it keeps the agents you already have; a template file carries its agents. The runner that executes the stages comes in a later change.
+- The state of an agent-cycle run (the stage, what each stage produced, a pending question, review rounds, the tracker comment each stage keeps) is stored one file per run in the workspace, with pure, tested transitions for starting, finishing a stage, approving, rejecting or skipping a gate, asking and answering, handing back, retrying, cancelling and resuming after a restart. Nothing runs a stage yet.
 
 ### Changed
 

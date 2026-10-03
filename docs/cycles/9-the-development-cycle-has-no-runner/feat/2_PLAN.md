@@ -79,15 +79,27 @@ interface Run {
   review: { rounds: number; max: number };
   error: { code: string; stage: string; detail: string | null } | null;
   history: HistoryEntry[];        // append-only trace of every transition
+  comments: Record<string, CommentRecord>;   // tracker comments by stage id, and `pr` for the pull request
   createdAt: string; updatedAt: string;
 }
 ```
+
+```ts
+interface CommentRecord {
+  target: 'issue' | 'mr'; noteId: string | number | null; url: string | null;
+  bodyHash: string | null; status: 'draft' | 'proposed' | 'published' | 'refused'; updatedAt: string;
+}
+```
+
+A stage keeps one comment on the tracker and edits it in place; the run only records where that comment stands (phase 2 publishes). Transitions: `recordCommentDraft`, `recordCommentProposal`, `recordCommentPublished` (with the note id the host returned), `recordCommentEdited`, `recordCommentRefused`.
 
 Transitions are pure functions in `src/shared/runs/`, each `(run, flow, input, now) => { run, messages }`: `startRun`, `stageDone`, `gateApprove`, `gateReject`, `gateSkip`, `ask`, `answer`, `handBack`, `reviewReturn`, `stageFailed`, `retry`, `cancel`, `resumeAfterRestart`. `messages` are forum drafts the caller appends to the run's thread, so the thread holds every post, handoff, question, answer and decision, in order. A `flow` is derived from the config (`flowOf`): the stages in rank order with their human flag and resolved agent.
 
 ### Forum
 
-Thread: `{ id, kind: 'run' | 'general', runId, title, createdAt }`. Message: `{ seq, thread, at, kind, author, text, code?, params?, mentions[], refs[], stage, to?, replyTo? }` with kinds `post | question | answer | handoff | decision | system` and author `agent <id> | person | app`. `system` and `decision` messages carry a `code` and `params`, rendered at display time with `t()`, so a language switch also translates the old thread.
+Thread: `{ id, kind: 'run' | 'general', runId, title, createdAt }`. Message: `{ seq, thread, at, kind, author, text, code?, params?, mentions[], refs[], stage, to?, replyTo?, public, published? }` with kinds `post | question | answer | handoff | decision | system` and author `agent <id> | person | app`. `system` and `decision` messages carry a `code` and `params`, rendered at display time with `t()`, so a language switch also translates the old thread.
+
+A message has `public: boolean` (eligible to appear on the tracker: what an agent did, asked, was answered or was decided; handoffs and stage changes stay internal) and, once mirrored, `published: { target, noteId, url }`. The file is append only, so a publication is recorded as an annotation line (`{ type: 'published', seq, published }`) that reading folds into the message.
 
 ## Phase 1: data model and stores (this change)
 
@@ -185,6 +197,10 @@ Choices taken where the spec is silent.
 21. **No run IPC in phase 1**: nothing can start, change or read a run from the outside until phase 2 defines who may.
 22. **The runner section of the config waits for phase 2** and becomes schema 5; a version number is cheap and a config written by a phase 1 build must keep opening.
 23. **The app's commits run with hooks disabled** (`core.hooksPath=/dev/null`): a tracked hook an agent edited would otherwise run unconfined.
+
+24. **Tracker comments are recorded, not published, in phase 1.** `Run.comments` is keyed by stage id and `pr` (a stage with the id `pr` draws a validation warning), each record `{ target, noteId, url, bodyHash, status, updatedAt }` with status `draft | proposed | published | refused`, so a stage can edit its own comment in place instead of posting a second one. A proposal over a published comment keeps its note id (it is an edit); a refusal never demotes a published comment. The transitions apply to a run in any status (the pull request comment comes after `done`); the body hash is computed by phase 2, the model has no hashing. Templates, configuration and the publishing itself are phase 2.
+25. **`public` is a flag, not a message kind**, because a question, a decision and a post are all public records while a handoff of the same author is not. The transitions mark posts, questions, answers and decisions public and leave handoffs and stage changes internal; a person's plain `forum:post` is internal. Being public never publishes: mirroring needs the workspace option and its own approval.
+26. **A message's `published` link is an annotation line**, since thread files are append only; `forum-core` folds the latest annotation into the message when it reads.
 
 ## Not verified yet
 

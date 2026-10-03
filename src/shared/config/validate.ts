@@ -95,6 +95,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     }),
   );
   const stageIds = new Set(c.devCycle.stages.map((s) => s.id));
+  if (stageIds.has('pr')) warnings.push({ path: 'devCycle.stages', message: 'the stage id "pr" is where a run keeps the comment of the pull request: pick another id for the stage' });
   c.devCycle.stageMapping.forEach((r, i) => {
     if (!stageIds.has(r.stage)) errors.push({ path: `devCycle.stageMapping[${i}].stage`, message: `unknown stage "${r.stage}"` });
     try {

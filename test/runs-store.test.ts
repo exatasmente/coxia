@@ -1,0 +1,127 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { createRunStore } from '../src/main/runs-core';
+import { RunError, cancel, gateApprove, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import { agentFlowStages, at, startInput } from './helpers/runs';
+
+let dir: string;
+const flow = agentFlowStages();
+const fresh = (over = {}) => startRun(startInput(over), flow, at(0)).run;
+
+beforeEach(() => {
+  dir = join(mkdtempSync(join(tmpdir(), 'coxia-runs-')), 'runs');
+});
+
+describe('the run store', () => {
+  it('writes one JSON file per run, atomically, and reads it back', () => {
+    const store = createRunStore(dir);
+    const saved = store.create(fresh());
+    expect(saved.rev).toBe(1);
+    expect(readdirSync(dir)).toEqual(['r-abc123-x1y2.json']);
+    expect(JSON.parse(readFileSync(join(dir, 'r-abc123-x1y2.json'), 'utf8'))).toMatchObject({ version: 1, id: 'r-abc123-x1y2', status: 'working', stage: 'refine' });
+    expect(store.get('r-abc123-x1y2')).toEqual(saved);
+    expect(store.get('r-zzzzzz-none')).toBeNull();
+  });
+
+  it('applies a move to what is on disk, saves it with the next rev and hands back the messages for the thread', () => {
+    const store = createRunStore(dir);
+    store.create(fresh());
+    const tr = store.update('r-abc123-x1y2', (r) => stageDone(r, flow, { summary: 's', handoff: 'h', artifacts: ['1_SPEC.md'] }, at(1)));
+    expect(tr.run).toMatchObject({ rev: 2, status: 'gate', stage: 'gate1', updatedAt: at(1) });
+    expect(tr.messages.map((m) => m.kind)).toEqual(['post', 'handoff', 'system']);
+    expect(store.get('r-abc123-x1y2')).toEqual(tr.run);
+    expect(readdirSync(dir).filter((f) => f.includes('.tmp'))).toEqual([]);
+  });
+
+  it('keeps nothing of a move that throws', () => {
+    const store = createRunStore(dir);
+    const before = store.create(fresh());
+    expect(() => store.update(before.id, (r) => gateApprove(r, flow, at(1)))).toThrow(expect.objectContaining({ code: 'wrong-state' }));
+    expect(store.get(before.id)).toEqual(before);
+    expect(() => store.update('r-nothing-here', (r) => ({ run: r, messages: [] }))).toThrow(expect.objectContaining({ code: 'unknown-run' }));
+  });
+
+  it('allows one run in progress per issue, and another once it has ended', () => {
+    const store = createRunStore(dir);
+    store.create(fresh());
+    expect(() => store.create(fresh({ id: 'r-abc124-x1y3' }))).toThrow(expect.objectContaining({ code: 'duplicate' }));
+    expect(() => store.create(fresh())).toThrow(expect.objectContaining({ code: 'duplicate' }));
+    store.create(fresh({ id: 'r-abc125-x1y4', issue: { ref: 'app#102', iid: 102, title: 'Other', url: null } }));
+    expect(store.activeFor('app#101')?.id).toBe('r-abc123-x1y2');
+    store.update('r-abc123-x1y2', (r) => cancel(r, 'person', at(2)));
+    expect(store.activeFor('app#101')).toBeNull();
+    expect(store.create(fresh({ id: 'r-abc126-x1y5' })).id).toBe('r-abc126-x1y5');
+    expect(store.list().map((r) => r.id).sort()).toEqual(['r-abc123-x1y2', 'r-abc125-x1y4', 'r-abc126-x1y5']);
+  });
+
+  it('lists the most recently changed first', () => {
+    const store = createRunStore(dir);
+    store.create(fresh({ id: 'r-aaaaaa-aa11' }));
+    store.create(fresh({ id: 'r-bbbbbb-bb22', issue: { ref: '2', iid: 2, title: 'b', url: null } }));
+    store.update('r-aaaaaa-aa11', (r) => stageDone(r, flow, { summary: 's', handoff: '', artifacts: [] }, at(5)));
+    expect(store.list().map((r) => r.id)).toEqual(['r-aaaaaa-aa11', 'r-bbbbbb-bb22']);
+  });
+
+  it('never overwrites a run written by a newer app, and does not use it', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    const path = join(dir, `${run.id}.json`);
+    const newer = JSON.stringify({ ...run, version: 2, somethingNew: true });
+    writeFileSync(path, newer);
+    expect(store.get(run.id)).toBeNull();
+    expect(store.list()).toEqual([]);
+    expect(store.unreadable()).toEqual([{ id: run.id, reason: 'newer', detail: expect.stringContaining('newer app') }]);
+    expect(() => store.update(run.id, (r) => cancel(r, 'person', at(1)))).toThrow(expect.objectContaining({ code: 'newer-version' }));
+    expect(readFileSync(path, 'utf8')).toBe(newer);
+  });
+
+  it('does not trust a file that does not match the schema, and reports it instead of failing the list', () => {
+    const store = createRunStore(dir);
+    const good = store.create(fresh());
+    const bad = (name: string, edit: (r: Record<string, any>) => void) => {
+      const r = JSON.parse(JSON.stringify(good));
+      edit(r);
+      writeFileSync(join(dir, `${name}.json`), JSON.stringify(r));
+    };
+    bad('r-bad001-aa11', (r) => (r.status = 'sleeping'));
+    bad('r-bad002-aa11', (r) => (r.cycleFolder = '../../elsewhere'));
+    bad('r-bad003-aa11', (r) => (r.cycleFolder = '/etc'));
+    bad('r-bad004-aa11', (r) => (r.comments = { 'Not An Id': { target: 'issue', noteId: null, url: null, bodyHash: null, status: 'draft', updatedAt: at(0) } }));
+    bad('r-bad005-aa11', (r) => delete r.stages);
+    writeFileSync(join(dir, 'r-bad006-aa11.json'), '{ not json');
+    writeFileSync(join(dir, 'notes.json'), '{}');
+    expect(store.list().map((r) => r.id)).toEqual([good.id]);
+    expect(store.unreadable().map((u) => [u.id, u.reason])).toEqual(['r-bad001-aa11', 'r-bad002-aa11', 'r-bad003-aa11', 'r-bad004-aa11', 'r-bad005-aa11', 'r-bad006-aa11'].map((id) => [id, 'invalid']));
+  });
+
+  it('turns an id that is not one of ours away before it can become a path', () => {
+    const store = createRunStore(dir);
+    expect(store.get('../../etc/passwd')).toBeNull();
+    expect(() => store.update('../x', (r) => ({ run: r, messages: [] }))).toThrow(RunError);
+    expect(existsSync(join(dir, '..', '..', 'etc'))).toBe(false);
+  });
+
+  it('refuses to create a run that is not valid, and writes nothing', () => {
+    const store = createRunStore(dir);
+    expect(() => store.create({ ...fresh(), status: 'sleeping' } as never)).toThrow(expect.objectContaining({ code: 'invalid' }));
+    expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
+  });
+
+  it('survives a restart: a new store over the same folder resumes the run at the stage it was in', () => {
+    const first = createRunStore(dir);
+    const run = first.create(fresh());
+    const second = createRunStore(dir);
+    expect(second.get(run.id)).toEqual(run);
+    const tr = second.update(run.id, (r) => resumeAfterRestart(r, flow, at(10)));
+    expect(tr.run).toMatchObject({ status: 'working', stage: 'refine', rev: 2 });
+    expect(tr.run.stages[0].attempts).toBe(2);
+  });
+
+  it('starts a folder that does not exist yet', () => {
+    mkdirSync(join(dir, '..'), { recursive: true });
+    expect(createRunStore(dir).list()).toEqual([]);
+    expect(existsSync(dir)).toBe(false);
+  });
+});

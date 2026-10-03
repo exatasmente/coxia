@@ -50,6 +50,12 @@ O modelo traz um time padrão (`team` do modelo): Refinador, Planejador, Desenvo
 
 O executor que leva uma issue por essas etapas ainda não existe.
 
+### Execuções
+
+Uma **execução** (*run*) é uma issue passando pelo ciclo de agentes: a etapa em que está, o que cada etapa produziu, quem trabalha, o que espera a pessoa e o histórico. Fica em um arquivo JSON por execução em `<dados>/workspaces/<id>/runs/<id>.json`, gravado de forma atômica e conferido contra um JSON Schema a cada leitura (`src/shared/runs/schema.ts`): um arquivo gravado por um app mais novo não é usado nem sobrescrito, e um arquivo que não bate com o esquema é listado como ilegível, nunca apagado. Só pode haver uma execução em andamento por issue.
+
+O estado muda por funções puras em `src/shared/runs/transitions.ts` (`startRun`, `stageDone`, `gateApprove`, `gateReject`, `gateSkip`, `ask`, `answer`, `handBack`, `reviewReturn`, `stageFailed`, `retry`, `cancel`, `resumeAfterRestart`), cada uma devolvendo a execução nova e as mensagens que o fórum deve registrar, na ordem. Reprovar um gate devolve a execução à etapa que produziu o artefato, com o motivo como passagem (*handoff*); pular exige motivo e fica registrado como decisão; uma pergunta pausa a etapa até a resposta; a revisão devolve o trabalho ao desenvolvedor e, na segunda rodada com apontamentos, a execução para e pergunta à pessoa; depois de reabrir o app, a etapa interrompida recomeça. Uma etapa sem agente não começa e diz isso. Cada etapa guarda no máximo **um** comentário no tracker, editado no lugar: a execução só registra onde ele está (`comments`, por etapa e `pr` para o pull request: alvo, id da nota, endereço, hash do corpo, estado). Nada disso é publicado nesta fase.
+
 ### Prioridade
 
 O cartão leva o que o tracker diz da issue: as labels, o milestone, o projeto e a hora da última atualização (`updatedAt`). A **prioridade** do cartão é a primeira entrada de `devCycle.priority.labels` que casa com alguma label da issue; guarda a posição (`rank`, 0 é a mais alta) e a label da issue que casou. Sem entradas, ou sem casamento, o cartão não tem prioridade. Ela aparece no cartão da tela Hoje (e no detalhe, junto com o milestone) e na call; o agente do turno lê `priority` e `milestone` quando `enrichment.cardFields` os lista, e é instruído a citá-los só quando mudam o que importa agora. O milestone é só contexto: não entra na ordem. Uma fonte de cartões por comando (`externalTools.cardSource`) pode informar `labels`, `milestone` e `updated_at` nos itens de issue; sem eles o cartão não tem prioridade.
@@ -173,6 +179,12 @@ The `agent-flow` template describes the work of a team of agents, not tracker st
 The template brings a default team (the template's `team`): Refiner, Planner, Developer, Reviewer and QA, with permissions `read`, `read`, `worktree`, `read`, `read`. Only the developer may change files, and only inside the run's worktree. Applying the template to a workspace that already has agents **keeps the person's agents**: one with the same `id` is not touched, missing ones are added, and the stages the new cycle lacks are dropped from every agent's `stages`. An exported template file carries the agents that are not built in. The definitions of the team, `agentId` and the permission are in [`configuration.md`](configuration.md).
 
 The executor that takes an issue through these stages does not exist yet.
+
+### Runs
+
+A **run** is an issue going through the agent cycle: the stage it is in, what each stage produced, who is working, what waits for the person, and its history. It is one JSON file per run in `<data>/workspaces/<id>/runs/<id>.json`, written atomically and checked against a JSON Schema on every read (`src/shared/runs/schema.ts`): a file written by a newer app is neither used nor overwritten, and a file that does not match the schema is listed as unreadable, never deleted. There can be one run in progress per issue.
+
+The state changes through pure functions in `src/shared/runs/transitions.ts` (`startRun`, `stageDone`, `gateApprove`, `gateReject`, `gateSkip`, `ask`, `answer`, `handBack`, `reviewReturn`, `stageFailed`, `retry`, `cancel`, `resumeAfterRestart`), each returning the new run and the messages the forum is to record, in order. Rejecting a gate returns the run to the stage that produced the artifact, with the reason as a handoff; skipping needs a reason and is recorded as a decision; a question pauses the stage until it is answered; the review hands the work back to the developer and, on the second round with findings, the run stops and asks the person; after the app restarts the interrupted stage starts over. A stage with no agent does not start and says so. Each stage keeps at most **one** comment on the tracker, edited in place: the run only records where it stands (`comments`, by stage and `pr` for the pull request: target, note id, address, body hash, status). Nothing of this is published at this stage.
 
 ### Priority
 
