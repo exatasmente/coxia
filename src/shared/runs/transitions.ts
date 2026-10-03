@@ -845,6 +845,18 @@ export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'trackin
   return { run: out, messages: [] };
 }
 
+/**
+ * The person accepted the plan: the heads of the pull requests the run has read are frozen (once; a later gate, or a second approval, keeps the first). What a merge
+ * brings in is checked against them, so a commit pushed to a pull request after the plan was approved is not merged by the agent.
+ */
+export function freezePlan(run: Run, at: string): Transition {
+  if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
+  if (run.subject.planned) return { run, messages: [] };
+  const out = clone(run, at);
+  (out.subject as RunSubject).planned = Object.fromEntries(run.subject.activities.map((a) => [String(a.pr), a.head]));
+  return { run: out, messages: [] };
+}
+
 // ---- tracker comments --------------------------------------------------------------------------------------------------------------------
 // A stage keeps ONE comment on the tracker and edits it in place; the run only records where that comment stands. Nothing here publishes: phase 2
 // proposes and executes, then calls these to say what happened. They apply to a run in any status (the pull request comment comes after `done`).

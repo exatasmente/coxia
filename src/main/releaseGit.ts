@@ -1,7 +1,6 @@
-import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { promisify } from 'node:util';
 import { t } from '../shared/i18n';
 import { type ReleaseUnit, releaseBranchOf, releaseTagOf } from '../shared/release';
 import { assertPlainPush, git as rawGit } from './conflictGit';
@@ -19,8 +18,6 @@ import { SAFE, checkRef } from './runner/git';
 // the worktree stands on `release/X.Y.Z` for the steps of the release, and on a DETACHED HEAD at what the remote has of main (or local main's commit when there is
 // no remote) for the stable: the release is merged into that commit, the script (`--worktree`) cuts the stable on it, and `HEAD:refs/heads/main` is what is pushed.
 
-const run = promisify(execFile);
-
 export interface ReleaseIdentity {
   name: string;
   email: string;
@@ -35,8 +32,10 @@ export interface ReleasePr {
   /** The commit the pull request is at on the host. */
   sha: string;
   approved: boolean;
-  /** The host's checks: `failing` and `running` stop the merge, `none` (no checks configured) does not. */
+  /** The host's checks: `failing` and `running` stop the merge (a CI nobody could read is `running`), `none` (no checks configured) does not. */
   checks: 'success' | 'failing' | 'running' | 'none';
+  /** The branch comes from another repository than the one the pull request is aimed at, or the host did not say it does not: not merged by the app. */
+  fork: boolean;
 }
 
 export interface ReleaseEnv {
@@ -68,7 +67,22 @@ const TAIL = 4000;
 
 // The git of this file: in a release worktree it also reads the excludes file made for it (the links to the clone's dependencies must not make the tree dirty).
 const excludes = new Map<string, string>();
-const git: typeof rawGit = (cwd, args, options) => rawGit(cwd, excludes.has(cwd) ? ['-c', `core.excludesFile=${excludes.get(cwd)}`, ...args] : args, options);
+// Every command of this file runs with the repository's hooks, signing and file-system monitor switched off (a hook or an `fsmonitor` program is the repository's code,
+// and `status`, `fetch` and `worktree add` would run them too).
+const git: typeof rawGit = (cwd, args, options) => rawGit(cwd, [...SAFE, ...(excludes.has(cwd) ? ['-c', `core.excludesFile=${excludes.get(cwd)}`] : []), ...args], options);
+
+// One step at a time per worktree: a stable moves HEAD to a detached commit, a beta commits on the release branch, a push sends what HEAD is. The approval path and the
+// auto path both come through here, so two steps asked at once (two "sim" clicked together) are carried out one after the other, in the order they were asked.
+const queues = new Map<string, Promise<unknown>>();
+function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const next = (queues.get(key) ?? Promise.resolve()).then(work, work);
+  const tailPromise = next.catch(() => undefined);
+  queues.set(key, tailPromise);
+  void tailPromise.then(() => {
+    if (queues.get(key) === tailPromise) queues.delete(key);
+  });
+  return next;
+}
 
 const tail = (text: string): string => (text.length > TAIL ? `…${text.slice(-TAIL)}` : text);
 const ok = async (clone: string, args: string[]): Promise<boolean> => (await git(clone, args, { fail: false })).code === 0;
@@ -81,7 +95,8 @@ const identityArgs = (id: ReleaseIdentity): string[] => ['-c', `user.name=${id.n
 const authorOf = (id: ReleaseIdentity): string => `${id.name} <${id.email}>`;
 
 /** Whether `a` is in the history of `b`. */
-const sameSha = (a: string, b: string): boolean => a.length >= 7 && b.length >= 7 && (a.toLowerCase().startsWith(b.toLowerCase()) || b.toLowerCase().startsWith(a.toLowerCase()));
+/** Whether two commit names are the same commit, one possibly abbreviated (7 characters at least). */
+export const sameSha = (a: string, b: string): boolean => a.length >= 7 && b.length >= 7 && (a.toLowerCase().startsWith(b.toLowerCase()) || b.toLowerCase().startsWith(a.toLowerCase()));
 
 const isAncestor = (clone: string, a: string, b: string): Promise<boolean> => ok(clone, ['merge-base', '--is-ancestor', a, b]);
 
@@ -115,7 +130,10 @@ async function prepareWorktree(env: ReleaseEnv): Promise<string> {
     mkdirSync(dirname(wt), { recursive: true });
     await fetchBranch(env.clone, 'main');
     const base = (await exists(env.clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(env.clone, 'refs/heads/main')) ? 'refs/heads/main' : 'HEAD';
-    await git(env.clone, ['worktree', 'add', '--detach', '--quiet', wt, base]);
+    // A worktree whose folder was deleted is still registered, and git then refuses the path: forget what is gone first.
+    await git(env.clone, ['worktree', 'prune'], { fail: false });
+    const made = await git(env.clone, ['worktree', 'add', '--detach', '--quiet', wt, base], { fail: false });
+    if (made.code !== 0) throw new Error(t('main.release.worktreeFailed', { path: wt, detail: (made.stderr || made.stdout).trim().slice(0, 400) }));
   } else {
     // a folder that is somebody else's checkout is not ours to run in
     const common = async (dir: string): Promise<string> => resolve(dir, (await out(dir, ['rev-parse', '--git-common-dir'])));
@@ -162,7 +180,7 @@ async function ensureLocal(clone: string, branch: string): Promise<boolean> {
   checkRef(branch);
   if (await exists(clone, `refs/heads/${branch}`)) return true;
   if (!(await exists(clone, `refs/remotes/origin/${branch}`))) return false;
-  await git(clone, [...SAFE, 'branch', '--quiet', '--track', branch, `refs/remotes/origin/${branch}`]);
+  await git(clone, ['branch', '--quiet', '--track', branch, `refs/remotes/origin/${branch}`]);
   return true;
 }
 
@@ -171,11 +189,11 @@ async function switchTo(clone: string, branch: string): Promise<void> {
   if ((await currentBranch(clone)) === branch) return;
   const elsewhere = await checkedOutElsewhere(clone, branch);
   if (elsewhere) throw new Error(t('main.release.branchElsewhere', { branch, path: elsewhere }));
-  await git(clone, [...SAFE, 'switch', '--quiet', branch]);
+  await git(clone, ['switch', '--quiet', branch]);
 }
 
 /** Leaves the worktree on a detached HEAD at `ref`: what stands for main, which the person's checkout keeps. */
-const detachAt = (clone: string, ref: string): Promise<unknown> => git(clone, [...SAFE, 'switch', '--quiet', '--detach', ref]);
+const detachAt = (clone: string, ref: string): Promise<unknown> => git(clone, ['switch', '--quiet', '--detach', ref]);
 
 /** Reads what the remote has of a branch, when it has it: the script compares with the tracking refs and never fetches. */
 async function fetchBranch(clone: string, branch: string): Promise<void> {
@@ -192,20 +210,56 @@ function scriptEnv(env: ReleaseEnv): NodeJS.ProcessEnv {
   return { ...clean, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: exclude ? '3' : '2', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null', GIT_CONFIG_KEY_1: 'commit.gpgsign', GIT_CONFIG_VALUE_1: 'false', ...(exclude ? { GIT_CONFIG_KEY_2: 'core.excludesFile', GIT_CONFIG_VALUE_2: exclude } : {}) };
 }
 
-/** Runs one mode of the release script of the clone. The arguments are built here from the operation; the script's own output is returned and never read. */
+/**
+ * Runs one mode of the release script of the worktree. The arguments are built here from the operation; the script's own output is returned and never read. It runs as a
+ * process group of its own: when it outlives its time, the whole group is killed (the checks it started included), and the worktree is brought back to its commit.
+ */
 async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: string[]): Promise<string> {
   const file = join(env.clone, SCRIPT);
   if (!existsSync(file)) throw new Error(t('main.release.noScript'));
+  const limit = env.scriptTimeoutMs ?? 40 * 60_000;
+  const child = spawn(file, [mode, ...extra], { cwd: env.clone, env: scriptEnv(env), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let text = '';
+  const keep = (b: Buffer): void => {
+    text = (text + b.toString('utf8')).slice(-32 * 1024);
+  };
+  child.stdout.on('data', keep);
+  child.stderr.on('data', keep);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      if (child.pid) process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      child.kill('SIGKILL');
+    }
+  }, limit);
+  const code = await new Promise<number | null>((resolve) => {
+    child.on('error', () => resolve(null));
+    child.on('close', (c) => resolve(c));
+  });
+  clearTimeout(timer);
+  if (timedOut) {
+    await recoverWorktree(env.clone);
+    throw new Error(t('main.release.scriptTimedOut', { mode, minutes: Math.max(1, Math.round(limit / 60_000)) }));
+  }
+  if (code !== 0) throw new Error(t('main.release.scriptFailed', { mode, detail: tail(text.trim() || `exit ${code}`) }));
+  return tail(text.trim());
+}
+
+/** What a script that was killed may leave in the worktree (it is ours alone): a stale index lock, a half-made version bump. Back to the commit it was at. */
+async function recoverWorktree(wt: string): Promise<void> {
   try {
-    const { stdout, stderr } = await run(file, [mode, ...extra], { cwd: env.clone, env: scriptEnv(env), timeout: env.scriptTimeoutMs ?? 40 * 60_000, maxBuffer: 32 * 1024 * 1024 });
-    return tail(`${stdout}${stderr ? `\n${stderr}` : ''}`.trim());
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message: string };
-    throw new Error(t('main.release.scriptFailed', { mode, detail: tail(`${err.stderr ?? ''}\n${err.stdout ?? ''}`.trim() || err.message) }));
+    const gitDir = resolve(wt, (await git(wt, ['rev-parse', '--git-dir'], { fail: false })).stdout.trim());
+    rmSync(join(gitDir, 'index.lock'), { force: true });
+    await git(wt, ['reset', '--hard', '--quiet', 'HEAD'], { fail: false });
+    await git(wt, ['clean', '-fdq'], { fail: false });
+  } catch {
+    // the next step will say what is wrong with the tree
   }
 }
 
-/** A plain push of one ref: nothing is forced, and no other ref goes with it. */
+/** A plain push of one ref: nothing is forced, and no other ref goes with it. `src` is a commit name or a tag ref, never a symbolic name such as HEAD (what it names could move). */
 async function pushRef(clone: string, src: string, dst: string): Promise<string> {
   const spec = `${src}:${dst}`;
   const args = ['push', '--no-verify', 'origin', spec];
@@ -215,7 +269,7 @@ async function pushRef(clone: string, src: string, dst: string): Promise<string>
 }
 
 async function merge(clone: string, id: ReleaseIdentity, args: string[]): Promise<void> {
-  const r = await git(clone, [...SAFE, ...identityArgs(id), 'merge', ...args], { fail: false });
+  const r = await git(clone, [...identityArgs(id), 'merge', ...args], { fail: false });
   if (r.code !== 0) {
     await git(clone, ['merge', '--abort'], { fail: false });
     throw new Error((r.stderr || r.stdout).trim().slice(0, 600));
@@ -241,6 +295,7 @@ async function mergePr(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResul
   const mr = await env.pr(pr);
   if (mr.state !== 'open') throw new Error(t('main.release.prNotOpen', { pr, state: mr.state }));
   if (mr.targetBranch !== branch) throw new Error(t('main.release.prBase', { pr, base: mr.targetBranch, branch }));
+  if (mr.fork) throw new Error(t('main.release.prFork', { pr }));
   if (mr.draft) throw new Error(t('main.release.prDraft', { pr }));
   if (!mr.approved) throw new Error(t('main.release.prNotApproved', { pr }));
   if (mr.checks === 'failing' || mr.checks === 'running') throw new Error(t('main.release.prChecks', { pr, status: mr.checks }));
@@ -287,7 +342,7 @@ async function stable(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult
   const before = await sha(env.clone, 'HEAD');
   // The release branch goes into it (a fast-forward when main has not moved, a merge commit with the configured identity otherwise); a branch deleted earlier is not an error.
   if ((await exists(env.clone, `refs/heads/${branch}`)) && !(await isAncestor(env.clone, branch, 'HEAD'))) {
-    const ff = await git(env.clone, [...SAFE, 'merge', '--ff-only', '--quiet', branch], { fail: false });
+    const ff = await git(env.clone, ['merge', '--ff-only', '--quiet', branch], { fail: false });
     if (ff.code !== 0) {
       try {
         // i18n-ignore-next-line: the subject of a merge commit, as the repository's history has it (RELEASING.md)
@@ -308,14 +363,14 @@ async function pushBranchOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<Release
     const tag = releaseTagOf(unit.version);
     if (!(await exists(env.clone, `refs/tags/${tag}`))) throw new Error(t('main.release.mainNotCut', { tag }));
     await detachAt(env.clone, `refs/tags/${tag}`);
-    const head = await sha(env.clone, 'HEAD');
-    const output = await pushRef(env.clone, 'HEAD', 'refs/heads/main');
+    const head = (await sha(env.clone, 'HEAD')) as string;
+    const output = await pushRef(env.clone, head, 'refs/heads/main');
     return { output: output || t('main.release.pushed', { ref: 'main' }), before: head, after: head, tag: null };
   }
   const branch = releaseBranchOf(unit.version);
   await switchTo(env.clone, branch);
-  const head = await sha(env.clone, 'HEAD');
-  const output = await pushRef(env.clone, 'HEAD', `refs/heads/${branch}`);
+  const head = (await sha(env.clone, 'HEAD')) as string;
+  const output = await pushRef(env.clone, head, `refs/heads/${branch}`);
   return { output: output || t('main.release.pushed', { ref: branch }), before: head, after: head, tag: null };
 }
 
@@ -336,10 +391,16 @@ async function pushTagOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseRes
 }
 
 /** Runs one release operation in the worktree of the run. Throws the reason (translated) when it is refused or fails; what ran is in the returned output. */
-export async function runReleaseOp(unit: ReleaseUnit, given: ReleaseEnv): Promise<ReleaseResult> {
-  await assertRepo(given.clone);
-  // Every step runs in the worktree of the run; the person's checkout is only the place it is made from.
-  const env: ReleaseEnv = { ...given, clone: await prepareWorktree(given) };
+export function runReleaseOp(unit: ReleaseUnit, given: ReleaseEnv): Promise<ReleaseResult> {
+  // One step at a time per worktree, in the order they were asked.
+  return serialized(resolve(given.worktree), async () => {
+    await assertRepo(given.clone);
+    // Every step runs in the worktree of the run; the person's checkout is only the place it is made from.
+    return dispatch(unit, { ...given, clone: await prepareWorktree(given) });
+  });
+}
+
+function dispatch(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> {
   switch (unit.op) {
     case 'open':
       return open(unit, env);
@@ -380,8 +441,17 @@ export function releaseCommandLine(unit: ReleaseUnit): string {
 export async function previewRelease(unit: ReleaseUnit, clone: string): Promise<string> {
   const lines = [releaseCommandLine(unit)];
   try {
-    if (unit.op === 'push-branch') {
-      const branch = unit.branch === 'main' ? 'main' : releaseBranchOf(unit.version);
+    if (unit.op === 'push-branch' && unit.branch === 'main') {
+      // What goes is the commit the stable tag names (the person's own main is not it), over what the remote has.
+      const tag = releaseTagOf(unit.version);
+      if (!(await exists(clone, `refs/tags/${tag}`))) {
+        lines.push(t('main.release.mainNotCut', { tag }));
+      } else {
+        const base = (await exists(clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main..' : '';
+        lines.push((await out(clone, ['log', '--oneline', '-n', '30', `${base}refs/tags/${tag}^{commit}`])) || t('main.release.nothingNew'));
+      }
+    } else if (unit.op === 'push-branch') {
+      const branch = releaseBranchOf(unit.version);
       const base = (await exists(clone, `refs/remotes/origin/${branch}`)) ? `refs/remotes/origin/${branch}..` : '';
       lines.push((await out(clone, ['log', '--oneline', '-n', '30', `${base}refs/heads/${branch}`])) || t('main.release.nothingNew'));
     } else if (unit.op === 'push-tag') {

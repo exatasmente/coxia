@@ -11,6 +11,13 @@ export type ReleaseOp = (typeof RELEASE_OPS)[number];
 export const RELEASE_PUSH_OPS: readonly ReleaseOp[] = ['push-branch', 'push-tag'];
 export const isReleasePush = (op: ReleaseOp): boolean => RELEASE_PUSH_OPS.includes(op);
 
+/**
+ * The operations that always wait for the person's "sim" (D6 for the pushes, D18 for the cuts): a push leaves the machine, and `beta` and `stable` run the repository's own
+ * scripts and the code of merged pull requests, unsandboxed, as the person. Only `open` and `merge-pr` (behind its gate) follow the agent's autonomy.
+ */
+export const RELEASE_WAIT_OPS: readonly ReleaseOp[] = ['beta', 'stable', 'push-branch', 'push-tag'];
+export const alwaysWaits = (op: ReleaseOp): boolean => RELEASE_WAIT_OPS.includes(op);
+
 /** Which branch a `push-branch` sends: the release branch, or `main` after a stable was cut on it (the workflow refuses a stable tag that is not on `origin/main`). */
 export const RELEASE_BRANCHES = ['release', 'main'] as const;
 export type ReleaseBranch = (typeof RELEASE_BRANCHES)[number];
@@ -27,7 +34,7 @@ export interface ReleaseUnit {
   runId?: string;
   /** `merge-pr`: the pull request to merge into the release branch. */
   pr?: number;
-  /** `merge-pr`: the commit the pull request was at when the plan was made; the merge is refused when it moved. */
+  /** `merge-pr` (required): the commit the pull request was at when the plan was made; the merge is refused when it moved, or when it is not the head the person approved. */
   head?: string;
   /** `open`: the stable tag a patch is cut from (`vA.B.C`). */
   from?: string;
@@ -90,6 +97,7 @@ export function parseReleaseUnit(raw: unknown): ReleaseUnit {
     if (typeof o.pr !== 'number' || !Number.isSafeInteger(o.pr) || o.pr < 1 || o.pr > 999_999_999) throw new ReleaseUnitError('bad-pr', String(o.pr).slice(0, 20));
     unit.pr = o.pr;
   }
+  if (op === 'merge-pr' && o.head === undefined) throw new ReleaseUnitError('bad-head', 'missing');
   if (only('head', ['merge-pr'])) {
     if (typeof o.head !== 'string' || !HEAD.test(o.head)) throw new ReleaseUnitError('bad-head', String(o.head).slice(0, 20));
     unit.head = o.head.toLowerCase();
@@ -120,17 +128,17 @@ export const RELEASE_MCP_TOOL_NAME = `mcp__${RELEASE_MCP_SERVER}__release_action
 // i18n-ignore-start: the tool text for the model: English by design
 export const RELEASE_TOOL_DESCRIPTION =
   'Asks the app to do one step of the release of this run\'s version, by the release script of the repository. `open` makes release/<version> (`from` is the stable tag a patch is cut from), ' +
-  '`merge-pr` merges an approved pull request into it locally (`pr` is its number, `head` the commit you read it at), `beta` and `stable` cut the next beta or the stable version locally, ' +
-  '`push-branch` and `push-tag` send the branch (`release`, or `main` after a stable) or the tag (`beta`, the latest one, or `stable`). The version is X.Y.Z. A push always waits for the person; ' +
-  'the other steps run by themselves only when you are set to run by themselves, and otherwise wait for the person too. The answer says which happened.';
+  '`merge-pr` merges an approved pull request into it locally (`pr` is its number, `head` is required: the commit you read it at, which must be the one the plan approved), `beta` and `stable` cut the next beta or the stable version locally, ' +
+  '`push-branch` and `push-tag` send the branch (`release`, or `main` after a stable) or the tag (`beta`, the latest one, or `stable`). The version is X.Y.Z. A push, a beta and a stable ALWAYS wait for the person; ' +
+  '`open` and `merge-pr` run by themselves only when you are set to run by themselves, and otherwise wait for the person too. The answer says which happened.';
 
 export const RELEASE_TOOL_SCHEMA = {
   type: 'object',
   properties: {
-      op: { type: 'string', enum: [...RELEASE_OPS], description: 'The step' },
+    op: { type: 'string', enum: [...RELEASE_OPS], description: 'The step' },
     version: { type: 'string', description: 'The version of this release: X.Y.Z' },
     pr: { type: 'integer', description: 'merge-pr: the number of the pull request' },
-    head: { type: 'string', description: 'merge-pr: the commit the pull request was at when you read it' },
+    head: { type: 'string', description: 'merge-pr (required): the commit the pull request was at when you read it' },
     from: { type: 'string', description: 'open: the stable tag a patch is cut from, vA.B.C' },
     branch: { type: 'string', enum: [...RELEASE_BRANCHES], description: 'push-branch: release (default) or main' },
     channel: { type: 'string', enum: [...RELEASE_CHANNELS], description: 'push-tag: beta or stable' },

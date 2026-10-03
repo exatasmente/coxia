@@ -89,6 +89,8 @@ interface GlMr {
   work_in_progress?: boolean;
   source_branch: string;
   target_branch: string;
+  source_project_id?: number;
+  target_project_id?: number;
   sha?: string;
   web_url: string;
   author?: { username: string };
@@ -211,6 +213,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     mergedAt: iso(m.merged_at),
     description: m.description ?? '',
     roles,
+    ...(m.source_project_id !== undefined && m.target_project_id !== undefined ? { fromFork: m.source_project_id !== m.target_project_id } : {}),
     issueRefs: issueRefsOf(`${m.title}\n${m.description ?? ''}`, m.source_branch),
   });
 
@@ -390,8 +393,11 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     },
 
     async listMrsByTarget(project, branch, opts = {}) {
-      const rows = await tr.pages<GlMr>(`${repoPath(project)}/merge_requests?target_branch=${enc(branch)}&state=all&order_by=updated_at&sort=desc`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
-      return rows.map((m) => mrOf(m, /^\d+$/.test(project) ? undefined : project)).filter((m) => m.state !== 'closed').slice(0, opts.limit ?? 100);
+      // The open ones are asked for by themselves (every one of them, up to a bound), so a branch with many merged pull requests cannot push an open one off the list.
+      const base = `${repoPath(project)}/merge_requests?target_branch=${enc(branch)}&order_by=updated_at&sort=desc`;
+      const [open, merged] = await Promise.all([tr.pages<GlMr>(`${base}&state=opened`, { maxPages: 5 }), tr.pages<GlMr>(`${base}&state=merged`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 })]);
+      const own = /^\d+$/.test(project) ? undefined : project;
+      return [...open.map((m) => mrOf(m, own)), ...merged.map((m) => mrOf(m, own)).slice(0, opts.limit ?? 100)];
     },
 
     async getRelease(project, tag) {

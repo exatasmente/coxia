@@ -39,6 +39,12 @@ export interface ForgePr {
   /** Someone approved it (its reviews say so). */
   approved?: boolean;
   draft?: boolean;
+  /** The branch comes from another repository. */
+  fork?: boolean;
+  /** Who approved it, and how the host knows them (default: `ana`, a member), and the commit the approval was given on (default: the head). */
+  approval?: { by?: string; association?: string; commit?: string };
+  /** The commit checks: `failing`, or `unreadable` (the host does not answer). Default: no checks. */
+  checks?: 'failing' | 'unreadable';
   /** Its title and description (a description that says `Closes #N` links the issue). */
   title?: string;
   body?: string;
@@ -55,6 +61,8 @@ export interface ForgeIssue {
   labels: string[];
   state: 'open' | 'closed';
   milestone?: string | null;
+  /** Who opened it (the user the app acts as when not said). */
+  author?: string;
 }
 
 /** A release the forge shows for a tag: a draft is not shown by the tags endpoint. */
@@ -127,7 +135,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     return made;
   };
   const allPrs = (): ForgePr[] => [...(forge.pr ? [forge.pr] : []), ...forge.others];
-  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: pr.title ?? 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: pr.body ?? '' });
+  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: pr.title ?? 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head, repo: { full_name: pr.fork ? 'someone/project' : PROJECT } }, base: { ref: pr.base, repo: { full_name: PROJECT } }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: pr.body ?? '' });
   const threadNode = (t: Thread) => ({ id: t.id, isResolved: t.resolved, path: t.path, line: t.line, originalLine: t.line, comments: { nodes: t.comments.map((c) => ({ databaseId: c.databaseId, author: { login: 'runner-bot' }, body: c.body, createdAt: '2026-10-03T12:00:00Z', url: `https://example.test/${PROJECT}/pull/7#discussion_r${c.databaseId}` })) } });
   const openThread = (path: string, line: number | null, body: string): void => {
     const databaseId = nextId++;
@@ -147,7 +155,13 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path))) return { number: Number(m[1]), title: 'Add the thing', state: 'open', labels: forge.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${m[1]}`, user: { login: 'ana' }, assignees: [], body: '' };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/timeline$/.exec(path))) return forge.linked && forge.pr ? [{ event: 'cross-referenced', source: { issue: { number: forge.pr.number, pull_request: {}, repository: { full_name: PROJECT } } } }] : [];
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/comments$/.exec(path))) return forge.threads.flatMap((t) => t.comments.map((c) => ({ id: c.databaseId, body: c.body, created_at: '2026-10-03T12:00:00Z', user: { login: 'runner-bot' } })));
-    if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path))) return allPrs().find((x) => x.number === Number(m?.[1]))?.approved ? [{ user: { login: 'ana' }, state: 'APPROVED', submitted_at: '2026-10-03T12:00:00Z' }] : [];
+    if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path))) return allPrs().find((x) => x.number === Number(m?.[1]))?.approved ? (() => { const found = allPrs().find((x) => x.number === Number(m?.[1])) as ForgePr; return [{ user: { login: found.approval?.by ?? 'ana' }, state: 'APPROVED', submitted_at: '2026-10-03T12:00:00Z', commit_id: found.approval?.commit ?? found.head, author_association: found.approval?.association ?? 'MEMBER' }]; })() : [];
+    if ((m = /^repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]+)\/(check-runs|status)$/.exec(path))) {
+      const owner = allPrs().find((x) => x.head === m?.[1]);
+      if (owner?.checks === 'unreadable') throw new Error('the host does not answer');
+      if (m[2] === 'status') return { state: 'pending', statuses: [] };
+      return { check_runs: owner?.checks === 'failing' ? [{ status: 'completed', conclusion: 'failure' }] : [] };
+    }
     if (/^repos\/[^/]+\/[^/]+\/pulls$/.test(path)) {
       const base = new URLSearchParams(endpoint.split('?')[1] ?? '').get('base');
       return allPrs().filter((x) => !base || x.base === base).map(prJson);
@@ -155,7 +169,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if (path === 'search/issues') {
       const q = new URLSearchParams(endpoint.split('?')[1] ?? '').get('q') ?? '';
       const label = /label:"([^"]+)"/.exec(q)?.[1];
-      const items = [...forge.issues.values()].filter((i) => i.state === 'open' && (!label || i.labels.includes(label))).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${i.number}`, user: { login: 'runner-bot' }, assignees: [], body: i.body, milestone: i.milestone ? { title: i.milestone } : null }));
+      const items = [...forge.issues.values()].filter((i) => i.state === 'open' && (!label || i.labels.includes(label))).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${i.number}`, user: { login: i.author ?? 'runner-bot' }, assignees: [], body: i.body, milestone: i.milestone ? { title: i.milestone } : null }));
       return { items };
     }
     if ((m = /^repos\/[^/]+\/[^/]+\/releases\/tags\/([\w.%-]+)$/.exec(path))) {

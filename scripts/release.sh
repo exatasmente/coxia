@@ -14,7 +14,8 @@
 #   --allow-branch   skip the branch rules (a beta on release/X.Y.Z only, a stable on main only); loud
 #   --emergency      a stable for a hotfix that cannot wait for a beta: skips the beta, merge and remote rules; loud, and written in the tag
 #   --worktree       run in a worktree of its own, where main is not a branch (the app's release steps): open cuts from origin/main when there is one, and a stable is cut on a
-#                    detached HEAD that stands for main (merge release/X.Y.Z into origin/main's commit first); every other rule is the same
+#                    detached HEAD that stands for main (merge release/X.Y.Z into origin/main's commit first); every other rule is the same. Note that a stable
+#                    is accepted from a detached HEAD only with this option (the checks of the stable, the merged beta and the remote rules still apply)
 #   --dry-run        validate and print the plan; change nothing
 #
 # Order: refuse a dirty tree, apply the branch and version rules, run the checks, bump package.json and package-lock.json (npm version

@@ -309,6 +309,11 @@ export interface RunSubject {
   tracking: { iid: number; url: string | null; closed?: boolean } | null;
   /** The pull requests of the version, as the run last read them (the plan's list; the waits and the tracking issue's list are worked out from them). */
   activities: ReleaseActivity[];
+  /**
+   * The head of each pull request (by number) as the run had read it when the person accepted the plan at its first gate: the only commits a `merge-pr` may bring in.
+   * Absent until that gate is accepted. A pull request added, or pushed to, after it needs a new plan.
+   */
+  planned?: Record<string, string>;
 }
 
 export interface Run {

@@ -127,6 +127,19 @@ describe('starting a release', () => {
     expect(forge.writes.filter((x) => x.endpoint.endsWith('/issues'))).toEqual([]);
   });
 
+  it('adopts an issue of that title only when it is the person own or carries the label of the version; somebody else issue is left alone and a new one is made, with the reason in the thread', async () => {
+    forge.issues.set(150, { number: 150, title: 'Release 0.5.0', body: '', labels: [], state: 'open', author: 'a-stranger' });
+    const first = await start();
+    expect(current(first.b, first.run).subject?.tracking).toMatchObject({ iid: 200 });
+    expect(forge.writes.filter((x) => x.endpoint.endsWith('/issues'))).toHaveLength(1);
+    expect(first.b.thread(first.run).some((m) => m.kind === 'system' && m.code === 'runner.release.trackingNotAdopted' && JSON.stringify(m).includes('a-stranger'))).toBe(true);
+    // the same title by somebody else, but labelled with the version (the pattern of the cycle), is the release one
+    forge.issues.clear();
+    forge.issues.set(160, { number: 160, title: 'Release 0.6.0', body: '', labels: ['0.6.0'], state: 'open', author: 'a-maintainer' });
+    const labelled = await start({ version: '0.6.0' });
+    expect(current(labelled.b, labelled.run).subject?.tracking).toMatchObject({ iid: 160 });
+  });
+
   it('does not take a closed issue of that title, and refuses a version that is not X.Y.Z, a flow it does not have and a second run for the same version', async () => {
     forge.issues.set(150, { number: 150, title: 'Release 0.5.0', body: '', labels: [], state: 'closed' });
     const { b, run } = await start();
@@ -192,6 +205,42 @@ describe('the release from the plan to the stable', () => {
     );
   }
 
+  it('does not merge a pull request that moved after the plan was accepted, whatever head the agent names', async () => {
+    const asked: string[] = [];
+    const { b, run } = await start({
+      script: (x) =>
+        x.engine.script(
+          'release-manager',
+          () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN }),
+          async (call) => {
+            const head = forge.others[0].head;
+            for (const named of [head, 'f'.repeat(40)]) {
+              try {
+                asked.push(await call.release!({ op: 'merge-pr', version: '0.5.0', pr: 7, head: named }));
+              } catch (e) {
+                asked.push(`refused: ${(e as Error).message}`);
+              }
+            }
+            return work('Nothing merged.', { comment: STEP('What was merged') });
+          },
+        ),
+    });
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const planned = w.pushedBranch('feat/x', 'release/0.5.0');
+    forge.others.push({ number: 7, branch: 'feat/x', head: planned, base: 'release/0.5.0', files: [], approved: true, title: 'Add the x', body: '' });
+    await b.runner.sweep();
+    await b.settle();
+    expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7 })]);
+    // the author pushes again after the plan was written and before the person says yes to it
+    forge.others[0].head = 'a'.repeat(40);
+    b.runner.gate(run.id, 'approve');
+    await b.settle();
+    expect(current(b, run).subject?.planned).toEqual({ '7': planned });
+    expect(asked).toHaveLength(2);
+    expect(asked.every((a) => /^Did not happen:.*was not in the plan you approved/.test(a))).toBe(true);
+    expect(w.git('log', '-1', '--format=%s', 'release/0.5.0')).not.toMatch(/Merge pull request/);
+  });
+
   it('goes all the way: the plan on the tracking issue, a merge made locally, a beta, the waits, the stable, and a push that always waits for a yes', async () => {
     const pr = { head: '' };
     // the person's checkout: nothing a release does may change it
@@ -222,6 +271,8 @@ describe('the release from the plan to the stable', () => {
     b.runner.gate(run.id, 'approve');
     await b.settle();
     now = current(b, run);
+    // accepting the plan froze the head the pull request had in it
+    expect(now.subject?.planned).toEqual({ '7': pr.head });
     expect(now.stage).toBe('release-merged');
     expect(now.status).toBe('waiting');
     expect(now.wait?.kind).toBe('release-approved');
@@ -233,14 +284,19 @@ describe('the release from the plan to the stable', () => {
     await b.runner.tick();
     await b.settle();
 
-    // the beta is cut locally; both pushes wait in Actions even though the agent runs by itself
+    // the beta and both pushes wait in Actions even though the agent runs by itself (D6, D18): nothing was cut and nothing was sent
     now = current(b, run);
     expect(now.stage).toBe('release-feedback');
-    expect(w.git('tag', '--list')).toContain('v0.5.0-beta.1');
+    expect(w.git('tag', '--list')).not.toContain('beta');
     expect(w.remote('tag', '--list')).not.toContain('beta');
     const proposals = pending().filter((a) => a.kind === 'release-git');
-    expect(proposals.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['push-branch', 'push-tag']);
-    for (const op of ['push-branch', 'push-tag']) await actions.approveAction(proposals.find((a) => (a.unit as { op: string }).op === op)!.id);
+    expect(proposals.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['beta', 'push-branch', 'push-tag']);
+    const say = (op: string, list = proposals) => list.find((a) => (a.unit as { op: string }).op === op)!.id;
+    // the person says yes in order: the cut (the script and the checks run), then the branch, then the tag
+    await actions.approveAction(say('beta'));
+    expect(w.git('tag', '--list')).toContain('v0.5.0-beta.1');
+    expect(w.remote('tag', '--list')).not.toContain('beta');
+    for (const op of ['push-branch', 'push-tag']) await actions.approveAction(say(op));
     expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
     expect(listAudit().filter((l) => l.kind === 'push').map((l) => l.target)).toEqual(['git push origin refs/tags/v0.5.0-beta.<latest>', 'git push origin HEAD:refs/heads/release/0.5.0']);
 
@@ -261,20 +317,23 @@ describe('the release from the plan to the stable', () => {
     expect(now.stage).toBe('release-stable-gate');
     expect(now.status).toBe('gate');
 
-    // the stable: merged into main and cut by the script; main and its tag wait for a yes
+    // the stable: the cut and the pushes of main and of its tag all wait for a yes; the run ends with them pending
     b.runner.gate(run.id, 'approve');
     await b.settle();
     now = current(b, run);
     expect(now.status).toBe('done');
+    expect(w.git('tag', '--list')).not.toContain('v0.5.0\n');
+    const stable = pending().filter((a) => a.kind === 'release-git');
+    expect(stable.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['push-branch', 'push-tag', 'stable']);
+    await actions.approveAction(say('stable', stable));
     expect(w.steps.version).toBe('0.5.0');
-    expect(w.git('tag', '--list')).toContain('v0.5.0');
+    expect(w.git('tag', '--list').split('\n')).toContain('v0.5.0');
     expect(w.argv().flat()).not.toContain('--emergency');
     expect(w.argv().flat()).not.toContain('--allow-branch');
-    const stablePushes = pending().filter((a) => a.kind === 'release-git');
-    expect(stablePushes.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['push-branch', 'push-tag']);
-    expect(w.remote('tag', '--list')).not.toContain('v0.5.0\n');
-    for (const op of ['push-branch', 'push-tag']) await actions.approveAction(stablePushes.find((a) => (a.unit as { op: string }).op === op)!.id);
+    expect(w.remote('tag', '--list').split('\n')).not.toContain('v0.5.0');
+    for (const op of ['push-branch', 'push-tag']) await actions.approveAction(say(op, stable));
     expect(w.remote('tag', '--list').split('\n')).toContain('v0.5.0');
+    expect(w.remote('rev-parse', 'main')).toBe(w.git('rev-parse', 'v0.5.0^{commit}'));
 
     // the tracking issue stays open until the host shows the stable published; then it says so and is closed, by the agent, through the door
     await b.runner.tick();
@@ -420,6 +479,17 @@ describe('what the sweep and the waits read from the host', () => {
     w.change('Fixed', 'a fix after the beta');
     w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'tag', '-a', 'v0.5.0-beta.2', '-m', 'beta 2');
     expect(await over()).toBe(false);
+  });
+
+  it('beta-age counts a beta the host shows even when this clone has no tag of it (cut elsewhere), and the newest of them starts the wait over', async () => {
+    const { over } = await waiting('beta-age', { minutes: 60 });
+    expect(w.git('tag', '--list')).not.toContain('beta');
+    forge.releases.set('v0.5.0-beta.1', { draft: false, prerelease: true, publishedAt: new Date(clock.getTime() - 3 * 3_600_000).toISOString() });
+    expect(await over()).toBe(true);
+    forge.releases.set('v0.5.0-beta.2', { draft: false, prerelease: true, publishedAt: new Date(clock.getTime() - 5 * 60_000).toISOString() });
+    expect(await over()).toBe(false);
+    clock = new Date(clock.getTime() + 56 * 60_000);
+    expect(await over()).toBe(true);
   });
 
   it('beta-age reads the blocking label from the wait, and beta-blocker when it names none; and it goes on being unsure where the host cannot say', async () => {

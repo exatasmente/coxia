@@ -47,7 +47,7 @@ interface BbPr {
   state: string;
   draft?: boolean;
   description?: string;
-  source: { branch: { name: string }; commit?: { hash: string } | null };
+  source: { branch: { name: string }; commit?: { hash: string } | null; repository?: { full_name?: string } };
   destination: { branch: { name: string }; repository?: { full_name: string } };
   links?: { html?: { href?: string } };
   author?: BbUser;
@@ -158,6 +158,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       mergedAt: pr.state === 'MERGED' ? iso(pr.updated_on) : null,
       description: pr.description ?? '',
       roles,
+      ...(pr.source.repository?.full_name && pr.destination.repository?.full_name ? { fromFork: pr.source.repository.full_name !== pr.destination.repository.full_name } : {}),
       issueRefs: issueRefsOf(`${pr.title}\n${pr.description ?? ''}`, pr.source.branch.name),
     };
   };
@@ -170,7 +171,13 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
   }
 
   async function ciOf(project: string, iid: number): Promise<VcsCi | null> {
-    const rows = await c.values<{ state: string; url?: string }>(`${repo(project)}/pullrequests/${iid}/statuses`, { maxPages: 2 }).catch(() => []);
+    // A read that fails is not "no checks": unknown counts as still running (a merge must not go ahead on a CI nobody could read).
+    let unreadable = false;
+    const rows = await c.values<{ state: string; url?: string }>(`${repo(project)}/pullrequests/${iid}/statuses`, { maxPages: 2 }).catch(() => {
+      unreadable = true;
+      return [] as { state: string; url?: string }[];
+    });
+    if (unreadable) return { status: 'pending', raw: 'unreadable', runId: null, webUrl: null };
     const status = worstCi(rows.map((r) => CI[r.state] ?? 'pending'));
     return status ? { status, raw: rows.map((r) => r.state).join(',').toLowerCase(), runId: null, webUrl: rows.find((r) => r.url)?.url ?? null } : null;
   }
@@ -335,9 +342,12 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
 
     async listMrsByTarget(project, branch, opts = {}) {
       if (!/^[\w][\w./-]{0,200}$/.test(branch) || branch.includes('..')) throw new VcsError('invalid', { detail: branch });
-      // i18n-ignore: query language of the code host
-      const rows = await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `destination.branch.name="${branch}" AND (state="OPEN" OR state="MERGED")`, sort: '-updated_on' }, maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
-      return rows.slice(0, opts.limit ?? 100).map((r) => {
+      // The open ones are asked for by themselves (every one of them, up to a bound), so a branch with many merged pull requests cannot push an open one off the list.
+      const ask = (state: 'OPEN' | 'MERGED', pages: number) =>
+        // i18n-ignore: query language of the code host
+        c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `destination.branch.name="${branch}" AND state="${state}"`, sort: '-updated_on' }, maxPages: pages });
+      const [open, merged] = await Promise.all([ask('OPEN', 5), ask('MERGED', Math.ceil((opts.limit ?? 100) / 100) || 1)]);
+      return [...open, ...merged.slice(0, opts.limit ?? 100)].map((r) => {
         const m = mrOf(r);
         return { ...m, project: m.project || project };
       });

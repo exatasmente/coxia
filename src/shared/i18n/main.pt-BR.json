@@ -1181,7 +1181,7 @@
   "main.release.noRun": "Este passo da release não nomeia uma execução deste workspace que esteja liberando a {version}, ou a execução foi cancelada: nada foi feito.",
   "main.release.noRepo": "O repositório {repo} da execução não está configurado ou não tem clone local: nada foi feito.",
   "main.release.noIdentity": "O runner não tem identidade (nome e e-mail nas configurações do runner). A release é assinada com ela e com mais nada: nada foi feito.",
-  "main.release.autoPush": "Um push nunca sai sozinho: ele espera o sim de uma pessoa.",
+  "main.release.autoPush": "Um push, uma beta e uma estável nunca saem sozinhos: esperam o sim de uma pessoa.",
   "main.release.notRepo": "A pasta do repositório não é um checkout de trabalho: nada foi feito.",
   "main.release.dirty": "O repositório tem alterações que não foram commitadas. O script de release recusa uma árvore suja e trocar de branch poderia levar as alterações junto: faça commit ou stash antes. Nada foi feito.",
   "main.release.noBranch": "A branch {branch} não existe neste clone.",
@@ -1252,7 +1252,7 @@
   "main.forum.code.runner.release.noTracking": "O comentário \"{title}\" espera a issue de acompanhamento, que ainda não existe.",
   "main.forum.code.runner.release.stepRefused": "Um passo da release foi recusado, e nada foi feito: {reason}",
   "main.forum.code.runner.release.proposed": "Esperando o seu sim em Ações: {summary}.",
-  "main.forum.code.runner.release.pushProposed": "Esperando o seu sim em Ações, como todo push: {summary}.",
+  "main.forum.code.runner.release.alwaysWaits": "Esperando o seu sim em Ações, como todo push e todo corte: {summary}.",
   "main.forum.code.runner.release.done": "Feito: {summary}.",
   "main.forum.code.runner.release.failed": "Não aconteceu: {summary}. {reason}",
   "main.forum.code.runner.release.stepDone": "Feito, depois do seu sim: {summary}.",
@@ -1260,5 +1260,10 @@
   "main.forum.code.runner.release.closed": "A versão estável está no ar, e a issue de acompanhamento foi fechada: {url}",
   "main.forum.code.runner.release.closeFailed": "A issue de acompanhamento não pôde ser fechada: {reason}",
   "main.release.worktreeBusy": "A pasta {path} não é o worktree desta release: o app não roda no que não criou. Remova ou renomeie e tente de novo.",
-  "main.release.branchElsewhere": "A branch {branch} está com checkout em {path}, e uma branch não pode ter checkout duas vezes: troque aquele checkout para outra branch (os passos da release rodam em um worktree próprio e nunca o tocam) e tente de novo."
+  "main.release.branchElsewhere": "A branch {branch} está com checkout em {path}, e uma branch não pode ter checkout duas vezes: troque aquele checkout para outra branch (os passos da release rodam em um worktree próprio e nunca o tocam) e tente de novo.",
+  "main.release.prFork": "O {crLong} #{pr} vem de um fork, ou o host não disse que não vem: o app não integra código de outro repositório. Integre à mão se confia nele. Nada foi integrado.",
+  "main.release.notPlanned": "O {crLong} #{pr} não estava no plano que você aprovou neste commit (é novo, ou recebeu push depois): nada foi integrado. Devolva a execução ao plano para ele ser planejado de novo.",
+  "main.release.worktreeFailed": "O worktree desta release não pôde ser criado em {path}: {detail}",
+  "main.release.scriptTimedOut": "O script de release ({mode}) passou do limite de {minutes} minutos e foi parado, com tudo que ele tinha iniciado; o worktree voltou como estava.",
+  "main.forum.code.runner.release.trackingNotAdopted": "Existe uma issue aberta com o título da release, mas não é da própria pessoa e não tem rótulo desta versão, então não foi usada: {url} (de {author}). Uma nova issue de acompanhamento é criada."
 }

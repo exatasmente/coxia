@@ -5,7 +5,7 @@ import { cycleText } from '../../shared/cycles/text';
 import { type ForumMessage, type PublishedRef, runThreadId } from '../../shared/forum';
 import { createTranslator } from '../../shared/i18n';
 import { crMarkOf } from '../../shared/i18n/terms';
-import { type ReleaseUnit, isReleasePush, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../../shared/release';
+import { type ReleaseUnit, alwaysWaits, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../../shared/release';
 import {
   type CommentProblem,
   type CommentTarget,
@@ -1087,7 +1087,20 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const { issue: project } = projects(run);
     const title = releaseTitle(run.subject.version);
     try {
-      const found = (await provider.listIssues({ project, scope: 'all', limit: 100 })).find((i) => i.state === 'open' && i.title.trim().toLowerCase() === title.toLowerCase());
+      // An open issue with the title is taken only when it is the person's own (its author is the user the app acts as) or carries the label that names this version (the
+      // cycle's `releaseLabelPattern`): somebody else's issue of that title is not where a release reports, and a new one is made.
+      const same = (await provider.listIssues({ project, scope: 'all', limit: 100 })).filter((i) => i.state === 'open' && i.title.trim().toLowerCase() === title.toLowerCase());
+      const me = await provider.currentUser().catch(() => null);
+      let pattern: RegExp | null = null;
+      try {
+        pattern = new RegExp(deps.config().devCycle.releaseLabelPattern, 'i');
+      } catch {
+        pattern = null;
+      }
+      const version = run.subject.version;
+      const ours = (i: (typeof same)[number]): boolean => (!!me && !!i.author && i.author.toLowerCase() === me.username.toLowerCase()) || i.labels.some((l) => pattern?.exec(l)?.[1] === version);
+      const found = same.find(ours);
+      for (const other of same.filter((i) => !ours(i))) say(run, 'runner.release.trackingNotAdopted', { url: other.webUrl, author: other.author ?? '—' });
       if (found) {
         say(run, 'runner.release.trackingAdopted', { url: found.webUrl });
         return trackingKnown(runId, { iid: found.iid, url: found.webUrl || null });
@@ -1116,7 +1129,10 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
-  const stepKey = (u: ReleaseUnit): string => [u.op, u.pr, u.branch, u.channel, u.from].filter((x) => x !== undefined).join(':');
+  /** How many betas of one version the wait looks for on the host. */
+const MAX_BETAS = 30;
+
+const stepKey = (u: ReleaseUnit): string => [u.op, u.pr, u.branch, u.channel, u.from].filter((x) => x !== undefined).join(':');
 
   function stepSummary(u: ReleaseUnit): string {
     const p = { version: u.version, pr: u.pr ?? '', tag: u.from ?? '' };
@@ -1147,9 +1163,10 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const summary = stepSummary(unit);
     // Each time a stage runs (the person may send it back for another beta) is its own step: the proposal of an earlier attempt that was carried out is not this one.
     const key = `release:${runId}:${who.stage}:${who.attempt}:${stepKey(unit)}`;
-    if (isReleasePush(unit.op) || !who.autonomous) {
+    // A push, a beta and a stable wait for the person whatever the agent's autonomy (D6, D18); `open` and `merge-pr` follow it.
+    if (alwaysWaits(unit.op) || !who.autonomous) {
       const created = door.proposeRelease({ key, issue: trackIid(run), issueTitle: run.issue.title, summary, unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } });
-      if (created) say(run, isReleasePush(unit.op) ? 'runner.release.pushProposed' : 'runner.release.proposed', { summary }, who.stage);
+      if (created) say(run, alwaysWaits(unit.op) ? 'runner.release.alwaysWaits' : 'runner.release.proposed', { summary }, who.stage);
       return created ? `Waiting for the person: "${summary}" is in Actions and happens when they say yes. Nothing was done yet.` : `Already waiting in Actions (or already done): "${summary}".`;
     }
     try {
@@ -1234,6 +1251,23 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return (wait?.label ?? stage?.waitsFor?.label ?? '').trim() || 'beta-blocker';
   };
 
+  /**
+   * The betas of the version: the highest number there is (the clone's tags and what the host has published, the host asked tag by tag from beta.1 on, so a beta cut elsewhere
+   * counts too) and the published release of each beta the host shows.
+   */
+  async function betasOf(run: Run, provider: VcsProvider): Promise<{ latest: number; published: Map<number, NonNullable<Awaited<ReturnType<typeof publishedRelease>>>> }> {
+    const version = run.subject?.version ?? '';
+    const local = await betaTagsOf(run);
+    const localMax = local.length ? Number(local[local.length - 1].split('.').pop()) : 0;
+    const published = new Map<number, NonNullable<Awaited<ReturnType<typeof publishedRelease>>>>();
+    for (let n = 1; n <= MAX_BETAS; n++) {
+      const rel = await publishedRelease(provider, run, `v${version}-beta.${n}`);
+      if (rel) published.set(n, rel);
+      else if (n > localMax) break;
+    }
+    return { latest: Math.max(localMax, ...published.keys()), published };
+  }
+
   async function releaseTick(runId: string): Promise<void> {
     const run = deps.runs.get(runId);
     if (!run?.subject || run.status === 'cancelled' || run.subject.tracking?.closed) return;
@@ -1243,11 +1277,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!run.subject.tracking) await ensureTracking(runId);
     await refreshActivities(runId);
     await flushTracking(runId);
-    for (const tag of await betaTagsOf(run)) {
-      const n = tag.split('.').pop() as string;
+    for (const [n, rel] of (await betasOf(run, provider)).published) {
       if (need(runId).comments[`beta-${n}`]?.status === 'published') continue;
-      const rel = await publishedRelease(provider, run, tag);
-      if (rel) await appComment(runId, { key: `beta-${n}`, template: 'beta-published', body: `${tr('main.runner.release.betaLine', { tag, url: rel.webUrl })}\n\n${tr('main.runner.release.betaWait', { label: blockingLabelOf(run) })}` });
+      await appComment(runId, { key: `beta-${n}`, template: 'beta-published', body: `${tr('main.runner.release.betaLine', { tag: `v${run.subject.version}-beta.${n}`, url: rel.webUrl })}\n\n${tr('main.runner.release.betaWait', { label: blockingLabelOf(run) })}` });
     }
     const stable = await publishedRelease(provider, run, releaseTagOf(run.subject.version));
     if (stable && !stable.prerelease) {
@@ -1266,9 +1298,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   /** Whether the latest beta has been published for `minutes` and no issue with the blocking label is open: what a wait for `beta-age` ends on. */
   async function betaAged(run: Run, provider: VcsProvider, w: WaitState): Promise<boolean> {
     if (!run.subject || !w.minutes) return false;
-    const latest = (await betaTagsOf(run)).at(-1);
-    if (!latest) return false;
-    const rel = await publishedRelease(provider, run, latest);
+    const { latest, published } = await betasOf(run, provider);
+    // The latest beta there is must be the one that is out: a newer one the host does not show yet starts the wait over.
+    const rel = latest ? published.get(latest) : undefined;
     if (!rel?.publishedAt || Date.parse(rel.publishedAt) + w.minutes * 60_000 > (deps.now?.() ?? new Date()).getTime()) return false;
     // The blocking report is an open issue with the label: where the host cannot say (no labels on issues), nothing is known, and the wait goes on.
     const blocking = await provider.listIssues({ project: projects(run).issue, scope: 'labels', labels: [blockingLabelOf(run, w)], limit: 20 });

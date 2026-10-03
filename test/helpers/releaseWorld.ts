@@ -47,7 +47,8 @@ export class Checkout {
   commit(file: string, message: string): void {
     writeFileSync(join(this.dir, 'work.txt'), `${readFileSync(join(this.dir, 'work.txt'), { encoding: 'utf8', flag: 'a+' })}${file}\n`);
     this.git('add', '-A');
-    this.git(...ID, 'commit', '-q', '-m', message);
+    // the test's own commits never run the hooks a test installs to see whether the app's commands do
+    this.git(...ID, 'commit', '-q', '--no-verify', '-m', message);
   }
 
   /** A changelog entry under [Unreleased] (not committed). */
@@ -98,7 +99,7 @@ export class ReleaseWorld {
     for (const f of ['release-notes.sh', 'release-changelog.mjs']) copyFileSync(join(SCRIPTS, f), join(this.dir, 'scripts', f));
     copyFileSync(join(SCRIPTS, 'release.sh'), join(this.dir, 'scripts', 'release.real.sh'));
     // The wrapper is what the runner calls as scripts/release.sh: it records the arguments (in a file of the world's folder, whichever worktree runs it) and runs the real script.
-    writeFileSync(join(this.dir, 'scripts', 'release.sh'), `#!/usr/bin/env bash\nROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"\n{ for a in "$@"; do printf '%s\\037' "$a"; done; printf '\\n'; } >> "${this.root}/argv.log"\nexec bash "$ROOT/scripts/release.real.sh" "$@"\n`);
+    writeFileSync(join(this.dir, 'scripts', 'release.sh'), `#!/usr/bin/env bash\nROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"\n{ for a in "$@"; do printf '%s\\037' "$a"; done; printf '\\n'; } >> "${this.root}/argv.log"\nif [ -f "${this.root}/hang" ]; then echo half-done > "$ROOT/left-by-script.txt"; touch "$ROOT/.git-index-marker"; sleep 120 & echo $! > "${this.root}/sleep.pid"; wait; fi\nexec bash "$ROOT/scripts/release.real.sh" "$@"\n`);
     chmodSync(join(this.dir, 'scripts', 'release.sh'), 0o755);
     writeFileSync(join(this.dir, 'scripts', 'public-audit.mjs'), 'process.exit(0);\n');
     writeFileSync(join(this.dir, 'scripts', 'theme-audit.mjs'), 'process.exit(0);\n');

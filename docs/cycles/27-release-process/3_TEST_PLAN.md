@@ -34,10 +34,11 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 
 ### 3. Pushes always wait
 
-1. Switch the Release manager to **runs by itself**. Let the run reach **Cut the beta**: the beta is cut with no question (`git tag --list` shows `v0.2.0-beta.1`, the audit log has a row *Release step* by `release-manager`), and **two proposals** appear in Actions: push the release branch, push the latest beta tag. Nothing is on the remote (`git ls-remote --tags origin`).
+1. Switch the Release manager to **runs by itself**. Let the run reach **Cut the beta**: **three proposals** appear in Actions (D18): cut the beta, push the release branch, push the latest beta tag. Nothing is cut (`git tag --list` shows no `v0.2.0-beta.1`) and nothing is on the remote (`git ls-remote --tags origin`) until you say yes; say yes to the cut first (the script and the checks run, the tag appears), then to the branch, then to the tag. The same three-step shape holds for the stable (`stable`, push of `main`, push of the tag).
 2. *See the push* shows the refs and the commits that would go. Say yes to the branch, then to the tag (in the other order the tag is refused: "Push release/0.2.0 first"). The workflow of part 1 starts; check and publish the draft as in `RELEASING.md`.
 3. In a **test workspace** (Settings › Workspaces, mark it) every step is refused when it runs and nothing is logged; the proposals still exist and their confirmation is refused.
-4. Automated: `test/runner-release.test.ts` (the pushes of the beta and of the stable are proposals with an autonomous agent), `test/release-actions.test.ts` ("a step an agent's autonomy lets go out": a push is refused by `runReleaseAuto`; "is refused in a test workspace").
+4. A paired browser (the PWA) cannot start a release (D19): `runs:startRelease` answers as a desktop-only channel; it can follow the run and answer its gates.
+5. Automated: `test/runner-release.test.ts` (the cuts and the pushes of the beta and of the stable are proposals with an autonomous agent; a plan accepted freezes the heads and a moved head is not merged; adoption of the tracking issue; the latest beta read from the host), `test/release-actions.test.ts` ("a step an agent's autonomy lets go out": a push, a beta and a stable are refused by `runReleaseAuto`; "is refused in a test workspace").
 
 ### 4. The unit is judged again, and an agent cannot reach `--emergency`
 

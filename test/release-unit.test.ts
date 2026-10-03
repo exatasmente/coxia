@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, isReleasePush, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../src/shared/release';
+import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../src/shared/release';
 
 // What a release action may hold: an operation and a version, and only the other fields that operation has. Nothing that names a path, a command or a flag.
 
@@ -42,10 +42,13 @@ describe('the unit of a release action', () => {
   });
 
   it('wants a pull request number for a merge and for nothing else', () => {
-    expect(code({ op: 'merge-pr', version: '0.6.0' })).toBe('bad-pr');
-    for (const pr of [0, -1, 1.5, '7', null, 1e12]) expect(code({ op: 'merge-pr', version: '0.6.0', pr }), String(pr)).toBe('bad-pr');
+    expect(code({ op: 'merge-pr', version: '0.6.0', head: 'abcdef1' })).toBe('bad-pr');
+    for (const pr of [0, -1, 1.5, '7', null, 1e12]) expect(code({ op: 'merge-pr', version: '0.6.0', pr, head: 'abcdef1' }), String(pr)).toBe('bad-pr');
+    // the commit the pull request was read at is required: a merge of "whatever it is now" is not a step
+    expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7 })).toBe('bad-head');
     expect(code({ op: 'beta', version: '0.6.0', pr: 7 })).toBe('field-not-for-op');
     expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head: 'not a sha' })).toBe('bad-head');
+    expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head: 'abc' })).toBe('bad-head');
     expect(code({ op: 'beta', version: '0.6.0', head: 'abcdef1' })).toBe('field-not-for-op');
   });
 
@@ -75,6 +78,8 @@ describe('the unit of a release action', () => {
     expect(releaseBranchOf('0.6.0')).toBe('release/0.6.0');
     expect(releaseTagOf('0.6.0')).toBe('v0.6.0');
     expect(RELEASE_OPS.filter(isReleasePush)).toEqual(['push-branch', 'push-tag']);
+    // what always waits for the person: the pushes (D6) and the cuts, which run the repository's scripts and merged code as the person (D18)
+    expect(RELEASE_OPS.filter(alwaysWaits)).toEqual(['beta', 'stable', 'push-branch', 'push-tag']);
   });
 
   it('is the schema the tool gives the agent: the six operations and the fields above, no path and no flag', () => {

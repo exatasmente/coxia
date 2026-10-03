@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type ReleasePr, latestBetaTag, releaseCommandLine, runReleaseOp } from '../src/main/releaseGit';
+import { type ReleasePr, latestBetaTag, previewRelease, releaseCommandLine, runReleaseOp } from '../src/main/releaseGit';
 import { setLanguage } from '../src/shared/i18n';
 import { type ReleaseUnit } from '../src/shared/release';
 import { AUTHOR, ReleaseWorld, cleanWorlds } from './helpers/releaseWorld';
@@ -23,7 +23,7 @@ afterAll(() => {
 
 const unit = (over: Partial<ReleaseUnit> & Pick<ReleaseUnit, 'op'>): ReleaseUnit => ({ version: '0.5.0', ...over });
 const open = (w: ReleaseWorld, pr?: (n: number) => Promise<ReleasePr>) => (u: ReleaseUnit) => runReleaseOp(u, { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), pr });
-const green = (over: Partial<ReleasePr> = {}): ReleasePr => ({ state: 'open', draft: false, sourceBranch: 'feat/x', targetBranch: 'release/0.5.0', sha: '', approved: true, checks: 'success', ...over });
+const green = (over: Partial<ReleasePr> = {}): ReleasePr => ({ state: 'open', draft: false, sourceBranch: 'feat/x', targetBranch: 'release/0.5.0', sha: '', approved: true, checks: 'success', fork: false, ...over });
 const AS = `${AUTHOR.name} <${AUTHOR.email}>`;
 
 /** A world with release/0.5.0 open (in the worktree of the steps) and pushed. */
@@ -158,6 +158,7 @@ describe('merge-pr', () => {
     ['one whose checks fail', { checks: 'failing' as const }, /checks .* are failing/],
     ['one whose checks are still running', { checks: 'running' as const }, /are running/],
     ['one aimed at another branch', { targetBranch: 'main' }, /aimed at main, not at release\/0\.5\.0/],
+    ['one from a fork (or one the host did not say is not)', { fork: true }, /comes from a fork/],
   ])('refuses %s, and merges nothing', async (_name, over, message) => {
     const { w } = await opened();
     const head = w.pushedBranch('feat/x', 'release/0.5.0');
@@ -203,7 +204,7 @@ describe('merge-pr', () => {
 
   it('refuses when the code host cannot be read, and when the release branch does not exist', async () => {
     const { w } = await opened();
-    await expect(open(w)(unit({ op: 'merge-pr', pr: 7 }))).rejects.toThrow(/cannot be read right now/);
+    await expect(open(w)(unit({ op: 'merge-pr', pr: 7, head: 'a'.repeat(40) }))).rejects.toThrow(/cannot be read right now/);
     const bare = new ReleaseWorld();
     await expect(open(bare, async () => green())(unit({ op: 'merge-pr', pr: 7 }))).rejects.toThrow(/branch release\/0\.5\.0 does not exist/);
   });
@@ -433,5 +434,119 @@ describe('what a person is shown', () => {
     expect(lines).toContain('git push origin HEAD:refs/heads/main');
     expect(lines).toContain('git push origin refs/tags/v0.5.0');
     expect(lines.join('\n')).not.toMatch(/--force|--emergency|--allow-branch|\+refs/);
+  });
+});
+
+describe('what runs, and when', () => {
+  it('runs the steps one at a time per worktree, in the order they were asked, so a stable cannot move HEAD under a push that was asked at the same moment', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    w.steps.git('push', '-q', 'origin', 'release/0.5.0');
+    await run(unit({ op: 'beta' }));
+    w.steps.git('push', '-q', 'origin', 'release/0.5.0');
+    w.steps.git('push', '-q', 'origin', 'v0.5.0-beta.1');
+    const releaseHead = w.steps.git('rev-parse', 'HEAD');
+    // a stable (it detaches HEAD and merges), a push of the release branch and a push of main, fired together
+    const results = await Promise.allSettled([run(unit({ op: 'stable' })), run(unit({ op: 'push-branch' })), run(unit({ op: 'push-branch', branch: 'main' }))]);
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+    // the release branch got the commit of the release branch, never the stable's commit; main got the stable's
+    expect(w.remote('rev-parse', 'release/0.5.0')).toBe(releaseHead);
+    expect(w.remote('rev-parse', 'main')).toBe(w.git('rev-parse', 'v0.5.0^{commit}'));
+    expect(w.remote('rev-parse', 'release/0.5.0')).not.toBe(w.remote('rev-parse', 'main'));
+  });
+
+  it('makes two cuts asked together one after the other: the first is made, the second finds nothing new to cut and says so', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    const two = await Promise.allSettled([run(unit({ op: 'beta' })), run(unit({ op: 'beta' }))]);
+    expect(two.map((r) => r.status)).toEqual(['fulfilled', 'rejected']);
+    expect(w.git('tag', '--list', 'v0.5.0-beta.*')).toBe('v0.5.0-beta.1');
+  });
+
+  it('keeps a step that failed from holding up the ones asked after it', async () => {
+    const { run } = await opened();
+    const [bad, good] = await Promise.allSettled([run(unit({ op: 'beta', version: '0.9.0' })), run(unit({ op: 'push-branch' }))]);
+    expect(bad.status).toBe('rejected');
+    expect(good.status).toBe('fulfilled');
+  });
+
+  it('sends a commit by name, never HEAD: what is pushed is what the step resolved', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing');
+    const head = w.steps.git('rev-parse', 'HEAD');
+    await run(unit({ op: 'push-branch' }));
+    expect(w.remote('rev-parse', 'release/0.5.0')).toBe(head);
+    expect(releaseCommandLine(unit({ op: 'push-branch' }))).toContain('HEAD:refs/heads/');
+  });
+
+  it('forgets a worktree whose folder was deleted and makes it again', async () => {
+    const { w, run } = await opened();
+    rmSync(w.stepsDir, { recursive: true, force: true });
+    expect(w.git('worktree', 'list', '--porcelain')).toContain(w.stepsDir);
+    await run(unit({ op: 'push-branch' }));
+    expect(existsSync(join(w.stepsDir, '.git'))).toBe(true);
+    expect(w.steps.branch).toBe('release/0.5.0');
+  });
+
+  it('says why a worktree could not be made, instead of git\'s own wording alone', async () => {
+    const w = new ReleaseWorld();
+    // the folder is under a file: it cannot be made
+    writeFileSync(join(w.root, 'blocker'), 'x');
+    await expect(runReleaseOp(unit({ op: 'open' }), { clone: w.dir, worktree: join(w.root, 'blocker', 'steps'), identity: AUTHOR, env: w.scriptEnv() })).rejects.toThrow();
+  });
+
+  it('runs without the hooks of the repository: not when the worktree is made, not when a branch is switched to, and not for the script\'s own commits', async () => {
+    const w = new ReleaseWorld();
+    const marker = join(w.root, 'hook-ran');
+    for (const hook of ['post-checkout', 'post-merge', 'pre-commit', 'commit-msg']) {
+      writeFileSync(join(w.dir, '.git', 'hooks', hook), `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+    }
+    // the hook does run for a plain git command (so the test can tell)
+    w.git('worktree', 'add', '--detach', join(w.root, 'sanity'), 'main');
+    expect(existsSync(marker)).toBe(true);
+    rmSync(marker);
+    const run = open(w);
+    await run(unit({ op: 'open' }));
+    w.steps.change('Added', 'a thing');
+    await run(unit({ op: 'beta' }));
+    await run(unit({ op: 'push-branch' }));
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('stops a script that outlives its time, with everything it started, and puts the worktree back so the next step can run', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    writeFileSync(join(w.root, 'hang'), '');
+    await expect(runReleaseOp(unit({ op: 'beta' }), { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), scriptTimeoutMs: 700 })).rejects.toThrow(/ran past its limit/);
+    const pid = Number(readFileSync(join(w.root, 'sleep.pid'), 'utf8').trim());
+    expect(() => process.kill(pid, 0)).toThrow();
+    // what the script left (a file, a lock) is gone, and the tree is clean
+    expect(existsSync(join(w.stepsDir, 'left-by-script.txt'))).toBe(false);
+    expect(w.steps.git('status', '--porcelain')).toBe('');
+    rmSync(join(w.root, 'hang'));
+    const cut = await run(unit({ op: 'beta' }));
+    expect(cut.tag).toBe('v0.5.0-beta.1');
+  });
+});
+
+describe('what a person is shown for a push of main', () => {
+  it('is the commits of the stable the tag names over what the remote has, never the person\'s own main, and says when the stable is not cut yet', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    await run(unit({ op: 'beta' }));
+    await run(unit({ op: 'push-branch' }));
+    await run(unit({ op: 'push-tag', channel: 'beta' }));
+    const notCut = await previewRelease(unit({ op: 'push-branch', branch: 'main' }), w.dir);
+    expect(notCut).toContain('git push origin HEAD:refs/heads/main');
+    expect(notCut).toMatch(/there is no tag v0\.5\.0 yet/);
+    // the person has a commit of their own on main that would never be sent
+    writeFileSync(join(w.dir, 'mine.txt'), 'x');
+    w.git('add', '-A');
+    w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'my own unpushed work');
+    await run(unit({ op: 'stable' }));
+    const shown = await previewRelease(unit({ op: 'push-branch', branch: 'main' }), w.dir);
+    expect(shown).toContain('feat: a thing for the version');
+    expect(shown).toContain('feat: release 0.5.0');
+    expect(shown).not.toContain('my own unpushed work');
   });
 });

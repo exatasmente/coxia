@@ -64,11 +64,12 @@ export async function createWorktree(w: WorktreeRequest): Promise<Worktree> {
   if (existsSync(w.dest)) throw new WorktreeError('dest-exists', w.dest);
   if (await ok(w.clone, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) throw new WorktreeError('branch-exists', branch);
   const base = checkRef(w.base ?? (await defaultBranch(w.clone)));
-  await git(w.clone, ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], { fail: false });
+  // The repository's hooks and file-system monitor are its own code: `fetch` and `worktree add` (whose checkout runs a `post-checkout` hook) run without them, like every command of the app.
+  await git(w.clone, [...SAFE, 'fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], { fail: false });
   const remote = `refs/remotes/origin/${base}`;
   const baseRef = (await ok(w.clone, ['rev-parse', '--verify', '--quiet', remote])) ? remote : (await ok(w.clone, ['rev-parse', '--verify', '--quiet', `refs/heads/${base}`])) ? `refs/heads/${base}` : 'HEAD';
   mkdirSync(dirname(w.dest), { recursive: true });
-  await git(w.clone, ['worktree', 'add', '--no-track', '-b', branch, w.dest, baseRef]);
+  await git(w.clone, [...SAFE, 'worktree', 'add', '--no-track', '-b', branch, w.dest, baseRef]);
   return { baseRef, baseSha: await out(w.dest, ['rev-parse', 'HEAD']) };
 }
 
@@ -134,15 +135,15 @@ export const commitMessage = (template: string, summary: string, iid: number): s
  * command. Returns the new commit, or null when there was nothing to commit.
  */
 export async function commitAll(wt: string, message: string, identity: Identity): Promise<string | null> {
-  await git(wt, ['add', '-A', '--', '.', ...DEPENDENCY_EXCLUDES]);
-  if (!(await out(wt, ['status', '--porcelain', '--', '.', ...DEPENDENCY_EXCLUDES]))) return null;
+  await git(wt, [...SAFE, 'add', '-A', '--', '.', ...DEPENDENCY_EXCLUDES]);
+  if (!(await out(wt, [...SAFE, 'status', '--porcelain', '--', '.', ...DEPENDENCY_EXCLUDES]))) return null;
   await git(wt, [...SAFE, '-c', `user.name=${identity.name}`, '-c', `user.email=${identity.email}`, 'commit', '--no-verify', '--quiet', '-m', message]);
   return out(wt, ['rev-parse', 'HEAD']);
 }
 
 /** Whether the worktree has a change (tracked or not) outside `exclude`, the cycle folder: what a pass that writes code leaves before the app commits it. */
 export async function changedOutside(wt: string, exclude: string): Promise<boolean> {
-  return !!(await git(wt, ['status', '--porcelain', '--', '.', `:(exclude)${exclude}`, ...DEPENDENCY_EXCLUDES], { fail: false })).stdout.trim();
+  return !!(await git(wt, [...SAFE, 'status', '--porcelain', '--', '.', `:(exclude)${exclude}`, ...DEPENDENCY_EXCLUDES], { fail: false })).stdout.trim();
 }
 
 /** What the branch changed since it was cut, outside `exclude` (the cycle folder), as a reviewer reads it: no external diff or text conversion program runs. */

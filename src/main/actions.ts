@@ -34,8 +34,8 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
-import { type ReleaseUnit, isReleasePush, parseReleaseUnit } from '../shared/release';
-import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp } from './releaseGit';
+import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit } from '../shared/release';
+import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
@@ -992,6 +992,11 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
   const id = getConfig().runner.identity;
   const identity = { name: id.name.trim(), email: id.email.trim() };
   if (!identity.name || !identity.email) throw new Error(t('main.release.noIdentity'));
+  // A merge brings in only the head the person approved with the plan: a pull request that was not in it, or that moved since, is not merged by the agent.
+  if (unit.op === 'merge-pr') {
+    const planned = run.subject?.planned?.[String(unit.pr)];
+    if (!planned || !sameSha(planned, unit.head as string)) throw new Error(t('main.release.notPlanned', { pr: unit.pr as number }));
+  }
   const push = isReleasePush(unit.op);
   const fields: Record<string, string> = { op: unit.op, version: unit.version, run: run.id, repo: run.repo, ...(unit.pr !== undefined ? { pr: String(unit.pr) } : {}) };
   return audited(origin, { kind: push ? 'push' : 'release', target: releaseCommandLine(unit), via: push ? 'git' : 'release.sh', fields }, async () => {
@@ -1002,7 +1007,8 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
       identity,
       pr: async (n) => {
         const mr = await vcsProvider().getMr(project ?? issueProjectKey(), n, { approvals: true });
-        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.approved === true, checks: checksOf(mr.ci) };
+        // What a merge may rely on: an approval bound to the head by a member of the project where the host can say (GitHub), the host's plain approval where it cannot.
+        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.onHead ?? mr.approvals?.approved === true, checks: checksOf(mr.ci), fork: mr.fromFork !== false };
       },
     });
     fields.before = r.before ?? '';
@@ -1012,10 +1018,10 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
   });
 }
 
-/** One release step an agent's autonomy lets go out without a "sim". A push is refused here whatever the caller says: it only ever waits for a person. */
+/** One release step an agent's autonomy lets go out without a "sim". A push, a beta and a stable are refused here whatever the caller says: they only ever wait for a person. */
 export async function runReleaseAuto(w: { issue: number; key: string; summary: string; by: string }, raw: unknown): Promise<string> {
   const unit = parseReleaseUnit(raw);
-  if (isReleasePush(unit.op)) throw new Error(t('main.release.autoPush'));
+  if (alwaysWaits(unit.op)) throw new Error(t('main.release.autoPush'));
   return runRelease({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by }, unit);
 }
 

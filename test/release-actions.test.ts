@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
 import { setLanguage } from '../src/shared/i18n';
-import { flowOf, startRun } from '../src/shared/runs';
+import { flowOf, freezePlan, recordSubject, startRun } from '../src/shared/runs';
 import { type Forge, HEAD, makeForge } from './helpers/fakeForge';
 import { AUTHOR, ReleaseWorld, cleanWorlds } from './helpers/releaseWorld';
 import { type Repo, runnerConfig } from './helpers/runner';
@@ -77,6 +77,12 @@ afterAll(() => {
   process.env.PATH = realPath;
 });
 
+/** The person accepted a plan that read the pull request 7 at `head`: the run knows it, and froze it. */
+function planned(head: string): void {
+  runStore().update(RUN, (r) => recordSubject(r, { activities: [{ pr: 7, title: 'Add the x', url: 'u', head, state: 'open', approved: true, issue: null }] }, '2026-10-03T10:30:00.000Z'));
+  runStore().update(RUN, (r) => freezePlan(r, '2026-10-03T10:31:00.000Z'));
+}
+
 const approve = (id: string) => actions.approveAction(id);
 const propose = (key: string, u: Record<string, unknown>) => actions.proposeRelease(input(key, u)) as NonNullable<ReturnType<typeof actions.proposeRelease>>;
 
@@ -139,6 +145,7 @@ describe('approving a step', () => {
     w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
     const head = w.pushedBranch('feat/x', 'release/0.5.0');
     forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: true };
+    planned(head);
     const done = await approve(propose('m', unit({ op: 'merge-pr', pr: 7, head })).id);
     expect(done.state).toBe('done');
     expect(w.steps.git('log', '-1', '--format=%s')).toBe('Merge pull request #7 from feat/x');
@@ -152,6 +159,7 @@ describe('approving a step', () => {
     w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
     const head = w.pushedBranch('feat/x', 'release/0.5.0');
     const before = w.steps.git('rev-parse', 'HEAD');
+    planned(head);
     const attempt = async (key: string, pr: Partial<NonNullable<Forge['pr']>>, u: Record<string, unknown> = {}) => {
       forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: true, ...pr };
       return approve(propose(key, unit({ op: 'merge-pr', pr: 7, head, ...u })).id);
@@ -159,11 +167,55 @@ describe('approving a step', () => {
     expect((await attempt('m1', { approved: false })).output).toMatch(/not approved/);
     expect((await attempt('m2', { base: 'main' })).output).toMatch(/aimed at main/);
     expect((await attempt('m3', { draft: true })).output).toMatch(/draft/);
-    expect((await attempt('m4', {}, { head: 'f'.repeat(40) })).output).toMatch(/plan read it/);
+    expect((await attempt('m4', {}, { head: 'f'.repeat(40) })).output).toMatch(/was not in the plan you approved/);
+    expect((await attempt('m5', { fork: true })).output).toMatch(/comes from a fork/);
     expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
     const failed = listAudit().filter((l) => l.fields.op === 'merge-pr');
     expect(failed).toHaveLength(4);
     expect(failed.every((l) => !l.ok)).toBe(true);
+  });
+
+  it('merges only the head the person approved with the plan: a pull request that was not in it, or that moved after it, is refused before anything runs', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: true };
+    const merge = (key: string, h = head) => approve(propose(key, unit({ op: 'merge-pr', pr: 7, head: h })).id);
+    const before = w.steps.git('rev-parse', 'HEAD');
+    const audits = listAudit().length;
+    // no plan accepted yet
+    expect((await merge('m1')).output).toMatch(/was not in the plan you approved/);
+    planned('1'.repeat(40));
+    // the plan was written for another commit, and the pull request was pushed to since
+    expect((await merge('m2')).output).toMatch(/was not in the plan you approved/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    // refused before the audit: nothing ran
+    expect(listAudit()).toHaveLength(audits);
+    // freezing is once: a second acceptance does not move the heads the first plan froze
+    planned(head);
+    expect((await merge('m3')).state).toBe('failed');
+    // only a new plan (here, the file edited as a run sent back to its plan and accepted again would) makes it the planned head
+    runStore().update(RUN, (r) => ({ run: { ...r, subject: { ...(r.subject as NonNullable<typeof r.subject>), planned: { '7': head } } }, messages: [] }));
+    expect((await merge('m4')).state).toBe('done');
+  });
+
+  it('merges on an approval only when a member gave it on the head, and with checks that can be read and pass', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    planned(head);
+    const attempt = async (key: string, over: Partial<NonNullable<Forge['pr']>>) => {
+      forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: true, ...over };
+      return approve(propose(key, unit({ op: 'merge-pr', pr: 7, head })).id);
+    };
+    const before = w.steps.git('rev-parse', 'HEAD');
+    expect((await attempt('a1', { approval: { association: 'NONE' } })).output).toMatch(/not approved/);
+    expect((await attempt('a2', { approval: { commit: 'b'.repeat(40) } })).output).toMatch(/not approved/);
+    expect((await attempt('a3', { checks: 'failing' })).output).toMatch(/checks .* are failing/);
+    // a CI nobody could read is not "no checks": it counts as still running
+    expect((await attempt('a4', { checks: 'unreadable' })).output).toMatch(/checks .* are running/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    expect((await attempt('a5', { approval: { association: 'COLLABORATOR' } })).state).toBe('done');
   });
 
   it('judges the stored unit again: an action edited on disk to name a path or a flag fails and runs nothing', async () => {
@@ -233,12 +285,26 @@ describe('a step an agent\'s autonomy lets go out', () => {
     expect(listAudit()[0]).toMatchObject({ kind: 'release', ok: true, by: 'release-manager', origin: { actionId: 'auto:release:auto:open', kind: 'auto' }, fields: { op: 'open', run: RUN } });
   });
 
-  it('never pushes: a push waits for a person whatever the caller says', async () => {
+  it('never pushes, and never cuts: a push, a beta and a stable wait for a person whatever the caller says', async () => {
     await actions.runReleaseAuto(meta, unit({ op: 'open' }));
-    await expect(actions.runReleaseAuto({ ...meta, key: 'b' }, unit({ op: 'push-branch' }))).rejects.toThrow(/never goes out by itself/);
-    await expect(actions.runReleaseAuto({ ...meta, key: 't' }, unit({ op: 'push-tag', channel: 'beta' }))).rejects.toThrow(/never goes out by itself/);
+    const calls = w.argv().length;
+    for (const [key, u] of [['b', { op: 'push-branch' }], ['t', { op: 'push-tag', channel: 'beta' }], ['c', { op: 'beta' }], ['s', { op: 'stable' }]] as const) {
+      await expect(actions.runReleaseAuto({ ...meta, key }, unit(u)), key).rejects.toThrow(/never go out by themselves/);
+    }
     expect(w.remote('branch', '--list')).not.toContain('release/0.5.0');
+    expect(w.argv()).toHaveLength(calls);
     expect(listAudit()).toHaveLength(1);
+  });
+
+  it('goes on with the two steps that follow the autonomy: opening the branch and merging what the plan approved', async () => {
+    const out = await actions.runReleaseAuto(meta, unit({ op: 'open' }));
+    expect(out).toContain('release/0.5.0');
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: true };
+    planned(head);
+    await expect(actions.runReleaseAuto({ ...meta, key: 'merge' }, unit({ op: 'merge-pr', pr: 7, head }))).resolves.toContain('Merged');
+    expect(listAudit()[0]).toMatchObject({ kind: 'release', by: 'release-manager', fields: { op: 'merge-pr' } });
   });
 
   it('is refused in a test workspace, with nothing run and nothing logged', async () => {

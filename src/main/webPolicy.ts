@@ -7,8 +7,9 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // the workspace test flag and deletion (a browser may create, rename and switch workspaces, not lower the guard),
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
-// screen: a token never travels through the browser channel).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe']);
+// screen: a token never travels through the browser channel), and the start of a release run (`runs:startRelease`, D19: it ends in scripts and merged code of the repository
+// run as the person, so only the window starts one; a paired browser follows the run and answers its gates).
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'runs:startRelease']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -21,7 +22,7 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 // phone is where a person answers a question. A mention only calls on an agent that reads (never one that writes), and a post is never mirrored to
 // the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
-// runs:* are all open to a paired browser, the reads and the moves alike (start, startRelease, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
+// runs:* are all open to a paired browser, except runs:startRelease (above), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
 // undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
 // browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed
 // only on the computer, see configScope.ts), and its writes to the code host still wait in the proposals of actions:approve. The autonomy switches change how

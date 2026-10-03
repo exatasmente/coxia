@@ -65,6 +65,12 @@ export interface VcsApprovals {
   by: string[];
   /** Reviewers that asked for changes (GitHub). */
   changesRequestedBy: string[];
+  /**
+   * Whether an approval stands for the commit the pull request is at now, by someone who is a member of the project (GitHub: the review's `commit_id` is the head and the
+   * reviewer's `author_association` is OWNER, MEMBER or COLLABORATOR, and nobody of those asks for changes). Absent where the host cannot say: GitLab and Bitbucket do not
+   * bind an approval to a commit in what they answer (the project's setting that drops approvals when commits are added does), so `approved` is all there is.
+   */
+  onHead?: boolean;
 }
 
 export type VcsMrState = 'open' | 'merged' | 'closed';
@@ -93,6 +99,8 @@ export interface VcsMr {
   mergedAt: string | null;
   /** The text the issue links are read from (description). */
   description: string;
+  /** The branch comes from another repository than the one the change request is aimed at (a fork); absent when the host's list does not say. */
+  fromFork?: boolean;
   /** Roles of the current user on it: author and/or reviewer (list calls only). */
   roles: ('author' | 'reviewer')[];
   /** Issue numbers the host says this MR closes or references; empty when unknown. */

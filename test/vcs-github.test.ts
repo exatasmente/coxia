@@ -80,7 +80,8 @@ describe('reads over the API transport', () => {
       ['acme/uploader', 9, ['reviewer'], false, 'running', false, 'feature/retry'],
     ]);
     // CHANGES_REQUESTED followed by APPROVED by the same person is an approval; a bare comment counts for nothing
-    expect(mrs[0].approvals).toEqual({ approved: true, by: ['carol-dev'], changesRequestedBy: [] });
+    // the recorded review carries no commit and no association: it is an approval, but not one a merge may rely on
+    expect(mrs[0].approvals).toEqual({ approved: true, by: ['carol-dev'], changesRequestedBy: [], onHead: false });
     expect(mrs[0].reviewers.map((r) => r.username)).toEqual(['carol-dev']);
     expect(mrs[0].issueRefs).toEqual([12]);
     expect(host?.hits.find((h) => h.path.endsWith('/search/issues'))?.query.get('q')).toBe('is:pr is:open author:ana-dev');
