@@ -14,6 +14,11 @@ describe('the shipped templates', () => {
     expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
   });
 
+  it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s has a flow with nothing to say about it', (id) => {
+    const c = apply(id);
+    expect(checkFlow({ stages: c.devCycle.stages, team: c.agents.team })).toEqual([]);
+  });
+
   it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s produces a valid workspace config', (id) => {
     const r = validateConfig(apply(id));
     expect(r.errors).toEqual([]);

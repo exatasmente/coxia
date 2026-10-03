@@ -22,10 +22,10 @@ const nearestWork = (stages: StageDef[], i: number): string | null => {
 
 /**
  * The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
- * `next` is null where the run ends: after the last stage, or after a stage that says so.
+ * `next` is null where the run ends: after the last stage, or after a stage that says so. `stages` is the list to read when it is not the cycle's own: the
+ * seam for a squad that has a flow of its own (the agents still come from the one team).
  */
-export function flowOf(config: FlowConfig): FlowStage[] {
-  const stages = config.devCycle.stages;
+export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.stages): FlowStage[] {
   return stages.map((s, i) => {
     const type = s.type ?? 'work';
     const who = type === 'work' ? stageAgent(config.agents.team, stages, s.id) : null;

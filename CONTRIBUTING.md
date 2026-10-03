@@ -121,6 +121,7 @@ A template is a named `devCycle` section ([`docs/cycles.md`](docs/cycles.md)): t
 5. List it in the table of `docs/cycles.md`.
 6. A template may bring agents (`team`, see `agentFlow.ts`): applying it adds those the workspace lacks by id and never touches one it has. Their texts are catalog keys too.
 7. A template may bring the comments its stages leave on the tracker (`devCycle.comments`, see `agentFlowComments.ts`); without them nothing is posted. Their texts are catalog keys too.
+8. A template for an agent cycle describes a flow: each stage's `type`, `agentId`, `produces`, `returnsTo`, `waitsFor` and the other fields of [`docs/cycles.md`](docs/cycles.md), and each agent's `turnsTo`. Run `checkFlow` over it (`src/shared/runs/flowCheck.ts`): `test/cycle-templates.test.ts` fails on any error or warning of a shipped template.
 
 ## How to add a model provider
 

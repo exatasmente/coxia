@@ -184,6 +184,17 @@ describe('the fields of a stage', () => {
   });
 });
 
+describe('a flow read from another list of stages', () => {
+  it('takes the stages it is given and the agents from the team: the seam for a flow of its own per squad', () => {
+    const c = agentFlowConfig();
+    const shorter = c.devCycle.stages.filter((s) => s.id !== 'gate2' && s.id !== 'qa');
+    expect(flowOf(c, shorter).map((s) => s.id)).toEqual(['refine', 'gate1', 'plan', 'implement', 'review', 'ready']);
+    expect(flowOf(c, shorter).find((s) => s.id === 'plan')?.next).toBe('implement');
+    expect(flowOf(c, shorter).find((s) => s.id === 'implement')?.agent).toBe('developer');
+    expect(flowOf(c).map((s) => s.id)).toHaveLength(8);
+  });
+});
+
 describe('the copy of the flow a run keeps', () => {
   const started = () => startRun(startInput(), agentFlowStages(), AT).run;
 

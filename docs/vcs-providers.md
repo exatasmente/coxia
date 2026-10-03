@@ -60,7 +60,7 @@ Com o login do CLI (`cliPreference: cli`) valem as permissões da sessão do CLI
 
 ### Escritas: um só caminho
 
-1. Um módulo descreve a escrita com `provider.planWrite(op)` (operações neutras: `commentIssue`, `commentMr`, `replyThread`, `resolveThread`, `editIssueNote`, `editMrNote`, `setIssueLabels`, `setIssueStatus`, `addReviewer`, `setDraft`, `playJob`, `submitReview`, `createMr`). O provedor só **descreve**: devolve comandos, não executa.
+1. Um módulo descreve a escrita com `provider.planWrite(op)` (operações neutras: `commentIssue`, `commentMr`, `replyThread`, `resolveThread`, `editIssueNote`, `editMrNote`, `setIssueLabels`, `setIssueStatus`, `addReviewer`, `setDraft`, `playJob`, `submitReview`, `createMr`, `deleteNote`). O provedor só **descreve**: devolve comandos, não executa.
 2. `proposeVcsAction` (`actions.ts`, antes `proposeGitlabAction`, o nome antigo continua) valida o comando com o validador do provedor e guarda uma ação pendente. Comandos de GitLab viram `kind: 'gitlab'` (como as ações salvas antes dos provedores); os de GitHub e Bitbucket, `kind: 'vcs'`.
 3. Você vê o comando exato em Ações e confirma. `approveAction` julga o comando de novo (ele pode ter vindo do disco), o executor roda e `auditoria.jsonl` registra uma linha, com o corpo e sem token.
 4. Só `vcs/runtime.ts` importa os executores e só `actions.ts` os chama; `test/vcs-writes.test.ts` falha se isso mudar. Um workspace de teste recusa a confirmação.
@@ -72,11 +72,12 @@ Limites por provedor: status de issue do GitLab depende dos ids de status da ins
 
 ### Revisão em linhas, nota editada e pull request
 
-Três operações novas, mapeadas assim (o runner as usa; veja [`runner.md`](runner.md)):
+Quatro operações novas (`deleteNote` desfaz um comentário automático do runner), mapeadas assim (o runner as usa; veja [`runner.md`](runner.md)):
 
 | Operação | GitHub | GitLab | Bitbucket Cloud |
 |---|---|---|---|
 | `editMrNote` | `PATCH issues/comments/{id}` (os comentários da conversa de um PR são comentários de issue) | `PUT merge_requests/{iid}/notes/{id}` | `PUT pullrequests/{id}/comments/{id}` |
+| `deleteNote` (`target`: `issue`, `mr` ou `review`) | `DELETE issues/comments/{id}` (comentário de conversa de uma issue ou de um PR) ou `DELETE pulls/comments/{id}` (comentário de linha ou de arquivo de uma revisão) | `DELETE issues/{iid}/notes/{id}` ou `DELETE merge_requests/{iid}/notes/{id}` (o comentário de uma revisão é uma nota do MR) | `DELETE issues/{id}/comments/{id}` ou `DELETE pullrequests/{id}/comments/{id}` |
 | `createMr` | `POST pulls` (`title`, `head`, `base`, `body`) | `POST merge_requests` (`source_branch`, `target_branch`, `title`, `description`) | `POST pullrequests` (`title`, `description`, `source`, `destination`) |
 | `submitReview`, a revisão | **uma** chamada `POST pulls/{n}/reviews` com `event` (`REQUEST_CHANGES` ou `COMMENT`), `body`, `commit_id` e os comentários de linha | uma **discussão** por comentário, com a posição, e uma nota com o texto geral | um comentário **inline** por comentário e um comentário com o texto geral |
 | o veredito | o `event` da revisão | não há chamada de "pedir alterações": o veredito está na primeira linha do texto geral | `POST pullrequests/{id}/request-changes`, por último, só quando pede alterações |
@@ -85,6 +86,8 @@ Três operações novas, mapeadas assim (o runner as usa; veja [`runner.md`](run
 | sugestão de troca | bloco ` ```suggestion ` | bloco ` ```suggestion:-N+0 `, com N = última linha − primeira da faixa | só descrita, em bloco de código comum (não há sugestão) |
 
 O GitLab recusa colocar a revisão se a cabeça do MR andou desde que os comentários foram posicionados (o runner posiciona pelo diff atual e passa o commit que usou). `ExecMeta.response` devolve ao chamador o JSON que o host respondeu (o id do comentário, o número do PR), que o executor também continua devolvendo como texto cortado.
+
+`deleteNote` é a única exclusão que a lista fechada de escritas aceita: o validador de cada provedor só deixa passar um `DELETE` no endereço de um comentário (no GitLab, qualquer outro `DELETE` sob `projects/` passou a ser recusado; no GitHub e no Bitbucket, cada um dos dois endereços é uma entrada da lista), sem corpo, e o id do comentário tem de ser um número inteiro positivo. No GitHub, o texto geral de uma revisão enviada **é a revisão**, que o host não apaga: desfazer uma rodada apaga os comentários de linha e de arquivo dela e deixa esse texto. O DELETE do GitLab e do GitHub responde 204 sem corpo, e o executor trata isso como sucesso.
 
 ### Cartões e estágios
 
@@ -113,6 +116,7 @@ Toda chamada tem tempo limite (30 s na API, 60 s no CLI). Uma leitura repete em 
 - GitHub e Bitbucket só foram testados contra servidores falsos com respostas modeladas na documentação; nenhuma conta real. As **escritas** de qualquer provedor (inclusive o executor via API do GitLab e o `gh api --input`) não rodaram em host real: o único uso real foi uma leitura (`GET`) no GitLab, pelo login do `glab`.
 - O GraphQL de threads do GitHub (`reviewThreads`) e de rascunho (`markPullRequestReadyForReview`) segue o esquema público, sem conta para conferir.
 - Bitbucket: `resolve` de comentário, `draft` no PR e `conflito` (não há campo) dependem da versão da API.
+- **Apagar um comentário** (`deleteNote`): só rodou contra hosts falsos modelados na documentação. Não se viu um host real aceitar o `DELETE` de um comentário de revisão (`pulls/comments/{id}` no GitHub, uma nota de discussão no GitLab, um comentário `inline` no Bitbucket), nem o que cada host faz com as respostas a um comentário apagado; o token precisa de permissão de escrita nas issues e nos pull requests, e um comentário de outra pessoa é recusado pelo host (o runner só apaga o que ele mesmo postou).
 - **Revisão, nota editada e criação de PR** (`submitReview`, `editMrNote`, `createMr`): só rodaram contra hosts falsos modelados na documentação. Em particular: o limite do GitLab para `position_type=file` (16.10) é um palpite conservador; se for mais cedo, o comentário só vai na primeira linha da mudança; `position[...]` como campos de formulário (API) ou `-f` do `glab` (que o transforma em JSON aninhado) não foi visto aceito por um GitLab real; `POST pullrequests/{id}/request-changes` do Bitbucket e o `inline` sem `from`/`to` seguem a documentação, sem conta; no GitHub, comentários de arquivo são chamadas à parte e aparecem como comentários de revisão soltos, não dentro da revisão.
 - A ferramenta `VcsRead` no Claude SDK usa `zod` (peer do SDK): se não carregar, o agente fica sem ela.
 
@@ -174,7 +178,7 @@ With the CLI login (`cliPreference: cli`) the CLI session's permissions apply. T
 
 ### Writes: one door
 
-1. A module describes the write with `provider.planWrite(op)` (neutral operations: `commentIssue`, `commentMr`, `replyThread`, `resolveThread`, `editIssueNote`, `editMrNote`, `setIssueLabels`, `setIssueStatus`, `addReviewer`, `setDraft`, `playJob`, `submitReview`, `createMr`). The provider only **describes**: it returns commands, it does not run them.
+1. A module describes the write with `provider.planWrite(op)` (neutral operations: `commentIssue`, `commentMr`, `replyThread`, `resolveThread`, `editIssueNote`, `editMrNote`, `setIssueLabels`, `setIssueStatus`, `addReviewer`, `setDraft`, `playJob`, `submitReview`, `createMr`, `deleteNote`). The provider only **describes**: it returns commands, it does not run them.
 2. `proposeVcsAction` (`actions.ts`, formerly `proposeGitlabAction`, the old name still works) checks the command with the provider's validator and stores a pending action. GitLab commands become `kind: 'gitlab'` (like the actions saved before providers); GitHub and Bitbucket ones, `kind: 'vcs'`.
 3. You see the exact command in Actions and confirm. `approveAction` judges the command again (it may have come from disk), the executor runs it and `auditoria.jsonl` records one line, with the body and without the token.
 4. Only `vcs/runtime.ts` imports the executors and only `actions.ts` calls them; `test/vcs-writes.test.ts` fails if that changes. A test workspace refuses the confirmation.
@@ -186,11 +190,12 @@ Limits per provider: GitLab issue status depends on the instance's status ids (e
 
 ### Line review, an edited note and a pull request
 
-Three new operations, mapped like this (the runner uses them; see [`runner.md`](runner.md)):
+Four new operations (`deleteNote` takes back an automatic comment of the runner), mapped like this (the runner uses them; see [`runner.md`](runner.md)):
 
 | Operation | GitHub | GitLab | Bitbucket Cloud |
 |---|---|---|---|
 | `editMrNote` | `PATCH issues/comments/{id}` (a PR's conversation comments are issue comments) | `PUT merge_requests/{iid}/notes/{id}` | `PUT pullrequests/{id}/comments/{id}` |
+| `deleteNote` (`target`: `issue`, `mr` or `review`) | `DELETE issues/comments/{id}` (the conversation comment of an issue or a PR) or `DELETE pulls/comments/{id}` (a review's comment on a line or a file) | `DELETE issues/{iid}/notes/{id}` or `DELETE merge_requests/{iid}/notes/{id}` (a review's comment is a note of the MR) | `DELETE issues/{id}/comments/{id}` or `DELETE pullrequests/{id}/comments/{id}` |
 | `createMr` | `POST pulls` (`title`, `head`, `base`, `body`) | `POST merge_requests` (`source_branch`, `target_branch`, `title`, `description`) | `POST pullrequests` (`title`, `description`, `source`, `destination`) |
 | `submitReview`, the review | **one** call, `POST pulls/{n}/reviews`, with `event` (`REQUEST_CHANGES` or `COMMENT`), `body`, `commit_id` and the line comments | one **discussion** per comment, with the position, and a note with the general text | one **inline** comment per comment and a comment with the general text |
 | the verdict | the review's `event` | there is no "request changes" call: the verdict is in the first line of the general text | `POST pullrequests/{id}/request-changes`, last, only when it asks for changes |
@@ -199,6 +204,8 @@ Three new operations, mapped like this (the runner uses them; see [`runner.md`](
 | a suggested replacement | a ` ```suggestion ` block | a ` ```suggestion:-N+0 ` block, N = last line − first line of the range | only described, in a plain code block (there is no suggestion) |
 
 GitLab refuses to place the review when the MR's head moved since the comments were positioned (the runner positions from the current diff and passes the commit it used). `ExecMeta.response` hands the caller the JSON the host answered (the comment's id, the PR's number), which the executor still returns as cut text too.
+
+`deleteNote` is the only deletion the closed list of writes accepts: each provider's validator lets a `DELETE` through only at the address of a comment (on GitLab, any other `DELETE` under `projects/` is now refused; on GitHub and Bitbucket each of the two addresses is an entry of the list), with no body, and the comment id must be a positive whole number. On GitHub the general text of a submitted review **is the review**, which the host does not delete: undoing a round deletes its line and file comments and leaves that text. GitLab's and GitHub's DELETE answer 204 with no body, and the executor treats that as success.
 
 ### Cards and stages
 
@@ -227,5 +234,6 @@ Every call has a timeout (30 s on the API, 60 s on the CLI). A read retries on n
 - GitHub and Bitbucket were only tested against fake servers with answers modelled on the documentation; no real account. **Writes** of any provider (including the GitLab API executor and `gh api --input`) never ran against a real host: the only real use was a read (`GET`) on GitLab through the `glab` login.
 - GitHub's GraphQL for threads (`reviewThreads`) and draft (`markPullRequestReadyForReview`) follows the public schema, with no account to check against.
 - Bitbucket: comment `resolve`, PR `draft` and the conflict flag (there is no field) depend on the API version.
+- **Deleting a comment** (`deleteNote`): it only ran against fake hosts modelled on the documentation. No real host was seen to accept the `DELETE` of a review comment (`pulls/comments/{id}` on GitHub, a discussion note on GitLab, an `inline` comment on Bitbucket), nor what each host does with the replies to a deleted comment; the token needs write access to issues and pull requests, and someone else's comment is refused by the host (the runner only deletes what it posted).
 - **Review, edited note and PR creation** (`submitReview`, `editMrNote`, `createMr`): they only ran against fake hosts modelled on the documentation. In particular: GitLab's threshold for `position_type=file` (16.10) is a conservative guess; if it is earlier, the comment just goes on the first line of the change; `position[...]` as form fields (API) or `glab`'s `-f` (which turns it into nested JSON) was not seen accepted by a real GitLab; Bitbucket's `POST pullrequests/{id}/request-changes` and `inline` without `from`/`to` follow the documentation, with no account; on GitHub, file comments are separate calls and show as loose review comments, not inside the review.
 - The `VcsRead` tool on the Claude SDK uses `zod` (a peer of the SDK): if it cannot load, the agent runs without the tool.
