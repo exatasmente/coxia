@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { basename, join } from 'node:path';
 import type { CeremonyId, DevCycleConfig, Language } from '../shared/config/types';
 import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, cycleText, exportTemplateText, parseTemplate, templateFromConfig, buildCycleView, ceremonyAvailable, type ApplyOptions, type CycleTemplate, type CycleView, type TemplateCheck, type TemplateSummary, type ViewContext } from '../shared/cycles';
-import { DATA_ROOT } from './env';
+import { DATA_ROOT, WORKSPACE_ID } from './env';
 import { getConfig, rc, saveConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -14,7 +14,7 @@ export const TEMPLATES_DIR = join(DATA_ROOT, 'cycle-templates');
 /** What the cycle depends on in this workspace: whether there is a specs folder, which tool stores card notes. */
 export function viewContext(): ViewContext {
   const tool = rc().cardSource?.command;
-  return { specs: !!rc().specsDir, noteTool: tool ? basename(tool) : null };
+  return { specs: !!rc().specsDir, noteTool: tool ? basename(tool) : null, workspaceId: WORKSPACE_ID };
 }
 
 export function cycleView(): CycleView {

@@ -14,6 +14,8 @@ import { cycleText, userTerms } from './text';
 export interface ViewContext extends CeremonyContext {
   /** Name of the tool that stores a note on a card (the card source's command); null when there is none. */
   noteTool: string | null;
+  /** The workspace this process runs, so the renderer can tell its cached terms from another workspace's. */
+  workspaceId?: string | null;
 }
 
 export interface CycleView {
@@ -38,6 +40,8 @@ export interface CycleView {
   cardsFrom: string;
   /** The workspace has a specs folder: the documents the cycle names exist. */
   specs: boolean;
+  /** The workspace the view is of (null when the caller did not say). */
+  workspaceId: string | null;
 }
 
 export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): CycleView {
@@ -63,6 +67,7 @@ export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): Cycle
     host,
     cardsFrom: ctx.noteTool ?? host.name,
     specs: ctx.specs,
+    workspaceId: ctx.workspaceId ?? null,
   };
 }
 

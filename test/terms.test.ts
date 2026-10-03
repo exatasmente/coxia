@@ -193,6 +193,8 @@ describe('what the view carries to the screens', () => {
     expect(view.terms).toEqual(termsFor(hostConfig('github', { language: 'pt-BR' }), 'pt-BR'));
     expect(view.host).toMatchObject({ kind: 'github', name: 'GitHub', manualJobs: false, issueStatus: false, reviewerReplaces: false, readSwitch: true, cli: 'gh', trackerMcp: false });
     expect(view.host.engines.turn).toBe('claude-sdk');
+    expect(view.workspaceId).toBeNull();
+    expect(buildCycleView(hostConfig('github'), { specs: false, noteTool: null, workspaceId: 'principal' }).workspaceId).toBe('principal');
   });
 
   it('the engine of a role is the one of its provider', () => {

@@ -7,7 +7,7 @@ import type { DestinationLabels } from '../../shared/destination';
 import { t } from '../../shared/i18n';
 import type { TemplateSummary } from '../../shared/cycles/types';
 import { api, moduleEvents } from './api';
-import { applyTerms } from './i18n';
+import { applyTerms, termsViewFailed } from './i18n';
 
 export const cycleApi = {
   view: () => api.invoke<CycleView>('cycle:view'),
@@ -28,12 +28,13 @@ const subscribers = new Set<() => void>();
 
 function set(next: CycleView): void {
   state = next;
-  applyTerms(next.terms);
+  applyTerms(next.terms, next.workspaceId);
   for (const fn of subscribers) fn();
 }
 
 function reload(): void {
-  void cycleApi.view().then(set, () => undefined);
+  // A view that cannot be loaded leaves the words the defaults (or the last view's, if there was one), never a cache's.
+  void cycleApi.view().then(set, () => termsViewFailed());
 }
 
 function start(): void {

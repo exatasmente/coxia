@@ -1,7 +1,9 @@
 import { createElement, Fragment, type ReactNode, useSyncExternalStore } from 'react';
 import type { Language } from '../../shared/config/types';
-import { getLanguage, i18nSnapshot, intlLocale, normalizeLanguage, type Params, setLanguage, setTerms, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import { getLanguage, i18nSnapshot, intlLocale, normalizeLanguage, type Params, resetTerms, setLanguage, setTerms, setVoiceEnabled, subscribeLanguage, t, tv, voiceEnabled } from '../../shared/i18n';
+import { createTermsLoader } from '../../shared/i18n/termsCache';
 import type { Terms } from '../../shared/i18n/terms';
+import type { WorkspacesView } from '../../shared/workspaces';
 import { api } from './api';
 
 const KEY = 'cerimonias.language';
@@ -30,28 +32,51 @@ export function applyVoiceMode(enabled: boolean): void {
   }
 }
 
-/** The workspace's terms (host name, change-request noun, ceremony name...): the texts of the screens are filled from them. */
-export function applyTerms(terms: Terms): void {
-  setTerms(terms);
-  try {
-    localStorage.setItem(TERMS_KEY, JSON.stringify({ language: getLanguage(), terms }));
-  } catch {
-    // storage may be unavailable; the cycle view confirms the terms on every load
-  }
+// The terms of the first moments: the cache of this workspace and language (storage may be unavailable), the workspace's own view, the defaults
+// when the view cannot be loaded. See createTermsLoader.
+const termsLoader = createTermsLoader({
+  read: () => {
+    try {
+      return localStorage.getItem(TERMS_KEY);
+    } catch {
+      return null;
+    }
+  },
+  write: (text) => {
+    try {
+      localStorage.setItem(TERMS_KEY, text);
+    } catch {
+      // storage may be unavailable; the cycle view confirms the terms on every load
+    }
+  },
+  setTerms,
+  resetTerms,
+  getLanguage,
+});
+
+/** The workspace's terms (host name, change-request noun, ceremony name...) from its cycle view: the texts of the screens are filled from them. */
+export function applyTerms(terms: Terms, workspaceId: string | null): void {
+  termsLoader.fromView(terms, workspaceId);
 }
 
-// The last language, voice mode and terms come from localStorage so the first paint is already right; the workspace config confirms them.
+/** The cycle view could not be loaded: until it is, the words are the defaults and not whatever a cache held. */
+export function termsViewFailed(): void {
+  termsLoader.viewFailed();
+}
+
+// The last language and voice mode come from localStorage so the first paint is already right; the workspace config confirms them. The terms
+// follow once the running workspace is known.
 export function initLanguage(): void {
   try {
     const last = localStorage.getItem(KEY);
     if (last) applyLanguage(normalizeLanguage(last));
     const voice = localStorage.getItem(VOICE_KEY);
     if (voice) setVoiceEnabled(voice === '1');
-    const cached = JSON.parse(localStorage.getItem(TERMS_KEY) ?? 'null') as { language?: string; terms?: Terms } | null;
-    if (cached?.terms && cached.language === getLanguage()) setTerms(cached.terms);
   } catch {
     // keep the default
   }
+  // The cached terms belong to a workspace: they are used once the running one is known.
+  void api.invoke<WorkspacesView>('workspace:list').then((v) => termsLoader.workspaceKnown(v.running), () => undefined);
   void api.getSettings().then(
     (s) => {
       applyLanguage(s.language);
