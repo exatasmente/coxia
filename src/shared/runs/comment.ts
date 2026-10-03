@@ -79,16 +79,19 @@ export function renderComment(tpl: CommentTemplate, ctx: CommentContext, content
 
 // ---- the hidden marker ------------------------------------------------------------------------------------------------------------------
 
-/** What identifies a comment as the one a run left for a stage, so it is found again (and edited) when the run lost its note id. */
-export function markerOf(runId: string, key: string, round?: number): string {
-  return `<!-- coxia:run=${runId} stage=${key}${round ? ` round=${round}` : ''} -->`;
+/**
+ * What identifies a comment as the one a run left for a stage (or for a round of the review, and for one finding of it), so it is found again, and
+ * edited, when the run lost its note id.
+ */
+export function markerOf(runId: string, key: string, round?: number, finding?: number): string {
+  return `<!-- coxia:run=${runId} stage=${key}${round ? ` round=${round}` : ''}${finding !== undefined ? ` finding=${finding}` : ''} -->`;
 }
 
-const MARKER = /<!--\s*coxia:run=(\S+)\s+stage=(\S+?)(?:\s+round=(\d+))?\s*-->/;
+const MARKER = /<!--\s*coxia:run=(\S+)\s+stage=(\S+?)(?:\s+round=(\d+))?(?:\s+finding=(\d+))?\s*-->/;
 
-export function readMarker(body: string): { run: string; key: string; round: number | null } | null {
+export function readMarker(body: string): { run: string; key: string; round: number | null; finding: number | null } | null {
   const m = MARKER.exec(body);
-  return m ? { run: m[1], key: m[2], round: m[3] ? Number(m[3]) : null } : null;
+  return m ? { run: m[1], key: m[2], round: m[3] ? Number(m[3]) : null, finding: m[4] ? Number(m[4]) : null } : null;
 }
 
 /** The comment among `comments` that carries this marker (the newest when there are several). */
@@ -108,19 +111,13 @@ export type CommentProblem = (typeof COMMENT_PROBLEMS)[number];
 export const COMMENT_REWRITES = ['secret', 'localPath', 'runId', 'mention'] as const;
 export type CommentRewrite = (typeof COMMENT_REWRITES)[number];
 
-export interface CheckOptions {
+export interface CheckOptions extends TextOptions {
   /** The status line the comment must open with (as `renderComment` returned it). */
   status: string;
   /** The marker the comment must end with. */
   marker: string;
   /** Whether the template has a technical section (a `<details>` is only allowed then). */
   technicalDetail: boolean;
-  /** The worktree of the run: a path under it is rewritten to a path in the repository. */
-  worktree: string;
-  /** The ids of the agents of the team: naming one is a problem. */
-  agentIds: string[];
-  /** Masks what looks like a credential (`redact` of the error log). */
-  redact: (text: string) => string;
 }
 
 export interface Checked {
@@ -155,11 +152,22 @@ function proseOf(body: string, keepCode = false): string {
     .replace(keepCode ? /(?!)/g : /`[^`\n]*`/g, '');
 }
 
+export interface TextOptions {
+  /** The hidden marker the text carries, which keeps the id of the run it names. */
+  marker?: string;
+  /** The worktree of the run: a path under it is rewritten to a path in the repository. */
+  worktree: string;
+  /** The ids of the agents of the team: naming one is a problem. */
+  agentIds: string[];
+  /** Masks what looks like a credential (`redact` of the error log). */
+  redact: (text: string) => string;
+}
+
 /**
- * Rewrites what can be rewritten and reports what cannot. The structure (status first, the technical detail last and collapsed, one marker at the end) is
- * checked on the final text, not trusted from how it was composed.
+ * Rewrites what can be rewritten in a piece of text that goes to the tracker and reports what cannot: the part every comment shares, and the whole of a
+ * comment on a line of the code, which has no structure of its own.
  */
-export function checkComment(raw: string, o: CheckOptions): Checked {
+export function checkText(raw: string, o: TextOptions): Checked {
   const rewrites: Checked['rewrites'] = [];
   const note = (code: CommentRewrite, n: number): void => {
     if (n > 0) rewrites.push({ code, count: n });
@@ -180,10 +188,10 @@ export function checkComment(raw: string, o: CheckOptions): Checked {
   body = masked;
 
   // The id of a run is the app's, not the reader's; the marker is the one place it stays, and it is put back after.
-  const marked = body.includes(o.marker);
-  const bare = marked ? body.split(o.marker).join('\u0000') : body;
+  const marked = !!o.marker && body.includes(o.marker);
+  const bare = marked ? body.split(o.marker as string).join('\u0000') : body;
   const ids = count(bare, RUN_ID);
-  body = (marked ? bare.replace(RUN_ID, '') : bare).split('\u0000').join(o.marker);
+  body = (marked ? bare.replace(RUN_ID, '') : bare.replace(RUN_ID, '')).split('\u0000').join(o.marker ?? '');
   note('runId', ids);
 
   // Naming an agent is judged on the text as written: a mention is about to be turned into code, which the prose check skips.
@@ -199,17 +207,6 @@ export function checkComment(raw: string, o: CheckOptions): Checked {
 
   const problems: Checked['problems'] = [];
   const flag = (code: CommentProblem, sample: string): void => void problems.push({ code, sample: sample.slice(0, 80) });
-
-  const first = body.split('\n').find((l) => l.trim());
-  if (first?.trim() !== `**${o.status}**`) flag('status', first ?? '');
-
-  const opens = count(body, /<details\b/i);
-  const closes = count(body, /<\/details>/gi);
-  const after = body.includes('</details>') ? body.slice(body.lastIndexOf('</details>') + '</details>'.length).split(o.marker).join('').trim() : '';
-  if (opens !== closes || opens > 1 || (opens > 0 && !o.technicalDetail) || /<details[^>]*\bopen\b/i.test(body) || after) flag('details', opens ? 'details' : '');
-
-  if (body.split(o.marker).length !== 2 || !body.trimEnd().endsWith(o.marker)) flag('marker', '');
-
   const prose = proseOf(body);
   for (const id of o.agentIds) {
     const e = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -226,4 +223,30 @@ export function checkComment(raw: string, o: CheckOptions): Checked {
   if (person) flag('firstPerson', person[0]);
 
   return { body, problems, rewrites };
+}
+
+/**
+ * A whole comment: the rewrites and the reports of `checkText`, and the structure checked on the final text (status first, the technical detail last
+ * and collapsed, one marker at the end), not trusted from how it was composed.
+ */
+export function checkComment(raw: string, o: CheckOptions): Checked {
+  const text = checkText(raw, o);
+  const body = text.body;
+  const problems = text.problems;
+  const flag = (code: CommentProblem, sample: string): void => void problems.push({ code, sample: sample.slice(0, 80) });
+
+  const first = body.split('\n').find((l) => l.trim());
+  if (first?.trim() !== `**${o.status}**`) flag('status', first ?? '');
+
+  const opens = count(body, /<details\b/i);
+  const closes = count(body, /<\/details>/gi);
+  const after = body.includes('</details>') ? body.slice(body.lastIndexOf('</details>') + '</details>'.length).split(o.marker).join('').trim() : '';
+  if (opens !== closes || opens > 1 || (opens > 0 && !o.technicalDetail) || /<details[^>]*\bopen\b/i.test(body) || after) flag('details', opens ? 'details' : '');
+
+  if (body.split(o.marker).length !== 2 || !body.trimEnd().endsWith(o.marker)) flag('marker', '');
+
+  // The structure problems come first: they say the comment is not the standard one before any word in it is judged.
+  const rank = (code: CommentProblem): number => (['status', 'details', 'marker'] as CommentProblem[]).indexOf(code) >= 0 ? (['status', 'details', 'marker'] as CommentProblem[]).indexOf(code) : 99;
+  problems.sort((a, b) => rank(a.code) - rank(b.code));
+  return { body, problems, rewrites: text.rewrites };
 }

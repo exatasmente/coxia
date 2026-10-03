@@ -88,7 +88,8 @@ describe('composing the comment', () => {
 describe('the marker', () => {
   it('names the run, the stage and the round, and finds the newest comment that carries it', () => {
     expect(marker).toBe('<!-- coxia:run=r-abc123-x1y2 stage=refine -->');
-    expect(readMarker(`text\n${markerOf('r-abc123-x1y2', 'review', 2)}\n`)).toEqual({ run: 'r-abc123-x1y2', key: 'review', round: 2 });
+    expect(readMarker(`text\n${markerOf('r-abc123-x1y2', 'review', 2)}\n`)).toEqual({ run: 'r-abc123-x1y2', key: 'review', round: 2, finding: null });
+    expect(readMarker(markerOf('r-abc123-x1y2', 'review', 1, 3))).toEqual({ run: 'r-abc123-x1y2', key: 'review', round: 1, finding: 3 });
     expect(readMarker('no marker here')).toBeNull();
     const comments = [{ id: 1, body: `a ${marker}` }, { id: 2, body: 'b' }, { id: 3, body: `c ${marker}` }, { id: 4, body: `d ${markerOf('r-other-0000', 'refine')}` }, { id: 5, body: `e ${markerOf('r-abc123-x1y2', 'plan')}` }];
     expect(findMarked(comments, 'r-abc123-x1y2', 'refine')?.id).toBe(3);

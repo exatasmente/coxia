@@ -383,7 +383,8 @@ export interface VcsCommand {
 export type GitlabCommand = VcsCommand;
 
 // 'gitlab' is a write to GitLab (what every action saved before providers existed is); 'vcs' a write to GitHub or Bitbucket.
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs';
+// 'run-push' is the push of a run's branch (the runner proposes it; it always waits for its own "sim").
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {
@@ -409,6 +410,10 @@ export interface ReleaseAction {
   unit: Record<string, unknown> | null;
   summary: string | null;
   command: VcsCommand | null;
+  /** A group of writes that belong together (a review round: its comments, replies and verdict) and wait for one "sim"; `command` is the first. Absent for a single write. */
+  commands?: VcsCommand[];
+  /** How many of `commands` already ran: a retry after a failure goes on from there instead of posting the first ones again. */
+  done?: number;
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }

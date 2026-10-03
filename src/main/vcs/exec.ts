@@ -8,18 +8,13 @@ import type { VcsKind } from '../../shared/config/types';
 import { VcsError, scrubSecrets } from './errors';
 import type { HttpClient } from './http';
 import { type CliRun, cliFailure, defaultCliRun } from './transport';
-import type { VcsCommand } from './types';
+import type { ExecMeta, VcsCommand } from './types';
 
 // The only code that writes to a code host. It runs a command the confirmation flow already approved (approveAction in actions.ts):
 // nothing else imports it, and a test keeps it that way. Each executor refuses a command its provider's validator would refuse, so a
 // command read back from disk is judged again right before it runs.
 
-export interface ExecMeta {
-  /** Filled with the HTTP status when the host answered. */
-  code?: number;
-  /** Filled with what the host answered, parsed, when it was JSON: the id of the comment or the number of the pull request that was just made. */
-  response?: unknown;
-}
+export type { ExecMeta };
 
 function parsed(text: string): unknown {
   try {

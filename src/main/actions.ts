@@ -10,6 +10,7 @@ import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
+import { runStore } from './runs';
 import { getSettings } from './config';
 import {
   applyResolutions,
@@ -17,6 +18,7 @@ import {
   commitMerge,
   conflictsDir,
   findClone,
+  git,
   prepareWorktree,
   pushBranch,
   removeWorktree,
@@ -33,6 +35,7 @@ import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
+import type { ExecMeta } from './vcs/types';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
 import { issueProjectKey, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
@@ -156,6 +159,8 @@ export function proposeVcsAction(input: {
   detail?: string;
   command: VcsCommand;
   notify?: { title: string; body: string };
+  /** What the module that proposed it needs to recognise it when it is done (the runner's comments and pull request). */
+  unit?: Record<string, unknown>;
 }): ReleaseAction | null {
   validateVcsCommand(input.command);
   const store = read();
@@ -169,11 +174,62 @@ export function proposeVcsAction(input: {
     stage: input.stage ?? '',
     summary: input.summary,
     command: input.command,
+    unit: input.unit ?? null,
     output: [input.detail, describe(input.command)].filter(Boolean).join('\n\n'),
   });
   write({ ...store, actions: [action, ...store.actions] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
   return action;
+}
+
+/**
+ * Several writes that are one thing to the person (a review round: its comments, its replies and its verdict) wait in one proposal, for one "sim". They run
+ * in order; the first that fails stops the rest, and approving again goes on from there. A group of one is an ordinary proposal.
+ */
+export function proposeVcsGroup(input: Omit<Parameters<typeof proposeVcsAction>[0], 'command'>, commands: VcsCommand[]): ReleaseAction | null {
+  if (!commands.length) return null;
+  if (commands.length === 1) return proposeVcsAction({ ...input, command: commands[0] });
+  for (const c of commands) validateVcsCommand(c);
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
+  const action = blank({
+    key: input.key,
+    kind: commands.every((c) => commandKind(c) === 'gitlab') ? 'gitlab' : 'vcs',
+    issue: input.issue,
+    issueTitle: input.issueTitle ?? '',
+    stage: input.stage ?? '',
+    summary: input.summary,
+    command: commands[0],
+    commands,
+    done: 0,
+    unit: input.unit ?? null,
+    output: [input.detail, ...commands.map((c, i) => `${i + 1}/${commands.length}  ${describe(c)}`)].filter(Boolean).join('\n\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+// ---- what a module learns when a proposal it made is carried out --------------------------------------------------------------------------
+
+/** What the host answered to each write of a proposal that ran (parsed JSON when it was one). */
+export type ActionListener = (action: ReleaseAction, responses: unknown[]) => void;
+const listeners = new Set<ActionListener>();
+
+/** Tells `fn` after any proposal is carried out. Returns the way to stop. */
+export function onActionDone(fn: ActionListener): () => void {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+
+function told(action: ReleaseAction, responses: unknown[]): void {
+  for (const fn of listeners) {
+    try {
+      fn(action, responses);
+    } catch (e) {
+      console.error('[actions] listener', e);
+    }
+  }
 }
 
 /** The name the function had when GitLab was the only host. */
@@ -195,7 +251,7 @@ function runtimeFor(c: VcsCommand): VcsRuntime {
   return found;
 }
 
-async function runVcs(c: VcsCommand, meta: { code?: number } = {}): Promise<string> {
+async function runVcs(c: VcsCommand, meta: ExecMeta = {}): Promise<string> {
   return runtimeFor(c).exec.run(c, meta);
 }
 
@@ -293,6 +349,7 @@ export async function previewAction(id: string): Promise<string> {
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
   if (a.kind === 'conflict-push') return a.output ?? '';
+  if (a.kind === 'run-push') return a.output ?? '';
   return a.files.join('\n');
 }
 
@@ -329,11 +386,30 @@ async function proposeQaComment(sync: ReleaseAction): Promise<void> {
 
 type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
 
+/** Where a write came from, for the audit line: a proposal the person approved, or a write an agent's autonomy let go out. */
+interface AuditOrigin {
+  issue: number;
+  actionId: string;
+  kind: string;
+  key: string;
+  summary: string | null;
+  by?: string;
+  bodyHash?: string;
+}
+
+const originOf = (a: ReleaseAction): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary });
+
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
-async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?: number }) => Promise<string>): Promise<string> {
+async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMeta) => Promise<string>): Promise<string> {
   assertExternalWrite(t('vcs.write.guard'));
-  const meta: { code?: number } = {};
-  const entry = { ...base, issue: a.issue, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary } };
+  const meta: ExecMeta = {};
+  const entry = {
+    ...base,
+    issue: from.issue,
+    origin: { actionId: from.actionId, kind: from.kind, key: from.key, summary: from.summary },
+    ...(from.by ? { by: from.by } : {}),
+    ...(from.bodyHash ? { bodyHash: from.bodyHash } : {}),
+  };
   try {
     const out = await write(meta);
     recordWrite({ ...entry, ok: true, code: meta.code ?? null, result: out });
@@ -346,6 +422,26 @@ async function audited(a: ReleaseAction, base: AuditBase, write: (meta: { code?:
   }
 }
 
+/** One write to the code host that an agent's autonomy lets go out without a "sim": the same door, the same audit log, with the agent as who and the body's hash. */
+export interface AutoWrite {
+  issue: number;
+  key: string;
+  summary: string;
+  by: string;
+  bodyHash?: string;
+}
+
+export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> {
+  validateVcsCommand(c);
+  let response: unknown;
+  await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+    const out = await runVcs(c, meta);
+    response = meta.response;
+    return out;
+  });
+  return response;
+}
+
 export async function approveAction(id: string): Promise<ReleaseAction> {
   assertExternalWrite(t('vcs.write.guard'));
   const a = read().actions.find((x) => x.id === id);
@@ -355,29 +451,48 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   update(id, (x) => ({ ...x, state: 'running' }));
+  const responses: unknown[] = [];
   try {
     let output: string;
     if (a.kind === 'conflict-push') {
       output = await publishConflict(a);
+    } else if (a.kind === 'run-push') {
+      output = await publishRunBranch(a);
     } else if (isVcsAction(a)) {
-      const c = a.command as VcsCommand;
-      output = await audited(a, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, (meta) => runVcs(c, meta));
+      // A group runs in order from where it stopped; each write is audited on its own, under the proposal that holds them.
+      const all = a.commands ?? [a.command as VcsCommand];
+      const outputs: string[] = [];
+      for (let i = a.done ?? 0; i < all.length; i++) {
+        const c = all[i];
+        let response: unknown;
+        outputs.push(
+          await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+            const out = await runVcs(c, meta);
+            response = meta.response;
+            return out;
+          }),
+        );
+        responses.push(response);
+        if (all.length > 1) update(id, (x) => ({ ...x, done: i + 1 }));
+      }
+      output = outputs.join('\n');
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(originOf(a), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
       const body = a.proposedBody;
       const [cmd] = await vcsProvider().planWrite({ op: 'editIssueNote', project: issueProjectKey(), iid: a.issue, noteId: a.noteId, body });
-      output = await audited(a, { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
+      output = await audited(originOf(a), { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
         await runVcs(cmd, meta);
         return t('main.actions.noteEdited', { note: a.noteId ?? '', issue: a.issue });
       });
     } else {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
-      output = await audited(a, { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(originOf(a), { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
+    told(done, responses);
     if (done.kind === 'sync') setTimeout(() => void proposeQaComment(done).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
     if (done.kind === 'conflict-push') return await afterPublish(done);
     return done;
@@ -759,11 +874,50 @@ async function publishConflict(a: ReleaseAction): Promise<string> {
   const { r } = pushOwner(a);
   const fields = { repo: r.clone, branch: r.branch, commit: r.commit as string, mr: a.mrs[0]?.ref ?? '' };
   // i18n-ignore: a git command line shown as it runs
-  return audited(a, { kind: 'push', target: `git push origin HEAD:refs/heads/${r.branch}`, via: 'git', fields }, async () => {
+  return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${r.branch}`, via: 'git', fields }, async () => {
     // The check ran moments ago, before "running"; repeat it right at the push.
     await assertPublishable({ wt: r.worktree, branch: r.branch, originSha: r.originSha, commit: r.commit as string });
     return pushBranch(r.worktree, r.branch);
   });
+}
+
+// ---- the push of a run's branch -----------------------------------------------------------------------------------------------------------
+// The runner never pushes: it proposes the push here and it waits for its own "sim" whatever the agents' autonomy. The action names a run, never a
+// folder: the worktree and the branch are read from the run's file when it is approved, so a stored action cannot point the push anywhere else.
+
+/** Proposes the push of a run's branch. A push of the same run that still waits is replaced: what goes is the branch as it is when the "sim" comes. */
+export function proposeRunPush(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; runId: string; branch: string; notify?: { title: string; body: string } }): ReleaseAction | null {
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
+  const now = new Date().toISOString();
+  const replaced = store.actions.map((a) => (a.kind === 'run-push' && a.state === 'pending' && a.unit?.runId === input.runId ? { ...a, state: 'skipped' as const, finishedAt: now, output: t('main.actions.pushReplaced') } : a));
+  const action = blank({
+    key: input.key,
+    kind: 'run-push',
+    issue: input.issue,
+    issueTitle: input.issueTitle ?? '',
+    summary: input.summary,
+    unit: { runId: input.runId, branch: input.branch },
+    // i18n-ignore: a git command line shown as it runs
+    output: [input.detail, `git -C <worktree> push origin HEAD:refs/heads/${input.branch}`].filter(Boolean).join('\n\n'),
+  });
+  write({ ...store, actions: [action, ...replaced] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+async function publishRunBranch(a: ReleaseAction): Promise<string> {
+  const runId = String((a.unit ?? {}).runId ?? '');
+  const run = runStore().get(runId);
+  if (!run || run.branch !== (a.unit ?? {}).branch) throw new Error(t('main.actions.pushNoRun', { run: runId.slice(0, 40) }));
+  if (!existsSync(run.worktree)) throw new Error(t('main.conflictGit.worktreeGone'));
+  const here = (await git(run.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+  if (here !== run.branch) throw new Error(t('main.actions.pushWrongBranch', { branch: run.branch, here }));
+  // What the agents did is committed by the app after each stage: a change that is not committed would silently stay behind.
+  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
+  const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
+  // i18n-ignore: a git command line shown as it runs
+  return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
 }
 
 // After a successful push: clean up, close the conflict and hand the QA comment to its own "sim".

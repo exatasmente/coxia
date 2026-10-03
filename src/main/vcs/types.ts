@@ -264,3 +264,11 @@ export interface VcsProvider {
   /** Checks that a command (possibly read back from disk) has a shape this provider may run. Throws the reason. */
   validateCommand(command: VcsCommand): void;
 }
+
+/** What an executor tells the caller besides the text it returns. */
+export interface ExecMeta {
+  /** Filled with the HTTP status when the host answered. */
+  code?: number;
+  /** Filled with what the host answered, parsed, when it was JSON: the id of the comment or the number of the pull request that was just made. */
+  response?: unknown;
+}

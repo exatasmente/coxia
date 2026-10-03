@@ -39,17 +39,32 @@ describe('web policy for the runs', () => {
   });
 });
 
-describe('the runner writes nothing to a code host', () => {
-  it('imports neither the proposals of Actions nor the executors of the providers', () => {
-    for (const f of files) {
+// What leaves the machine from a run goes through two files and nothing else: publish.ts decides what goes out (and plans each write with the provider),
+// door.ts is where it leaves, through the proposals and the audit of Actions. Everything else in the runner still writes nothing and imports nothing that could.
+const DOOR = 'door.ts';
+const PUBLISHER = 'publish.ts';
+const others = files.filter((f) => f !== DOOR);
+
+describe('the runner writes to a code host through one door', () => {
+  it('only the door imports the proposals of Actions or anything that runs a write; the publisher and the rest do not', () => {
+    const importers = files.filter((f) => /from '\.\.\/actions'/.test(source(f)));
+    expect(importers).toEqual([DOOR]);
+    for (const f of others) {
       const text = source(f);
-      expect(text, f).not.toMatch(/from '\.\.\/actions'/);
       expect(text, f).not.toMatch(/from '\.\.\/vcs\/(exec|runtime|validate)'/);
-      expect(text, f).not.toMatch(/proposeVcsAction|approveAction|planWrite|assertExternalWrite/);
+      expect(text, f).not.toMatch(/proposeVcsAction|proposeVcsGroup|proposeRunPush|runVcsAuto|approveAction|assertExternalWrite|externalRefusal/);
     }
+    expect(source(DOOR)).not.toMatch(/from '\.\.\/vcs\/(exec|runtime|validate)'/);
+    // the publisher gets the provider through the door and only knows its types
+    expect(source(PUBLISHER)).not.toMatch(/from '\.\.\/vcs'/);
   });
 
-  it('has no git push anywhere: not a command it runs, and not a function it imports', () => {
+  it('only the publisher plans a write, and only the door asks the workspace whether external writes are allowed', () => {
+    expect(files.filter((f) => /\.planWrite\(|\bplanWrite\b/.test(source(f)))).toEqual([PUBLISHER]);
+    expect(files.filter((f) => /externalRefusal|assertExternalWrite|isTestWorkspace/.test(source(f)))).toEqual([DOOR]);
+  });
+
+  it('has no git push anywhere: not a command it runs, and not a function it imports (the door proposes it, Actions runs it)', () => {
     for (const f of files) {
       const text = source(f);
       expect(text, f).not.toMatch(/'push'/);
@@ -57,8 +72,10 @@ describe('the runner writes nothing to a code host', () => {
     }
   });
 
-  it('reads the code host through the provider only, and only to read', () => {
-    const calls = files.flatMap((f) => [...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
-    expect(new Set(calls)).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
+  it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
+    const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
+    expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
+    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getRepo', 'linkedMrs', 'planWrite', 'noteUrl']));
+    for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });
 });

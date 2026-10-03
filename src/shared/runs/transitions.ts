@@ -1,7 +1,7 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
 import { flowProblems, producerOf } from './flow';
-import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -471,26 +471,29 @@ function noteComment(run: Run, key: string, at: string, status: CommentStatus, c
 
 const fresh = (target: CommentTarget, status: CommentStatus, at: string): CommentRecord => ({ target, noteId: null, url: null, bodyHash: null, status, updatedAt: at });
 
+// What the caller says about the text, kept only when it says it: an edit that does not carry a title does not lose the one it had.
+const details = (input: CommentDetails): CommentDetails => Object.fromEntries(Object.entries({ body: input.body, headline: input.headline, title: input.title }).filter(([, v]) => v !== undefined));
+
 /** A body was written but nothing was asked of the person yet. */
-export function recordCommentDraft(run: Run, key: string, input: { target: CommentTarget; bodyHash: string }, at: string): Transition {
-  return noteComment(run, key, at, 'draft', (c) => ({ ...(c ?? fresh(input.target, 'draft', at)), target: input.target, bodyHash: input.bodyHash, status: c?.status === 'published' ? 'published' : 'draft', updatedAt: at }));
+export function recordCommentDraft(run: Run, key: string, input: { target: CommentTarget; bodyHash: string } & CommentDetails, at: string): Transition {
+  return noteComment(run, key, at, 'draft', (c) => ({ ...(c ?? fresh(input.target, 'draft', at)), ...details(input), target: input.target, bodyHash: input.bodyHash, status: c?.status === 'published' ? 'published' : 'draft', updatedAt: at }));
 }
 
 /** The comment (or its edit) waits in Actions for its own "yes". A comment already published keeps its note id, so the proposal is an edit. */
-export function recordCommentProposal(run: Run, key: string, input: { target: CommentTarget; bodyHash: string }, at: string): Transition {
-  return noteComment(run, key, at, 'proposed', (c) => ({ ...(c ?? fresh(input.target, 'proposed', at)), target: input.target, bodyHash: input.bodyHash, status: 'proposed', updatedAt: at }));
+export function recordCommentProposal(run: Run, key: string, input: { target: CommentTarget; bodyHash: string } & CommentDetails, at: string): Transition {
+  return noteComment(run, key, at, 'proposed', (c) => ({ ...(c ?? fresh(input.target, 'proposed', at)), ...details(input), target: input.target, bodyHash: input.bodyHash, status: 'proposed', updatedAt: at }));
 }
 
 /** The host accepted the comment and returned its id. */
-export function recordCommentPublished(run: Run, key: string, input: { target: CommentTarget; noteId: string | number; url: string | null; bodyHash: string }, at: string): Transition {
-  return noteComment(run, key, at, 'published', () => ({ target: input.target, noteId: input.noteId, url: input.url, bodyHash: input.bodyHash, status: 'published', updatedAt: at }));
+export function recordCommentPublished(run: Run, key: string, input: { target: CommentTarget; noteId: string | number; url: string | null; bodyHash: string } & CommentDetails, at: string): Transition {
+  return noteComment(run, key, at, 'published', (c) => ({ ...(c ?? {}), ...details(input), target: input.target, noteId: input.noteId, url: input.url, bodyHash: input.bodyHash, status: 'published', updatedAt: at }));
 }
 
 /** The published comment was edited in place: same note id, new body. Refused when there is no published comment to edit. */
-export function recordCommentEdited(run: Run, key: string, input: { bodyHash: string; url?: string | null }, at: string): Transition {
+export function recordCommentEdited(run: Run, key: string, input: { bodyHash: string; url?: string | null } & CommentDetails, at: string): Transition {
   const current = run.comments[key];
   if (!current || current.noteId === null) throw new RunError('unknown-comment', { key });
-  return noteComment(run, key, at, 'published', (c) => ({ ...(c as CommentRecord), bodyHash: input.bodyHash, url: input.url === undefined ? (c as CommentRecord).url : input.url, status: 'published', updatedAt: at }));
+  return noteComment(run, key, at, 'published', (c) => ({ ...(c as CommentRecord), ...details(input), bodyHash: input.bodyHash, url: input.url === undefined ? (c as CommentRecord).url : input.url, status: 'published', updatedAt: at }));
 }
 
 /** The proposal was refused or skipped (a test workspace, or the person said no). A comment already published stays published. */

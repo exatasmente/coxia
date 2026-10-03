@@ -80,6 +80,19 @@ export interface CommentRecord {
   bodyHash: string | null;
   status: CommentStatus;
   updatedAt: string;
+  /** The text last written for it, as it goes (or went) to the tracker: what Actions shows for a proposal and what a deferred comment posts later. */
+  body?: string | null;
+  /** The first line of the body (its status): what tells that an edit changed what the comment says. */
+  headline?: string | null;
+  /** The pull request's title, for the `pr` record. */
+  title?: string | null;
+}
+
+/** What a transition may record about a comment besides where it stands. */
+export interface CommentDetails {
+  body?: string;
+  headline?: string;
+  title?: string;
 }
 
 /** What a non-autonomous agent finished and the person has not accepted yet. */

@@ -386,6 +386,23 @@ describe('tracker comments', () => {
     expect(d.run.history.filter((h) => h.type === 'comment').map((h) => [h.stage, h.detail])).toContainEqual(['refine', 'published']);
   });
 
+  it('keep the text last written, its first line and the pull request\'s title, and an edit that does not carry them does not lose them', () => {
+    const d = drive();
+    d.do((r, t) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: 'p1', body: '**Ready**\n\ntext', headline: 'Ready', title: 'Add the thing' }, t));
+    expect(d.run.comments.pr).toMatchObject({ body: '**Ready**\n\ntext', headline: 'Ready', title: 'Add the thing', status: 'draft' });
+    d.do((r, t) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: 'p1' }, t));
+    expect(d.run.comments.pr).toMatchObject({ body: '**Ready**\n\ntext', title: 'Add the thing', status: 'proposed' });
+    d.do((r, t) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: 7, url: null, bodyHash: 'p1' }, t));
+    expect(d.run.comments.pr).toMatchObject({ noteId: 7, body: '**Ready**\n\ntext', title: 'Add the thing', status: 'published' });
+    d.do((r, t) => recordCommentEdited(r, 'pr', { bodyHash: 'p2', body: 'new' }, t));
+    expect(d.run.comments.pr).toMatchObject({ body: 'new', headline: 'Ready', title: 'Add the thing' });
+    expect(parseRun(JSON.parse(JSON.stringify(d.run))).ok).toBe(true);
+    // a run written before these fields reads fine
+    const old = JSON.parse(JSON.stringify(d.run)) as { comments: { pr: Record<string, unknown> } };
+    for (const k of ['body', 'headline', 'title']) delete old.comments.pr[k];
+    expect(parseRun(old).ok).toBe(true);
+  });
+
   it('cannot edit what was never published, and apply to a finished run', () => {
     const d = drive();
     expect(() => recordCommentEdited(d.run, 'plan', { bodyHash: 'x' }, AT)).toThrow(expect.objectContaining({ code: 'unknown-comment' }));

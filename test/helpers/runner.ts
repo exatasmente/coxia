@@ -169,6 +169,10 @@ export interface Boot {
 }
 
 export interface BootOptions {
+  /** The runner publishes to the code host through the real door (Actions and the audit log); the test installs the fake host with `setVcsRuntimeForTests`. */
+  publish?: boolean;
+  /** Changes the workspace config of the test before the run (the language, the templates, an agent's autonomy). */
+  configure?: (c: WorkspaceConfig) => void;
   repo?: Repo;
   engine?: FakeEngine;
   issues?: FakeIssues;
@@ -191,7 +195,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
   const repo = options.repo ?? makeRepo();
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), 'cerimonias-runner-data-'));
   // Every boot starts from a fresh configuration: what an earlier test switched (an agent's autonomy, say) must not leak into the next.
-  updateConfig(() => runnerConfig(neutralConfig(), repo));
+  updateConfig(() => runnerConfig(neutralConfig(), repo, options.configure));
   const runs = createRunStore(join(dir, 'runs'));
   const forum = createForumStore(join(dir, 'forum'));
   const issues = options.issues ?? fakeIssues();
@@ -209,6 +213,11 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     notify: (n) => notices.push({ title: n.title, body: n.body }),
     timeoutMs: options.timeoutMs,
   };
+  if (options.publish) {
+    const { createPublisher } = await import('../../src/main/runner/publish');
+    const { realDoor } = await import('../../src/main/runner/door');
+    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor });
+  }
   const runner = createRunner(deps);
   return {
     repo,

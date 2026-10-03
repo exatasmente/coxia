@@ -23,6 +23,7 @@ import {
   handBack,
   isTerminal,
   newRunId,
+  producerOf,
   recordQa,
   recordReview,
   resumeAfterRestart,
@@ -45,11 +46,13 @@ import type { ForumStore } from '../forum-core';
 import { type RunStore } from '../runs-core';
 import { beginRun, moveRun } from '../runs-forum';
 import type { Notice } from '../scheduler';
+import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, executeStage, pickAgent, withLimit } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
 import { mentionCall } from './mention';
+import type { Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
 // stage whose agent runs by itself is executed one after the other until the run reaches a gate, a question, a failure or its end; a stage whose agent waits
@@ -98,6 +101,8 @@ export interface RunnerDeps {
   issues: IssueSource;
   engine: StageEngine;
   updateConfig(change: (config: WorkspaceConfig) => WorkspaceConfig): WorkspaceConfig;
+  /** What leaves the machine from a run (comments, reviews, the push and the pull request); without it the runner writes nothing to the code host. */
+  publisher?: Publisher;
   notify?(notice: Notice): void;
   now?(): Date;
   newId?(): string;
@@ -126,6 +131,10 @@ export interface Runner {
   onMessage(message: ForumMessage): void;
   /** Starts runs for the issues that ask for one, up to the configured number at a time. */
   scan(): Promise<Run[]>;
+  /** A proposal of the runner was carried out in Actions (a comment, a review, the push, the pull request): the run goes on from there. */
+  actionDone(action: ReleaseAction, responses: unknown[]): void;
+  /** Posts the reviews that waited for their pull request, for the runs whose pull request exists by now. */
+  flush(): Promise<void>;
   /** After a restart: a run that was in the middle of a stage starts that stage over, and every run that can go on does. */
   resume(): void;
   /** Resolves when nothing is running: stages, mentions and what they started. */
@@ -140,6 +149,18 @@ export function createRunner(deps: RunnerDeps): Runner {
   const flowNow = (): FlowStage[] => flowOf(deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
   const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs };
+
+  // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
+  const publishing = new Map<string, Promise<void>>();
+  const publish = (runId: string, work: (p: Publisher) => Promise<void>): void => {
+    const p = deps.publisher;
+    if (!p) return;
+    const next = (publishing.get(runId) ?? Promise.resolve()).then(() => work(p)).catch((e) => console.error('[runner] publishing', runId, e instanceof Error ? e.message : e));
+    publishing.set(runId, next);
+    void next.finally(() => {
+      if (publishing.get(runId) === next) publishing.delete(runId);
+    });
+  };
 
   const inflight = new Map<string, Promise<void>>();
   const again = new Set<string>();
@@ -235,7 +256,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done.
   function settle(run: Run, r: StageRun): void {
     const flow = flowNow();
-    const { agent } = pickAgent(deps.config(), run, flow);
+    const { agent, stage: flowStage } = pickAgent(deps.config(), run, flow);
     const by = agent.id;
     const stage = run.stage;
     const out = r.output;
@@ -245,20 +266,26 @@ export function createRunner(deps: RunnerDeps): Runner {
     const apply = (change: (x: Run) => Transition): void => {
       tell(before, moveRun(d, run.id, change));
     };
+    // The stage's result goes to the tracker after the run has moved on: a comment, a review, and, at the end of the stage that changes code, the push.
+    const autonomous = run.stages.find((s) => s.stage === stage)?.autonomous ?? false;
+    const ended = (round?: number): void => publish(run.id, (p) => p.stageEnded(run.id, { stage: flowStage, agent, kind: r.kind, output: out, round, autonomous }));
 
     if (out.question) {
       if (out.summary) post(out.summary);
       apply((x) => ask(x, { by, text: out.question }, now()));
+      publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
     if (r.kind === 'review') {
-      moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
+      const recorded = moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
       const text = findingsText(out.summary, out.findings);
       if (out.verdict === 'changes') {
         apply((x) => reviewReturn(x, flow, { by, findings: text, handoff: text }, now()));
+        ended(recorded.reviews.length);
         return;
       }
       apply((x) => stageDone(x, flow, { summary: text, handoff: out.handoff, artifacts: r.written }, now()));
+      ended(recorded.reviews.length);
       return;
     }
     if (r.kind === 'qa') {
@@ -269,10 +296,12 @@ export function createRunner(deps: RunnerDeps): Runner {
         const text = failuresText(out.summary, out.scenarios);
         post(text);
         apply((x) => handBack(x, flow, { by, toStage: builder.id, text, countRound: true }, now()));
+        ended();
         return;
       }
     }
     apply((x) => stageDone(x, flow, { summary: out.summary, handoff: out.handoff, artifacts: r.written }, now()));
+    ended();
   }
 
   // ---- starting a run ---------------------------------------------------------------------------------------------------------------
@@ -373,9 +402,19 @@ export function createRunner(deps: RunnerDeps): Runner {
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
     gate(id, action, reason = '') {
-      if (action === 'approve') return move(id, (r, f, at) => gateApprove(r, f, at, reason));
-      if (action === 'reject') return move(id, (r, f, at) => gateReject(r, f, reason, at));
-      if (action === 'skip') return move(id, (r, f, at) => gateSkip(r, f, reason, at));
+      const before = need(id);
+      const flow = flowNow();
+      const gateStage = flow.find((s) => s.id === before.stage);
+      // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the person decided.
+      const judged = gateStage ? producerOf(flow, gateStage.id) : null;
+      const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
+      const decided = (run: Run): Run => {
+        if (gateStage?.human) publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+        return run;
+      };
+      if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason)));
+      if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
+      if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
       throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
     },
     answer: (id, text) => move(id, (r, f, at) => answerMove(r, f, text, at)),
@@ -411,8 +450,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       });
     },
     scan: () => (scanning ??= scanIssues().finally(() => (scanning = null))),
+    actionDone(action, responses) {
+      const id = String(action.unit?.runId ?? '');
+      if (id && deps.runs.get(id)) publish(id, (p) => p.actionDone(action, responses));
+    },
+    async flush() {
+      for (const run of deps.runs.list()) {
+        if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
+      }
+      await api.idle();
+    },
     resume() {
       for (const run of deps.runs.list().reverse()) {
+        if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
         if (isTerminal(run)) continue;
         try {
           if (run.status === 'working') moveRun(d, run.id, (r) => resumeAfterRestart(r, flowNow(), now()));
@@ -424,7 +474,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     async idle() {
       for (let i = 0; i < 50; i++) {
-        const all = [...inflight.values(), ...mentions.values(), ...(scanning ? [scanning] : [])];
+        const all = [...inflight.values(), ...mentions.values(), ...publishing.values(), ...(scanning ? [scanning] : [])];
         if (!all.length) return;
         await Promise.allSettled(all);
       }

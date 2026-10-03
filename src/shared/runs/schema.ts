@@ -47,6 +47,9 @@ const comment = object(
     bodyHash: { type: ['string', 'null'], description: 'Hash of the body last proposed or published.', maxLength: 200 },
     status: enumOf('Where the comment is.', COMMENT_STATUSES),
     updatedAt: time('When it last changed.'),
+    body: { type: ['string', 'null'], description: 'The text last written for it, as it goes to the tracker.', maxLength: 200_000 },
+    headline: { type: ['string', 'null'], description: 'The first line of the body: its status.', maxLength: 1000 },
+    title: { type: ['string', 'null'], description: 'The title of the pull request (the `pr` record).', maxLength: 500 },
   },
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
