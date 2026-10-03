@@ -960,5 +960,11 @@
   "flow.check.turns-loop": "Agents turn to each other in a circle ({agents}): a question would never reach the person.",
   "flow.check.agent-idle": "{agent} runs by itself but works no stage.",
   "flow.check.gate-last": "{stage} is a gate after the last work stage: there is nothing left for it to judge.",
-  "flow.check.end-no-agent": "{stage} is where the flow ends and has no agent: the run ends there without anyone working it."
+  "flow.check.end-no-agent": "{stage} is where the flow ends and has no agent: the run ends there without anyone working it.",
+  "prompt.sdd.runner.output.reporter": "Besides that, if the issue lacks something that only the person who reported it can tell (what they saw, how to reproduce it, what they expected), put the question in reporterQuestion (otherwise null): it is posted on the issue and the stage waits for their reply, then you go on with it. Ask only what you cannot find in the issue and the code, and ask it once.",
+  "main.runner.status.summary": "Label \"{label}\" for {stage}",
+  "main.forum.code.runner.status.set": "The label \"{label}\" was set on the issue.",
+  "main.forum.code.runner.status.proposed": "The label \"{label}\" waits for your yes in Actions.",
+  "main.forum.code.runner.status.refused": "This workspace does not write to the code host: the label \"{label}\" was not set.",
+  "main.forum.code.runner.status.failed": "The label \"{label}\" could not be set: {reason}"
 }

@@ -8,7 +8,7 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 // What a paired browser may do to a run. Reading, and answering the question a stage is waiting on, are open: the phone is where a person answers, and
 // an answer only lets the stage that asked go on. Everything else starts work or changes a run, or what an agent may do by itself: the window only.
 const OPEN = ['runs:list', 'runs:get', 'runs:answer'];
-const WINDOW_ONLY = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:setAutonomous'];
+const WINDOW_ONLY = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:setAutonomous'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
@@ -75,7 +75,7 @@ describe('the runner writes to a code host through one door', () => {
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
     const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
     expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
-    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl']));
+    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl']));
     for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });
 });

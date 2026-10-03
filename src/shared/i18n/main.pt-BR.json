@@ -960,5 +960,11 @@
   "flow.check.turns-loop": "Agentes recorrem uns aos outros em círculo ({agents}): uma pergunta nunca chegaria à pessoa.",
   "flow.check.agent-idle": "{agent} roda sozinho mas não trabalha em nenhuma etapa.",
   "flow.check.gate-last": "{stage} é um portão depois da última etapa de trabalho: não resta nada para ele julgar.",
-  "flow.check.end-no-agent": "{stage} é onde o fluxo termina e não tem agente: a execução termina ali sem ninguém trabalhar nela."
+  "flow.check.end-no-agent": "{stage} é onde o fluxo termina e não tem agente: a execução termina ali sem ninguém trabalhar nela.",
+  "prompt.sdd.runner.output.reporter": "Além disso, se faltar na issue algo que só quem a abriu pode dizer (o que viu, como reproduzir, o que esperava), ponha a pergunta em reporterQuestion (senão null): ela é publicada na issue e a etapa espera a resposta, depois você segue com ela. Pergunte só o que você não acha na issue nem no código, e pergunte uma vez.",
+  "main.runner.status.summary": "Rótulo \"{label}\" para {stage}",
+  "main.forum.code.runner.status.set": "O rótulo \"{label}\" foi aplicado na issue.",
+  "main.forum.code.runner.status.proposed": "O rótulo \"{label}\" espera o seu sim em Ações.",
+  "main.forum.code.runner.status.refused": "Este espaço de trabalho não escreve no servidor de código: o rótulo \"{label}\" não foi aplicado.",
+  "main.forum.code.runner.status.failed": "Não foi possível aplicar o rótulo \"{label}\": {reason}"
 }

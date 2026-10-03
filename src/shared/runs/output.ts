@@ -34,8 +34,10 @@ export interface StageOutput {
   artifacts: ArtifactOutput[];
   /** What the next stage is to do; empty: nothing to say. */
   handoff: string;
-  /** Something only the person can decide; non-empty pauses the stage. */
+  /** Something the agent cannot go on without; non-empty pauses the stage. It goes to the agent the asker turns to, and from there up to the person. */
   question: string;
+  /** Something only the person who reported the issue can say; non-empty makes the stage wait for their reply on the issue. */
+  reporterQuestion: string;
   /** Review only. */
   verdict: 'approved' | 'changes' | null;
   findings: Finding[];
@@ -61,6 +63,8 @@ const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] },
 const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sections: { type: 'array', items: obj({ heading: str, body: str }) }, technical: str });
 
 export interface OutputWants {
+  /** The agent may ask the person who reported the issue: ask for `reporterQuestion`. */
+  reporter?: boolean;
   /** The stage has a comment template: ask for `comment`. */
   comment?: boolean;
   /** The stage ends with the push: ask for the pull request description too. */
@@ -78,6 +82,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: scenario } });
+  if (wants.reporter) base.reporterQuestion = strOrNull;
   if (wants.comment) base.comment = commentText();
   if (wants.pr) base.pr = commentText({ title: str });
   return obj(base);
@@ -154,6 +159,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     }),
     handoff: text(o.handoff),
     question: text(o.question),
+    reporterQuestion: text(o.reporterQuestion),
     verdict,
     findings,
     scenarios: kind === 'qa' ? list(o.scenarios).flatMap((s) => readScenario(s) ?? []) : [],

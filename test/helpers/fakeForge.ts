@@ -33,6 +33,8 @@ export interface ForgePr {
   head: string;
   base: string;
   files: { filename: string; patch: string }[];
+  /** The pull request was merged (it reads as closed with a merge time). */
+  merged?: boolean;
 }
 
 export const HEAD = 'aaaa111122223333aaaa111122223333aaaa1111';
@@ -47,6 +49,10 @@ export interface Forge {
   pr: ForgePr | null;
   /** The pull request shows in the issue's timeline (a person opened it by hand, or it was made). */
   linked: boolean;
+  /** The labels of the issue 101. */
+  labels: string[];
+  /** A comment a person wrote on an issue or a pull request, after the time given (the reply of a reporter). */
+  say(number: number, login: string, body: string, at: string): void;
   /** A write to refuse with this status (every write while set). */
   failWith: { status: number; message: string } | null;
   runtime(): VcsRuntime;
@@ -68,6 +74,8 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     reviews: [],
     pr: over.pr === null ? null : { number: 7, branch: 'cycle/101-add-the-thing-101', head: HEAD, base: 'main', files: Object.entries(PATCHES).map(([filename, patch]) => ({ filename, patch })), ...over.pr },
     linked: over.linked ?? true,
+    labels: [],
+    say: (n, login, body, at) => void forge.notes.set(n, [...(forge.notes.get(n) ?? []), { id: nextId++, body, user: { login }, created_at: at }]),
     failWith: null,
     bodies: (n) => (forge.notes.get(n) ?? []).map((x) => [x.id, x.body]),
     runtime: () => runtime,
@@ -78,7 +86,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     forge.notes.set(n, [...(forge.notes.get(n) ?? []), made]);
     return made;
   };
-  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: 'A pull request', state: 'open', head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: '' });
+  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: '' });
   const threadNode = (t: Thread) => ({ id: t.id, isResolved: t.resolved, path: t.path, line: t.line, originalLine: t.line, comments: { nodes: t.comments.map((c) => ({ databaseId: c.databaseId, author: { login: 'runner-bot' }, body: c.body, createdAt: '2026-10-03T12:00:00Z', url: `https://example.test/${PROJECT}/pull/7#discussion_r${c.databaseId}` })) } });
   const openThread = (path: string, line: number | null, body: string): void => {
     const databaseId = nextId++;
@@ -91,6 +99,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if (path === 'user') return { id: 1, login: 'runner-bot', name: 'Runner' };
     if (path === `repos/${PROJECT}`) return { default_branch: 'main', html_url: `https://example.test/${PROJECT}`, full_name: PROJECT };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path))) return (forge.notes.get(Number(m[1])) ?? []).map((n) => ({ ...n, html_url: url(Number(m?.[1]), n.id) }));
+    if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path))) return { number: Number(m[1]), title: 'Add the thing', state: 'open', labels: forge.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${m[1]}`, user: { login: 'ana' }, assignees: [], body: '' };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/timeline$/.exec(path))) return forge.linked && forge.pr ? [{ event: 'cross-referenced', source: { issue: { number: forge.pr.number, pull_request: {}, repository: { full_name: PROJECT } } } }] : [];
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/comments$/.exec(path))) return forge.threads.flatMap((t) => t.comments.map((c) => ({ id: c.databaseId, body: c.body, created_at: '2026-10-03T12:00:00Z', user: { login: 'runner-bot' } })));
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/files$/.exec(path))) return forge.pr?.number === Number(m[1]) ? forge.pr.files : [];
@@ -126,6 +135,10 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
       if (!found) throw new Error('404 not found');
       found.body = json.body;
       response = { id: found.id };
+    } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/\d+\/labels$/.exec(command.endpoint)) && command.method === 'POST') {
+      forge.labels = [...new Set([...forge.labels, ...(json.labels as string[])])];
+    } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/\d+\/labels\/([\w%.-]+)$/.exec(command.endpoint)) && command.method === 'DELETE') {
+      forge.labels = forge.labels.filter((l) => l !== decodeURIComponent(m?.[1] ?? ''));
     } else if (/\/pulls\/\d+\/reviews$/.test(command.endpoint)) {
       const id = nextId++;
       forge.reviews.push({ id, event: json.event, body: json.body, commit_id: json.commit_id, comments: json.comments });

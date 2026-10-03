@@ -76,6 +76,8 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:answer', (run: unknown, answer: unknown) => r.answer(id(run), text(answer)));
   ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
   ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
+  ctx.handle('runs:skipWait', (run: unknown, reason: unknown) => r.skipWait(id(run), text(reason)));
+  ctx.handle('runs:migrateFlow', (run: unknown) => r.migrateFlow(id(run)));
   ctx.handle('runs:setAutonomous', (agent: unknown, on: unknown) => {
     if (typeof agent !== 'string' || typeof on !== 'boolean') throw new RunnerError('unknown-agent', { agent: '' });
     r.setAutonomous(agent, on);
@@ -89,6 +91,8 @@ export const runsModule: Module = (ctx) => {
     enabled: () => getConfig().runner.enabled && isFlowCycle(getConfig().devCycle.stages) && vcsReady(),
     run: async () => {
       await r.scan();
+      // The runs that wait for a merged pull request, a reply, a label or the time are looked at on the same tick.
+      await r.tick();
       // A review that waited for its pull request goes out once the pull request exists (the person may have opened it by hand).
       await r.flush();
     },

@@ -10,15 +10,19 @@ import {
   RunError,
   type Transition,
   acceptStage,
+  askReporter,
   assertStartable,
   answer as answerMove,
   ask,
   cancel as cancelMove,
   failuresText,
   findingsText,
+  flowErrors,
+  flowIssueText,
   flowOf,
   flowOfRun,
   isFlowCycle,
+  migrateFlow as migrateFlowMove,
   gateApprove,
   gateReject,
   gateSkip,
@@ -36,6 +40,8 @@ import {
   stageFailed,
   startRun,
   startStage as startMove,
+  waitDone,
+  waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
 import { updateAgent } from '../../shared/config/team';
@@ -126,6 +132,10 @@ export interface Runner {
   answer(id: string, text: string): Run;
   retry(id: string): Run;
   cancel(id: string): Run;
+  /** The person does not wait any longer for the event of a waiting run. A reason is required. */
+  skipWait(id: string, reason: string): Run;
+  /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
+  migrateFlow(id: string): Run;
   setAutonomous(agentId: string, on: boolean): WorkspaceConfig;
   /** A person's post in a run's thread that answers the run's pending question: the answer is recorded and the stage goes on. Null when the post answers nothing. */
   answerPost(thread: string, text: string): ForumMessage | null;
@@ -133,6 +143,8 @@ export interface Runner {
   onMessage(message: ForumMessage): void;
   /** Starts runs for the issues that ask for one, up to the configured number at a time. */
   scan(): Promise<Run[]>;
+  /** Looks for what each waiting run waits for (a merged pull request, a reply, a label, the time) and sends on the runs whose event happened. */
+  tick(): Promise<Run[]>;
   /** A proposal of the runner was carried out in Actions (a comment, a review, the push, the pull request): the run goes on from there. */
   actionDone(action: ReleaseAction, responses: unknown[]): void;
   /** Posts the reviews that waited for their pull request, for the runs whose pull request exists by now. */
@@ -173,6 +185,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   const refused = new Set<string>();
   const starting = new Set<string>();
   let scanning: Promise<Run[]> | null = null;
+  let ticking: Promise<Run[]> | null = null;
 
   const need = (id: string): Run => {
     const run = deps.runs.get(id);
@@ -182,7 +195,19 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
-  function tell(before: string | null, run: Run): void {
+  function tell(prior: Run | null, run: Run): void {
+    // The label a stage sets on the tracker goes out when the run enters it.
+    if (prior && prior.stage !== run.stage && deps.publisher) {
+      const flow = flowFor(run);
+      const entered = flow.find((s) => s.id === run.stage);
+      const previous = flow.find((s) => s.id === prior.stage) ?? null;
+      if (entered && (entered.trackerStatus || previous?.trackerStatus)) {
+        // A work stage's own agent speaks for it; a gate, a wait or an end has none, so its label waits for a "yes".
+        const autonomous = entered.type === 'work' && !!entered.agent && entered.autonomous;
+        publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
+      }
+    }
+    const before = prior?.status ?? null;
     if (before === run.status || !deps.notify || !deps.config().notifications) return;
     const key = ({ gate: 'gate', question: 'question', failed: 'failed', 'to-start': 'toStart', 'to-accept': 'toAccept', done: 'done' } as Record<string, string>)[run.status];
     if (!key) return;
@@ -193,7 +218,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // Every change of a run goes through here: saved with its messages, the person told when it now waits for them, and the next stage started when it can.
   function move(id: string, change: (run: Run, flow: FlowStage[], at: string) => Transition): Run {
-    const before = need(id).status;
+    const before = need(id);
     const run = moveRun(d, id, (r) => change(r, flowFor(r), now()));
     tell(before, run);
     pump(id);
@@ -253,8 +278,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (deps.runs.get(run.id)?.status !== 'working') return;
     const detail = redact(e instanceof Error ? e.message : String(e)).slice(0, 500);
     if (!(e instanceof StageError)) console.error('[runner]', run.id, run.stage, detail);
-    const before = run.status;
-    tell(before, moveRun(d, run.id, (r) => stageFailed(r, detail, now())));
+    tell(run, moveRun(d, run.id, (r) => stageFailed(r, detail, now())));
   }
 
   // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done.
@@ -266,14 +290,19 @@ export function createRunner(deps: RunnerDeps): Runner {
     const out = r.output;
     const refs = r.written.map((path) => ({ path }));
     const post = (text: string) => deps.forum.append(runThreadId(run.id), { kind: 'post', author: { type: 'agent', id: by }, text, refs, stage, public: true });
-    const before = run.status;
     const apply = (change: (x: Run) => Transition): void => {
-      tell(before, moveRun(d, run.id, change));
+      tell(run, moveRun(d, run.id, change));
     };
     // The stage's result goes to the tracker after the run has moved on: a comment, a review, and, at the end of the stage that changes code, the push.
     const autonomous = run.stages.find((s) => s.stage === stage)?.autonomous ?? false;
     const ended = (round?: number): void => publish(run.id, (p) => p.stageEnded(run.id, { stage: flowStage, agent, kind: r.kind, output: out, round, autonomous }));
 
+    if (out.reporterQuestion) {
+      if (out.summary) post(out.summary);
+      apply((x) => askReporter(x, { by, text: out.reporterQuestion }, now()));
+      publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.reporterQuestion, autonomous }));
+      return;
+    }
     if (out.question) {
       if (out.summary) post(out.summary);
       apply((x) => ask(x, { by, text: out.question }, now()));
@@ -352,8 +381,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     const { iid, ref } = refOf(raw);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
     const flow = flowNow();
-    // The refusal the first transition would give, before anything is created on disk.
+    // The refusal the first transition would give, before anything is created on disk, and then what the flow check says stops a run.
     assertStartable(flow);
+    const broken = flowErrors({ stages: config.devCycle.stages, team: config.agents.team }, { asFlow: true });
+    if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
 
     const { issue, comments } = await deps.issues.get(iid);
     if (issue.state === 'closed') throw new RunnerError('issue-closed', { ref });
@@ -428,6 +459,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       aborts.get(id)?.abort();
       return run;
     },
+    skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
+    migrateFlow(id) {
+      const config = deps.config();
+      const broken = flowErrors({ stages: config.devCycle.stages, team: config.agents.team }, { asFlow: true });
+      if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+      const flow = flowOf(config);
+      return move(id, (r, _f, at) => migrateFlowMove(r, flow, at));
+    },
     setAutonomous(agentId, on) {
       if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
       return deps.updateConfig((c) => updateAgent(c, agentId, { autonomous: on }));
@@ -454,6 +493,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       });
     },
     scan: () => (scanning ??= scanIssues().finally(() => (scanning = null))),
+    tick: () => (ticking ??= lookForEvents().finally(() => (ticking = null))),
     actionDone(action, responses) {
       const id = String(action.unit?.runId ?? '');
       if (id && deps.runs.get(id)) publish(id, (p) => p.actionDone(action, responses));
@@ -478,7 +518,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     async idle() {
       for (let i = 0; i < 50; i++) {
-        const all = [...inflight.values(), ...mentions.values(), ...publishing.values(), ...(scanning ? [scanning] : [])];
+        const all = [...inflight.values(), ...mentions.values(), ...publishing.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
         if (!all.length) return;
         await Promise.allSettled(all);
       }
@@ -513,6 +553,28 @@ export function createRunner(deps: RunnerDeps): Runner {
         deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
       }
     }
+  }
+
+  // ---- what a waiting run waits for -------------------------------------------------------------------------------------------------
+
+  // Every waiting run is looked at once per tick: the code host says whether its event happened, and the run goes on from where it waits.
+  async function lookForEvents(): Promise<Run[]> {
+    const sent: Run[] = [];
+    for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
+      const w = run.wait;
+      if (!w) continue;
+      let over: { over: boolean; reply?: string } = { over: false };
+      if (w.kind === 'time') over = { over: Date.parse(w.since) + (w.minutes ?? 0) * 60_000 <= (deps.now?.() ?? new Date()).getTime() };
+      else if (deps.publisher) over = await deps.publisher.waitOver(run.id);
+      // The person may have moved the run while the host was being asked.
+      if (!over.over || deps.runs.get(run.id)?.rev !== run.rev) continue;
+      try {
+        sent.push(move(run.id, (r, f, at) => waitDone(r, f, { reply: over.reply }, at)));
+      } catch (e) {
+        console.error('[runner] could not send on a waiting run', run.id, e instanceof Error ? e.message : e);
+      }
+    }
+    return sent;
   }
 
   // ---- runs the app starts by itself ------------------------------------------------------------------------------------------------

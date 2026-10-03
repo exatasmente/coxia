@@ -38,6 +38,8 @@ export interface StageInput {
   comment?: CommentAsk | null;
   /** The pull request description, for the stage that ends with the push. */
   pr?: CommentAsk | null;
+  /** The agent may ask the person who reported the issue, on the issue. */
+  reporter?: boolean;
 }
 
 const MESSAGE_MAX = 1500;
@@ -110,6 +112,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.reporter ? cp('runner.output.reporter') : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

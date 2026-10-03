@@ -125,6 +125,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     return tpl ? { sections: tpl.sections, technical: tpl.technicalDetail } : null;
   };
   const comment = askOf(stage.comment);
+  // The first stage of a flow is where an issue comes in: the agent that works it may ask the person who reported it what is missing.
+  const reporter = kind === 'work' && flow[0]?.id === stage.id;
   const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
 
   const input: StageInput = {
@@ -142,6 +144,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     answer: pendingAnswer(thread, agent.id, stage.id),
     comment,
     pr,
+    reporter,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -157,7 +160,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,
@@ -175,7 +178,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   }
 
   const output = readOutput(data, kind);
-  if (!output.summary && !output.question) throw new StageError('empty-answer');
+  if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];
   for (const a of output.artifacts) {
@@ -186,7 +189,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     writeArtifact(wt, run.cycleFolder, a.name, a.content);
     written.push(a.name);
   }
-  if (output.question) return { kind, output, written, commit: null, head: looked };
+  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked };
 
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });

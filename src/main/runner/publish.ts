@@ -121,6 +121,10 @@ export interface Publisher {
   actionDone(action: ReleaseAction, responses: unknown[]): Promise<void>;
   /** The review of a round that waited for the pull request goes out now, if the pull request exists. */
   flushReviews(runId: string): Promise<void>;
+  /** Whether the event a waiting run waits for has happened, as the code host says (a reply is what the person wrote). Never throws: an unreadable host is "not yet". */
+  waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
+  /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
+  stageEntered(runId: string, e: { stage: FlowStage; previous: FlowStage | null; autonomous: boolean }): Promise<void>;
 }
 
 const iso = (d: Date): string => d.toISOString();
@@ -373,7 +377,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!tpl) return;
     const run = need(runId);
     // Each time an agent asks is its own comment: the thread of the issue reads as the conversation it was.
-    const n = run.history.filter((h) => h.type === 'question' && h.stage === e.stage.id).length || 1;
+    const n = run.history.filter((h) => (h.type === 'question' || (h.type === 'wait-started' && h.detail === 'reporter-reply')) && h.stage === e.stage.id).length || 1;
     const key = `question-${e.stage.id}-${n}`.slice(0, 48);
     const marker = markerOf(run.id, key);
     const content: StageComment = { sections: [{ heading: '', body: e.question }], technical: '' };
@@ -648,6 +652,77 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  // ---- what a waiting run waits for -----------------------------------------------------------------------------------------------
+
+  /** The pull request of the run, in any state: the recorded one, else one from its branch that the issue links to. */
+  async function prState(run: Run, provider: VcsProvider): Promise<'open' | 'merged' | 'closed' | null> {
+    const known = run.comments.pr;
+    const { issue, repo } = projects(run);
+    if (known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId))) return (await provider.getMr(repo, Number(known.noteId))).state;
+    const found = (await provider.linkedMrs(issue, run.issue.iid)).find((m) => m.sourceBranch === run.branch);
+    return found ? found.state : null;
+  }
+
+  async function waitOver(runId: string): Promise<{ over: boolean; reply?: string }> {
+    const run = deps.runs.get(runId);
+    const w = run?.wait;
+    if (!run || !w) return { over: false };
+    try {
+      if (w.kind === 'time') return { over: Date.parse(w.since) + (w.minutes ?? 0) * 60_000 <= (deps.now?.() ?? new Date()).getTime() };
+      // The issue this run waits on is another run's: nothing resolves it until squads give runs a way to depend on each other.
+      if (w.kind === 'linked-done') return { over: false };
+      const provider = door.provider();
+      if (!provider) return { over: false };
+      const { issue } = projects(run);
+      if (w.kind === 'pr-merged') return { over: (await prState(run, provider)) === 'merged' };
+      if (w.kind === 'label') {
+        const want = (w.label ?? '').trim().toLowerCase();
+        return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
+      }
+      // A reply is a comment of a person written after the wait began: anything the app itself posted carries its marker, and a note of the system is not one.
+      const since = Date.parse(w.since);
+      const reply = (await provider.listIssueComments(issue, run.issue.iid))
+        .filter((c) => !c.system && !readMarker(c.body) && Date.parse(c.createdAt) > since)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .at(0);
+      return reply ? { over: true, reply: redact(reply.body).slice(0, 4000) } : { over: false };
+    } catch (e) {
+      console.error('[runner] could not look for what the run waits for', runId, message(e));
+      return { over: false };
+    }
+  }
+
+  // ---- the label a stage sets on the tracker ----------------------------------------------------------------------------------------
+
+  async function stageEntered(runId: string, e: { stage: FlowStage; previous: FlowStage | null; autonomous: boolean }): Promise<void> {
+    const add = e.stage.trackerStatus;
+    const remove = e.previous?.trackerStatus && e.previous.trackerStatus !== add ? e.previous.trackerStatus : null;
+    if ((!add || add === e.previous?.trackerStatus) && !remove) return;
+    const run = need(runId);
+    const refusal = door.refusal();
+    if (refusal) return say(run, 'runner.status.refused', { label: add ?? remove ?? '' }, e.stage.id);
+    const provider = door.provider();
+    if (!provider) return;
+    const { issue } = projects(run);
+    const commands = await provider.planWrite({ op: 'setIssueLabels', project: issue, iid: run.issue.iid, add: add && add !== e.previous?.trackerStatus ? [add] : [], remove: remove ? [remove] : [] });
+    if (!commands.length) return;
+    const attempt = run.stages.find((s) => s.stage === e.stage.id)?.attempts ?? 1;
+    const key = `status:${runId}:${e.stage.id}:${attempt}`;
+    const summary = tr('main.runner.status.summary', { label: add ?? remove ?? '', stage: e.stage.label });
+    // The agent of the stage lets it go out by itself; a gate or a wait has no agent to speak for it, so it waits for a "yes".
+    if (!e.autonomous) {
+      const created = door.propose({ key, issue: run.issue.iid, issueTitle: run.issue.title, summary, unit: { runId, purpose: 'status', stage: e.stage.id }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+      if (created) say(run, 'runner.status.proposed', { label: add ?? remove ?? '' }, e.stage.id);
+      return;
+    }
+    try {
+      await door.post({ issue: run.issue.iid, key, summary, by: e.stage.agent ?? 'app' }, commands);
+      say(run, 'runner.status.set', { label: add ?? remove ?? '' }, e.stage.id);
+    } catch (err) {
+      say(run, 'runner.status.failed', { label: add ?? remove ?? '', reason: message(err) }, e.stage.id);
+    }
+  }
+
   // Anything that goes wrong while publishing is said in the thread and never fails the stage or the run.
   const guarded = (runId: string, work: () => Promise<void>): Promise<void> =>
     work().catch((e) => {
@@ -667,6 +742,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     gateDecided: (runId, e) => guarded(runId, () => gate(runId, e)),
     actionDone: (a, responses) => guarded(String(a.unit?.runId ?? ''), () => done(a, responses)),
     flushReviews: (runId) => guarded(runId, () => flush(runId)),
+    waitOver,
+    stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
   };
 }
 
