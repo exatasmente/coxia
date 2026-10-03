@@ -163,18 +163,23 @@ jobs:
       - name: Check the files
         run: scripts/verify-release-files.sh "$VERSION" dist
 
-      - name: Keep the draft a pre-release when the version has a suffix
-        if: needs.prepare.outputs.dry_run != 'true' && needs.prepare.outputs.prerelease == 'true'
+      - name: Link the draft to its tag, and keep it a pre-release when the version has a suffix
+        if: needs.prepare.outputs.dry_run != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
-          # electron-builder creates either a draft or a published pre-release; GitHub allows both flags, so set the second one here.
-          # A draft has no tag yet: GitHub shows it as untagged-<hash> until it is published, so it is found by its name (the tag, set with releaseName).
+          # electron-builder creates the draft with tag_name=$TAG, yet GitHub answered with tag_name "untagged-<hash>" and target_commitish main
+          # (v0.5.0-beta.2): publishing that draft would create a tag literally named untagged-<hash> on main's head instead of linking the pushed
+          # tag. So the draft is found by its name (the tag, set with releaseName) and its tag_name is set here. A stable's draft is created by the
+          # same call, so it gets the same treatment. electron-builder creates either a draft or a published pre-release; GitHub allows both flags,
+          # so the second one is set here too.
           id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
           [ -n "$id" ] || { echo "::error::no draft release for $TAG"; exit 1; }
-          gh api --method PATCH "repos/$REPOSITORY/releases/$id" -F prerelease=true --jq '"draft=\(.draft) prerelease=\(.prerelease)"'
+          gh api --method PATCH "repos/$REPOSITORY/releases/$id" -f tag_name="$TAG" -F prerelease="$PRERELEASE" \
+            --jq '"tag_name=\(.tag_name) draft=\(.draft) prerelease=\(.prerelease)"'
 
       - name: Check what the draft release holds
         if: needs.prepare.outputs.dry_run != 'true'
@@ -184,9 +189,12 @@ jobs:
         run: |
           set -euo pipefail
           feed="$CHANNEL-linux.yml"
-          # By name, as above: the draft of a pre-release is untagged until a person publishes it. The newest one wins (the API lists newest first).
+          # By name, as above: GitHub may show the draft as untagged-<hash>. The newest one wins (the API lists newest first).
           id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
           [ -n "$id" ] || { echo "::error::no draft release named $TAG"; exit 1; }
+          # Publishing creates the tag named in tag_name when it does not exist: anything but $TAG would put a stray tag on the draft's target.
+          tag_name="$(gh api "repos/$REPOSITORY/releases/$id" --jq '.tag_name')"
+          [ "$tag_name" = "$TAG" ] || { echo "::error::the draft release is linked to the tag $tag_name, not $TAG: publishing it would create $tag_name"; exit 1; }
           assets="$(gh api "repos/$REPOSITORY/releases/$id" --jq '.assets[].name')"
           echo "$assets"
           for want in "coxia-$VERSION.AppImage" "coxia_${VERSION}_amd64.deb" "$feed"; do

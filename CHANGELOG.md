@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- For maintainers: the draft the release workflow creates came back from GitHub with the tag `untagged-<hash>` aimed at `main`, and publishing it would have created that tag on `main` instead of linking the pushed version tag. The workflow now sets the draft's tag to the version tag, for a beta and a stable, and fails if the draft is linked to anything else.
+
 ## [0.5.0-beta.2] - 2026-10-03
 
 ### Added
