@@ -359,6 +359,25 @@ describe('the review limit and QA', () => {
     expect(subjects.join('\n')).not.toContain('fix the constant');
   });
 
+  it('commits code with an English subject without a type or an issue reference, and documents with the stage fallback', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('developer', async (_c, tools) => {
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Done.', { commit: 'fix(slug): add accent folding (app#101) #101', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    // the readers describe what they read, in Portuguese or not: their commits hold documents, so the agent's text is not used
+    b.engine.script('reviewer', () => work('Fine.', { commit: 'aprova a revisão do código', artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    b.engine.script('refiner', () => work('Spec.', { commit: 'feat: write the spec', artifacts: [doc('1_SPEC.md')] }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const subjects = git(run.worktree, 'log', '--format=%s').split('\n');
+    expect(subjects).toContain('feat: add accent folding #101');
+    expect(subjects).toContain('feat: add the review documents #101');
+    expect(subjects).toContain('feat: add the refine documents #101');
+    expect(subjects.filter((x) => /app#|aprova|write the spec/.test(x))).toEqual([]);
+  });
+
   it('does not say so for a pass that changes code, nor for an agent that only reads', async () => {
     const b = await boot();
     easy(b);

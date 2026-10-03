@@ -92,10 +92,25 @@ const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-
 
 const ATTRIBUTION = /co-authored-by|generated (?:with|by)|\bclaude\b|\banthropic\b|\bai[- ](?:generated|assisted)\b/i;
 
-/** The first line of a commit's summary as the convention wants it: one line, lowercase first letter, no full stop, at most 72 characters. Attribution of a tool never gets through. */
+// The conventional prefix a model adds out of habit ("feat(core): ", "fix: "): the repository's template says the type, and where the issue number goes.
+const TYPE_PREFIX = /^(?:feat|fix|chore|docs|doc|refactor|test|tests|style|perf|build|ci|revert|wip)(?:\([^)]*\))?!?:\s*/i;
+const ISSUE_REF = /\s*\(\s*[\w./-]*#\d+\s*\)|\s*[\w./-]*#\d+\b/g;
+// Words that only Portuguese uses: a summary with one of them (or with an accent) was not written in English.
+const PORTUGUESE = /\b(?:de|da|das|dos|para|com|uma|que|não|nao|pela|pelo|na|nas|nos|ao|aos|sem|por|ou|em|os)\b/i;
+
+/** Whether a summary reads as English: plain ASCII, some letters, none of the words only Portuguese has. */
+export const looksEnglish = (text: string): boolean => /^[\x20-\x7e]+$/.test(text) && /[a-z]{2}/i.test(text) && !PORTUGUESE.test(text);
+
+/**
+ * The first line of a commit's summary as the convention wants it: no type prefix and no issue reference (the repository's template adds both), one line,
+ * lowercase first letter, no full stop, at most 72 characters. Attribution of a tool never gets through, and neither does a summary that is not English
+ * (or that nothing is left of): the fallback is used then.
+ */
 export function commitSummary(summary: string, fallback: string): string {
-  const line = summary.split('\n')[0].trim().replace(/\.+$/, '');
-  const use = line && !ATTRIBUTION.test(line) ? line : fallback;
+  let line = summary.split('\n')[0].trim();
+  for (let i = 0; i < 3 && TYPE_PREFIX.test(line); i++) line = line.replace(TYPE_PREFIX, '');
+  line = line.replace(ISSUE_REF, '').replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
+  const use = line && !ATTRIBUTION.test(line) && looksEnglish(line) ? line : fallback;
   return (use.charAt(0).toLowerCase() + use.slice(1)).slice(0, 72).trim();
 }
 

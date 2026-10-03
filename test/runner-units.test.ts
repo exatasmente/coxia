@@ -6,7 +6,7 @@ import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
 import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
-import { WorktreeError, branchDiff, branchStat, commitAll, commitMessage, commitSummary, createWorktree, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
+import { WorktreeError, branchDiff, branchStat, commitAll, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
 import { git } from './helpers/conflictRepos';
 import { comment, issue, makeRepo } from './helpers/runner';
@@ -189,6 +189,26 @@ describe('the commit message', () => {
     expect(commitSummary('y'.repeat(100), 'x')).toHaveLength(72);
     expect(commitMessage('feat: {summary} #{iid}', 'add it', 12)).toBe('feat: add it #12');
     expect(commitMessage('fix: {summary} (#{iid})', 'add it', 12)).toBe('fix: add it (#12)');
+  });
+
+  it('drops a type prefix and an issue reference the agent added, since the template says both', () => {
+    expect(commitSummary('feat(core): add accent folding (app#101)', 'x')).toBe('add accent folding');
+    expect(commitSummary('Fix: handle empty titles #101', 'x')).toBe('handle empty titles');
+    expect(commitSummary('fix: feat: stack the prefixes (#12) and the refs app#7', 'x')).toBe('stack the prefixes and the refs');
+    expect(commitSummary('refactor!: drop the old helper', 'x')).toBe('drop the old helper');
+    // a colon that is not a conventional type stays
+    expect(commitSummary('update: the slug rules', 'x')).toBe('update: the slug rules');
+    // nothing left of it
+    expect(commitSummary('feat: #101', 'use the fallback')).toBe('use the fallback');
+  });
+
+  it('falls back when the summary is not English: accents, or Portuguese words in plain letters', () => {
+    expect(commitSummary('corrige a remoção de acentos', 'the fallback')).toBe('the fallback');
+    expect(commitSummary('corrige a geracao do slug para titulos', 'the fallback')).toBe('the fallback');
+    expect(commitSummary('fix the slug for “quoted” titles', 'the fallback')).toBe('the fallback');
+    expect(looksEnglish('add accent folding to the slug')).toBe(true);
+    expect(looksEnglish('do not strip hyphens')).toBe(true);
+    expect(looksEnglish('###')).toBe(false);
   });
 
   it('never carries the attribution of a tool, whatever the agent wrote', () => {

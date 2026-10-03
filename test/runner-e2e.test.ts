@@ -62,7 +62,7 @@ describe('a run from refine to ready', () => {
     expect(issueText).toContain('Please keep it small.');
     expect(issueText).not.toContain('changed the label');
     expect(readFileSync(join(folder, '1_SPEC.md'), 'utf8')).toBe('# Spec\nDo X, not Y.\n');
-    expect(git(wt, 'log', '--format=%s', 'main..HEAD').split('\n')).toEqual(['feat: write the spec #101', 'feat: add the issue record #101']);
+    expect(git(wt, 'log', '--format=%s', 'main..HEAD').split('\n')).toEqual(['feat: add the refine documents #101', 'feat: add the issue record #101']);
     expect(run.base).toBe(git(b.repo.clone, 'rev-parse', 'main'));
     // what the refiner was given: the issue as data, the rules of a reader, no way to write
     const refine = engine.calls[0];
@@ -139,7 +139,7 @@ describe('a run from refine to ready', () => {
     const subjects = git(wt, 'log', '--format=%s', 'main..HEAD').split('\n').reverse();
     expect(subjects).toEqual([
       'feat: add the issue record #101',
-      'feat: write the spec #101',
+      'feat: add the refine documents #101',
       'feat: add the plan documents #101',
       'feat: add the feature #101',
       'feat: add the review documents #101',

@@ -224,8 +224,10 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // A pass of an agent that writes that changed no code is a pass of documents: what the agent said it fixed is not in the diff, and the commit does not claim it.
   const noCodeChange = writes && !(await changedOutside(wt, run.cycleFolder));
   if (noCodeChange) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.noCodeChange', params: { agent: agent.id }, stage: stage.id });
-  const fallback = commitFallback(stage.label, writes && !noCodeChange);
-  const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, noCodeChange ? fallback : commitSummary(output.commit, fallback), run.issue.iid), identity);
+  // A stage that only writes documents never takes the agent's description for its commit: that describes code, and there is none.
+  const code = writes && !noCodeChange;
+  const fallback = commitFallback(stage.label, code);
+  const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}) };
 }
 
