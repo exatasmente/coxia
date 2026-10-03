@@ -10,6 +10,10 @@ import { useIsPhone } from '../useIsPhone';
 import { useWatcherAlerts } from '../watchersApi';
 import { BellIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
+import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
+import { RunNeeds } from './cycle/RunNeeds';
+import { SquadPicker } from './cycle/SquadPicker';
+import { useRuns } from './cycle/runsApi';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
@@ -41,7 +45,9 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
   const ready = cards.filter((card) => c.turns[card.ref]).length;
   // `cards` is already in the agenda's order (blocked, priority, last update): Today lists them as the call will, without sorting again.
-  const blocked = cards.filter((card) => card.blockers.length);
+  // A run stopped on a question or a failure blocks its card as much as a blocker the tracker shows.
+  const runs = useRuns();
+  const blocked = cards.filter((card) => card.blockers.length || (runs && isRunBlocker(runOfCard(runs, card.ref))));
   const asking = pendingQuestions(cards, c.turns, c.answered);
   const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
@@ -119,6 +125,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         {!phone && (
           <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
             <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
             <RadarButton go={go} />
@@ -142,6 +150,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const needsBlock = (
     <>
       <NeedsList items={needs} go={go} dismiss={dismiss} />
+      <RunNeeds go={go} />
       {/* slot: banners of feature modules */}
     </>
   );
@@ -221,6 +230,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         <div className="cer">
           <h3>{cycle?.preDailyLabel ? cycle.preDailyLabel.charAt(0).toUpperCase() + cycle.preDailyLabel.slice(1) : t('ui.today.preDaily')}</h3>
           <p className="small muted">{c.cards ? t('ui.today.agentsReady', { ready, total: cards.length }) : t('ui.today.buildingCards')}</p>
+          <SquadPicker value={c.squad} onChange={(squad) => void c.setSquad(squad)} disabled={!!c.startedAt && !c.callEnded} />
           <button type="button" className="btn" disabled={!c.cards} onClick={() => go({ name: 'call' })}>
             {c.startedAt && !c.callEnded ? tv('call.back') : tv('call.enter')}
           </button>

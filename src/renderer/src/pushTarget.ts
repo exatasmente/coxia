@@ -17,6 +17,10 @@ export function targetToScreen(t: PushTarget, hasCards: boolean): Screen | null 
       return t.ref ? { name: 'discussions', ref: t.ref, mr: t.mr } : null;
     case 'conflict':
       return t.id ? { name: 'conflict', id: t.id } : null;
+    case 'run':
+      return t.id ? { name: 'run', id: t.id } : null;
+    case 'forum':
+      return t.id ? { name: 'forum', thread: t.id } : { name: 'forum' };
     default:
       return { name: t.to } as Screen;
   }

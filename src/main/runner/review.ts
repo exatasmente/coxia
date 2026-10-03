@@ -1,9 +1,12 @@
 import type { VcsKind } from '../../shared/config/types';
 import type { Language } from '../../shared/config/types';
 import { createTranslator } from '../../shared/i18n';
-import { type Finding, whereOf } from '../../shared/runs';
+import { type Finding, sameFinding, whereOf } from '../../shared/runs';
 import { covers, indexPatch } from '../vcs/diffLines';
 import type { ReviewComment } from '../vcs/types';
+
+// The comparison of two findings is shared with the run screens, which show a finding's thread from it; it is exported from here as it always was.
+export { sameFinding };
 
 // What the reviewer found, turned into what a review on the pull request is made of. Pure: the diff of the pull request comes in, and so does the host's kind
 // (a suggestion is written differently on each one). Nothing here reads or writes the code host.
@@ -37,23 +40,6 @@ export function placeFindings(findings: Finding[], changes: { path: string; diff
     if (!covers(index_, finding.side, finding.line, to)) return { ...base, where: 'file' as const };
     return { ...base, where: 'line' as const, anchored: true, line: to, startLine: finding.endLine !== null ? finding.line : null };
   });
-}
-
-const words = (text: string): Set<string> => new Set(text.toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu) ?? []);
-
-/**
- * Whether two findings (from different rounds) say the same thing: the same file and either the same words or a good deal of them, or the same
- * replacement. The line is not compared: code moves between rounds.
- */
-export function sameFinding(a: Finding, b: Finding): boolean {
-  if (a.path !== b.path) return false;
-  if (a.suggestion && b.suggestion && a.suggestion.trim() === b.suggestion.trim()) return true;
-  const x = words(a.body);
-  const y = words(b.body);
-  if (!x.size || !y.size) return a.body.trim() === b.body.trim();
-  let shared = 0;
-  for (const w of x) if (y.has(w)) shared++;
-  return shared / (x.size + y.size - shared) >= 0.5;
 }
 
 const fenceOf = (code: string): string => '`'.repeat(Math.max(3, ...(code.match(/`+/g) ?? []).map((r) => r.length + 1)));

@@ -36,6 +36,9 @@ export const EMPTY_DEEP: DeepState = { sessionId: null, msgs: [], sources: [], o
 export function useCeremony() {
   const [restored, setRestored] = useState(false);
   const [id, setId] = useState(newId);
+  // The squad the ceremony is held for (its runs and cards only); null: the whole workspace.
+  const [squad, setSquad] = useState<string | null>(null);
+  const squadRef = useRef<string | null>(null);
   const [cards, setCards] = useState<CardsResult | null>(null);
   const [cardsError, setCardsError] = useState<string | null>(null);
   const [loadingCards, setLoadingCards] = useState(false);
@@ -68,7 +71,7 @@ export function useCeremony() {
     setLoadingCards(true);
     setCardsError(null);
     try {
-      const result = await api.loadCards(LIMIT, refresh);
+      const result = await api.loadCards(LIMIT, refresh, squadRef.current);
       // A card already covered in an earlier meeting today is marked, and what moved (or is blocked) goes first.
       const agenda = await minutesApi.agenda(result.cards, nextId.current ?? idRef.current).catch(() => null);
       setMarks(agenda?.marks ?? {});
@@ -82,6 +85,8 @@ export function useCeremony() {
 
   const hydrate = useCallback((s: SavedCeremony) => {
     setId(s.id);
+    squadRef.current = s.squad ?? null;
+    setSquad(s.squad ?? null);
     setCards(s.cards);
     setTurns(s.turns);
     for (const [ref, turn] of Object.entries(s.turns)) pending.current.set(ref, Promise.resolve(turn));
@@ -116,6 +121,7 @@ export function useCeremony() {
     (): SavedCeremony => ({
       version: 1,
       id,
+      squad,
       kind: 'pre-daily',
       date: '',
       cards,
@@ -134,7 +140,7 @@ export function useCeremony() {
       teamsKey,
       saveResult,
     }),
-    [id, cards, turns, decisions, effects, answered, log, startedAt, endedAt, callIdx, callEnded, spoken, deep, teams, teamsKey, saveResult],
+    [id, squad, cards, turns, decisions, effects, answered, log, startedAt, endedAt, callIdx, callEnded, spoken, deep, teams, teamsKey, saveResult],
   );
 
   useEffect(() => {
@@ -167,10 +173,11 @@ export function useCeremony() {
     return () => moduleEvents.removeEventListener(FLUSH_EVENT, onFlush);
   }, []);
 
-  const reset = useCallback(async () => {
+  // A new ceremony; `next` (a squad, or null for the whole workspace) changes who it is held for, otherwise it keeps the squad it had.
+  const reset = useCallback(async (next?: string | null) => {
     pending.current.clear();
     nextId.current = newId();
-    hydrate({ ...snapshot, id: nextId.current, cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
+    hydrate({ ...snapshot, squad: next === undefined ? snapshot.squad : next, id: nextId.current, cards: null, turns: {}, decisions: [], effects: [], answered: {}, log: [], startedAt: null, endedAt: null, callIdx: -1, callEnded: false, spoken: {}, deep: {}, teams: null, teamsKey: null, saveResult: null });
     setTurnErrors({});
     setResumed(false);
     try {
@@ -261,8 +268,8 @@ export function useCeremony() {
   }, []);
 
   const minutes = useMemo(
-    (): Minutes => buildMinutes({ cards, turns, answered, decisions, effects, log, startedAt, endedAt }),
-    [cards, turns, answered, decisions, effects, log, startedAt, endedAt],
+    (): Minutes => buildMinutes({ squad, cards, turns, answered, decisions, effects, log, startedAt, endedAt }),
+    [squad, cards, turns, answered, decisions, effects, log, startedAt, endedAt],
   );
 
   return {
@@ -272,6 +279,9 @@ export function useCeremony() {
     statusAt,
     mergeStatus,
     reset,
+    squad,
+    /** Holds the pre-daily for another squad (or the whole workspace): a new ceremony, which is only possible while no call is going on. */
+    setSquad: (next: string | null) => (startedAt && !callEnded ? Promise.resolve() : reset(next)),
     cards,
     cardsError,
     loadingCards,

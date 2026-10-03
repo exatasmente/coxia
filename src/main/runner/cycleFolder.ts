@@ -92,3 +92,32 @@ export function writeArtifact(wt: string, folder: string, name: string, content:
   if (!check.ok) throw new Error(`document refused (${check.code}): ${name}`);
   writeFileSync(check.path, content.endsWith('\n') ? content : `${content}\n`);
 }
+
+const VIEW_MAX = 200_000;
+const PIECE = 2_000;
+
+// The masking of secrets slows down on one very long unbroken line (a minified file, a blob): it goes line by line, and a line that long in pieces, cut at a space when there is one.
+function redactLong(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      if (line.length <= PIECE) return redact(line);
+      const out: string[] = [];
+      for (let rest = line; rest; ) {
+        const cut = rest.length <= PIECE ? rest.length : Math.max(rest.lastIndexOf(' ', PIECE), 0) || PIECE;
+        out.push(redact(rest.slice(0, cut)));
+        rest = rest.slice(cut);
+      }
+      return out.join('');
+    })
+    .join('\n');
+}
+
+/** One document of the cycle folder as text for the run screen, secrets masked; null when the name is not a document, the file is not there, or the path leaves the folder. */
+export function readArtifact(wt: string, folder: string, name: string): { text: string; clipped: boolean } | null {
+  if (!ARTIFACT_NAME.test(name)) return null;
+  const check = checkPath(wt, join(folder, name), { read: true });
+  if (!check.ok || !existsSync(check.path) || !statSync(check.path).isFile()) return null;
+  const raw = readFileSync(check.path, 'utf8');
+  return { text: redactLong(raw.slice(0, VIEW_MAX)), clipped: raw.length > VIEW_MAX };
+}

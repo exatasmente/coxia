@@ -6,6 +6,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { t, tv, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { RunProposal, isRunProposal } from './cycle/RunProposal';
 import { BackIcon } from './icons';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
@@ -96,6 +97,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
         ))}
       </div>
       <p className="small" style={{ lineHeight: 1.5 }}>{what(a)}</p>
+      <RunProposal a={a} go={go} />
 
       {a.files.length > 0 && (
         <details>
@@ -121,7 +123,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           </div>
         </div>
       )}
-      {a.output && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {a.output && !isRunProposal(a) && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
 
