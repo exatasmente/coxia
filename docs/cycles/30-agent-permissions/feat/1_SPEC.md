@@ -47,7 +47,7 @@ Two permissions per agent, chosen in the team editor, with defaults per role, an
 ### 2.3 QA's report says what was executed
 
 - Each scenario of a QA pass carries `evidence`: `executed` (the agent ran something in its sandbox to check it) or `read` (it only looked at code, documents or results). An agent with `shell: sandbox` is asked to say which and to cite the commands that back an `executed` scenario (their numbers in the stage's command list); any other QA agent is not asked, and every scenario is recorded as `read`.
-- The **app checks the claim**: `executed` stands only when it cites at least one command of this stage and at least one of them ended with exit code 0. Otherwise it is recorded as `read` and **labelled** "claimed as executed, nothing backs it" (`unbacked`). A pass without execution is therefore visible as one, in the run screen, in the thread, and in the QA comment's status line ("3 of 5 scenarios executed").
+- The **app checks the claim**: `executed` stands only when it cites at least one command of this stage and at least one of them ended with exit code 0. Otherwise it is recorded as `read` and **labelled** "claimed as executed, nothing backs it" (`unbacked`). A pass without execution is therefore visible as one, in the run screen, in the thread, and in the QA comment (a section that says "3 of 5 scenarios were executed" and names the claims nothing backed).
 - It is evidence that a command ran, not that the behaviour is right: a test script can print what it likes (T16). The label says "executed", never "verified".
 - The commands the app runs before QA (`runner.commands`) stay as they are for a QA agent without a sandbox. For a QA agent with a sandbox they run **inside it** (same session), so the app stops running repository code unsandboxed on that path.
 
@@ -88,7 +88,7 @@ Desktop only (the block is shown read-only in a paired browser, like the command
 
 ### 4.4 The run screens
 
-Under a stage that executed something, the commands it ran with exit code, duration and the end of the output; in the thread, one app message per command; in the live activity, the command and its exit code while it runs; in Settings → Audit log, one row per command (kind "command"). A QA scenario shows its evidence (executed / read / "claimed, not backed").
+In the thread, one app message per command with its exit code, duration and the end of its output (and one per request the registry proxy decided on); in the live activity, the command and then its exit code; in Settings → Audit log, one row per command (kind "Sandbox command", with the agent that ran it). A QA scenario in the review rounds shows its evidence (executed / only read / "claimed as executed, not backed"). There is no separate commands panel under a stage: the thread is where they are.
 
 ### 4.5 Existing workspaces (migration, schema 9 to 10)
 

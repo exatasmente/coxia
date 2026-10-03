@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Per-agent permissions for a run, chosen in Settings › Team: **code host read** (`tracker`: none or read; issues, comments, labels, the milestone, linked pull requests with their diff, review threads and checks; never a write, which stays at the door of Actions) and **commands** (`shell`: none, the listed commands of the runner, or a sandbox). A reader keeps the read path the workspace has on; an agent that changes files gets the read through the app's own tool only, never the host CLI or an MCP server.
+- **A sandbox for an agent's commands**, built for each stage and ended with it (Linux with bubblewrap; macOS and Windows offer only none and the listed commands, and the editor says why): the worktree writable (an agent that only reads works in a throwaway copy of the code, so nothing it does reaches the branch), the rest of the system read-only, no home folder, no credentials and nothing of the app's environment, `.git` read-only, no network, and limits per command and per stage. A process one command starts stays for the next and is killed when the stage ends, before the app commits. Every command, its exit code and the end of its output go to the run's thread, the live activity and the audit log. A computer without a working sandbox does not offer it, and a stage that needs one fails instead of running the commands outside it. The commands the app runs before QA run inside QA's sandbox when it has one.
+- Runner settings: the sandbox's network switch (off, or only HTTPS to listed package-registry hosts through a filtering proxy in the app; not a general internet switch), the registry hosts, extra read-only folders (a toolchain in the home folder; secret-looking places are refused) and the limits (command time, stage time, memory, processes, file size, size of a reader's copy). Only the computer changes them; a paired browser can lower an agent's permissions and never raise them.
+- **QA says what it executed.** With a sandbox, each scenario is marked executed (citing the commands that back it) or only read; the app checks the claim and labels one that nothing backs. The QA comment says how many scenarios were executed. Without a sandbox every scenario is recorded as only read.
+- **Recommended permissions per role** (the Product Owner and the Tech Lead read the host; QA, the developer and the Tech Lead run commands in a sandbox) for new teams and templates, and a panel in the team editor that offers them to a team that already exists. Nothing is applied by itself.
+- A design document with a threat model for all of this: `docs/cycles/30-agent-permissions/`.
+
+### Changed
+
+- The configuration moves to schema 10 (`tracker` and `shell` on each agent, `runner.sandbox`). The migration raises nothing: an agent that changes files keeps the commands of the runner (or none, when the workspace lists none), an agent that only reads keeps no commands and the code host read it had, and the sandbox starts closed.
+- The runner no longer follows a symbolic link in the cycle folder when it reads the documents for the next stage or for the run screen.
+
 ## [0.4.1] - 2026-10-03
 
 ### Changed
