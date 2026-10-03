@@ -26,7 +26,8 @@ export const RUN_TONE: Record<RunStatus, RunTone> = {
 export const isRunBlocker = (run: Pick<Run, 'status'> | null | undefined): boolean => !!run && (run.status === 'question' || run.status === 'failed');
 
 /** Whether the person has something to do for the run now: decide a gate, answer, start or accept a stage, retry, or choose a squad. A question still held by an agent is the team's to answer. */
-export function needsPerson(run: Pick<Run, 'status' | 'question'>): boolean {
+export function needsPerson(run: Pick<Run, 'status' | 'question' | 'command'>): boolean {
+  if (run.command) return true;
   if (run.status === 'question') return !run.question || (run.question.holder ?? null) === null;
   return run.status === 'gate' || run.status === 'to-start' || run.status === 'to-accept' || run.status === 'failed';
 }

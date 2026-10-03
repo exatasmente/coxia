@@ -403,6 +403,8 @@
   "ui.team.shell": "Comandos",
   "ui.team.shell.allowlist": "Comandos da lista",
   "ui.team.shell.allowlist.hint": "Roda só os comandos listados nas configurações do executor, exatamente como escritos, no worktree. Eles não ficam numa sandbox.",
+  "ui.team.shell.host": "Este computador, com a sua aprovação",
+  "ui.team.shell.host.hint": "Roda qualquer comando neste computador, como você, fora de qualquer sandbox: alcança a rede, as suas ferramentas, contêineres e emuladores. Cada comando espera você permitir (uma vez, ou até o fim da etapa) neste computador, ou num celular pareado só quando os efeitos externos estão liberados lá. Um agente que só lê roda numa cópia descartável do código. Só se define aqui, nunca por um modelo.",
   "ui.team.shell.noSandbox": "A sandbox não é oferecida: {reason}.",
   "ui.team.shell.noSandboxWeb": "A sandbox não é oferecida no computador que roda o app.",
   "ui.team.shell.none": "Nenhum",

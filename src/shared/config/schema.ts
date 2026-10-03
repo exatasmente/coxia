@@ -198,7 +198,7 @@ const agentDef = object(
     stages: list('Ids of the devCycle.stages the agent works.', string('A stage id.', { pattern: ID }), { maxItems: 60, uniqueItems: true }),
     permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
     tracker: enumOf('none: no code host reads in a run; read: reads issues, comments and pull requests (never a write). Absent: none.', AGENT_TRACKERS),
-    shell: enumOf('none: no commands; allowlist: the commands of runner.commands exactly as written (agents that write only); sandbox: any command inside a sandbox built for the stage. Absent: allowlist for an agent that writes, else none.', AGENT_SHELLS),
+    shell: enumOf('none: no commands; allowlist: the commands of runner.commands exactly as written (agents that write only); sandbox: any command inside a sandbox built for the stage; host: any command on this computer, unsandboxed. Absent: allowlist for an agent that writes, else none.', AGENT_SHELLS),
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },

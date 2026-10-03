@@ -936,6 +936,7 @@ export function trackerOf(agent: Pick<AgentDef, 'tracker' | 'permission'>): NonN
 // The live activity shows the call the model made; this adds how it ended, once the command has.
 function withActivity(session: SandboxSession, activity: RunActivity): SandboxSession {
   return {
+    description: session.description,
     exec: async (command) => {
       const r = await session.exec(command);
       activity.tool(r.refused ? `exit — ${r.refused}` : r.timedOut ? `exit — timeout (${Math.round(r.ms / 1000)}s)` : `exit ${r.exitCode ?? '—'} (${Math.max(1, Math.round(r.ms / 100) / 10)}s)`);

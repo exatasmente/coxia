@@ -20,8 +20,8 @@ export const PERMISSION_HINT: Record<AgentPermission, string> = {
 
 export const TRACKER_LABEL: Record<AgentTracker, string> = { none: 'ui.team.tracker.none', read: 'ui.team.tracker.read' };
 export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.tracker.none.hint', read: 'ui.team.tracker.read.hint' };
-export const SHELL_LABEL: Record<AgentShell, string> = { none: 'ui.team.shell.none', allowlist: 'ui.team.shell.allowlist', sandbox: 'ui.team.shell.sandbox' };
-export const SHELL_HINT: Record<AgentShell, string> = { none: 'ui.team.shell.none.hint', allowlist: 'ui.team.shell.allowlist.hint', sandbox: 'ui.team.shell.sandbox.hint' };
+export const SHELL_LABEL: Record<AgentShell, string> = { none: 'ui.team.shell.none', allowlist: 'ui.team.shell.allowlist', sandbox: 'ui.team.shell.sandbox', host: 'ui.team.shell.host' };
+export const SHELL_HINT: Record<AgentShell, string> = { none: 'ui.team.shell.none.hint', allowlist: 'ui.team.shell.allowlist.hint', sandbox: 'ui.team.shell.sandbox.hint', host: 'ui.team.shell.host.hint' };
 
 export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry' };
 export const SANDBOX_REASON_LABEL: Record<SandboxReason, string> = {

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
-import { RunError, isFlowCycle } from '../../shared/runs';
+import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
 import { createdIssueOf } from '../../shared/runs/links';
 import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
@@ -122,6 +122,8 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:answer', (run: unknown, answer: unknown) => r.answer(id(run), text(answer)));
   ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
   ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
+  // Lets a `shell: host` agent run a command on this computer: from a paired browser only with the same switch as approving a proposal (webPolicy.ts).
+  ctx.handle('runs:command', (run: unknown, command: unknown, decision: unknown, note?: unknown) => r.command(id(run), text(command), decision as CommandDecision, text(note)));
   ctx.handle('runs:skipWait', (run: unknown, reason: unknown) => r.skipWait(id(run), text(reason)));
   ctx.handle('runs:sendBack', (run: unknown, stage: unknown, note: unknown) => r.sendBack(id(run), text(stage), text(note)));
   ctx.handle('runs:migrateFlow', (run: unknown) => r.migrateFlow(id(run)));

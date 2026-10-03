@@ -10,7 +10,7 @@ import { SHELL_DESCRIPTION, SHELL_MCP_SERVER, SHELL_SCHEMA, SHELL_TOOL_NAME, run
 export function shellToolImpl(session: SandboxSession): ToolImpl {
   return {
     name: SHELL_TOOL_NAME,
-    description: SHELL_DESCRIPTION,
+    description: session.description ?? SHELL_DESCRIPTION,
     parameters: SHELL_SCHEMA as unknown as Json,
     async run(input, ctx) {
       const text = await runShell(session, input);
@@ -26,7 +26,7 @@ export async function shellMcpServer(session: SandboxSession): Promise<Record<st
     const { z } = await import('zod');
     const server = sdk.createSdkMcpServer({
       name: SHELL_MCP_SERVER,
-      tools: [sdk.tool(SHELL_TOOL_NAME, SHELL_DESCRIPTION, { command: z.string() }, async (args) => ({ content: [{ type: 'text' as const, text: await runShell(session, args) }] }))],
+      tools: [sdk.tool(SHELL_TOOL_NAME, session.description ?? SHELL_DESCRIPTION, { command: z.string() }, async (args) => ({ content: [{ type: 'text' as const, text: await runShell(session, args) }] }))],
     });
     return { [SHELL_MCP_SERVER]: server };
   } catch (e) {

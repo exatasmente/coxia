@@ -129,7 +129,7 @@ export function pruneAgentStages(team: AgentDef[], cycle: Pick<DevCycleConfig, '
 }
 
 /** How far each permission reaches, lowest first: a change to a higher value gives an agent more than it had. */
-const SHELL_RANK: Record<AgentShell, number> = { none: 0, allowlist: 1, sandbox: 2 };
+const SHELL_RANK: Record<AgentShell, number> = { none: 0, allowlist: 1, sandbox: 2, host: 3 };
 const TRACKER_RANK: Record<AgentTracker, number> = { none: 0, read: 1 };
 
 /** Whether `to` lets an agent run more than `from` did. */

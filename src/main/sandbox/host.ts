@@ -1,0 +1,159 @@
+import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
+import { closeSync, existsSync, mkdtempSync, openSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { SandboxLimits } from '../../shared/config/types';
+import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
+import { redact } from '../errorlog-core';
+import { scrubbedEnv } from '../engine/guard';
+import { tail } from '../runner/commands';
+import { type ExecResult, type SandboxSession, readTailNoFollow } from './session';
+
+// The session of an agent set to `shell: host`: the same Shell tool, log and limits of time as a sandbox, but every command runs on this computer, as the person who runs
+// the app, with the login PATH and the app's environment cleaned of what looks like a credential. Nothing confines it: it reaches what the person reaches (the network,
+// the container engine, a display, an emulator). It is the person's choice, made on the computer, for one agent. Each command starts its own process group, so a process
+// it leaves in the background (a dev server) stays up for the next command and is ended with the others when the stage ends. With `approve`, no command starts before the
+// person allows it: the time spent waiting is not the stage's time for commands.
+
+export interface HostSessionOptions {
+  /** Where the commands run: the worktree, or the throwaway copy of an agent that only reads. */
+  cwd: string;
+  /** Only the limits of time apply: memory, processes and file size are the computer's own. */
+  limits: Pick<SandboxLimits, 'commandMs' | 'stageMs'>;
+  /** The environment a command starts from, before it is cleaned (the real one adds the login PATH). */
+  env: () => Promise<NodeJS.ProcessEnv>;
+  /** Told about every command as it ends (the thread, the audit log, the live activity). */
+  onExec?: (result: ExecResult, mode: 'run' | 'refused') => void;
+  /** Asked before each command starts; a refusal comes back to the model as a command that did not run, with the person's note. */
+  approve?: (command: string) => Promise<{ ok: boolean; note?: string }>;
+  /** What to undo once everything has ended: the copy of a reader. */
+  cleanup?: (() => Promise<void> | void)[];
+}
+
+export interface HostSessionDeps {
+  spawn?: (file: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: ['ignore', number, number] }) => ChildProcess;
+  platform?: NodeJS.Platform;
+}
+
+/** The most of a command's output that is read back: what the model gets is the end of it. */
+const OUTPUT_READ = 256 * 1024;
+
+// i18n-ignore-next-line: tool description for the model: English by design
+export const HOST_SHELL_DESCRIPTION = 'Runs one shell command on this computer, as the person who runs the app, in your working folder: it reaches what they reach (the network, installed tools, containers, emulators), without their credentials in the environment. A process you start in the background stays until the end of your stage. One command at a time.';
+
+export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {}): SandboxSession {
+  const spawn = deps.spawn ?? ((f, a, opt) => nodeSpawn(f, a, opt));
+  const windows = (deps.platform ?? process.platform) === 'win32';
+  const groups = new Set<ChildProcess>();
+  const results: ExecResult[] = [];
+  // Output goes to a file, not a pipe: a process left in the background keeps writing after the command ends, and a closed pipe would kill it.
+  const outDir = mkdtempSync(join(tmpdir(), 'coxia-host-'));
+  let spent = 0;
+  let closed = false;
+  let queue: Promise<unknown> = Promise.resolve();
+
+  const kill = (child: ChildProcess, signal: NodeJS.Signals): void => {
+    try {
+      if (!windows && child.pid) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch {
+      // The group is already gone.
+    }
+  };
+
+  const run = (command: string): Promise<ExecResult> =>
+    new Promise((resolve) => {
+      const n = results.length + 1;
+      const record = (r: Omit<ExecResult, 'n'>, mode: 'run' | 'refused'): void => {
+        const full: ExecResult = { n, ...r };
+        results.push(full);
+        try {
+          o.onExec?.(full, mode);
+        } catch (e) {
+          console.error('[host] reporting a command', e instanceof Error ? e.message : e);
+        }
+        resolve(full);
+      };
+      const refuse = (refused: NonNullable<ExecResult['refused']>): void => record({ command, exitCode: null, timedOut: false, output: '', ms: 0, refused }, 'refused');
+      if (closed) return refuse('closed');
+      if (!command.trim()) return refuse('empty');
+      if (Buffer.byteLength(command) > SHELL_COMMAND_MAX) return refuse('size');
+      if (o.limits.stageMs - spent <= 0) return refuse('budget');
+      void (o.approve ? o.approve(command) : Promise.resolve({ ok: true as boolean, note: undefined as string | undefined }))
+        .catch(() => ({ ok: false, note: undefined }))
+        .then(async (answer) => {
+          if (closed) return refuse('closed');
+          if (!answer.ok) return record({ command, exitCode: null, timedOut: false, output: answer.note ? redact(answer.note.slice(0, 500)) : '', ms: 0, refused: 'denied' }, 'refused');
+          start(await o.env().catch(() => ({ ...process.env })));
+        });
+      const start = (env: NodeJS.ProcessEnv): void => {
+        if (closed) return refuse('closed');
+        const left = o.limits.stageMs - spent;
+        const started = Date.now();
+        const outFile = join(outDir, `out.${n}`);
+        let child: ChildProcess;
+        const fd = openSync(outFile, 'w', 0o600);
+        try {
+          child = windows
+            ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], { cwd: o.cwd, env: scrubbedEnv(env), detached: false, stdio: ['ignore', fd, fd] })
+            : spawn(existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh', ['-c', command], { cwd: o.cwd, env: scrubbedEnv(env), detached: true, stdio: ['ignore', fd, fd] });
+        } catch (e) {
+          return record({ command, exitCode: null, timedOut: false, output: redact(String(e instanceof Error ? e.message : e)), ms: 0 }, 'run');
+        } finally {
+          closeSync(fd);
+        }
+        groups.add(child);
+        let timedOut = false;
+        let settled = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          kill(child, 'SIGKILL');
+        }, Math.min(o.limits.commandMs, left));
+        const finish = (code: number | null, error?: string): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          const ms = Date.now() - started;
+          spent += ms;
+          const output = readTailNoFollow(outFile, OUTPUT_READ) ?? '';
+          record({ command, exitCode: timedOut ? null : code, timedOut, output: redact(tail(error ? `${output}\n${error}` : output)), ms }, 'run');
+        };
+        child.once('exit', (code, signal) => finish(code ?? (signal ? 128 + (signalNumber(signal) ?? 0) : null)));
+        child.once('error', (e) => finish(null, e.message));
+      };
+    });
+
+  const close = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    // A command still running (the stage was stopped) ends with its group: its answer comes with the exit.
+    for (const child of groups) kill(child, 'SIGTERM');
+    if (groups.size) await new Promise((r) => setTimeout(r, 500));
+    for (const child of groups) kill(child, 'SIGKILL');
+    groups.clear();
+    rmSync(outDir, { recursive: true, force: true });
+    for (const c of o.cleanup ?? []) {
+      try {
+        await c();
+      } catch (e) {
+        console.error('[host] cleanup', e instanceof Error ? e.message : e);
+      }
+    }
+  };
+
+  return {
+    description: HOST_SHELL_DESCRIPTION,
+    exec: (command) => {
+      const next = queue.then(() => run(command));
+      queue = next.catch(() => undefined);
+      return next;
+    },
+    get log() {
+      return results;
+    },
+    close,
+  };
+}
+
+const SIGNALS: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
+const signalNumber = (s: NodeJS.Signals): number | undefined => SIGNALS[s];

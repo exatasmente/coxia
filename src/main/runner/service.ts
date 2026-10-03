@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
@@ -69,6 +70,9 @@ import {
   waitDone,
   waitLinked,
   waitSkip,
+  COMMAND_DECISIONS,
+  type CommandDecision,
+  type PendingCommand,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
 import { autonomousOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
@@ -106,7 +110,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -188,6 +192,8 @@ export interface Runner {
   answer(id: string, text: string): Run;
   retry(id: string): Run;
   cancel(id: string): Run;
+  /** The person's answer to the command an agent set to `shell: host` waits to run; `commandId` must be the one waiting, so a late click never answers a newer one. */
+  command(id: string, commandId: string, decision: CommandDecision, note?: string): Run;
   /** Proposes deleting a comment the runner posted by itself, as an action that waits for a "yes" (and is audited when it runs); the run keeps the record as removed. */
   undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
@@ -238,7 +244,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
+  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -258,6 +264,36 @@ export function createRunner(deps: RunnerDeps): Runner {
   const mentions = new Map<string, Promise<void>>();
   const chains = new Map<string, Promise<void>>();
   const chainAborts = new Map<string, AbortController>();
+  // The command each run's working stage waits for the person to allow (`shell: host`): one at a time, since a stage runs one command at a time. Never saved: it
+  // lives as long as the stage that asked, and a stage that ends (or the app that closes) takes it along as a refusal.
+  const commands = new Map<string, { pending: PendingCommand; answer: (a: { decision: CommandDecision; note?: string }) => void }>();
+  const withCommand = (run: Run | null): Run | null => {
+    const c = run ? commands.get(run.id) : undefined;
+    return run && c ? { ...run, command: c.pending } : run;
+  };
+
+  function askCommand(ask: { run: string; stage: string; agent: string; command: string }, signal: AbortSignal): Promise<{ decision: CommandDecision; note?: string }> {
+    return new Promise((resolve) => {
+      const pending: PendingCommand = { id: deps.newId?.() ?? randomUUID(), stage: ask.stage, agent: ask.agent, command: ask.command, since: now() };
+      const finish = (a: { decision: CommandDecision; note?: string }): void => {
+        if (commands.get(ask.run)?.pending.id !== pending.id) return;
+        commands.delete(ask.run);
+        signal.removeEventListener('abort', stopped);
+        resolve(a);
+      };
+      const stopped = (): void => finish({ decision: 'deny' });
+      commands.get(ask.run)?.answer({ decision: 'deny' });
+      commands.set(ask.run, { pending, answer: finish });
+      signal.addEventListener('abort', stopped, { once: true });
+      // The thread is what the screens follow: this message brings the question to the run's screen and to the list of what waits for the person.
+      deps.forum.append(runThreadId(ask.run), { kind: 'system', author: { type: 'app' }, code: 'runner.command.ask', params: { agent: ask.agent, command: redact(ask.command.replace(/\s+/g, ' ')).slice(0, 300) }, stage: ask.stage });
+      const run = deps.runs.get(ask.run);
+      if (run && deps.notify && deps.config().notifications) {
+        const params = { ref: run.issue.ref, title: run.issue.title, agent: ask.agent };
+        deps.notify({ title: t('main.runner.notice.command.title', params), body: t('main.runner.notice.command.body', params), onClick: { type: 'open', screen: { name: 'run', id: run.id } } });
+      }
+    });
+  }
   const refused = new Set<string>();
   const starting = new Set<string>();
   let scanning: Promise<Run[]> | null = null;
@@ -687,8 +723,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- what the person does ---------------------------------------------------------------------------------------------------------
 
   const api: Runner = {
-    list: () => deps.runs.list(),
-    get: (id) => deps.runs.get(id),
+    list: () => deps.runs.list().map((r) => withCommand(r) as Run),
+    get: (id) => withCommand(deps.runs.get(id)),
     start,
     startRelease,
     startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
@@ -718,6 +754,15 @@ export function createRunner(deps: RunnerDeps): Runner {
       aborts.get(id)?.abort();
       chainAborts.get(id)?.abort();
       return run;
+    },
+    command(id, commandId, decision, note = '') {
+      const waiting = commands.get(id);
+      if (!waiting || waiting.pending.id !== commandId) throw new RunnerError('no-command');
+      if (!COMMAND_DECISIONS.includes(decision)) throw new RunnerError('bad-action', { action: String(decision).slice(0, 20) });
+      const said = note.trim().slice(0, 500);
+      deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: `runner.command.${decision}`, params: { agent: waiting.pending.agent, note: said || '—' }, stage: waiting.pending.stage });
+      waiting.answer({ decision, note: said || undefined });
+      return need(id);
     },
     async undoPost(id, key) {
       const run = need(id);

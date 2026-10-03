@@ -426,7 +426,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   // For a QA agent with a sandbox: how many scenarios were executed and which claims nothing backed. Absent for one without (everything it did was reading).
   const evidenceTail = (end: StageEnd): string | undefined => {
-    if (end.kind !== 'qa' || end.agent.shell !== 'sandbox' || !end.output.scenarios.length) return undefined;
+    if (end.kind !== 'qa' || (end.agent.shell !== 'sandbox' && end.agent.shell !== 'host') || !end.output.scenarios.length) return undefined;
     const all = end.output.scenarios;
     const unbacked = all.filter((s) => s.unbacked);
     const lines = [tr('main.runner.scenario.evidenceLine', { executed: all.filter((s) => s.evidence === 'executed').length, total: all.length }), ...(unbacked.length ? [tr('main.runner.scenario.evidenceUnbacked', { names: unbacked.map((s) => s.name).join('; ') })] : [])];
