@@ -32,7 +32,7 @@ echo "uv $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "venv --python") mkdir -p "$4/bin"; cp "$FAKE_PY" "$4/bin/python"; chmod +x "$4/bin/python" ;;
   "pip install")
-    [ -n "$FAKE_UV_HANG" ] && { echo $$ > "$FAKE_PID"; exec sleep 30; }
+    [ -n "$FAKE_UV_HANG" ] && { echo $$ > "$FAKE_PID.tmp" && mv "$FAKE_PID.tmp" "$FAKE_PID"; exec sleep 30; }
     [ -n "$FAKE_UV_FAIL" ] && { echo "error: no matching distribution found for faster-whisper" >&2; exit 1; }
     echo "Installed 5 packages" ;;
 esac
@@ -60,7 +60,7 @@ function fixture(opts: { uvOnPath?: boolean; python3?: boolean; env?: Record<str
   if (opts.uvOnPath !== false) script(join(bin, 'uv'), FAKE_UV);
   if (opts.python3 !== false) script(join(bin, 'python3'), FAKE_PYTHON3);
   // PATH holds only the fakes and the few tools they use, so a machine "without python3" really has none.
-  for (const tool of ['mkdir', 'cp', 'chmod', 'touch', 'dirname', 'sleep']) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
+  for (const tool of ['mkdir', 'cp', 'chmod', 'touch', 'dirname', 'sleep', 'mv']) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
   const log = join(root, 'calls.log');
   writeFileSync(log, '');
   const ctx: SetupContext = {
@@ -260,15 +260,17 @@ describe('installVoice', () => {
     const control = new AbortController();
     const { h, progress } = hooks(control.signal);
     const running = installVoice(f.ctx, OPTS, h);
+    // The fake renames its pid file into place: a file seen half written read as pid 0, and kill(0, 0) probes the test's own process group.
     const pidFile = join(f.root, 'pid');
-    for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 30));
-    expect(existsSync(pidFile)).toBe(true);
+    for (let i = 0; i < 300 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 30));
     const pid = Number(readFileSync(pidFile, 'utf8').trim());
+    expect(Number.isInteger(pid) && pid > 1).toBe(true);
+    expect(process.kill(pid, 0)).toBe(true);
     control.abort();
     expect(await running).toEqual({ ok: false, cancelled: true });
     expect(progress[progress.length - 1].phase).toBe('cancelled');
-    await new Promise((r) => setTimeout(r, 100));
-    expect(() => process.kill(pid, 0)).toThrow();
+    // the run settles on the tool's 'close', after it was reaped: no grace period needed
+    expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
     expect(existsSync(join(f.ctx.paths.venv, '.cerimonias-ready'))).toBe(false);
     // resume
     delete f.ctx.env.FAKE_UV_HANG;
