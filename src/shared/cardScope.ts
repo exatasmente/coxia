@@ -50,7 +50,9 @@ export function effectiveCardScope(i: CardScopeInput): EffectiveCardScope {
 
 /** The labels field of the wizard: names separated by commas; quotes and backslashes (which the configuration refuses) are dropped as they are typed. */
 export function parseLabelsField(text: string): string[] {
-  return cleanLabels(text.replace(/["\\\u0000-\u001f]/g, '').split(','));
+  // The schema keeps at most 10 labels of 100 characters: what is typed past that is cut here, not refused on save.
+  return cleanLabels(text.replace(/["\\\u0000-\u001f]/g, '').split(',').map((l) => l.trim().slice(0, 100)))
+    .slice(0, 10);
 }
 
 /** The scopes the wizard offers for the tracker of this integration; a `labels` already stored stays listed so the choice is not hidden from its owner. */

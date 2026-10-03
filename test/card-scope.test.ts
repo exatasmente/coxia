@@ -62,6 +62,20 @@ describe('the labels field', () => {
     c.projects.issues.cardLabels = parseLabelsField('bug, "ready" ,sprint:12, in progress, STAGE:: Doing');
     expect(validateConfig(c).errors).toEqual([]);
   });
+
+  it('keeps at most 10 labels of 100 characters', () => {
+    expect(parseLabelsField(Array.from({ length: 12 }, (_, i) => `l${i}`).join(','))).toHaveLength(10);
+    expect(parseLabelsField('x'.repeat(150))[0]).toHaveLength(100);
+  });
+
+  it('a stored label that starts or ends with a comma, a quote or a backslash is refused', () => {
+    for (const bad of [',bug', 'bug,', '"x', 'x"', '"', ',', '\\', 'a\\', 'a,b']) {
+      const c = neutralConfig();
+      c.projects.issues.cardScope = 'labels';
+      c.projects.issues.cardLabels = [bad];
+      expect(validateConfig(c).errors.length, bad).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('the stored fields', () => {

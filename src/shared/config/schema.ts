@@ -10,7 +10,7 @@ export const SECRET_REF = '^[a-z0-9][a-z0-9._-]{0,63}$';
 export const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
 const NO_NUL = '^[^\\u0000]*$';
 // A card label is looked up in the query language of each host: no separator, quote or escape may reach it, and no space at the ends.
-const CARD_LABEL = '^\\S(?:[^,"\\\\\\u0000-\\u001f]*\\S)?$';
+const CARD_LABEL = '^[^\\s,"\\\\\\u0000-\\u001f](?:[^,"\\\\\\u0000-\\u001f]*[^\\s,"\\\\\\u0000-\\u001f])?$';
 
 const string = (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: 'string', description, maxLength: 4000, pattern: NO_NUL, ...extra });
 const nullableString = (description: string): JsonSchema => ({ type: ['string', 'null'], description, maxLength: 4000, pattern: NO_NUL });

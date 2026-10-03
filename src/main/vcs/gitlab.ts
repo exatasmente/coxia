@@ -246,6 +246,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
       const limit = opts.limit ?? 200;
       const labels = opts.scope === 'labels' ? cleanLabels(opts.labels ?? []) : [];
       if (opts.scope === 'labels' && !labels.length) return [];
+      // GitLab reads the label names `None` and `Any` as filters (no label, any label), not as labels of those names.
       // `labels=` is an AND and the OR filter (`or[labels]`) is a paid-tier feature, so "any of" is one read per label, merged by number.
       const queries = labels.length ? labels.map((l) => `&labels=${enc(l)}`) : [''];
       const lists = await pool(queries, 3, (q) => tr.pages<GlIssue>(`${repoPath(opts.project)}/issues?scope=all&state=opened&order_by=updated_at${q}`, { maxPages: Math.ceil(limit / 100) || 1 }));
