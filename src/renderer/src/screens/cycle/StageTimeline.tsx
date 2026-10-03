@@ -38,6 +38,14 @@ const COMMENT_STATUS_KEY: Record<CommentRow['record']['status'], string> = {
   removed: 'ui.cycle.comment.removed',
 };
 
+const KIND_KEY: Record<CommentRow['kind'], string> = {
+  stage: 'ui.cycle.comment.kind.stage',
+  decision: 'ui.cycle.comment.kind.decision',
+  question: 'ui.cycle.comment.kind.question',
+  review: 'ui.cycle.comment.kind.review',
+  pr: 'ui.cycle.comment.kind.pr',
+};
+
 const UNDO_KEY = { refused: 'ui.cycle.comment.undoRefused', nothing: 'ui.cycle.comment.undoNothing', 'no-host': 'ui.cycle.comment.undoNoHost' } as const;
 
 /** One tracker comment of the run: where it stands, the link to it, and "delete" for a post that is up (a proposal that waits in Actions for the person's yes). */
@@ -46,6 +54,8 @@ function CommentLine({ run, row, web, go }: { run: Run; row: CommentRow; web: bo
   const [step, setStep] = useState<'idle' | 'confirm' | 'busy'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const status = row.record.status;
+  // A comment that never got a title or a status line is called by what it is, not by its key.
+  const name = row.label === row.key ? t(KIND_KEY[row.kind]) : row.label;
   const undo = async () => {
     setStep('busy');
     setMessage(null);
@@ -62,7 +72,7 @@ function CommentLine({ run, row, web, go }: { run: Run; row: CommentRow; web: bo
       <div className="row cy-comment-row">
         <span className={`badge cy-cstatus cy-cstatus-${status}`}>{t(COMMENT_STATUS_KEY[status])}</span>
         <span className="cy-comment-label">
-          {row.record.url ? <a href={row.record.url} target="_blank" rel="noreferrer">{row.label}</a> : row.label}
+          {row.record.url ? <a href={row.record.url} target="_blank" rel="noreferrer">{name}</a> : name}
           <span className="faint"> · {t(row.record.target === 'mr' ? 'ui.cycle.comment.onPr' : 'ui.cycle.comment.onIssue')}</span>
         </span>
         {status === 'proposed' && <button type="button" className="btn cy-mini" onClick={() => go({ name: 'actions' })}>{t('ui.cycle.comment.seeActions')}</button>}
