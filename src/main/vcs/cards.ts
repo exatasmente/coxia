@@ -67,6 +67,8 @@ export interface CardSourceOptions {
   now: () => Date;
   /** Issues with no merge request in the text of any: how many are asked the host about (one read each). */
   linkLookups?: number;
+  /** "group/name" of the workspace's repos on this host: my merge requests elsewhere are not this workspace's. Empty: every project. */
+  projects?: string[];
 }
 
 const short = (project: string): string => project.split('/').pop() ?? project;
@@ -112,10 +114,13 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
   const today = dayOf(o.now());
   const baseline = o.state ? (o.state.date === today ? o.state.baseline : o.state.current) : {};
 
-  const [issues, mrs] = await Promise.all([
+  const [issues, allMrs] = await Promise.all([
     provider.caps.issues ? provider.listMyIssues({ project: o.issueProject, limit: 100 }) : Promise.resolve([] as VcsIssue[]),
     provider.listMyMrs({ roles: ['author', 'reviewer'], detail: true, limit: 60 }),
   ]);
+
+  const projects = new Set((o.projects ?? []).map((p) => p.toLowerCase()));
+  const mrs = projects.size ? allMrs.filter((m) => projects.has(m.project.toLowerCase())) : allMrs;
 
   // Merge requests of each issue: by the numbers the text of the merge request names, then by asking the host for the issues left without.
   const byIssue = new Map<number, VcsMr[]>();
