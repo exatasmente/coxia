@@ -117,3 +117,13 @@ export function scrubbedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   out.GIT_TERMINAL_PROMPT = '0';
   return out;
 }
+
+/**
+ * The names `scrubbedEnv` would drop from `env`, for an engine that cannot clean the environment of the commands it runs (the Claude SDK's process
+ * needs the provider's key) and removes them from each command instead. Only plain variable names: one is later put on a command line.
+ */
+export function credentialNames(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env)
+    .filter((k) => env[k] !== undefined && SECRET_NAME.test(k) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(k))
+    .sort();
+}

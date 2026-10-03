@@ -63,6 +63,27 @@ describe('runAgent on the open engine', () => {
     expect(blocked.map((e) => e.label).join(' ')).not.toMatch(/fora da pasta/);
   });
 
+  it('runs the commands an agent that writes was given without the credential-looking variables of the process', async () => {
+    process.env.TEST_PROVIDER_API_KEY = 'sk-test-must-not-leak';
+    const env = await fakeOpenAI((req) => (req.n === 1 ? toolStep([{ id: 'b1', name: 'Bash', args: { command: 'node -p process.env.TEST_PROVIDER_API_KEY' } }]) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }])));
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'local2', kind: 'openai-compatible', baseUrl: env.url, structured: 'tool' }));
+        return c;
+      });
+      const agent = newAgent({ id: 'developer', permission: 'worktree', model: { role: null, provider: 'local2', model: 'qwen3:8b' } });
+      const command = 'node -p process.env.TEST_PROVIDER_API_KEY';
+      await runAgent({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'developer', maxTurns: 6, confine: { root, hooks: confinedHooks({ root, commands: [command] }) } }, [command]);
+      const second = JSON.stringify(env.chats()[1].body?.messages);
+      expect(second).toContain('undefined');
+      expect(second).not.toContain('sk-test-must-not-leak');
+    } finally {
+      delete process.env.TEST_PROVIDER_API_KEY;
+      await env.close();
+    }
+  });
+
   it('serves a reader with no Write, no Edit and no shell', async () => {
     const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local', model: 'qwen3:8b' } });
     fake.requests.length = 0;

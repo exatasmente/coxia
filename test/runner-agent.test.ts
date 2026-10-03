@@ -98,6 +98,29 @@ describe('runAgent on the Claude SDK', () => {
     expect(denied).toEqual(['Write:outside', 'Bash:command']);
   });
 
+  it('removes the credential-looking variables from every command of an agent that writes, and says nothing of the others', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-write-'));
+    const hooks = confinedHooks({ root, commands: ['npm test'] });
+    let seen: Record<string, any>[] = [];
+    script = [
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      async (options: Record<string, any>) => {
+        const bash = (options.hooks.PreToolUse as { matcher: string; hooks: ((i: unknown, id: undefined, o: { signal: AbortSignal }) => Promise<Record<string, any>>)[] }[]).find((g) => g.matcher === 'Bash') as { hooks: ((i: unknown, id: undefined, o: { signal: AbortSignal }) => Promise<Record<string, any>>)[] };
+        for (const command of ['npm test', 'rm -rf .']) seen.push(await bash.hooks[0]({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: root }, undefined, { signal: new AbortController().signal }));
+      },
+      { type: 'result', subtype: 'success', session_id: 's1', structured_output: { fala: 'ok' } },
+    ] as never;
+    await runAgent({ agent: writer, prompt: 'p', schema, system: 's', cwd: root, label: 'developer', maxTurns: 5, confine: { root, hooks } }, ['npm test']);
+    // the SDK process itself keeps the key it needs to reach the model
+    expect(calls[0].options.env.ANTHROPIC_API_KEY).toBe('test-key-not-real');
+    const [allowed, refused] = seen.map((o) => o.hookSpecificOutput);
+    expect(allowed.permissionDecision).toBe('allow');
+    expect(allowed.updatedInput.command).toMatch(/^env (-u \w+ )+npm test$/);
+    expect(allowed.updatedInput.command).toContain('-u ANTHROPIC_API_KEY');
+    expect(refused.permissionDecision).toBe('deny');
+    seen = [];
+  });
+
   it('turns the shell off for an agent that writes when it was given no command', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agent-write-'));
     await runAgent({ agent: writer, prompt: 'p', schema, system: 's', cwd: root, label: 'developer', maxTurns: 5, confine: { root, hooks: confinedHooks({ root, commands: [] }) } }, []);

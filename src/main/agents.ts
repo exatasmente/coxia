@@ -11,7 +11,9 @@ import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
+import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
@@ -435,13 +437,17 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
   const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
+  const env = claudeSdkEnv(req.target);
+  // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
+  // without the credential-looking variables (the open engine cleans its own environment instead).
+  const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req),
+      ...sdkOptions({ ...(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req), confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
-      env: claudeSdkEnv(req.target),
+      env,
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
     },
   });
