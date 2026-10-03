@@ -44,7 +44,7 @@ export interface ForumDeps {
 
 export interface ForumStore {
   /** Creates the thread when it does not exist; returns the header it has. Idempotent. */
-  ensureThread(input: { id: string; kind: ThreadKind; runId?: string | null; title: string }): ThreadHeader;
+  ensureThread(input: { id: string; kind: ThreadKind; runId?: string | null; squad?: string | null; title: string }): ThreadHeader;
   /** A general thread with a title of the person's choosing; its id is made from the title and is never one that exists. */
   createGeneral(title: string): ThreadSummary;
   /** Appends messages in order to a thread that exists; returns them as stored. Listeners are told after the write. */
@@ -85,6 +85,7 @@ const HEADER: JsonSchema = {
     id: { type: 'string', pattern: THREAD_ID.source },
     kind: { type: 'string', enum: [...THREAD_KINDS] },
     runId: { type: ['string', 'null'], maxLength: 64 },
+    squad: { type: ['string', 'null'], maxLength: 48 },
     title: { type: 'string', maxLength: MAX_TITLE },
     createdAt: { type: 'string', maxLength: 40 },
   },
@@ -161,21 +162,28 @@ interface State {
   count: number;
   lastAt: string | null;
   lastKind: ForumMessage['kind'] | null;
-  openQuestion: number | null;
+  /** The sequence numbers of the questions and requests nobody has answered yet, oldest first. */
+  open: number[];
   endsClean: boolean;
 }
 
-function stateOf(p: Parsed & { header: ThreadHeader }): State {
-  let open: number | null = null;
-  for (const m of p.messages) {
-    if (m.kind === 'question') open = m.seq;
-    else if (m.kind === 'answer') open = null;
-  }
-  const last = p.messages[p.messages.length - 1];
-  return { header: p.header, lastSeq: last?.seq ?? 0, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, openQuestion: open, endsClean: p.endsClean };
+// An answer closes the question or request it says it answers (`replyTo`), or the latest one open when it says none: a thread with a single question at a
+// time reads as it always did, and the squads channel, where requests are open side by side, closes each one by its own answer.
+function settle(open: number[], m: Pick<ForumMessage, 'kind' | 'seq' | 'replyTo'>): number[] {
+  if (m.kind === 'question' || m.kind === 'request') return [...open, m.seq];
+  if (m.kind !== 'answer') return open;
+  const target = m.replyTo !== null && open.includes(m.replyTo) ? m.replyTo : open[open.length - 1];
+  return open.filter((n) => n !== target);
 }
 
-const summaryOf = (s: State): ThreadSummary => ({ id: s.header.id, kind: s.header.kind, runId: s.header.runId, title: s.header.title, createdAt: s.header.createdAt, count: s.count, lastAt: s.lastAt, lastKind: s.lastKind, openQuestion: s.openQuestion !== null });
+function stateOf(p: Parsed & { header: ThreadHeader }): State {
+  let open: number[] = [];
+  for (const m of p.messages) open = settle(open, m);
+  const last = p.messages[p.messages.length - 1];
+  return { header: p.header, lastSeq: last?.seq ?? 0, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
+}
+
+const summaryOf = (s: State): ThreadSummary => ({ id: s.header.id, kind: s.header.kind, runId: s.header.runId, ...(s.header.kind === 'channel' ? { squad: s.header.squad ?? null } : {}), title: s.header.title, createdAt: s.header.createdAt, count: s.count, lastAt: s.lastAt, lastKind: s.lastKind, openQuestion: s.open.length > 0 });
 
 const slug = (title: string): string =>
   title
@@ -248,8 +256,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       refs: cleanRefs(d.refs),
       stage: d.stage ?? null,
       to: d.to ?? null,
-      // An answer says which question it answers: the latest one nobody has answered.
-      replyTo: d.kind === 'answer' ? state.openQuestion : null,
+      // An answer says which question or request it answers: the one it names when that one is open, else the latest nobody has answered.
+      replyTo: d.kind === 'answer' ? (d.replyTo !== undefined && d.replyTo !== null && state.open.includes(d.replyTo) ? d.replyTo : (state.open[state.open.length - 1] ?? null)) : null,
       public: d.public === true,
       published: d.published ?? null,
     };
@@ -260,11 +268,11 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       const have = load(input.id);
       if (have) return have.header;
       if (input.title.length > MAX_TITLE) throw new ForumError('bad-title');
-      const header: ThreadHeader = { v: 1, type: 'thread', id: input.id, kind: input.kind, runId: input.runId ?? null, title: input.title.trim(), createdAt: now().toISOString() };
+      const header: ThreadHeader = { v: 1, type: 'thread', id: input.id, kind: input.kind, runId: input.runId ?? null, ...(input.kind === 'channel' ? { squad: input.squad ?? null } : {}), title: input.title.trim(), createdAt: now().toISOString() };
       mkdirSync(dir, { recursive: true });
       // 'wx': a thread another call created in the meantime is not overwritten.
       writeFileSync(path(input.id), `${JSON.stringify(header)}\n`, { flag: 'wx' });
-      cache.set(input.id, { header, lastSeq: 0, count: 0, lastAt: null, lastKind: null, openQuestion: null, endsClean: true });
+      cache.set(input.id, { header, lastSeq: 0, count: 0, lastAt: null, lastKind: null, open: [], endsClean: true });
       return header;
     },
     createGeneral(title) {
@@ -291,8 +299,7 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
         work.count += 1;
         work.lastAt = m.at;
         work.lastKind = m.kind;
-        if (m.kind === 'question') work.openQuestion = m.seq;
-        else if (m.kind === 'answer') work.openQuestion = null;
+        work.open = settle(work.open, m);
       }
       appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${built.map((m) => JSON.stringify(m)).join('\n')}\n`);
       cache.set(thread, { ...work, endsClean: true });

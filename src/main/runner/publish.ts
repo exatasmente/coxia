@@ -112,6 +112,9 @@ export interface StageEnd {
 
 export type GateAction = 'approve' | 'reject' | 'skip';
 
+/** What came of asking for the issue another squad's request turns into. */
+export type IssueMade = { status: 'created'; iid: number; url: string | null } | { status: 'proposed' } | { status: 'refused' | 'no-host' | 'failed'; reason: string };
+
 export interface Publisher {
   /** A work stage ended an attempt (done, findings or QA result). Its comment goes out, or waits, or is refused; a review goes to the pull request. */
   stageEnded(runId: string, end: StageEnd): Promise<void>;
@@ -127,6 +130,11 @@ export interface Publisher {
   waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
   /** Proposes deleting what an automatic post of the run put on the tracker (always a "yes"). `proposed` is false when there was nothing to propose and `reason` says why. */
   undo(runId: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
+  /**
+   * The issue another squad's request turns into, created on the tracker in the issue project with the squad's label: by itself when the liaison that took
+   * the request runs by itself (`autonomous`), as a proposal waiting for a "yes" otherwise (the runner learns of it through `actionDone`), refused in a test workspace.
+   */
+  requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade>;
   /** The run started in a squad that carries a label on the tracker: the issue gets it, by itself when the squad's liaison runs by itself and as a proposal otherwise. */
   squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
@@ -754,7 +762,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!run || !w) return { over: false };
     try {
       if (w.kind === 'time') return { over: Date.parse(w.since) + (w.minutes ?? 0) * 60_000 <= (deps.now?.() ?? new Date()).getTime() };
-      // The issue this run waits on is another run's: nothing resolves it until squads give runs a way to depend on each other.
+      // The runs a run waits on are the runner's to know (it holds the runs, and the issues' state is read by it): the runner resolves `linked-done` itself.
       if (w.kind === 'linked-done') return { over: false };
       const provider = door.provider();
       if (!provider) return { over: false };
@@ -805,6 +813,40 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       say(run, 'runner.status.set', { label: add ?? remove ?? '' }, e.stage.id);
     } catch (err) {
       say(run, 'runner.status.failed', { label: add ?? remove ?? '', reason: message(err) }, e.stage.id);
+    }
+  }
+
+  // ---- the issue another squad's request becomes ----------------------------------------------------------------------------------
+
+  async function requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade> {
+    const run = need(runId);
+    const refusal = door.refusal();
+    if (refusal) {
+      say(run, 'runner.request.refused', { title: e.title });
+      return { status: 'refused', reason: refusal };
+    }
+    const provider = door.provider();
+    if (!provider) return { status: 'no-host', reason: '' };
+    const { issue } = projects(run);
+    const commands = await provider.planWrite({ op: 'createIssue', project: issue, title: e.title, body: e.body, labels: e.label?.trim() ? [e.label.trim()] : [] });
+    const summary = tr('main.runner.request.issueSummary', { title: e.title, squad: e.squad });
+    const key = `request:${runId}:${e.key}`;
+    if (!e.autonomous) {
+      const created = door.propose({ key, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail: e.body, unit: { runId, purpose: 'request-issue', key: e.key }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+      if (created) say(run, 'runner.request.proposed', { title: e.title, squad: e.squad });
+      return { status: 'proposed' };
+    }
+    try {
+      const responses = await door.post({ issue: run.issue.iid, key, summary, by: e.by, bodyHash: hashOf(e.body) }, commands);
+      const made = prRefOf(responses[0]);
+      if (made.iid === null) {
+        say(run, 'runner.request.issueFailed', { title: e.title, reason: tr('main.runner.comment.noId') });
+        return { status: 'failed', reason: tr('main.runner.comment.noId') };
+      }
+      return { status: 'created', iid: made.iid, url: made.url };
+    } catch (err) {
+      say(run, 'runner.request.issueFailed', { title: e.title, reason: message(err) });
+      return { status: 'failed', reason: message(err) };
     }
   }
 
@@ -859,6 +901,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     undo: (runId, key) => undo(runId, key),
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
     squadRouted: (runId, e) => guarded(runId, () => squadRouted(runId, e)),
+    requestIssue: (runId, e) => requestIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
   };
 }
 

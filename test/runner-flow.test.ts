@@ -239,10 +239,22 @@ describe('stages that wait', () => {
     expect(b.runner.get(run.id)!.status).toBe('done');
   });
 
-  it('keeps the event of a linked issue for squads: nothing resolves it yet, and the person can go on', async () => {
+  it('a wait on a linked issue has nothing to wait for when the run asked for nothing: it goes on at the tick', async () => {
     const b = await boot({ configure: withWait({ kind: 'linked-done' }) });
     easy(b);
     const run = await reachWait(b);
+    expect(run.status).toBe('waiting');
+    expect((await b.runner.tick()).map((r) => r.id)).toEqual([run.id]);
+    await b.settle();
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'done' });
+  });
+
+  it('holds a run that asked another squad for something until what it asked for is over, and the person can go on without it', async () => {
+    const b = await boot({ configure: withWait({ kind: 'linked-done' }) });
+    easy(b);
+    const run = await reachWait(b);
+    // the run asked for another run that is still going
+    b.runs.update(run.id, (r) => ({ run: { ...r, links: [{ key: 'req-1', role: 'requested', kind: 'change', squad: 'b', run: 'r-gone-0000', issue: 'app#999', title: 'Something', status: 'open', at: r.updatedAt }] }, messages: [] }));
     expect(await b.runner.tick()).toEqual([]);
     expect(() => b.runner.skipWait(run.id, '')).toThrow(expect.objectContaining({ code: 'empty-reason' }));
     b.runner.skipWait(run.id, 'The other issue was closed by hand.');

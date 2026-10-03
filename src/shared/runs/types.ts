@@ -58,7 +58,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -185,9 +185,39 @@ export interface RunIssue {
 export const ROUTING_WHY = ['several', 'none'] as const;
 export type RoutingWhy = (typeof ROUTING_WHY)[number];
 
-/** How a run came to be in its squad: by the scope rules (and which one), by the front door's proposal or by the person. */
-export const ROUTED_BY = ['repo', 'label', 'path', 'unclaimed', 'agent', 'person'] as const;
+/** The rules of a squad's scope, in the order they narrow the squads. */
+export const SCOPE_RULES = ['repo', 'label', 'path', 'unclaimed'] as const;
+export type ScopeRule = (typeof SCOPE_RULES)[number];
+
+/** How a run came to be in its squad: by the scope rules (and which one), by the front door's proposal, by the person, or because another squad asked for it. */
+export const ROUTED_BY = [...SCOPE_RULES, 'agent', 'person', 'request'] as const;
 export type RoutedBy = (typeof ROUTED_BY)[number];
+
+/** A run linked to another: `requested` (this run asked another squad for something and waits for it) or `origin` (this run exists because another squad asked). */
+export const LINK_ROLES = ['requested', 'origin'] as const;
+export type LinkRole = (typeof LINK_ROLES)[number];
+export const LINK_KINDS = ['question', 'change'] as const;
+export type LinkKind = (typeof LINK_KINDS)[number];
+/** proposed: the issue waits for a "yes" in Actions. open: the other run exists and is not over. done: it ended (or its issue was closed). refused: it will not exist. */
+export const LINK_STATUSES = ['proposed', 'open', 'done', 'refused'] as const;
+export type LinkStatus = (typeof LINK_STATUSES)[number];
+
+export interface RunLink {
+  /** Unique in the run: what an update names. */
+  key: string;
+  role: LinkRole;
+  kind: LinkKind;
+  /** The other squad, by id. */
+  squad: string | null;
+  /** The other run, once it exists. */
+  run: string | null;
+  /** The issue of the other run ("app#102"), once it exists. */
+  issue: string | null;
+  /** What was asked, in a line: the title of the issue it became. */
+  title: string;
+  status: LinkStatus;
+  at: string;
+}
 
 /**
  * A run whose squad is not decided yet: the scope rules left several squads (or none), so the run starts in the workspace's flow at its front door, whose
@@ -236,6 +266,8 @@ export interface Run {
   routedBy?: RoutedBy | null;
   /** Set while the squad is not decided (see `RoutingState`); null or absent once it is, and for a workspace with no squads. */
   routing?: RoutingState | null;
+  /** The runs this one asked something of (and may wait for), and the run it was made for, when another squad's request made it. */
+  links?: RunLink[];
   /**
    * The flow the run started with, and keeps following when the cycle is edited afterwards (`runs:migrateFlow` moves it to the current one). Absent in a run
    * written before flows were copied: it follows the current flow.

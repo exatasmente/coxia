@@ -236,3 +236,39 @@ describe('what a person writes', () => {
     expect(() => personPost(store, [], 'g', 'x'.repeat(MAX_TEXT + 1))).toThrow(expect.objectContaining({ code: 'too-long' }));
   });
 });
+
+describe('the channels of the squads and the requests between them', () => {
+  const req = (to: string, n: number) => ({ kind: 'request' as const, author: agent('lead-a'), to, text: `Request ${n}`, params: { from: 'a', squad: 'b', kind: 'change' } });
+
+  it('a channel is a thread of its own kind, with the squad it belongs to; the channel of the squads has none', () => {
+    store.ensureThread({ id: 'squads', kind: 'channel', squad: null, title: 'Squads' });
+    store.ensureThread({ id: 'squad-a', kind: 'channel', squad: 'a', title: 'Squad A' });
+    expect(store.summary('squads')).toMatchObject({ kind: 'channel', squad: null, runId: null });
+    expect(store.summary('squad-a')).toMatchObject({ kind: 'channel', squad: 'a', title: 'Squad A' });
+    expect(JSON.parse(lines('squad-a')[0])).toMatchObject({ kind: 'channel', squad: 'a' });
+    // other threads carry no squad of their own
+    store.ensureThread({ id: 'g', kind: 'general', title: 'General' });
+    expect('squad' in (store.summary('g') as object)).toBe(false);
+    // a channel opened again is the same channel, and it survives a restart of the store
+    expect(make().summary('squad-a')).toMatchObject({ squad: 'a' });
+  });
+
+  it('a request stays open until an answer closes it, and each answer closes the request it names', () => {
+    store.ensureThread({ id: 'squads', kind: 'channel', squad: null, title: 'Squads' });
+    const [first, second] = store.append('squads', [req('lead-b', 1), req('lead-c', 2)]);
+    expect(store.summary('squads')).toMatchObject({ openQuestion: true, lastKind: 'request' });
+    expect(first).toMatchObject({ kind: 'request', to: 'lead-b', params: { from: 'a', squad: 'b', kind: 'change' }, replyTo: null });
+    // answering the first while the second is still open: the one it names is closed
+    const [answer] = store.append('squads', { kind: 'answer', author: agent('lead-b'), to: 'lead-a', text: 'Done.', replyTo: first.seq });
+    expect(answer.replyTo).toBe(first.seq);
+    expect(store.summary('squads')!.openQuestion).toBe(true);
+    // an answer that names nothing closes the latest one open, as before
+    const [last] = store.append('squads', { kind: 'answer', author: agent('lead-c'), text: 'No.' });
+    expect(last.replyTo).toBe(second.seq);
+    expect(store.summary('squads')!.openQuestion).toBe(false);
+    // an answer naming a request that is not open falls back to the latest open one (none: no reply)
+    expect(store.append('squads', { kind: 'answer', author: agent('lead-c'), text: 'Late.', replyTo: first.seq })[0].replyTo).toBeNull();
+    // and all of it is read back the same after a restart
+    expect(make().summary('squads')).toMatchObject({ count: 5, openQuestion: false });
+  });
+});

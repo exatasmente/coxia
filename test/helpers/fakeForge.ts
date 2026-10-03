@@ -40,8 +40,21 @@ export interface ForgePr {
 export const HEAD = 'aaaa111122223333aaaa111122223333aaaa1111';
 export const PROJECT = 'group/project';
 
+/** An issue the forge made when a write asked for one: what was sent, and whether it is closed. */
+export interface ForgeIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: string[];
+  state: 'open' | 'closed';
+}
+
 export interface Forge {
   writes: ForgeWrite[];
+  /** The issues the writes created, by number (101 is the one the runner tests start from and is not here). */
+  issues: Map<number, ForgeIssue>;
+  /** Closes an issue the forge made. */
+  close(number: number): void;
   /** The notes of the issue 101 and of the pull request, by number. */
   notes: Map<number, Note[]>;
   threads: Thread[];
@@ -67,8 +80,14 @@ export const PATCHES = {
 
 export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean; author?: string } = {}): Forge {
   let nextId = 5000;
+  let nextIssue = 200;
   const forge: Forge = {
     writes: [],
+    issues: new Map(),
+    close: (n) => {
+      const found = forge.issues.get(n);
+      if (found) found.state = 'closed';
+    },
     notes: new Map([[101, []]]),
     threads: [],
     reviews: [],
@@ -99,6 +118,10 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if (path === 'user') return { id: 1, login: 'runner-bot', name: 'Runner' };
     if (path === `repos/${PROJECT}`) return { default_branch: 'main', html_url: `https://example.test/${PROJECT}`, full_name: PROJECT };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path))) return (forge.notes.get(Number(m[1])) ?? []).map((n) => ({ ...n, html_url: url(Number(m?.[1]), n.id) }));
+    if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path)) && forge.issues.has(Number(m[1]))) {
+      const made = forge.issues.get(Number(m[1])) as ForgeIssue;
+      return { number: made.number, title: made.title, state: made.state, labels: made.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${made.number}`, user: { login: 'runner-bot' }, assignees: [], body: made.body };
+    }
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path))) return { number: Number(m[1]), title: 'Add the thing', state: 'open', labels: forge.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${m[1]}`, user: { login: 'ana' }, assignees: [], body: '' };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/timeline$/.exec(path))) return forge.linked && forge.pr ? [{ event: 'cross-referenced', source: { issue: { number: forge.pr.number, pull_request: {}, repository: { full_name: PROJECT } } } }] : [];
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/comments$/.exec(path))) return forge.threads.flatMap((t) => t.comments.map((c) => ({ id: c.databaseId, body: c.body, created_at: '2026-10-03T12:00:00Z', user: { login: 'runner-bot' } })));
@@ -135,6 +158,11 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
       if (!found) throw new Error('404 not found');
       found.body = json.body;
       response = { id: found.id };
+    } else if (command.method === 'POST' && new RegExp(`^repos/${PROJECT}/issues$`).test(command.endpoint)) {
+      const number = nextIssue++;
+      forge.issues.set(number, { number, title: json.title, body: json.body, labels: json.labels ?? [], state: 'open' });
+      forge.notes.set(number, []);
+      response = { number, id: number * 1000, html_url: `https://example.test/${PROJECT}/issues/${number}` };
     } else if (command.method === 'DELETE' && (m = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(\d+)$/.exec(command.endpoint))) {
       const id = Number(m[1]);
       if (![...forge.notes.values()].flat().some((n) => n.id === id)) throw new Error('404 not found');

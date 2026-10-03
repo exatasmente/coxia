@@ -1,12 +1,12 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
 
-export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing'] as const;
+export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing', 'unknown-link'] as const;
 export type RunErrorCode = (typeof RUN_ERROR_CODES)[number];
 
 export class RunError extends Error {
@@ -152,6 +152,8 @@ const clone = (run: Run, at: string): Run => ({ ...structuredClone(run), updated
 export interface StartInput {
   /** The squad the scope rules picked: the run starts in it, with the flow the caller resolved for it. */
   squad?: { id: string; name: string; rule: RoutedBy } | null;
+  /** The run another squad's request made: the run that asked, and what it asked. The new run starts linked to it. */
+  origin?: { run: string; issue: string; squad: string | null; kind: RunLink['kind']; key: string; title: string } | null;
   /** The scope rules could not pick a squad: the run starts at the front door of the workspace's flow and the squad is decided there (see `RoutingState`). */
   routing?: { candidates: string[]; why: RoutingWhy } | null;
   id: string;
@@ -212,6 +214,11 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
   if (input.routing) {
     run.routing = { candidates: [...input.routing.candidates], why: input.routing.why, proposal: null, result: null };
     messages.push({ kind: 'system', author: app, code: `run.squad.triage.${input.routing.why}`, params: { squads: input.routing.candidates.join(', ') } });
+  }
+  if (input.origin) {
+    run.links = [{ key: `origin-${input.origin.key}`.slice(0, 48), role: 'origin', kind: input.origin.kind, squad: input.origin.squad, run: input.origin.run, issue: input.origin.issue, title: input.origin.title, status: 'open', at }];
+    log(run, at, 'link', null, 'app', `origin:${input.origin.run}`);
+    messages.push({ kind: 'system', author: app, code: 'run.link.origin', params: { issue: input.origin.issue, run: input.origin.run, squad: input.origin.squad ?? '' } });
   }
   const front = flow[0];
   if (input.routing && !(front.type === 'work' && front.agent)) {
@@ -687,8 +694,11 @@ function resume(out: Run, flow: FlowStage[], at: string, by: 'app' | 'person', a
   advance(out, flow, stage, at, messages);
 }
 
-/** What the run waited for happened. For a wait stage the run goes on to the next; for an agent that asked the reporter, `reply` is its answer. */
-export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string }, at: string): Transition {
+/**
+ * What the run waited for happened. For a wait stage the run goes on to the next; for an agent that asked the reporter, `reply` is its answer, and the app is
+ * the author of it when the event was another run's end (`from: 'app'`): nobody wrote it.
+ */
+export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string; from?: 'person' | 'app' }, at: string): Transition {
   need(run, 'waiting');
   const stage = stageOf(flow, run.stage);
   const out = clone(run, at);
@@ -696,7 +706,7 @@ export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string },
   const messages: ForumDraft[] = [];
   if (stage.type === 'work') {
     const text = (input.reply ?? '').trim();
-    resume(out, flow, at, 'app', { kind: 'answer', author: person, text: text || undefined, code: text ? undefined : 'wait.noText', stage: run.stage, to: run.wait?.by ?? null, public: false }, messages);
+    resume(out, flow, at, 'app', { kind: 'answer', author: input.from === 'app' ? app : person, text: text || undefined, code: text ? undefined : 'wait.noText', stage: run.stage, to: run.wait?.by ?? null, public: false }, messages);
   } else {
     messages.push({ kind: 'system', author: app, code: `wait.done.${run.wait?.kind ?? 'time'}`, params: { stage: stage.label }, stage: run.stage });
     resume(out, flow, at, 'app', null, messages);
@@ -715,6 +725,46 @@ export function waitSkip(run: Run, flow: FlowStage[], reason: string, at: string
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'wait.skipped', params: { stage: stage.label }, text: why, stage: run.stage, public: true }];
   resume(out, flow, at, 'person', stage.type === 'work' ? { kind: 'answer', author: person, text: why, stage: run.stage, to: run.wait?.by ?? null, public: false } : null, messages);
   return { run: out, messages };
+}
+
+// ---- runs that ask each other ------------------------------------------------------------------------------------------------------------
+// A run whose agent asked something of another squad (a change in its area) goes on only when that squad's run is over: the agent's question is answered with
+// "a request was made", and the run waits on `linked-done` until every run it asked for has ended.
+
+export interface WaitLinkedInput {
+  /** The liaison that holds the question and answers it with `text`. */
+  by: string;
+  text: string;
+  link: Omit<RunLink, 'at' | 'role'>;
+}
+
+/** The question of a run is turned into a request to another squad: it is answered ("asked, waiting") and the stage waits for the linked run. */
+export function waitLinked(run: Run, input: WaitLinkedInput, at: string): Transition {
+  need(run, 'question');
+  const q = run.question;
+  if (!q || q.kind !== 'agent' || !q.holder || q.holder !== input.by) throw new RunError('wrong-state', { status: run.status });
+  const text = input.text.trim();
+  if (!text) throw new RunError('empty-text');
+  const out = clone(run, at);
+  out.question = null;
+  out.status = 'waiting';
+  out.wait = { kind: 'linked-done', since: at, by: q.by };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  out.links = [...(run.links ?? []), { ...structuredClone(input.link), role: 'requested', at }];
+  log(out, at, 'wait-started', run.stage, q.by, 'linked-done');
+  log(out, at, 'link', run.stage, input.by, `requested:${input.link.key}`);
+  return { run: out, messages: [{ kind: 'answer', author: agent(input.by), text, to: q.by, stage: run.stage, public: false }] };
+}
+
+/** What a link of the run knows changes: the other run now exists, it ended, the issue was refused. Applies in any status. */
+export function linkUpdate(run: Run, key: string, patch: Partial<Pick<RunLink, 'run' | 'issue' | 'status' | 'title'>>, at: string): Transition {
+  const i = (run.links ?? []).findIndex((l) => l.key === key);
+  if (i < 0) throw new RunError('unknown-link', { key });
+  const out = clone(run, at);
+  const links = out.links as RunLink[];
+  links[i] = { ...links[i], ...structuredClone(patch) };
+  log(out, at, 'link-updated', null, 'app', `${key}:${links[i].status}`);
+  return { run: out, messages: [] };
 }
 
 // ---- following another flow ------------------------------------------------------------------------------------------------------------

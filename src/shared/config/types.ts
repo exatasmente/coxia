@@ -172,7 +172,7 @@ export type StageType = (typeof STAGE_TYPES)[number];
 
 /**
  * What a wait stage waits for. `pr-merged`: the run's pull request is merged. `reporter-reply`: a new comment of a person on the issue. `label`: the issue
- * carries `label`. `linked-done`: the issue another run depends on is done (reserved for squads: nothing resolves it yet). `time`: `minutes` have passed.
+ * carries `label`. `linked-done`: every run this one asked another squad for has ended, or its issue was closed (a run that asked for nothing has nothing to wait for). `time`: `minutes` have passed.
  */
 export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];

@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -143,6 +143,22 @@ const flowStage = object(
   ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
 );
 
+const link = object(
+  'A run linked to another: one this run asked something of, or the one it was made for.',
+  {
+    key: string('Unique in the run.', { pattern: ID }),
+    role: enumOf('requested: this run asked another squad and waits for it. origin: this run exists because another squad asked.', LINK_ROLES),
+    kind: enumOf('A question or a change.', LINK_KINDS),
+    squad: { type: ['string', 'null'], description: 'The other squad.', pattern: ID },
+    run: { type: ['string', 'null'], description: 'The other run, once it exists.', pattern: RUN_ID.source },
+    issue: { type: ['string', 'null'], description: 'The issue of the other run, once it exists.', maxLength: 200 },
+    title: string('What was asked, in a line.', { maxLength: 500 }),
+    status: enumOf('proposed: the issue waits for a yes. open: the other run is going. done: it ended. refused: it will not exist.', LINK_STATUSES),
+    at: time('When.'),
+  },
+  ['key', 'role', 'kind', 'squad', 'run', 'issue', 'title', 'status', 'at'],
+);
+
 const routing = {
   ...object(
     'A run whose squad is not decided yet.',
@@ -188,6 +204,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     squad: { type: ['string', 'null'], description: 'The squad the run works in; absent or null: none.', pattern: ID },
     routedBy: { type: ['string', 'null'], description: 'How the run came to be in its squad.', enum: [...ROUTED_BY, null] },
     routing,
+    links: { type: 'array', description: 'The runs this one asked something of, and the run it was made for.', items: link, maxItems: 100 },
     flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
     review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {

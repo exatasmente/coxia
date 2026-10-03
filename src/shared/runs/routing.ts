@@ -1,5 +1,5 @@
 import type { SquadDef } from '../config/types';
-import type { RoutedBy, RoutingWhy } from './types';
+import type { RoutingWhy, ScopeRule } from './types';
 
 // Which squad an issue belongs to, by the scope of the squads: the repository first, then the labels, then the folders of the files the issue mentions.
 // Each rule narrows the squads the one before left; one squad left is the answer. When the rules leave several squads, or none claims the issue, the answer is
@@ -14,7 +14,7 @@ export interface RouteInput {
   text: string;
 }
 
-export type RouteResult = { kind: 'matched'; squad: string; rule: Exclude<RoutedBy, 'agent' | 'person'> } | { kind: 'ambiguous'; why: RoutingWhy; candidates: string[] };
+export type RouteResult = { kind: 'matched'; squad: string; rule: ScopeRule } | { kind: 'ambiguous'; why: RoutingWhy; candidates: string[] };
 
 const lower = (v: string): string => v.trim().toLowerCase();
 const dir = (p: string): string => p.trim().replace(/^\.?\/+/, '').replace(/\/+$/, '');
@@ -43,7 +43,7 @@ const under = (file: string, prefix: string): boolean => {
 export function routeIssue(squads: SquadDef[], input: RouteInput): RouteResult {
   const labels = new Set(input.labels.map(lower));
   const files = mentionedPaths(input.text);
-  const rules: [Exclude<RoutedBy, 'agent' | 'person'>, (s: SquadDef) => boolean][] = [
+  const rules: [ScopeRule, (s: SquadDef) => boolean][] = [
     ['repo', (s) => input.repo !== null && s.scope.repos.includes(input.repo)],
     ['label', (s) => s.scope.labels.some((l) => labels.has(lower(l)))],
     ['path', (s) => s.scope.paths.some((p) => (input.repo === null || p.repo === input.repo) && files.some((f) => under(f, p.prefix)))],

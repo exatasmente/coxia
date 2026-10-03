@@ -2,12 +2,14 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
-import { type ForumMessage, parseMentions, runThreadId } from '../../shared/forum';
+import { type ForumDraft, type ForumMessage, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import {
   type FlowStage,
-  type RoutedBy,
+  type PendingQuestion,
   type Run,
+  type ScopeRule,
+  type RunLink,
   RunError,
   type StageOutput,
   type Transition,
@@ -31,8 +33,10 @@ import {
   gateReject,
   gateSkip,
   handBack,
+  createdIssueOf,
   isTerminal,
   leaveSquad,
+  linkUpdate,
   MAX_QUESTION_HOPS,
   newRunId,
   passQuestion,
@@ -52,11 +56,13 @@ import {
   startRun,
   startStage as startMove,
   waitDone,
+  waitLinked,
   waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
 import { autonomousOf, membersOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { cycleText } from '../../shared/cycles/text';
+import { ensureSquadChannels } from '../forum-channels';
 import { updateAgent } from '../../shared/config/team';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
@@ -72,9 +78,10 @@ import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, pickAgent, withLimit } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
-import { chainCall, readChain } from './chain';
+import { type ChainRequest, chainCall, readChain } from './chain';
+import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { mentionCall } from './mention';
-import type { Publisher } from './publish';
+import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
 // stage whose agent runs by itself is executed one after the other until the run reaches a gate, a question, a failure or its end; a stage whose agent waits
@@ -101,6 +108,12 @@ export interface IssueSource {
   triggered(label: string): Promise<VcsIssue[]>;
   /** The code host can be read right now. */
   ready(): boolean;
+}
+
+/** A run that another squad's request makes: the squad it goes to, and the run that asked. */
+export interface LinkedStart {
+  squad: string;
+  origin: NonNullable<Parameters<typeof startRun>[0]['origin']>;
 }
 
 export interface RunnerEnv {
@@ -220,6 +233,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
   function tell(prior: Run | null, run: Run): void {
+    // A run that was made for another's request has ended: the run that waits on it can go on.
+    if (run.status === 'done' && prior?.status !== 'done') for (const l of run.links ?? []) if (l.role === 'origin' && l.run) trackLink(settleLinked(l.run).then(() => undefined));
     // The label a stage sets on the tracker goes out when the run enters it.
     if (prior && prior.stage !== run.stage && deps.publisher) {
       const flow = flowFor(run);
@@ -400,18 +415,18 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   // Two starts for one issue at the same moment: the second is refused before it touches the repository.
-  async function start(raw: string, repoId?: string): Promise<Run> {
+  async function start(raw: string, repoId?: string, force?: LinkedStart): Promise<Run> {
     const { ref } = refOf(raw);
     if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
     starting.add(ref);
     try {
-      return await create(raw, repoId);
+      return await create(raw, repoId, force);
     } finally {
       starting.delete(ref);
     }
   }
 
-  async function create(raw: string, repoId?: string): Promise<Run> {
+  async function create(raw: string, repoId?: string, force?: LinkedStart): Promise<Run> {
     const config = deps.config();
     if (!isFlowCycle(config.devCycle.stages)) throw new RunnerError('not-agent-flow');
     const env = deps.env();
@@ -432,11 +447,15 @@ export function createRunner(deps: RunnerDeps): Runner {
     // The squads that can take work, and what the issue says about which one is its: its labels, and the files its text mentions.
     const routable = squadsOf(config).filter((q) => membersOf(config, q.id).length);
     const text = [issue.title, issue.body, ...comments.filter((c) => !c.system).map((c) => c.body)].join('\n');
-    const repo = await repoFor(env.issues.project, repoId ?? (routable.length ? repoOfSquad(routable, issue.labels, text, env) : undefined));
-    const routed = routable.length ? routeIssue(routable, { repo: repo.id, labels: issue.labels, text }) : null;
+    // A run another squad's request makes goes to that squad, in the repository it owns: nothing is routed.
+    if (force && !routable.some((q) => q.id === force.squad)) throw new RunError('unknown-squad', { squad: force.squad.slice(0, 48) });
+    const owned = force ? (squadOf(config, force.squad)?.scope.repos ?? []).filter((r) => env.repos.some((x) => x.id === r)) : [];
+    const repo = await repoFor(env.issues.project, repoId ?? (force ? owned[0] : routable.length ? repoOfSquad(routable, issue.labels, text, env) : undefined));
+    const routed: { kind: 'matched'; squad: string; rule: ScopeRule | 'request' } | ReturnType<typeof routeIssue> | null = force ? { kind: 'matched', squad: force.squad, rule: 'request' } : routable.length ? routeIssue(routable, { repo: repo.id, labels: issue.labels, text }) : null;
+    if (routable.length) ensureSquadChannels(deps.forum, squadsOf(config), config.language);
     // The flow the run starts with: its squad's when the scope rules picked one, the workspace's otherwise (the front door then proposes the squad).
     let startFlow = flow;
-    let squad: { id: string; name: string; rule: Extract<RoutedBy, 'repo' | 'label' | 'path' | 'unclaimed'> } | null = null;
+    let squad: { id: string; name: string; rule: ScopeRule | 'request' } | null = null;
     if (routed?.kind === 'matched') {
       const view = squadView(config, routed.squad);
       startFlow = flowOf(view, view.devCycle.stages);
@@ -460,7 +479,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(dest, commitMessage(config.runner.commitMessage, 'add the issue record', iid), identity);
       const started = startRun(
-        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, squad, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
+        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, squad, origin: force?.origin ?? null, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
         startFlow,
         now(),
       );
@@ -470,7 +489,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       throw e;
     }
     tell(null, run);
-    if (squad) labelSquad(run, squad.id);
+    // The label of the squad goes onto an issue the squad's own request created already: it was born with it.
+    if (squad && !force) labelSquad(run, squad.id);
     pump(run.id);
     return run;
   }
@@ -622,7 +642,14 @@ export function createRunner(deps: RunnerDeps): Runner {
     tick: () => (ticking ??= lookForEvents().finally(() => (ticking = null))),
     actionDone(action, responses) {
       const id = String(action.unit?.runId ?? '');
-      if (id && deps.runs.get(id)) publish(id, (p) => p.actionDone(action, responses));
+      if (!id || !deps.runs.get(id)) return;
+      // The issue another squad's request waited to create was approved: the run of that squad starts on it.
+      if (action.unit?.purpose === 'request-issue') {
+        const made = createdIssueOf(responses[0]);
+        trackLink((made ? linkedIssueCreated(id, String(action.unit.key), made.iid) : linkRefused(id, String(action.unit.key), t('main.runner.comment.noId'))).then(() => undefined));
+        return;
+      }
+      publish(id, (p) => p.actionDone(action, responses));
     },
     async flush() {
       for (const run of deps.runs.list()) {
@@ -645,7 +672,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     async idle() {
       for (let i = 0; i < 50; i++) {
-        const all = [...inflight.values(), ...mentions.values(), ...chains.values(), ...publishing.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
+        const all = [...inflight.values(), ...mentions.values(), ...chains.values(), ...publishing.values(), ...linkWork.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
         if (!all.length) return;
         await Promise.allSettled(all);
       }
@@ -731,10 +758,14 @@ export function createRunner(deps: RunnerDeps): Runner {
 
       const env = deps.env();
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
+      // The liaison of a squad may answer with a request to another squad's liaison, when there is one to receive it.
+      const own = squadOf(config, holder.squad);
+      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && config.agents.team.some((a) => a.id === o.liaison && a.squad === o.id));
+      const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
       try {
-        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd });
+        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const r = await withLimit(withActivityContext(`run:${id}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
@@ -747,6 +778,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const now = deps.runs.get(id)?.question;
       if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
       if (!answer) return handUp(id, holder.id, 'failed', failure);
+      if (answer.verdict === 'request') return handleRequest(id, holder, q, answer.request, !!liaison);
 
       if (answer.verdict === 'answer' && answer.text) {
         move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: answer.text }, at));
@@ -759,6 +791,152 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
+  // ---- requests between squads ------------------------------------------------------------------------------------------------------
+
+  const linkWork = new Set<Promise<void>>();
+  const trackLink = (work: Promise<void>): void => {
+    const p: Promise<void> = work
+      .catch((e) => console.error('[runner] linked runs', e instanceof Error ? e.message : e))
+      .finally(() => void linkWork.delete(p));
+    linkWork.add(p);
+  };
+
+  const squadName = (config: WorkspaceConfig, q: SquadDef): string => cycleText(q.name || q.id, config.language);
+
+  // What the liaison of a squad reads when a request reaches it: the repository its squad owns, else the run's worktree.
+  const squadCwd = (to: SquadDef, run: Run): string => {
+    const env = deps.env();
+    return env.repos.find((r) => to.scope.repos.includes(r.id) && existsSync(r.path))?.path ?? (existsSync(run.worktree) ? run.worktree : env.fallbackCwd);
+  };
+
+  // The liaison of a squad made a request to the liaison of another, in the squads channel; that one reads it (only reads) and answers, declines, turns it into an
+  // issue of its squad or hands it to the person. What it says goes back down the chain: the asker's question is answered with it.
+  async function handleRequest(id: string, holder: AgentDef, q: PendingQuestion, request: ChainRequest | null, offered: boolean): Promise<void> {
+    const config = deps.config();
+    const run = need(id);
+    const from = squadOf(config, holder.squad);
+    const to = request ? squadOf(config, request.squad) : null;
+    const target = to?.liaison ? config.agents.team.find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
+    if (!offered || !request || !from || from.liaison !== holder.id || !to || to.id === from.id || !target) return handUp(id, holder.id, 'failed', t('main.runner.request.invalid'));
+    ensureSquadChannels(deps.forum, squadsOf(config), config.language);
+    const toName = squadName(config, to);
+    const [sent] = deps.forum.append(SQUADS_CHANNEL, { kind: 'request', author: { type: 'agent', id: holder.id }, to: target.id, text: request.text, params: { from: from.id, squad: to.id, kind: request.kind, run: id, ref: run.issue.ref }, public: false });
+    deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.request.sent', params: { agent: holder.id, squad: toName, kind: request.kind }, stage: run.stage });
+    const reply = (draft: Partial<ForumDraft>) => deps.forum.append(SQUADS_CHANNEL, { kind: 'answer', author: { type: 'agent', id: target.id }, to: holder.id, replyTo: sent.seq, public: false, ...draft });
+
+    let answer: RequestAnswer | null = null;
+    let failure = '';
+    try {
+      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      const abort = new AbortController();
+      chainAborts.set(id, abort);
+      const r = await withLimit(withActivityContext(`run:${id}`, () => deps.engine(call, [])), abort, deps.timeoutMs ?? config.runner.stageTimeoutMs);
+      answer = readRequestAnswer(r.data);
+      if (!answer) failure = 'empty-answer';
+    } catch (e) {
+      failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+    }
+    // The person (or a cancel) may have answered while the other liaison thought: then what it said is not used (the request stays in the channel as it was).
+    const now = deps.runs.get(id)?.question;
+    if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
+    if (!answer) {
+      reply({ author: { type: 'app' }, to: null, code: 'runner.request.failed', params: { agent: target.id, reason: failure } });
+      return handUp(id, holder.id, 'failed', t('main.runner.request.failedDetail', { squad: toName, reason: failure }));
+    }
+
+    if (answer.verdict === 'answer') {
+      reply({ text: answer.text });
+      move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: t('main.runner.request.answerText', { squad: toName, agent: target.id, text: answer.text }) }, at));
+      return;
+    }
+    if (answer.verdict === 'decline') {
+      const reason = answer.reason || '—';
+      reply({ code: 'runner.request.declined', params: { reason } });
+      move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: t('main.runner.request.declinedText', { squad: toName, agent: target.id, reason }) }, at));
+      return;
+    }
+    if (answer.verdict === 'needs-person') {
+      const reason = answer.reason || '—';
+      reply({ code: 'runner.request.handedUp', params: { reason } });
+      move(id, (r, _f, at) => passQuestion(r, { from: holder.id, to: null, text: `${q.text}\n\n${t('main.runner.request.needsPersonText', { squad: toName, reason })}`, reason: '' }, at));
+      return reachPerson(id);
+    }
+
+    // The request becomes an issue of the other squad. The asker's run waits for it (the question is answered with "asked, waiting"), and the issue is created on
+    // the tracker under the autonomy of the liaison that took the request: by itself, or as a proposal that waits for a "yes".
+    reply({ code: 'runner.request.willIssue', params: { title: answer.title }, text: answer.text });
+    const key = `req-${(run.links ?? []).length + 1}`;
+    const body = `${answer.text}\n\n${t('main.runner.request.issueOrigin', { squad: squadName(config, from), ref: run.issue.ref })}`;
+    move(id, (r, _f, at) => waitLinked(r, { by: holder.id, text: t('main.runner.request.waitingText', { squad: toName, title: answer.title }), link: { key, kind: request.kind, squad: to.id, run: null, issue: null, title: answer.title, status: 'proposed' } }, at));
+    const made: IssueMade = deps.publisher ? await deps.publisher.requestIssue(id, { key, squad: toName, title: answer.title, body, label: to.label, by: target.id, autonomous: autonomousOf(config, target) }) : { status: 'no-host', reason: '' };
+    await afterIssue(id, key, made);
+  }
+
+  async function afterIssue(id: string, key: string, made: IssueMade): Promise<void> {
+    if (made.status === 'proposed') return;
+    if (made.status === 'created') return linkedIssueCreated(id, key, made.iid);
+    return linkRefused(id, key, made.reason);
+  }
+
+  // The issue exists: the run of the other squad starts on it, linked to the run that asked, and each thread says so.
+  async function linkedIssueCreated(id: string, key: string, iid: number): Promise<void> {
+    const origin = deps.runs.get(id);
+    const link = origin?.links?.find((l) => l.key === key);
+    if (!origin || !link || link.status !== 'proposed' || !link.squad) return;
+    const config = deps.config();
+    const to = squadOf(config, link.squad);
+    try {
+      const made = await start(String(iid), undefined, { squad: link.squad, origin: { run: id, issue: origin.issue.ref, squad: origin.squad ?? null, kind: link.kind, key, title: link.title } });
+      moveRun(d, id, (r) => linkUpdate(r, key, { run: made.id, issue: made.issue.ref, status: 'open' }, now()));
+      const params = { issue: made.issue.ref, run: made.id, squad: to ? squadName(config, to) : link.squad, origin: origin.issue.ref };
+      deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.request.linked', params, stage: origin.stage });
+      deps.forum.append(SQUADS_CHANNEL, { kind: 'system', author: { type: 'app' }, code: 'runner.request.linkedChannel', params });
+    } catch (e) {
+      await linkRefused(id, key, redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
+    }
+  }
+
+  // The issue will not exist (a refusal, a failure, the person's "no"): the link says so and the stage that waited for it goes on, told.
+  async function linkRefused(id: string, key: string, reason: string): Promise<void> {
+    const run = deps.runs.get(id);
+    const link = run?.links?.find((l) => l.key === key);
+    if (!run || !link || link.status === 'refused') return;
+    moveRun(d, id, (r) => linkUpdate(r, key, { status: 'refused' }, now()));
+    await settleLinked(id, reason);
+  }
+
+  async function issueClosed(ref: string): Promise<boolean> {
+    try {
+      return (await deps.issues.get(refOf(ref).iid)).issue.state === 'closed';
+    } catch {
+      return false;
+    }
+  }
+
+  // A run that waits on `linked-done` goes on when every run it asked for has ended (or its issue was closed); a request that will not become an issue counts as
+  // over, and the stage is told. Returns whether the run went on.
+  async function settleLinked(id: string, why = ''): Promise<boolean> {
+    const run = deps.runs.get(id);
+    if (!run || run.status !== 'waiting' || run.wait?.kind !== 'linked-done') return false;
+    const links = (run.links ?? []).filter((l) => l.role === 'requested');
+    // A wait stage with nothing requested has nothing to wait for; an agent that asked has its request.
+    if (!links.length && run.wait.by) return false;
+    const ended: { link: RunLink; how: 'done' | 'refused' }[] = [];
+    for (const l of links) {
+      if (l.status === 'refused') ended.push({ link: l, how: 'refused' });
+      else if (l.status === 'done') ended.push({ link: l, how: 'done' });
+      else if (l.status === 'proposed' || !l.run) return false;
+      else if (deps.runs.get(l.run)?.status === 'done' || (l.issue && (await issueClosed(l.issue)))) ended.push({ link: l, how: 'done' });
+      else return false;
+    }
+    // The person may have moved the run while the host was being asked.
+    if (deps.runs.get(id)?.rev !== run.rev) return false;
+    for (const e of ended) if (e.link.status === 'open') moveRun(d, id, (r) => linkUpdate(r, e.link.key, { status: 'done' }, now()));
+    const lines = ended.map((e) => (e.how === 'done' ? t('main.runner.linked.done', { ref: e.link.issue ?? e.link.title }) : t('main.runner.linked.refused', { title: e.link.title, reason: why || '—' })));
+    move(id, (r, f, at) => waitDone(r, f, { reply: lines.join('\n'), from: 'app' }, at));
+    return true;
+  }
+
   // ---- what a waiting run waits for -------------------------------------------------------------------------------------------------
 
   // Every waiting run is looked at once per tick: the code host says whether its event happened, and the run goes on from where it waits.
@@ -768,6 +946,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       const w = run.wait;
       if (!w) continue;
       let over: { over: boolean; reply?: string } = { over: false };
+      if (w.kind === 'linked-done') {
+        // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).
+        if (await settleLinked(run.id)) {
+          const moved = deps.runs.get(run.id);
+          if (moved) sent.push(moved);
+        }
+        continue;
+      }
       if (w.kind === 'time') over = { over: Date.parse(w.since) + (w.minutes ?? 0) * 60_000 <= (deps.now?.() ?? new Date()).getTime() };
       else if (deps.publisher) over = await deps.publisher.waitOver(run.id);
       // The person may have moved the run while the host was being asked.

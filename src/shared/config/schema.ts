@@ -96,7 +96,7 @@ const fileList = (description: string): JsonSchema => list(description, string('
 const waitFor = object(
   'What a wait stage waits for.',
   {
-    kind: enumOf('pr-merged: the pull request of the run is merged. reporter-reply: a person comments on the issue. label: the issue carries a label. linked-done: the issue another run depends on is done (squads). time: some minutes pass.', WAIT_KINDS),
+    kind: enumOf('pr-merged: the pull request of the run is merged. reporter-reply: a person comments on the issue. label: the issue carries a label. linked-done: every run this one asked another squad for has ended, or its issue was closed. time: some minutes pass.', WAIT_KINDS),
     label: string('For label: the label name.', { maxLength: 200 }),
     minutes: integer('For time: minutes after the stage is entered.', 1, 525_600),
   },

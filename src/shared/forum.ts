@@ -3,8 +3,11 @@ import { t } from './i18n';
 // The forum: one thread per run plus general threads. Messages are what agents and people say about an activity; the stores are in
 // main/forum-core.ts (JSONL, append only) and main/runs-core.ts (the run each thread belongs to).
 
-export const MESSAGE_KINDS = ['post', 'question', 'answer', 'handoff', 'decision', 'system'] as const;
+export const MESSAGE_KINDS = ['post', 'question', 'answer', 'handoff', 'decision', 'system', 'request'] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+// `request` is what a liaison says to the liaison of another squad, in the squads channel: it asks something of that squad's area (a question, or a change), is
+// open until an `answer` closes it, and carries the squad it comes from and the one it is for in its params.
 
 /** Who said it: an agent of the team, the person, or the app itself (stage changes, the review limit). */
 export type Author = { type: 'agent'; id: string } | { type: 'person' } | { type: 'app' };
@@ -40,6 +43,8 @@ export interface ForumDraft {
   stage?: string | null;
   /** Handoff: the agent id that takes over, or "person". */
   to?: string | null;
+  /** An answer: the `seq` of the question or request it answers, when it is not the latest one open. */
+  replyTo?: number | null;
   /** Public record: what an agent did, asked, was answered or was decided, and may appear on the tracker. Handoffs and stage changes stay internal. Default false. */
   public?: boolean;
   published?: PublishedRef | null;
@@ -62,7 +67,7 @@ export interface ForumMessage {
   refs: ArtifactRef[];
   stage: string | null;
   to: string | null;
-  /** An answer: the `seq` of the question it answers. */
+  /** An answer: the `seq` of the question or request it answers. */
   replyTo: number | null;
   /** Eligible to appear on the tracker. Being public is not being published: nothing is mirrored without the workspace option and an approval. */
   public: boolean;
@@ -70,7 +75,8 @@ export interface ForumMessage {
   published: PublishedRef | null;
 }
 
-export const THREAD_KINDS = ['run', 'general'] as const;
+/** run: the thread of a run. general: a thread a person opened. channel: the channel of a squad, and the channel the squads talk in. */
+export const THREAD_KINDS = ['run', 'general', 'channel'] as const;
 export type ThreadKind = (typeof THREAD_KINDS)[number];
 
 export interface ThreadHeader {
@@ -80,6 +86,8 @@ export interface ThreadHeader {
   kind: ThreadKind;
   /** The run a `run` thread belongs to. */
   runId: string | null;
+  /** The squad a channel belongs to; null for any other thread and for the channel the squads talk in. */
+  squad?: string | null;
   title: string;
   createdAt: string;
 }
@@ -88,6 +96,8 @@ export interface ThreadSummary {
   id: string;
   kind: ThreadKind;
   runId: string | null;
+  /** The squad the thread is listed under: a squad's channel is its own; a run's thread is its run's squad (filled by the module that knows the runs); null otherwise. */
+  squad?: string | null;
   title: string;
   createdAt: string;
   count: number;
@@ -117,6 +127,11 @@ export const GENERAL_THREAD = 'general';
 export const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export const runThreadId = (runId: string): string => `run-${runId}`;
+
+/** The channel the squads talk in: the requests liaisons make to each other, and their answers. */
+export const SQUADS_CHANNEL = 'squads';
+/** The channel of a squad: its general talk. Its runs' threads are listed under it. */
+export const squadChannelId = (squadId: string): string => `squad-${squadId}`;
 
 /** The text of a message as a person reads it: what the author wrote, or the app's own wording of its `code`. */
 export function messageText(m: { text?: string; code?: string | null; params?: Record<string, ParamValue> }): string {

@@ -93,7 +93,7 @@ export function pendingAnswer(thread: ForumMessage[], agent: string, stage: stri
   const answered = thread.find((m) => m.kind === 'answer' && m.seq > asked.seq);
   if (!answered) return null;
   const reported = thread.some((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === agent && m.seq > answered.seq);
-  return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t('main.runner.author.person') };
+  return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t(answered.author.type === 'app' ? 'main.runner.author.app' : 'main.runner.author.person') };
 }
 
 export async function withLimit<T>(work: Promise<T>, abort: AbortController, ms: number): Promise<T> {
