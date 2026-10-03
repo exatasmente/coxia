@@ -21,7 +21,7 @@ import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
-import { GLAB_READ, gitlabHint, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider } from './vcs';
 
 export { GLAB_READ };
@@ -70,7 +70,7 @@ function shellDenial(usage: string, plumbing: string): string {
   return hints ? cp('system.shellDenied', { hints }) : cp('system.shellDeniedNone');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage = gitlabHint()): HookCallback {
+export function shellAllowlist(patterns: RegExp[], usage: string): HookCallback {
   const plumbing = (): string => (patterns.some((re) => re.source.startsWith('^git -C')) ? cp('system.hintGitplumbing') : '');
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};

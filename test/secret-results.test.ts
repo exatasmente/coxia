@@ -313,7 +313,7 @@ describe('redactSecretResults', () => {
 });
 
 describe('shell allowlist with git and secret files', () => {
-  const hook = shellAllowlist([...GIT_MIRROR_READ]);
+  const hook = shellAllowlist([...GIT_MIRROR_READ], '');
   const MIRROR = '/home/ana/.cache/release-sync/web.git';
   const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
 

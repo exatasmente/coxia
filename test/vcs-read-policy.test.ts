@@ -28,7 +28,7 @@ async function decide(hook: unknown, command: string): Promise<'allow' | 'deny'>
 afterAll(() => rmSync(DATA, { recursive: true, force: true }));
 
 describe('gh commands the ceremony agent may run', () => {
-  const hook = shellAllowlist(GH_READ);
+  const hook = shellAllowlist(GH_READ, '');
   const allowed = [
     'gh api repos/acme/app/pulls/7',
     'gh api repos/acme/app/pulls/7/comments',
@@ -119,14 +119,14 @@ describe('gh commands the ceremony agent may run', () => {
   });
 
   it('refuses the glab commands when only the gh patterns are active, and the other way round', async () => {
-    expect(await decide(shellAllowlist(GH_READ), 'glab api projects/acme%2Fapp/issues/12/notes')).toBe('deny');
-    expect(await decide(shellAllowlist(GLAB_READ), 'gh api repos/acme/app/issues/12/comments')).toBe('deny');
+    expect(await decide(shellAllowlist(GH_READ, ''), 'glab api projects/acme%2Fapp/issues/12/notes')).toBe('deny');
+    expect(await decide(shellAllowlist(GLAB_READ, ''), 'gh api repos/acme/app/issues/12/comments')).toBe('deny');
   });
 
   it('tells the agent which commands it can run, for the provider in use', async () => {
     const reason = async (h: unknown) =>
       (((await (h as Hook)({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }, undefined, { signal: new AbortController().signal })) as { hookSpecificOutput: { permissionDecisionReason: string } }).hookSpecificOutput.permissionDecisionReason);
-    expect(await reason(shellAllowlist(GLAB_READ))).toContain('glab api projects/');
+    expect(await reason(shellAllowlist(GLAB_READ, readPolicyFor('gitlab', { enabled: true, cli: true, api: false }).usage))).toContain('glab api projects/');
     expect(await reason(shellAllowlist(GH_READ, readPolicyFor('github', { enabled: true, cli: true, api: false }).usage))).toContain('gh api repos/');
   });
 
@@ -137,7 +137,7 @@ describe('gh commands the ceremony agent may run', () => {
 });
 
 describe('glab: the dot-segment hardening added with the gh patterns', () => {
-  const hook = shellAllowlist(GLAB_READ);
+  const hook = shellAllowlist(GLAB_READ, '');
   it.each(['glab api projects/../merge_requests/1', 'glab api projects/%2e%2e/issues/1/notes', 'glab api projects/./issues/1', 'glab api projects/..%2Fx/pipelines'.replace('..%2Fx', '..')])('refuses %s', async (command) => {
     expect(await decide(hook, command)).toBe('deny');
   });

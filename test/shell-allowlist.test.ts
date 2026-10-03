@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GLAB_READ, gitMirrorRead, noSecrets, shellAllowlist, stripOutputSuffix } from '../src/main/agents';
+import { gitlabHint } from '../src/main/vcs/readPolicy';
 
 const GIT_MIRROR_READ = gitMirrorRead('/home/ana/.cache/release-sync');
 
@@ -12,8 +13,8 @@ async function decide(hook: unknown, input: Record<string, unknown>): Promise<'a
 }
 
 const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
-const glabHook = shellAllowlist(GLAB_READ);
-const gitHook = shellAllowlist([...GLAB_READ, ...GIT_MIRROR_READ]);
+const glabHook = shellAllowlist(GLAB_READ, gitlabHint());
+const gitHook = shellAllowlist([...GLAB_READ, ...GIT_MIRROR_READ], gitlabHint());
 
 const MIRROR = '/home/ana/.cache/release-sync/web.git';
 
