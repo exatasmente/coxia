@@ -19,9 +19,9 @@ async function make(settings: Omit<VcsSettings, 'apiUrl'>, path: string, routes:
   return buildRuntime({ ...settings, apiUrl: `${host.url}${path}` }, { token: () => token, env: () => ({}), sleep: noSleep });
 }
 
-const GH = { id: 'gh', kind: 'github', host: 'ghe.test', user: '', secretRef: 'x', cli: 'gh', preference: 'api', repos: [] } as const;
-const GL = { id: 'gl', kind: 'gitlab', host: 'gitlab.test', user: '', secretRef: 'x', cli: 'glab', preference: 'api', repos: [] } as const;
-const BB = { id: 'bb', kind: 'bitbucket', host: 'bitbucket.org', user: 'ana', secretRef: 'x', cli: null, preference: 'api', repos: ['acme/app'] } as const;
+const GH: Omit<VcsSettings, 'apiUrl'> = { id: 'gh', kind: 'github', host: 'ghe.test', user: '', secretRef: 'x', cli: 'gh', preference: 'api', repos: [] };
+const GL: Omit<VcsSettings, 'apiUrl'> = { id: 'gl', kind: 'gitlab', host: 'gitlab.test', user: '', secretRef: 'x', cli: 'glab', preference: 'api', repos: [] };
+const BB: Omit<VcsSettings, 'apiUrl'> = { id: 'bb', kind: 'bitbucket', host: 'bitbucket.org', user: 'ana', secretRef: 'x', cli: null, preference: 'api', repos: ['acme/app'] };
 
 const ghPull = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `Thing ${number}`, state: 'open', merged_at: null, draft: false, head: { ref: `feat/${number}`, sha: `${String(number).repeat(8)}aaaa` }, base: { ref: 'release/0.6.0' }, html_url: `https://ghe.test/acme/app/pull/${number}`, user: { login: 'ana' }, body: `Closes #${number + 100}`, ...over });
 

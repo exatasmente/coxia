@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { BUILT_IN_TEMPLATES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
+import { BUILT_IN_TEMPLATES, RELEASE_FLOW_STAGES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
-import { removeAgent } from '../src/shared/config/team';
+import { RECOMMENDED, removeAgent } from '../src/shared/config/team';
 import { checkFlow, flowOf, isFlowCycle } from '../src/shared/runs';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { CATALOGS } from '../src/shared/i18n';
@@ -11,7 +11,7 @@ const apply = (id: string) => applyTemplate(neutralConfig(), builtInTemplate(id)
 
 describe('the shipped templates', () => {
   it('are the ones the wizard lists, in order', () => {
-    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
+    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering', 'release-flow']);
   });
 
   it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s has a flow with nothing to say about it', (id) => {
@@ -437,5 +437,125 @@ describe('the agent cycle template: the business team', () => {
     const missingAgent = parseTemplate({ ...base, devCycle: { stages: [{ id: 'a', label: 'A', match: [], kind: 'development', rank: 1, agentId: 'ghost' }] } });
     expect(missingAgent.errors.map((e) => e.path)).toEqual(['template.devCycle.stages[0].agentId']);
     expect(parseTemplate({ ...base, team: [{ id: 'w', name: 'W', stages: ['a'] }] }).ok).toBe(true);
+  });
+});
+
+describe('the release-flow template', () => {
+  const flow = builtInTemplate('release-flow')!;
+  const issueFlow = applyTemplate(neutralConfig(), builtInTemplate('agent-flow')!);
+  const applied = () => applyTemplate(issueFlow, flow);
+
+  it('is a template of a kind of run: it adds its flow next to the workspace\'s own and changes nothing else of the cycle', () => {
+    const c = applied();
+    expect(flow.runKind).toBe('release');
+    expect(c.devCycle.flows?.release?.map((s) => s.id)).toEqual(RELEASE_FLOW_STAGES.map((s) => s.id));
+    expect(c.devCycle.stages).toEqual(issueFlow.devCycle.stages);
+    expect(c.devCycle.templateId).toBe('agent-flow');
+    expect({ ...c.devCycle, flows: null, comments: null }).toEqual({ ...issueFlow.devCycle, flows: null, comments: null });
+    expect(c.agents.team.map((a) => a.id)).toContain('release-manager');
+    expect(c.agents.team.filter((a) => a.id !== 'release-manager')).toEqual(issueFlow.agents.team);
+  });
+
+  it('validates with nothing to say about it: the flow of the release has no problem and the agent works its stages', () => {
+    const c = applied();
+    const checked = validateConfig(c);
+    expect(checked.errors).toEqual([]);
+    expect(checked.warnings).toEqual([]);
+    expect(checkFlow({ stages: c.devCycle.flows!.release, team: c.agents.team }, { asFlow: true })).toEqual([]);
+    const own = apply('release-flow');
+    expect(validateConfig(own).errors).toEqual([]);
+    expect(validateConfig(own).warnings).toEqual([]);
+  });
+
+  it('goes plan, gate, assemble, merges in, beta, feedback, gate, stable, published, and every stage is reachable', () => {
+    const stages = flowOf({ agents: { team: applied().agents.team }, devCycle: { stages: applied().devCycle.flows!.release } });
+    expect(stages.map((s) => [s.id, s.type, s.agent])).toEqual([
+      ['release-plan', 'work', 'release-manager'],
+      ['release-plan-gate', 'gate', null],
+      ['release-assemble', 'work', 'release-manager'],
+      ['release-merged', 'wait', null],
+      ['release-beta', 'work', 'release-manager'],
+      ['release-feedback', 'wait', null],
+      ['release-stable-gate', 'gate', null],
+      ['release-stable', 'work', 'release-manager'],
+      ['release-published', 'work', null],
+    ]);
+    expect(stages.find((s) => s.id === 'release-plan')?.artifacts).toEqual(['RELEASE_PLAN.md']);
+    expect(stages.find((s) => s.id === 'release-merged')?.waitsFor).toEqual({ kind: 'release-approved' });
+    expect(stages.find((s) => s.id === 'release-feedback')?.waitsFor).toEqual({ kind: 'beta-age', minutes: 1440, label: 'beta-blocker' });
+    // a rejected gate goes back to the work stage it judged
+    expect(stages.find((s) => s.id === 'release-plan-gate')?.returnsTo).toBe('release-plan');
+    expect(stages.find((s) => s.id === 'release-stable-gate')?.returnsTo).toBe('release-beta');
+    expect(stages.at(-1)?.next).toBeNull();
+  });
+
+  it('shares no stage id with the flows for issues, so an agent that lists stages cannot mix the two', () => {
+    const ids = new Set(RELEASE_FLOW_STAGES.map((s) => s.id));
+    for (const id of ['agent-flow', 'agent-flow-engineering', 'sdd', 'scrum', 'kanban', 'github-flow', 'minimal']) for (const s of cycleOf(builtInTemplate(id)!).stages) expect(ids.has(s.id), `${id}: ${s.id}`).toBe(false);
+  });
+
+  it('brings a Release manager that reads the host and runs nothing: tracker read, no shell, no files', () => {
+    const agent = flow.team!.find((a) => a.id === 'release-manager')!;
+    expect(agent).toMatchObject({ permission: 'read', tracker: 'read', shell: 'none', autonomous: true, system: false, turnsTo: null });
+    expect(agent.stages.sort()).toEqual(['release-assemble', 'release-beta', 'release-plan', 'release-stable']);
+    expect(RECOMMENDED['release-manager']).toEqual({ tracker: 'read', shell: 'none' });
+  });
+
+  it('has every text in both catalogs: the template, the stages, the agent and each comment', () => {
+    const cycle = cycleOf(flow);
+    const keys = [
+      flow.name,
+      flow.description,
+      ...cycle.stages.map((s) => s.label),
+      ...flow.team!.flatMap((a) => [a.name, a.job, a.instructions]),
+      ...Object.values(cycle.comments).flatMap((c) => [c.title, c.status, ...c.sections.flatMap((s) => [s.heading, s.guidance])]),
+    ];
+    expect(keys.length).toBeGreaterThan(40);
+    for (const key of keys) for (const l of ['pt-BR', 'en'] as const) expect(CATALOGS[l][key], `${l} ${key}`).toBeTruthy();
+  });
+
+  it('has a comment for each work stage and for what the app writes on the tracking issue, and reuses the gate and the question of the agent cycle', () => {
+    const comments = cycleOf(flow).comments;
+    for (const s of RELEASE_FLOW_STAGES.filter((x) => x.agentId)) expect(comments[s.id], s.id).toBeTruthy();
+    for (const k of ['activities', 'beta-published', 'stable-published', 'gate', 'question']) expect(comments[k], k).toBeTruthy();
+    expect(comments.gate).toEqual(cycleOf(builtInTemplate('agent-flow')!).comments.gate);
+  });
+
+  it('is idempotent, keeps a comment the person edited, and does not touch the config it was given', () => {
+    const once = applied();
+    expect(applyTemplate(once, flow)).toEqual(once);
+    const edited = structuredClone(once);
+    edited.devCycle.comments['release-plan'].title = 'My own title';
+    expect(applyTemplate(edited, flow).devCycle.comments['release-plan'].title).toBe('My own title');
+    const before = structuredClone(issueFlow);
+    applyTemplate(issueFlow, flow);
+    expect(issueFlow).toEqual(before);
+  });
+
+  it('keeps the flow when another template replaces the cycle of the workspace', () => {
+    const c = applyTemplate(applied(), builtInTemplate('scrum')!);
+    expect(c.devCycle.flows?.release).toBeTruthy();
+    expect(validateConfig(c).errors).toEqual([]);
+    expect(c.agents.team.find((a) => a.id === 'release-manager')?.stages.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a squad called release: its id is the key of this flow', () => {
+    const c = applied();
+    c.squads = [{ id: 'release', name: 'Release', mission: '', scope: { repos: [], labels: [], paths: [], unclaimed: false }, liaison: null, autonomy: true, label: null }];
+    expect(validateConfig(c).errors.map((e) => e.path)).toContain('squads[0].id');
+  });
+
+  it('a flow of a release that is broken is reported with its path', () => {
+    const c = applied();
+    c.devCycle.flows!.release[3] = { ...c.devCycle.flows!.release[3], waitsFor: { kind: 'beta-age' } };
+    const r = validateConfig(c);
+    expect(r.errors.map((e) => e.path)).toContain('devCycle.flows.release[3].waitsFor');
+  });
+
+  it('travels in a template file with its kind', () => {
+    const check = parseTemplate(JSON.parse(exportTemplateText(flow, new Date('2026-10-03T12:00:00Z'))));
+    expect(check.errors).toEqual([]);
+    expect(check.template?.runKind).toBe('release');
+    expect(applyTemplate(issueFlow, check.template!).devCycle.flows?.release).toEqual(applied().devCycle.flows?.release);
   });
 });

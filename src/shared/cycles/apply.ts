@@ -2,6 +2,7 @@
 import { mergeDeep, neutralConfig } from '../config/defaults';
 import type { AgentDef, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
+import { RELEASE_FLOW_KEY } from '../config/squads';
 import { newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
@@ -24,8 +25,22 @@ export function cycleOf(template: CycleTemplate): DevCycleConfig {
   return { ...merged, templateId: template.id, stageMapping: merged.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) };
 }
 
+/**
+ * A template for a kind of run that is not an issue's (`runKind`): its stages become the flow of that kind, next to the workspace's own flow, which stays as it is. The
+ * comments it brings are added where the workspace has none of that key (a text the person edited is theirs), and so are its agents (by id, as ever).
+ */
+function applyRunKind(config: WorkspaceConfig, template: CycleTemplate, options: ApplyOptions): WorkspaceConfig {
+  const brought = cycleOf(template);
+  const out = structuredClone(config);
+  out.devCycle.flows = { ...(out.devCycle.flows ?? {}), [RELEASE_FLOW_KEY]: structuredClone(brought.stages) };
+  out.devCycle.comments = { ...structuredClone(brought.comments), ...out.devCycle.comments };
+  out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], out.devCycle, { sandbox: options.sandbox === true });
+  return out;
+}
+
 /** The config with its development cycle replaced by the template's. Nothing outside `devCycle` changes; validation is the caller's (saveConfig). */
 export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, options: ApplyOptions = {}): WorkspaceConfig {
+  if (template.runKind === 'release') return applyRunKind(config, template, options);
   const next = cycleOf(template);
   if (options.keepQaUser !== false && config.devCycle.qa.user && !next.qa.user) next.qa = { ...next.qa, user: config.devCycle.qa.user };
   // The priority labels are the team's tracker conventions, like the QA account: a template that names none leaves the workspace's alone.
@@ -146,6 +161,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     description: typeof t.description === 'string' ? t.description : '',
     needs: Array.isArray(t.needs) ? (t.needs.filter((n) => typeof n === 'string') as TemplateNeed[]) : [],
     devCycle: withFlowFields(t.devCycle as Record<string, unknown>) as DeepPartial<DevCycleConfig>,
+    ...(t.runKind === 'release' ? { runKind: 'release' as const } : {}),
   };
   if (t.team !== undefined) {
     if (!Array.isArray(t.team) || !t.team.every(isObject)) return fail('template.team', 'expected a list of agents');
