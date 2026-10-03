@@ -61,6 +61,28 @@ describe('the order of the cards', () => {
   });
 });
 
+describe('the cards past the limit', () => {
+  const many = () => {
+    reportMock.items = [issue(1, { labels: ['P1'] }), issue(2, { blockers: ['x'] }), issue(3, { labels: ['P0'] }), issue(4), issue(5)];
+  };
+
+  it('are not dropped: the call gets the first ones, the total and the rest in the same order', async () => {
+    many();
+    const r = await loadCards(2);
+    expect(r.cards.map((c) => c.iid)).toEqual(['2', '3']);
+    expect(r.rest?.map((c) => c.iid)).toEqual(['1', '4', '5']);
+    expect(r.total).toBe(5);
+  });
+
+  it('leave no rest when everything fits', async () => {
+    many();
+    const r = await loadCards(5);
+    expect(r.rest).toBeUndefined();
+    expect(r.cards).toHaveLength(5);
+    expect(r.total).toBe(5);
+  });
+});
+
 describe('what the turn agent reads', () => {
   const load = async (over: Partial<ReportItem>) => {
     reportMock.items = [issue(7, over)];

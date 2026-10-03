@@ -1,5 +1,5 @@
 import { sortCards } from './priority';
-import type { Card, CardSeen } from './types';
+import type { Card, CardSeen, CardsResult } from './types';
 
 // Pure rules for the meetings of one day: what moved on a card since an earlier meeting, and how the agenda of a later meeting is ordered.
 
@@ -80,6 +80,17 @@ export function orderAgenda(cards: Card[], marks: Record<string, SameDayMark>): 
 /** The order every screen lists the agenda in: the comparator Today and the call share (blocked, priority, last update), then the same-day rule. */
 export function agendaOrder(cards: Card[], marks: Record<string, SameDayMark>): Card[] {
   return orderAgenda(sortCards(cards), marks);
+}
+
+/**
+ * A card the call left out joins the agenda right after the one in progress (at the end when the call has not started, `callIdx` < 0), so
+ * nothing already visited shifts. A ref that is not among the left out cards changes nothing.
+ */
+export function bringIntoAgenda(result: CardsResult, ref: string, callIdx: number): CardsResult {
+  const card = result.rest?.find((c) => c.ref === ref);
+  if (!card) return result;
+  const at = callIdx < 0 ? result.cards.length : Math.min(result.cards.length, callIdx + 1);
+  return { ...result, cards: [...result.cards.slice(0, at), card, ...result.cards.slice(at)], rest: result.rest?.filter((c) => c.ref !== ref) };
 }
 
 /** Local "HH:MM" of an ISO instant. */

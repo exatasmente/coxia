@@ -13,7 +13,7 @@ import type {
   Voice,
 } from '../../shared/types';
 import { buildMinutes } from '../../shared/minutes';
-import { type SameDayMark, agendaOrder } from '../../shared/sameDay';
+import { type SameDayMark, agendaOrder, bringIntoAgenda } from '../../shared/sameDay';
 import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
 import { minutesApi } from './minutesApi';
@@ -230,6 +230,11 @@ export function useCeremony() {
     await Promise.all(Array.from({ length: PARALLEL }, worker));
   }, [cards, getTurn]);
 
+  // A card the call left out joins the agenda (see bringIntoAgenda).
+  const callIdxRef = useRef(callIdx);
+  callIdxRef.current = callIdx;
+  const bringIn = useCallback((ref: string) => setCards((prev) => (prev ? bringIntoAgenda(prev, ref, callIdxRef.current) : prev)), []);
+
   const indexOf = useCallback((ref: string) => Math.max(0, cards?.cards.findIndex((c) => c.ref === ref) ?? 0), [cards]);
   const colorOf = useCallback((ref: string) => AGENT_COLORS[indexOf(ref) % AGENT_COLORS.length], [indexOf]);
   const voiceOf = useCallback(
@@ -271,6 +276,7 @@ export function useCeremony() {
     cardsError,
     loadingCards,
     loadCards,
+    bringIn,
     turns,
     turnErrors,
     getTurn,

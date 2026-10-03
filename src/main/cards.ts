@@ -71,5 +71,6 @@ export async function loadCards(limit: number, refresh = false): Promise<CardsRe
       };
     });
   const ordered = sortCards(cards);
-  return { generatedAt: report.generated_at, total: ordered.length, cards: ordered.slice(0, limit) };
+  const rest = ordered.slice(limit);
+  return { generatedAt: report.generated_at, total: ordered.length, cards: ordered.slice(0, limit), ...(rest.length ? { rest } : {}) };
 }

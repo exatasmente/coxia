@@ -51,6 +51,8 @@ O cartão leva o que o tracker diz da issue: as labels, o milestone, o projeto e
 
 **Uma ordem só.** Hoje e a call listam os cartões na mesma ordem (`compareCards` em `src/shared/priority.ts`): bloqueados primeiro, depois a prioridade (quem não tem, por último), depois o atualizado mais recentemente (quem não tem hora, por último). Empate não se desfaz pelo texto da referência: ficam na ordem em que o tracker os entregou. Uma reunião mais tarde no mesmo dia ainda põe por último o cartão que não mudou e não está bloqueado (`agendaOrder`). Hoje lista o que a call vai seguir, sem reordenar; as faixas de urgência antigas (pergunta pendente, volta do QA, perto do QA) saíram da ordem porque contradiziam esta.
 
+**Nada some em silêncio.** A call leva as primeiras 8 atividades da ordem. As que não cabem não são descartadas: `cards:load` devolve também `rest` (na mesma ordem) e o `total`. A abertura da call diz quantas ficaram de fora, a coluna da pauta lista as que ficaram, no fim, cada uma com "Trazer" (ela entra logo depois da atividade em andamento), e Hoje mostra a contagem. Uma conversa salva antes disso não tem `rest` e não mostra nada.
+
 ### Prompts e idiomas
 
 Cada texto que o app manda a um agente vive nos catálogos (`src/shared/i18n/pt-BR.json` e `en.json`) com a chave `prompt.<família>.<id>`; `<id>` é `<cabeça>.<nome>` (`turn.main`, `gate.rules`, `qa.skillsLine`…). A família `sdd` é completa; `scrum` e `kanban` só trazem o que muda (a retro). Um texto que a família do papel não tem cai no `sdd`. `promptOverrides[id][idioma]` troca um texto (inclusive por vazio). Com a voz desligada (`voice.enabled: false`) o app procura antes a chave com o sufixo `.novoice` (as regras de fala, o preâmbulo e o capítulo de chat dizem "a voz está desligada" em vez de "para ser ouvida"), e os marcadores `{mode}` ("por voz" / "em texto"), `{heard}` ("transcrição por voz" / "texto digitado"), `{call}` ("Call" / "Conversa") e `{answered}` tomam a palavra do modo.
@@ -157,6 +159,8 @@ The card carries what the tracker says about the issue: its labels, milestone, p
 ```
 
 **One order.** Today and the call list the cards in the same order (`compareCards` in `src/shared/priority.ts`): blocked first, then priority (a card with none last), then the most recently updated (a card with no time last). A tie is not broken by the reference text: tied cards keep the order the tracker handed them over in. A later meeting on the same day still puts a card that did not change and is not blocked last (`agendaOrder`). Today lists what the call will follow, without sorting again; the old urgency bands (pending question, back from QA, close to QA) left the order because they contradicted this one.
+
+**Nothing is dropped silently.** The call takes the first 8 activities of the order. The ones that do not fit are not discarded: `cards:load` also returns `rest` (in the same order) and the `total`. The call's opening says how many were left out, the agenda column lists them at the end, each with "Bring in" (it joins right after the activity in progress), and Today shows the count. A conversation saved before this has no `rest` and shows nothing.
 
 ### Prompts and languages
 

@@ -69,7 +69,8 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     const id = ++runId.current;
     c.start();
     const blocked = cards.filter((x) => x.blockers.length).length;
-    const text = tv('call.opening', { total: cards.length, blocked });
+    const left = latest.current.cards?.rest?.length ?? 0;
+    const text = [tv('call.opening', { total: cards.length, blocked }), left ? t('ui.call.leftOut', { count: left }) : ''].filter(Boolean).join(' ');
     void (async () => {
       await new Promise((r) => setTimeout(r, 50));
       if (runId.current !== id) return;
@@ -246,6 +247,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
   const over = secs > 30;
   const busy = phase === 'transcribing' || phase === 'thinking';
   const speakingWho = player.speaking;
+  const leftOut = c.cards?.rest ?? [];
   const pending = cards
     .slice(0, idx + 1)
     .filter((x) => c.turns[x.ref]?.question && !c.answered[x.ref])
@@ -300,6 +302,23 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                 </div>
               );
             })}
+            {leftOut.length > 0 && (
+              <>
+                <h2 className="section-title" style={{ marginTop: 14, marginBottom: 2 }}>{t('ui.call.leftOutTitle', { n: leftOut.length })}</h2>
+                <p className="small faint">{t('ui.call.leftOutHint')}</p>
+                {leftOut.map((x) => (
+                  <div key={x.ref} className="queue-item">
+                    <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                      <div className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>#{x.iid}{x.priority ? ` · ${x.priority.label}` : ''}</div>
+                      <div className="t">{x.title}</div>
+                    </div>
+                    <button type="button" className="btn" aria-label={t('ui.call.bringInLabel', { iid: x.iid })} disabled={phase === 'ended' || phase === 'intro'} onClick={() => c.bringIn(x.ref)}>
+                      {t('ui.call.bringIn')}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </aside>
 
           <main className="call-main" style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -310,6 +329,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
                   <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.3 }}>
                     {t('ui.call.endedSummary', { decisions: t('ui.call.count.decision', { count: c.decisions.length }), effects: t('ui.call.count.effect', { count: c.effects.length }), questions: t('ui.call.count.question', { count: c.minutes.unanswered.length }) })}
                   </div>
+                  {leftOut.length > 0 && <div className="small" style={{ color: 'var(--on-night-muted)' }}>{t('ui.call.leftOut', { count: leftOut.length })}</div>}
                   <div><button type="button" className="btn btn-accent" onClick={() => go({ name: 'ata' })}>{t('ui.call.generateMinutes')}</button></div>
                 </div>
               ) : (

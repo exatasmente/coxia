@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { agendaOrder } from '../src/shared/sameDay';
+import { agendaOrder, bringIntoAgenda } from '../src/shared/sameDay';
 import { compareCards, priorityOf, sortCards } from '../src/shared/priority';
-import type { Card } from '../src/shared/types';
+import type { Card, CardsResult } from '../src/shared/types';
 
 describe('priorityOf', () => {
   const levels = ['^P0$', '^P1$', 'priority::low'];
@@ -73,5 +73,28 @@ describe('the order of the cards', () => {
     // What the loader hands the call is in this order already, so Today (which lists it as it is) shows the same.
     const loaded = agendaOrder(cards, marks);
     expect(agendaOrder(loaded, marks)).toEqual(loaded);
+  });
+});
+
+describe('bringing a left out card into the agenda', () => {
+  const result = (): CardsResult => ({ generatedAt: '', total: 5, cards: [card('a#1'), card('a#2'), card('a#3')], rest: [card('a#4'), card('a#5')] });
+
+  it('puts it right after the card in progress, and takes it out of the rest', () => {
+    const r = bringIntoAgenda(result(), 'a#5', 1);
+    expect(r.cards.map((c) => c.ref)).toEqual(['a#1', 'a#2', 'a#5', 'a#3']);
+    expect(r.rest?.map((c) => c.ref)).toEqual(['a#4']);
+    expect(r.total).toBe(5);
+  });
+
+  it('puts it at the end before the call has started, and after the last card when that one is in progress', () => {
+    expect(bringIntoAgenda(result(), 'a#4', -1).cards.map((c) => c.ref)).toEqual(['a#1', 'a#2', 'a#3', 'a#4']);
+    expect(bringIntoAgenda(result(), 'a#4', 2).cards.map((c) => c.ref)).toEqual(['a#1', 'a#2', 'a#3', 'a#4']);
+  });
+
+  it('does nothing for a card that is not among the left out ones, and does not mutate the input', () => {
+    const input = result();
+    expect(bringIntoAgenda(input, 'a#1', 0)).toBe(input);
+    bringIntoAgenda(input, 'a#4', 0);
+    expect(input.rest).toHaveLength(2);
   });
 });

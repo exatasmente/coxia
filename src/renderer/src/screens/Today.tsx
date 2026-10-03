@@ -187,6 +187,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         ))}
       </ul>
       {c.cards && !visible.length && <p className="dash-calm">{t('ui.today.noActivities')}</p>}
+      {c.cards && c.cards.total > cards.length && <p className="faint small">{t('ui.today.outside', { count: c.cards.total - cards.length })}</p>}
 
       {c.cards && (cards.length > TOP || filter !== 'all') && (
         <button
