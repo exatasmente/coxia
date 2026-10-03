@@ -11,6 +11,7 @@ import { useWatcherAlerts } from '../watchersApi';
 import { BellIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
 import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
+import { RunNeeds } from './cycle/RunNeeds';
 import { useRuns } from './cycle/runsApi';
 import { RadarButton } from './radarSlots';
 import { SaudeButton } from './SaudeButton';
@@ -123,6 +124,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         {!phone && (
           <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
             <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
             <RadarButton go={go} />
@@ -146,6 +149,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const needsBlock = (
     <>
       <NeedsList items={needs} go={go} dismiss={dismiss} />
+      <RunNeeds go={go} />
       {/* slot: banners of feature modules */}
     </>
   );

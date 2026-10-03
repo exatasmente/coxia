@@ -184,3 +184,15 @@
   .cy-forum { grid-template-columns: minmax(0, 1fr); }
   .cy-msgs-scroll { max-height: none; overflow: visible; }
 }
+
+/* the list of runs */
+.cy-filters { flex-wrap: wrap; }
+.cy-squad-filter { max-width: 320px; }
+.cy-run-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cy-run-row { width: 100%; min-height: 64px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.cy-run-row.you { border-color: var(--amber-line); }
+.cy-run-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cy-run-title { font-weight: 600; overflow-wrap: anywhere; }
+.cy-run-note { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cy-run-row .badge { flex: 0 0 auto; }
+@media (max-width: 600px) { .cy-run-row { align-items: flex-start; flex-direction: column; } }

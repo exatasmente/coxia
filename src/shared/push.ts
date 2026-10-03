@@ -24,7 +24,7 @@ export interface PushStatus {
   notificationsOn: boolean;
 }
 
-export const PUSH_SCREENS = ['today', 'call', 'deep', 'ata', 'history', 'settings', 'actions', 'conflict', 'gate', 'qa', 'retro', 'custo', 'quick', 'reentry', 'discussions', 'radar', 'saude', 'auditoria', 'help', 'glossario'];
+export const PUSH_SCREENS = ['today', 'call', 'deep', 'ata', 'history', 'settings', 'actions', 'conflict', 'gate', 'qa', 'retro', 'custo', 'quick', 'reentry', 'discussions', 'radar', 'saude', 'auditoria', 'help', 'glossario', 'run', 'runs', 'forum'];
 const NEEDS_REF = new Set(['deep', 'gate', 'qa', 'quick', 'reentry', 'discussions']);
 const FIELD = /^[\w#.:/-]{1,80}$/;
 
@@ -44,6 +44,7 @@ export function parseTarget(raw: unknown): PushTarget | null {
   }
   if (NEEDS_REF.has(out.to) && !out.ref) return null;
   if (out.to === 'conflict' && !out.id) return null;
+  if (out.to === 'run' && !out.id) return null;
   return out;
 }
 

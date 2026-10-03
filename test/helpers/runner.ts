@@ -1,3 +1,4 @@
+import type { AppEvent } from '../../src/shared/types';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -161,7 +162,7 @@ export interface Boot {
   forum: ReturnType<typeof createForumStore>;
   issues: FakeIssues;
   engine: FakeEngine;
-  notices: { title: string; body: string }[];
+  notices: { title: string; body: string; onClick: AppEvent }[];
   dir: string;
   deps: RunnerDeps;
   thread(run: Run | string): ForumMessage[];
@@ -203,7 +204,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
   const issues = options.issues ?? fakeIssues();
   if (!options.issues) issues.add(issue(101), [comment('bob', 'Please keep it small.'), comment('system', 'changed the label', true)]);
   const engine = options.engine ?? fakeEngine();
-  const notices: { title: string; body: string }[] = [];
+  const notices: { title: string; body: string; onClick: AppEvent }[] = [];
   const deps: RunnerDeps = {
     runs,
     forum,
@@ -212,7 +213,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     issues,
     engine,
     updateConfig,
-    notify: (n) => notices.push({ title: n.title, body: n.body }),
+    notify: (n) => notices.push({ title: n.title, body: n.body, onClick: n.onClick }),
     timeoutMs: options.timeoutMs,
   };
   if (options.publish) {

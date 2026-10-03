@@ -279,6 +279,7 @@ const NAV_ACTIVE: Record<string, NavKey> = {
   help: 'more',
   glossario: 'more',
   run: 'more',
+  runs: 'more',
   forum: 'more',
 };
 

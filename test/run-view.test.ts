@@ -14,7 +14,7 @@ import {
   type Finding,
   type Run,
 } from '../src/shared/runs';
-import { RUN_TONE, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, stageLabelOf, stageRows } from '../src/shared/runs/view';
+import { RUN_FILTERS, RUN_TONE, filterCounts, inFilter, listRuns, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, stageLabelOf, stageRows } from '../src/shared/runs/view';
 import { RUN_STATUSES } from '../src/shared/runs';
 import { drive, flowWithAutonomy, at } from './helpers/runs';
 
@@ -223,5 +223,55 @@ describe('a question that is passed on', () => {
     expect(needsPerson(d.run)).toBe(false);
     d.do((r, when) => passQuestion(r, { from: 'tech-lead', to: null, text: 'Which API?', reason: 'A scope decision.' }, when));
     expect(needsPerson(d.run)).toBe(true);
+  });
+});
+
+describe('the list of runs', () => {
+  const run = (id: string, status: Run['status'], updatedAt: string, squad: string | null = null, holder: string | null = null) => ({
+    id,
+    status,
+    updatedAt,
+    squad,
+    question: status === 'question' ? { by: 'developer', holder, kind: 'agent' as const, text: 'x', askedAt: '', stage: 'implement' } : null,
+  });
+  const runs = [
+    run('working-old', 'working', '2026-10-03T08:00:00Z', 'a'),
+    run('done', 'done', '2026-10-03T12:00:00Z', 'a'),
+    run('gate', 'gate', '2026-10-03T09:00:00Z', 'b'),
+    run('asking-agent', 'question', '2026-10-03T10:00:00Z', 'b', 'tech-lead'),
+    run('asking-you', 'question', '2026-10-03T07:00:00Z', null),
+    run('failed', 'failed', '2026-10-03T11:00:00Z', 'a'),
+    run('waiting', 'waiting', '2026-10-03T06:00:00Z'),
+    run('cancelled', 'cancelled', '2026-10-03T13:00:00Z', 'b'),
+    run('working-new', 'working', '2026-10-03T11:30:00Z', 'b'),
+  ];
+  const ids = (list: { id: string }[]) => list.map((r) => r.id);
+
+  it('puts what waits for the person first, then what goes on, then what ended, the newest change first inside each', () => {
+    expect(ids(listRuns(runs))).toEqual(['failed', 'gate', 'asking-you', 'working-new', 'asking-agent', 'working-old', 'waiting', 'cancelled', 'done']);
+  });
+
+  it('filters by what each run waits for: a question held by an agent is waiting, not the person\'s', () => {
+    expect(ids(listRuns(runs, 'you'))).toEqual(['failed', 'gate', 'asking-you']);
+    expect(ids(listRuns(runs, 'working'))).toEqual(['working-new', 'working-old']);
+    expect(ids(listRuns(runs, 'waiting'))).toEqual(['asking-agent', 'waiting']);
+    expect(ids(listRuns(runs, 'failed'))).toEqual(['failed']);
+    expect(ids(listRuns(runs, 'finished'))).toEqual(['cancelled', 'done']);
+  });
+
+  it('filters by squad, with the runs that have none under the empty squad, and together with the status', () => {
+    expect(ids(listRuns(runs, 'all', 'a'))).toEqual(['failed', 'working-old', 'done']);
+    expect(ids(listRuns(runs, 'all', ''))).toEqual(['asking-you', 'waiting']);
+    expect(ids(listRuns(runs, 'working', 'b'))).toEqual(['working-new']);
+  });
+
+  it('counts every filter, and every status is in some filter (a failed run is both what waits for the person and a failed one)', () => {
+    const counts = filterCounts(runs);
+    expect(counts).toMatchObject({ all: 9, you: 3, working: 2, waiting: 2, failed: 1, finished: 2 });
+    for (const status of ['working', 'gate', 'question', 'to-start', 'to-accept', 'waiting', 'failed', 'done', 'cancelled'] as const) {
+      const r = run('x', status, '2026-10-03T00:00:00Z');
+      const groups = RUN_FILTERS.filter((f) => f !== 'all' && inFilter(r, f));
+      expect(groups.length, status).toBe(status === 'failed' ? 2 : 1);
+    }
   });
 });

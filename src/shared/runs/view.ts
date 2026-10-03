@@ -202,3 +202,38 @@ export function reviewRounds(run: Pick<Run, 'reviews'>): RoundView[] {
 
 /** Whether the run follows an earlier version of the flow than the one the cycle has now: a run with no copy follows the current one. */
 export const followsOlderFlow = (run: Pick<Run, 'flow'>, currentHash: string): boolean => !!run.flow && run.flow.hash !== currentHash;
+
+// ---- the list of runs ---------------------------------------------------------------------------------------------------------------------
+
+export const RUN_FILTERS = ['all', 'you', 'working', 'waiting', 'failed', 'finished'] as const;
+export type RunFilter = (typeof RUN_FILTERS)[number];
+
+/** Whether a run belongs to a filter: `you`: something waits for the person; `waiting`: it waits for an event or for another agent; `finished`: done or cancelled. */
+export function inFilter(run: Pick<Run, 'status' | 'question'>, filter: RunFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'you':
+      return needsPerson(run);
+    case 'working':
+      return run.status === 'working';
+    case 'waiting':
+      return run.status === 'waiting' || (run.status === 'question' && !needsPerson(run));
+    case 'failed':
+      return run.status === 'failed';
+    case 'finished':
+      return isTerminal(run);
+  }
+}
+
+/** The runs of a filter and, optionally, of one squad (`''` is the runs with no squad); what waits for the person first, then what goes on, then what ended, the newest change first inside each. */
+export function listRuns<T extends Pick<Run, 'status' | 'question' | 'squad' | 'updatedAt'>>(runs: readonly T[], filter: RunFilter = 'all', squad: string | null = null): T[] {
+  const rank = (r: T): number => (isTerminal(r) ? 2 : needsPerson(r) ? 0 : 1);
+  return runs
+    .filter((r) => inFilter(r, filter) && (squad === null || (r.squad ?? '') === squad))
+    .sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** How many runs each filter has, for the chips. */
+export const filterCounts = (runs: readonly Pick<Run, 'status' | 'question'>[]): Record<RunFilter, number> =>
+  Object.fromEntries(RUN_FILTERS.map((f) => [f, runs.filter((r) => inFilter(r, f)).length])) as Record<RunFilter, number>;
