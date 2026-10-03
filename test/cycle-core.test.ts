@@ -92,6 +92,17 @@ describe('applying and managing templates', () => {
     expect(core.listTemplates('en')[4].name).toBe('Minimal (only the daily prep and unblocking)');
   });
 
+  it('applies the release flow next to the cycle of the workspace: its template id and its stages stay, the release flow and its agent are added', () => {
+    core.applyCycleTemplate('kanban');
+    const before = cfg.getConfig();
+    core.applyCycleTemplate('release-flow');
+    const after = cfg.getConfig();
+    expect(after.devCycle.templateId).toBe('kanban');
+    expect(after.devCycle.stages).toEqual(before.devCycle.stages);
+    expect(after.devCycle.flows?.release?.map((s) => s.id)).toContain('release-beta');
+    expect(after.agents.team.map((x) => x.id)).toContain('release-manager');
+  });
+
   it('refuses a template nobody knows', () => {
     expect(() => core.applyCycleTemplate('nothing')).toThrow(/desconhecido/);
   });
@@ -147,7 +158,8 @@ describe('what the setup wizard is given', () => {
   it('a list of templates in the shape its normaliser reads: each one carries the cycle it sets and what the person still provides', () => {
     const listed = cycles.listCycleTemplates('en');
     const info = normalizeTemplates(listed);
-    expect(info.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering', 'release-flow']);
+    // the release flow is a template for a kind of run, not a cycle to choose for the whole workspace: the wizard does not offer it
+    expect(info.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
     const scrum = info.find((t) => t.id === 'scrum')!;
     expect(scrum).toMatchObject({ name: 'Scrum', available: true, ceremonies: { preDaily: true, gate: false, retro: true }, needs: ['issueProject'] });
     expect(scrum.stages.map((s) => s.id)).toContain('in-progress');

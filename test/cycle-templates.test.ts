@@ -552,6 +552,13 @@ describe('the release-flow template', () => {
     expect(r.errors.map((e) => e.path)).toContain('devCycle.flows.release[3].waitsFor');
   });
 
+  it('is not part of the template file a workspace exports: the file is valid and the Release manager lists no stage of a flow it does not carry', () => {
+    const template = templateFromConfig(applied(), { id: 'mine', name: 'Mine', description: '' });
+    expect(template.devCycle.flows).toBeUndefined();
+    expect(template.team?.find((a) => a.id === 'release-manager')?.stages).toEqual([]);
+    expect(parseTemplate(JSON.parse(exportTemplateText(template, new Date('2026-10-03T12:00:00Z')))).errors).toEqual([]);
+  });
+
   it('travels in a template file with its kind', () => {
     const check = parseTemplate(JSON.parse(exportTemplateText(flow, new Date('2026-10-03T12:00:00Z'))));
     expect(check.errors).toEqual([]);

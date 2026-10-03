@@ -2,7 +2,7 @@
 
 Reads with [`1_SPEC.md`](1_SPEC.md) (section numbers and "D" decisions point there). Checked against the code as of `0.5.0-beta.1` (`package.json`, the tags `v0.4.3` and `v0.5.0-beta.1`, config schema 10).
 
-**Part 1** is the process (spec section 3): done in the branch `feat-release-process` (commits at the end of this file). **Part 2** is the release as a runner cycle (spec section 4): not started, briefed at the end of this file.
+**Part 1** is the process (spec section 3): done in the branch `feat-release-process` (commits at the end of this file). **Part 2** is the release as a runner cycle (spec section 4): done in the same branch (section 9 says what shipped; the brief of section 7 is kept as it was written).
 
 ## What gets built
 
@@ -99,6 +99,12 @@ Checked in the code (not by a build, which needs the network): `computeChannelNa
 | P17 | **Review 9.** `scripts/verify-release-origin.sh` (stable: reachable from `origin/main`; beta: from `origin/release/X.Y.Z`) runs in the workflow's `prepare` job over a `fetch-depth: 0` checkout, for pushes only; a script rather than inline shell so it is tested over a temporary repository with a bare origin | a tag pushed before its branch, or from a local-only commit, must publish nothing |
 | P18 | **Review 5, 6.** The emergency tag's subject is `Coxia X.Y.Z (emergency: rules were skipped)` (the rules are not only the beta's now); with the release branch deleted only the beta tag stands for it, and commits on `main` after that beta are not detected: said in `RELEASING.md` | what the script cannot know is told, not guessed |
 | P13 | Part 2 follows spec section 4 with decisions D5 and D6, **approved by the maintainer on 2026-10-03**, and the tracking issue D11 (approved the same day) | they set the shape of `Run` and of what an autonomous agent may do |
+| P19 | **Part 2.** The release steps live in `src/main/releaseGit.ts` (pure of Actions, over a clone, with the host read injected) and `src/shared/release.ts` (the unit and its judge); `actions.ts` only proposes, approves, audits and resolves the clone from the run | the safety-critical part is testable over temporary repositories without the runner |
+| P20 | **Part 2.** The tool is `ReleaseAction`, a handler the runner gives each stage of a release run (`AgentCall.release`), wrapped to keep the idle limit from firing | an agent of an issue run never gets it, and the publisher judges every call |
+| P21 | **Part 2.** The tracking issue and the app's own comments go through the same `deliver` as the stage comments (the issue is `trackIid(run)`; a comment before the issue exists stays a draft) | one path to the host, one marker, one place that edits in place |
+| P22 | **Part 2.** The sweep (`lookForEvents`) also calls `Publisher.releaseTick` for every release run that is not cancelled, closed or old (30 days) | the beta published and the stable published happen on the host, after a run may have ended |
+| P23 | **Part 2.** `Publisher` gets `localTags` (injected by the module) | the publisher must not import git (`runs-policy`), and the beta wait needs the tags the clone has |
+| P24 | **Part 2.** The release brief and every stage section are in the catalogs (`main.runner.release.*`, `prompt.sdd.runner.section.release`), the template in `cycle.releaseFlow.*`; no host word in them (`{crLong}`, `{cr}`, `{crMark}`) | the host-terms test renders every catalog key on the three hosts |
 
 ## 7. Part 2: what the next agent needs
 
@@ -140,3 +146,21 @@ Read the spec's section 4 first; D5 and D6 there are the maintainer's to confirm
 | `feat: document the release branch, beta and stable flow #27` | `RELEASING.md`, `CONTRIBUTING.md`, `docs/updates.md`, `CHANGELOG.md` |
 
 Not verified: the workflow on GitHub (the lookup against the real API, the pre-release flag, the checks of the feed); the branch protection settings suggested in `RELEASING.md`. The real `0.5.0` line: `v0.5.0-beta.1` was cut on `main` before this process existed, so `scripts/release.sh open 0.5.0` is refused ("already has a beta tag") on purpose. Both ways on exist and were dry-run against a clone of this branch: `scripts/release.sh 0.5.0` (or `stable`) on `main` already passes, because the beta tag exists, is in `main` and there is no release branch (the output notes it), and it folds `[0.5.0-beta.1]` and `[Unreleased]` into `[0.5.0]`; or `git switch -c release/0.5.0` by hand and cut `beta` for a second round.
+
+## 9. Part 2: what shipped
+
+Built in this branch after the maintainer approved D5 and D6 (2026-10-03) and asked for the tracking issue (D11). The order was the brief's: the action kind first, over temporary repositories; then the run and the waits; then the template, the tool and the docs.
+
+| What | Where | Guarded by |
+|---|---|---|
+| The unit of a release step and its judge | `src/shared/release.ts` | `test/release-unit.test.ts` |
+| The steps (`open`, `merge-pr`, `beta`, `stable`, `push-branch`, `push-tag`) | `src/main/releaseGit.ts` | `test/release-git.test.ts` (the real script, a bare origin) |
+| The `release-git` kind: proposal, approval, audit, the auto path, the preview | `src/main/actions.ts`, `src/main/runner/door.ts`, `src/renderer/src/screens/Actions.tsx` | `test/release-actions.test.ts` |
+| Reads by target branch and by tag, and closing an issue, on three hosts | `src/main/vcs/*` | `test/vcs-release-reads.test.ts` |
+| `Run.subject`, the run file, `recordSubject` | `src/shared/runs/{types,schema,transitions}.ts` | `test/runs-subject.test.ts` |
+| `runs:startRelease`, the tracking issue, the activities, the sweep, the two waits | `src/main/runner/{service,publish,release,module}.ts` | `test/runner-release.test.ts` |
+| The tool, on both engines | `src/main/releaseTool.ts`, `src/main/agents.ts` | `test/engine-release-tool.test.ts` |
+| The wait kinds in the flow check, the editor, the schema | `src/shared/{config,runs}/*`, `src/renderer/src/screens/team/*` | `test/flow-check.test.ts` |
+| The template, its flow key and its comments | `src/shared/cycles/templates/releaseFlow.ts`, `src/shared/cycles/apply.ts`, `src/shared/config/{squads,validate}.ts` | `test/cycle-templates.test.ts` |
+
+Not verified: a real model, a real host, the workflow and `npm run dist`; [`3_TEST_PLAN.md`](../3_TEST_PLAN.md) says how a person checks each acceptance item.

@@ -91,7 +91,8 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   delete cycle.flows;
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
-  const team = config.agents.team.filter((a) => !a.system).map((a) => {
+  // The flows of the squads and of a release are not part of a template file, so an agent that works only their stages does not list them there.
+  const team = pruneAgentStages(config.agents.team.filter((a) => !a.system), cycle).map((a) => {
     const { squad: _squad, ...rest } = structuredClone(a);
     return rest;
   });
