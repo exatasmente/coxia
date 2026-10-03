@@ -1,8 +1,8 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
-import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
+import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 6). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 7). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -91,6 +91,18 @@ const vcs = object(
   ['id', 'kind', 'host'],
 );
 
+const fileList = (description: string): JsonSchema => list(description, string('File name.', { pattern: ARTIFACT, maxLength: 100 }), { maxItems: 20, uniqueItems: true });
+
+const waitFor = object(
+  'What a wait stage waits for.',
+  {
+    kind: enumOf('pr-merged: the pull request of the run is merged. reporter-reply: a person comments on the issue. label: the issue carries a label. linked-done: the issue another run depends on is done (squads). time: some minutes pass.', WAIT_KINDS),
+    label: string('For label: the label name.', { maxLength: 200 }),
+    minutes: integer('For time: minutes after the stage is entered.', 1, 525_600),
+  },
+  ['kind'],
+);
+
 const stage = object(
   'A stage of the flow an issue goes through.',
   {
@@ -99,9 +111,16 @@ const stage = object(
     match: strings('Case-insensitive regular expressions tested against the card stage or issue status.'),
     kind: enumOf('What the stage means.', STAGE_KINDS),
     rank: integer('Position in the flow: higher is closer to done.', 0, 100),
+    type: enumOf('Flow cycles only. work: an agent produces something; gate: the person decides; wait: the run waits for an event.', STAGE_TYPES),
     agentId: string('The agent of agents.team that works this stage in a run; it wins over the stages list of the agents.', { pattern: ID }),
-    artifacts: list('Files, in the cycle folder, that this stage must produce: plain names, none starting with a dot.', string('File name.', { pattern: ARTIFACT, maxLength: 100 }), { maxItems: 20, uniqueItems: true }),
-    human: boolean('A gate: the stage waits for the person, so it has no agent.'),
+    produces: fileList('Files, in the cycle folder, that this stage must produce: plain names, none starting with a dot.'),
+    reads: fileList('Artifacts the stage is given; left out: every earlier one.'),
+    next: { type: ['string', 'null'], description: 'The stage that follows; left out: the next in the list; null: the run ends after this stage.', pattern: ID },
+    returnsTo: string('Where the work goes back to (a rejected gate, a review with blocking findings, a QA failure); left out: the work stage nearest before.', { pattern: ID }),
+    roundLimit: integer('How many returns this stage may cause before the run asks the person; left out: 2.', 1, 20),
+    waitsFor: waitFor,
+    comment: { type: ['string', 'null'], description: 'The key of this stage\'s comment template in devCycle.comments; left out: the stage id; null or empty: no comment.', maxLength: 48 },
+    trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
   },
   ['id', 'kind'],
 );

@@ -13,6 +13,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v4  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
 //   v5  runner (the section that takes an issue through the agent cycle by itself), off by default.
 //   v6  devCycle.comments (the templates of the comments the runner leaves on the tracker): the agent cycle's own, none for any other cycle.
+//   v7  the stages of an agent cycle are a flow: `type` (work, gate, wait), `produces` (was `artifacts`), `returnsTo` and `roundLimit` (the review and QA rules the
+//       runner used to have built in), and the order of the list is the order of the run (it used to be the rank).
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -121,8 +123,41 @@ function v5ToV6(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 6, devCycle: { ...cycle, comments: own ? agentFlowComments() : {} } };
 }
 
+// What the runner did before the flow was data, written as the fields that say the same: a gate is `human`, the review sends the work back to the stage
+// before it, a QA failure to the first stage whose agent changes files, both after two rounds, and the stage where the run ends (the last by rank) has no
+// agent. A cycle with none of the agent fields is one of the ceremonies' and is left as it is.
+function v6ToV7(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const cycle = pick(old.devCycle);
+  const list = Array.isArray(cycle.stages) ? (cycle.stages as unknown[]).filter(isObject) : [];
+  if (!list.some((s) => s.human !== undefined || s.agentId !== undefined || s.artifacts !== undefined)) return { ...old, schemaVersion: 7 };
+  const team = Array.isArray(pick(old.agents).team) ? (pick(old.agents).team as unknown[]).filter(isObject) : [];
+  const rank = (s: Doc): number => (typeof s.rank === 'number' ? s.rank : 0);
+  // The flow's order used to be rank, then the list: now it is the list.
+  const ordered = list.map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => ({ ...x.s }));
+  const agentOf = (s: Doc): Doc | undefined => team.find((a) => a.id === s.agentId) ?? team.find((a) => Array.isArray(a.stages) && (a.stages as unknown[]).includes(s.id));
+  const writer = (s: Doc): boolean => s.human !== true && agentOf(s)?.permission === 'worktree';
+  const stages = ordered.map((s, i) => {
+    const { human, artifacts, ...rest } = s;
+    const out: Doc = { ...rest, type: human === true ? 'gate' : 'work' };
+    if (Array.isArray(artifacts) && artifacts.length) out.produces = artifacts;
+    if (i === ordered.length - 1) delete out.agentId;
+    if (human !== true && s.kind === 'review') {
+      const before = ordered.slice(0, i).reverse().find((x) => x.human !== true);
+      if (before) Object.assign(out, { returnsTo: before.id, roundLimit: 2 });
+    }
+    if (human !== true && s.kind === 'qa') {
+      const builder = ordered.slice(0, i).find(writer);
+      if (builder) Object.assign(out, { returnsTo: builder.id, roundLimit: 2 });
+    }
+    return out;
+  });
+  if (ordered.some((s, i) => s !== undefined && list[i] !== undefined && s.id !== list[i].id)) notes.push('the stages of the agent cycle are listed in the order a run goes through them (they were ordered by rank)');
+  notes.push('the stages of the agent cycle became a flow (type, produces, returnsTo, roundLimit)');
+  return { ...old, schemaVersion: 7, devCycle: { ...cycle, stages } };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

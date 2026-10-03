@@ -10,14 +10,15 @@ import { agentFlowComments } from './agentFlowComments';
 // for every kind of issue). The tracker's own stage is not mapped: a run carries its stage, shown beside the card.
 
 export const AGENT_FLOW_STAGES: StageDef[] = [
-  { id: 'refine', label: 'Refine', match: ['^Refin'], kind: 'backlog', rank: 1, agentId: 'refiner', artifacts: ['1_SPEC.md'] },
-  { id: 'gate1', label: 'Gate 1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, human: true },
-  { id: 'plan', label: 'Plan', match: ['^Plan'], kind: 'development', rank: 3, agentId: 'planner', artifacts: ['2_PLAN.md'] },
-  { id: 'gate2', label: 'Gate 2', match: ['^Gate 2$'], kind: 'development', rank: 4, human: true },
-  { id: 'implement', label: 'Implement', match: ['^Implement'], kind: 'development', rank: 5, agentId: 'developer', artifacts: ['3_IMPLEMENTATION.md'] },
-  { id: 'review', label: 'Review', match: ['^Review'], kind: 'review', rank: 6, agentId: 'reviewer', artifacts: ['4_REVIEW.md'] },
-  { id: 'qa', label: 'QA', match: ['^QA$'], kind: 'qa', rank: 7, agentId: 'qa', artifacts: ['5_TEST_PLAN.md'] },
-  { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8 },
+  { id: 'refine', label: 'Refine', match: ['^Refin'], kind: 'backlog', rank: 1, type: 'work', agentId: 'refiner', produces: ['1_SPEC.md'] },
+  { id: 'gate1', label: 'Gate 1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, type: 'gate' },
+  { id: 'plan', label: 'Plan', match: ['^Plan'], kind: 'development', rank: 3, type: 'work', agentId: 'planner', produces: ['2_PLAN.md'] },
+  { id: 'gate2', label: 'Gate 2', match: ['^Gate 2$'], kind: 'development', rank: 4, type: 'gate' },
+  { id: 'implement', label: 'Implement', match: ['^Implement'], kind: 'development', rank: 5, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
+  { id: 'review', label: 'Review', match: ['^Review'], kind: 'review', rank: 6, type: 'work', agentId: 'reviewer', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
+  { id: 'qa', label: 'QA', match: ['^QA$'], kind: 'qa', rank: 7, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
+  // Where the run ends: no agent works it.
+  { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8, type: 'work' },
 ];
 
 const member = (id: string, key: string, stages: string[], permission: AgentDef['permission'], role: 'deep' | 'turn'): AgentDef =>

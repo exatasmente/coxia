@@ -279,10 +279,10 @@ describe('the agent cycle template', () => {
     expect(c.devCycle.templateId).toBe('agent-flow');
     const stages = [...c.devCycle.stages].sort((a, b) => a.rank - b.rank);
     expect(stages.map((s) => s.id)).toEqual(['refine', 'gate1', 'plan', 'gate2', 'implement', 'review', 'qa', 'ready']);
-    expect(stages.filter((s) => s.human).map((s) => s.id)).toEqual(['gate1', 'gate2']);
+    expect(stages.filter((s) => s.type === 'gate').map((s) => s.id)).toEqual(['gate1', 'gate2']);
     expect(stages.filter((s) => s.agentId).map((s) => [s.id, s.agentId])).toEqual([['refine', 'refiner'], ['plan', 'planner'], ['implement', 'developer'], ['review', 'reviewer'], ['qa', 'qa']]);
     expect(stages.find((s) => s.id === 'ready')).toMatchObject({ kind: 'reviewApproved' });
-    expect(stages.flatMap((s) => s.artifacts ?? [])).toEqual(['1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md']);
+    expect(stages.flatMap((s) => s.produces ?? [])).toEqual(['1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md']);
   });
 
   it('brings the default team: only the developer writes, and each agent works its own stage', () => {

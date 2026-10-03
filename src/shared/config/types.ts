@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 6;
+export const CONFIG_SCHEMA_VERSION = 7;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -166,20 +166,59 @@ export type CeremonyId = (typeof CEREMONY_IDS)[number];
 export const STAGE_KINDS = ['backlog', 'development', 'review', 'reviewApproved', 'qa', 'qaApproved', 'returned', 'done', 'blocked'] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
+/** What a stage of an agent cycle is: work (an agent produces something), a gate (the person decides) or a wait (the run waits for an event). */
+export const STAGE_TYPES = ['work', 'gate', 'wait'] as const;
+export type StageType = (typeof STAGE_TYPES)[number];
+
+/**
+ * What a wait stage waits for. `pr-merged`: the run's pull request is merged. `reporter-reply`: a new comment of a person on the issue. `label`: the issue
+ * carries `label`. `linked-done`: the issue another run depends on is done (reserved for squads: nothing resolves it yet). `time`: `minutes` have passed.
+ */
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time'] as const;
+export type WaitKind = (typeof WAIT_KINDS)[number];
+
+export interface WaitFor {
+  kind: WaitKind;
+  /** For `label`: the label name. */
+  label?: string;
+  /** For `time`: minutes after the stage is entered. */
+  minutes?: number;
+}
+
+/** How many times a stage may send the work back before the run stops and asks the person. */
+export const DEFAULT_ROUND_LIMIT = 2;
+
 export interface StageDef {
   id: string;
   label: string;
   /** Case-insensitive regular expressions (source text) tested against the card stage or issue status. */
   match: string[];
   kind: StageKind;
-  /** Position in the flow: higher is closer to done. */
+  /** Position in the flow: higher is closer to done. A cycle with typed stages (an agent cycle) runs its stages in the order they are listed. */
   rank: number;
-  /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. */
+  /**
+   * The flow fields: only a stage of an agent cycle has them. A cycle where no stage has a `type` is one of the ceremonies' (the card's stage by its regular
+   * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
+   */
+  type?: StageType;
+  /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */
-  artifacts?: string[];
-  /** A gate: the stage waits for the person, so it has no agent. */
-  human?: boolean;
+  produces?: string[];
+  /** The artifacts (and the issue record) the stage is given. Left out: every earlier one. */
+  reads?: string[];
+  /** The stage that follows. Left out: the next in the list (the last stage ends the run); null: the run ends after this stage. */
+  next?: string | null;
+  /** Where the work goes back to: a rejected gate, a review with blocking findings, a QA failure. Left out: the work stage nearest before. */
+  returnsTo?: string;
+  /** How many returns this stage may cause before the run asks the person. Left out: 2. */
+  roundLimit?: number;
+  /** Wait stages only. */
+  waitsFor?: WaitFor;
+  /** The key of the comment template (`devCycle.comments`) of this stage. Left out: the stage's own id; null or empty: no comment. */
+  comment?: string | null;
+  /** A label the issue gets on the tracker when the run enters the stage (and loses when it leaves it). */
+  trackerStatus?: string;
 }
 
 export interface PhaseFile {

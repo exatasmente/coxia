@@ -1,18 +1,18 @@
+import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { ForumDraft } from '../forum';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
 export const RUN_VERSION = 1;
-/** Review passes that may end in findings before the run stops and asks the person. */
-export const MAX_REVIEW_ROUNDS = 2;
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
 /**
  * working: an agent works `stage`. gate: the person decides. question: waiting for an answer. failed: waiting for a retry or a cancel.
  * to-start: the stage's agent is not autonomous, so the stage waits for the person to start it.
  * to-accept: that agent finished, and its result waits for the person to accept it (or send it back with a note).
+ * waiting: the stage is a wait (or an agent asked the person who reported the issue): the run goes on when the event it waits for happens (`Run.wait`).
  */
-export const RUN_STATUSES = ['working', 'gate', 'question', 'failed', 'to-start', 'to-accept', 'done', 'cancelled'] as const;
+export const RUN_STATUSES = ['working', 'gate', 'question', 'failed', 'to-start', 'to-accept', 'waiting', 'done', 'cancelled'] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const STAGE_STATUSES = ['running', 'waiting', 'done', 'rejected', 'skipped', 'failed', 'cancelled'] as const;
@@ -46,12 +46,12 @@ export interface PendingQuestion {
 }
 
 export interface RunFailure {
-  code: 'no-agent' | 'stage-failed';
+  code: 'no-agent' | 'stage-failed' | 'no-event';
   stage: string;
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['review', 'qa', 'comment', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -65,7 +65,7 @@ export interface HistoryEntry {
 
 export const COMMENT_TARGETS = ['issue', 'mr'] as const;
 export type CommentTarget = (typeof COMMENT_TARGETS)[number];
-export const COMMENT_STATUSES = ['draft', 'proposed', 'published', 'refused'] as const;
+export const COMMENT_STATUSES = ['draft', 'proposed', 'published', 'refused', 'removed'] as const;
 export type CommentStatus = (typeof COMMENT_STATUSES)[number];
 /** The key of the pull request's comment in `Run.comments`; the other keys are stage ids. */
 export const PR_COMMENT = 'pr';
@@ -197,7 +197,15 @@ export interface Run {
   question: PendingQuestion | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
-  review: { rounds: number; max: number };
+  /** How many times the work went back to each stage (by the stage it went back to) since the person last answered the limit's question. */
+  returns: Record<string, number>;
+  /** What the run waits for while its status is `waiting`; null otherwise. */
+  wait: WaitState | null;
+  /**
+   * The flow the run started with, and keeps following when the cycle is edited afterwards (`runs:migrateFlow` moves it to the current one). Absent in a run
+   * written before flows were copied: it follows the current flow.
+   */
+  flow?: FlowSnapshot;
   error: RunFailure | null;
   history: HistoryEntry[];
   /** The tracker comments of this run, by stage id (and `pr`). The record is where publishing keeps what it needs to edit a comment in place. */
@@ -212,17 +220,46 @@ export interface Run {
   updatedAt: string;
 }
 
-/** A stage of the flow a run follows, resolved from the config. */
+/** What a run in status `waiting` waits for, and since when. */
+export interface WaitState {
+  kind: WaitKind;
+  label?: string;
+  minutes?: number;
+  since: string;
+  /** The agent that asked the reporter, when an agent's question (not a wait stage) is what the run waits on; the stage goes on with that agent when the reply comes. */
+  by?: string;
+}
+
+/** A stage of the flow a run follows, resolved from the config: every default filled in. */
 export interface FlowStage {
   id: string;
   label: string;
-  /** A gate: waits for the person. */
-  human: boolean;
-  /** The agent id that works it; null for a gate and for the last stage. */
+  /** What the stage means to the ceremonies; it also says how an agent's answer is read (a review finds, QA verifies). */
+  kind: StageKind;
+  type: StageType;
+  /** The agent id that works it; null for a gate, a wait, and an end stage that has no agent. */
   agent: string | null;
-  /** The agent runs by itself (`AgentDef.autonomous`); false for a gate and the last stage. */
+  /** The agent runs by itself (`AgentDef.autonomous`); false when there is no agent. */
   autonomous: boolean;
+  /** The files the stage must produce. */
   artifacts: string[];
+  /** The artifacts the stage is given; null: every earlier one. */
+  reads: string[] | null;
+  /** The stage that follows; null: the run ends after this one. */
+  next: string | null;
+  /** Where the work goes back to; null when there is no work stage before. */
+  returnsTo: string | null;
+  roundLimit: number;
+  waitsFor: WaitFor | null;
+  /** The key of its comment template in `devCycle.comments`; null: none. */
+  comment: string | null;
+  trackerStatus: string | null;
+}
+
+/** The flow a run follows: a copy of its stages and a short hash that says which version it is. */
+export interface FlowSnapshot {
+  hash: string;
+  stages: FlowStage[];
 }
 
 /** What a move produces: the run as it is now, and what the forum is to record about it, in order. */

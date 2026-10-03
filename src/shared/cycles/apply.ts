@@ -17,7 +17,8 @@ export interface ApplyOptions {
 
 /** The cycle section a template stands for: the neutral cycle with the template's fields over it. Arrays are replaced, never merged. */
 export function cycleOf(template: CycleTemplate): DevCycleConfig {
-  const merged = mergeDeep(neutralDevCycle(), template.devCycle as unknown as Record<string, unknown>) as DevCycleConfig;
+  // Cloned: the template's own stages and texts must never be the objects of a workspace's config.
+  const merged = mergeDeep(neutralDevCycle(), structuredClone(template.devCycle) as unknown as Record<string, unknown>) as DevCycleConfig;
   return { ...merged, templateId: template.id, stageMapping: merged.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) };
 }
 
@@ -87,6 +88,18 @@ export interface TemplateCheck {
 }
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+
+// A template file written before the stages were a flow says `human` for a gate and `artifacts` for what a stage produces.
+function withFlowFields(devCycle: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(devCycle.stages)) return devCycle;
+  const stages = devCycle.stages.map((s) => {
+    if (!isObject(s) || (s.human === undefined && s.artifacts === undefined)) return s;
+    const { human, artifacts, ...rest } = s;
+    return { ...rest, ...(s.type === undefined ? { type: human === true ? 'gate' : 'work' } : {}), ...(artifacts !== undefined && rest.produces === undefined ? { produces: artifacts } : {}) };
+  });
+  return { ...devCycle, stages };
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
@@ -116,7 +129,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     name: (t.name as string).trim(),
     description: typeof t.description === 'string' ? t.description : '',
     needs: Array.isArray(t.needs) ? (t.needs.filter((n) => typeof n === 'string') as TemplateNeed[]) : [],
-    devCycle: t.devCycle as DeepPartial<DevCycleConfig>,
+    devCycle: withFlowFields(t.devCycle as Record<string, unknown>) as DeepPartial<DevCycleConfig>,
   };
   if (t.team !== undefined) {
     if (!Array.isArray(t.team) || !t.team.every(isObject)) return fail('template.team', 'expected a list of agents');

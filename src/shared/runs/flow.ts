@@ -1,18 +1,79 @@
-import type { DevCycleConfig, WorkspaceConfig } from '../config/types';
+import { DEFAULT_ROUND_LIMIT, type DevCycleConfig, type StageDef, type WorkspaceConfig } from '../config/types';
 import { stageAgent } from '../config/team';
-import type { FlowStage } from './types';
+import type { FlowSnapshot, FlowStage, Run } from './types';
+
+/** The name of the file the issue is copied into at the start of a run: the input of the first stage, readable by every one after it. */
+export const ISSUE_RECORD = '0_ISSUE.md';
+
+type FlowConfig = Pick<WorkspaceConfig, 'agents'> & { devCycle: Pick<DevCycleConfig, 'stages'> };
+
+/** A cycle whose stages carry a `type` is a flow a run follows; any other is a cycle of the ceremonies only. */
+export const isFlowCycle = (stages: Pick<StageDef, 'type'>[]): boolean => stages.some((s) => !!s.type);
+
+/** Every stage but a gate or a wait is work: a stage of a flow with no type is work. */
+export const isWork = (s: { type?: StageDef['type'] }): boolean => (s.type ?? 'work') === 'work';
+
+/** The id of the work stage nearest before position `i` of the list: where work goes back to when nothing says otherwise. */
+const nearestWork = (stages: StageDef[], i: number): string | null => {
+  for (let j = i - 1; j >= 0; j--) if (isWork(stages[j])) return stages[j].id;
+  return null;
+};
 
 /**
- * The stages of the cycle in the order a run goes through them (by rank, then as listed), each with its agent. The last one is where a run ends.
- * A gate has no agent, and neither has the last stage.
+ * The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
+ * `next` is null where the run ends: after the last stage, or after a stage that says so.
  */
-export function flowOf(config: Pick<WorkspaceConfig, 'agents'> & { devCycle: Pick<DevCycleConfig, 'stages'> }): FlowStage[] {
-  const stages = config.devCycle.stages.map((s, i) => ({ s, i })).sort((a, b) => a.s.rank - b.s.rank || a.i - b.i);
-  return stages.map(({ s }, i) => {
-    const human = !!s.human;
-    const last = i === stages.length - 1;
-    const who = human || last ? null : stageAgent(config.agents.team, config.devCycle.stages, s.id);
-    return { id: s.id, label: s.label || s.id, human, agent: who?.id ?? null, autonomous: who?.autonomous ?? false, artifacts: [...(s.artifacts ?? [])] };
+export function flowOf(config: FlowConfig): FlowStage[] {
+  const stages = config.devCycle.stages;
+  return stages.map((s, i) => {
+    const type = s.type ?? 'work';
+    const who = type === 'work' ? stageAgent(config.agents.team, stages, s.id) : null;
+    const comment = s.comment === undefined ? s.id : s.comment || null;
+    return {
+      id: s.id,
+      label: s.label || s.id,
+      kind: s.kind,
+      type,
+      agent: who?.id ?? null,
+      autonomous: who?.autonomous ?? false,
+      artifacts: [...(s.produces ?? [])],
+      reads: s.reads ? [...s.reads] : null,
+      next: s.next === undefined ? (stages[i + 1]?.id ?? null) : s.next,
+      returnsTo: s.returnsTo ?? nearestWork(stages, i),
+      roundLimit: s.roundLimit ?? DEFAULT_ROUND_LIMIT,
+      waitsFor: s.waitsFor ? { ...s.waitsFor } : null,
+      comment,
+      trackerStatus: s.trackerStatus?.trim() || null,
+    };
+  });
+}
+
+// A short, stable hash of a flow (FNV-1a over its structure): it says which version a run follows. What the agents are doing (autonomy) is not part of the
+// flow, so switching an agent on or off never makes a new version.
+export function flowHash(stages: FlowStage[]): string {
+  const text = JSON.stringify(stages.map(({ autonomous: _live, ...rest }) => rest));
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/** The copy of a flow a run keeps. */
+export const snapshotOf = (stages: FlowStage[]): FlowSnapshot => ({ hash: flowHash(stages), stages: structuredClone(stages) });
+
+/**
+ * The flow a run follows: the copy it started with, the agents as they are now (autonomy is read when a stage starts or publishes, so a switch applies from
+ * the next one; an agent that left the team is replaced by the one the cycle names for the stage today). A run with no copy follows the current flow.
+ */
+export function flowOfRun(run: Pick<Run, 'flow'>, config: FlowConfig): FlowStage[] {
+  if (!run.flow) return flowOf(config);
+  const team = config.agents.team;
+  return run.flow.stages.map((s) => {
+    if (s.type !== 'work' || !s.agent) return s;
+    const agent = team.find((a) => a.id === s.agent) ?? stageAgent(team, config.devCycle.stages, s.id);
+    return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false };
   });
 }
 
@@ -21,22 +82,22 @@ export interface FlowProblem {
   stage: string | null;
 }
 
-/** What keeps a run from starting: no stages, or a stage that is neither a gate nor the last and has no agent. */
+/** What keeps a run from starting: no stages, or a work stage that is not where the run ends and has no agent. */
 export function flowProblems(flow: FlowStage[]): FlowProblem[] {
   if (!flow.length) return [{ code: 'empty', stage: null }];
-  return flow.filter((s, i) => !s.human && i < flow.length - 1 && !s.agent).map((s) => ({ code: 'no-agent' as const, stage: s.id }));
+  return flow.filter((s) => s.type === 'work' && s.next !== null && !s.agent).map((s) => ({ code: 'no-agent' as const, stage: s.id }));
 }
 
-/** The work stage whose artifact a gate (or a later stage) judges: the nearest earlier stage that is not a gate. */
+/** The work stage whose artifact a gate (or a later stage) judges: the nearest earlier stage that is work. */
 export function producerOf(flow: FlowStage[], stageId: string): FlowStage | null {
   const i = flow.findIndex((s) => s.id === stageId);
-  for (let j = i - 1; j >= 0; j--) if (!flow[j].human) return flow[j];
+  for (let j = i - 1; j >= 0; j--) if (flow[j].type === 'work') return flow[j];
   return null;
 }
 
 /** The stage that ends with the push: the last one whose agent changes the worktree. Its work is what the pull request carries. */
 export function pushStageOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage | null {
   const writes = new Set(config.agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
-  const found = flow.filter((s) => !s.human && s.agent && writes.has(s.agent));
+  const found = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
   return found.length ? found[found.length - 1] : null;
 }

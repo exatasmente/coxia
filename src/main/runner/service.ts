@@ -17,6 +17,8 @@ import {
   failuresText,
   findingsText,
   flowOf,
+  flowOfRun,
+  isFlowCycle,
   gateApprove,
   gateReject,
   gateSkip,
@@ -147,6 +149,8 @@ const iso = (d: Date): string => d.toISOString();
 export function createRunner(deps: RunnerDeps): Runner {
   const now = (): string => iso(deps.now?.() ?? new Date());
   const flowNow = (): FlowStage[] => flowOf(deps.config());
+  // A run follows the flow it started with (a copy it carries), with the agents as they are now.
+  const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
   const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs };
 
@@ -182,7 +186,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (before === run.status || !deps.notify || !deps.config().notifications) return;
     const key = ({ gate: 'gate', question: 'question', failed: 'failed', 'to-start': 'toStart', 'to-accept': 'toAccept', done: 'done' } as Record<string, string>)[run.status];
     if (!key) return;
-    const params = { ref: run.issue.ref, title: run.issue.title, stage: flowNow().find((s) => s.id === run.stage)?.label ?? run.stage };
+    const params = { ref: run.issue.ref, title: run.issue.title, stage: flowFor(run).find((s) => s.id === run.stage)?.label ?? run.stage };
     const onClick: AppEvent = { type: 'navigate', to: 'today' };
     deps.notify({ title: t(`main.runner.notice.${key}.title`, params), body: t(`main.runner.notice.${key}.body`, params), onClick });
   }
@@ -190,7 +194,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // Every change of a run goes through here: saved with its messages, the person told when it now waits for them, and the next stage started when it can.
   function move(id: string, change: (run: Run, flow: FlowStage[], at: string) => Transition): Run {
     const before = need(id).status;
-    const run = moveRun(d, id, (r) => change(r, flowNow(), now()));
+    const run = moveRun(d, id, (r) => change(r, flowFor(r), now()));
     tell(before, run);
     pump(id);
     return run;
@@ -227,7 +231,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     let result: StageRun | null = null;
     let failure: unknown = null;
     try {
-      result = await executeStage(exec, run, flowNow(), abort);
+      result = await executeStage(exec, run, flowFor(run), abort);
     } catch (e) {
       failure = e;
     } finally {
@@ -255,7 +259,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done.
   function settle(run: Run, r: StageRun): void {
-    const flow = flowNow();
+    const flow = flowFor(run);
     const { agent, stage: flowStage } = pickAgent(deps.config(), run, flow);
     const by = agent.id;
     const stage = run.stage;
@@ -291,11 +295,11 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (r.kind === 'qa') {
       moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head }, now()));
       const failed = out.scenarios.some((s) => s.result === 'fail');
-      const builder = failed ? flow.find((s) => !s.human && s.agent && deps.config().agents.team.find((a) => a.id === s.agent)?.permission === 'worktree') : undefined;
-      if (failed && builder && flow.findIndex((s) => s.id === builder.id) < flow.findIndex((s) => s.id === stage)) {
+      const back = flow.find((s) => s.id === flowStage.returnsTo);
+      if (failed && back && back.type === 'work') {
         const text = failuresText(out.summary, out.scenarios);
         post(text);
-        apply((x) => handBack(x, flow, { by, toStage: builder.id, text, countRound: true }, now()));
+        apply((x) => handBack(x, flow, { by, toStage: back.id, text, countRound: true }, now()));
         ended();
         return;
       }
@@ -342,7 +346,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   async function create(raw: string, repoId?: string): Promise<Run> {
     const config = deps.config();
-    if (config.devCycle.templateId !== 'agent-flow') throw new RunnerError('not-agent-flow');
+    if (!isFlowCycle(config.devCycle.stages)) throw new RunnerError('not-agent-flow');
     const env = deps.env();
     if (!env.issues.project) throw new RunnerError('no-issue-project');
     const { iid, ref } = refOf(raw);
@@ -403,13 +407,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
     gate(id, action, reason = '') {
       const before = need(id);
-      const flow = flowNow();
+      const flow = flowFor(before);
       const gateStage = flow.find((s) => s.id === before.stage);
       // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the person decided.
-      const judged = gateStage ? producerOf(flow, gateStage.id) : null;
+      const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
       const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
       const decided = (run: Run): Run => {
-        if (gateStage?.human) publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+        if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
         return run;
       };
       if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason)));
@@ -465,7 +469,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
         if (isTerminal(run)) continue;
         try {
-          if (run.status === 'working') moveRun(d, run.id, (r) => resumeAfterRestart(r, flowNow(), now()));
+          if (run.status === 'working') moveRun(d, run.id, (r) => resumeAfterRestart(r, flowFor(r), now()));
           pump(run.id);
         } catch (e) {
           console.error('[runner] could not resume', run.id, e instanceof Error ? e.message : e);
@@ -515,7 +519,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   async function scanIssues(): Promise<Run[]> {
     const config = deps.config();
-    if (!config.runner.enabled || config.devCycle.templateId !== 'agent-flow' || !deps.issues.ready()) return [];
+    if (!config.runner.enabled || !isFlowCycle(config.devCycle.stages) || !deps.issues.ready()) return [];
     const room = config.runner.maxConcurrentRuns - deps.runs.list().filter((r) => r.status === 'working').length;
     if (room <= 0) return [];
     const found = (await deps.issues.triggered(config.runner.triggerLabel)).sort((a, b) => a.iid - b.iid);

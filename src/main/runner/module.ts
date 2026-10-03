@@ -1,7 +1,7 @@
 import { HOME, ATAS } from '../env';
 import { runAgent } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
-import { RunError } from '../../shared/runs';
+import { RunError, isFlowCycle } from '../../shared/runs';
 import type { Module } from '../module';
 import { runStore } from '../runs';
 import { vcsProvider, vcsReady } from '../vcs';
@@ -86,7 +86,7 @@ export const runsModule: Module = (ctx) => {
     name: 'runner',
     everyMin: 5,
     workHoursOnly: false,
-    enabled: () => getConfig().runner.enabled && getConfig().devCycle.templateId === 'agent-flow' && vcsReady(),
+    enabled: () => getConfig().runner.enabled && isFlowCycle(getConfig().devCycle.stages) && vcsReady(),
     run: async () => {
       await r.scan();
       // A review that waited for its pull request goes out once the pull request exists (the person may have opened it by hand).

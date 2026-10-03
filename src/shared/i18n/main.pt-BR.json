@@ -923,5 +923,22 @@
   "main.runner.comment.proposalTitle": "{ref}: algo espera o seu sim em Ações",
   "main.runner.comment.noId": "o host de código não disse o que criou",
   "main.runner.push.summary": "Enviar a branch {branch}",
-  "main.actions.replaced": "Substituída por uma proposta mais nova para a mesma coisa."
+  "main.actions.replaced": "Substituída por uma proposta mais nova para a mesma coisa.",
+  "main.runs.error.invalid-flow": "O fluxo do ciclo tem problemas que impedem uma execução: {detail}",
+  "main.runs.error.flow-mismatch": "A etapa {stage} é de outro tipo no fluxo atual, então esta execução não pode passar a ele.",
+  "main.runs.error.not-waiting": "A execução não está esperando um evento.",
+  "main.forum.code.run.stage.noEvent": "A etapa {stage} é uma espera sem evento. Corrija o fluxo e tente de novo.",
+  "main.forum.code.run.stage.wait.pr-merged": "Etapa {stage}: esperando o pull request ser integrado.",
+  "main.forum.code.run.stage.wait.reporter-reply": "Etapa {stage}: esperando uma resposta na issue.",
+  "main.forum.code.run.stage.wait.label": "Etapa {stage}: esperando o rótulo \"{label}\" na issue.",
+  "main.forum.code.run.stage.wait.linked-done": "Etapa {stage}: esperando a issue ligada ficar pronta.",
+  "main.forum.code.run.stage.wait.time": "Etapa {stage}: esperando {minutes} minutos.",
+  "main.forum.code.wait.done.pr-merged": "{stage}: o pull request foi integrado.",
+  "main.forum.code.wait.done.reporter-reply": "{stage}: há uma resposta na issue.",
+  "main.forum.code.wait.done.label": "{stage}: a issue tem o rótulo.",
+  "main.forum.code.wait.done.linked-done": "{stage}: a issue ligada está pronta.",
+  "main.forum.code.wait.done.time": "{stage}: o tempo passou.",
+  "main.forum.code.wait.noText": "Chegou uma resposta na issue.",
+  "main.forum.code.wait.skipped": "{stage}: não se espera mais. O motivo:",
+  "main.forum.code.run.flow.migrated": "A execução passa a seguir o fluxo atual (versão {hash})."
 }

@@ -1,12 +1,12 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
-import { flowProblems, producerOf } from './flow';
-import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { flowProblems, producerOf, snapshotOf } from './flow';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
 
-export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment'] as const;
+export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting'] as const;
 export type RunErrorCode = (typeof RUN_ERROR_CODES)[number];
 
 export class RunError extends Error {
@@ -47,14 +47,12 @@ function finishStage(run: Run, at: string, status: StageRecord['status'], artifa
 }
 
 /**
- * The run enters a stage: a gate waits for the person, the last stage ends the run, a stage with no agent fails (and says so), any other starts
- * its agent. Entering a stage again (after a rejection, a hand back, a restart or a retry) is a new attempt.
+ * The run enters a stage: a gate waits for the person, a wait stage waits for its event, a stage where the run ends and that has no agent ends it, a work stage
+ * with no agent fails (and says so), any other starts its agent. Entering a stage again (after a rejection, a hand back, a restart or a retry) is a new attempt.
  */
 function enter(run: Run, flow: FlowStage[], stageId: string, at: string, messages: ForumDraft[], start = false): void {
-  const i = flow.findIndex((s) => s.id === stageId);
-  if (i < 0) throw new RunError('unknown-stage', { stage: stageId });
-  const stage = flow[i];
-  const last = i === flow.length - 1;
+  const stage = flow.find((s) => s.id === stageId);
+  if (!stage) throw new RunError('unknown-stage', { stage: stageId });
   let rec = record(run, stageId);
   if (!rec) {
     rec = { stage: stageId, agent: null, status: 'running', artifacts: [], startedAt: null, endedAt: null, attempts: 0, autonomous: false };
@@ -67,18 +65,30 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
   rec.endedAt = null;
   run.stage = stageId;
   run.error = null;
+  run.wait = null;
   const base = { author: app, stage: stageId } as const;
-  if (stage.human) {
+  if (stage.type === 'gate') {
     run.status = 'gate';
     rec.status = 'waiting';
     log(run, at, 'stage-started', stageId, 'app');
     messages.push({ ...base, kind: 'system', code: 'run.stage.gate', params: { stage: stage.label } });
-  } else if (last) {
-    run.status = 'done';
-    rec.status = 'done';
-    rec.endedAt = at;
-    log(run, at, 'completed', stageId, 'app');
-    messages.push({ ...base, kind: 'system', code: 'run.completed', params: { stage: stage.label } });
+  } else if (stage.type === 'wait') {
+    if (!stage.waitsFor) {
+      run.status = 'failed';
+      rec.status = 'failed';
+      rec.endedAt = at;
+      run.error = { code: 'no-event', stage: stageId, detail: null };
+      log(run, at, 'failed', stageId, 'app', 'no-event');
+      messages.push({ ...base, kind: 'system', code: 'run.stage.noEvent', params: { stage: stage.label } });
+    } else {
+      run.status = 'waiting';
+      rec.status = 'waiting';
+      run.wait = { ...stage.waitsFor, since: at };
+      log(run, at, 'wait-started', stageId, 'app', stage.waitsFor.kind);
+      messages.push({ ...base, kind: 'system', code: `run.stage.wait.${stage.waitsFor.kind}`, params: { stage: stage.label, label: stage.waitsFor.label ?? '', minutes: stage.waitsFor.minutes ?? 0 } });
+    }
+  } else if (stage.next === null && !stage.agent) {
+    complete(run, stage, at, messages);
   } else if (!stage.agent) {
     run.status = 'failed';
     rec.status = 'failed';
@@ -101,11 +111,39 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
   }
 }
 
-const next = (flow: FlowStage[], stageId: string): FlowStage => {
-  const i = flow.findIndex((s) => s.id === stageId);
-  if (i < 0 || i >= flow.length - 1) throw new RunError('unknown-stage', { stage: stageId });
-  return flow[i + 1];
+// The run ends at this stage.
+function complete(run: Run, stage: FlowStage, at: string, messages: ForumDraft[]): void {
+  const rec = record(run, stage.id) as StageRecord;
+  run.status = 'done';
+  rec.status = 'done';
+  rec.endedAt = at;
+  log(run, at, 'completed', stage.id, 'app');
+  messages.push({ author: app, stage: stage.id, kind: 'system', code: 'run.completed', params: { stage: stage.label } });
+}
+
+/** The stage after `from`, or null when the run ends there. A `next` that names a stage the flow lacks is a refusal. */
+const followOf = (flow: FlowStage[], from: FlowStage): FlowStage | null => {
+  if (from.next === null) return null;
+  const to = flow.find((s) => s.id === from.next);
+  if (!to) throw new RunError('unknown-stage', { stage: from.next });
+  return to;
 };
+
+const stageOf = (flow: FlowStage[], stageId: string): FlowStage => {
+  const s = flow.find((x) => x.id === stageId);
+  if (!s) throw new RunError('unknown-stage', { stage: stageId });
+  return s;
+};
+
+// The run goes on from a stage that has been finished: to the stage after it, or to its end.
+function advance(out: Run, flow: FlowStage[], from: FlowStage, at: string, messages: ForumDraft[]): void {
+  const to = followOf(flow, from);
+  if (to) enter(out, flow, to.id, at, messages);
+  else complete(out, from, at, messages);
+}
+
+/** Who a handoff to `to` goes to: its agent, or the person when the stage is not one an agent works. */
+const handoffTo = (to: FlowStage | null): string => (!to || to.type !== 'work' || !to.agent ? 'person' : to.agent);
 
 const labelOf = (flow: FlowStage[], stageId: string): string => flow.find((s) => s.id === stageId)?.label ?? stageId;
 const clone = (run: Run, at: string): Run => ({ ...structuredClone(run), updatedAt: at });
@@ -146,7 +184,9 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     stages: [],
     question: null,
     pending: null,
-    review: { rounds: 0, max: MAX_REVIEW_ROUNDS },
+    returns: {},
+    wait: null,
+    flow: snapshotOf(flow),
     error: null,
     history: [],
     comments: {},
@@ -186,12 +226,12 @@ export function stageDone(run: Run, flow: FlowStage[], done: StageDoneInput, at:
     park(out, { kind: 'done', by, text: '', handoff: done.handoff, toStage: null, countRound: false }, done.artifacts, at);
     return { run: out, messages: [post, waitAccept(flow, run.stage)] };
   }
-  const to = next(flow, run.stage);
+  const to = followOf(flow, stageOf(flow, run.stage));
   finishStage(out, at, 'done', done.artifacts);
   log(out, at, 'stage-done', run.stage, by);
   const messages: ForumDraft[] = [post];
-  if (done.handoff.trim()) messages.push({ kind: 'handoff', author: agent(by), text: done.handoff, to: to.human || !to.agent ? 'person' : to.agent, stage: run.stage });
-  enter(out, flow, to.id, at, messages);
+  if (done.handoff.trim() && to) messages.push({ kind: 'handoff', author: agent(by), text: done.handoff, to: handoffTo(to), stage: run.stage });
+  advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
 
@@ -220,7 +260,7 @@ export function gateApprove(run: Run, flow: FlowStage[], at: string, note = ''):
   finishStage(out, at, 'done');
   log(out, at, 'gate-approved', run.stage, 'person', note.trim() || null);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
-  enter(out, flow, next(flow, run.stage).id, at, messages);
+  advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
 
@@ -229,8 +269,8 @@ export function gateReject(run: Run, flow: FlowStage[], reason: string, at: stri
   need(run, 'gate');
   const why = reason.trim();
   if (!why) throw new RunError('empty-reason');
-  const producer = producerOf(flow, run.stage);
-  if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
+  const producer = flow.find((s) => s.id === stageOf(flow, run.stage).returnsTo);
+  if (!producer || producer.type !== 'work') throw new RunError('unknown-stage', { stage: run.stage });
   const out = clone(run, at);
   log(out, at, 'gate-rejected', run.stage, 'person', why);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.rejected', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
@@ -247,7 +287,7 @@ export function gateSkip(run: Run, flow: FlowStage[], reason: string, at: string
   finishStage(out, at, 'skipped');
   log(out, at, 'gate-skipped', run.stage, 'person', why);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.skipped', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
-  enter(out, flow, next(flow, run.stage).id, at, messages);
+  advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
 
@@ -280,7 +320,9 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   if (q?.kind === 'review-limit') {
     const producer = producerOf(flow, run.stage);
     if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
-    out.review.rounds = 0;
+    // The budget of the stage the work was going back to starts again.
+    const back = stageOf(flow, run.stage).returnsTo;
+    if (back) out.returns[back] = 0;
     sendBack(out, flow, producer, person, said, at, messages, true);
   } else {
     out.status = 'working';
@@ -294,13 +336,13 @@ function applyReturn(out: Run, flow: FlowStage[], p: PendingResult, at: string, 
   const target = flow.find((x) => x.id === p.toStage);
   if (!target) throw new RunError('unknown-stage', { stage: p.toStage ?? '' });
   if (p.countRound) {
-    out.review.rounds += 1;
-    if (out.review.rounds >= out.review.max) {
+    const rounds = (out.returns[target.id] = (out.returns[target.id] ?? 0) + 1);
+    if (rounds >= stageOf(flow, out.stage).roundLimit) {
       out.status = 'question';
       out.question = { by: 'app', kind: 'review-limit', text: p.text, askedAt: at, stage: out.stage };
       (record(out, out.stage) as StageRecord).status = 'waiting';
       log(out, at, 'question', out.stage, 'app', 'review-limit');
-      messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds: out.review.rounds }, stage: out.stage, public: true });
+      messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds }, stage: out.stage, public: true });
       return;
     }
   }
@@ -326,7 +368,7 @@ export function handBack(run: Run, flow: FlowStage[], input: { by: string; toSta
   need(run, 'working');
   const i = flow.findIndex((s) => s.id === run.stage);
   const j = flow.findIndex((s) => s.id === input.toStage);
-  if (j < 0 || j >= i || flow[j].human) throw new RunError('unknown-stage', { stage: input.toStage });
+  if (i < 0 || j < 0 || j === i || flow[j].type !== 'work') throw new RunError('unknown-stage', { stage: input.toStage });
   const text = input.text.trim();
   if (!text) throw new RunError('empty-text');
   return returnWork(run, flow, { kind: 'return', by: input.by, text: input.countRound ? text : '', handoff: text, toStage: input.toStage, countRound: !!input.countRound }, null, at);
@@ -348,8 +390,8 @@ export function reviewReturn(run: Run, flow: FlowStage[], input: ReviewReturnInp
   need(run, 'working');
   const findings = input.findings.trim();
   if (!findings) throw new RunError('empty-text');
-  const producer = producerOf(flow, run.stage);
-  if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
+  const producer = flow.find((s) => s.id === stageOf(flow, run.stage).returnsTo);
+  if (!producer || producer.type !== 'work') throw new RunError('unknown-stage', { stage: run.stage });
   const post: ForumDraft = { kind: 'post', author: agent(input.by), text: findings, stage: run.stage, public: true };
   return returnWork(run, flow, { kind: 'return', by: input.by, text: findings, handoff: input.handoff?.trim() || findings, toStage: producer.id, countRound: true }, post, at);
 }
@@ -382,10 +424,10 @@ export function acceptStage(run: Run, flow: FlowStage[], at: string, note = ''):
   if (p.kind === 'return') {
     applyReturn(out, flow, p, at, messages);
   } else {
-    const to = next(flow, run.stage);
+    const to = followOf(flow, stageOf(flow, run.stage));
     (record(out, run.stage) as StageRecord).status = 'done';
-    if (p.handoff.trim()) messages.push({ kind: 'handoff', author: agent(p.by), text: p.handoff, to: to.human || !to.agent ? 'person' : to.agent, stage: run.stage });
-    enter(out, flow, to.id, at, messages);
+    if (p.handoff.trim() && to) messages.push({ kind: 'handoff', author: agent(p.by), text: p.handoff, to: handoffTo(to), stage: run.stage });
+    advance(out, flow, stageOf(flow, run.stage), at, messages);
   }
   return { run: out, messages };
 }
@@ -441,6 +483,7 @@ export function cancel(run: Run, by: 'person' | 'app', at: string): Transition {
   out.status = 'cancelled';
   out.question = null;
   out.pending = null;
+  out.wait = null;
   log(out, at, 'cancelled', run.stage, by);
   return { run: out, messages: [{ kind: 'system', author: by === 'person' ? person : app, code: 'run.cancelled', stage: run.stage }] };
 }
@@ -456,6 +499,85 @@ export function resumeAfterRestart(run: Run, flow: FlowStage[], at: string): Tra
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.stage.restarted', params: { stage: labelOf(flow, run.stage) }, stage: run.stage }];
   enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
+}
+
+// ---- waiting ---------------------------------------------------------------------------------------------------------------------------------
+// A wait stage holds the run until an event happens (the runner looks for it on its tick); an agent that asked the person who reported the issue
+// holds its own stage the same way and goes on with the reply.
+
+/** The working agent asks the person who reported the issue, on the tracker: its stage waits for their reply. */
+export function askReporter(run: Run, question: { by: string; text: string }, at: string): Transition {
+  need(run, 'working');
+  const text = question.text.trim();
+  if (!text) throw new RunError('empty-text');
+  const out = clone(run, at);
+  out.status = 'waiting';
+  out.wait = { kind: 'reporter-reply', since: at, by: question.by };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'wait-started', run.stage, question.by, 'reporter-reply');
+  return { run: out, messages: [{ kind: 'question', author: agent(question.by), text, to: 'reporter', stage: run.stage, public: true }] };
+}
+
+// What goes on after the event: a wait stage is done and the run follows it; an agent's own stage goes back to work, with what came as its answer.
+function resume(out: Run, flow: FlowStage[], at: string, by: 'app' | 'person', answer: ForumDraft | null, messages: ForumDraft[]): void {
+  const stage = stageOf(flow, out.stage);
+  out.wait = null;
+  if (stage.type === 'work') {
+    out.status = 'working';
+    (record(out, out.stage) as StageRecord).status = 'running';
+    if (answer) messages.push(answer);
+    return;
+  }
+  finishStage(out, at, by === 'person' ? 'skipped' : 'done');
+  advance(out, flow, stage, at, messages);
+}
+
+/** What the run waited for happened. For a wait stage the run goes on to the next; for an agent that asked the reporter, `reply` is its answer. */
+export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string }, at: string): Transition {
+  need(run, 'waiting');
+  const stage = stageOf(flow, run.stage);
+  const out = clone(run, at);
+  log(out, at, 'wait-done', run.stage, 'app', run.wait?.kind ?? null);
+  const messages: ForumDraft[] = [];
+  if (stage.type === 'work') {
+    const text = (input.reply ?? '').trim();
+    resume(out, flow, at, 'app', { kind: 'answer', author: person, text: text || undefined, code: text ? undefined : 'wait.noText', stage: run.stage, to: run.wait?.by ?? null, public: false }, messages);
+  } else {
+    messages.push({ kind: 'system', author: app, code: `wait.done.${run.wait?.kind ?? 'time'}`, params: { stage: stage.label }, stage: run.stage });
+    resume(out, flow, at, 'app', null, messages);
+  }
+  return { run: out, messages };
+}
+
+/** The person does not wait any longer: recorded as a decision with its reason, and the run goes on. */
+export function waitSkip(run: Run, flow: FlowStage[], reason: string, at: string): Transition {
+  need(run, 'waiting');
+  const why = reason.trim();
+  if (!why) throw new RunError('empty-reason');
+  const stage = stageOf(flow, run.stage);
+  const out = clone(run, at);
+  log(out, at, 'wait-skipped', run.stage, 'person', why);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'wait.skipped', params: { stage: stage.label }, text: why, stage: run.stage, public: true }];
+  resume(out, flow, at, 'person', stage.type === 'work' ? { kind: 'answer', author: person, text: why, stage: run.stage, to: run.wait?.by ?? null, public: false } : null, messages);
+  return { run: out, messages };
+}
+
+// ---- following another flow ------------------------------------------------------------------------------------------------------------
+
+/**
+ * The run follows `flow` from now on (the current flow of the cycle, which the person edited after the run started). Only while the run's stage still
+ * exists there, and is the same kind of stage: a run that waits at a gate cannot land on a stage an agent works.
+ */
+export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition {
+  if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
+  const stage = flow.find((s) => s.id === run.stage);
+  if (!stage) throw new RunError('unknown-stage', { stage: run.stage });
+  const was = run.flow?.stages.find((s) => s.id === run.stage);
+  if (was && was.type !== stage.type) throw new RunError('flow-mismatch', { stage: stage.label });
+  const out = clone(run, at);
+  out.flow = snapshotOf(flow);
+  log(out, at, 'flow-migrated', run.stage, 'person', out.flow.hash);
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
 }
 
 // ---- tracker comments --------------------------------------------------------------------------------------------------------------------
@@ -520,4 +642,10 @@ export function recordQa(run: Run, input: Omit<QaRecord, 'at'>, at: string): Tra
   out.qa.push({ ...structuredClone(input), at });
   log(out, at, 'qa', input.stage, input.by, input.scenarios.every((s) => s.result === 'pass') ? 'pass' : 'fail');
   return { run: out, messages: [] };
+}
+
+/** A comment the runner posted was deleted from the tracker (after the person said yes to the proposal). The run keeps the record. */
+export function recordCommentRemoved(run: Run, key: string, at: string): Transition {
+  if (!run.comments[key]) throw new RunError('unknown-comment', { key });
+  return noteComment(run, key, at, 'removed', (c) => ({ ...(c as CommentRecord), noteId: null, status: 'removed', updatedAt: at }));
 }

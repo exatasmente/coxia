@@ -3,6 +3,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { applyTemplate, kanban } from '../src/shared/cycles';
 import { RunError, type Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { git } from './helpers/conflictRepos';
@@ -41,7 +42,7 @@ const never = (): Promise<never> => new Promise(() => undefined);
 describe('starting a run', () => {
   it('is refused, touching nothing, when the cycle is not the agent cycle', async () => {
     const b = await boot();
-    b.deps.updateConfig((c) => ({ ...c, devCycle: { ...c.devCycle, templateId: 'kanban' } }));
+    b.deps.updateConfig((c) => applyTemplate(c, kanban));
     await expect(b.runner.start('app#101')).rejects.toMatchObject({ code: 'not-agent-flow' });
     expect(b.issues.reads).toEqual([]);
     expect(git(b.repo.clone, 'worktree', 'list').split('\n')).toHaveLength(1);
@@ -286,12 +287,12 @@ describe('the review limit and QA', () => {
     b.engine.script('reviewer', () => work('Still wrong.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding('Still wrong.')] }), () => work('Still wrong.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding('Still wrong.')] }), () => work('Fine now.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved' }));
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'review');
-    expect(run).toMatchObject({ status: 'question', stage: 'review', review: { rounds: 2 } });
+    expect(run).toMatchObject({ status: 'question', stage: 'review', returns: { implement: 2 } });
     expect(run.question).toMatchObject({ by: 'app', kind: 'review-limit' });
     expect(b.engine.calls.map((c) => c.agent.id).filter((a) => a === 'developer')).toHaveLength(2);
     b.runner.answerPost(`run-${run.id}`, 'Accept it as it is, the finding is a style choice.');
     run = await reach(b, b.runner.get(run.id)!, 'ready');
-    expect(run).toMatchObject({ status: 'done', review: { rounds: 0 } });
+    expect(run).toMatchObject({ status: 'done', returns: { implement: 0 } });
     expect(run.reviews).toHaveLength(3);
   });
 
@@ -306,7 +307,7 @@ describe('the review limit and QA', () => {
     expect(b.engine.calls[5].prompt).toContain('login');
     expect(b.engine.calls[5].prompt).toContain('a 500 on login');
     expect(run.qa.map((q) => q.scenarios[0].result)).toEqual(['fail', 'pass']);
-    expect(run.review.rounds).toBe(1);
+    expect(run.returns).toEqual({ implement: 1 });
   });
 
   it('records the findings of an approving review that only suggests, and goes on', async () => {
@@ -383,7 +384,7 @@ describe('runs the app starts by itself', () => {
     const b = await boot({ issues: triggered([1, 2]) });
     easy(b);
     expect(await b.runner.scan()).toEqual([]);
-    b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, enabled: true }, devCycle: { ...c.devCycle, templateId: 'kanban' } }));
+    b.deps.updateConfig((c) => ({ ...applyTemplate(c, kanban), runner: { ...c.runner, enabled: true } }));
     expect(await b.runner.scan()).toEqual([]);
     expect(b.issues.reads).toEqual([]);
   });

@@ -55,11 +55,11 @@ export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRo
 
 /**
  * The agent that works a stage: the one the stage names, else the first agent of the team that lists the stage, else none.
- * A gate (`human`) never has one.
+ * A gate and a wait never have one.
  */
 export function stageAgent(team: AgentDef[], stages: StageDef[], stageId: string): AgentDef | null {
   const stage = stages.find((s) => s.id === stageId);
-  if (!stage || stage.human) return null;
+  if (!stage || (stage.type && stage.type !== 'work')) return null;
   const named = stage.agentId ? team.find((a) => a.id === stage.agentId) : undefined;
   return named ?? team.find((a) => a.stages.includes(stageId)) ?? null;
 }

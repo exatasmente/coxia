@@ -8,7 +8,7 @@ import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
 import type { ForumStore } from '../forum-core';
-import { readFolder, writeArtifact } from './cycleFolder';
+import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, commitAll, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
@@ -68,7 +68,7 @@ export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]):
   if (!stage || !stage.agent) throw new StageError('no-stage', { stage: run.stage });
   const agent = config.agents.team.find((a) => a.id === stage.agent);
   if (!agent) throw new StageError('unknown-agent', { agent: stage.agent });
-  return { agent, stage, kind: outputKindOf(config.devCycle.stages.find((s) => s.id === stage.id)?.kind ?? 'development') };
+  return { agent, stage, kind: outputKindOf(stage.kind) };
 }
 
 /** The last note another stage left for `agent` that it has not answered with a post since. */
@@ -120,11 +120,11 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
 
   // The comment this stage leaves on the tracker, and the pull request description when this stage ends with the push: the agent is told the
   // sections of the cycle's templates and writes the text of each, so no second call is needed.
-  const askOf = (key: string): CommentAsk | null => {
-    const tpl = config.devCycle.comments[key];
+  const askOf = (key: string | null): CommentAsk | null => {
+    const tpl = key ? config.devCycle.comments[key] : undefined;
     return tpl ? { sections: tpl.sections, technical: tpl.technicalDetail } : null;
   };
-  const comment = askOf(stage.id);
+  const comment = askOf(stage.comment);
   const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
 
   const input: StageInput = {
@@ -135,7 +135,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     kind,
     writes,
     commands,
-    files: readFolder(wt, run.cycleFolder),
+    files: readFolder(wt, run.cycleFolder).filter((f) => !stage.reads || f.name === ISSUE_FILE || stage.reads.includes(f.name)),
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),

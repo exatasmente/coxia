@@ -8,9 +8,9 @@ type Doc = Record<string, any>;
 
 const withStages = (c: WorkspaceConfig): WorkspaceConfig => {
   c.devCycle.stages = [
-    { id: 'plan', label: 'Plan', match: [], kind: 'development', rank: 1, agentId: 'planner' },
-    { id: 'gate', label: 'Gate', match: [], kind: 'development', rank: 2, human: true },
-    { id: 'code', label: 'Code', match: [], kind: 'development', rank: 3 },
+    { id: 'plan', label: 'Plan', match: [], kind: 'development', rank: 1, type: 'work', agentId: 'planner' },
+    { id: 'gate', label: 'Gate', match: [], kind: 'development', rank: 2, type: 'gate' },
+    { id: 'code', label: 'Code', match: [], kind: 'development', rank: 3, type: 'work' },
   ];
   return c;
 };
@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 6, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: 7, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });
@@ -40,7 +40,7 @@ describe('the five system agents', () => {
 
   it('are seeded from agents.roles when they have to be added back', () => {
     const roles = neutralConfig().agents.roles;
-    const r = validateConfig({ schemaVersion: 6, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
+    const r = validateConfig({ schemaVersion: 7, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
     expect(r.config?.agents.team.find((a) => a.id === 'deep')).toMatchObject({ model: { role: 'turn' }, instructions: 'dig' });
   });
 
@@ -112,12 +112,12 @@ describe('validating the team', () => {
   it('keeps artifact names plain: no folder, nothing hidden, no repeat', () => {
     for (const bad of ['../x.md', 'a/b.md', '.hidden', '']) {
       const r = errorsOf((c) => {
-        c.devCycle.stages[0].artifacts = [bad];
+        c.devCycle.stages[0].produces = [bad];
       });
       expect(r.ok, bad).toBe(false);
     }
-    expect(errorsOf((c) => (c.devCycle.stages[0].artifacts = ['1_SPEC.md'])).ok).toBe(true);
-    expect(errorsOf((c) => (c.devCycle.stages[0].artifacts = ['a.md', 'a.md'])).ok).toBe(false);
+    expect(errorsOf((c) => (c.devCycle.stages[0].produces = ['1_SPEC.md'])).ok).toBe(true);
+    expect(errorsOf((c) => (c.devCycle.stages[0].produces = ['a.md', 'a.md'])).ok).toBe(false);
   });
 
   it('refuses an unknown permission and a field the schema does not know', () => {
@@ -152,7 +152,7 @@ describe('the migration to schema 4', () => {
     );
     expect(r.fromVersion).toBe(3);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(6);
+    expect(r.config.schemaVersion).toBe(7);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -173,7 +173,7 @@ describe('the migration to schema 4', () => {
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(6);
+    expect(r.config.schemaVersion).toBe(7);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });
@@ -261,7 +261,7 @@ describe('autonomy of each agent', () => {
   it('is off for the system agents and for an agent nobody said anything about', () => {
     expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
     expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
-    const r = validateConfig({ schemaVersion: 6, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    const r = validateConfig({ schemaVersion: 7, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
   });

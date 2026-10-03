@@ -1,6 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the run file format
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
+import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
 import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
@@ -117,6 +118,31 @@ const pending = {
   type: ['object', 'null'],
 } as JsonSchema;
 
+const waitFor = object('What a wait waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label: the label name.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time: minutes.', minimum: 1, maximum: 525_600 } }, ['kind']);
+
+const fileNames = { type: 'array', description: 'File names.', items: string('File name.', { pattern: FILE, maxLength: 100 }), maxItems: 50 } as JsonSchema;
+
+const flowStage = object(
+  'One stage of the flow the run follows, with every default filled in.',
+  {
+    id: string('Stage id.', { pattern: ID }),
+    label: string('Name shown.', { maxLength: 200 }),
+    kind: enumOf('What the stage means to the ceremonies.', STAGE_KINDS),
+    type: enumOf('work, gate or wait.', STAGE_TYPES),
+    agent: { type: ['string', 'null'], description: 'The agent that works it.', pattern: ID },
+    autonomous: { type: 'boolean', description: 'Whether that agent was autonomous when the copy was made (the live value is read from the team).' },
+    artifacts: fileNames,
+    reads: { ...fileNames, type: ['array', 'null'] },
+    next: { type: ['string', 'null'], description: 'The stage that follows; null: the run ends after it.', pattern: ID },
+    returnsTo: { type: ['string', 'null'], description: 'Where the work goes back to.', pattern: ID },
+    roundLimit: { type: 'integer', description: 'Returns allowed before the run asks the person.', minimum: 1, maximum: 20 },
+    waitsFor: { ...waitFor, type: ['object', 'null'] },
+    comment: { type: ['string', 'null'], description: 'The comment template key.', maxLength: 48 },
+    trackerStatus: { type: ['string', 'null'], description: 'The label the issue gets on entering.', maxLength: 200 },
+  },
+  ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
+);
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -137,9 +163,12 @@ export const RUN_SCHEMA: JsonSchema = object(
       type: ['object', 'null'],
     },
     pending,
-    review: object('Review passes.', { rounds: { type: 'integer', description: 'Passes that ended in findings.', minimum: 0, maximum: 1000 }, max: { type: 'integer', description: 'Passes allowed before the run asks the person.', minimum: 1, maximum: 1000 } }, ['rounds', 'max']),
+    returns: { type: 'object', description: 'How many times the work went back to each stage, by that stage.', additionalProperties: { type: 'integer', minimum: 0, maximum: 1000 } },
+    wait: { ...object('What the run waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time.', minimum: 1, maximum: 525_600 }, since: time('Since when.'), by: string('The agent that asked.', { maxLength: 48 }) }, ['kind', 'since']), type: ['object', 'null'] },
+    flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
+    review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {
-      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
+      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
       type: ['object', 'null'],
     },
     history: { type: 'array', description: 'Every transition, in order.', items: history, maxItems: 1000 },
@@ -150,7 +179,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },
-  ['version', 'rev', 'id', 'issue', 'repo', 'branch', 'worktree', 'cycleFolder', 'cycleId', 'status', 'stage', 'stages', 'question', 'pending', 'review', 'error', 'history', 'comments', 'createdAt', 'updatedAt'],
+  ['version', 'rev', 'id', 'issue', 'repo', 'branch', 'worktree', 'cycleFolder', 'cycleId', 'status', 'stage', 'stages', 'question', 'pending', 'error', 'history', 'comments', 'createdAt', 'updatedAt'],
 );
 
 export type RunParse = { ok: true; run: Run } | { ok: false; reason: 'newer' | 'invalid'; errors: string[] };
@@ -165,6 +194,6 @@ export function parseRun(raw: unknown): RunParse {
   const badKey = Object.keys((raw as { comments: object }).comments).find((k) => !new RegExp(ID).test(k));
   if (badKey) return { ok: false, reason: 'invalid', errors: [`comments.${badKey}: not a stage id`] };
   // A file written before these fields existed reads as having none.
-  const run = raw as Run;
-  return { ok: true, run: { ...run, reviews: run.reviews ?? [], qa: run.qa ?? [], base: run.base ?? null } };
+  const { review: _superseded, ...run } = raw as Run & { review?: unknown };
+  return { ok: true, run: { ...run, reviews: run.reviews ?? [], qa: run.qa ?? [], base: run.base ?? null, returns: run.returns ?? {}, wait: run.wait ?? null } };
 }

@@ -14,7 +14,7 @@ import {
   checkComment,
   checkText,
   findMarked,
-  flowOf,
+  flowOfRun,
   markerOf,
   pushStageOf,
   readMarker,
@@ -124,6 +124,8 @@ export interface Publisher {
 }
 
 const iso = (d: Date): string => d.toISOString();
+/** The comment template of a stage: the one its `comment` names, none when it names none. */
+const templateOf = (config: WorkspaceConfig, stage: { comment: string | null } | undefined): CommentTemplate | undefined => (stage?.comment ? config.devCycle.comments[stage.comment] : undefined);
 const hashOf = (text: string): string => createHash('sha256').update(text).digest('hex');
 const rec = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const normalize = (text: string): string => text.replace(/\r\n/g, '\n').split('\n').map((l) => l.trimEnd()).join('\n').trim();
@@ -356,7 +358,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function stageComment(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
-    const tpl = config.devCycle.comments[end.stage.id];
+    const tpl = templateOf(config, end.stage);
     if (!tpl) return;
     const run = need(runId);
     const marker = markerOf(run.id, end.stage.id);
@@ -385,8 +387,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const tpl = config.devCycle.comments.gate;
     if (!tpl) return;
     const run = need(runId);
-    const flow = flowOf(config);
-    const producer = flow.slice(0, flow.findIndex((s) => s.id === e.stage.id)).reverse().find((s) => !s.human);
+    const producer = flowOfRun(run, config).find((s) => s.id === e.stage.returnsTo);
     const decided = run.history.filter((h) => (h.type === 'gate-approved' || h.type === 'gate-rejected' || h.type === 'gate-skipped') && h.stage === e.stage.id).length || 1;
     const key = `decision-${e.stage.id}-${decided}`.slice(0, 48);
     const marker = markerOf(run.id, key);
@@ -409,7 +410,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function review(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
-    const tpl = config.devCycle.comments[end.stage.id];
+    const tpl = templateOf(config, end.stage);
     if (!tpl) return;
     let run = need(runId);
     const record = run.reviews.find((r) => r.round === end.round);
@@ -433,7 +434,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const draft = run.comments[key];
     const record = run.reviews.find((r) => r.round === round);
     if (!draft?.body || !record || draft.status === 'published') return;
-    const tpl = config.devCycle.comments.review;
+    const tpl = templateOf(config, flowOfRun(run, config).find((s) => s.id === record.stage));
     const title = draft.title ?? `Review (${round})`;
     const refusal = door.refusal();
     if (refusal) {
@@ -598,7 +599,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!run) return;
     const waiting = run.reviews.filter((r) => run.comments[`review-${r.round}`]?.status === 'draft').at(-1);
     if (!waiting) return;
-    const flowStage = flowOf(deps.config()).find((s) => s.id === waiting.stage);
+    const flowStage = flowOfRun(run, deps.config()).find((s) => s.id === waiting.stage);
     await publishReview(runId, waiting.round, { autonomous: stageAutonomy(run, waiting.stage), by: waiting.by || flowStage?.agent || 'app' });
   }
 
@@ -660,7 +661,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       guarded(runId, async () => {
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
-        if (end.kind === 'work' && pushStageOf(deps.config(), flowOf(deps.config()))?.id === end.stage.id) await pushStage(runId, end);
+        if (end.kind === 'work' && pushStageOf(deps.config(), flowOfRun(need(runId), deps.config()))?.id === end.stage.id) await pushStage(runId, end);
       }),
     asked: (runId, e) => guarded(runId, () => question(runId, e)),
     gateDecided: (runId, e) => guarded(runId, () => gate(runId, e)),

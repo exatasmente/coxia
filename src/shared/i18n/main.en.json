@@ -923,5 +923,22 @@
   "main.runner.comment.proposalTitle": "{ref}: something waits for your yes in Actions",
   "main.runner.comment.noId": "the code host did not say what it made",
   "main.runner.push.summary": "Push the branch {branch}",
-  "main.actions.replaced": "Replaced by a newer proposal for the same thing."
+  "main.actions.replaced": "Replaced by a newer proposal for the same thing.",
+  "main.runs.error.invalid-flow": "The flow of the cycle has problems that stop a run: {detail}",
+  "main.runs.error.flow-mismatch": "The stage {stage} is a different kind of stage in the current flow, so this run cannot move to it.",
+  "main.runs.error.not-waiting": "The run is not waiting for an event.",
+  "main.forum.code.run.stage.noEvent": "The stage {stage} is a wait with no event to wait for. Fix the flow and try again.",
+  "main.forum.code.run.stage.wait.pr-merged": "Stage {stage}: waiting for the pull request to be merged.",
+  "main.forum.code.run.stage.wait.reporter-reply": "Stage {stage}: waiting for a reply on the issue.",
+  "main.forum.code.run.stage.wait.label": "Stage {stage}: waiting for the label \"{label}\" on the issue.",
+  "main.forum.code.run.stage.wait.linked-done": "Stage {stage}: waiting for the linked issue to be done.",
+  "main.forum.code.run.stage.wait.time": "Stage {stage}: waiting {minutes} minutes.",
+  "main.forum.code.wait.done.pr-merged": "{stage}: the pull request was merged.",
+  "main.forum.code.wait.done.reporter-reply": "{stage}: there is a reply on the issue.",
+  "main.forum.code.wait.done.label": "{stage}: the issue has the label.",
+  "main.forum.code.wait.done.linked-done": "{stage}: the linked issue is done.",
+  "main.forum.code.wait.done.time": "{stage}: the time has passed.",
+  "main.forum.code.wait.noText": "A reply came on the issue.",
+  "main.forum.code.wait.skipped": "{stage}: no longer waiting. The reason:",
+  "main.forum.code.run.flow.migrated": "The run now follows the current flow (version {hash})."
 }

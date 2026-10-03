@@ -1,4 +1,5 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
+import { isFlowCycle } from '../runs/flow';
 import { promptFamilies } from '../cycles/prompts';
 import { catalogText } from '../cycles/text';
 import { withConfigDefaults } from './defaults';
@@ -68,7 +69,7 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
   const agentIds = new Set(team.map((a) => a.id));
   c.devCycle.stages.forEach((s, i) => {
     if (!s.agentId) return;
-    if (s.human) errors.push({ path: `devCycle.stages[${i}].agentId`, message: 'a gate waits for the person and has no agent' });
+    if (s.type && s.type !== 'work') errors.push({ path: `devCycle.stages[${i}].agentId`, message: 'only a work stage has an agent' });
     else if (!agentIds.has(s.agentId)) errors.push({ path: `devCycle.stages[${i}].agentId`, message: `unknown agent "${s.agentId}"` });
     else if (!team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
   });
@@ -89,7 +90,7 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   const { name, email } = r.identity;
   if (!!name.trim() !== !!email.trim()) errors.push({ path: 'runner.identity', message: 'needs both a name and an email, or neither' });
   else if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+$/.test(email.trim())) errors.push({ path: 'runner.identity.email', message: 'is not an email address' });
-  if (r.enabled && c.devCycle.templateId !== 'agent-flow') warnings.push({ path: 'runner.enabled', message: 'the runner only works with the agent cycle (devCycle.templateId "agent-flow")' });
+  if (r.enabled && !isFlowCycle(c.devCycle.stages)) warnings.push({ path: 'runner.enabled', message: 'the runner only works with a cycle whose stages have a type (the agent cycle)' });
 }
 
 const COMMENT_PLACEHOLDERS = new Set(['stage', 'round', 'result', 'decision', 'ref']);
@@ -109,7 +110,7 @@ function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Confi
     const stage = stages.get(key);
     if (!stage && !events.has(key)) warnings.push({ path: `devCycle.comments.${key}`, message: `no stage "${key}" and not one of ${COMMENT_EVENT_KEYS.join(', ')}: this template is never used` });
     if (stage && events.has(key) && key !== 'pr') warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is both a stage and an event: the template serves the event, pick another id for the stage` });
-    if (stage?.human) warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is a gate: its decision is posted from the "gate" template` });
+    if (stage?.type === 'gate') warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is a gate: its decision is posted from the "gate" template` });
     const status = catalogText(tpl.status, 'pt-BR') ?? tpl.status;
     for (const m of status.matchAll(/\{(\w+)\}/g)) if (!COMMENT_PLACEHOLDERS.has(m[1])) warnings.push({ path: at('status'), message: `{${m[1]}} is not a placeholder of a status: use ${[...COMMENT_PLACEHOLDERS].map((p) => `{${p}}`).join(', ')}` });
     for (const h of duplicates(tpl.sections.map((x) => (catalogText(x.heading, 'pt-BR') ?? x.heading).trim().toLowerCase()))) warnings.push({ path: at('sections'), message: `two sections are headed "${h}"` });
