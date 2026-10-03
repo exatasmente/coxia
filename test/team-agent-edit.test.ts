@@ -121,3 +121,29 @@ describe('the stages an agent works', () => {
     expect(stagesOfAgent(c, agent(c, 'turn'))).toEqual([]);
   });
 });
+
+describe('the two permissions of a run in the agent editor', () => {
+  it('start with no host read and no commands for a new agent, and carry what an agent has', async () => {
+    const { blankAgent, draftOf, applyAgent, agentProblems, shellAfterPermission } = await import('../src/renderer/src/screens/team/agentEdit');
+    const { neutralConfig } = await import('../src/shared/config');
+    expect(blankAgent()).toMatchObject({ tracker: 'none', shell: 'none' });
+    const config = neutralConfig();
+    const draft = { ...blankAgent(), id: 'qa2', name: 'QA 2', permission: 'read' as const, tracker: 'read' as const, shell: 'sandbox' as const };
+    const next = applyAgent(config, draft, true);
+    const made = next.agents.team.find((a) => a.id === 'qa2')!;
+    expect(made).toMatchObject({ tracker: 'read', shell: 'sandbox' });
+    expect(draftOf(made)).toMatchObject({ tracker: 'read', shell: 'sandbox' });
+    expect(agentProblems(config, draft, true)).toEqual([]);
+    expect(shellAfterPermission('allowlist', 'read')).toBe('none');
+    expect(shellAfterPermission('allowlist', 'worktree')).toBe('allowlist');
+    expect(shellAfterPermission('sandbox', 'read')).toBe('sandbox');
+  });
+
+  it('refuses "listed commands" for an agent that only reads', async () => {
+    const { blankAgent, agentProblems } = await import('../src/renderer/src/screens/team/agentEdit');
+    const { neutralConfig } = await import('../src/shared/config');
+    const draft = { ...blankAgent(), id: 'r2', name: 'R', permission: 'read' as const, shell: 'allowlist' as const };
+    expect(agentProblems(neutralConfig(), draft, true)).toEqual([{ field: 'shell', key: 'ui.team.err.allowlist' }]);
+    expect(agentProblems(neutralConfig(), { ...draft, permission: 'worktree' }, true)).toEqual([]);
+  });
+});

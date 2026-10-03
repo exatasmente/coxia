@@ -131,3 +131,20 @@ describe('the runner saved from a paired browser', () => {
     expect(runnerOfWeb({ ...draftOfRunner(plain), commandsMode: 'custom', commands: ['x'], worktreesDir: 'y' }, plain)).toEqual(plain);
   });
 });
+
+describe('the sandbox block of the runner draft', () => {
+  it('round trips the defaults, trims and lowercases hosts, and keeps the stored sandbox for a paired browser', () => {
+    const d = base();
+    expect(runnerOf(d).sandbox).toEqual(neutralConfig().runner.sandbox);
+    const edited = { ...d, sandbox: { ...d.sandbox, network: 'registry' as const, registryHosts: [' Registry.Example.com '], readOnlyPaths: [' ~/tools/node '] } };
+    expect(runnerOf(edited).sandbox).toMatchObject({ network: 'registry', registryHosts: ['registry.example.com'], readOnlyPaths: ['~/tools/node'] });
+    expect(runnerOfWeb(edited, neutralConfig().runner).sandbox).toEqual(neutralConfig().runner.sandbox);
+  });
+
+  it('says what is wrong with a host, a folder and a limit, and warns that the registry is on', () => {
+    const d = base();
+    const bad = { ...d, sandbox: { ...d.sandbox, network: 'registry' as const, registryHosts: ['https://x.example.com'], readOnlyPaths: ['~/.ssh', 'relative'], limits: { ...d.sandbox.limits, memoryMb: 1 } } };
+    expect(keys(bad)).toEqual(expect.arrayContaining(['error:sandboxHost', 'error:sandboxPathSecret', 'error:sandboxPath', 'error:sandboxLimit', 'warning:registryOn']));
+    expect(keys(base())).toEqual([]);
+  });
+});

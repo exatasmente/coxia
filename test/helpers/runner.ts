@@ -12,6 +12,8 @@ import { createForumStore } from '../../src/main/forum-core';
 import type { StageEngine } from '../../src/main/runner/executor';
 import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '../../src/main/runner/service';
 import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
+import { SandboxError, type ExecResult, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
+import type { SandboxStatus } from '../../src/shared/sandbox';
 import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
 import { neutralConfig } from '../../src/shared/config';
@@ -166,6 +168,57 @@ export function fakeCommands(table: Record<string, Partial<CommandResult>> = {})
   return run;
 }
 
+export interface FakeSandbox extends SandboxService {
+  /** What each stage asked for, and the sessions made. */
+  opened: { options: OpenOptions; session: FakeSession }[];
+}
+
+export interface FakeSession extends SandboxSession {
+  closed: boolean;
+  /** What `exec` was asked, in order. */
+  asked: string[];
+}
+
+/**
+ * A sandbox that runs nothing: it answers every command from a table (exit 0 and "ok" otherwise), reports each one the way the real session does, and records when it was
+ * closed. `available: false` makes it refuse like a machine without one. `onClose` runs when a session closes (to look at what the world was like then).
+ */
+export function fakeSandbox(o: { available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
+  const opened: FakeSandbox['opened'] = [];
+  const status: SandboxStatus = o.available === false ? { available: false, backend: null, version: null, reason: 'no-bwrap', detail: '' } : { available: true, backend: 'bwrap', version: '0.9.0', reason: null, detail: '' };
+  return {
+    opened,
+    status: async () => status,
+    purge: () => undefined,
+    async open(options) {
+      if (!status.available) throw new SandboxError('unavailable', { reason: 'bubblewrap is not installed' });
+      const log: ExecResult[] = [];
+      const asked: string[] = [];
+      const session: FakeSession = {
+        closed: false,
+        asked,
+        log,
+        async exec(command) {
+          asked.push(command);
+          // What the real session refuses without running it.
+          const refused = !command.trim() ? ('empty' as const) : undefined;
+          const r: ExecResult = refused ? { n: log.length + 1, command, exitCode: null, timedOut: false, output: '', ms: 0, refused } : { n: log.length + 1, command, exitCode: 0, timedOut: false, output: 'ok', ms: 5, ...o.table?.[command] };
+          log.push(r);
+          options.onExec?.(r, refused ? 'refused' : 'run');
+          return r;
+        },
+        async close() {
+          if (session.closed) return;
+          session.closed = true;
+          await o.onClose?.();
+        },
+      };
+      opened.push({ options, session });
+      return session;
+    },
+  };
+}
+
 export interface Boot {
   repo: Repo;
   runner: Runner;
@@ -193,6 +246,8 @@ export interface BootOptions {
   dir?: string;
   /** What the app's commands before QA answer; a fake that exits 0 by default. */
   commandRunner?: CommandRunner;
+  /** The sandbox of the agents set to `shell: sandbox`; none by default (such an agent's stage then fails). */
+  sandbox?: SandboxService;
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -230,6 +285,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     updateConfig,
     notify: (n) => notices.push({ title: n.title, body: n.body, onClick: n.onClick }),
     commandRunner: options.commandRunner ?? fakeCommands(),
+    sandbox: options.sandbox,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
   };

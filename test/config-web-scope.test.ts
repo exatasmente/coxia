@@ -148,3 +148,49 @@ describe('config:cycle-save, end to end', () => {
     expect(getConfig().runner.commands).toEqual(['npm test']);
   });
 });
+
+describe('the two permissions of an agent, from a paired browser', () => {
+  const withAgent = (shell: 'none' | 'allowlist' | 'sandbox', tracker: 'none' | 'read', permission: 'read' | 'worktree' = 'worktree'): WorkspaceConfig =>
+    edit((c) => {
+      c.agents.team.push({ id: 'dev', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: [], permission, tracker, shell, autonomous: false, turnsTo: null, instructions: '', system: false });
+    });
+  const agentOf = (c: WorkspaceConfig, change: (a: WorkspaceConfig['agents']['team'][number]) => void): WorkspaceConfig => {
+    const next = structuredClone(c);
+    change(next.agents.team.find((a) => a.id === 'dev')!);
+    return next;
+  };
+
+  it('may lower them, and change what is not them', () => {
+    const before = withAgent('sandbox', 'read');
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'allowlist'; a.tracker = 'none'; }))).toEqual([]);
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'none'; a.instructions = 'x'; }))).toEqual([]);
+    expect(refusedPaths(before, before)).toEqual([]);
+  });
+
+  it('may not raise them, and the refusal names the agent and the field', () => {
+    const before = withAgent('none', 'none');
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'sandbox'; }))).toEqual(['agents.team[dev].shell']);
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'allowlist'; }))).toEqual(['agents.team[dev].shell']);
+    expect(refusedPaths(before, agentOf(before, (a) => { a.tracker = 'read'; }))).toEqual(['agents.team[dev].tracker']);
+    const mid = withAgent('allowlist', 'none');
+    expect(refusedPaths(mid, agentOf(mid, (a) => { a.shell = 'sandbox'; }))).toEqual(['agents.team[dev].shell']);
+  });
+
+  it('may make an agent that has neither, and not one that has either', () => {
+    const before = base();
+    expect(refusedPaths(before, withAgent('none', 'none'))).toEqual([]);
+    expect(refusedPaths(before, withAgent('allowlist', 'none'))).toEqual(['agents.team[dev].shell']);
+    expect(refusedPaths(before, withAgent('none', 'read'))).toEqual(['agents.team[dev].tracker']);
+  });
+
+  it('may not touch the sandbox settings', () => {
+    expect(refused((c) => { c.runner.sandbox.network = 'registry'; })).toEqual(['runner.sandbox.network']);
+    expect(refused((c) => { c.runner.sandbox.readOnlyPaths = ['~/tools']; })).toEqual(['runner.sandbox.readOnlyPaths']);
+    expect(refused((c) => { c.runner.sandbox.limits.memoryMb = 4096; })).toEqual(['runner.sandbox.limits.memoryMb']);
+  });
+
+  it('lets a paired browser ask whether a sandbox can be made, which changes nothing', () => {
+    expect(webAccess('sandbox:status')).toBe('allow');
+    expect(webAccess('sandbox:probe')).toBe('allow');
+  });
+});
