@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-03
+
 ### Added
 
 - Per-agent permissions for a run, chosen in Settings › Team: **code host read** (`tracker`: none or read; issues, comments, labels, the milestone, linked pull requests with their diff, review threads and checks; never a write, which stays at the door of Actions) and **commands** (`shell`: none, the listed commands of the runner, or a sandbox). A reader keeps the read path the workspace has on; an agent that changes files gets the read through the app's own tool only, never the host CLI or an MCP server.
@@ -162,7 +164,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.1...HEAD
+[0.5.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0-beta.1
 [0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/exatasmente/coxia/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/exatasmente/coxia/compare/v0.3.0...v0.4.0
