@@ -2,14 +2,17 @@
 
 How a version of Coxia gets from a commit to the people who run it. How an installed app then updates itself is in [`docs/updates.md`](docs/updates.md).
 
-In short: `scripts/release.sh` bumps the version and tags it, you push the tag, GitHub Actions builds the **public** packages and uploads them to a **draft** release, you check the draft and click *Publish release*. Nothing reaches an installed app before that click.
+In short: a version is **opened** as a branch (`release/X.Y.Z`), its work is merged into it, `scripts/release.sh beta` cuts a **beta** that only people on the beta channel receive, and when the beta is good `scripts/release.sh stable` cuts the **stable** version on `main`. Each cut bumps the version and tags it locally; you push the tag, GitHub Actions builds the **public** packages and uploads them to a **draft** release, you check the draft and click *Publish release*. Nothing reaches an installed app before that click.
 
 ## Contents
 
 - [Two builds](#two-builds)
 - [First-time repository setup](#first-time-repository-setup)
-- [Cutting a release](#cutting-a-release)
-- [Beta releases](#beta-releases)
+- [The process](#the-process)
+- [Merging locally](#merging-locally)
+- [Hotfix](#hotfix)
+- [What a tag triggers](#what-a-tag-triggers)
+- [The changelog](#the-changelog)
 - [Verifying a draft](#verifying-a-draft)
 - [Publishing](#publishing)
 - [Dry runs and experimental platforms](#dry-runs-and-experimental-platforms)
@@ -38,10 +41,10 @@ The repository is `exatasmente/coxia`. Do this once, on GitHub (nothing here is 
    - Allow GitHub Actions (all actions and reusable workflows is fine; the workflows pin third-party actions to commit SHAs).
    - *Workflow permissions*: **Read repository contents** (the default is the safe one). The release workflow asks for `contents: write` only in the jobs that upload files.
    - Leave *Allow GitHub Actions to create and approve pull requests* off.
-3. **Branch protection for `main`** (Settings › Branches or Rulesets), suggested:
-   - require a pull request before merging, with code owner review (`.github/CODEOWNERS` names @exatasmente; with a single maintainer you can leave the approval count at 0 and still require the check);
-   - require status checks to pass: **Typecheck, tests and build** (the job of `ci.yml`), branch up to date;
-   - block force pushes and deletions.
+3. **Branch protection for `main` and `release/**`** (Settings › Branches or Rulesets), suggested:
+   - require status checks to pass: **Typecheck, tests and build** (the job of `ci.yml`, which runs for pull requests into `main` and `release/**`);
+   - block force pushes. Block deletions of `main`, and of `release/**` for everyone but you (you delete a release branch after its stable version);
+   - the work reaches a branch by a **local merge that you push** ([Merging locally](#merging-locally)), so do not require pull requests *for pushes* on a repository with one maintainer, or let your own role bypass that rule: the pull request and its green CI are the gate before the merge, and the host's merge button is never used. This has not been verified against the host's settings screens.
 4. **Protect the release tags** with a ruleset on `v*` (restrict creation and deletion to maintainers): pushing a tag publishes a build.
 5. **Settings › Code security**: enable Dependabot alerts and version updates (`.github/dependabot.yml` already asks for weekly npm and GitHub Actions updates), secret scanning and push protection.
 6. **Settings › General**: enable *Automatically delete head branches* if you like; leave *Releases* immutability to your taste (see [When something goes wrong](#when-something-goes-wrong)).
@@ -53,44 +56,112 @@ The repository starts private. Read [Private repository and autoupdate](#private
 
 `actions/checkout`, `actions/setup-node` and `actions/upload-artifact` are pinned to commit SHAs, each with its version in a trailing comment, so a moved tag cannot change what runs. Dependabot (`github-actions`) proposes new SHAs weekly. To pin a new action by hand, take the SHA that the release tag points to (for an annotated tag, the commit it dereferences to: `git ls-remote --tags https://github.com/<owner>/<action> 'refs/tags/v*'`, the line ending in `^{}`).
 
-## Cutting a release
+## The process
 
-Start from a clean, up-to-date `main` with everything merged and CI green. Describe what changed under `## [Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style: Added, Changed, Fixed...): the release notes are that text.
+Three steps, each a mode of `scripts/release.sh`. The numbers follow semver: a feature bumps the minor, a fix only the patch.
+
+| Step | Where | Tag | Who receives it |
+|---|---|---|---|
+| Open the version | `release/X.Y.Z`, cut from `main` (or from a stable tag, for a patch) | none | nobody: it is where the work lands |
+| Beta | on `release/X.Y.Z` | `vX.Y.Z-beta.N` | people on the **beta** channel (`beta-linux.yml`) |
+| Stable | on `main`, after `release/X.Y.Z` is merged into it | `vX.Y.Z` | everyone (`latest-linux.yml`) |
+
+The script never pushes, never writes `git config` and takes the identity from `--author` or `RELEASE_AUTHOR`. Options: `--dry-run`, `--skip-checks`, `--date`, `-m`, `--allow-branch`, `--emergency`; `scripts/release.sh --help` lists them.
+
+### 1. Open the version
+
+From an up-to-date `main` (fetch, and fast-forward it first):
 
 ```bash
-scripts/release.sh 0.2.0 --author "Your Name <you@example.com>" -m "feat: release 0.2.0"
+scripts/release.sh open 0.6.0
+git push -u origin release/0.6.0
 ```
 
-What it does, in order: refuses a dirty tree, a branch other than `main`, an existing tag and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`) and the public audit (`scripts/public-audit.mjs`, which always runs, even with `--skip-checks`); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.2.0] - <today>` and updates the compare links; commits with your message; creates the annotated tag `v0.2.0`. **It stops there and prints the push commands.** The author comes from the flag or `RELEASE_AUTHOR`; the script never touches `git config`. Options: `--dry-run`, `--skip-checks`, `--allow-branch`, `--date`.
+It creates `release/0.6.0` from `main` and switches to it. It refuses a branch or a tag that exists, a version that is not above the latest stable, a `main` that is behind `origin/main`, and a dirty tree. A **patch** of a released version (`0.5.1` after `0.5.0`) is cut from the stable tag, not from whatever `main` holds now: `scripts/release.sh open 0.5.1 --from v0.5.0` ([Hotfix](#hotfix)).
 
-Review the commit and the tag (`git show v0.2.0`), then push (this is the step that starts the workflow):
+### 2. Develop into it
+
+Every issue has its own branch, and its pull request targets `release/0.6.0`, not `main`; CI runs on those pull requests. Merge locally ([below](#merging-locally)). Describe each user-visible change under `## [Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style: Added, Changed, Fixed...).
+
+### 3. Close the release: the beta
+
+On `release/0.6.0`, clean and with CI green:
 
 ```bash
+scripts/release.sh beta --author "Your Name <12345+you@users.noreply.github.com>"
+git push origin release/0.6.0
+git push origin v0.6.0-beta.1
+```
+
+The number is the next one after the highest `v0.6.0-beta.N` tag (`beta.1` the first time). An explicit `scripts/release.sh 0.6.0-beta.2` is accepted when it follows the latest beta. The script refuses to run anywhere but on `release/X.Y.Z`, and refuses a version whose number is not the branch's (`release/0.6.0` cuts `0.6.0-beta.N`, never `0.7.0-beta.1`). What it does, in order: refuses a dirty tree, a tag that exists and an empty changelog; runs the same checks as CI (`tsc`, `vitest`, theme audit, i18n lint, `electron-vite build`) and the public audit (`scripts/public-audit.mjs`, which always runs, even with `--skip-checks` and in a dry run); bumps `package.json` and `package-lock.json` (`npm version --no-git-tag-version`); moves `[Unreleased]` under `## [0.6.0-beta.1] - <today>`; commits with `feat: release 0.6.0-beta.1`; creates the annotated tag. **It stops there and prints the push commands**; review the commit and the tag (`git show v0.6.0-beta.1`) first.
+
+The tag triggers the workflow ([below](#what-a-tag-triggers)); it makes a **draft pre-release**. The feed is `beta-linux.yml` (the first identifier after the dash names the channel: `-rc.1` would give `rc-linux.yml`, but only `beta` is wired into the app's settings) and no `latest-linux.yml` is produced, so people on the stable channel never see it. After you [verify](#verifying-a-draft) and [publish](#publishing) it, people who pick *Beta* in Settings › Updates receive it ([how to join](docs/updates.md#joining-the-beta-channel)). The app never moves anyone to an older version when they switch channels.
+
+### 4. Fixes during the beta
+
+A fix goes into the same release branch (its own branch, a pull request into `release/0.6.0`, a local merge), is described under `[Unreleased]`, and `scripts/release.sh beta` cuts `0.6.0-beta.2`, then `beta.3`... The branch is frozen to fixes for what the beta found: a stable only goes out from a beta somebody tried.
+
+### 5. Stable
+
+When the beta is good, merge the release branch into `main` and cut the stable version there:
+
+```bash
+git switch main
+git merge --ff-only release/0.6.0        # or --no-ff, below, when main has moved
+scripts/release.sh stable --author "Your Name <12345+you@users.noreply.github.com>"
 git push origin main
-git push origin v0.2.0
+git push origin v0.6.0
 ```
+
+`stable` reads the version from the pre-release in `package.json` (`0.6.0-beta.2` gives `0.6.0`); `scripts/release.sh 0.6.0` says the same. It refuses unless **a `v0.6.0-beta.*` tag exists**, **the latest beta is in `main`**, and **`release/0.6.0` (when it still exists, here or on `origin`) is merged and holds nothing newer than that beta**: a commit after the last beta was tried by nobody, so cut another beta first. The version must also be above the latest stable. Then the draft is built, checked and published like a beta's, and everyone on the stable channel receives it. The script ends by printing, not running, the commands that delete the release branch (`git branch -d release/0.6.0`, `git push origin --delete release/0.6.0`): run them after the draft is published.
+
+The first release (`0.1.0`) was a special case: `package.json` and the changelog already said `0.1.0`, so `scripts/release.sh 0.1.0 --author "..."` only ran the checks and created the tag. The same shortcut applies whenever the version and its changelog section are already in place.
+
+## Merging locally
+
+The host's merge button records the account's email as the merge author, so **it is never used**. Merge on your machine with the maintainer's noreply identity, passed with `-c` (never `git config`: that would write the repository's configuration, shared with every worktree):
+
+```bash
+git fetch origin pull/12/head:pr-12
+git switch release/0.6.0
+git -c user.name="Your Name" -c user.email="12345+you@users.noreply.github.com" \
+  merge --no-ff -m "Merge pull request #12 from you/feat-thing" pr-12
+git push origin release/0.6.0
+```
+
+The host shows the pull request as merged once its commits reach the base branch by that push. A pull request that was opened against `main` by mistake is retargeted to the open release branch before merging.
+
+## Hotfix
+
+An urgent fix on a stable version takes the same path with a short beta:
+
+```bash
+scripts/release.sh open 0.6.1 --from v0.6.0      # release/0.6.1, from the stable tag
+git push -u origin release/0.6.1
+# the fix: its own branch, a pull request into release/0.6.1, a local merge
+scripts/release.sh beta --author "..."           # 0.6.1-beta.1; push the branch and the tag
+# when somebody has tried it:
+git switch main && git merge --no-ff release/0.6.1   # main may have moved on: use a merge commit
+scripts/release.sh stable --author "..."
+```
+
+`--from` takes a stable tag of the same major.minor and a version above it; anything else is refused.
+
+**When even a beta cannot wait** (an incident), `scripts/release.sh 0.6.1 --emergency --author "..."` on `main` cuts the stable without the beta rules. It is loud on purpose: a banner on standard error naming every rule it skipped, the same lines again at the end, and the skipped rules written in the tag's message (`git show v0.6.1`). It never skips the checks, the public audit, the changelog or the version order. Do not make it a habit; a rule you have to skip twice a month is a rule to change.
+
+## What a tag triggers
 
 The tag triggers **Release** (`.github/workflows/release.yml`):
 
 1. **Check the version.** The tag must equal `v` + `package.json` version, or the run fails before building anything.
-2. **Linux job.** `npm ci`, then `npm run dist:public -- --publish always` with `GITHUB_TOKEN`: builds `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb` without the SDK, writes `latest-linux.yml`, and creates a **draft** release named after the tag, with the `CHANGELOG.md` section as its body, attaching the files. It then runs `scripts/verify-release-files.sh` (names, version and sha512 of the AppImage against the feed) and checks that the draft holds the three files.
+2. **Linux job.** `npm ci`, then `npm run dist:public -- --publish always` with `GITHUB_TOKEN`: builds `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb` without the SDK, writes the feed (`latest-linux.yml`, or `beta-linux.yml` for a beta), and creates a **draft** release named after the tag, with the `CHANGELOG.md` section as its body, attaching the files. It then runs `scripts/verify-release-files.sh` (names, version and sha512 of the AppImage against the feed; a pre-release must not produce `latest-linux.yml`), marks a beta's draft as a pre-release and checks that the draft holds the three files and **only its own channel's feed**.
 3. Nothing else. Windows and macOS are off unless you ask for them ([below](#dry-runs-and-experimental-platforms)).
 
-A final release **needs** a `CHANGELOG.md` entry for its version (the job fails without it); a pre-release falls back to a one-line note.
+A draft of a pre-release has no tag until it is published: GitHub lists it as `untagged-<hash>`. The workflow therefore finds the draft **by its name** (`v<version>`), not by `tag_name`. A final release needs a `CHANGELOG.md` entry for its version (the job fails without it); a pre-release falls back to a one-line note. What cannot be checked outside GitHub is that this lookup still finds the draft: the first beta cut with this workflow is the test.
 
-The first release (`0.1.0`) is a special case: `package.json` and the changelog already say `0.1.0`, so `scripts/release.sh 0.1.0 --author "..."` only runs the checks and creates the tag.
+## The changelog
 
-## Beta releases
-
-Use a pre-release suffix:
-
-```bash
-scripts/release.sh 0.2.0-beta.1 --author "Your Name <you@example.com>" -m "feat: release 0.2.0-beta.1"
-```
-
-The workflow treats any tag with a suffix as a pre-release: the update feed is `beta-linux.yml` (the first identifier after the dash names the channel: `-rc.1` would give `rc-linux.yml`, but only `beta` is wired into the app's settings), the release is marked **pre-release** (and stays a draft until you publish it), and no `latest-linux.yml` is produced, so people on the stable channel never see it. People who pick *Beta* in Settings › Updates receive it. The app never moves anyone to an older version when they switch channels.
-
-When the beta is good, release the final version (`0.2.0`) from the same line of commits: `scripts/release.sh 0.2.0` moves the changelog entries under `[0.2.0]`. The beta entry stays in the history.
+During the version, entries live under `## [Unreleased]`. A **beta** moves them under `## [X.Y.Z-beta.N] - <date>`, so the beta's release notes say what that beta changed (a fix for `beta.1` is its own `beta.2` section). The **stable** folds: `## [X.Y.Z] - <date>` gathers, subsection by subsection (Added, Changed, Fixed...), everything in the version's beta sections and whatever `[Unreleased]` still holds, and the beta sections leave `CHANGELOG.md` (their published pre-releases keep their own notes). A person who goes from `0.5.x` straight to `0.6.0` reads everything since, in one place. Check the folded section in the stable's commit (`git show`) before you push.
 
 ## Verifying a draft
 
@@ -127,7 +198,7 @@ On the draft release page click **Publish release**. For a final release, GitHub
 
 ## Dry runs and experimental platforms
 
-**Actions › Release › Run workflow** starts it by hand (from `main`). Inputs:
+**Actions › Release › Run workflow** starts it by hand (from `main`). `scripts/release.sh --dry-run ...` is the other dry run: it validates the rules of a cut and prints the plan, changing nothing. Inputs:
 
 - `dry_run` (default **on**): builds and checks the Linux packages with `--publish never`, uploads them as a workflow artifact (kept 7 days) and creates **no** release. Use it to see the pipeline green, or to look at the packages of a branch before tagging (run it from that branch). The version comes from `package.json`.
 - `experimental_platforms` (default off): also builds **Windows (NSIS)** and **macOS (dmg and zip)**. These builds are **unsigned and untested**. Windows shows a SmartScreen warning, and automatic updates on macOS need a signed and notarized app (the macOS updater refuses unsigned ones), so do not announce them as supported. They need a code-signing certificate (and, for macOS, an Apple Developer account) added as repository secrets before they are worth publishing; the workflow does not use any today. With `dry_run` off they upload into the same draft as the Linux job.
@@ -137,7 +208,8 @@ With `dry_run` off, a run started by hand does the real thing for the version in
 ## When something goes wrong
 
 - **The workflow failed before the draft was created** (version mismatch, checks): fix it, delete the tag locally and on GitHub (`git tag -d v0.2.0 && git push origin :refs/tags/v0.2.0`), then tag again. This only makes sense for a tag that was never published.
-- **The workflow failed after the draft was created:** delete the draft in the Releases page and the tag as above, fix, re-tag. (`electron-builder` reuses a draft with the same tag and replaces its files, but starting clean is safer.)
+- **The workflow failed after the draft was created:** delete the draft in the Releases page and the tag as above, fix, re-tag. A draft of a pre-release is untagged, and `electron-builder` reuses a draft only by its tag, so a leftover one is *not* reused: the next run would make a second draft with the same name. Delete it first.
+- **A beta has a bug:** fix it in `release/X.Y.Z` and cut the next beta; the stable waits for a beta that is good. Do not edit or re-tag a published beta.
 - **A published release is bad:** unpublish it (turn it back into a draft, or delete it) and publish a higher fix version. The app never downgrades by itself; a person who already installed it keeps it until the next version.
 - **The version in `package.json` does not match the tag:** the *Check the version* step says so. Re-run `scripts/release.sh` rather than editing by hand.
 
@@ -151,10 +223,10 @@ For private testing only, `electron-updater` can authenticate with a token: buil
 
 | What | Where | Trigger |
 |---|---|---|
-| `tsc`, `vitest`, theme audit, public audit, i18n lint, `electron-vite build` | `.github/workflows/ci.yml` (Ubuntu, Node from `.nvmrc`) | push and pull request to `main` |
+| `tsc`, `vitest`, theme audit, public audit, i18n lint, `electron-vite build` | `.github/workflows/ci.yml` (Ubuntu, Node from `.nvmrc`) | push and pull request to `main` and `release/**` |
 | Public Linux AppImage and deb, draft release | `.github/workflows/release.yml` | tag `v*.*.*`, or manual |
 | Windows and macOS (experimental) | same workflow | manual, with `experimental_platforms` |
-| Version bump, changelog, commit, tag | `scripts/release.sh` | you, on your machine |
+| Open a release branch; version bump, changelog, commit and tag of a beta or the stable | `scripts/release.sh` (`open`, `beta`, `stable`) and `scripts/release-changelog.mjs` | you, on your machine |
 | Release notes of one version | `scripts/release-notes.sh <version>` | the workflow and `release.sh` |
 | Name, version and checksum of the Linux files | `scripts/verify-release-files.sh <version> [dir]` | the workflow, and you |
 

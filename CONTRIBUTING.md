@@ -58,7 +58,7 @@ uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
 | `npm run dist` | Your own package, with the Claude Agent SDK inside (do not redistribute it) |
 | `npm run dist:public` | The public package, without the SDK: what the releases contain ([`RELEASING.md`](RELEASING.md)) |
 
-CI runs the typecheck, the tests, the theme audit, the i18n lint and the build for every pull request. Run the same before you push.
+CI runs the typecheck, the tests, the theme audit, the i18n lint and the build for every pull request (into `main` or a `release/*` branch). Run the same before you push.
 
 ## Tests
 
@@ -85,7 +85,7 @@ npx vitest run test/vcs-github.test.ts     # one file
 
 ## Commits, branches and pull requests
 
-- Branch from `main`; name it for what it does (`fix-vcs-timeout`, `feat-bitbucket-labels`).
+- Branch from the **open release branch** (`release/X.Y.Z`, see [`RELEASING.md`](RELEASING.md); `git branch -r --list 'origin/release/*'` lists the open ones, and the issue says which version it belongs to); when no version is open, from `main`. Name the branch for what it does (`fix-vcs-timeout`, `feat-bitbucket-labels`).
 - Commit messages have exactly two prefixes, lowercase, English, imperative, no trailing period:
 
   ```
@@ -95,8 +95,9 @@ npx vitest run test/vcs-github.test.ts     # one file
 
   For example `feat: add a gitea provider` or `fix: keep the downloaded update when a later check fails`. One logical change per commit.
 - If the change is visible to users, add a line under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md).
-- Open the pull request against `main` and fill in the template. Keep it focused; a refactor and a feature are two pull requests.
-- A maintainer reviews every pull request, and CI must be green.
+- Open the pull request against **that release branch** (`release/X.Y.Z`), not `main`, and fill in the template; CI runs on it as on a pull request into `main`. Keep it focused; a refactor and a feature are two pull requests.
+- A maintainer reviews every pull request, and CI must be green. The maintainer merges it **locally**, with their noreply identity, and never with the host's merge button ([`RELEASING.md`](RELEASING.md#merging-locally)); you do not need to do anything for that.
+- A version reaches people as a beta first, then stable ([`docs/updates.md`](docs/updates.md#joining-the-beta-channel)): a fix found in a beta goes into the same release branch.
 
 ## How to add a VCS provider
 

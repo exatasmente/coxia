@@ -34,6 +34,17 @@ O Coxia se atualiza de duas formas, conforme **como foi instalado**. O app desco
 - **Notas da versão:** vêm do `releaseNotes` do `latest-linux.yml` (ou do texto do release no GitHub), mostradas como texto simples (marcação removida, 4.000 caracteres no máximo).
 - **Erros:** qualquer falha (rede, `404` do `latest*.yml`, checksum que não confere, instalação) vai para o log de erros do app (origem `update:release`, visível em Saúde) e para a seção, sem diálogo.
 
+### Entrar no canal beta
+
+Uma versão passa por três degraus antes de chegar a todos: o ramo `release/X.Y.Z`, onde o trabalho se junta, a **beta** (`X.Y.Z-beta.1`, `beta.2`...) e, quando a beta está boa, a **estável** `X.Y.Z` ([`RELEASING.md`](../RELEASING.md)). Quem está no canal beta é o primeiro anel: recebe cada beta assim que ela é publicada, e depois a estável.
+
+1. Em Configurações › Atualizações, escolha **Canal › Beta** e clique em **Verificar agora**. A escolha vale para esta máquina (`channel` em `updates.json`).
+2. O app lê `beta-linux.yml` (e, no GitHub, os pré-lançamentos); quem fica no canal **estável** lê `latest-linux.yml` e nunca vê uma beta, porque uma beta não gera esse arquivo.
+3. Uma beta é instalada como qualquer atualização (baixa em segundo plano, **Reiniciar para atualizar**). Quando a versão estável `X.Y.Z` sai, ela é mais nova que `X.Y.Z-beta.N` e chega pelo mesmo canal.
+4. Para sair do beta, volte o canal para **Estável**: o app **não** troca para uma versão mais velha sozinho; numa beta, o botão "Voltar para a versão estável" faz isso uma vez.
+
+Só o AppImage se atualiza assim, e, como no resto desta página, só há atualização para outras pessoas quando o repositório (e os seus releases) é público. Um problema numa beta se relata como qualquer outro; a correção entra no mesmo ramo e vira a próxima beta.
+
 ### Plataformas
 
 | Plataforma | Estado |
@@ -124,6 +135,17 @@ Coxia updates itself in one of two ways, depending on **how it was installed**. 
 - **Never in the middle of something:** with a call, speech or an agent job running (the window tells the main process), the prompt goes away, "Restart" asks for confirmation ("Restart anyway") and quitting the app does **not** install. The state is saved either way; what is lost is the call or run in progress.
 - **Release notes:** from `releaseNotes` in `latest-linux.yml` (or the GitHub release text), shown as plain text (markup stripped, 4,000 characters at most).
 - **Errors:** any failure (network, `404` for `latest*.yml`, a checksum that does not match, install) goes to the app's error log (source `update:release`, visible in Saúde) and to the section, with no dialog.
+
+### Joining the beta channel
+
+A version goes through three steps before it reaches everyone: the `release/X.Y.Z` branch, where the work comes together, the **beta** (`X.Y.Z-beta.1`, `beta.2`...) and, when the beta is good, the **stable** `X.Y.Z` ([`RELEASING.md`](../RELEASING.md)). People on the beta channel are the first ring: they receive each beta as soon as it is published, and then the stable.
+
+1. In Settings › Updates, choose **Channel › Beta** and click **Check now**. The choice is per machine (`channel` in `updates.json`).
+2. The app reads `beta-linux.yml` (and, on GitHub, pre-releases); people on the **stable** channel read `latest-linux.yml` and never see a beta, because a beta does not produce that file.
+3. A beta installs like any update (downloads in the background, **Restart to update**). When the stable `X.Y.Z` comes out it is newer than `X.Y.Z-beta.N` and arrives through the same channel.
+4. To leave the beta, set the channel back to **Stable**: the app does **not** move to an older version by itself; on a beta, the "Go back to the stable version" button does it once.
+
+Only the AppImage updates this way and, as on the rest of this page, others only get updates once the repository (and so its releases) is public. A problem in a beta is reported like any other; the fix goes into the same branch and becomes the next beta.
 
 ### Platforms
 

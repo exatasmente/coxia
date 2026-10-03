@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A release process in three steps: a release branch, a beta, then stable.** `scripts/release.sh open X.Y.Z` cuts `release/X.Y.Z` from `main` (or, for a patch, from a stable tag with `--from`); the pull requests of the version target that branch and are merged locally with the maintainer's noreply identity; `scripts/release.sh beta` cuts `X.Y.Z-beta.N` with the next number, published as a pre-release that only people on the beta channel receive; `scripts/release.sh stable` cuts `X.Y.Z` on `main` once a beta tag exists and the release branch is merged and holds nothing newer than that beta. The script refuses a branch whose number does not match the version. `--emergency` skips the beta rules for a stable that cannot wait, loudly and written in the tag. The stable's changelog section folds the beta sections of its version. CI runs for pull requests and pushes to `release/**`. `RELEASING.md`, `CONTRIBUTING.md` and `docs/updates.md` (how a person joins the beta channel) describe it; the design is in `docs/cycles/27-release-process/`.
+
+### Fixed
+
+- For maintainers: the release workflow failed after uploading a pre-release, because it looked the draft up by its tag and a draft of a pre-release is untagged until it is published. It now finds it by its name, and checks that a pre-release carries only its own channel's feed (never `latest-linux.yml`).
+
 ## [0.5.0-beta.1] - 2026-10-03
 
 ### Added
