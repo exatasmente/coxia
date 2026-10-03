@@ -719,3 +719,68 @@ describe('release.sh arguments', () => {
     expect(w.run('0.5.0', '--from', 'v0.4.0', '--author', AUTHOR).err).toContain('belongs to open');
   });
 });
+
+// A release worktree is where the app cuts a version: main is the branch of the person's own checkout and is never touched, so the worktree stands on a detached HEAD
+// at what the remote has. `--worktree` makes the script read main from origin/main and accept a detached HEAD for a stable; every other rule is the same.
+describe('release.sh --worktree', () => {
+  const sh = (w: World, dir: string, ...args: string[]): string => {
+    const r = spawnSync('git', args, { cwd: dir, env: { ...process.env, PATH: process.env.PATH, HOME: join(w.root, 'home'), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const script = (w: World, dir: string, ...args: string[]): Run => {
+    const r = spawnSync('bash', [join(dir, 'scripts', 'release.sh'), ...args], { cwd: dir, env: { PATH: process.env.PATH, HOME: join(w.root, 'home'), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', LANG: 'C' }, encoding: 'utf8', timeout: 60_000 });
+    return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
+  };
+  /** A worktree on a detached HEAD at origin/main, with the remote a commit ahead of the local main (which is what the person's checkout may well be). */
+  const detached = (): { w: World; wt: string } => {
+    const w = new World();
+    w.addOrigin();
+    w.elsewhere('main');
+    const wt = join(w.root, 'wt');
+    w.git('worktree', 'add', '--detach', wt, 'origin/main');
+    return { w, wt };
+  };
+
+  it('opens from origin/main, which the worktree cannot make a local branch of, where the plain script wants a main that is not behind it', () => {
+    const { w, wt } = detached();
+    expect(script(w, wt, 'open', '0.5.0').err).toContain('behind origin/main');
+    const r = script(w, wt, 'open', '0.5.0', '--worktree');
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('open release/0.5.0 from origin/main');
+    expect(sh(w, wt, 'rev-parse', 'HEAD')).toBe(w.git('rev-parse', 'origin/main'));
+    expect(sh(w, wt, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('release/0.5.0');
+    // the local main of the person's checkout did not move
+    expect(w.git('rev-parse', 'main')).not.toBe(w.git('rev-parse', 'origin/main'));
+    expect(w.branch).toBe('main');
+  });
+
+  it('keeps the other rules of open: a released version, a dirty tree', () => {
+    const { w, wt } = detached();
+    expect(script(w, wt, 'open', '0.4.0', '--worktree').err).toContain('already exists');
+    writeFileSync(join(wt, 'dirty.txt'), 'x');
+    expect(script(w, wt, 'open', '0.5.0', '--worktree').err).toContain('not clean');
+  });
+
+  it('cuts a stable on a detached HEAD that holds the merged release, names the push of main, and refuses it on any other branch or without the flag', () => {
+    const { w, wt } = detached();
+    expect(script(w, wt, 'open', '0.5.0', '--worktree').code).toBe(0);
+    writeFileSync(join(wt, 'CHANGELOG.md'), readFileSync(join(wt, 'CHANGELOG.md'), 'utf8'));
+    sh(w, wt, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '--allow-empty', '-m', 'work');
+    expect(script(w, wt, 'beta', '--author', AUTHOR, '--skip-checks', '--date', '2026-02-01').code).toBe(0);
+    sh(w, wt, 'push', '-q', 'origin', 'release/0.5.0');
+    // on the release branch a stable is refused, with or without the flag
+    expect(script(w, wt, 'stable', '--author', AUTHOR, '--skip-checks', '--worktree').err).toContain("on branch 'release/0.5.0'");
+    // detached at origin/main with the release merged: accepted only with the flag
+    sh(w, wt, 'fetch', '-q', 'origin');
+    sh(w, wt, 'switch', '-q', '--detach', 'origin/main');
+    sh(w, wt, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'merge', '-q', '--no-ff', '-m', 'Merge release/0.5.0', 'release/0.5.0');
+    expect(script(w, wt, 'stable', '--author', AUTHOR, '--skip-checks').err).toContain("on branch 'HEAD'");
+    const r = script(w, wt, 'stable', '--author', AUTHOR, '--skip-checks', '--date', '2026-02-02', '--worktree');
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('git push origin HEAD:refs/heads/main');
+    expect(sh(w, wt, 'cat-file', '-t', 'v0.5.0')).toBe('tag');
+    expect(sh(w, wt, 'rev-parse', 'v0.5.0^{commit}')).toBe(sh(w, wt, 'rev-parse', 'HEAD'));
+    expect(w.branch).toBe('main');
+  });
+});

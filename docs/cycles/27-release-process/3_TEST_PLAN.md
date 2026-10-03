@@ -20,14 +20,14 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 
 1. Settings › Team: the **Release manager** has Code host **Read only**, Commands **None**, and it is not able to change files. Switch it to **waits for you** (not autonomous) for this item.
 2. Runs › *Start a release*, version `0.2.0`. The run opens at the plan stage. Nothing was written yet: no issue on the host, no branch (`git branch --list release/*` in your clone shows none), and Actions lists two proposals: **Create the tracking issue of the release 0.2.0** and **Open the release branch of 0.2.0**, each with what it would do.
-3. Say yes to the first: the issue **Release 0.2.0** exists on the host, the run knows it (the run screen links it) and the comments that waited (the plan's) are on it. Say yes to the second: `release/0.2.0` is checked out in your clone, cut by the repository's script (`git log`, `git status` clean); nothing is on the remote.
+3. Say yes to the first: the issue **Release 0.2.0** exists on the host, the run knows it (the run screen links it) and the comments that waited (the plan's) are on it. Say yes to the second: `release/0.2.0` exists, cut by the repository's script in the **worktree of the steps** (`git worktree list` shows `release-0.2.0-steps`), and your own checkout is exactly as you left it (same branch, same `git status`, your `main` unmoved); nothing is on the remote.
 4. Accept the plan stage: `RELEASE_PLAN.md` is in the run's folder and the run waits at **Approve the plan**. The plan comment is on the tracking issue, with the sections of the template, and another comment (**Activities of the release**) lists the pull requests aimed at `release/0.2.0` (none yet: push the branch with `git push -u origin release/0.2.0`, retarget one of your pull requests to it, and within 5 minutes the comment is edited, not posted again, with the link, whether it is approved and the issue it closes).
 5. Automated: `test/runner-release.test.ts` ("starting a release", "the release from the plan to the stable", "the comments of a release on its tracking issue"), `test/release-actions.test.ts`.
 
 ### 2. Merging an approved pull request, and the refusals
 
 1. Approve one pull request on the host (not a draft, checks green). Approve the plan; the stage that assembles the branch asks for `merge-pr`: with an agent that waits it is a proposal, with its number and the commit it was read at.
-2. Say yes: `git log --merges -1` on `release/0.2.0` is `Merge pull request #N from <branch>`, authored **and** committed by the identity of the runner settings, with two parents. The host's page for the pull request still says open (nothing was pushed, and the merge button was not used).
+2. Say yes: `git log --merges -1 release/0.2.0` is `Merge pull request #N from <branch>`, authored **and** committed by the identity of the runner settings, with two parents. The host's page for the pull request still says open (nothing was pushed, and the merge button was not used).
 3. For the other pull request, **not approved**: ask the agent (or approve a proposal made for it) and read the action's result: it says it is not approved, and `HEAD` did not move. Do the same for a draft, one aimed at `main`, and one whose branch gets a new commit after the plan was read ("is at X now, and the plan read it at Y").
 4. A merge that conflicts: make two pull requests that change the same line; the second is refused with "conflicts, and the merge was undone", `git status` is clean and there is no `MERGE_HEAD`.
 5. Automated: `test/release-git.test.ts` ("merge-pr"), `test/release-actions.test.ts` ("approving a step").
@@ -55,7 +55,7 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 
 ### 6. The stable, and closing
 
-1. Approve **Approve the stable**: the agent asks for `stable` (it merges `release/0.2.0` into `main` and cuts `v0.2.0`; `main` is where you left it, plus the release), then the pushes of `main` and of the tag wait. Say yes in that order and publish the draft.
+1. Approve **Approve the stable**: the agent asks for `stable` (it merges `release/0.2.0` into `main` and cuts `v0.2.0`; your `main` is not touched: the stable tag is on a detached commit made from `origin/main`), then the pushes of `main` and of the tag wait. Say yes in that order and publish the draft.
 2. The tracking issue then gets **Stable version published** and is closed (by itself, or as a proposal when the agent waits). Run it twice more: nothing is written again.
 3. Automated: `test/runner-release.test.ts` ("goes all the way").
 
@@ -69,4 +69,4 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 - A real model: the scripted engine says what the Release manager "does". Whether it picks the commit to merge at, the steps and their order, and writes the plan and the comments well, was not measured.
 - A real host: GitHub's releases-by-tag read, GitLab's releases and `closeIssue` on each host ran only against fakes modelled on the documentation; Bitbucket has no releases and no labels on issues, so the tracking issue is not closed by itself there and `beta-age` needs *Go on without waiting*.
 - The build: `npm run dist` and the GitHub workflow are not run by any test here (and the release checks are replaced by a stub `npx` in the temporary repositories); the draft's files, its publication and the update of an installed app are checked by hand as in `RELEASING.md`.
-- The checkout: the steps run in the repository's own checkout and leave it on the branch they ended on; with uncommitted changes there they are refused first.
+- The worktree: the steps run in a worktree of their own (`<worktrees>/<repo>/release-0.2.0-steps`) and never touch your checkout; the test does check its HEAD, branch and status after a whole release against a temporary repository, but not against a repository with a large `node_modules` or hooks of your own (the links to the dependencies and the exclude file were seen only with a small fake one).

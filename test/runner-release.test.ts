@@ -47,6 +47,8 @@ beforeEach(() => {
   stop?.();
   stop = null;
   w = new ReleaseWorld();
+  // the steps of a run work in a worktree next to the run's own, derived from it
+  w.stepsDir = join(w.root, 'worktrees', 'app', 'release-0.5.0-steps');
   // the release script of the repository runs with the stub `npx` of the world first on the PATH
   process.env.PATH = w.scriptEnv().PATH;
   forge = makeForge({ pr: null });
@@ -103,8 +105,9 @@ describe('starting a release', () => {
     expect(forge.writes.filter((x) => x.method === 'POST' && x.endpoint.endsWith('/issues'))).toEqual([expect.objectContaining({ json: expect.objectContaining({ title: 'Release 0.5.0' }) })]);
     expect(forge.issues.get(200)?.state).toBe('open');
     // the branch was opened by the repository's own script, signed with the identity of the runner
-    expect(w.branch).toBe('release/0.5.0');
-    expect(w.argv()[0]).toEqual(['open', '0.5.0', '--author', 'Runner Test <runner@example.test>']);
+    expect(w.steps.branch).toBe('release/0.5.0');
+    expect(w.branch).toBe('main');
+    expect(w.argv()[0]).toEqual(['open', '0.5.0', '--author', 'Runner Test <runner@example.test>', '--worktree']);
     const audit = listAudit().reverse();
     expect(audit.map((l) => [l.kind, l.by, l.fields.op ?? l.target.split(' ')[1].replace(/^repos\/group\/project\//, '')])).toEqual([['github', 'release-manager', 'issues'], ['github', 'release-manager', 'issues/200/comments'], ['release', 'release-manager', 'open'], ['github', 'release-manager', 'issues/200/comments']]);
     // the first stage is given the record of the release
@@ -149,7 +152,7 @@ describe('starting a release', () => {
     expect(current(b, run).subject?.tracking).toMatchObject({ iid: 200 });
     expect(forge.writes).toHaveLength(1);
     await actions.approveAction((open as { id: string }).id);
-    expect(w.branch).toBe('release/0.5.0');
+    expect(w.steps.branch).toBe('release/0.5.0');
     expect(listAudit()[0]).toMatchObject({ kind: 'release', origin: { kind: 'release-git' } });
     expect(listAudit()[0].by ?? null).toBeNull();
   });
@@ -191,9 +194,11 @@ describe('the release from the plan to the stable', () => {
 
   it('goes all the way: the plan on the tracking issue, a merge made locally, a beta, the waits, the stable, and a push that always waits for a yes', async () => {
     const pr = { head: '' };
+    // the person's checkout: nothing a release does may change it
+    const before = w.snapshot();
     const { b, run } = await start({ script: (x) => script(x, pr) });
     // the person pushes the branch the release opened, and a pull request is aimed at it
-    w.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
     pr.head = w.pushedBranch('feat/x', 'release/0.5.0');
     forge.others.push({ number: 7, branch: 'feat/x', head: pr.head, base: 'release/0.5.0', files: [], approved: true, title: 'Add the x', body: 'Closes #12' });
 
@@ -261,7 +266,7 @@ describe('the release from the plan to the stable', () => {
     await b.settle();
     now = current(b, run);
     expect(now.status).toBe('done');
-    expect(w.version).toBe('0.5.0');
+    expect(w.steps.version).toBe('0.5.0');
     expect(w.git('tag', '--list')).toContain('v0.5.0');
     expect(w.argv().flat()).not.toContain('--emergency');
     expect(w.argv().flat()).not.toContain('--allow-branch');
@@ -287,6 +292,9 @@ describe('the release from the plan to the stable', () => {
     await b.runner.tick();
     await b.settle();
     expect(forge.writes).toHaveLength(writes);
+    // the whole release was made in the worktree of its own: the person's checkout, its HEAD, its branch and its status are as they were
+    expect(w.snapshot()).toBe(before);
+    expect(w.branch).toBe('main');
     void AUTHOR;
   });
 });
@@ -315,7 +323,7 @@ describe('the tool the Release manager asks for the steps with', () => {
     });
     expect(answers).toHaveLength(REFUSED.length);
     for (const a of answers) expect(a).toMatch(/^Refused, nothing was done/);
-    expect(w.argv()).toEqual([['open', '0.5.0', '--author', 'Runner Test <runner@example.test>']]);
+    expect(w.argv()).toEqual([['open', '0.5.0', '--author', 'Runner Test <runner@example.test>', '--worktree']]);
     expect(pending()).toEqual([]);
     expect(listAudit().filter((l) => l.kind === 'release')).toHaveLength(1);
     expect(b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.release.stepRefused')).toHaveLength(REFUSED.length);
@@ -458,7 +466,7 @@ describe('the comments of a release on its tracking issue', () => {
 
   it('edits the list of activities in place when a pull request changes, and does not post it again when nothing did', async () => {
     const { b, run } = await start();
-    w.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
     forge.others.push({ number: 7, branch: 'feat/x', head: 'a'.repeat(40), base: 'release/0.5.0', files: [], title: 'Add the x' });
     await b.runner.tick();
     await b.settle();
@@ -484,9 +492,10 @@ describe('the comments of a release on its tracking issue', () => {
 describe('a patch release', () => {
   it('opens the branch from the stable tag it is a patch of', async () => {
     const { b, run } = await start({ version: '0.4.1', from: 'v0.4.0' });
+    w.stepsDir = join(w.root, 'worktrees', 'app', 'release-0.4.1-steps');
     expect(current(b, run).subject).toMatchObject({ version: '0.4.1', from: 'v0.4.0' });
-    expect(w.argv()[0]).toEqual(['open', '0.4.1', '--from', 'v0.4.0', '--author', 'Runner Test <runner@example.test>']);
-    expect(w.branch).toBe('release/0.4.1');
+    expect(w.argv()[0]).toEqual(['open', '0.4.1', '--from', 'v0.4.0', '--author', 'Runner Test <runner@example.test>', '--worktree']);
+    expect(w.steps.branch).toBe('release/0.4.1');
     expect(forge.issues.get(200)?.title).toBe('Release 0.4.1');
   });
 });

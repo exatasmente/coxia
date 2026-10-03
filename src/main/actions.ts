@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { getTerms, t } from '../shared/i18n';
@@ -997,6 +997,8 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
   return audited(origin, { kind: push ? 'push' : 'release', target: releaseCommandLine(unit), via: push ? 'git' : 'release.sh', fields }, async () => {
     const r = await runReleaseOp(unit, {
       clone,
+      // The steps run in a worktree of their own next to the run's: the person's checkout is never touched. Derived from the run, never from the unit.
+      worktree: join(dirname(run.worktree), `release-${unit.version}-steps`),
       identity,
       pr: async (n) => {
         const mr = await vcsProvider().getMr(project ?? issueProjectKey(), n, { approvals: true });

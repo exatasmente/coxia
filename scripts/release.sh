@@ -13,6 +13,8 @@
 #   --skip-checks    do not run tsc, tests, theme audit, i18n lint and the build (the public audit always runs)
 #   --allow-branch   skip the branch rules (a beta on release/X.Y.Z only, a stable on main only); loud
 #   --emergency      a stable for a hotfix that cannot wait for a beta: skips the beta, merge and remote rules; loud, and written in the tag
+#   --worktree       run in a worktree of its own, where main is not a branch (the app's release steps): open cuts from origin/main when there is one, and a stable is cut on a
+#                    detached HEAD that stands for main (merge release/X.Y.Z into origin/main's commit first); every other rule is the same
 #   --dry-run        validate and print the plan; change nothing
 #
 # Order: refuse a dirty tree, apply the branch and version rules, run the checks, bump package.json and package-lock.json (npm version
@@ -35,6 +37,7 @@ DATE="$(date +%Y-%m-%d)"
 CHECKS=1
 ALLOW_BRANCH=0
 EMERGENCY=0
+WORKTREE=0
 FROM=""
 DRY=0
 
@@ -47,6 +50,7 @@ while [ $# -gt 0 ]; do
     --skip-checks) CHECKS=0 ;;
     --allow-branch) ALLOW_BRANCH=1 ;;
     --emergency) EMERGENCY=1 ;;
+    --worktree) WORKTREE=1 ;;
     --dry-run) DRY=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown option $1 (see --help)" ;;
@@ -106,12 +110,16 @@ release_refs() {
   done
 }
 
+# What stands for main: the local branch, or, in a release worktree (where main is the person's checkout's branch and is never touched), what the remote has.
+MAIN_REF=main
+if [ "$WORKTREE" -eq 1 ] && ref_exists refs/remotes/origin/main; then MAIN_REF=origin/main; fi
+
 # The highest version main carries: its package.json and every stable or beta tag reachable from it. Empty when main does not exist.
 main_version() {
   local pkg="" tags=""
-  ref_exists refs/heads/main || return 0
-  pkg="$(git show main:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version" 2>/dev/null || true)"
-  tags="$(git tag --merged main --list 'v*' | sed -E 's/^v//; s/-.*$//' | grep -E "^$NUM\.$NUM\.$NUM\$" || true)"
+  git rev-parse -q --verify "$MAIN_REF^{commit}" >/dev/null || return 0
+  pkg="$(git show "$MAIN_REF:package.json" 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version" 2>/dev/null || true)"
+  tags="$(git tag --merged "$MAIN_REF" --list 'v*' | sed -E 's/^v//; s/-.*$//' | grep -E "^$NUM\.$NUM\.$NUM\$" || true)"
   { echo "${pkg%%-*}"; printf '%s\n' "$tags"; } | grep -E "^$NUM\.$NUM\.$NUM\$" | sort -V | tail -n1 || true
 }
 
@@ -145,16 +153,16 @@ cmd_open() {
     fi
     base="$FROM"; base_desc="the tag $FROM"
   else
-    ref_exists refs/heads/main || die "there is no local main to cut from"
-    if ref_exists refs/remotes/origin/main; then
+    git rev-parse -q --verify "$MAIN_REF^{commit}" >/dev/null || die "there is no local main to cut from"
+    if [ "$MAIN_REF" = main ] && ref_exists refs/remotes/origin/main; then
       behind="$(git rev-list --count main..origin/main)"
       [ "$behind" -eq 0 ] || die "main is $behind commit(s) behind origin/main: update it first (git fetch, then fast-forward main)"
     fi
     if [ -n "$line_tag" ]; then
       # The same major.minor as a released version is a patch, and a patch comes from the stable tag, not from whatever main holds now.
-      [ "$(git rev-parse main)" = "$(tag_commit "$line_tag")" ] || die "$v is a patch of $line_tag: cut it from the tag (scripts/release.sh open $v --from $line_tag); main has moved since"
+      [ "$(git rev-parse "$MAIN_REF")" = "$(tag_commit "$line_tag")" ] || die "$v is a patch of $line_tag: cut it from the tag (scripts/release.sh open $v --from $line_tag); main has moved since"
     fi
-    base="main"; base_desc="main ($(git rev-parse --short main))"
+    base="$MAIN_REF"; base_desc="$MAIN_REF ($(git rev-parse --short "$MAIN_REF"))"
   fi
   if [ -n "$floor" ] && ! ver_gt "$v" "${floor#v}"; then die "$v is not above the latest stable ${floor#v}"; fi
   if [ -z "$FROM" ]; then
@@ -230,7 +238,7 @@ if [ "$KIND" = beta ]; then
       die "the branch release/$BRANCH_CORE cuts $BRANCH_CORE-beta.N, not $VERSION: the number must match the branch (--allow-branch overrides)"
     fi
   fi
-elif [ "$BRANCH" != "main" ]; then
+elif [ "$BRANCH" != "main" ] && ! { [ "$WORKTREE" -eq 1 ] && [ "$BRANCH" = HEAD ]; }; then
   if [ "$ALLOW_BRANCH" -eq 1 ]; then
     LOUD+=("--allow-branch: $VERSION is cut on '$BRANCH' instead of main")
   else
@@ -392,11 +400,14 @@ When the draft is published, delete the release branch (these commands are only 
   git push origin --delete release/$CORE
 "
 fi
+# A stable cut on the detached HEAD of a release worktree is pushed to main by name.
+PUSH_REF="$BRANCH"
+if [ "$BRANCH" = HEAD ]; then PUSH_REF="HEAD:refs/heads/main"; fi
 cat <<EOF
 
 Done locally. Nothing was pushed. Review the commit and the tag, then push (this starts the release workflow):
 
-  git push origin $BRANCH
+  git push origin $PUSH_REF
   git push origin $TAG
 
 $NEXT_STEP

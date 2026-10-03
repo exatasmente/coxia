@@ -105,6 +105,8 @@ Checked in the code (not by a build, which needs the network): `computeChannelNa
 | P22 | **Part 2.** The sweep (`lookForEvents`) also calls `Publisher.releaseTick` for every release run that is not cancelled, closed or old (30 days) | the beta published and the stable published happen on the host, after a run may have ended |
 | P23 | **Part 2.** `Publisher` gets `localTags` (injected by the module) | the publisher must not import git (`runs-policy`), and the beta wait needs the tags the clone has |
 | P24 | **Part 2.** The release brief and every stage section are in the catalogs (`main.runner.release.*`, `prompt.sdd.runner.section.release`), the template in `cycle.releaseFlow.*`; no host word in them (`{crLong}`, `{cr}`, `{crMark}`) | the host-terms test renders every catalog key on the three hosts |
+| P25 | **Part 2, D14 (maintainer, 2026-10-03).** The steps run in `<worktrees>/<repo>/release-X.Y.Z-steps`, a detached worktree made from the clone (`prepareWorktree`); `release.sh --worktree` reads `main` from `origin/main` and accepts a detached HEAD for a stable; a stable is merged into a detached `origin/main` and `push-branch main` sends `HEAD:refs/heads/main` after detaching at the stable tag | the person's checkout (its branch, tree and `main`) is never touched, and no branch is checked out twice |
+| P26 | **Part 2.** The dependency folders of the clone are linked into the steps' worktree and hidden from `git status` by `core.excludesFile` (for our own git calls and, through `GIT_CONFIG_*`, for the script), a file in the worktree's own git directory | the checks of a cut (`tsc`, `vitest`, the build) need `node_modules`, and the script refuses a dirty tree; nothing is written to the shared `info/exclude` |
 
 ## 7. Part 2: what the next agent needs
 
@@ -154,7 +156,7 @@ Built in this branch after the maintainer approved D5 and D6 (2026-10-03) and as
 | What | Where | Guarded by |
 |---|---|---|
 | The unit of a release step and its judge | `src/shared/release.ts` | `test/release-unit.test.ts` |
-| The steps (`open`, `merge-pr`, `beta`, `stable`, `push-branch`, `push-tag`) | `src/main/releaseGit.ts` | `test/release-git.test.ts` (the real script, a bare origin) |
+| The steps (`open`, `merge-pr`, `beta`, `stable`, `push-branch`, `push-tag`), in a worktree of their own | `src/main/releaseGit.ts`, `scripts/release.sh --worktree` | `test/release-git.test.ts` (the real script, a bare origin, the person's checkout unchanged after a whole release), `test/release-script.test.ts` |
 | The `release-git` kind: proposal, approval, audit, the auto path, the preview | `src/main/actions.ts`, `src/main/runner/door.ts`, `src/renderer/src/screens/Actions.tsx` | `test/release-actions.test.ts` |
 | Reads by target branch and by tag, and closing an issue, on three hosts | `src/main/vcs/*` | `test/vcs-release-reads.test.ts` |
 | `Run.subject`, the run file, `recordSubject` | `src/shared/runs/{types,schema,transitions}.ts` | `test/runs-subject.test.ts` |

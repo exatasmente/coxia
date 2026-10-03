@@ -1199,7 +1199,7 @@
   "main.release.merged": "Integrou o {crLong} #{pr} em {branch} ({sha}). Nada foi enviado.",
   "main.release.mainDiverged": "A main não avança em fast-forward até a origin/main (tem commits que o remoto não tem, ou o contrário): atualize à mão antes. Nada foi integrado.",
   "main.release.mergeReleaseConflict": "Integrar {branch} na main dá conflito, e o merge foi desfeito. Resolva à mão.\n{detail}",
-  "main.release.mainNotCut": "A main só é enviada depois que a estável é cortada nela, e a tag {tag} não está na main: nada foi enviado.",
+  "main.release.mainNotCut": "A main só é enviada depois que a estável é cortada, e ainda não há a tag {tag}: nada foi enviado.",
   "main.release.pushed": "Enviou {ref}.",
   "main.release.noTag": "Não há tag {tag} aqui para enviar: nada foi enviado.",
   "main.release.tagNotAnnotated": "A tag {tag} não é anotada, então não foi feita pelo script de release: nada foi enviado.",
@@ -1258,5 +1258,7 @@
   "main.forum.code.runner.release.stepDone": "Feito, depois do seu sim: {summary}.",
   "main.forum.code.runner.release.closeProposed": "A versão estável está no ar. Fechar a issue de acompanhamento espera o seu sim em Ações: {summary}.",
   "main.forum.code.runner.release.closed": "A versão estável está no ar, e a issue de acompanhamento foi fechada: {url}",
-  "main.forum.code.runner.release.closeFailed": "A issue de acompanhamento não pôde ser fechada: {reason}"
+  "main.forum.code.runner.release.closeFailed": "A issue de acompanhamento não pôde ser fechada: {reason}",
+  "main.release.worktreeBusy": "A pasta {path} não é o worktree desta release: o app não roda no que não criou. Remova ou renomeie e tente de novo.",
+  "main.release.branchElsewhere": "A branch {branch} está com checkout em {path}, e uma branch não pode ter checkout duas vezes: troque aquele checkout para outra branch (os passos da release rodam em um worktree próprio e nunca o tocam) e tente de novo."
 }

@@ -1199,7 +1199,7 @@
   "main.release.merged": "Merged {crLong} #{pr} into {branch} ({sha}). Nothing was pushed.",
   "main.release.mainDiverged": "main cannot be fast-forwarded to origin/main (it has commits the remote lacks, or the other way round): update it by hand first. Nothing was merged.",
   "main.release.mergeReleaseConflict": "Merging {branch} into main conflicts, and the merge was undone. Resolve it by hand.\n{detail}",
-  "main.release.mainNotCut": "main is pushed only after the stable is cut on it, and the tag {tag} is not in main: nothing was pushed.",
+  "main.release.mainNotCut": "main is pushed only after the stable is cut, and there is no tag {tag} yet: nothing was pushed.",
   "main.release.pushed": "Pushed {ref}.",
   "main.release.noTag": "There is no tag {tag} here to push: nothing was pushed.",
   "main.release.tagNotAnnotated": "The tag {tag} is not an annotated tag, so it was not made by the release script: nothing was pushed.",
@@ -1258,5 +1258,7 @@
   "main.forum.code.runner.release.stepDone": "Done, after your yes: {summary}.",
   "main.forum.code.runner.release.closeProposed": "The stable version is out. Closing the tracking issue waits in Actions for your yes: {summary}.",
   "main.forum.code.runner.release.closed": "The stable version is out, and the tracking issue was closed: {url}",
-  "main.forum.code.runner.release.closeFailed": "The tracking issue could not be closed: {reason}"
+  "main.forum.code.runner.release.closeFailed": "The tracking issue could not be closed: {reason}",
+  "main.release.worktreeBusy": "The folder {path} is not the worktree of this release: the app does not run in what it did not make. Remove or rename it and try again.",
+  "main.release.branchElsewhere": "The branch {branch} is checked out in {path}, and a branch cannot be checked out twice: switch that checkout to another branch (the release steps run in a worktree of their own and never touch it) and try again."
 }
