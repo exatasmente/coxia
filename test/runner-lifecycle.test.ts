@@ -257,6 +257,17 @@ describe('a stage that goes wrong', () => {
     expect(b.engine.calls.find((c) => c.agent.id === 'refiner')!.system).toContain('To look around use the Read, Glob and Grep tools, not ls, find or pwd.');
   });
 
+  it('writes the documents of a stage without the head of the issue record, and asks the agent not to repeat it', async () => {
+    const b = await boot({ configure: (c) => (c.language = 'en') });
+    easy(b);
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md', '# Functional specification — app#101 Add the thing 101\n\n- Address: https://example.com/group/project/issues/101\n- Author: ana\n\n## What is asked\n\nX.\n')], handoff: 'Plan it.' }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'gate1');
+    expect(readFileSync(join(run.worktree, run.cycleFolder, '1_SPEC.md'), 'utf8')).toBe('# Functional specification\n\n## What is asked\n\nX.\n');
+    expect(b.engine.calls[0].prompt).toContain('opens with a title of its own');
+    expect(b.engine.calls[0].prompt).toContain('with no internal reference');
+  });
+
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {
     const b = await boot({ limits: { idleMs: 90, maxMs: 5_000 } });
     easy(b);

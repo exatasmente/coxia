@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
-import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
+import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
 import { WorktreeError, branchDiff, branchStat, commitAll, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
@@ -242,5 +242,32 @@ describe('what an agent is given from the thread', () => {
     expect(pendingAnswer(answered, 'planner', 'plan')).toEqual({ question: 'Which?', text: 'This one.', by: expect.any(String) });
     expect(pendingAnswer(answered, 'planner', 'refine')).toBeNull();
     expect(pendingAnswer([...answered, msg(3, { kind: 'post', author: agent('planner'), text: 'ok' })], 'planner', 'plan')).toBeNull();
+  });
+});
+
+describe('a document of a stage, tidied', () => {
+  const issue_ = { ref: 'app#101', title: 'slugify does not strip accents' };
+
+  it('loses the reference and the title of the issue in its heading, and the facts the issue record already has under it', () => {
+    const doc = ['# Functional specification — app#101 slugify does not strip accents', '', '- Address: https://example.com/group/project/issues/101', '- Author: ana', '- Labels: bug', '- Type: bug', '- Proposed priority: P1', '', '## What is asked', '', 'Strip them.'].join('\n');
+    expect(tidyArtifact(doc, issue_)).toBe(['# Functional specification', '', '- Type: bug', '- Proposed priority: P1', '', '## What is asked', '', 'Strip them.'].join('\n'));
+    // the same in the other language of the app
+    const pt = ['# Especificação funcional — app#101 slugify does not strip accents', '', '- Endereço: https://example.com/group/project/issues/101', '- Estado: open', '- Autor: ana', '', '## O que se pede', '', 'x'].join('\n');
+    expect(tidyArtifact(pt, issue_)).toBe(['# Especificação funcional', '', '## O que se pede', '', 'x'].join('\n'));
+  });
+
+  it('takes the internal reference out of a title that says something of its own, keeping the rest', () => {
+    expect(tidyArtifact('# Release note — app#101: addresses made from the title\n\nBody.', issue_)).toBe('# Release note — addresses made from the title\n\nBody.');
+    expect(tidyArtifact('# Note (app#101) addresses\n\nBody.', issue_)).toBe('# Note addresses\n\nBody.');
+    expect(tidyArtifact('# app#101\n\nBody.', issue_)).toBe('# app#101\n\nBody.');
+  });
+
+  it('leaves a document alone when it has none of that: a title of its own, a list that is something else, text with no heading', () => {
+    const plain = '# Test plan\n\n- Scenario one\n- Scenario two\n\nSee app#101 for the origin.';
+    expect(tidyArtifact(plain, issue_)).toBe(plain);
+    expect(tidyArtifact('no heading, app#101\n- Author: ana', issue_)).toBe('no heading, app#101\n- Author: ana');
+    expect(tidyArtifact('', issue_)).toBe('');
+    // an author in the body, after other text, is the document's own
+    expect(tidyArtifact('# Review\n\nText first.\n\n- Author: ana', issue_)).toBe('# Review\n\nText first.\n\n- Author: ana');
   });
 });

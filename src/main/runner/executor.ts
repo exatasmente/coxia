@@ -10,7 +10,7 @@ import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
-import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
+import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
 import { type CommandResult, type CommandRunner, runCommand, runCommands } from './commands';
 import { type Denial, confinedHooks } from './hooks';
@@ -274,7 +274,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });
       continue;
     }
-    writeArtifact(wt, run.cycleFolder, a.name, a.content);
+    writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(a.content, run.issue));
     written.push(a.name);
   }
   if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ran ? { commands: ran } : {}) };

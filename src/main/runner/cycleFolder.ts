@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { t } from '../../shared/i18n';
+import { createTranslator, t } from '../../shared/i18n';
 import { ARTIFACT_NAME } from '../../shared/runs';
 import { checkPath } from '../engine/guard';
 import type { VcsComment, VcsIssue } from '../vcs/types';
@@ -80,6 +80,39 @@ export function readFolder(wt: string, folder: string): FolderFile[] {
     left -= Math.min(raw.length, cap);
   }
   return files;
+}
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The names of the facts the issue record opens with, in every language the app has: what a model copies from it into its own document's head. */
+const issueFactNames = (): Set<string> => new Set((['pt-BR', 'en'] as const).flatMap((lang) => ['url', 'state', 'labels', 'author'].map((k) => createTranslator(lang)(`main.runner.issue.${k}`).trim().toLowerCase())));
+
+/**
+ * A document of a stage as the cycle folder keeps it: the head the issue record has (its reference in the title and the list of its address, state, labels
+ * and author) is not repeated in every document, since the folder and the file name already say which issue it is. The title keeps what is its own ("Release
+ * note — what changed"); a list under it that is anything else (a priority, a type) stays.
+ */
+export function tidyArtifact(content: string, issue: { ref: string; title: string }): string {
+  const lines = content.split('\n');
+  const at = lines.findIndex((l) => l.trim());
+  if (at < 0 || !/^#\s+\S/.test(lines[at])) return content;
+  let title = lines[at].replace(/^#\s+/, '');
+  title = title.replace(new RegExp(`\\s*\\(?${escapeRe(issue.ref)}\\)?\\s*:?`, 'gi'), ' ');
+  if (issue.title.trim()) title = title.replace(new RegExp(escapeRe(issue.title.trim()), 'i'), ' ');
+  title = title.replace(/\s+/g, ' ').replace(/(?:\s*[—–-])+\s*$/, '').replace(/^\s*[—–:-]\s*/, '').trim();
+  // The first block of list items under the title: the facts of the issue record go, the rest stays.
+  const names = issueFactNames();
+  let end = at + 1;
+  while (end < lines.length && (!lines[end].trim() || /^\s*[-*]\s/.test(lines[end]))) end++;
+  const head = lines.slice(at + 1, end);
+  const kept = head.filter((l) => {
+    const key = /^\s*[-*]\s*([^:\n]{1,40}):/.exec(l)?.[1].trim().toLowerCase();
+    return !(key && names.has(key));
+  });
+  // Nothing of the head was a fact of the issue record: it stays as it was, line for line.
+  const rest = [...(kept.length === head.length ? head : kept.some((l) => l.trim()) ? kept : ['']), ...lines.slice(end)];
+  const out = [title ? `# ${title}` : lines[at], ...rest].join('\n').replace(/\n{3,}/g, '\n\n');
+  return [...lines.slice(0, at), out].join('\n');
 }
 
 /** Writes a document of the stage into the cycle folder. The path goes through the same guard the agents' own writes do, so a name cannot lead anywhere else. */
