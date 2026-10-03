@@ -164,6 +164,20 @@ export type VcsTransport = 'cli' | 'api';
 
 // ---------------------------------------------------------------- writes (described, never run, by the provider)
 
+/** One comment of a review: on a line (or a range) of a file, or on the file itself when `line` is null. */
+export interface ReviewComment {
+  path: string;
+  /** The line it stands on (the last line of a range) as numbered in the side's file; null: a comment on the whole file. */
+  line: number | null;
+  /** The first line of a range; null for a single line. */
+  startLine: number | null;
+  /** new: the file after the change. old: a line the change removes. */
+  side: 'new' | 'old';
+  body: string;
+}
+
+export type ReviewEvent = 'request_changes' | 'comment';
+
 export type VcsWriteOp =
   | { op: 'commentIssue'; project: string; iid: number; body: string }
   | { op: 'commentMr'; project: string; iid: number; body: string }
@@ -175,7 +189,16 @@ export type VcsWriteOp =
   | { op: 'setIssueStatus'; project: string; iid: number; status: string; nodeId?: string }
   | { op: 'addReviewer'; project: string; iid: number; userId: string | number; username: string }
   | { op: 'setDraft'; project: string; iid: number; draft: boolean; title?: string }
-  | { op: 'playJob'; project: string; jobId: number };
+  | { op: 'playJob'; project: string; jobId: number }
+  /** A note on a merge or pull request edited in place (the conversation comment a stage left, not a review thread). */
+  | { op: 'editMrNote'; project: string; iid: number; noteId: string | number; body: string }
+  /**
+   * One review round: the general comment (`body`), the comments on lines and on files, and the verdict. Never an approval. `commitSha` is the head the
+   * positions were taken from; the provider anchors every comment to it.
+   */
+  | { op: 'submitReview'; project: string; iid: number; event: ReviewEvent; body: string; comments: ReviewComment[]; commitSha: string }
+  /** A pull request from a branch of the same repository. */
+  | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string };
 
 export type VcsWriteName = VcsWriteOp['op'];
 

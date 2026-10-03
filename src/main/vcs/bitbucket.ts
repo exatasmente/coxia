@@ -18,6 +18,7 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
+import { indexPatch } from './diffLines';
 import { checkIid, enc, iso, issueRefsOf, pool, splitUnifiedDiff, worstCi } from './util';
 
 // Bitbucket Cloud, REST 2.0 (api.bitbucket.org). A "project" is "workspace/repo-slug". Bitbucket has no CLI: this provider only uses
@@ -423,6 +424,29 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         }
         case 'playJob':
           throw new VcsError('unsupported', { kind: 'Bitbucket', what: t('vcs.write.playJob') });
+        case 'editMrNote': {
+          const id = checkIid(Number(op.noteId));
+          return [call('PUT', `${repo(op.project)}/pullrequests/${checkIid(op.iid)}/comments/${id}`, { content: { raw: op.body } })];
+        }
+        case 'createMr':
+          return [call('POST', `${repo(op.project)}/pullrequests`, { title: op.title, description: op.body, source: { branch: { name: op.sourceBranch } }, destination: { branch: { name: op.targetBranch } } })];
+        case 'submitReview': {
+          const n = checkIid(op.iid);
+          const url = `${repo(op.project)}/pullrequests/${n}`;
+          const changes = op.comments.some((x) => x.line === null) ? await provider.listMrChanges(op.project, n) : [];
+          const cmds = op.comments.map((x) => {
+            // Bitbucket comments on one line of the old file (`from`) or the new one (`to`); there is no range and no comment on a whole file, so
+            // a range stands on its last line and a file comment on the first line the change touches, saying so.
+            if (x.line !== null) return call('POST', `${url}/comments`, { content: { raw: x.body }, inline: { path: x.path, [x.side === 'old' ? 'from' : 'to']: x.line } });
+            const first = indexPatch(changes.find((f) => f.path === x.path)?.diff ?? '').first;
+            const at = first?.new ?? first?.old ?? null;
+            if (at === null) throw new VcsError('invalid', { detail: x.path });
+            return call('POST', `${url}/comments`, { content: { raw: `${t('vcs.write.aboutFile')}\n\n${x.body}` }, inline: { path: x.path, [first?.new !== null ? 'to' : 'from']: at } });
+          });
+          cmds.push(call('POST', `${url}/comments`, { content: { raw: op.body } }));
+          if (op.event === 'request_changes') cmds.push(call('POST', `${url}/request-changes`));
+          return cmds;
+        }
       }
     },
 
@@ -434,7 +458,10 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
 const R = '[\\w.-]+/[\\w.-]+';
 const WRITES: { method: VcsCommand['method']; re: RegExp; allowed: string[]; required: string[] }[] = [
   { method: 'POST', re: new RegExp(`^repositories/${R}/issues/\\d+/comments$`), allowed: ['content'], required: ['content'] },
-  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments$`), allowed: ['content', 'parent'], required: ['content'] },
+  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments$`), allowed: ['content', 'parent', 'inline'], required: ['content'] },
+  { method: 'PUT', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
+  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/request-changes$`), allowed: [], required: [] },
+  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests$`), allowed: ['title', 'description', 'source', 'destination'], required: ['title', 'source', 'destination'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+/resolve$`), allowed: [], required: [] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/issues/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/issues/\\d+$`), allowed: ['state'], required: ['state'] },
@@ -466,4 +493,13 @@ export function validateBitbucketCommand(cmd: VcsCommand): void {
   if ('parent' in body && !Number.isSafeInteger((body.parent as { id?: unknown })?.id)) throw new Error(t('vcs.validate.body'));
   if ('draft' in body && typeof body.draft !== 'boolean') throw new Error(t('vcs.validate.body'));
   if ('title' in body && typeof body.title !== 'string') throw new Error(t('vcs.validate.body'));
+  if ('description' in body && typeof body.description !== 'string') throw new Error(t('vcs.validate.body'));
+  if ('inline' in body) {
+    const i = body.inline as { path?: unknown; to?: unknown; from?: unknown } | null;
+    const ok = !!i && typeof i === 'object' && typeof i.path === 'string' && Object.keys(i).every((k) => ['path', 'to', 'from'].includes(k)) && ['to', 'from'].every((k) => !(k in i) || Number.isSafeInteger((i as Record<string, unknown>)[k]));
+    if (!ok) throw new Error(t('vcs.validate.body'));
+  }
+  for (const k of ['source', 'destination']) {
+    if (k in body && !(typeof (body[k] as { branch?: { name?: unknown } })?.branch?.name === 'string' && /^[\w][\w./-]*$/.test(String((body[k] as { branch: { name: string } }).branch.name)))) throw new Error(t('vcs.validate.body'));
+  }
 }

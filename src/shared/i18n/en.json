@@ -657,5 +657,7 @@
   "cycle.agentFlow.comment.pr.s2.heading": "How to verify",
   "cycle.agentFlow.comment.pr.s2.guidance": "Steps a person can follow to see the change working.",
   "cycle.agentFlow.comment.pr.s3.heading": "Extra findings",
-  "cycle.agentFlow.comment.pr.s3.guidance": "Anything found outside the issue's scope; each item says whether it enters this change or becomes another issue. Leave empty when there is none."
+  "cycle.agentFlow.comment.pr.s3.guidance": "Anything found outside the issue's scope; each item says whether it enters this change or becomes another issue. Leave empty when there is none.",
+  "vcs.write.aboutFile": "This comment is about the whole file.",
+  "vcs.write.reviewNoRefs": "the merge request has no diff yet, so a review cannot be placed on it"
 }

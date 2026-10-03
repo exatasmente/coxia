@@ -657,5 +657,7 @@
   "cycle.agentFlow.comment.pr.s2.heading": "Como verificar",
   "cycle.agentFlow.comment.pr.s2.guidance": "Passos que uma pessoa pode seguir para ver a mudança funcionando.",
   "cycle.agentFlow.comment.pr.s3.heading": "Achados extras",
-  "cycle.agentFlow.comment.pr.s3.guidance": "Qualquer coisa encontrada fora do escopo da issue; cada item diz se entra nesta mudança ou vira outra issue. Deixe vazio quando não houver."
+  "cycle.agentFlow.comment.pr.s3.guidance": "Qualquer coisa encontrada fora do escopo da issue; cada item diz se entra nesta mudança ou vira outra issue. Deixe vazio quando não houver.",
+  "vcs.write.aboutFile": "Este comentário é sobre o arquivo inteiro.",
+  "vcs.write.reviewNoRefs": "o merge request ainda não tem diff, então não dá para colocar uma revisão nele"
 }
