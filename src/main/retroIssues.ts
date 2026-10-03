@@ -63,6 +63,7 @@ export async function proposeRetroIssues(retro: Retro, melhorias: RetroImproveme
     const spoken = t(key, params);
     retro.talk.push({ me: false, text: spoken, speech: spoken, at: now() });
   };
+  const used = new Set<string>();
   for (const [i, m] of melhorias.entries()) {
     const body = [
       t('main.retro.issue.dimension', { value: m.dimensao }),
@@ -78,7 +79,10 @@ export async function proposeRetroIssues(retro: Retro, melhorias: RetroImproveme
       say('main.retro.issue.refused', { title: m.titulo, reason: plan.reason });
       continue;
     }
-    const key = `retro-issue:${retro.id}:${slug(m.titulo) || `i${i}`}`;
+    const base = `retro-issue:${retro.id}:${slug(m.titulo) || `i${i}`}`;
+    // Two improvements whose titles normalize to the same slug are still two improvements: the index keeps one from swallowing the other.
+    const key = used.has(base) ? `${base}:${i}` : base;
+    used.add(key);
     const summary = t('main.retro.issue.summary', { title: m.titulo });
     const made = proposeVcsAction({
       key,

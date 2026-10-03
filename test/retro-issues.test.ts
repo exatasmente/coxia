@@ -180,6 +180,23 @@ describe('what the conversation of the retro raises', () => {
     expect(again.talk.filter((m) => m.me)).toHaveLength(2);
     expect(forge.writes).toEqual([]);
   });
+
+  it('still gives each improvement its own proposal when two titles normalize to the same key', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    retro.writeRetro(stored());
+    // only the first forty characters of the normalized title make the key, so these two would collide without the index
+    const long = 'A'.repeat(45);
+    asked.answer = answer([improvement(`${long} um`), improvement(`${long} dois`)]);
+
+    const after = await retro.askRetro(day(), 'o que travou?');
+
+    const made = proposals();
+    expect(made).toHaveLength(2);
+    expect(new Set(made.map((a) => (a.unit ?? {}).key)).size).toBe(2);
+    expect(after.talk.filter((m) => !m.me && m.text.includes('está em Ações como proposta'))).toHaveLength(2);
+    expect(forge.writes).toEqual([]);
+  });
 });
 
 describe('the issue a retro improvement opens', () => {
@@ -254,7 +271,8 @@ describe('the issue a retro improvement opens', () => {
     expect(proposals()[0].state).toBe('skipped');
     expect(forge.writes).toEqual([]);
     expect(forge.issues.size).toBe(0);
-    expect(said.talk).toHaveLength(4);
+    // the question, the answer and the note that says the proposal waits in Actions
+    expect(said.talk).toHaveLength(3);
     expect(note(said, 'está em Ações como proposta')).toBe(true);
     expect('improvements' in (retro.readRetro(day()) as Retro)).toBe(false);
   });
@@ -281,6 +299,19 @@ describe('an improvement that cannot become a task', () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain('"Encurtar o ciclo de revisão" fica só nesta conversa: ');
     expect(notes[0]).toContain('projeto de issues');
+    expect(proposals()).toEqual([]);
+    expect(forge.writes).toEqual([]);
+  });
+
+  it('stays in the conversation when the integration exists but does not write issues', async () => {
+    forge = makeForge();
+    const base = forge.runtime();
+    setVcsRuntimeForTests({ ...base, provider: { ...base.provider, caps: { ...base.provider.caps, issues: false } } });
+
+    const notes = await said();
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('não escreve issue');
     expect(proposals()).toEqual([]);
     expect(forge.writes).toEqual([]);
   });

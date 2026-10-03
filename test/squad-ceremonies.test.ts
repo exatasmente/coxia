@@ -25,7 +25,7 @@ vi.mock('../src/main/agents', async (orig) => ({
   ...(await orig<typeof import('../src/main/agents')>()),
   askAgent: async (_role: string, prompt: string) => {
     asked.prompts.push(prompt);
-    return { data: { fala: 'Spoken.', numeros: [], funcionou: [], travou: [], retrabalho: [], melhorias: [] }, sessionId: 's1', partial: false };
+    return { data: { fala: 'Spoken.', numeros: [], funcionou: [], travou: [], retrabalho: [] }, sessionId: 's1', partial: false };
   },
 }));
 

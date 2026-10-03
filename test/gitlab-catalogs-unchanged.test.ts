@@ -107,6 +107,14 @@ const REMOVED: Record<string, string> = {
   'ui.retro.improvements.hint': 'the retro no longer offers the IMPROVEMENTS.md flow to take by hand (decision 5)',
   'ui.retro.improvements.hintPlain': 'the retro no longer offers the team improvements record to take by hand (decision 5)',
   'prompt.sdd.retro.improvementsFormat': 'the retro prompt no longer describes an improvements field: the record no longer has one (rule 1)',
+  // The texts the improvement entry of the retro screen used: nothing reads an improvement any more, so these have no caller left.
+  'ui.retro.copied': 'the copied feedback of the retro improvement entry went away with the section (rule 1)',
+  'ui.retro.copyEntry': 'the button that copied one improvement of the retro went away with the section (rule 1)',
+  'ui.retro.entry.dimension': 'the dimension line of the copied improvement entry has no caller any more (rule 1)',
+  'ui.retro.entry.problem': 'the problem line of the copied improvement entry has no caller any more (rule 1)',
+  'ui.retro.entry.proposal': 'the proposal line of the copied improvement entry has no caller any more (rule 1)',
+  'ui.retro.problem': 'the problem label of the retro improvement entry has no caller any more (rule 1)',
+  'ui.retro.proposal': 'the proposal label of the retro improvement entry has no caller any more (rule 1)',
 };
 
 // What the callers of main passed as params for a GitLab workspace on SDD with its defaults (the same values the terms give now): a text

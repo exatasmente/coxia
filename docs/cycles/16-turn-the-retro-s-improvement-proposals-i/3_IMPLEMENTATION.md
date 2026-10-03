@@ -1,141 +1,114 @@
-# Implementação: as melhorias da retro viram tarefa do fluxo de agentes
+# Ajustes da revisão e do QA na entrega das melhorias
 
-Os três passos do plano (§3) foram aplicados nesta árvore de trabalho. Nada foi commitado
-e nenhum gate rodou até o fim: ver §5.
+Os três passos do plano já estavam no worktree. Nesta passada foram tratados os quatro
+apontamentos da revisão, os buracos que o QA marcou, e dois defeitos que só apareceram quando
+os gates finalmente rodaram. Nada foi commitado.
 
-## 1. O que foi implementado, por passo do plano
+## 1. O que mudou nesta passada
 
-### Passo 1 — a tela e o registro perdem a seção de melhorias
+### Apontamentos da revisão
 
-- `src/shared/types.ts`: `improvements` saiu de `Retro` e a interface `Improvement` foi apagada.
-- `src/renderer/src/screens/RetroScreen.tsx`: apagados `improvementEntry`, o estado de copiado, a
-  função que copiava, a seção inteira e o import de `errorText`, que só ela usava. O resto da tela
-  (relato, números, funcionou, travou, retrabalho, conversa) ficou igual.
-- `src/shared/i18n/ui-docs.{en,pt-BR}.json`: `ui.retro.intro` reescrito, a chave nova
-  `ui.retro.introPlain` acrescentada e `ui.retro.improvements.{title,hint,hintPlain}` apagados.
-- `test/gitlab-catalogs-unchanged.test.ts`: `INTENDED` ganhou `language?: 'pt-BR' | 'both'`
-  (padrão `pt-BR`) e `replace` opcional; entrou o mapa `REMOVED` (chave → motivo), com um teste de
-  que cada chave listada sumiu dos dois catálogos; o filtro dos diffs e a asserção de que nada
-  sumiu do instantâneo passam a pular as chaves removidas.
-- Regra 2 sem código novo: `read()` continua fazendo `JSON.parse(...) as Retro`, sem validar
-  schema, então uma ata gravada com `improvements` abre e o campo extra é ignorado — é o que o
-  caso 1 do teste novo confere.
-- `test/retro-issues.test.ts` (novo): casos 1 e 2 de §5 do plano.
+1. **Colisão de chave** (`src/main/retroIssues.ts:82-85`). Duas melhorias cujo título, depois
+de virar resumo e ser cortado em 40 caracteres, dava o mesmo valor geravam a mesma chave; a
+segunda não virava proposta nem ganhava nota. Agora um conjunto de chaves já usadas na mesma
+leva desempata com o índice: a segunda melhoria recebe `…:<índice>` e vira proposta. O
+comportamento normal (títulos distintos) continua com a mesma chave de antes, então a
+deduplicação entre rodadas segue igual.
+2. **Override morto no perfil de exemplo** (`docs/examples/legacy-profile.example.json`). O
+bloco `promptOverrides.retro.improvementsFormat`, que depois da mudança não casa com chave
+de prompt nenhuma, foi removido.
+3. **Campo supérfluo no dublê** (`test/squad-ceremonies.test.ts:28`). `melhorias: []` saiu da
+resposta falsa de `askAgent`.
+4. **Comentário defasado** (`src/renderer/src/screens/RetroScreen.tsx:91`). A primeira metade
+da frase, que falava da convenção IMPROVEMENTS.md, saiu; restou "The gate quizzes belong to
+the SDD cycle; any other cycle gets the neutral wording."
 
-### Passo 2 — a melhoria nasce na conversa da retro
+### Buracos do QA
 
-- `src/main/retro.ts`: `prepareRetro` perdeu o parâmetro `improvements` do prompt, a propriedade
-  `melhorias` do schema e a linha `improvements` da gravação; `askRetro` pede `melhorias` no schema
-  (opcional, absorvido com `?? []`) e chama `proposeRetroIssues` antes de `write`. `read`/`write`
-  passaram a ser exportados como `readRetro`/`writeRetro`, porque a proposta e a nota releem a ata
-  por id e o teste precisa semear a ata.
-- `src/main/retroIssues.ts` (novo): por melhoria, na ordem em que vieram, decide o motivo de não
-  dar (sem host → sem escrita de issue → sem projeto de issues → título recusado pelo host) e,
-  quando dá, monta o corpo com `main.retro.issue.{dimension,problem,proposal,origin}` e propõe uma
-  ação `vcs` com `unit {purpose:'retro-issue', retro, key}`, chave `retro-issue:<id>:<slug do
-  título>` (cortado em 40), `issue: 0` e subtítulo vazio; também exporta `noteRetroIssue` (relê a
-  ata por id e empilha a nota) e `failureText` (redação de segredo + corte em 300). Nada é escrito
-  no host aqui: cada proposta espera o "sim".
-- `src/shared/i18n/{en,pt-BR}.json`: `{improvements}` saiu de `prompt.sdd.retro.main`, a chave
-  `prompt.sdd.retro.improvementsFormat` e a frase de "melhorias" dos prompts de retro de Scrum e
-  Kanban foram apagadas, e entraram as nove chaves `main.retro.issue.*` nos dois idiomas.
-  `prompt.sdd.retro.ask` não mudou.
-- `src/renderer/src/screens/Actions.tsx`: o subtítulo do cartão só é renderizado quando há
-  `issueTitle` ou `stage`, para o cartão da retro não mostrar " · " solto.
-- `test/golden/{en,legacy}-prompts{,-novoice}.json`: editados à mão (ver §5, item 5).
-- `test/retro-issues.test.ts`: casos 3 (proposta, Regra 3 e 6), 4 (deduplicação) e 8 (Regra 7).
+5. **Caminho "a integração existe, mas não escreve issue"** ganhou caso próprio em
+`test/retro-issues.test.ts`: um provedor com `caps.issues` falso, que leva a fala do motivo
+(`main.retro.issue.noWrite`) e nenhuma proposta.
+6. **Colisão de títulos** ganhou caso de teste: duas melhorias de 48 caracteres que só divergem
+depois do 40º resumo geram duas propostas com chaves distintas e duas notas na conversa.
 
-### Passo 3 — a issue criada começa a tarefa
+### Defeitos encontrados ao rodar os gates
 
-- `src/main/runner/module.ts`: `retroIssueDone(action, responses, start)` sai cedo quando
-  `action.unit?.purpose !== 'retro-issue'`, lê a issue criada com `createdIssueOf(responses[0])`;
-  sem número deixa a nota `main.retro.issue.noIssue`; com número chama
-  `start(`${rc().issues.refPrefix}${made.iid}`)` e, se a execução não começar, deixa
-  `main.retro.issue.noRun` com o motivo. Registrado como segundo `onRunnerActionDone`, ao lado do
-  que entrega as respostas ao runner.
-- `test/retro-issues.test.ts`: casos 5 (issue criada, auditada e execução iniciada), 6 (espaço de
-  teste recusa a confirmação) e 7 (pular não cria nada).
+7. **Texto morto nos catálogos reprovava a suíte.** O plano supunha que o lint não acusa chave
+sem uso, mas `test/ui-i18n.test.ts:81` (`leave no ui.* key unused`) reprova: sete chaves
+`ui.retro.*` ficaram sem chamador depois que a seção de melhorias saiu da tela
+(`ui.retro.copied`, `ui.retro.copyEntry`, `ui.retro.entry.dimension`,
+`ui.retro.entry.problem`, `ui.retro.entry.proposal`, `ui.retro.problem`, `ui.retro.proposal`).
+Elas saíram de `src/shared/i18n/ui-docs.{en,pt-BR}.json` e entraram em `REMOVED`
+(`test/gitlab-catalogs-unchanged.test.ts`), cada uma com motivo.
+8. **Contagem errada no caso 7 do teste novo.** O caso "não agora" esperava quatro falas na
+conversa; são três (a pergunta, a resposta do moderador e a nota da proposta). A expectativa
+foi corrigida para três, com um comentário dizendo quais são.
 
-## 2. Arquivos tocados
+## 2. Arquivos tocados nesta passada
 
-Modificados: `src/main/retro.ts`, `src/main/runner/module.ts`, `src/renderer/src/screens/Actions.tsx`,
-`src/renderer/src/screens/RetroScreen.tsx`, `src/shared/types.ts`,
-`src/shared/i18n/{en,pt-BR,main.en,main.pt-BR,ui-docs.en,ui-docs.pt-BR}.json`,
-`test/gitlab-catalogs-unchanged.test.ts`, os quatro `test/golden/*.json`.
-Novos: `src/main/retroIssues.ts`, `test/retro-issues.test.ts`.
+Modificados: `src/main/retroIssues.ts`, `src/renderer/src/screens/RetroScreen.tsx`,
+`src/shared/i18n/ui-docs.en.json`, `src/shared/i18n/ui-docs.pt-BR.json`,
+`test/gitlab-catalogs-unchanged.test.ts`, `test/retro-issues.test.ts`,
+`test/squad-ceremonies.test.ts`, `docs/examples/legacy-profile.example.json`.
 
-## 3. O que foi verificado nesta etapa
+Sem arquivo novo nesta passada. O restante da mudança (o código e os textos do plano original)
+segue como estava no worktree.
 
-Só leitura e só os dois comandos permitidos.
+## 3. O que foi verificado nesta passada
 
-Lido (arquivo por arquivo, para sustentar cada asserção do teste novo):
+Os dois comandos permitidos rodaram de verdade, porque nesta árvore há `node_modules`:
 
-- `test/retro-issues.test.ts` inteiro e as costuras de que ele depende: `test/helpers/runner.ts`
-  (o `boot` reescreve a config inteira, com `projects.issues.project` `group/project` e um repo
-  `app`), `test/helpers/fakeForge.ts` (POST `repos/group/project/issues` → issue 200, `writes`
-  vazio antes do "sim"), `test/helpers/config.ts`.
-- `test/gitlab-catalogs-unchanged.test.ts` inteiro, e a aritmética da guarda conferida à mão contra
-  `test/fixtures/catalogs-main/*`: as quatro entradas de `INTENDED` (a frase de `ui.retro.intro` nos
-  dois idiomas; `\n{improvements}` em `prompt.sdd.retro.main`; a frase de melhorias dos prompts de
-  retro de Scrum e Kanban, nos dois idiomas) casam caractere a caractere com o texto do instantâneo,
-  e as quatro chaves de `REMOVED` estão ausentes de `src/shared/i18n`.
-- `src/main/retro.ts`, `src/main/retroIssues.ts`, `src/main/runner/module.ts` — o código aplicado.
-- Os quatro `test/golden/{en,legacy}-prompts{,-novoice}.json`: o prompt `retro` não tem mais menção
-  a melhoria nem `{improvements}`, as chaves de schema do `retro` são
-  `[fala,numeros,funcionou,travou,retrabalho]` e o `retro-ask` ganhou `melhorias` na lista de chaves
-  com o texto do prompt igual.
-- As fontes renderizadas: `prompt.(sdd|scrum|kanban).retro.main` e as chaves `main.retro.issue.*`
-  nos dois catálogos, `ui-docs.{en,pt-BR}.json`, e a ausência de `Improvement`,
-  `ui.retro.improvements`, `improvementsFormat` e `improvementEntry` em `src/`.
-- `test/squad-ceremonies.test.ts` ainda responde `melhorias: []`, que o `?? []` absorve.
+- `npm run typecheck` → código 0, sem erros (`tsc --noEmit -p tsconfig.json`).
+- `npm test` → **175 arquivos, 2975 testes, todos passando**. Duas linhas de lint aparecem na
+saída e são esperadas: vêm de dois testes que pedem a reprovação do lint de propósito
+(`exits non-zero above the allowed total` e `refuses a scope it does not know`); os testes
+que exigem o lint limpo passaram.
 
-Executado:
+Consequências do que a suíte exercitou:
 
-- `npm run typecheck` → código 127, `sh: 1: tsc: not found`.
-- `npm test` → código 127, `sh: 1: vitest: not found`.
+- Os quatro textos de ouro dos prompts, que tinham sido editados à mão, **passaram no teste de
+paridade** (`test/cycle-parity-en*.test.ts`). Isso prova que a edição à mão corresponde ao
+que a regeneração produziria — o plano pedia `UPDATE_GOLDEN=1`, que não está entre os
+comandos desta etapa, mas a paridade por execução cobre a mesma dúvida.
+- A guarda dos catálogos congelados passou com as quatro entradas de `INTENDED` e as onze de
+`REMOVED` (as quatro do plano mais as sete desta passada).
+- Os casos de `test/retro-issues.test.ts` — inclusive a criação da issue com início automático
+da execução, a recusa em espaço de trabalho de testes, os quatro motivos de não dar, a
+deduplicação e as duas adições desta passada — passaram.
+- Os testes que rodam o lint de traduções (`test/ui-i18n.test.ts`, `test/i18n.test.ts`) e a
+regra de chave sem uso passaram.
 
-A causa é a árvore de trabalho não ter `node_modules` e `npm install` não estar entre os comandos
-permitidos desta etapa.
+Verificado por leitura, contra o resultado dos testes: o desempate de chave só entra na
+colisão, então a chave da proposta normal não muda.
 
 ## 4. O que não foi verificado
 
-Todo o resto. Em particular, não rodados: `npx tsc --noEmit`, `npx vitest run`,
-`node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`,
-`electron-vite build` e a regeneração dos goldens com `UPDATE_GOLDEN=1`. O aplicativo não foi
-aberto, nenhum modelo real foi chamado e nenhum host real foi tocado. Nada aqui prova que o código
-compila, que o teste novo passa, que a guarda congelada passa com as novas entradas ou que a tela
-renderiza como descrito: são asserções sobre leitura, não sobre execução. Ficam fora do alcance
-desta etapa, e precisam de quem as rode: se o modelo preenche `melhorias` sem instrução no prompt;
-se o cartão da retro renderiza como descrito; se a execução começa de fato logo depois da criação
-da issue num host real; e se o diff dos goldens editados à mão corresponde ao que a regeneração
-produziria.
+- `node scripts/theme-audit.mjs`, `npm run i18n:lint` e `node scripts/public-audit.mjs` como
+comandos e `electron-vite build`: **não rodados** — esta etapa só pode chamar `npm test` e
+`npm run typecheck`. O lint de traduções foi exercitado dentro da suíte (que passou), e
+`test/public-audit.test.ts` testa as regras da auditoria com entrada sintética, não a árvore
+real; a auditoria de verdade sobre os arquivos desta mudança segue **não verificada**.
+- Se o modelo preenche `melhorias` sem o prompt pedir: depende de modelo real, não observado.
+- Se a tela renderiza o cartão da proposta como descrito: não há teste de tela renderizada para
+a retro; a prova é leitura da fonte e o teste de fonte da tela.
+- Se a execução começa de fato logo depois de a issue existir num rastreador real: o teste
+prova a fiação com host falso, não o host. O caso também não confere pasta de ciclo, conversa
+nem documentos da execução; isso vem do caminho comum de início de tarefa e é coberto pelos
+testes do runner, não por este.
 
-## 5. Desvios do plano
+## 5. Divergências do plano
 
-1. `readRetro`/`writeRetro` exportados de `src/main/retro.ts`: o plano (§4.2/§4.3) manda reler a ata
-   por id, mas não dizia como; as funções internas viraram `export const readRetro = read` e
-   `export const writeRetro = write`, sem mudar o corpo.
-2. `retroIssueDone` extraído e exportado, com o início da execução injetado por parâmetro, em vez
-   do ouvinte inline de §4.3. O ouvinte inline só existe dentro de `runsModule`, que nenhum teste
-   monta (o `boot` dos testes cria o runner por outro caminho); sem a extração o caso 5 não teria
-   como ser exercitado. O comportamento é o do plano, e a única diferença é a assinatura.
-3. `failureText` (redação de segredo + corte em 300, como `publish.ts` faz) em vez do `message(err)`
-   que o plano escrevia: a nota vai para a conversa da retro.
-4. `ui.retro.introPlain` **não** entrou em `INTENDED`, ao contrário de §4.5. É chave nova: não
-   existe em `test/fixtures/catalogs-main/`, a guarda só percorre chaves do instantâneo e o teste
-   "every intended difference still exists" reprova uma entrada de `INTENDED` sem diff. A lista de
-   `INTENDED` ficou, então, com quatro entradas.
-5. Os quatro `test/golden/*.json` foram editados à mão (o prompt `retro` perde a menção a melhorias
-   e o `retro-ask` ganha `melhorias` nas chaves de schema, com o texto do prompt igual), porque
-   `UPDATE_GOLDEN=1` não está entre os comandos desta etapa. A regeneração precisa ser conferida no
-   passo de revisão.
-6. Os três commits do plano não puderam ser feitos: esta etapa não commita. O assunto informado
-   cobre os três passos.
-7. `docs/examples/legacy-profile.example.json` ainda carrega
-   `promptOverrides.retro.improvementsFormat`, um override que agora não casa com chave nenhuma. O
-   plano não manda limpá-lo e nenhum teste o lê; ficou como estava.
+1. **A decisão 5 do plano estava errada.** Ela mandava deixar as chaves de tela sem uso para
+não somar exceções à guarda, afirmando que o lint não as acusa. `test/ui-i18n.test.ts:81`
+acusa, e a suíte ficava vermelha. As sete chaves foram removidas e listadas em `REMOVED`,
+como descrito em 1.7.
+2. **Os textos de ouro não foram regenerados com `UPDATE_GOLDEN=1`** (comando indisponível
+nesta etapa); a edição à mão passou no teste de paridade por execução.
+3. **O caso 7 do teste novo foi corrigido** (esperava quatro falas, são três), como descrito
+em 1.8 — era defeito do teste, não do código.
+4. A execução segue sem os três commits do plano: esta etapa não commita.
 
 ## 6. Gates
 
-Nenhum rodou (§3). O estado honesto deste passo é: código e teste escritos, árvore não compilada e
-não testada.
+`npm run typecheck` e `npm test` verdes. Os demais gates do repositório e o build não rodaram
+(§4).

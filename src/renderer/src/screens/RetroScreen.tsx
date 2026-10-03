@@ -88,7 +88,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
     [retro],
   );
   const voiceOn = useVoiceEnabled();
-  // The IMPROVEMENTS.md convention and the gate quizzes belong to the SDD cycle; any other cycle gets the neutral wording.
+  // The gate quizzes belong to the SDD cycle; any other cycle gets the neutral wording.
   const sddCycle = useCycle()?.templateId === 'sdd';
   const talk = useTalk(player, ask, setError);
 
