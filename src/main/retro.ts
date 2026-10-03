@@ -9,6 +9,7 @@ import { cycle, formatDate, formatTime, language, prompt as cp, text as cycleWor
 import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
 import { runStore } from './runs';
+import { type RetroImprovement, proposeRetroIssues } from './retroIssues';
 import { getConfig, rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 import { t } from '../shared/i18n';
@@ -38,6 +39,10 @@ function read(id: string): Retro | null {
     return null;
   }
 }
+
+/** Reads and writes one stored retro; the retro's conversation adds to it after reading. */
+export const readRetro = read;
+export const writeRetro = write;
 
 /** The latest retro of the whole workspace, or, with a squad, the latest one held for it. */
 export function latestRetro(squad: string | null = null): Retro | null {
@@ -132,7 +137,6 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
     funcionou: { titulo: string; evidencia: string }[];
     travou: { titulo: string; evidencia: string }[];
     retrabalho: { titulo: string; evidencia: string }[];
-    melhorias: { titulo: string; dimensao: string; problema: string; proposta: string }[];
   }>(
     'deep',
     cp('retro.main', {
@@ -142,7 +146,6 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
       docsRef: cp('retro.docsRef'),
       focus: cp('retro.focus'),
       words: params.speechWords,
-      improvements: cp('retro.improvementsFormat'),
       digest: JSON.stringify(digest).slice(0, 24000),
     }),
     obj({
@@ -151,7 +154,6 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
       funcionou: { type: 'array', items: item },
       travou: { type: 'array', items: item },
       retrabalho: { type: 'array', items: item },
-      melhorias: { type: 'array', items: obj({ titulo: str, dimensao: str, problema: str, proposta: str }) },
     }),
     { maxTurns: 16 },
   );
@@ -167,7 +169,6 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
     worked: map(r.data.funcionou),
     stuck: map(r.data.travou),
     rework: map(r.data.retrabalho),
-    improvements: r.data.melhorias.map((m) => ({ title: m.titulo, dimension: m.dimensao, problem: m.problema, proposal: m.proposta })),
     talk: [],
     createdAt: to.toISOString(),
   });
@@ -176,13 +177,14 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
 export async function askRetro(id: string, question: string): Promise<Retro> {
   const retro = read(id);
   if (!retro) throw new Error(t('main.retro.notFound'));
-  const r = await askAgent<{ fala: string; texto: string }>(
+  const r = await askAgent<{ fala: string; texto: string; melhorias?: RetroImprovement[] }>(
     'deep',
     cp('retro.ask', { question }),
-    obj({ fala: str, texto: str }),
+    obj({ fala: str, texto: str, melhorias: { type: 'array', items: obj({ titulo: str, dimensao: str, problema: str, proposta: str }) } }),
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );
   retro.sessionId = r.sessionId || retro.sessionId;
   retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
+  await proposeRetroIssues(retro, r.data.melhorias ?? []);
   return write(retro);
 }

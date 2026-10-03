@@ -347,9 +347,6 @@
         "retro.focus": {
           "pt-BR": "Olhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta."
         },
-        "retro.improvementsFormat": {
-          "pt-BR": "\"melhorias\": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta."
-        },
         "reentry.pipelineLine": {
           "pt-BR": "Leia a seção \"3. Ciclos\" (a tabela de gatilhos e o texto abaixo dela) e a seção \"7. QA-assistente\" (tabela de classes) de {skill}."
         }
