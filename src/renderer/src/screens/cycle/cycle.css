@@ -196,3 +196,12 @@
 .cy-run-note { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .cy-run-row .badge { flex: 0 0 auto; }
 @media (max-width: 600px) { .cy-run-row { align-items: flex-start; flex-direction: column; } }
+
+/* a proposal of the runner in Actions */
+.cy-proposal { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--blue-line); background: var(--surface-2); min-width: 0; }
+.cy-proposal-head { gap: 8px; }
+.cy-proposal-progress { padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.cy-labels { display: flex; flex-wrap: wrap; gap: 6px; }
+.cy-commands { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; max-height: 260px; overflow: auto; }
+.cy-needs { margin-top: 16px; }

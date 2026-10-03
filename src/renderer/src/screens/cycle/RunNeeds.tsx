@@ -25,7 +25,7 @@ export function RunNeeds({ go }: { go: (s: Screen) => void }) {
   if (!runs?.length) return null;
   const shown = all ? waiting : waiting.slice(0, SHOWN);
   return (
-    <section className="dash-sec" aria-labelledby="cy-needs-h">
+    <section className="dash-sec cy-needs" aria-labelledby="cy-needs-h">
       <div className="row spread dash-sec-head">
         <h2 id="cy-needs-h" className="section-title">{waiting.length ? t('ui.cycle.needs.titleCount', { count: waiting.length }) : t('ui.cycle.needs.title')}</h2>
         <button type="button" className="btn dash-refresh" onClick={() => go({ name: 'runs' })}>{t('ui.cycle.needs.all', { count: runs.length })}</button>
