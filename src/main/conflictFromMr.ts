@@ -8,9 +8,10 @@ export interface MrRef {
 
 const PROJECT = /^[\w.-]+(\/[\w.-]+)*$/;
 
-// Accepts "group/sub/project!42" and "project!42" (the card's short form); a bare "!42" is refused.
+// Accepts "group/sub/project!42" and "project!42" (the card's short form), with "#" for the hosts that mark a pull request that way; a bare
+// "!42" is refused.
 export function parseMrRef(ref: string): MrRef {
-  const m = /^\s*(.+?)!(\d+)\s*$/.exec(ref);
+  const m = /^\s*(.+?)[!#](\d+)\s*$/.exec(ref);
   if (!m || !PROJECT.test(m[1]) || m[1].split('/').some((s) => /^\.+$/.test(s))) throw new Error(t('main.conflictMr.invalidRef', { ref }));
   const iid = Number(m[2]);
   if (!Number.isSafeInteger(iid) || iid <= 0) throw new Error(t('main.conflictMr.invalidNumber', { ref }));

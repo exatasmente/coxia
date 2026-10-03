@@ -18,6 +18,8 @@ export interface ReportItem {
   pending: string[];
   changes: { field: string; from: unknown; to: unknown }[];
   manual_note: string | null;
+  // The host says the request conflicts with its target; a card source command may omit it and write only the blocker text.
+  has_conflicts?: boolean;
   // The tracker's own data about an issue; a card source that does not report it leaves them out.
   labels?: string[];
   milestone?: string | null;
@@ -43,11 +45,18 @@ const TIMEOUT_MS = 150_000;
 // A forced refresh may join a run that started this recently; an older one is waited out and run again.
 const JOIN_WINDOW_MS = 10_000;
 
-let cache: { at: number; report: Report } | null = null;
-let flight: { startedAt: number; promise: Promise<Report> } | null = null;
+let cache: { at: number; report: Report; key: string } | null = null;
+let flight: { startedAt: number; promise: Promise<Report>; key: string } | null = null;
 let queued: Promise<Report> | null = null;
 let spawned = 0;
 const status: ReportStatus = { lastOkAt: null, lastDurationMs: null, lastError: null, lastErrorAt: null, inFlight: false };
+
+// What decides which cards the built-in source returns. A cache or a run made under another key is stale, so a saved change of the tracker
+// settings shows at once instead of when the five minutes are over.
+function sourceKey(): string {
+  const { issues, cardSource, primaryVcs } = rc();
+  return JSON.stringify([cardSource !== null, primaryVcs?.id ?? null, issues.vcsId, issues.project, issues.cardScope, issues.cardLabels]);
+}
 
 const timedOut = (e: unknown) => Boolean((e as { killed?: boolean }).killed) || (e as { code?: string }).code === 'ETIMEDOUT';
 
@@ -63,7 +72,7 @@ async function spawnOnce(): Promise<Report> {
   return JSON.parse(stdout) as Report;
 }
 
-async function fetchReport(): Promise<Report> {
+async function fetchReport(key: string): Promise<Report> {
   const started = Date.now();
   try {
     let report: Report;
@@ -73,7 +82,7 @@ async function fetchReport(): Promise<Report> {
       if (!timedOut(e)) throw e;
       report = await spawnOnce();
     }
-    cache = { at: Date.now(), report };
+    cache = { at: Date.now(), report, key };
     status.lastOkAt = cache.at;
     status.lastDurationMs = cache.at - started;
     status.lastError = null;
@@ -86,18 +95,21 @@ async function fetchReport(): Promise<Report> {
 }
 
 function start(): Promise<Report> {
-  const promise = fetchReport().finally(() => {
+  const key = sourceKey();
+  const promise = fetchReport(key).finally(() => {
     flight = null;
     status.inFlight = false;
   });
-  flight = { startedAt: Date.now(), promise };
+  flight = { startedAt: Date.now(), promise, key };
   status.inFlight = true;
   return promise;
 }
 
 export async function readReport(opts: { refresh?: boolean } = {}): Promise<Report> {
-  if (!opts.refresh && cache && Date.now() - cache.at < REPORT_TTL_MS) return cache.report;
-  if (flight && (!opts.refresh || Date.now() - flight.startedAt < JOIN_WINDOW_MS)) return flight.promise;
+  const key = sourceKey();
+  if (!opts.refresh && cache && cache.key === key && Date.now() - cache.at < REPORT_TTL_MS) return cache.report;
+  // A run made under other settings is not joined, even by a call that does not ask for a refresh.
+  if (flight && flight.key === key && (!opts.refresh || Date.now() - flight.startedAt < JOIN_WINDOW_MS)) return flight.promise;
   if (!flight) return start();
   // Forced refresh while an older run is in flight: wait for it, then a single new run serves every waiting refresh.
   queued ??= flight.promise

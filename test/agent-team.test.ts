@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 8, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: 9, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });
@@ -40,7 +40,7 @@ describe('the five system agents', () => {
 
   it('are seeded from agents.roles when they have to be added back', () => {
     const roles = neutralConfig().agents.roles;
-    const r = validateConfig({ schemaVersion: 8, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
+    const r = validateConfig({ schemaVersion: 9, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
     expect(r.config?.agents.team.find((a) => a.id === 'deep')).toMatchObject({ model: { role: 'turn' }, instructions: 'dig' });
   });
 
@@ -133,10 +133,10 @@ describe('validating the team', () => {
   });
 });
 
-describe('the migration to schema 4', () => {
-  const v3 = (change: (c: Doc) => void = () => undefined): Doc => {
+describe('the migration to schema 5', () => {
+  const v4 = (change: (c: Doc) => void = () => undefined): Doc => {
     const c = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
-    c.schemaVersion = 3;
+    c.schemaVersion = 4;
     delete c.agents.team;
     change(c);
     return c;
@@ -144,15 +144,15 @@ describe('the migration to schema 4', () => {
 
   it('seeds the five system agents from agents.roles, keeping the person\'s model role and instructions', () => {
     const r = migrateConfig(
-      v3((c) => {
+      v4((c) => {
         c.agents.roles.deep.modelRole = 'turn';
         c.agents.roles.deep.extraInstructions = 'dig deep';
       }),
       { legacyInstall: false },
     );
-    expect(r.fromVersion).toBe(3);
+    expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -160,20 +160,20 @@ describe('the migration to schema 4', () => {
   });
 
   it('leaves a team that is already there alone, and a file with no agents section to the defaults', () => {
-    const own = v3((c) => (c.agents.team = [{ id: 'writer', name: 'Writer' }]));
+    const own = v4((c) => (c.agents.team = [{ id: 'writer', name: 'Writer' }]));
     expect(migrateConfig(own, { legacyInstall: false }).config.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
-    const bare = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
+    const bare = migrateConfig({ schemaVersion: 4, language: 'en' }, { legacyInstall: false });
     expect(bare.config.agents.team).toEqual(systemAgents());
     expect(bare.config.language).toBe('en');
   });
 
-  it('carries a v2 file through both steps', () => {
-    const v2 = v3((c) => {
+  it('carries a v2 file through every step', () => {
+    const v2 = v4((c) => {
       c.schemaVersion = 2;
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });
@@ -263,7 +263,7 @@ describe('autonomy of each agent', () => {
   it('is off for the system agents and for an agent nobody said anything about', () => {
     expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
     expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
-    const r = validateConfig({ schemaVersion: 8, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    const r = validateConfig({ schemaVersion: 9, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
   });
@@ -295,11 +295,11 @@ describe('autonomy of each agent', () => {
   });
 
   it('comes from the migration as off for the five system agents', () => {
-    const v3 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
-    v3.schemaVersion = 3;
-    delete v3.agents.team;
-    expect(migrateConfig(v3, { legacyInstall: false }).config.agents.team.map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
-    // A v4 file written before the flag existed gets it off.
+    const v4 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    v4.schemaVersion = 4;
+    delete v4.agents.team;
+    expect(migrateConfig(v4, { legacyInstall: false }).config.agents.team.map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
+    // A file written before the flag existed gets it off.
     const old = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
     old.agents.team.push({ id: 'writer', name: 'Writer', permission: 'read' });
     for (const a of old.agents.team) delete a.autonomous;

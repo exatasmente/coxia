@@ -1,11 +1,13 @@
-import type { StageDef, StageMappingRule, VcsKind } from '../../shared/config/types';
+import { effectiveCardScope } from '../../shared/cardScope';
+import type { CardScope, StageDef, StageMappingRule, VcsKind } from '../../shared/config/types';
 import { shownText } from '../../shared/cycles/text';
 import { t } from '../../shared/i18n';
+import { crRef } from '../../shared/vcs';
 import { stageOf, stagesFor } from './stages';
 import type { VcsIssue, VcsMr, VcsProvider } from './types';
 import { pool } from './util';
 
-// The generic card source: my assigned open issues and their merge or pull requests, built from the provider. It stands in for an
+// The generic card source: the open issues the workspace's scope picks (mine by default) and their merge or pull requests, built from the provider. It stands in for an
 // external card source command when the workspace has none, and produces the same items (issue, mr) that command did.
 
 export interface CardItem {
@@ -60,6 +62,10 @@ export interface CardState {
 export interface CardSourceOptions {
   /** "group/name" of the issue project; null: every project the host lists for me. */
   issueProject: string | null;
+  /** projects.issues.cardScope: which open issues of the tracker become cards. Default: the ones assigned to me. */
+  scope?: CardScope;
+  /** projects.issues.cardLabels, for the `labels` scope. */
+  labels?: string[];
   /** "app#" for "app#101"; empty: "<repo>#<n>". */
   refPrefix: string;
   /** devCycle.stages; empty: the host's defaults. */
@@ -118,8 +124,14 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
   const today = dayOf(o.now());
   const baseline = o.state ? (o.state.date === today ? o.state.baseline : o.state.current) : {};
 
+  // A scope the workspace cannot honour (no issue project, no labels, a host without them) is the assigned issues, never every issue.
+  const scope = effectiveCardScope({ scope: o.scope ?? 'assigned', labels: o.labels ?? [], project: o.issueProject, kind: o.kind });
+  const listIssues = (): Promise<VcsIssue[]> =>
+    scope.scope === 'assigned' || !o.issueProject
+      ? provider.listMyIssues({ project: o.issueProject, limit: 100 })
+      : provider.listIssues({ project: o.issueProject, scope: scope.scope, labels: scope.labels, limit: 100 });
   const [issues, allMrs] = await Promise.all([
-    provider.caps.issues ? provider.listMyIssues({ project: o.issueProject, limit: 100 }) : Promise.resolve([] as VcsIssue[]),
+    provider.caps.issues ? listIssues() : Promise.resolve([] as VcsIssue[]),
     provider.listMyMrs({ roles: ['author', 'reviewer'], detail: true, limit: 60 }),
   ]);
 
@@ -176,8 +188,11 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
     });
   }
 
+  // An issue and a change request can share a number on a host with separate sequences (Bitbucket): the longer form tells them apart.
+  const issueRefs = new Set(items.map((i) => i.ref));
   for (const m of mrs) {
-    const ref = `${short(m.project)}!${m.iid}`;
+    const brief = crRef(o.kind, m.project, m.iid);
+    const ref = issueRefs.has(brief) ? crRef(o.kind, m.project, m.iid, { full: true }) : brief;
     const snap: CardSnapshot = { stage: null, pipeline: m.ci?.status ?? null, draft: m.draft, conflicts: m.hasConflicts === true, state: m.state };
     current[ref] = snap;
     const refs = refsOf.get(`${m.project}!${m.iid}`) ?? [];

@@ -66,9 +66,10 @@ export function confinedHooks(o: ConfineOptions): Hooks {
     return {};
   };
 
-  // The shell is the allow-list of the ceremonies with another list in it: only the commands the workspace named, character for character.
+  // The shell is the allow-list of the ceremonies with another list in it: only the commands the workspace named, character for character. The denial is the
+  // runner's own (below), so the usage hint of a code host's read commands, which none of these patterns open, is empty.
   const patterns = o.commands.map((c) => new RegExp(`^${escapeRe(c)}$`));
-  const listed = shellAllowlist(patterns);
+  const listed = shellAllowlist(patterns, '');
   const bashGuard: HookCallback = async (input, id, opts) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {}; // i18n-ignore: the tool's name
     const out = await listed(input, id, opts);

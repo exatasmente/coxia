@@ -202,7 +202,7 @@ export interface BootOptions {
 export function runnerConfig(c: WorkspaceConfig, repo: Repo, over: (c: WorkspaceConfig) => void = () => undefined, flow: 'engineering' | 'business' = 'engineering'): WorkspaceConfig {
   const next = applyTemplate(c, flow === 'business' ? agentFlow : agentFlowEngineering);
   next.projects.repos = [{ id: 'app', path: repo.clone, remoteUrl: null, vcsId: null, projectPath: 'group/project' }];
-  next.projects.issues = { vcsId: null, project: 'group/project', projectId: null, refPrefix: 'app#' };
+  next.projects.issues = { vcsId: null, project: 'group/project', projectId: null, refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] };
   next.runner = { ...next.runner, worktreesDir: repo.worktrees, identity: { name: 'Runner Test', email: 'runner@example.test' } };
   over(next);
   return next;

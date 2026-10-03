@@ -1,4 +1,4 @@
-// The comment templates of the cycle (schema 6, then 7): what the agent cycle brings, what the other cycles do not, validation and the migration.
+// The comment templates of the cycle (schema 7, then 8): what the agent cycle brings, what the other cycles do not, validation and the migration.
 import { describe, expect, it } from 'vitest';
 import { migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
 import { COMMENT_EVENT_KEYS, type CommentTemplate, type WorkspaceConfig } from '../src/shared/config/types';
@@ -114,20 +114,20 @@ describe('validation', () => {
   });
 });
 
-describe('the migration to schema 6', () => {
-  const v5 = (change: (c: Doc) => void = () => undefined): Doc => {
+describe('the migration to schema 7', () => {
+  const v6 = (change: (c: Doc) => void = () => undefined): Doc => {
     const c = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
-    c.schemaVersion = 5;
+    c.schemaVersion = 6;
     delete c.devCycle.comments;
     change(c);
     return c;
   };
 
   it('gives a workspace on the agent cycle that cycle\'s templates, and says so', () => {
-    const r = migrateConfig(v5((c) => (c.devCycle.templateId = 'agent-flow')), { legacyInstall: false });
-    expect(r.fromVersion).toBe(5);
+    const r = migrateConfig(v6((c) => (c.devCycle.templateId = 'agent-flow')), { legacyInstall: false });
+    expect(r.fromVersion).toBe(6);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.devCycle.comments).toEqual(agentFlow().devCycle.comments);
     expect(r.notes.join(' ')).toContain('comment templates');
     expect(validateConfig(r.config).ok).toBe(true);
@@ -135,22 +135,22 @@ describe('the migration to schema 6', () => {
 
   it('gives any other cycle none, so nothing is ever posted for it', () => {
     for (const templateId of ['sdd', 'none', 'kanban', 'mine']) {
-      const r = migrateConfig(v5((c) => (c.devCycle.templateId = templateId)), { legacyInstall: false });
+      const r = migrateConfig(v6((c) => (c.devCycle.templateId = templateId)), { legacyInstall: false });
       expect(r.config.devCycle.comments, templateId).toEqual({});
     }
   });
 
   it('keeps templates a file already carries and touches nothing else', () => {
     const own = { qa: { title: 'T', status: 'S', sections: [], technicalDetail: false } };
-    const r = migrateConfig(v5((c) => { c.devCycle.comments = own; c.language = 'en'; c.devCycle.templateId = 'agent-flow'; }), { legacyInstall: false });
+    const r = migrateConfig(v6((c) => { c.devCycle.comments = own; c.language = 'en'; c.devCycle.templateId = 'agent-flow'; }), { legacyInstall: false });
     expect(r.config.devCycle.comments).toEqual(own);
     expect(r.config.language).toBe('en');
   });
 
   it('carries an old file all the way, and does not open one from a newer app', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en', devCycle: { templateId: 'agent-flow' } }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(Object.keys(r.config.devCycle.comments)).toContain('review');
-    expect(() => migrateConfig({ schemaVersion: 9 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 10 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

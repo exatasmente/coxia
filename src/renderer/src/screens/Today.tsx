@@ -35,6 +35,8 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const cycle = useCycle();
   const on = cycle?.ceremonies;
+  // The cards come from the card source tool when there is one, else from the host.
+  const cardsFrom = cycle?.cardsFrom ?? t('ui.today.row.hostButton');
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
@@ -163,7 +165,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
       <div className="row spread dash-sec-head">
         <h2 id="acts-h" className="section-title">{c.cards ? t('ui.today.activitiesCount', { count: cards.length }) : t('ui.today.activities')}</h2>
         <button type="button" className="btn dash-refresh" disabled={c.loadingCards} onClick={() => void c.loadCards(true)}>
-          {c.loadingCards ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.today.refreshGitlab')}
+          {c.loadingCards ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.today.refresh', { vcsName: cardsFrom })}
         </button>
       </div>
 
@@ -215,7 +217,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
       )}
 
       <p className="faint dash-foot">
-        {t('ui.today.foot')}
+        {t(cycle?.specs === false ? 'ui.today.footPlain' : 'ui.today.foot', { vcsName: cardsFrom })}
         {c.statusAt && ` ${t('ui.today.footStatus', { time: new Date(c.statusAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) })}`}
       </p>
     </section>

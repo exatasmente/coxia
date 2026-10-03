@@ -234,3 +234,27 @@ describe('the executor', () => {
     expect(host?.hits).toHaveLength(1);
   });
 });
+
+describe('the open issues of a repository, whoever they are assigned to', () => {
+  it('lists the open, new and on-hold issues of the repository, with no assignee filter, and treats a repository without a tracker as empty', async () => {
+    const rt = await api({ [`GET ${API}/repositories/acme/app/issues`]: { json: F.issues }, [`GET ${API}/repositories/acme/uploader/issues`]: { status: 404, json: { type: 'error', error: { message: 'no tracker' } } } });
+    const issues = await rt.provider.listIssues({ project: 'acme/app', scope: 'all' });
+    expect(issues.map((i) => [i.project, i.iid])).toEqual([['acme/app', 12]]);
+    const hit = host?.hits.find((h) => h.path.endsWith('/acme/app/issues'));
+    expect(hit?.query.get('q')).toBe('(state="new" OR state="open" OR state="on hold")');
+    expect(hit?.query.get('sort')).toBe('-updated_on');
+    expect(await rt.provider.listIssues({ project: 'acme/uploader', scope: 'all' })).toEqual([]);
+    expect(host?.hits.some((h) => h.path.endsWith('/user'))).toBe(false);
+  });
+
+  it('refuses a label scope, because its tracker has no labels, without a request', async () => {
+    const rt = await api();
+    await expect(rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['bug'] })).rejects.toMatchObject({ code: 'unsupported' });
+    expect(host?.hits).toHaveLength(0);
+  });
+
+  it('cuts at the limit', async () => {
+    const rt = await api({ [`GET ${API}/repositories/acme/app/issues`]: { json: { values: Array.from({ length: 5 }, (_, i) => ({ ...F.issues.values[0], id: 100 + i })) } } });
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'all', limit: 2 })).toHaveLength(2);
+  });
+});

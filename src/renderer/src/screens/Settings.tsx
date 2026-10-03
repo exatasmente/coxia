@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { LANGUAGES } from '../../../shared/config/types';
+import { type ToolSwitch, visibleTools } from '../../../shared/cycles/view';
 import { type ModelRole, type Settings, type Theme } from '../../../shared/settings';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { clearSpeechCache, setBargeIn, setSpeechEnabled } from '../audio';
 import { autostartApi } from '../autostartApi';
+import { useCycle } from '../cycleApi';
 import { applyLanguage, applyVoiceMode, intlLocale, tv, useT } from '../i18n';
 import { applyTheme } from '../theme';
 import { jobs, useJobs } from '../useJobs';
@@ -28,13 +30,14 @@ const ROLES: [ModelRole, string, string][] = [
   ['fix', 'ui.settings.role.fix.label', 'ui.settings.role.fix.hint'],
 ];
 
-const TOOLS: [keyof Settings['tools'], string, string][] = [
-  ['files', 'ui.settings.tool.files.label', 'ui.settings.tool.files.hint'],
-  ['skills', 'ui.settings.tool.skills.label', 'ui.settings.tool.skills.hint'],
-  ['gitlabMcp', 'ui.settings.tool.gitlabMcp.label', 'ui.settings.tool.gitlabMcp.hint'],
-  ['glab', 'ui.settings.tool.glab.label', 'ui.settings.tool.glab.hint'],
-  ['subagents', 'ui.settings.tool.subagents.label', 'ui.settings.tool.subagents.hint'],
-];
+// The agent read switch (`glab` in the settings) governs the host's CLI when it has one and the app's own read tool when it does not.
+const TOOL_KEYS = (cli: boolean): Record<ToolSwitch, [string, string]> => ({
+  files: ['ui.settings.tool.files.label', 'ui.settings.tool.files.hint'],
+  skills: ['ui.settings.tool.skills.label', 'ui.settings.tool.skills.hint'],
+  gitlabMcp: ['ui.settings.tool.gitlabMcp.label', 'ui.settings.tool.gitlabMcp.hint'],
+  glab: cli ? ['ui.settings.tool.vcsCli.label', 'ui.settings.tool.vcsCli.hint'] : ['ui.settings.tool.vcsTool.label', 'ui.settings.tool.vcsTool.hint'],
+  subagents: ['ui.settings.tool.subagents.label', 'ui.settings.tool.subagents.hint'],
+});
 
 const THEME_LABELS: [Theme, string, string][] = [
   ['system', 'ui.settings.theme.system', 'ui.settings.theme.systemHint'],
@@ -52,6 +55,10 @@ function dayName(day: number): string {
 
 export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
   const t = useT();
+  const host = useCycle()?.host;
+  // Until the cycle has loaded only the switches every workspace has are listed.
+  const keys = TOOL_KEYS(!!host?.cli);
+  const tools = (host ? visibleTools(host) : (['files', 'skills', 'subagents'] as const)).map((key) => [key, ...keys[key]] as const);
   const [s, setS] = useState<Settings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -172,7 +179,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
               {t('ui.settings.tools.hint')}
             </p>
           </div>
-          {TOOLS.map(([key, labelKey, hintKey]) => (
+          {tools.map(([key, labelKey, hintKey]) => (
             <label key={key} className="check-row">
               <input type="checkbox" checked={s.tools[key]} onChange={() => set((p) => ({ ...p, tools: { ...p.tools, [key]: !p.tools[key] } }))} />
               <span>

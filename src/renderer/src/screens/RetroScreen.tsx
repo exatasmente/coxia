@@ -7,6 +7,7 @@ import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { AgentActivity } from '../AgentActivity';
 import { SquadPicker, SquadScope } from './cycle/SquadPicker';
+import { useCycle } from '../cycleApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
@@ -102,6 +103,8 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
     [retro],
   );
   const voiceOn = useVoiceEnabled();
+  // The IMPROVEMENTS.md convention and the gate quizzes belong to the SDD cycle; any other cycle gets the neutral wording.
+  const sddCycle = useCycle()?.templateId === 'sdd';
   const talk = useTalk(player, ask, setError);
 
   const copy = async (what: string, text: string) => {
@@ -141,7 +144,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
         {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
         {loaded && !retro && !busy && (
           <p className="small muted">
-            {t('ui.retro.intro')}
+            {t(sddCycle ? 'ui.retro.intro' : 'ui.retro.introPlain')}
           </p>
         )}
 
@@ -171,7 +174,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             </div>
             <section className="panel" style={{ padding: 20, gap: 12 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.retro.improvements.title')}</h2>
-              <p className="small muted">{t('ui.retro.improvements.hint')}</p>
+              <p className="small muted">{t(sddCycle ? 'ui.retro.improvements.hint' : 'ui.retro.improvements.hintPlain')}</p>
               {retro.improvements.map((m) => (
                 <div key={m.title} className="item">
                   <div className="row spread">

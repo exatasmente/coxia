@@ -1,4 +1,5 @@
 import type { VcsKind } from '../../shared/config/types';
+import type { VcsCaps } from '../../shared/vcsCaps';
 import type { VcsCommand } from '../../shared/types';
 
 // The neutral shapes every provider (GitLab, GitHub, Bitbucket Cloud) returns, and the interface the rest of the app talks to.
@@ -146,19 +147,7 @@ export interface VcsRepo {
   webUrl: string;
 }
 
-export interface VcsCaps {
-  /** The tracker has a workflow status separate from labels. */
-  issueStatus: boolean;
-  /** MR discussions can be marked resolved. */
-  resolvableThreads: boolean;
-  /** CI jobs that wait for a person (GitLab manual jobs). */
-  manualJobs: boolean;
-  draftToggle: boolean;
-  /** The host exposes whether the branch conflicts with the target. */
-  conflictFlag: boolean;
-  /** The host can list issues assigned to me. */
-  issues: boolean;
-}
+export type { VcsCaps };
 
 export type VcsTransport = 'cli' | 'api';
 
@@ -224,6 +213,15 @@ export interface MyMrOptions {
   limit?: number;
 }
 
+export interface IssueListOptions {
+  /** The project whose open issues are listed, whoever they are assigned to. */
+  project: string;
+  /** `labels` keeps the issues that carry any of `labels`. */
+  scope: 'all' | 'labels';
+  labels?: string[];
+  limit?: number;
+}
+
 export interface VcsProvider {
   readonly kind: VcsKind;
   readonly id: string;
@@ -235,6 +233,8 @@ export interface VcsProvider {
 
   // issues
   listMyIssues(opts?: { project?: string | null; limit?: number }): Promise<VcsIssue[]>;
+  /** The open issues of one project, newest update first; throws `unsupported` for a label scope on a host whose issues have no labels. */
+  listIssues(opts: IssueListOptions): Promise<VcsIssue[]>;
   /** `status` also reads the workflow status and the global id (a second call on GitLab); its failure is the caller's. */
   getIssue(project: string, iid: number, opts?: { status?: boolean }): Promise<VcsIssue>;
   /** Workflow status by issue number; an empty map when the host has none or the read failed. */

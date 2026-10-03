@@ -42,7 +42,7 @@ describe('getters for a migrated install: the constants env.ts used to hold', ()
   it('host, issue project, QA user, refs and the release label', () => {
     expect(r.vcsHost).toBe('git.acme.test');
     expect(r.primaryVcs).toMatchObject({ kind: 'gitlab', cli: 'glab', apiUrl: 'https://git.acme.test/api/v4' });
-    expect(r.issues).toEqual({ vcsId: 'gitlab', project: 'acme/web', projectId: 1, refPrefix: 'web#' });
+    expect(r.issues).toEqual({ vcsId: 'gitlab', project: 'acme/web', projectId: 1, refPrefix: 'web#', cardScope: 'assigned', cardLabels: [] });
     expect(r.qaUser).toBe('qa.acme');
     const m = r.releaseLabelPattern.exec('web-51.22.0');
     expect(m?.[1]).toBe('51.22.0');
@@ -76,7 +76,7 @@ describe('getters for a fresh install: neutral, nothing from a company or a mach
     expect(r.primaryVcs).toBeNull();
     expect(r.repos).toEqual([]);
     expect(r.qaUser).toBeNull();
-    expect(r.issues).toEqual({ vcsId: null, project: null, projectId: null, refPrefix: '' });
+    expect(r.issues).toEqual({ vcsId: null, project: null, projectId: null, refPrefix: '', cardScope: 'assigned', cardLabels: [] });
     expect(r.specsDir).toBeNull();
     expect(r.cardSource).toBeNull();
     expect(r.releaseSync).toBeNull();

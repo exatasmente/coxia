@@ -354,3 +354,82 @@ describe('the executor', () => {
     expect(host?.hits).toHaveLength(0);
   });
 });
+
+describe('the open issues of a project, whoever they are assigned to', () => {
+  const issue = (n: number, over: Record<string, unknown> = {}) => ({
+    number: n,
+    title: `Issue ${n}`,
+    state: 'open',
+    labels: [{ name: 'bug' }],
+    assignees: [],
+    user: { login: 'bob-qa' },
+    created_at: '2026-09-01T10:00:00Z',
+    updated_at: '2026-09-30T09:00:00Z',
+    closed_at: null,
+    html_url: `https://ghe.test/acme/app/issues/${n}`,
+    repository_url: 'https://ghe.test/api/v3/repos/acme/app',
+    ...over,
+  });
+  const search = (items: unknown[]) => ({ [`GET ${API}/search/issues`]: { json: { total_count: items.length, items } } });
+  const query = () => new URL(`http://x/${host?.log()[0].replace(/^GET /, '')}`).searchParams;
+
+  it('asks the search for the open issues of the repository, newest update first, with no pull request counted', async () => {
+    const rt = await api(search([issue(3, { assignees: [{ login: 'cy' }] }), issue(4)]));
+    const issues = await rt.provider.listIssues({ project: 'acme/app', scope: 'all' });
+    expect(query().get('q')).toBe('is:issue is:open repo:acme/app');
+    expect(host?.log()[0]).toContain('&sort=updated&order=desc&per_page=100&page=1');
+    expect(issues.map((i) => [i.project, i.iid, i.state, i.assignees])).toEqual([['acme/app', 3, 'open', ['cy']], ['acme/app', 4, 'open', []]]);
+  });
+
+  it('keeps a pull request out even when the search lets one through', async () => {
+    const rt = await api(search([issue(3), issue(4, { pull_request: { url: 'x' } })]));
+    expect((await rt.provider.listIssues({ project: 'acme/app', scope: 'all' })).map((i) => i.iid)).toEqual([3]);
+  });
+
+  it('filters by any of the labels with one OR qualifier, quoting each name', async () => {
+    const rt = await api(search([issue(5)]));
+    await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: [' ready to test ', 'bug', 'READY TO TEST'] });
+    expect(query().get('q')).toBe('is:issue is:open repo:acme/app label:"ready to test","bug"');
+  });
+
+  it('never lets a quote or a backslash of a label into the query', async () => {
+    const rt = await api(search([]));
+    await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['a" repo:other/x', 'b\\'] });
+    expect(query().get('q')).toBe('is:issue is:open repo:acme/app label:"a repo:other/x","b"');
+  });
+
+  it('is an empty list, without a request, for a label scope with no label', async () => {
+    const rt = await api(search([issue(1)]));
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: [' '] })).toEqual([]);
+    expect(host?.log()).toHaveLength(0);
+  });
+
+  it('reads at most two pages of a hundred and cuts at the limit', async () => {
+    const page = (from: number) => Array.from({ length: 100 }, (_, i) => issue(from + i));
+    host = await startFakeHost({
+      [`GET ${API}/user`]: { json: F.user },
+      [`GET ${API}/search/issues`]: (h: { query: URLSearchParams }) => ({ json: { items: page(h.query.get('page') === '1' ? 1 : 101) } }),
+    });
+    const rt = buildRuntime(settings({ apiUrl: `${host.url}${API}` }), { token: () => TOKEN, env: () => ({}), sleep: noSleep });
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'all' })).toHaveLength(200);
+    expect(host.log().filter((l) => l.includes('/search/issues'))).toHaveLength(2);
+    expect(await rt.provider.listIssues({ project: 'acme/app', scope: 'all', limit: 100 })).toHaveLength(100);
+  });
+
+  it('refuses a project that is not owner/repo before any request', async () => {
+    const rt = await api(search([]));
+    await expect(rt.provider.listIssues({ project: 'acme/app repo:other/x', scope: 'all' })).rejects.toBeInstanceOf(VcsError);
+    expect(host?.log()).toHaveLength(0);
+  });
+
+  it('asks gh for the same search', async () => {
+    const calls: string[][] = [];
+    const run: CliRun = async (_f, args) => {
+      calls.push(args);
+      return JSON.stringify(args[1] === 'user' ? F.user : { items: [] });
+    };
+    const rt = buildRuntime(settings({ preference: 'cli' }), { token: () => 'unused', env: () => ({}), run });
+    await rt.provider.listIssues({ project: 'acme/app', scope: 'labels', labels: ['bug'] });
+    expect(calls).toEqual([['api', 'search/issues?q=is%3Aissue%20is%3Aopen%20repo%3Aacme%2Fapp%20label%3A%22bug%22&sort=updated&order=desc&per_page=100&page=1']]);
+  });
+});

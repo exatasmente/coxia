@@ -50,16 +50,33 @@ export function prefixAllows(prefixes: string[], command: string): boolean {
   return prefixes.some((p) => c === p || c.startsWith(`${p} `));
 }
 
+/**
+ * What the model is told the shell accepts, from the Bash(<prefix>:*) rules of the run: the commands of the code host the workspace uses (glab for
+ * GitLab, gh for GitHub), plumbing git in a conflict call, and nothing else. With no rule the hook policy alone decides.
+ */
+export function bashDescription(prefixes: string[]): string {
+  const hostReads = prefixes.filter((p) => !p.startsWith('git '));
+  const git = prefixes.some((p) => p.startsWith('git '));
+  // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
+  const accepted =
+    hostReads.length && git
+      ? `Only code host reads (${hostReads.join(' / ')}) and, in conflict calls, plumbing git reads are accepted: `
+      : hostReads.length
+        ? `Only code host reads (${hostReads.join(' / ')}) are accepted: `
+        : git
+          ? 'Only plumbing git reads are accepted: '
+          : 'Only the commands the permission policy allows are accepted: ';
+  return `Runs one read-only shell command. ${accepted}one command at a time, no pipes, no ; or &&. A trailing "2>&1" and "| head -n N" are allowed.`;
+  // i18n-ignore-end
+}
+
 export const bashTool: ToolImpl = {
   name: 'Bash',
-  description:
-    // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
-    'Runs one read-only shell command. Only code host reads (glab api / glab mr view / glab issue view, gh api / gh pr view / gh issue view) and, in conflict calls, plumbing git reads are accepted: ' +
-    'one command at a time, no pipes, no ; or &&. A trailing "2>&1" and "| head -n N" are allowed.',
+  description: bashDescription([]),
   parameters: {
     type: 'object',
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     properties: { command: { type: 'string', description: 'The command' }, description: { type: 'string', description: 'What it does, in a few words' } },
-    // i18n-ignore-end
     required: ['command'],
   },
   async run(input, ctx) {
@@ -91,3 +108,6 @@ function renderBash(response: unknown, max: number): string {
   if (r.exitCode) parts.push(t('main.engine.text.bash.exit', { code: r.exitCode }));
   return clip(parts.join('\n').trim() || t('main.engine.text.bash.noOutput'), max);
 }
+
+/** The Bash tool as this run's rules describe it. */
+export const bashToolFor = (prefixes: string[]): ToolImpl => ({ ...bashTool, description: bashDescription(prefixes) });

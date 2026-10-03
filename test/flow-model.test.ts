@@ -1,4 +1,4 @@
-// The flow as data (schema 7): the stage fields, their defaults, the migration of the stages the agent cycle had before, and the copy a run keeps.
+// The flow as data (schema 8): the stage fields, their defaults, the migration of the stages the agent cycle had before, and the copy a run keeps.
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { migrateConfig } from '../src/shared/config/migrations';
@@ -11,8 +11,8 @@ import { agentFlowConfig, agentFlowStages, startInput, AT } from './helpers/runs
 
 type Doc = Record<string, any>;
 
-// The stages of the agent cycle as the app wrote them before the stages were a flow (schema 6): `human` for a gate, `artifacts` for what a stage produces.
-const V6_STAGES = [
+// The stages of the agent cycle as the app wrote them before the stages were a flow (schema 7): `human` for a gate, `artifacts` for what a stage produces.
+const V7_STAGES = [
   { id: 'refine', label: 'Refine', match: ['^Refin'], kind: 'backlog', rank: 1, agentId: 'refiner', artifacts: ['1_SPEC.md'] },
   { id: 'gate1', label: 'Gate 1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, human: true },
   { id: 'plan', label: 'Plan', match: ['^Plan'], kind: 'development', rank: 3, agentId: 'planner', artifacts: ['2_PLAN.md'] },
@@ -23,9 +23,9 @@ const V6_STAGES = [
   { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8 },
 ];
 
-const v6Doc = (stages: unknown[] = V6_STAGES): Doc => {
+const v7Doc = (stages: unknown[] = V7_STAGES): Doc => {
   const c = structuredClone(agentFlowConfig()) as unknown as Doc;
-  c.schemaVersion = 6;
+  c.schemaVersion = 7;
   c.devCycle.templateId = 'agent-flow';
   c.devCycle.stages = structuredClone(stages);
   // a file of that time had no `turnsTo`
@@ -33,18 +33,18 @@ const v6Doc = (stages: unknown[] = V6_STAGES): Doc => {
   return c;
 };
 
-describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
+describe('migrating the stages of an agent cycle to a flow (schema 8)', () => {
   // A cycle the person changed (one more stage) is what keeps what it has: its stages become fields and nothing more.
-  const customized = (stages: unknown[] = V6_STAGES): unknown[] => [...stages, { id: 'extra', label: 'Extra', match: [], kind: 'development', rank: 7, agentId: 'qa', artifacts: ['9_EXTRA.md'] }];
+  const customized = (stages: unknown[] = V7_STAGES): unknown[] => [...stages, { id: 'extra', label: 'Extra', match: [], kind: 'development', rank: 7, agentId: 'qa', artifacts: ['9_EXTRA.md'] }];
 
   it('turns what the runner did by itself into fields, so a run behaves as it did', () => {
-    const r = migrateConfig(v6Doc(customized()), { legacyInstall: false });
-    expect(r.fromVersion).toBe(6);
-    expect(r.config.schemaVersion).toBe(8);
+    const r = migrateConfig(v7Doc(customized()), { legacyInstall: false });
+    expect(r.fromVersion).toBe(7);
+    expect(r.config.schemaVersion).toBe(9);
     expect(validateConfig(r.config).ok).toBe(true);
     // the same stages the engineering cycle template has now: gates are typed, the review and QA return to the developer's stage after two rounds
     // (the labels a stored file has are literals and stay as they were written: only the template's own are catalog keys)
-    const written = new Map(V6_STAGES.map((s) => [s.id, s.label]));
+    const written = new Map(V7_STAGES.map((s) => [s.id, s.label]));
     expect(r.config.devCycle.stages.filter((s) => s.id !== 'extra')).toEqual(ENGINEERING_FLOW_STAGES.map((s) => ({ ...s, label: written.get(s.id) })));
     expect(r.notes.join(' ')).toContain('became a flow');
     expect(r.notes.join(' ')).toContain('left as they are');
@@ -52,7 +52,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
   });
 
   it('gives a workspace still on the untouched agent cycle its new default: the business team is added, its own agents stay', () => {
-    const r = migrateConfig(v6Doc(), { legacyInstall: false });
+    const r = migrateConfig(v7Doc(), { legacyInstall: false });
     expect(validateConfig(r.config).errors).toEqual([]);
     expect(r.config.devCycle.stages).toEqual(AGENT_FLOW_STAGES);
     const team = r.config.agents.team.filter((a) => !a.system);
@@ -68,7 +68,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
   });
 
   it('keeps what the person wrote in the comments, and an agent the person pointed somewhere', () => {
-    const doc = v6Doc();
+    const doc = v7Doc();
     doc.devCycle.comments.refine.status = 'My own status';
     doc.agents.team.find((a: Doc) => a.id === 'developer').turnsTo = 'qa';
     const r = migrateConfig(doc, { legacyInstall: false });
@@ -77,7 +77,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
   });
 
   it('does not add an agent the person already made with the same id', () => {
-    const doc = v6Doc();
+    const doc = v7Doc();
     doc.agents.team.push({ id: 'support', name: 'Mine', job: '', model: { role: 'turn', provider: '', model: '' }, stages: [], permission: 'read', autonomous: false, instructions: '', system: false });
     const r = migrateConfig(doc, { legacyInstall: false });
     expect(r.config.agents.team.filter((a) => a.id === 'support')).toHaveLength(1);
@@ -85,20 +85,20 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
   });
 
   it('lists the stages in the order a run goes through them: they were ordered by rank', () => {
-    const shuffled = [V6_STAGES[7], V6_STAGES[3], V6_STAGES[0], V6_STAGES[6], V6_STAGES[1], V6_STAGES[5], V6_STAGES[2], V6_STAGES[4]];
-    const r = migrateConfig(v6Doc(customized(shuffled)), { legacyInstall: false });
+    const shuffled = [V7_STAGES[7], V7_STAGES[3], V7_STAGES[0], V7_STAGES[6], V7_STAGES[1], V7_STAGES[5], V7_STAGES[2], V7_STAGES[4]];
+    const r = migrateConfig(v7Doc(customized(shuffled)), { legacyInstall: false });
     expect(r.config.devCycle.stages.map((s) => s.id)).toEqual(['refine', 'gate1', 'plan', 'gate2', 'implement', 'review', 'qa', 'extra', 'ready']);
     expect(r.notes.join(' ')).toContain('ordered by rank');
   });
 
   it('drops the agent of the stage where the run ended: it never worked it', () => {
-    const stages = V6_STAGES.map((s) => (s.id === 'ready' ? { ...s, agentId: 'qa' } : s));
-    const r = migrateConfig(v6Doc(customized(stages)), { legacyInstall: false });
+    const stages = V7_STAGES.map((s) => (s.id === 'ready' ? { ...s, agentId: 'qa' } : s));
+    const r = migrateConfig(v7Doc(customized(stages)), { legacyInstall: false });
     expect(r.config.devCycle.stages.find((s) => s.id === 'ready')).not.toHaveProperty('agentId');
   });
 
   it('sends a QA failure to the first stage whose agent changes files, and leaves the return alone when there is none', () => {
-    const doc = v6Doc();
+    const doc = v7Doc();
     doc.agents.team = doc.agents.team.map((a: Doc) => (a.id === 'developer' ? { ...a, permission: 'read' } : a));
     const r = migrateConfig(doc, { legacyInstall: false });
     expect(r.config.devCycle.stages.find((s) => s.id === 'qa')).not.toHaveProperty('returnsTo');
@@ -107,7 +107,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
 
   it('leaves a cycle of the ceremonies alone: no stage of it has a type', () => {
     const doc = structuredClone(neutralConfig()) as unknown as Doc;
-    doc.schemaVersion = 6;
+    doc.schemaVersion = 7;
     doc.devCycle.stages = [{ id: 'todo', label: 'To do', match: ['^To do$'], kind: 'backlog', rank: 1 }, { id: 'done', label: 'Done', match: ['^Done$'], kind: 'done', rank: 2 }];
     const r = migrateConfig(doc, { legacyInstall: false });
     expect(r.config.devCycle.stages).toEqual(doc.devCycle.stages);
@@ -115,7 +115,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 7)', () => {
   });
 
   it('reads a template file written before the stages were a flow', () => {
-    const file = { id: 'old', name: 'Old', description: '', needs: [], devCycle: { templateId: 'old', stages: V6_STAGES.slice(0, 3) }, team: engineeringTeam().slice(0, 2) };
+    const file = { id: 'old', name: 'Old', description: '', needs: [], devCycle: { templateId: 'old', stages: V7_STAGES.slice(0, 3) }, team: engineeringTeam().slice(0, 2) };
     const r = parseTemplate(file);
     expect(r.errors).toEqual([]);
     const stages = (r.template?.devCycle.stages ?? []) as StageDef[];

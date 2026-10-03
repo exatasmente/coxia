@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGS, createVoiceTranslator, setLanguage, setVoiceEnabled, t, tv } from '../src/shared/i18n';
+import { defaultTerms } from '../src/shared/i18n/terms';
 import { UI_EN, UI_PT_BR } from '../src/shared/i18n/ui';
 import { intlLocale, tNodes, withNodes } from '../src/renderer/src/i18n';
 
@@ -18,7 +19,7 @@ const ROOT = join(import.meta.dirname, '..');
 const I18N_DIR = join(ROOT, 'src/shared/i18n');
 const RENDERER = join(ROOT, 'src/renderer/src');
 
-const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1].toLowerCase().replace(/^(cr|crlong)s$/, '$1')))].sort();
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -79,10 +80,22 @@ describe('the renderer sources', () => {
 
   it('leave no ui.* key unused (a key counts as used through its .novoice or _one/_other siblings too)', () => {
     const used = (key: string) => {
-      const base = key.replace(/\.novoice$/, '').replace(/_(one|other)$/, '');
+      const base = key.replace(/(\.(novoice|on-github|on-gitlab|on-bitbucket|off-sdd|own-ceremony|own-target|own-retro))+$/, '').replace(/_(one|other)$/, '');
       return USED.has(key) || USED.has(base) || USED.has(`${base}.novoice`);
     };
     expect(Object.keys(UI_PT_BR).filter((key) => !used(key))).toEqual([]);
+  });
+
+  it('pair every host or cycle variant with its plain wording, and keep the placeholders the caller passes', () => {
+    // A variant may use or drop a standard term ({cr}, {summaryTarget}...), which the translator fills; the params of the call must stay.
+    const standard = new Set(Object.keys(defaultTerms('en').words).map((name) => holes(`{${name}}`)[0]));
+    const variant = /\.(on-(github|gitlab|bitbucket)|off-sdd|own-(ceremony|target|retro))$/;
+    for (const key of Object.keys(UI_PT_BR).filter((k) => variant.test(k))) {
+      const base = key.replace(variant, '');
+      expect(base in UI_PT_BR, key).toBe(true);
+      const params = (text: string) => holes(text).filter((name) => !standard.has(name));
+      expect(params(UI_PT_BR[key]), key).toEqual(params(UI_PT_BR[base]));
+    }
   });
 
   it('pair every .novoice variant with its voice wording', () => {

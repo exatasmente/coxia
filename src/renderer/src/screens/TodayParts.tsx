@@ -4,8 +4,9 @@ import { shortRef } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
 import { intlLocale, useT } from '../i18n';
-import { type AgoraPlan, type NeedItem, type NeedTarget, conflictMrs, mrLabel, stageLabel } from '../dashboard';
+import { type AgoraPlan, type NeedItem, type NeedTarget, mrLabel, stageLabel } from '../dashboard';
 import { returnedFromQa } from '../../../shared/cycles/stages';
+import { showQuickActions } from '../../../shared/cycles/view';
 import type { Card } from '../../../shared/types';
 import { getLanguage } from '../../../shared/i18n';
 import { clockOf } from '../../../shared/sameDay';
@@ -110,7 +111,7 @@ export function NeedsList({ items, go, dismiss }: { items: NeedItem[]; go: (s: S
                 )}
                 {n.conflictCard && (
                   <div className="need-extra">
-                    <ResolveConflict card={n.conflictCard} go={go} place="need" only={conflictMrs(n.conflictCard).find((m) => n.title.startsWith(`${m.ref}:`))?.ref} />
+                    <ResolveConflict card={n.conflictCard} go={go} place="need" only={n.conflictRef} />
                   </div>
                 )}
               </li>
@@ -174,7 +175,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
               </>
             )}
             <CardRunFacts cardRef={card.ref} />
-            <dt /* i18n-ignore */>MRs</dt>
+            <dt>{t('ui.today.row.crsLabel')}</dt>
             <dd>{card.mrs.join(' · ') || t('ui.today.noMr')}</dd>
             {blocked && (
               <>
@@ -215,7 +216,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
             <CardRunActions card={card} go={go} />
-            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })} /* i18n-ignore */>GitLab</button>
+            {cycle && showQuickActions(card, cycle.host) && <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>{t('ui.today.row.hostButton')}</button>}
             {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>{t('ui.today.row.qaReturn')}</button>}
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>{t('ui.today.row.discussions')}</button>}
             {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}

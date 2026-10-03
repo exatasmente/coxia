@@ -18,6 +18,8 @@ export interface Card {
   spec: SpecInfo | null;
   mrs: string[];
   mrPaths: { ref: string; project: string; iid: number }[];
+  // Refs of the MRs the card source says conflict with their target; absent on a card from a source that only has the blocker text.
+  mrConflicts?: string[];
   blockers: string[];
   pending: string[];
   changes: string[];

@@ -11,13 +11,15 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v1  no schemaVersion; the flat "Settings" of the app before configuration existed (models, tools, schedule, voice, ...; web lived in it too).
 //   v2  WorkspaceConfig (types.ts).
 //   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
-//   v4  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
-//   v5  runner (the section that takes an issue through the agent cycle by itself), off by default.
-//   v6  devCycle.comments (the templates of the comments the runner leaves on the tracker): the agent cycle's own, none for any other cycle.
-//   v7  the stages of an agent cycle are a flow: `type` (work, gate, wait), `produces` (was `artifacts`), `returnsTo` and `roundLimit` (the review and QA rules the
+//   v4  projects.issues.cardScope and cardLabels: which issues become cards. Nothing stored changes; the bump makes an app that does not know the
+//       fields refuse the file instead of repairing (and then saving) a `projects.issues` block it cannot read.
+//   v5  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
+//   v6  runner (the section that takes an issue through the agent cycle by itself), off by default.
+//   v7  devCycle.comments (the templates of the comments the runner leaves on the tracker): the agent cycle's own, none for any other cycle.
+//   v8  the stages of an agent cycle are a flow: `type` (work, gate, wait), `produces` (was `artifacts`), `returnsTo` and `roundLimit` (the review and QA rules the
 //       runner used to have built in), and the order of the list is the order of the run (it used to be the rank). The agent cycle itself grew a business team
 //       (support, product owner, tech lead, customer success): a workspace still on its untouched default gets it, any other keeps what it has.
-//   v8  `runner.stageTimeoutMs` (one wall-clock limit) is two: `stageIdleMs` (no sign of life from the agent) and `stageMaxMs` (the cap on a stage).
+//   v9  `runner.stageTimeoutMs` (one wall-clock limit) is two: `stageIdleMs` (no sign of life from the agent) and `stageMaxMs` (the cap on a stage).
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -98,41 +100,53 @@ function v2ToV3(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   };
 }
 
+// A v3 file has no card scope: it gets today's behavior written out, and nothing else in the file moves.
+function v3ToV4(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  const projects = pick(old.projects);
+  if (!Object.keys(projects).length) return { ...old, schemaVersion: 4 };
+  const issues = pick(projects.issues);
+  return {
+    ...old,
+    schemaVersion: 4,
+    projects: { ...projects, issues: { ...issues, cardScope: issues.cardScope ?? 'assigned', cardLabels: issues.cardLabels ?? [] } },
+  };
+}
+
 // The team starts as the five system agents, one per role, taking each role's model and extra instructions: nothing the ceremonies do changes.
 // A file with no agents section is left to the defaults, which hold the same five.
-function v3ToV4(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+function v4ToV5(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   const agents = pick(old.agents);
-  if (!Object.keys(agents).length || Array.isArray(agents.team)) return { ...old, schemaVersion: 4 };
+  if (!Object.keys(agents).length || Array.isArray(agents.team)) return { ...old, schemaVersion: 5 };
   const roles = pick(agents.roles);
   const seeds = Object.fromEntries(LLM_ROLES.map((r) => [r, pick(roles[r])]));
   notes.push('agent team created with the five built-in agents, taken from agents.roles');
-  return { ...old, schemaVersion: 4, agents: { ...agents, team: systemAgents(seeds) } };
+  return { ...old, schemaVersion: 5, agents: { ...agents, team: systemAgents(seeds) } };
 }
 
 // The runner starts switched off with its defaults, so a workspace that never heard of it behaves exactly as before.
-function v4ToV5(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
-  if (isObject(old.runner)) return { ...old, schemaVersion: 5 };
+function v5ToV6(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (isObject(old.runner)) return { ...old, schemaVersion: 6 };
   notes.push('runner section created with its defaults (off)');
-  return { ...old, schemaVersion: 5, runner: neutralRunner() };
+  return { ...old, schemaVersion: 6, runner: neutralRunner() };
 }
 
 // A workspace on the agent cycle gets that cycle's comment templates (the runner then has something to post); any other cycle brings none, so nothing
 // is ever posted for it. A file that already carries templates keeps them.
-function v5ToV6(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+function v6ToV7(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   const cycle = pick(old.devCycle);
-  if (!Object.keys(cycle).length || isObject(cycle.comments)) return { ...old, schemaVersion: 6 };
+  if (!Object.keys(cycle).length || isObject(cycle.comments)) return { ...old, schemaVersion: 7 };
   const own = cycle.templateId === 'agent-flow';
   if (own) notes.push('comment templates of the agent cycle added to devCycle');
-  return { ...old, schemaVersion: 6, devCycle: { ...cycle, comments: own ? agentFlowComments() : {} } };
+  return { ...old, schemaVersion: 7, devCycle: { ...cycle, comments: own ? agentFlowComments() : {} } };
 }
 
 // What the runner did before the flow was data, written as the fields that say the same: a gate is `human`, the review sends the work back to the stage
 // before it, a QA failure to the first stage whose agent changes files, both after two rounds, and the stage where the run ends (the last by rank) has no
 // agent. A cycle with none of the agent fields is one of the ceremonies' and is left as it is.
-function v6ToV7(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+function v7ToV8(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   const cycle = pick(old.devCycle);
   const list = Array.isArray(cycle.stages) ? (cycle.stages as unknown[]).filter(isObject) : [];
-  if (!list.some((s) => s.human !== undefined || s.agentId !== undefined || s.artifacts !== undefined)) return { ...old, schemaVersion: 7 };
+  if (!list.some((s) => s.human !== undefined || s.agentId !== undefined || s.artifacts !== undefined)) return { ...old, schemaVersion: 8 };
   const team = Array.isArray(pick(old.agents).team) ? (pick(old.agents).team as unknown[]).filter(isObject) : [];
   const rank = (s: Doc): number => (typeof s.rank === 'number' ? s.rank : 0);
   // The flow's order used to be rank, then the list: now it is the list.
@@ -156,7 +170,7 @@ function v6ToV7(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   });
   if (ordered.some((s, i) => s !== undefined && list[i] !== undefined && s.id !== list[i].id)) notes.push('the stages of the agent cycle are listed in the order a run goes through them (they were ordered by rank)');
   notes.push('the stages of the agent cycle became a flow (type, produces, returnsTo, roundLimit)');
-  const flowDoc = { ...old, schemaVersion: 7, devCycle: { ...cycle, stages } };
+  const flowDoc = { ...old, schemaVersion: 8, devCycle: { ...cycle, stages } };
   return cycle.templateId === 'agent-flow' ? withBusinessTeam(flowDoc, stages, notes) : flowDoc;
 }
 
@@ -192,19 +206,19 @@ function withBusinessTeam(doc: Doc, stages: Doc[], notes: string[]): Doc {
 // agent for that long) and a generous wall-clock cap. A value the person set keeps being the longest a stage may take (the cap, and the idle limit too when it
 // is shorter than the default idle limit); the old default becomes the new defaults.
 const OLD_STAGE_TIMEOUT_MS = 30 * 60_000;
-function v7ToV8(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+function v8ToV9(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   const runner = pick(old.runner);
-  if (runner.stageTimeoutMs === undefined) return { ...old, schemaVersion: 8 };
+  if (runner.stageTimeoutMs === undefined) return { ...old, schemaVersion: 9 };
   const { stageTimeoutMs, ...rest } = runner;
   const own = typeof stageTimeoutMs === 'number' && stageTimeoutMs !== OLD_STAGE_TIMEOUT_MS ? stageTimeoutMs : null;
   const idle = neutralRunner().stageIdleMs;
   if (own !== null) notes.push(`runner.stageTimeoutMs (${own} ms) is now runner.stageMaxMs, the cap on a stage; the idle limit is runner.stageIdleMs`);
   else notes.push('runner.stageTimeoutMs became two limits: runner.stageIdleMs (no sign of life from the agent) and runner.stageMaxMs (the cap on a stage), with their defaults');
-  return { ...old, schemaVersion: 8, runner: { ...rest, ...(own !== null ? { stageMaxMs: own, ...(own < idle ? { stageIdleMs: own } : {}) } : {}) } };
+  return { ...old, schemaVersion: 9, runner: { ...rest, ...(own !== null ? { stageMaxMs: own, ...(own < idle ? { stageIdleMs: own } : {}) } : {}) } };
 }
 
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

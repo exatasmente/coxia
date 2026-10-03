@@ -1,6 +1,6 @@
 import type { VcsKind } from '../../shared/config/types';
 import { t } from '../../shared/i18n';
-import type { VcsProbeCheck, VcsProbeRequest, VcsProbeResult, VcsProbeSample, VcsProbeScopes } from '../../shared/vcs';
+import { type VcsProbeCheck, type VcsProbeRequest, type VcsProbeResult, type VcsProbeSample, type VcsProbeScopes, crRef } from '../../shared/vcs';
 import { VcsError } from './errors';
 import { type RuntimeDeps, type VcsRuntime, type VcsSettings, buildRuntime } from './runtime';
 import type { VcsIssue, VcsMr } from './types';
@@ -41,7 +41,7 @@ export function settingsOfRequest(r: VcsProbeRequest, cliCommand: string | null)
 }
 
 const issueSample = (i: VcsIssue): VcsProbeSample => ({ ref: `${i.project}#${i.iid}`, title: i.title, status: i.status ?? i.state, url: i.webUrl });
-const mrSample = (m: VcsMr): VcsProbeSample => ({ ref: `${m.project}!${m.iid}`, title: m.title, status: m.ci?.status ?? m.state, url: m.webUrl });
+const mrSample = (kind: VcsKind, m: VcsMr): VcsProbeSample => ({ ref: crRef(kind, m.project, m.iid, { full: true }), title: m.title, status: m.ci?.status ?? m.state, url: m.webUrl });
 
 interface Inspect {
   granted: string[] | null;
@@ -153,7 +153,7 @@ export async function probeWithRuntime(rt: VcsRuntime, o: { issueProject: string
 
   try {
     const mrs = await provider.listMyMrs({ roles: ['author', 'reviewer'], limit: 30 });
-    result.mrs = { total: mrs.length, sample: mrs.slice(0, SAMPLE).map(mrSample) };
+    result.mrs = { total: mrs.length, sample: mrs.slice(0, SAMPLE).map((m) => mrSample(settings.kind, m)) };
     check('mrs', true, t('vcs.probe.mrs', { count: mrs.length }));
   } catch (e) {
     check('mrs', false, message(e));

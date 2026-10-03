@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect } from 'react';
 import type { Screen } from '../App';
+import { ceremoniesListed } from '../../../shared/cycles/view';
+import { useCycle } from '../cycleApi';
 import { tNodes, tvNodes, useT, useTv, useVoiceEnabled } from '../i18n';
 import { BackIcon } from './icons';
 
@@ -45,6 +47,10 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
   const t = useT();
   const tv = useTv();
   const voiceOn = useVoiceEnabled();
+  // Until the cycle has loaded the screen lists everything; afterwards only the ceremonies the cycle has and the workspace can run.
+  const cycle = useCycle();
+  const listed = cycle ? ceremoniesListed(cycle) : null;
+  const has = (key: keyof NonNullable<typeof listed>) => !listed || listed[key];
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
@@ -81,13 +87,14 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
         </Block>
 
         <Block title={t('ui.help.ceremonies.title')}>
-          <Item term={t('ui.help.ceremonies.preDaily')}>{tv('help.preDaily')}</Item>
-          <Item term={t('ui.help.ceremonies.unblock')}>{t('ui.help.ceremonies.unblock.text')}</Item>
-          <Item term={t('ui.help.ceremonies.qaHandoff')}>{t('ui.help.ceremonies.qaHandoff.text')}</Item>
-          <Item term={t('ui.help.ceremonies.retro')}>{t('ui.help.ceremonies.retro.text')}</Item>
-          <Item term={t('ui.help.ceremonies.gate')}>{t('ui.help.ceremonies.gate.text')}</Item>
-          <Item term={t('ui.help.ceremonies.others')}>{t('ui.help.ceremonies.others.text')}</Item>
-          <Item term={t('ui.help.ceremonies.radar')}>{t('ui.help.ceremonies.radar.text')}</Item>
+          {has('preDaily') && <Item term={t('ui.help.ceremonies.preDaily')}>{tv('help.preDaily')}</Item>}
+          {has('unblock') && <Item term={t('ui.help.ceremonies.unblock')}>{t('ui.help.ceremonies.unblock.text')}</Item>}
+          {has('qaHandoff') && <Item term={t('ui.help.ceremonies.qaHandoff')}>{t('ui.help.ceremonies.qaHandoff.text')}</Item>}
+          {has('retro') && <Item term={t('ui.help.ceremonies.retro')}>{t('ui.help.ceremonies.retro.text')}</Item>}
+          {has('gate') && <Item term={t('ui.help.ceremonies.gate')}>{t('ui.help.ceremonies.gate.text')}</Item>}
+          {has('host') && has('qaReturn') && <Item term={t('ui.help.ceremonies.others')}>{t('ui.help.ceremonies.others.text')}</Item>}
+          {has('host') && !has('qaReturn') && <Item term={t('ui.help.ceremonies.hostOnly')}>{t('ui.help.ceremonies.hostOnly.text')}</Item>}
+          {has('host') && <Item term={t('ui.help.ceremonies.radar')}>{t('ui.help.ceremonies.radar.text')}</Item>}
         </Block>
 
         <Block title={t('ui.help.never.title')}>

@@ -1,4 +1,5 @@
 import type { VcsKind } from './config/types';
+import { crMarkOf } from './i18n/terms';
 
 // What the setup wizard gets back from probing a VCS integration (channel `vcs:probe`): enough to say "connected as X, here are your
 // issues and merge requests" or to name the one thing that is missing. Nothing in it is a secret.
@@ -60,4 +61,13 @@ export interface VcsProbeRequest {
   /** "group/name" of the issue project, and repositories to look in (Bitbucket). */
   issueProject?: string | null;
   repos?: string[];
+}
+
+/**
+ * The ref of a change request as the person reads it: "app!7" on GitLab, "app#7" on the other hosts. The short form drops the group or owner;
+ * `full` keeps the whole project path ("group/app!7"), which is what a ref must carry to be resolved without the card around it.
+ */
+export function crRef(kind: VcsKind | null, project: string, iid: number | string, options: { full?: boolean } = {}): string {
+  const name = options.full ? project : (project.split('/').pop() ?? project);
+  return `${name}${crMarkOf(kind)}${iid}`;
 }

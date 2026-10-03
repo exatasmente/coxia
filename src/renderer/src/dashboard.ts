@@ -128,11 +128,12 @@ export function agoraPlan(i: AgoraInput): AgoraPlan {
   };
 }
 
+// The sentence of a card source command that only has text; the integration's own blocker is localized, so it is never parsed.
 const MR_CONFLICT = /^(.+): MR com conflitos$/;
 
-/** The MRs of the card that the report blocks for conflicts ("<mr>: MR com conflitos"), in the card's order. */
+/** The MRs of the card that conflict, in the card's order: the ones the source flags, plus the ones a blocker names with the command's sentence. */
 export function conflictMrs(card: Card): Card['mrPaths'] {
-  const refs = new Set(card.blockers.map((b) => MR_CONFLICT.exec(b)?.[1]).filter((r): r is string => !!r));
+  const refs = new Set([...(card.mrConflicts ?? []), ...card.blockers.map((b) => MR_CONFLICT.exec(b)?.[1]).filter((r): r is string => !!r)]);
   return card.mrPaths.filter((m) => refs.has(m.ref));
 }
 
@@ -156,8 +157,10 @@ export interface NeedItem {
   to: NeedTarget | null;
   // Only watcher rows can be dismissed.
   alertId?: string;
-  // Blocked rows whose first reason is an MR with conflicts: the card, so the row can offer to resolve it.
+  // Blocked rows of a card with a conflicting MR: the card, so the row can offer to resolve it.
   conflictCard?: Card;
+  // The one MR whose button the row shows, when the row's own reason is that MR's; absent: one button per conflicting MR.
+  conflictRef?: string;
 }
 
 export interface NeedsInput {
@@ -203,6 +206,8 @@ export function needsYou(i: NeedsInput): NeedItem[] {
   }
 
   for (const c of i.cards.filter((x) => x.blockers.length)) {
+    const conflicting = conflictMrs(c);
+    const own = conflicting.find((m) => c.blockers[0].startsWith(`${m.ref}:`));
     items.push({
       id: `blocked:${c.ref}`,
       kind: 'blocked',
@@ -211,7 +216,7 @@ export function needsYou(i: NeedsInput): NeedItem[] {
       detail: `#${c.iid} · ${c.title}`,
       cta: t('ui.today.deepen'),
       to: { to: 'deep', ref: c.ref },
-      ...(MR_CONFLICT.test(c.blockers[0]) && conflictMrs(c).length ? { conflictCard: c } : {}),
+      ...(conflicting.length ? { conflictCard: c, ...(own ? { conflictRef: own.ref } : {}) } : {}),
     });
   }
 

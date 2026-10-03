@@ -9,7 +9,7 @@ import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 import { vcsProvider, vcsReady } from './vcs';
-import { t } from '../shared/i18n';
+import { getTerms, t } from '../shared/i18n';
 
 const FILE = join(ATAS, 'efeitos.json');
 const DAY_MS = 86_400_000;
@@ -222,7 +222,7 @@ export async function verify(c: CheckSpec, since: string): Promise<Verdict> {
       const notes = c.kind === 'mr_comment' ? await prov.listMrComments(project, iid) : await prov.listIssueComments(project, iid);
       const user = (await prov.currentUser()).username;
       const hit = notes.find((n) => !n.system && n.author === user && after(n.createdAt, since));
-      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.comment', { target: `${c.kind === 'mr_comment' ? '!' : '#'}${c.iid}` }) : t('main.efeitos.noComment') };
+      return { done: !!hit, at: hit?.createdAt, evidence: hit ? t('main.efeitos.comment', { target: `${c.kind === 'mr_comment' ? getTerms().words.crMark : '#'}${c.iid}` }) : t('main.efeitos.noComment') };
     }
     case 'issue_label':
     case 'issue_label_removed': {

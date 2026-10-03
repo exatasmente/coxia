@@ -1,4 +1,6 @@
+import { cleanLabels } from '../../shared/cardScope';
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { RestTransport } from './transport';
 import type {
@@ -26,7 +28,7 @@ import { ISSUE_TITLE_MAX, checkIid, checkLabel, checkTitle, enc, iso, issueRefsO
 // thread is resolved, resolving it, and the draft state of a pull request. Issues are GitHub issues (no separate workflow status:
 // the card stage comes from labels and from the pull request).
 
-export const GITHUB_CAPS: VcsCaps = { issueStatus: false, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: true, issues: true };
+export const GITHUB_CAPS: VcsCaps = VCS_CAPS.github;
 
 /** The GraphQL writes a GitHub proposal may carry: resolve a review thread, mark a pull request ready or back to draft. */
 export const GITHUB_MUTATION =
@@ -247,7 +249,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     notes: th.comments.nodes.map((c) => ({ id: c.databaseId, author: c.author?.login ?? 'ghost', body: c.body, createdAt: c.createdAt, system: false, webUrl: c.url ?? `${web}/${project}/pull/${iid}#discussion_r${c.databaseId}` })),
   });
 
-  const searchRaw = async (q: string, limit = 100): Promise<GhIssue[]> => tr.pages<GhIssue>(`search/issues?q=${enc(q)}`, { pick: (b) => (b as { items?: GhIssue[] }).items ?? [], maxPages: Math.ceil(limit / 100) || 1 });
+  const searchRaw = async (q: string, limit = 100, maxPages = Math.ceil(limit / 100) || 1, order = ''): Promise<GhIssue[]> => tr.pages<GhIssue>(`search/issues?q=${enc(q)}${order}`, { pick: (b) => (b as { items?: GhIssue[] }).items ?? [], maxPages });
 
   const provider: VcsProvider = {
     kind: 'github',
@@ -265,6 +267,18 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         .filter((i) => !i.pull_request)
         .slice(0, opts.limit ?? 200)
         .map((i) => issueOf(i, opts.project ?? repoFromUrl(i.repository_url)));
+    },
+
+    async listIssues(opts) {
+      const project = checkRepo(opts.project);
+      const labels = opts.scope === 'labels' ? cleanLabels(opts.labels ?? []).map((l) => l.replace(/["\\]/g, '')) : [];
+      if (opts.scope === 'labels' && !labels.length) return [];
+      // The issues endpoint hands back pull requests too, which would spend the page budget; `is:issue` leaves them out of the count.
+      // A comma inside one `label:` qualifier is an OR in the search syntax, while `labels=` of the endpoint is an AND.
+      // i18n-ignore: query language of the code host
+      const q = `is:issue is:open repo:${project}${labels.length ? ` label:${labels.map((l) => `"${l}"`).join(',')}` : ''}`;
+      const rows = await searchRaw(q, opts.limit ?? 200, 2, '&sort=updated&order=desc');
+      return rows.filter((i) => !i.pull_request).slice(0, opts.limit ?? 200).map((i) => issueOf(i, project));
     },
 
     async getIssue(project, iid) {

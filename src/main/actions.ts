@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
-import { t } from '../shared/i18n';
+import { getTerms, t } from '../shared/i18n';
+import { crRef } from '../shared/vcs';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
@@ -37,8 +38,11 @@ import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
-import { issueProjectKey, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
+import { issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
+
+/** The workspace's word for a change request (MR, PR), for a notification of an action that has no ref. */
+const crWord = (): string => getTerms().words.cr;
 
 const exec = promisify(execFile);
 const FILE = join(ATAS, 'acoes.json');
@@ -617,7 +621,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   const issue = Number(card.iid);
   if (!Number.isInteger(issue) || issue <= 0) throw new Error(t('main.actions.noIssueNumber', { iid: card.iid }));
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
-  const ref = `${project}!${iid}`;
+  const ref = crRef(primaryKind(), project, iid, { full: true });
   const prov = vcsProvider();
   const [mr, repo, user] = await Promise.all([prov.getMr(project, iid), prov.getRepo(project), prov.currentUser()]);
   assertResolvable(ref, mr, { me: user.username, defaultBranch: repo.defaultBranch });
@@ -669,7 +673,7 @@ export async function conflictPrepare(id: string): Promise<ReleaseAction> {
     if (r) throw new Error(t('main.actions.alreadyPrepared'));
     if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
     const u = (a.unit ?? {}) as Partial<Unit>;
-    const iid = Number(u.mr_iid ?? /!(\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
+    const iid = Number(u.mr_iid ?? /[!#](\d+)$/.exec(a.mrs[0]?.ref ?? '')?.[1]);
     const branch = u.source_branch ?? a.mrs[0]?.branch;
     const project = projectOf(u);
     if (!iid || !branch || !project) throw new Error(t('main.actions.mrDataMissing'));
@@ -814,7 +818,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
       mrs: a.mrs,
       files: r.files.map((f) => f.path),
       retest: true,
-      summary: t('main.actions.publishSummary', { ref: a.mrs[0]?.ref ?? 'MR', branch: r.branch }),
+      summary: t('main.actions.publishSummary', { ref: a.mrs[0]?.ref ?? crWord(), branch: r.branch }),
       unit: { conflictId: a.id, branch: r.branch, commit: sha },
       output: [
         // i18n-ignore: a git command line shown as it runs
@@ -830,7 +834,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     if (getSettings().notifications) {
       deps?.notify({
         title: t('main.actions.resolvedTitle', { issue: a.issue }),
-        body: t('main.actions.resolvedBody', { ref: a.mrs[0]?.ref ?? 'MR' }),
+        body: t('main.actions.resolvedBody', { ref: a.mrs[0]?.ref ?? crWord() }),
         onClick: { type: 'conflict', id: a.id },
       });
     }
@@ -947,7 +951,7 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
     resolve: x.resolve ? { ...x.resolve, publishedAt: new Date().toISOString() } : x.resolve,
   }));
   if (getSettings().notifications) {
-    deps?.notify({ title: t('main.actions.publishedTitle', { issue: a.issue }), body: t('main.actions.publishedBody', { ref: a.mrs[0]?.ref ?? 'MR', branch: r?.branch ?? '' }), onClick: { type: 'navigate', to: 'actions' } });
+    deps?.notify({ title: t('main.actions.publishedTitle', { issue: a.issue }), body: t('main.actions.publishedBody', { ref: a.mrs[0]?.ref ?? crWord(), branch: r?.branch ?? '' }), onClick: { type: 'navigate', to: 'actions' } });
   }
   conflictHooks.scheduleQaComment({
     ...a,

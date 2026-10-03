@@ -25,7 +25,7 @@ import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
-import { GLAB_READ, gitlabHint, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
+import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider } from './vcs';
 
 export { GLAB_READ };
@@ -67,7 +67,15 @@ export function stripOutputSuffix(command: string): string {
   return command.trim().replace(/( 2>&1)?( \| head -[cn] \d+)?$/, '');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage = gitlabHint()): HookCallback {
+// What the agent is told when the shell refuses a command: the commands of the code host it may read, plumbing git in a conflict call, and
+// when the workspace has neither, that no read command is open.
+function shellDenial(usage: string, plumbing: string): string {
+  const hints = [usage, plumbing].filter(Boolean).join(' ');
+  return hints ? cp('system.shellDenied', { hints }) : cp('system.shellDeniedNone');
+}
+
+export function shellAllowlist(patterns: RegExp[], usage: string): HookCallback {
+  const plumbing = (): string => (patterns.some((re) => re.source.startsWith('^git -C')) ? cp('system.hintGitplumbing') : '');
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
     const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
@@ -78,7 +86,7 @@ export function shellAllowlist(patterns: RegExp[], usage = gitlabHint()): HookCa
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: cp('system.shellDenied', { hints: `${usage}${patterns.some((re) => re.source.startsWith('^git -C')) ? ` ${cp('system.hintGitplumbing')}` : ''}` }),
+        permissionDecisionReason: shellDenial(usage, plumbing()),
       },
     };
   };
@@ -259,12 +267,13 @@ export const redactSecretResults: HookCallback = async (input) => {
 };
 
 export function agentHooks(patterns: RegExp[] = []): NonNullable<Options['hooks']> {
-  // The shell allow-list follows the configured provider (gh for GitHub); anything else keeps the glab one, which no tool rule enables.
+  // The shell allow-list follows the configured provider (glab for GitLab, gh for GitHub); a host with no CLI (Bitbucket, an API-only integration)
+  // reads through the app's tool and has no shell command to allow, and it is not told about a CLI it does not have.
   const policy = vcsReadPolicy();
   const cli = policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : GLAB_READ), ...patterns], cli ? policy.usage : gitlabHint())] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
       { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],

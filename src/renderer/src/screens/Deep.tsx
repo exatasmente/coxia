@@ -155,7 +155,7 @@ export function Deep({
   const keep = () => {
     if (!chosen) return;
     c.addDecision({ ref: card.ref, text: chosen.decision, target, dest: destination(card, target, destinationLabels(cycle)) });
-    if (chosen.effect) c.addEffect({ ref: card.ref, text: chosen.effect, repo: card.mrs[0]?.split('!')[0] ?? card.ref.split('#')[0] });
+    if (chosen.effect) c.addEffect({ ref: card.ref, text: chosen.effect, repo: card.mrs[0]?.split(/[!#]/)[0] ?? card.ref.split('#')[0] });
     c.markAnswered(card.ref);
     update((d) => ({ ...d, saved: true }));
   };

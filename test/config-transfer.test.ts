@@ -26,7 +26,7 @@ function sample(): WorkspaceConfig {
   c.language = 'en';
   c.projects.roots = ['~/work'];
   c.projects.repos = [{ id: 'api', path: '~/work/api', remoteUrl: 'git@github.com:acme/api.git', vcsId: 'gh', projectPath: 'acme/api' }];
-  c.projects.issues = { vcsId: 'gh', project: 'acme/api', projectId: null, refPrefix: 'API-' };
+  c.projects.issues = { vcsId: 'gh', project: 'acme/api', projectId: null, refPrefix: 'API-', cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] };
   c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: 'ana', secretRef: 'vcs.github', cliPreference: 'auto', cliCommand: null }];
   c.llm.providers.push(newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', models: ['qwen3:8b'], structured: 'tool' }));
   c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
@@ -56,7 +56,7 @@ describe('export', () => {
     const file = JSON.parse(text);
     expect(file).toMatchObject({ format: EXPORT_FORMAT, formatVersion: 1, app: { name: 'coxia', version: '1.2.3' }, workspace: { name: 'Acme' }, exportedAt: '2026-10-02T12:00:00.000Z' });
     expect(file.requiredSecrets.map((s: { ref: string }) => s.ref).sort()).toEqual(['llm.anthropic', 'vcs.github']);
-    expect(file.config.schemaVersion).toBe(8);
+    expect(file.config.schemaVersion).toBe(9);
     expect(file.config.vcs[0].secretRef).toBe('vcs.github');
     expect(text).not.toMatch(/"(apiKey|token|password|secret)"/i);
   });
@@ -179,7 +179,7 @@ describe('what an import refuses', () => {
     expect(parseImport('[]').ok).toBe(false);
     expect(parseImport(JSON.stringify({ ...good(), formatVersion: 7 })).errors[0].message).toMatch(/newer/);
     const newer = good();
-    newer.config.schemaVersion = 9;
+    newer.config.schemaVersion = 10;
     expect(parseImport(JSON.stringify(newer)).errors[0].message).toMatch(/newer app/);
   });
 

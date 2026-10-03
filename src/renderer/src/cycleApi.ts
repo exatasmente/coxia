@@ -7,6 +7,7 @@ import type { DestinationLabels } from '../../shared/destination';
 import { t } from '../../shared/i18n';
 import type { TemplateSummary } from '../../shared/cycles/types';
 import { api, moduleEvents } from './api';
+import { applyTerms, termsViewFailed } from './i18n';
 
 export const cycleApi = {
   view: () => api.invoke<CycleView>('cycle:view'),
@@ -27,11 +28,13 @@ const subscribers = new Set<() => void>();
 
 function set(next: CycleView): void {
   state = next;
+  applyTerms(next.terms, next.workspaceId);
   for (const fn of subscribers) fn();
 }
 
 function reload(): void {
-  void cycleApi.view().then(set, () => undefined);
+  // A view that cannot be loaded leaves the words the defaults (or the last view's, if there was one), never a cache's.
+  void cycleApi.view().then(set, () => termsViewFailed());
 }
 
 function start(): void {
@@ -40,6 +43,11 @@ function start(): void {
   moduleEvents.addEventListener(CYCLE_EVENT, (e) => set((e as CustomEvent<CycleView>).detail));
   moduleEvents.addEventListener(CONFIG_EVENT, reload);
   reload();
+}
+
+/** Loads the cycle (and with it the workspace's terms) at start, for the screens that do not read the cycle themselves. */
+export function startCycle(): void {
+  start();
 }
 
 /** The words a decision's destination is written with, before the cycle has loaded as well as after. */

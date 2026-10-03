@@ -1,4 +1,6 @@
+import { cleanLabels } from '../../shared/cardScope';
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { RestTransport } from './transport';
 import type {
@@ -35,7 +37,7 @@ const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|wip:)\s*/i;
 const BOT = /^k8s|_bot_|bot$/i;
 const ISSUE_PAGE_LIMIT = 5;
 
-export const GITLAB_CAPS: VcsCaps = { issueStatus: true, resolvableThreads: true, manualJobs: true, draftToggle: true, conflictFlag: true, issues: true };
+export const GITLAB_CAPS: VcsCaps = VCS_CAPS.gitlab;
 
 export function undrafted(title: string): string {
   return title.replace(DRAFT_PREFIX, '');
@@ -254,6 +256,18 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     return fileComments;
   };
 
+  // Statuses come from one GraphQL read per project; a failed read leaves them empty, never fails the list.
+  async function withStatuses(issues: VcsIssue[]): Promise<VcsIssue[]> {
+    const byProject = new Map<string, VcsIssue[]>();
+    for (const i of issues) byProject.set(i.project, [...(byProject.get(i.project) ?? []), i]);
+    await pool([...byProject], 3, async ([project, list]) => {
+      if (!project) return;
+      const statuses = await provider.issueStatuses(project, list.map((i) => i.iid));
+      for (const i of list) i.status = statuses.get(i.iid) ?? null;
+    });
+    return issues;
+  }
+
   const provider: VcsProvider = {
     kind: 'gitlab',
     id: o.id,
@@ -265,16 +279,21 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     async listMyIssues(opts = {}) {
       const base = opts.project ? `${repoPath(opts.project)}/issues` : 'issues';
       const rows = await tr.pages<GlIssue>(`${base}?scope=assigned_to_me&state=opened&order_by=updated_at`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 });
-      const issues = rows.slice(0, opts.limit ?? 200).map((i) => issueOf(i, opts.project && !/^\d+$/.test(opts.project) ? opts.project : undefined));
-      // Statuses come from one GraphQL read per project; a failed read leaves them empty, never fails the list.
-      const byProject = new Map<string, VcsIssue[]>();
-      for (const i of issues) byProject.set(i.project, [...(byProject.get(i.project) ?? []), i]);
-      await pool([...byProject], 3, async ([project, list]) => {
-        if (!project) return;
-        const statuses = await provider.issueStatuses(project, list.map((i) => i.iid));
-        for (const i of list) i.status = statuses.get(i.iid) ?? null;
-      });
-      return issues;
+      return withStatuses(rows.slice(0, opts.limit ?? 200).map((i) => issueOf(i, opts.project && !/^\d+$/.test(opts.project) ? opts.project : undefined)));
+    },
+
+    async listIssues(opts) {
+      const limit = opts.limit ?? 200;
+      const labels = opts.scope === 'labels' ? cleanLabels(opts.labels ?? []) : [];
+      if (opts.scope === 'labels' && !labels.length) return [];
+      // GitLab reads the label names `None` and `Any` as filters (no label, any label), not as labels of those names.
+      // `labels=` is an AND and the OR filter (`or[labels]`) is a paid-tier feature, so "any of" is one read per label, merged by number.
+      const queries = labels.length ? labels.map((l) => `&labels=${enc(l)}`) : [''];
+      const lists = await pool(queries, 3, (q) => tr.pages<GlIssue>(`${repoPath(opts.project)}/issues?scope=all&state=opened&order_by=updated_at${q}`, { maxPages: Math.ceil(limit / 100) || 1 }));
+      const byIid = new Map<number, GlIssue>();
+      for (const row of lists.flat()) if (!byIid.has(row.iid)) byIid.set(row.iid, row);
+      const rows = [...byIid.values()].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+      return withStatuses(rows.slice(0, limit).map((i) => issueOf(i, /^\d+$/.test(opts.project) ? undefined : opts.project)));
     },
 
     async getIssue(project, iid, opts = {}) {

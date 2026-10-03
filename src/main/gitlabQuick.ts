@@ -3,8 +3,7 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeVcsAction, proposeVcsCommands } from './actions';
 import { getSettings } from './config';
-import { vcsName } from './cyclePrompts';
-import { getConfig, isIssueRef, issueProjectKey, rc } from './workspaceConfig';
+import { getConfig, isIssueRef, issueProjectKey, primaryKind, rc } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
 import type { Notice } from './scheduler';
@@ -12,6 +11,7 @@ import { vcsProvider, vcsReady } from './vcs';
 import { undrafted } from './vcs/gitlab';
 import type { VcsCiJob, VcsWriteOp } from './vcs/types';
 import { t } from '../shared/i18n';
+import { crRef } from '../shared/vcs';
 
 // The quick actions of a card (reviewer, draft, manual jobs, issue status) on whichever code host the workspace uses. Every write is
 // only a proposal: it waits in Ações for the user's "seguir" (proposeVcsAction), then runs through the audited executor.
@@ -57,7 +57,7 @@ async function mrInfo(projectPath: string, iid: number, user: string): Promise<Q
   const m = await prov.getMr(projectPath, iid);
   const jobs = prov.caps.manualJobs && m.ci?.runId != null ? await prov.listCiJobs(projectPath, m.ci.runId) : [];
   return {
-    ref: `${projectPath.split('/').pop()}!${iid}`,
+    ref: crRef(primaryKind(), projectPath, iid),
     projectPath,
     iid,
     title: m.title,
@@ -79,7 +79,7 @@ function transitionsFor(status: string | null, labels: string[]): QuickTransitio
     if (status === r.to) return { ...base, allowed: false, reason: t('main.quick.sameStatus') };
     if (!status || !r.from.includes(status)) return { ...base, allowed: false, reason: t('main.quick.cannotLeave', { status: status ?? t('main.quick.noStatus') }) };
     const foreign = stage.filter((l) => l !== r.label && !r.removable.includes(l));
-    if (foreign.length) return { ...base, allowed: false, reason: t('main.quick.foreign', { labels: foreign.join(', '), vcs: vcsName() }) };
+    if (foreign.length) return { ...base, allowed: false, reason: t('main.quick.foreign', { labels: foreign.join(', ') }) };
     return { ...base, allowed: true, reason: null };
   });
 }
@@ -191,7 +191,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     );
     return out;
   }
-  const ref = `${req.projectPath.split('/').pop()}!${req.mrIid}`;
+  const ref = crRef(primaryKind(), req.projectPath, req.mrIid);
   const mr = await prov.getMr(req.projectPath, req.mrIid);
   if (mr.state !== 'open') throw new Error(t('main.quick.notOpen', { ref }));
   if (mr.author !== (await prov.currentUser()).username) throw new Error(t('main.quick.readOnly', { ref, author: mr.author }));
@@ -200,7 +200,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     if (!mr.draft) throw new Error(t('main.quick.notDraft', { ref }));
     // GitLab marks a draft by a prefix in the title; GitHub and Bitbucket by a flag.
     const title = prov.kind === 'gitlab' ? undrafted(mr.title) : undefined;
-    if (title !== undefined && title === mr.title) throw new Error(t('main.quick.noDraftPrefix', { vcs: vcsName() }));
+    if (title !== undefined && title === mr.title) throw new Error(t('main.quick.noDraftPrefix'));
     await propose(
       { key: `quick:undraft:${ref}`, issue, issueTitle: mr.title, summary: t('main.quick.undraft', { ref }) },
       { op: 'setDraft', project: req.projectPath, iid: req.mrIid, draft: false, ...(title !== undefined ? { title } : {}) },
@@ -299,7 +299,7 @@ async function autoRun(notify: (n: Notice) => void): Promise<void> {
     proposeVcsCommands({ key: p.key, issue: p.issue, issueTitle: p.issueTitle, summary: p.summary, notify: each ? p.notify : undefined }, await prov.planWrite(p.op));
   }
   if (!each && getSettings().notifications) {
-    notify({ title: t('main.quick.many', { count: fresh.length, vcs: vcsName() }), body: t('main.quick.manyBody'), onClick: { type: 'navigate', to: 'actions' } });
+    notify({ title: t('main.quick.many', { count: fresh.length }), body: t('main.quick.manyBody'), onClick: { type: 'navigate', to: 'actions' } });
   }
 }
 

@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n';
+import { VCS_CAPS } from '../../shared/vcsCaps';
 import { VcsError } from './errors';
 import type { HttpClient } from './http';
 import type {
@@ -25,7 +26,7 @@ import { ISSUE_TITLE_MAX, checkIid, checkTitle, enc, iso, issueRefsOf, pool, spl
 // the HTTP transport. Its issue tracker is optional (a repository may have it off): a repository without one simply has no issues.
 // Pull request lists are per user across workspaces; the reviewer role and the issues are looked up in the repositories in `repos`.
 
-export const BITBUCKET_CAPS: VcsCaps = { issueStatus: true, resolvableThreads: true, manualJobs: false, draftToggle: true, conflictFlag: false, issues: true };
+export const BITBUCKET_CAPS: VcsCaps = VCS_CAPS.bitbucket;
 
 // i18n-ignore: query language of the code host
 const ISSUE_OPEN = '(state="new" OR state="open" OR state="on hold")';
@@ -238,6 +239,19 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         }
       });
       return lists.flat().slice(0, opts.limit ?? 200);
+    },
+
+    async listIssues(opts) {
+      // The tracker has no labels: a label scope would show every issue, so it is refused instead of widened.
+      if (opts.scope === 'labels') throw new VcsError('unsupported', { kind: 'Bitbucket', what: t('vcs.write.labels') });
+      try {
+        const rows = await c.values<BbIssue>(`${repo(opts.project)}/issues`, { query: { q: ISSUE_OPEN, sort: '-updated_on' }, maxPages: 2 });
+        return rows.slice(0, opts.limit ?? 200).map((i) => issueOf(i, opts.project));
+      } catch (e) {
+        // A repository with the tracker off answers 404: it has no issues, which is not an error.
+        if (e instanceof VcsError && e.code === 'not_found') return [];
+        throw e;
+      }
     },
 
     async getIssue(project, iid) {

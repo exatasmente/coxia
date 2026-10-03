@@ -36,7 +36,7 @@ export function neutralConfig(): WorkspaceConfig {
       providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null, options: {}, capabilities: null, structured: 'auto', headers: {}, maxOutputTokens: null, temperature: null, timeoutMs: null, legacyCustomEndpoint: false }],
       roles: roles<RoleModel>((r) => ({ provider: DEFAULT_PROVIDER_ID, model: NEUTRAL_ROLE_MODELS[r] })),
     },
-    projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '' } },
+    projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '', cardScope: 'assigned', cardLabels: [] } },
     vcs: [],
     docs: { autoDetect: true, claudeMdRoots: [], skillsDirs: [], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null },
     devCycle: neutralDevCycle(),

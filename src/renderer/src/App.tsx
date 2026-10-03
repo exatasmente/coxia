@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { parseTarget, targetFromSearch, type PushTarget } from '../../shared/push';
 import type { Card, ReleaseAction } from '../../shared/types';
 import { api, moduleEvents } from './api';
+import { startCycle } from './cycleApi';
 import { setBargeIn, setSpeechEnabled, usePlayer } from './audio';
 import { useCeremony } from './ceremony';
 import { applyVoiceMode, useTv } from './i18n';
@@ -103,6 +104,7 @@ export function App() {
   useHelpShortcut(screen.name, go);
 
   useEffect(() => {
+    startCycle();
     void api.listActions().then(setActions);
     void api.getSettings().then((s) => {
       applyVoiceMode(s.voice.enabled);

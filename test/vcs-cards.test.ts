@@ -2,12 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { TEST_STAGES } from './helpers/config';
+import { TEST_STAGES, hostConfig } from './helpers/config';
 import { matchStage } from '../src/shared/config/stages';
-import { setLanguage } from '../src/shared/i18n';
+import { termsFor } from '../src/shared/cycles';
+import { resetTerms, setLanguage, setTerms } from '../src/shared/i18n';
 import { buildCardReport } from '../src/main/vcs/cards';
 import { DEFAULT_STAGES, kindFromWork, stageOf, stagesFor } from '../src/main/vcs/stages';
 import { buildRuntime } from '../src/main/vcs/runtime';
+import { VCS_CAPS as VCS_CAPS_OF } from '../src/shared/vcsCaps';
 import type { VcsIssue, VcsMr } from '../src/main/vcs/types';
 import { type FakeHost, fixture, noSleep, startFakeHost } from './helpers/fakeHost';
 import { fakeGitlabRuntime } from './helpers/vcs';
@@ -23,6 +25,7 @@ afterEach(async () => {
   await host?.close();
   host = null;
   setLanguage('pt-BR');
+  resetTerms();
 });
 afterAll(() => rmSync(DATA, { recursive: true, force: true }));
 
@@ -224,12 +227,100 @@ describe('the card report from a provider', () => {
       [`GET ${API}/repos/acme/app/pulls/7/reviews`]: { json: GH.reviews },
       [`GET ${API}/repos/acme/uploader/pulls/9/reviews`]: { json: [] },
     });
+    // The workspace is on GitHub: a pull request is app#7 and the CI of a card is "checks".
+    setTerms(termsFor(hostConfig('github', { language: 'pt-BR' }), 'pt-BR'));
     const rt = buildRuntime({ id: 'gh', kind: 'github', host: 'ghe.test', apiUrl: `${host.url}${API}`, user: '', secretRef: 'x', cli: null, preference: 'api', repos: [] }, { token: () => 't', env: () => ({}), sleep: noSleep });
     const { report } = await buildCardReport(rt.provider, { issueProject: null, refPrefix: '', stages: [], kind: 'github', state: null, now: () => NOW });
     const issues = report.items.filter((i) => i.kind === 'issue');
     expect(issues.map((i) => [i.ref, i.stage])).toEqual([['app#12', 'In development']]);
-    const pr7 = report.items.find((i) => i.ref === 'app!7');
-    expect(pr7).toMatchObject({ issue_refs: ['12'], blockers: ['Pipeline falhou', 'Conflito com a branch de destino'], pending: ['Ainda em rascunho'], pipeline: 'failed', has_conflicts: true });
-    expect(report.items.find((i) => i.ref === 'uploader!9')).toMatchObject({ roles: ['reviewer'], pending: ['Revisão pedida a você', 'Pipeline em andamento'] });
+    const pr7 = report.items.find((i) => i.ref === 'app#7');
+    expect(pr7).toMatchObject({ issue_refs: ['12'], blockers: ['Checks falharam', 'Conflito com a branch de destino'], pending: ['Ainda em rascunho'], pipeline: 'failed', has_conflicts: true });
+    expect(report.items.find((i) => i.ref === 'uploader#9')).toMatchObject({ roles: ['reviewer'], pending: ['Revisão pedida a você', 'Checks em andamento'] });
+  });
+});
+
+describe('which issues become cards', () => {
+  type Call = { fn: 'mine' | 'list'; args: unknown };
+  const stub = (kind: 'github' | 'gitlab' | 'bitbucket', issues: VcsIssue[], mrs: VcsMr[] = []) => {
+    const calls: Call[] = [];
+    const provider = {
+      caps: VCS_CAPS_OF[kind],
+      listMyIssues: async (args: unknown) => (calls.push({ fn: 'mine', args }), issues.filter((i) => i.assignees.includes('me'))),
+      listIssues: async (args: unknown) => (calls.push({ fn: 'list', args }), issues),
+      listMyMrs: async () => mrs,
+      linkedMrs: async () => [],
+    } as unknown as import('../src/main/vcs/types').VcsProvider;
+    return { provider, calls };
+  };
+  const base = (kind: 'github' | 'gitlab' | 'bitbucket') => ({ issueProject: 'acme/app', refPrefix: 'app#', stages: [], kind, state: null, now: () => NOW });
+  const issues = [issue({ iid: 1, assignees: ['me'], labels: ['bug'] }), issue({ iid: 2, assignees: ['cy'], labels: ['ready'] }), issue({ iid: 3, labels: [] })];
+  const refs = (r: { items: { kind: string; ref: string }[] }) => r.items.filter((i) => i.kind === 'issue').map((i) => i.ref);
+
+  it('asks for the issues assigned to me, exactly as before, when no scope is given or the scope is assigned', async () => {
+    for (const extra of [{}, { scope: 'assigned' as const }, { scope: 'assigned' as const, labels: ['bug'] }]) {
+      const { provider, calls } = stub('github', issues);
+      const { report } = await buildCardReport(provider, { ...base('github'), ...extra });
+      expect(calls).toEqual([{ fn: 'mine', args: { project: 'acme/app', limit: 100 } }]);
+      expect(refs(report)).toEqual(['app#1']);
+    }
+  });
+
+  it('asks for every open issue of the issue project, and the refs use the prefix', async () => {
+    const { provider, calls } = stub('gitlab', issues);
+    const { report } = await buildCardReport(provider, { ...base('gitlab'), scope: 'all' });
+    expect(calls).toEqual([{ fn: 'list', args: { project: 'acme/app', scope: 'all', labels: [], limit: 100 } }]);
+    expect(refs(report)).toEqual(['app#1', 'app#2', 'app#3']);
+  });
+
+  it('asks for the issues with any of the labels, trimmed', async () => {
+    const { provider, calls } = stub('github', [issues[1]]);
+    const { report } = await buildCardReport(provider, { ...base('github'), scope: 'labels', labels: [' ready ', 'bug', 'Ready'] });
+    expect(calls).toEqual([{ fn: 'list', args: { project: 'acme/app', scope: 'labels', labels: ['ready', 'bug'], limit: 100 } }]);
+    expect(refs(report)).toEqual(['app#2']);
+  });
+
+  it.each([
+    ['no issue project', { issueProject: null, scope: 'all' as const }, 'github' as const],
+    ['no label', { scope: 'labels' as const, labels: [] }, 'github' as const],
+    ['labels on a host whose issues have none', { scope: 'labels' as const, labels: ['bug'] }, 'bitbucket' as const],
+  ])('falls back to the assigned issues with %s, never to every issue', async (_why, extra, kind) => {
+    const { provider, calls } = stub(kind, issues);
+    const { report } = await buildCardReport(provider, { ...base(kind), ...extra });
+    expect(calls.map((c) => c.fn)).toEqual(['mine']);
+    expect(refs(report)).toEqual(['app#1']);
+  });
+
+  it('does not touch the merge requests: they stay the ones I wrote or review, linked by the number in their text', async () => {
+    const mine = mr({ iid: 9, issueRefs: [2], roles: ['author'] });
+    const { provider } = stub('github', issues, [mine]);
+    const assigned = await buildCardReport(provider, base('github'));
+    const all = await buildCardReport(provider, { ...base('github'), scope: 'all' });
+    expect(assigned.report.items.filter((i) => i.kind === 'mr')).toHaveLength(1);
+    expect(all.report.items.filter((i) => i.kind === 'mr').map((m) => [m.ref, m.issue_refs])).toEqual([['app#9', ['2']]]);
+  });
+
+  it('gives the cards of the default scope the same fields as before: nothing about the scope or the assignee', async () => {
+    const { provider } = stub('github', issues);
+    const mine = (await buildCardReport(provider, base('github'))).report.items[0];
+    const all = (await buildCardReport(provider, { ...base('github'), scope: 'all' })).report.items.find((i) => i.ref === 'app#1');
+    expect(Object.keys(all ?? {}).sort()).toEqual(Object.keys(mine).sort());
+  });
+
+  it('a card that appears because the scope widened has no change to report', async () => {
+    const first = await buildCardReport(stub('github', issues).provider, base('github'));
+    const wider = await buildCardReport(stub('github', issues).provider, { ...base('github'), scope: 'all', state: first.state });
+    expect(wider.report.items.filter((i) => i.kind === 'issue').map((i) => i.changes)).toEqual([[], [], []]);
+  });
+
+  it('reads the open issues of a GitHub project through the search, over the real provider and a fake host', async () => {
+    const API = '/api/v3';
+    host = await startFakeHost({
+      [`GET ${API}/user`]: { json: GH.user },
+      [`GET ${API}/search/issues`]: (h) => ({ json: h.query.get('q')?.startsWith('is:issue') ? { items: GH.issues_assigned.filter((i: { pull_request?: unknown }) => !i.pull_request) } : { items: [] } }),
+    });
+    const rt = buildRuntime({ id: 'gh', kind: 'github', host: 'ghe.test', apiUrl: `${host.url}${API}`, user: '', secretRef: 'x', cli: null, preference: 'api', repos: [] }, { token: () => 't', env: () => ({}), sleep: noSleep });
+    const { report } = await buildCardReport(rt.provider, { issueProject: 'acme/app', refPrefix: 'app#', stages: [], kind: 'github', state: null, now: () => NOW, scope: 'labels', labels: ['bug'] });
+    expect(refs(report)).toEqual(['app#12']);
+    expect(host.log().some((l) => l.includes('label%3A%22bug%22'))).toBe(true);
   });
 });

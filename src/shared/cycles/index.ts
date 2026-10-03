@@ -8,9 +8,11 @@ import type { CycleTemplate } from './types';
 
 export * from './apply';
 export * from './ceremonies';
+export * from './host';
 export * from './neutral';
 export * from './prompts';
 export * from './stages';
+export * from './terms';
 export * from './text';
 export * from './types';
 export * from './view';

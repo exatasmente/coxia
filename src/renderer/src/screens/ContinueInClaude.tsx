@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { api } from '../api';
+import type { LlmRole } from '../../../shared/config/types';
+import { showContinueInClaude } from '../../../shared/cycles/view';
+import { useCycle } from '../cycleApi';
 import { useT } from '../i18n';
 import { isWeb } from '../platform';
 
-export function ContinueInClaude({ sessionId, prompt, label, dark = false }: { sessionId: string | null | undefined; prompt?: string; label?: string; dark?: boolean }) {
+// `role` is the agent role that ran the session: only the Claude engine keeps sessions `claude --resume` can read.
+export function ContinueInClaude({ sessionId, prompt, label, dark = false, role = 'deep' }: { sessionId: string | null | undefined; prompt?: string; label?: string; dark?: boolean; role?: LlmRole }) {
   const t = useT();
+  const cycle = useCycle();
   const [state, setState] = useState<string | null>(null);
-  if (!sessionId) return null;
+  if (!sessionId || (cycle && !showContinueInClaude(cycle.host, role))) return null;
   const open = async () => {
     const r = await api.continueInClaude(sessionId, prompt);
     if (r.ok) setState(t('ui.continueInClaude.opening'));

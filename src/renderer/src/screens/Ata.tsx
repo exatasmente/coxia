@@ -233,7 +233,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
                   <span className="mono faint">{e.repo} · {e.ref}</span>
                   <EfeitoStatus effect={e} ceremonyId={c.snapshot.id} />
                   {c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId ? (
-                    <ContinueInClaude sessionId={c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId} prompt={effectPrompt(e)} label={t('ui.ata.effect.run')} />
+                    <ContinueInClaude sessionId={c.turns[e.ref]?.sessionId ?? c.deep[e.ref]?.sessionId} prompt={effectPrompt(e)} label={t('ui.ata.effect.run')} role={c.turns[e.ref]?.sessionId ? 'turn' : 'deep'} />
                   ) : (
                     <button type="button" className="btn" title={t('ui.ata.effect.noSession')} onClick={() => void api.copy(effectPrompt(e))}>{t('ui.ata.effect.copyRequest')}</button>
                   )}

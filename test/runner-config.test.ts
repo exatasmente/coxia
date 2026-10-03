@@ -76,21 +76,21 @@ describe('the runner section', () => {
   });
 });
 
-describe('the migration to schema 5', () => {
-  const v4 = (change: (c: Doc) => void = () => undefined): Doc => {
+describe('the migration to schema 6', () => {
+  const v5 = (change: (c: Doc) => void = () => undefined): Doc => {
     const c = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
-    c.schemaVersion = 4;
+    c.schemaVersion = 5;
     delete c.runner;
     change(c);
     return c;
   };
 
   it('adds the runner switched off and touches nothing else', () => {
-    const before = v4((c) => (c.language = 'en'));
+    const before = v5((c) => (c.language = 'en'));
     const r = migrateConfig(before, { legacyInstall: false });
-    expect(r.fromVersion).toBe(4);
+    expect(r.fromVersion).toBe(5);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -98,18 +98,18 @@ describe('the migration to schema 5', () => {
   });
 
   it('keeps a runner section that is already there', () => {
-    const r = migrateConfig(v4((c) => (c.runner = { ...neutralRunner(), enabled: true, triggerLabel: 'auto' })), { legacyInstall: false });
+    const r = migrateConfig(v5((c) => (c.runner = { ...neutralRunner(), enabled: true, triggerLabel: 'auto' })), { legacyInstall: false });
     expect(r.config.runner).toMatchObject({ enabled: true, triggerLabel: 'auto' });
   });
 
-  it('carries a v3 file through both steps', () => {
+  it('carries a v3 file through every step', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(8);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 9 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 10 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

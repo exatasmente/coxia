@@ -6,11 +6,12 @@ import type { Card } from '../shared/types';
 import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ATAS } from './env';
-import { rc } from './workspaceConfig';
+import { primaryKind, rc } from './workspaceConfig';
 import { vcsProvider } from './vcs';
 import type { Module, ModuleContext } from './module';
 import { fetchRepos, worktreeHealth } from './worktrees';
 import { t } from '../shared/i18n';
+import { crRef } from '../shared/vcs';
 
 const FILE = join(ATAS, 'radar.json');
 // The collision check treats 40 lines (about one method) as "same place".
@@ -106,7 +107,7 @@ function distance(a: [number, number], b: [number, number]): number {
 const repoName = (project: string) => project.split('/').pop() ?? project;
 
 function side(u: Unit, mr: MrChanges): RadarSide {
-  return { ref: u.card.ref, iid: u.card.iid, title: u.card.title, stage: u.card.stage, mr: `${repoName(mr.project)}!${mr.iid}`, branch: mr.branch, target: mr.target, url: mr.url };
+  return { ref: u.card.ref, iid: u.card.iid, title: u.card.title, stage: u.card.stage, mr: crRef(primaryKind(), mr.project, mr.iid), branch: mr.branch, target: mr.target, url: mr.url };
 }
 
 const recommendation = (kind: RadarKind): string => t(`main.radar.recommendation.${kind}`);

@@ -5,6 +5,7 @@ import type { DestinationLabels } from '../shared/destination';
 import { renderPrompt } from '../shared/cycles/prompts';
 import { cycleText, joinList, userTerms, voiceText } from '../shared/cycles/text';
 import type { Params, Translate } from '../shared/i18n';
+import { hostWords } from '../shared/i18n/terms';
 import type { Card } from '../shared/types';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 
@@ -22,10 +23,7 @@ export function text(value: string, params?: Params): string {
 /** "GitLab", "GitHub", "Bitbucket", or a neutral phrase when the workspace has no integration. */
 export function vcsName(): string {
   const kind = rc().primaryVcs?.kind;
-  if (kind === 'gitlab') return 'GitLab';
-  if (kind === 'github') return 'GitHub';
-  if (kind === 'bitbucket') return 'Bitbucket';
-  return text('cycle.vcs.fallback');
+  return kind ? hostWords(kind, language()).vcsName : text('cycle.vcs.fallback');
 }
 
 /** What the team calls the daily preparation ("pré-daily", "daily scrum", "standup"). */

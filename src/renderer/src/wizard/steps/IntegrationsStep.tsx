@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import type { VcsIntegration, VcsKind } from '../../../../shared/config/types';
+import { useEffect, useState } from 'react';
+import { effectiveCardScope, parseLabelsField, scopesOffered } from '../../../../shared/cardScope';
+import type { CardScope, IssueProjectConfig, VcsIntegration, VcsKind } from '../../../../shared/config/types';
 import { VCS_KINDS } from '../../../../shared/config/types';
 import type { VcsProbeResult } from '../../../../shared/vcs';
 import { type SecretDraft, type VcsTestResult, emptySecretDraft, secretInputFrom, vcsSecretRef } from '../../../../shared/wizard';
@@ -32,6 +33,15 @@ function testMessageKey(r: VcsTestResult): string {
   if (http === '403') return 'wizard.vcs.test.403';
   if (http === '404') return 'wizard.vcs.test.404';
   return '';
+}
+
+// The labels are typed as text so a comma being typed is not eaten; the array in the config follows the text.
+function LabelsInput({ id, value, disabled, onChange }: { id: string; value: string[]; disabled: boolean; onChange: (labels: string[]) => void }) {
+  const [text, setText] = useState(value.join(', '));
+  useEffect(() => {
+    if (JSON.stringify(parseLabelsField(text)) !== JSON.stringify(value)) setText(value.join(', '));
+  }, [value, text]);
+  return <input id={id} className="text-input" spellCheck={false} disabled={disabled} value={text} onChange={(e) => { setText(e.target.value); onChange(parseLabelsField(e.target.value)); }} />;
 }
 
 /** What the probe found beyond "connected": the checks, the permissions warnings and a few of my issues and merge requests. */
@@ -123,6 +133,9 @@ export function IntegrationsStep({ cfg, setCfg, view, refreshView }: StepProps) 
   };
 
   const issues = cfg.projects.issues;
+  const patchIssues = (change: Partial<IssueProjectConfig>) => setCfg((c) => ({ ...c, projects: { ...c.projects, issues: { ...c.projects.issues, ...change } } }));
+  const issueKind = cfg.vcs.find((v) => v.id === issues.vcsId)?.kind ?? null;
+  const applied = effectiveCardScope({ scope: issues.cardScope, labels: issues.cardLabels, project: issues.project, kind: issueKind });
 
   return (
     <div className="wz-stack">
@@ -213,6 +226,18 @@ export function IntegrationsStep({ cfg, setCfg, view, refreshView }: StepProps) 
               <input id="wz-issues-project" className="text-input mono" spellCheck={false} placeholder={PROJECT_PLACEHOLDER} disabled={!issues.vcsId} value={issues.project ?? ''} onChange={(e) => setCfg((c) => ({ ...c, projects: { ...c.projects, issues: { ...c.projects.issues, project: e.target.value.trim() || null } } }))} />
             </Field>
           </div>
+          <Field label={t('wizard.vcs.issuesScope')} htmlFor="wz-issues-scope" hint={t('wizard.vcs.issuesScopeHint')}>
+            <select id="wz-issues-scope" className="text-input" disabled={!issues.vcsId} value={issues.cardScope} onChange={(e) => patchIssues({ cardScope: e.target.value as CardScope })}>
+              {scopesOffered(issueKind, issues.cardScope).map((s) => <option key={s} value={s}>{t(`wizard.vcs.issuesScope.${s}`)}</option>)}
+            </select>
+          </Field>
+          {issues.cardScope === 'labels' && (
+            <Field label={t('wizard.vcs.issuesLabels')} htmlFor="wz-issues-labels" hint={t('wizard.vcs.issuesLabelsHint')}>
+              <LabelsInput id="wz-issues-labels" disabled={!issues.vcsId} value={issues.cardLabels} onChange={(cardLabels) => patchIssues({ cardLabels })} />
+            </Field>
+          )}
+          {issues.vcsId && applied.fallback && <Notice tone="warn">{t(`wizard.vcs.issuesScopeNote.${applied.fallback}`)}</Notice>}
+          {issues.vcsId && cfg.externalTools.cardSource.enabled && <Notice tone="info">{t('wizard.vcs.issuesScopeNote.external')}</Notice>}
           <Field label={t('wizard.vcs.issuesPrefix')} htmlFor="wz-issues-prefix" hint={t('wizard.vcs.issuesPrefixHint')}>
             <input id="wz-issues-prefix" className="text-input mono" style={{ maxWidth: 200 }} spellCheck={false} disabled={!issues.vcsId} value={issues.refPrefix} onChange={(e) => setCfg((c) => ({ ...c, projects: { ...c.projects, issues: { ...c.projects.issues, refPrefix: e.target.value.trim() } } }))} />
           </Field>
