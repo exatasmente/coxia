@@ -463,7 +463,7 @@
   },
   "retro": {
    "role": "deep",
-   "prompt": "Retro semanal do Bruno, por voz, de 25/09/2026 a 02/10/2026. Você conduz.\nBase: o resumo abaixo (cerimônias, decisões, ações de release, quizzes de gate e mudanças no GitLab). Pode ler specs e o playbook para entender um ponto; não invente fato que não esteja no resumo ou no que você ler.\nOlhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.\n\"fala\": abertura de até 150 palavras. \"numeros\": de 3 a 6 contagens da semana; \"valor\" é só o número (ex.: \"2\", \"4\") e o contexto vai em \"rotulo\" (até 8 palavras). Cada item de \"funcionou\", \"travou\" e \"retrabalho\" com a evidência concreta (issue, data).\n\"melhorias\": no formato do IMPROVEMENTS.md do playbook (título, dimensão, o problema hoje, o que seria), só as que a evidência sustenta.\nResumo da semana: {\"cerimonias\":[],\"acoes_de_release\":[],\"gates\":[{\"issue\":\"web#101\",\"gate\":1,\"rodadas\":2,\"erros\":[\"x\"]}],\"mudancas_gitlab\":[\"2026-09-30 web#101 stage: Doing → Test Fail\"]}\nPortuguês do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. Issue pelo número curto (\"a 101\"), MR pelo repositório e número (\"o 303 do gateway\"). Fale só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.",
+   "prompt": "Retro semanal do Bruno, por voz, de 25/09/2026 a 02/10/2026. Você conduz.\nBase: o resumo abaixo (cerimônias, decisões, ações de release, quizzes de gate e mudanças no GitLab). Pode ler specs e o playbook para entender um ponto; não invente fato que não esteja no resumo ou no que você ler.\nOlhe processo, não pessoas: Failed testing e reprovações, bloqueios que duraram, conflitos pós-release, gates com mais de uma rodada (o material não ensinou), perguntas que ficaram sem resposta.\n\"fala\": abertura de até 150 palavras. \"numeros\": de 3 a 6 contagens da semana; \"valor\" é só o número (ex.: \"2\", \"4\") e o contexto vai em \"rotulo\" (até 8 palavras). Cada item de \"funcionou\", \"travou\" e \"retrabalho\" com a evidência concreta (issue, data).\nResumo da semana: {\"cerimonias\":[],\"acoes_de_release\":[],\"gates\":[{\"issue\":\"web#101\",\"gate\":1,\"rodadas\":2,\"erros\":[\"x\"]}],\"mudancas_gitlab\":[\"2026-09-30 web#101 stage: Doing → Test Fail\"]}\nPortuguês do Brasil falado: frases curtas, sem markdown, sem listas, sem emoji. Issue pelo número curto (\"a 101\"), MR pelo repositório e número (\"o 303 do gateway\"). Fale só o que está no cartão ou no que você leu nesta sessão; não deduza causa técnica nem invente estado.",
    "system": "Você participa de uma cerimônia por voz do Bruno como agente de uma atividade. A cerimônia é somente leitura: não edite arquivos, não publique nada; no terminal, só leitura do GitLab. Toda ação com efeito externo vira item da ata para o Bruno executar depois, com confirmação.\nPara ler o GitLab: `glab api projects/<grupo%2Frepo>/merge_requests/<iid>/discussions` (discussões de MR), `glab api projects/<grupo%2Frepo>/issues/<iid>/notes` (comentários de issue) ou `glab mr view <iid> -R <grupo/repo> --comments`. O caminho de cada MR está em mrPaths do cartão.",
    "maxTurns": 16,
    "resume": null,
@@ -485,8 +485,7 @@
     "numeros",
     "funcionou",
     "travou",
-    "retrabalho",
-    "melhorias"
+    "retrabalho"
    ]
   },
   "retro-ask": {
@@ -510,7 +509,8 @@
    "extraDirs": [],
    "schemaKeys": [
     "fala",
-    "texto"
+    "texto",
+    "melhorias"
    ]
   },
   "reentry": {

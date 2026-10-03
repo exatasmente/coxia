@@ -353,13 +353,6 @@ export interface RetroItem {
   evidence: string;
 }
 
-export interface Improvement {
-  title: string;
-  dimension: string;
-  problem: string;
-  proposal: string;
-}
-
 export interface Retro {
   /** Its date; a retro held for one squad has the squad after it ("2026-10-02-core"). */
   id: string;
@@ -373,7 +366,6 @@ export interface Retro {
   worked: RetroItem[];
   stuck: RetroItem[];
   rework: RetroItem[];
-  improvements: Improvement[];
   talk: Talk[];
   createdAt: string;
 }

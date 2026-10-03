@@ -373,7 +373,7 @@
   },
   "retro": {
    "role": "deep",
-   "prompt": "Ana's weekly retro, by voice, from 9/25/2026 to 10/2/2026. You lead it.\nBase: the summary below (ceremonies, decisions, release actions and gate quizzes). You may read specs and the project documentation to understand a point; do not invent a fact that is not in the summary or in what you read.\nLook at process, not people: rejections in review and in QA, blockers that lasted, post-release conflicts, gates with more than one round (the material did not teach), questions left unanswered.\n\"fala\" (speech): an opening of up to 150 words. \"numeros\" (numbers): 3 to 6 counts for the week; \"valor\" (value) is just the number (e.g. \"2\", \"4\") and the context goes in \"rotulo\" (label, up to 8 words). Each item of \"funcionou\" (worked), \"travou\" (stuck) and \"retrabalho\" (rework) with concrete evidence (issue, date).\n\"melhorias\" (improvements): proposals to improve the process (title, dimension, today's problem, what it would be), only the ones the evidence supports.\nSummary of the week: {\"ceremonies\":[],\"release_actions\":[],\"gates\":[{\"issue\":\"web#101\",\"gate\":1,\"rounds\":2,\"mistakes\":[\"x\"]}],\"host_changes\":[]}\nSpoken English: short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Say only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
+   "prompt": "Ana's weekly retro, by voice, from 9/25/2026 to 10/2/2026. You lead it.\nBase: the summary below (ceremonies, decisions, release actions and gate quizzes). You may read specs and the project documentation to understand a point; do not invent a fact that is not in the summary or in what you read.\nLook at process, not people: rejections in review and in QA, blockers that lasted, post-release conflicts, gates with more than one round (the material did not teach), questions left unanswered.\n\"fala\" (speech): an opening of up to 150 words. \"numeros\" (numbers): 3 to 6 counts for the week; \"valor\" (value) is just the number (e.g. \"2\", \"4\") and the context goes in \"rotulo\" (label, up to 8 words). Each item of \"funcionou\" (worked), \"travou\" (stuck) and \"retrabalho\" (rework) with concrete evidence (issue, date).\nSummary of the week: {\"ceremonies\":[],\"release_actions\":[],\"gates\":[{\"issue\":\"web#101\",\"gate\":1,\"rounds\":2,\"mistakes\":[\"x\"]}],\"host_changes\":[]}\nSpoken English: short sentences, no markdown, no lists, no emoji. Say the issue by its short number (\"issue 123\") and the MR by repository and number (\"MR 45 of web\"). Say only what is on the card or what you read in this session; do not infer a technical cause or invent state.",
    "system": "You take part in a voice ceremony of Ana's as the agent of one activity. The ceremony is read-only: do not edit files, do not publish anything; in the terminal, read the code host only. Every action with an external effect becomes an item of the minutes for Ana to run later, with confirmation.",
    "maxTurns": 16,
    "resume": null,
@@ -390,8 +390,7 @@
     "numeros",
     "funcionou",
     "travou",
-    "retrabalho",
-    "melhorias"
+    "retrabalho"
    ]
   },
   "retro-ask": {
@@ -410,7 +409,8 @@
    "extraDirs": [],
    "schemaKeys": [
     "fala",
-    "texto"
+    "texto",
+    "melhorias"
    ]
   },
   "reentry": {

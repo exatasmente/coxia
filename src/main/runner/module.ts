@@ -3,7 +3,10 @@ import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
 import { RunError, isFlowCycle } from '../../shared/runs';
+import { createdIssueOf } from '../../shared/runs/links';
+import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
+import { failureText, noteRetroIssue } from '../retroIssues';
 import { runStore } from '../runs';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
@@ -44,6 +47,22 @@ const id = (v: unknown): string => {
   return v;
 };
 
+/**
+ * The proposal a retro raised to open an issue was approved and the host answered: the issue exists, so the task starts on it. A host that did not answer
+ * with the number leaves the improvement in the conversation, and a task that refuses to start is said there too. `start` is a parameter because the runner
+ * only exists inside the module, which no test drives.
+ */
+export function retroIssueDone(action: ReleaseAction, responses: unknown[], start: (ref: string) => Promise<unknown>): void {
+  if (action.unit?.purpose !== 'retro-issue') return;
+  const retro = String(action.unit.retro ?? '');
+  const made = createdIssueOf(responses[0]);
+  if (!made) {
+    noteRetroIssue(retro, 'main.retro.issue.noIssue', {});
+    return;
+  }
+  void start(`${rc().issues.refPrefix}${made.iid}`).catch((err) => noteRetroIssue(retro, 'main.retro.issue.noRun', { reason: failureText(err) }));
+}
+
 /** The sandbox of the running workspace's agents. Its folders live under the workspace's data and are the app's own: nothing from an earlier process is kept. */
 export const sandbox = createSandboxService({ dir: join(ATAS, 'sandbox'), home: HOME, protect: [DATA_ROOT] });
 
@@ -70,6 +89,8 @@ export const runsModule: Module = (ctx) => {
   current = r;
   // A comment, a review, the push or the pull request that waited in Actions was approved: the run learns what the host made.
   onRunnerActionDone((action, responses) => r.actionDone(action, responses));
+  // The issue a retro improvement asked for was created: the task on it starts by itself, without another "sim".
+  onRunnerActionDone((action, responses) => retroIssueDone(action, responses, (ref) => r.start(ref)));
   // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, read only.
   interceptPosts((thread, body) => r.answerPost(thread, body));
   forumStore().subscribe((m) => r.onMessage(m));
