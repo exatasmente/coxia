@@ -27,7 +27,7 @@ Setup for both cases: a fresh data folder (`CERIMONIAS_DATA_DIR`, `CERIMONIAS_SP
 | Quick actions screen (the button above) | kicker "GitLab · proposals", "Reading GitLab…", "Merge requests · 2", "MR of someone else: read-only", an "Issue status · no status" block with a note about GraphQL | "GitHub · proposals", "Pull requests · 2"; no issue status block (GitHub issues have none) |
 | Discussions screen | "Reading the discussions on GitLab…", "sent to GitLab", "no MR" | GitHub, "no PR" |
 | Help screen | "Writing to GitLab", "QA return, Discussions, GitLab", "reading the spec, GitLab and playbook" | GitHub; ceremonies the cycle does not have are not listed |
-| Settings, agent tools | two switches: **GitLab through MCP** and **GitLab through glab** (the second one actually controls `gh`) | one switch for the host CLI named after the configured one (`gh`); the tracker MCP switch only when an MCP server is configured |
+| Settings, agent tools | two switches: **GitLab through MCP** and **GitLab through glab** (the second one actually controls `gh`) | one switch for reading the configured host (`gh`); the tracker MCP switch only when an MCP server is configured |
 | Settings, web access / test workspace | "Approve release and GitLab actions", "no writes to GitLab" | GitHub |
 | Radar, Retro intro | "nothing is commented on or changed in GitLab", "GitLab changes from the last 7 days", "your open MRs" | GitHub, PRs, and the retro window the cycle sets |
 | Call, notifications, minutes | "Review of MR app!7", "MR in conflict with main", effects checked as `!7` | "Review of PR app#7", "PR in conflict with main", `#7` |
@@ -37,13 +37,13 @@ Setup for both cases: a fresh data folder (`CERIMONIAS_DATA_DIR`, `CERIMONIAS_SP
 
 Everything above, plus:
 
-- **Settings** still offers the `glab` switch although Bitbucket has no CLI (the agents read through the `VcsRead` tool).
+- **Settings** still labels the agent read switch "GitLab through glab" although Bitbucket has no CLI: there the switch governs the `VcsRead` tool.
 - The Quick actions screen offers the same layout although Bitbucket has no labels or manual jobs, and its status is the issue state.
 - When an agent runs a shell command that is not allowed, the refusal tells it to use `glab` commands (`src/main/agents.ts:262`), which do not exist for Bitbucket.
 
 ### Other things that now come from configuration
 
-- **Ceremony name.** The cycle names the daily ceremony ("pre-daily", "daily scrum", "standup"). Today's header follows it; the call title, the minutes title, the history entries, the help screen, the Settings reminder and the wizard still say "Pre-daily" (about 30 texts).
+- **Ceremony name.** The cycle names the daily ceremony ("pre-daily", "daily scrum", "standup"). Today's header follows it; the call title, the minutes title, the history entries, the help screen, the Settings reminder and the wizard still say "Pre-daily" (26 texts).
 - **Cycle structure.** The Help screen lists Gate, QA hand-off and Retro for a cycle that has none of them; generic texts say "spec", "Plan", "playbook", "QA" for a Kanban or Minimal cycle.
 - **Retro.** The retro window is a cycle parameter (7 days, 14 for Scrum), but the screens say "weekly" and "last 7 days", and the notification says "Weekly retro".
 - **Where the summary goes.** `summaryTarget` says where the team summary is pasted; the screens say "the team chat".
@@ -61,10 +61,10 @@ Everything above, plus:
 
 The inventory is in [`1_INVESTIGATION.md`](1_INVESTIGATION.md). In numbers (catalog keys, each counted once for the pair of languages; a key can belong to more than one family):
 
-- 33 keys name GitLab where the configured host should be named, 76 say "MR" or "merge request" where the noun depends on the host, 15 of them also write the ref as `!7`.
+- 33 keys name GitLab where the configured host should be named, 77 say "MR" or "merge request" where the noun depends on the host, 15 of them also write the ref as `!7`.
 - 34 keys belong to features that exist only on GitLab and should be hidden elsewhere.
-- 62 keys name the daily ceremony, a cycle document or a cycle step with a fixed word.
-- 4 spots in code build or hard-code the text outside the catalogs (`TodayParts.tsx` buttons and label, the `'MR'` fallback in `actions.ts`, the ref in six places, the shell denial hint).
+- 56 keys name the daily ceremony (26), a cycle document or step (25) or the retro window (5) with a fixed word; 10 more name the summary target or the retro window.
+- 24 spots in code build or hard-code the text outside the catalogs (the `GitLab` button and `MRs` label in `TodayParts.tsx`, the `'MR'` fallback in `actions.ts`, the ref in six places, the shell denial hint, the Settings and Help lists, ...); 19 of them need a change.
 
 Out of scope: adding a host, changing what a provider can do, redesigning the Quick actions screen, and changing the text of the SDD template for a GitLab workspace.
 
