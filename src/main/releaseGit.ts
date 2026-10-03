@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { t } from '../shared/i18n';
 import { type ReleaseUnit, releaseBranchOf, releaseTagOf } from '../shared/release';
 import { assertPlainPush, git as rawGit } from './conflictGit';
@@ -16,7 +16,8 @@ import { SAFE, checkRef } from './runner/git';
 //
 // Nothing here touches the person's checkout: the steps run in a worktree of their own, made from the clone for the run. A branch is never checked out twice, so
 // the worktree stands on `release/X.Y.Z` for the steps of the release, and on a DETACHED HEAD at what the remote has of main (or local main's commit when there is
-// no remote) for the stable: the release is merged into that commit, the script (`--worktree`) cuts the stable on it, and `HEAD:refs/heads/main` is what is pushed.
+// no remote) for `open` and for the stable: `open` runs main's own script (never the one of a release branch that merged pull requests may have changed), the release is
+// merged into that commit for the stable, the script (`--worktree`) cuts the stable on it, and `<sha>:refs/heads/main` is what is pushed (the sha resolved first).
 
 export interface ReleaseIdentity {
   name: string;
@@ -48,6 +49,8 @@ export interface ReleaseEnv {
   pr?: (n: number) => Promise<ReleasePr>;
   /** Replaces the environment the script runs in (tests). */
   env?: NodeJS.ProcessEnv;
+  /** The head of the pull request the plan the person accepted froze (merge-pr only): the host must still have exactly this commit. */
+  planned?: string;
   /** How long the script may take: it runs the checks of CI. */
   scriptTimeoutMs?: number;
 }
@@ -63,6 +66,8 @@ export interface ReleaseResult {
 }
 
 const SCRIPT = 'scripts/release.sh';
+const EXIT_GRACE_MS = 250;
+const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const TAIL = 4000;
 
 // The git of this file: in a release worktree it also reads the excludes file made for it (the links to the clone's dependencies must not make the tree dirty).
@@ -94,10 +99,10 @@ const currentBranch = async (clone: string): Promise<string> => (await git(clone
 const identityArgs = (id: ReleaseIdentity): string[] => ['-c', `user.name=${id.name}`, '-c', `user.email=${id.email}`];
 const authorOf = (id: ReleaseIdentity): string => `${id.name} <${id.email}>`;
 
-/** Whether `a` is in the history of `b`. */
-/** Whether two commit names are the same commit, one possibly abbreviated (7 characters at least). */
-export const sameSha = (a: string, b: string): boolean => a.length >= 7 && b.length >= 7 && (a.toLowerCase().startsWith(b.toLowerCase()) || b.toLowerCase().startsWith(a.toLowerCase()));
+/** Whether two commit names are the same full commit (a 40 or 64 hex digit name each, case does not matter): an abbreviation is never "the same". */
+export const sameSha = (a: string, b: string): boolean => FULL_SHA.test(a) && FULL_SHA.test(b) && a.toLowerCase() === b.toLowerCase();
 
+/** Whether `a` is in the history of `b`. */
 const isAncestor = (clone: string, a: string, b: string): Promise<boolean> => ok(clone, ['merge-base', '--is-ancestor', a, b]);
 
 /** The highest `vX.Y.Z-beta.N` tag of a version in this clone, or null. */
@@ -119,6 +124,27 @@ const isDir = (p: string): boolean => {
   }
 };
 
+/** The path as git prints it: the folder's parent resolved (a symbolic link in the way), the folder's own name kept (it may be gone). */
+function listedPath(p: string): string {
+  const abs = resolve(p);
+  try {
+    return join(realpathSync(dirname(abs)), basename(abs));
+  } catch {
+    return abs;
+  }
+}
+
+/** Whether git still lists `path` as a worktree whose folder is gone (prunable). */
+async function registeredButGone(clone: string, path: string): Promise<boolean> {
+  const target = listedPath(path);
+  for (const block of (await out(clone, ['worktree', 'list', '--porcelain'])).split('\n\n')) {
+    const lines = block.split('\n');
+    const listed = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+    if (listed && lines.some((l) => l === 'prunable' || l.startsWith('prunable ')) && listedPath(listed) === target) return true;
+  }
+  return false;
+}
+
 /**
  * The worktree of a release run, made from the clone when it is not there: detached, so it holds no branch. The dependency folders the clone has are linked into it
  * (the checks of a cut need them) and kept out of `git status` by an excludes file in the worktree's own git directory.
@@ -130,9 +156,9 @@ async function prepareWorktree(env: ReleaseEnv): Promise<string> {
     mkdirSync(dirname(wt), { recursive: true });
     await fetchBranch(env.clone, 'main');
     const base = (await exists(env.clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(env.clone, 'refs/heads/main')) ? 'refs/heads/main' : 'HEAD';
-    // A worktree whose folder was deleted is still registered, and git then refuses the path: forget what is gone first.
-    await git(env.clone, ['worktree', 'prune'], { fail: false });
-    const made = await git(env.clone, ['worktree', 'add', '--detach', '--quiet', wt, base], { fail: false });
+    // A worktree whose folder was deleted is still registered, and git then refuses the path. Only THIS path is taken over (`--force`, and only when git lists it as
+    // prunable): a repository-wide `git worktree prune` would also forget the registrations of other worktrees whose folders are gone (a drive that is not mounted).
+    const made = await git(env.clone, ['worktree', 'add', '--detach', '--quiet', ...((await registeredButGone(env.clone, wt)) ? ['--force'] : []), wt, base], { fail: false });
     if (made.code !== 0) throw new Error(t('main.release.worktreeFailed', { path: wt, detail: (made.stderr || made.stdout).trim().slice(0, 400) }));
   } else {
     // a folder that is somebody else's checkout is not ours to run in
@@ -207,17 +233,20 @@ function scriptEnv(env: ReleaseEnv): NodeJS.ProcessEnv {
   const drop = new Set(credentialNames(base));
   const clean = Object.fromEntries(Object.entries(base).filter(([k]) => !drop.has(k)));
   const exclude = excludes.get(env.clone);
-  return { ...clean, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: exclude ? '3' : '2', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null', GIT_CONFIG_KEY_1: 'commit.gpgsign', GIT_CONFIG_VALUE_1: 'false', ...(exclude ? { GIT_CONFIG_KEY_2: 'core.excludesFile', GIT_CONFIG_VALUE_2: exclude } : {}) };
+  return { ...clean, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: exclude ? '4' : '3', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null', GIT_CONFIG_KEY_1: 'commit.gpgsign', GIT_CONFIG_VALUE_1: 'false', GIT_CONFIG_KEY_2: 'core.fsmonitor', GIT_CONFIG_VALUE_2: 'false', ...(exclude ? { GIT_CONFIG_KEY_3: 'core.excludesFile', GIT_CONFIG_VALUE_3: exclude } : {}) };
 }
 
 /**
  * Runs one mode of the release script of the worktree. The arguments are built here from the operation; the script's own output is returned and never read. It runs as a
  * process group of its own: when it outlives its time, the whole group is killed (the checks it started included), and the worktree is brought back to its commit.
+ * The step ends when the script EXITS (plus a short grace for its last words): a grandchild that left the group and still holds the pipes cannot hold the step, or the
+ * queue of the worktree, after that.
  */
-async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: string[]): Promise<string> {
+async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: string[], version: string): Promise<string> {
   const file = join(env.clone, SCRIPT);
   if (!existsSync(file)) throw new Error(t('main.release.noScript'));
   const limit = env.scriptTimeoutMs ?? 40 * 60_000;
+  const startedAt = Date.now();
   const child = spawn(file, [mode, ...extra], { cwd: env.clone, env: scriptEnv(env), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let text = '';
   const keep = (b: Buffer): void => {
@@ -234,24 +263,50 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
       child.kill('SIGKILL');
     }
   }, limit);
-  const code = await new Promise<number | null>((resolve) => {
-    child.on('error', () => resolve(null));
-    child.on('close', (c) => resolve(c));
+  const code = await new Promise<number | null>((done) => {
+    let settled = false;
+    const finish = (c: number | null): void => {
+      if (settled) return;
+      settled = true;
+      child.stdout.destroy();
+      child.stderr.destroy();
+      done(c);
+    };
+    child.on('error', () => finish(null));
+    child.on('close', (c) => finish(c));
+    child.on('exit', (c) => setTimeout(() => finish(c), EXIT_GRACE_MS));
   });
   clearTimeout(timer);
   if (timedOut) {
-    await recoverWorktree(env.clone);
+    await recoverWorktree(env.clone, startedAt, version);
     throw new Error(t('main.release.scriptTimedOut', { mode, minutes: Math.max(1, Math.round(limit / 60_000)) }));
   }
   if (code !== 0) throw new Error(t('main.release.scriptFailed', { mode, detail: tail(text.trim() || `exit ${code}`) }));
   return tail(text.trim());
 }
 
-/** What a script that was killed may leave in the worktree (it is ours alone): a stale index lock, a half-made version bump. Back to the commit it was at. */
-async function recoverWorktree(wt: string): Promise<void> {
+/**
+ * What a script that was killed may leave in the worktree (it is ours alone): stale locks, a half-made version bump. Locks are removed only when they were made after
+ * the step began (an older one is somebody else's, the person's own git perhaps) and only the ones this step's refs could have: the worktree's index and HEAD, the
+ * release branch and the tags of the version. Then the tree goes back to the commit it was at.
+ */
+async function recoverWorktree(wt: string, since: number, version: string): Promise<void> {
   try {
-    const gitDir = resolve(wt, (await git(wt, ['rev-parse', '--git-dir'], { fail: false })).stdout.trim());
-    rmSync(join(gitDir, 'index.lock'), { force: true });
+    const dirOf = async (flag: string): Promise<string> => resolve(wt, (await git(wt, ['rev-parse', flag], { fail: false })).stdout.trim());
+    const gitDir = await dirOf('--git-dir');
+    const common = await dirOf('--git-common-dir');
+    const stale = (file: string): void => {
+      try {
+        if (statSync(file).mtimeMs >= since - 1000) rmSync(file, { force: true });
+      } catch {
+        // not there
+      }
+    };
+    stale(join(gitDir, 'index.lock'));
+    stale(join(gitDir, 'HEAD.lock'));
+    stale(join(common, 'refs', 'heads', `${releaseBranchOf(version)}.lock`));
+    const tags = join(common, 'refs', 'tags');
+    if (existsSync(tags)) for (const name of readdirSync(tags)) if (name.startsWith(releaseTagOf(version)) && name.endsWith('.lock')) stale(join(tags, name));
     await git(wt, ['reset', '--hard', '--quiet', 'HEAD'], { fail: false });
     await git(wt, ['clean', '-fdq'], { fail: false });
   } catch {
@@ -259,12 +314,16 @@ async function recoverWorktree(wt: string): Promise<void> {
   }
 }
 
+// What the person's git config could add to a push: the tags `push.followTags` takes along, the submodules `push.recurseSubmodules` pushes, a signed push, and a
+// mirror of the remote. The refspec of a push is explicit, so `remote.origin.push` and `push.default` do not apply, but these do unless they are switched off.
+const PUSH_SAFE = ['-c', 'push.followTags=false', '-c', 'push.recurseSubmodules=no', '-c', 'push.gpgSign=false', '-c', 'remote.origin.mirror=false'];
+
 /** A plain push of one ref: nothing is forced, and no other ref goes with it. `src` is a commit name or a tag ref, never a symbolic name such as HEAD (what it names could move). */
 async function pushRef(clone: string, src: string, dst: string): Promise<string> {
   const spec = `${src}:${dst}`;
   const args = ['push', '--no-verify', 'origin', spec];
   assertPlainPush(args);
-  const r = await git(clone, args);
+  const r = await git(clone, [...PUSH_SAFE, ...args]);
   return `${r.stdout}${r.stderr}`.trim();
 }
 
@@ -276,11 +335,26 @@ async function merge(clone: string, id: ReleaseIdentity, args: string[]): Promis
   }
 }
 
+/** What stands for main in the worktree: the remote's main, or local main's commit when there is no remote; null when there is neither. */
+async function mainBase(clone: string): Promise<string | null> {
+  return (await exists(clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(clone, 'refs/heads/main')) ? 'refs/heads/main' : null;
+}
+
 async function open(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> {
+  const branch = releaseBranchOf(unit.version);
+  checkRef(branch);
   await assertClean(env.clone);
   await fetchBranch(env.clone, 'main');
+  await fetchBranch(env.clone, branch);
+  // Refused BEFORE anything runs: `open` runs the script of the commit the worktree stands on, and once a pull request was merged into the release branch that script may be
+  // the pull request's. A branch that exists is not opened again (the script would refuse it, but only after having run).
+  if ((await exists(env.clone, `refs/heads/${branch}`)) || (await exists(env.clone, `refs/remotes/origin/${branch}`))) throw new Error(t('main.release.branchExists', { branch }));
+  // And `open` runs main's own script: the worktree is put on what stands for main first, as the stable does, so that no script of a release branch ever runs without a "sim".
+  const base = await mainBase(env.clone);
+  if (!base) throw new Error(t('main.release.noBranch', { branch: 'main' }));
+  await detachAt(env.clone, base);
   const before = await sha(env.clone, 'HEAD');
-  const output = await script(env, 'open', [unit.version, ...(unit.from ? ['--from', unit.from] : []), '--author', authorOf(env.identity), '--worktree']);
+  const output = await script(env, 'open', [unit.version, ...(unit.from ? ['--from', unit.from] : []), '--author', authorOf(env.identity), '--worktree'], unit.version);
   return { output, before, after: await sha(env.clone, 'HEAD'), tag: null };
 }
 
@@ -299,7 +373,10 @@ async function mergePr(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResul
   if (mr.draft) throw new Error(t('main.release.prDraft', { pr }));
   if (!mr.approved) throw new Error(t('main.release.prNotApproved', { pr }));
   if (mr.checks === 'failing' || mr.checks === 'running') throw new Error(t('main.release.prChecks', { pr, status: mr.checks }));
-  if (unit.head && !sameSha(mr.sha, unit.head)) throw new Error(t('main.release.prMoved', { pr, now: mr.sha.slice(0, 9), was: unit.head.slice(0, 9) }));
+  // The head the plan the person accepted froze, when the caller knows it (the app always does), and the head the unit names: both are the host's head now, as full names.
+  for (const wanted of [env.planned, unit.head]) {
+    if (wanted !== undefined && !sameSha(mr.sha, wanted)) throw new Error(t('main.release.prMoved', { pr, now: mr.sha.slice(0, 9), was: wanted.slice(0, 9) }));
+  }
   const source = checkRef(mr.sourceBranch);
 
   await switchTo(env.clone, branch);
@@ -325,7 +402,7 @@ async function beta(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> 
   await switchTo(env.clone, branch);
   await fetchBranch(env.clone, branch);
   const before = await sha(env.clone, 'HEAD');
-  const output = await script(env, 'beta', ['--author', authorOf(env.identity)]);
+  const output = await script(env, 'beta', ['--author', authorOf(env.identity)], unit.version);
   return { output, before, after: await sha(env.clone, 'HEAD'), tag: await latestBetaTag(env.clone, unit.version) };
 }
 
@@ -336,7 +413,7 @@ async function stable(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult
   await fetchBranch(env.clone, branch);
   await ensureLocal(env.clone, branch);
   // What stands for main is a commit, not the branch (the person's checkout has it): the remote's main, or local main's commit when there is no remote.
-  const base = (await exists(env.clone, 'refs/remotes/origin/main')) ? 'refs/remotes/origin/main' : (await exists(env.clone, 'refs/heads/main')) ? 'refs/heads/main' : null;
+  const base = await mainBase(env.clone);
   if (!base) throw new Error(t('main.release.noBranch', { branch: 'main' }));
   await detachAt(env.clone, base);
   const before = await sha(env.clone, 'HEAD');
@@ -352,7 +429,7 @@ async function stable(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult
       }
     }
   }
-  const output = await script(env, 'stable', ['--author', authorOf(env.identity), '--worktree']);
+  const output = await script(env, 'stable', ['--author', authorOf(env.identity), '--worktree'], unit.version);
   return { output, before, after: await sha(env.clone, 'HEAD'), tag: releaseTagOf(unit.version) };
 }
 
@@ -362,6 +439,10 @@ async function pushBranchOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<Release
     // main goes out only after the stable of this version was cut: the tag is the proof, and the commit it names is what is sent (HEAD is detached there, never a branch).
     const tag = releaseTagOf(unit.version);
     if (!(await exists(env.clone, `refs/tags/${tag}`))) throw new Error(t('main.release.mainNotCut', { tag }));
+    // The tag must be the script's: an annotated one, whose commit is on top of what the remote has of main (a lightweight tag of any commit would send that commit as main).
+    if ((await out(env.clone, ['cat-file', '-t', `refs/tags/${tag}`])) !== 'tag') throw new Error(t('main.release.tagNotAnnotated', { tag }));
+    await fetchBranch(env.clone, 'main');
+    if ((await exists(env.clone, 'refs/remotes/origin/main')) && !(await isAncestor(env.clone, 'refs/remotes/origin/main', `refs/tags/${tag}^{commit}`))) throw new Error(t('main.release.tagNotOnMain', { tag }));
     await detachAt(env.clone, `refs/tags/${tag}`);
     const head = (await sha(env.clone, 'HEAD')) as string;
     const output = await pushRef(env.clone, head, 'refs/heads/main');
@@ -430,7 +511,7 @@ export function releaseCommandLine(unit: ReleaseUnit): string {
     case 'stable':
       return `git merge ${releaseBranchOf(unit.version)} (into a detached origin/main), scripts/release.sh stable --worktree`;
     case 'push-branch':
-      return `git push origin HEAD:refs/heads/${unit.branch === 'main' ? 'main' : releaseBranchOf(unit.version)}`;
+      return `git push origin <sha>:refs/heads/${unit.branch === 'main' ? 'main' : releaseBranchOf(unit.version)}`;
     case 'push-tag':
       return unit.channel === 'stable' ? `git push origin refs/tags/${releaseTagOf(unit.version)}` : `git push origin refs/tags/v${unit.version}-beta.<latest>`;
   }

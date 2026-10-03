@@ -227,10 +227,15 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     return status ? { status, raw: status, runId: null, webUrl: `${web}/${project}/commit/${sha}/checks` } : null;
   }
 
+  // GitHub's `author_association` says how the reviewer relates to the repository (owner, member, collaborator: an invitation, or an organisation seat), which is NOT the same
+  // as a right to write to it: it is the best the reviews carry, and the docs say so.
   const MEMBER = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+  const REVIEW_PAGES = 3;
 
   async function approvalsOf(project: string, iid: number, head = ''): Promise<VcsApprovals> {
-    const reviews = await tr.pages<{ user?: { login: string } | null; state: string; submitted_at?: string; commit_id?: string; author_association?: string }>(`${repo(project)}/pulls/${iid}/reviews`, { maxPages: 3 });
+    const reviews = await tr.pages<{ user?: { login: string } | null; state: string; submitted_at?: string; commit_id?: string; author_association?: string }>(`${repo(project)}/pulls/${iid}/reviews`, { maxPages: REVIEW_PAGES });
+    // Reviews beyond the pages read were not seen: what a merge may rely on is then not known, and `onHead` is false (the plain approval is still reported).
+    const truncated = reviews.length >= REVIEW_PAGES * 100;
     const latest = new Map<string, { state: string; commit: string; member: boolean }>();
     for (const r of [...reviews].sort((a, b) => (a.submitted_at ?? '').localeCompare(b.submitted_at ?? ''))) {
       const login = r.user?.login;
@@ -243,7 +248,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     // What a merge may rely on: an approval by a member of the project, given on the commit the pull request is at now, with no member asking for changes.
     const standing = [...latest.values()].filter((s) => s.member && s.state === 'APPROVED' && !!head && s.commit.toLowerCase() === head.toLowerCase());
     const blocked = [...latest.values()].some((s) => s.member && s.state === 'CHANGES_REQUESTED');
-    return { approved: by.length > 0 && changes.length === 0, by, changesRequestedBy: changes, onHead: standing.length > 0 && !blocked };
+    return { approved: by.length > 0 && changes.length === 0, by, changesRequestedBy: changes, onHead: !truncated && standing.length > 0 && !blocked };
   }
 
   async function gql<T>(query: string): Promise<T> {

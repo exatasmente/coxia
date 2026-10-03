@@ -61,7 +61,8 @@ export class ReleaseUnitError extends Error {
 const NUM = '(?:0|[1-9][0-9]{0,8})';
 export const RELEASE_VERSION = new RegExp(`^${NUM}\\.${NUM}\\.${NUM}$`);
 export const RELEASE_FROM = new RegExp(`^v${NUM}\\.${NUM}\\.${NUM}$`);
-const HEAD = /^[0-9a-f]{7,64}$/i;
+// A commit is named in full (SHA-1 or SHA-256): an abbreviation could be the prefix of another commit, and what a merge is checked against must be exact.
+const HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const ALLOWED = new Set(['op', 'version', 'runId', 'pr', 'head', 'from', 'branch', 'channel']);
 
 /** The release branch of a version. */

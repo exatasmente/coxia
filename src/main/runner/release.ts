@@ -41,7 +41,8 @@ export function activitiesText(version: string, activities: readonly ReleaseActi
         const link = a.issue ? issueUrl(a.issue) : null;
         const closes = a.issue && link ? tr('main.runner.release.activity.closes', { issue: a.issue, url: link }) : '';
         const kind = a.state === 'merged' ? 'merged' : a.approved ? 'ready' : 'waiting';
-        return tr(`main.runner.release.activity.${kind}`, { crMark, pr: a.pr, title: oneLine(a.title), url: a.url, closes });
+        const at = a.head && a.state !== 'merged' ? tr('main.runner.release.activity.at', { sha: a.head.slice(0, 9) }) : '';
+        return tr(`main.runner.release.activity.${kind}`, { crMark, pr: a.pr, title: oneLine(a.title), url: a.url, at, closes });
       })
     : [tr('main.runner.release.activities.none', { branch: releaseBranchOf(version) })];
   const extra = milestone.length ? ['', tr('main.runner.release.milestone.title', { version }), ...milestone.map((i) => tr('main.runner.release.milestone.item', { iid: i.iid, title: oneLine(i.title), url: i.url }))] : [];

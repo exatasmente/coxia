@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ReleasePr, latestBetaTag, previewRelease, releaseCommandLine, runReleaseOp } from '../src/main/releaseGit';
@@ -430,8 +430,8 @@ describe('what a person is shown', () => {
       releaseCommandLine(unit({ op: 'push-branch', branch: 'main' })),
       releaseCommandLine(unit({ op: 'push-tag', channel: 'stable' })),
     ];
-    expect(lines).toContain('git push origin HEAD:refs/heads/release/0.5.0');
-    expect(lines).toContain('git push origin HEAD:refs/heads/main');
+    expect(lines).toContain('git push origin <sha>:refs/heads/release/0.5.0');
+    expect(lines).toContain('git push origin <sha>:refs/heads/main');
     expect(lines).toContain('git push origin refs/tags/v0.5.0');
     expect(lines.join('\n')).not.toMatch(/--force|--emergency|--allow-branch|\+refs/);
   });
@@ -476,7 +476,7 @@ describe('what runs, and when', () => {
     const head = w.steps.git('rev-parse', 'HEAD');
     await run(unit({ op: 'push-branch' }));
     expect(w.remote('rev-parse', 'release/0.5.0')).toBe(head);
-    expect(releaseCommandLine(unit({ op: 'push-branch' }))).toContain('HEAD:refs/heads/');
+    expect(releaseCommandLine(unit({ op: 'push-branch' }))).toContain('<sha>:refs/heads/');
   });
 
   it('forgets a worktree whose folder was deleted and makes it again', async () => {
@@ -537,7 +537,7 @@ describe('what a person is shown for a push of main', () => {
     await run(unit({ op: 'push-branch' }));
     await run(unit({ op: 'push-tag', channel: 'beta' }));
     const notCut = await previewRelease(unit({ op: 'push-branch', branch: 'main' }), w.dir);
-    expect(notCut).toContain('git push origin HEAD:refs/heads/main');
+    expect(notCut).toContain('git push origin <sha>:refs/heads/main');
     expect(notCut).toMatch(/there is no tag v0\.5\.0 yet/);
     // the person has a commit of their own on main that would never be sent
     writeFileSync(join(w.dir, 'mine.txt'), 'x');
@@ -548,5 +548,205 @@ describe('what a person is shown for a push of main', () => {
     expect(shown).toContain('feat: a thing for the version');
     expect(shown).toContain('feat: release 0.5.0');
     expect(shown).not.toContain('my own unpushed work');
+  });
+});
+
+// ---- the second security review ---------------------------------------------------------------------------------------------------------
+
+/** What a pull request that rewrites scripts/release.sh would put in the release branch: a script that leaves a mark and cuts nothing. */
+const pullRequestScript = (marker: string): string => `#!/usr/bin/env bash\ntouch "${marker}"\nexit 0\n`;
+
+describe('open runs main\'s script and never one a pull request brought into the release branch', () => {
+  it('refuses to open a branch that exists, before running anything: the merged script does not run for a second open', async () => {
+    const { w } = await opened();
+    const marker = join(w.root, 'pr-script-ran');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0', 'scripts/release.sh', pullRequestScript(marker));
+    await open(w, async () => green({ sha: head }))(unit({ op: 'merge-pr', pr: 7, head }));
+    // the release branch now holds the pull request's script, and it is what the worktree stands on
+    expect(readFileSync(join(w.stepsDir, 'scripts', 'release.sh'), 'utf8')).toContain(marker);
+    expect(existsSync(marker)).toBe(false);
+    const calls = w.argv().length;
+    await expect(open(w)(unit({ op: 'open' }))).rejects.toThrow(/release\/0\.5\.0 already exists/);
+    expect(existsSync(marker)).toBe(false);
+    expect(w.argv()).toHaveLength(calls);
+  });
+
+  it('refuses it also when only the remote has the branch, and when the local one is gone', async () => {
+    const { w } = await opened();
+    const marker = join(w.root, 'pr-script-ran');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0', 'scripts/release.sh', pullRequestScript(marker));
+    await open(w, async () => green({ sha: head }))(unit({ op: 'merge-pr', pr: 7, head }));
+    w.steps.git('push', '-q', 'origin', 'release/0.5.0');
+    w.steps.git('switch', '-q', '--detach', 'origin/main');
+    w.steps.git('branch', '-D', 'release/0.5.0');
+    await expect(open(w)(unit({ op: 'open' }))).rejects.toThrow(/already exists/);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('opens another version from main\'s commit even when the worktree stands on a release branch with a merged script', async () => {
+    const { w } = await opened();
+    const marker = join(w.root, 'pr-script-ran');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0', 'scripts/release.sh', pullRequestScript(marker));
+    await open(w, async () => green({ sha: head }))(unit({ op: 'merge-pr', pr: 7, head }));
+    expect(w.steps.branch).toBe('release/0.5.0');
+    await open(w)(unit({ op: 'open', version: '0.6.0' }));
+    expect(existsSync(marker)).toBe(false);
+    expect(w.steps.branch).toBe('release/0.6.0');
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(w.remote('rev-parse', 'main'));
+  });
+});
+
+describe('a push sends the one ref, whatever the person\'s git configuration says', () => {
+  const pushed = (w: ReleaseWorld): string => w.remote('for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags').split('\n').sort().join(' ');
+
+  it('does not take the beta tag along with the branch (push.followTags), nor other branches (remote.origin.push)', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    await run(unit({ op: 'beta' }));
+    w.git('config', 'push.followTags', 'true');
+    w.git('config', '--add', 'remote.origin.push', 'refs/heads/*:refs/heads/*');
+    w.git('config', '--add', 'remote.origin.push', 'refs/tags/*:refs/tags/*');
+    w.git('branch', 'person/extra');
+    await run(unit({ op: 'push-branch' }));
+    expect(pushed(w)).toBe('refs/heads/main refs/heads/release/0.5.0 refs/tags/v0.4.0');
+    // then the tag, alone, and still no other branch
+    await run(unit({ op: 'push-tag', channel: 'beta' }));
+    expect(pushed(w)).toBe('refs/heads/main refs/heads/release/0.5.0 refs/tags/v0.4.0 refs/tags/v0.5.0-beta.1');
+  });
+
+  it('is not turned into a mirror of the repository by remote.origin.mirror', async () => {
+    const { w, run } = await opened();
+    w.git('config', 'remote.origin.mirror', 'true');
+    w.git('branch', 'person/extra');
+    await run(unit({ op: 'push-branch' }));
+    expect(pushed(w)).toBe('refs/heads/main refs/heads/release/0.5.0 refs/tags/v0.4.0');
+  });
+});
+
+describe('main goes out only with the stable tag the script made, on top of main', () => {
+  async function cutStable(): Promise<{ w: ReleaseWorld; run: ReturnType<typeof open> }> {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    await run(unit({ op: 'beta' }));
+    await run(unit({ op: 'push-branch' }));
+    await run(unit({ op: 'push-tag', channel: 'beta' }));
+    return { w, run };
+  }
+
+  it('refuses a lightweight tag with the stable\'s name: it could be any commit', async () => {
+    const { w, run } = await cutStable();
+    w.steps.git('tag', 'v0.5.0', 'release/0.5.0');
+    await expect(run(unit({ op: 'push-branch', branch: 'main' }))).rejects.toThrow(/not an annotated tag/);
+    expect(w.remote('rev-parse', 'main')).not.toBe(w.steps.git('rev-parse', 'release/0.5.0'));
+  });
+
+  it('refuses an annotated tag whose commit is not on top of what the remote has of main', async () => {
+    const { w, run } = await cutStable();
+    // the tag names the release branch's commit, which does not have what somebody pushed to main meanwhile
+    w.steps.git(...['-c', 'user.name=t', '-c', 'user.email=t@example.test'], 'tag', '-a', 'v0.5.0', '-m', 'not the script\'s', 'release/0.5.0');
+    const theirs = w.advanceMain();
+    await expect(run(unit({ op: 'push-branch', branch: 'main' }))).rejects.toThrow(/not on top of what the remote has of main/);
+    expect(w.remote('rev-parse', 'main')).toBe(theirs);
+  });
+});
+
+describe('only this worktree\'s own registration is taken over', () => {
+  it('leaves the registration of another worktree whose folder is gone, and makes this one again without a repository-wide prune', async () => {
+    const { w, run } = await opened();
+    const gone = join(w.root, 'some-other-worktree');
+    w.git('worktree', 'add', '--detach', '-q', gone, 'main');
+    rmSync(gone, { recursive: true, force: true });
+    rmSync(w.stepsDir, { recursive: true, force: true });
+    expect(w.git('worktree', 'list', '--porcelain')).toContain(gone);
+    await run(unit({ op: 'push-branch' }));
+    expect(existsSync(join(w.stepsDir, '.git'))).toBe(true);
+    // the other registration is still there, still prunable: nothing pruned the repository
+    const listing = w.git('worktree', 'list', '--porcelain').split('\n\n');
+    const other = listing.find((b) => b.includes(gone)) ?? '';
+    expect(other).toContain('prunable');
+  });
+});
+
+describe('the exact commit', () => {
+  it('is the same commit only when both are the full name', async () => {
+    const { sameSha } = await import('../src/main/releaseGit');
+    const full = 'abcdef0123456789abcdef0123456789abcdef01';
+    expect(sameSha(full, full.toUpperCase())).toBe(true);
+    expect(sameSha(full, full.slice(0, 7))).toBe(false);
+    expect(sameSha(full.slice(0, 12), full)).toBe(false);
+    expect(sameSha(full.slice(0, 7), full.slice(0, 7))).toBe(false);
+    expect(sameSha(full, `${full.slice(0, 39)}0`)).toBe(false);
+  });
+
+  it('is checked against the plan\'s frozen head too, when the caller gives it', async () => {
+    const { w } = await opened();
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    const before = w.steps.git('rev-parse', 'HEAD');
+    const run = (planned: string) => runReleaseOp(unit({ op: 'merge-pr', pr: 7, head }), { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), planned, pr: async () => green({ sha: head }) });
+    await expect(run('c'.repeat(40))).rejects.toThrow(/plan read it/);
+    await expect(run(head.slice(0, 10))).rejects.toThrow(/plan read it/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    await expect(run(head)).resolves.toMatchObject({ tag: null });
+  });
+});
+
+describe('a step ends with the script, not with what the script left holding its pipes', () => {
+  it('does not wait for a process that left the group with the pipes open, and the next step can run at once', async () => {
+    const w = new ReleaseWorld();
+    const pidFile = join(w.root, 'daemon.pid');
+    const real = readFileSync(join(w.dir, 'scripts', 'release.sh'), 'utf8');
+    writeFileSync(join(w.dir, 'scripts', 'release.sh'), real.replace('exec bash', `setsid sleep 40 & echo $! > "${pidFile}"\nexec bash`));
+    w.commit('script', 'chore: a script that starts a daemon');
+    w.git('push', '-q', 'origin', 'main');
+    const started = Date.now();
+    try {
+      await open(w)(unit({ op: 'open' }));
+      expect(Date.now() - started).toBeLessThan(15_000);
+      expect(w.steps.branch).toBe('release/0.5.0');
+    } finally {
+      try {
+        process.kill(Number(readFileSync(pidFile, 'utf8').trim()), 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  it('gives the script a git that has the file-system monitor switched off', async () => {
+    const w = new ReleaseWorld();
+    const seen = join(w.root, 'fsmonitor.txt');
+    const real = readFileSync(join(w.dir, 'scripts', 'release.sh'), 'utf8');
+    writeFileSync(join(w.dir, 'scripts', 'release.sh'), real.replace('exec bash', `git config --get core.fsmonitor > "${seen}"\nexec bash`));
+    w.commit('script', 'chore: a script that reads its config');
+    w.git('push', '-q', 'origin', 'main');
+    w.git('config', 'core.fsmonitor', 'true');
+    try {
+      await open(w)(unit({ op: 'open' }));
+    } finally {
+      w.git('config', '--unset', 'core.fsmonitor');
+    }
+    expect(readFileSync(seen, 'utf8').trim()).toBe('false');
+  });
+});
+
+describe('a killed script\'s locks', () => {
+  it('removes the ones it made (the index, HEAD, the release branch, the version\'s tags) and keeps an older one that is not its own', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'a thing for the version');
+    const common = w.git('rev-parse', '--git-common-dir');
+    const older = join(w.dir, common, 'refs', 'tags', 'v0.5.0-beta.9.lock');
+    writeFileSync(older, '');
+    const past = new Date(Date.now() - 3_600_000);
+    utimesSync(older, past, past);
+    writeFileSync(join(w.root, 'hang'), '');
+    await expect(runReleaseOp(unit({ op: 'beta' }), { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), scriptTimeoutMs: 700 })).rejects.toThrow(/ran past its limit/);
+    const gitDir = w.steps.git('rev-parse', '--git-dir');
+    expect(existsSync(join(w.stepsDir, gitDir.startsWith('/') ? gitDir : gitDir, 'HEAD.lock'))).toBe(false);
+    expect(existsSync(join(w.dir, common, 'refs', 'heads', 'release', '0.5.0.lock'))).toBe(false);
+    expect(existsSync(join(w.dir, common, 'refs', 'tags', 'v0.5.0-beta.1.lock'))).toBe(false);
+    expect(existsSync(older)).toBe(true);
+    rmSync(older);
+    rmSync(join(w.root, 'hang'));
+    await expect(run(unit({ op: 'beta' }))).resolves.toMatchObject({ tag: 'v0.5.0-beta.1' });
   });
 });

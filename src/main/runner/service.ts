@@ -29,7 +29,6 @@ import {
   flowOfRun,
   isFlowCycle,
   migrateFlow as migrateFlowMove,
-  freezePlan,
   gateApprove,
   gateReject,
   gateSkip,
@@ -706,8 +705,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
         return run;
       };
-      // The person accepting the plan freezes the heads of the pull requests it was written for, before anything after the gate starts.
-      if (before.subject && !before.subject.planned && gateStage?.type === 'gate' && action !== 'reject') moveRun(d, id, (r) => freezePlan(r, now()));
+      // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
       if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason)));
       if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
       if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));

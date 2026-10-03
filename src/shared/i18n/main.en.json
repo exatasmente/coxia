@@ -1212,9 +1212,10 @@
   "main.runner.release.branch.remote": "exists on the remote only",
   "main.runner.release.branch.none": "does not exist yet",
   "main.runner.release.none": "none",
-  "main.runner.release.activity.merged": "- [{crMark}{pr} {title}]({url}): merged{closes}",
-  "main.runner.release.activity.ready": "- [{crMark}{pr} {title}]({url}): approved and ready to merge{closes}",
-  "main.runner.release.activity.waiting": "- [{crMark}{pr} {title}]({url}): not approved yet{closes}",
+  "main.runner.release.activity.merged": "- [{crMark}{pr} {title}]({url}): merged{at}{closes}",
+  "main.runner.release.activity.ready": "- [{crMark}{pr} {title}]({url}): approved and ready to merge{at}{closes}",
+  "main.runner.release.activity.waiting": "- [{crMark}{pr} {title}]({url}): not approved yet{at}{closes}",
+  "main.runner.release.activity.at": " (at `{sha}`)",
   "main.runner.release.activity.closes": ", closes [#{issue}]({url})",
   "main.runner.release.activities.none": "Nothing is aimed at {branch} yet.",
   "main.runner.release.milestone.title": "Open issues of the milestone {version} that no {crLong} aimed at the branch carries yet:",
@@ -1265,5 +1266,9 @@
   "main.release.notPlanned": "{CrLong} #{pr} was not in the plan you approved at this commit (it is new, or it was pushed to since): nothing was merged. Send the run back to the plan so that it is planned again.",
   "main.release.worktreeFailed": "The worktree of this release could not be made at {path}: {detail}",
   "main.release.scriptTimedOut": "The release script ({mode}) ran past its limit of {minutes} minutes and was stopped, with everything it had started; the worktree was put back as it was.",
-  "main.forum.code.runner.release.trackingNotAdopted": "An open issue titled like the release exists, but it is not the person's own and carries no label of this version, so it was not used: {url} (by {author}). A new tracking issue is made."
+  "main.forum.code.runner.release.trackingNotAdopted": "An open issue titled like the release exists, but it is not the person's own and carries no label of this version, so it was not used: {url} (by {author}). A new tracking issue is made.",
+  "main.release.branchExists": "The branch {branch} already exists (here or on the remote): it is not opened again, and nothing was run. Merges and cuts go on in the branch that is there.",
+  "main.release.tagNotOnMain": "The tag {tag} is not on top of what the remote has of main, so it is not what main is moved to: nothing was pushed.",
+  "main.forum.code.runner.release.movedSincePlan": "{CrLong} #{pr} was at {was} when you accepted the plan and is at {now} on the host now. It will not be merged by the agent: send the run back to the plan so that it is planned again.",
+  "main.forum.code.runner.release.notInPlan": "{CrLong} #{pr} (at {now}) was not in the plan you accepted. It will not be merged by the agent: send the run back to the plan so that it is planned again."
 }

@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createRunStore } from '../src/main/runs-core';
 import { WAIT_KINDS } from '../src/shared/config/types';
-import { type RunSubject, RunError, RUN_SCHEMA, parseRun, recordSubject, startRun } from '../src/shared/runs';
-import { agentFlowStages, at, startInput } from './helpers/runs';
+import { type RunSubject, RunError, RUN_SCHEMA, gateApprove, gateReject, gateSkip, parseRun, recordSubject, sendBackTo, stageDone, startRun } from '../src/shared/runs';
+import { agentFlowStages, at, drive, startInput } from './helpers/runs';
 
 const flow = agentFlowStages();
 const subject = (over: Partial<RunSubject> = {}): RunSubject => ({ kind: 'release', version: '0.6.0', from: null, tracking: null, activities: [], ...over });
@@ -85,5 +85,69 @@ describe('the run file of a release', () => {
     expect(parseRun(run).ok).toBe(true);
     run.wait.kind = 'whenever';
     expect(parseRun(run).ok).toBe(false);
+  });
+});
+
+describe('the heads a plan froze', () => {
+  const activity = (pr: number, head: string) => ({ pr, title: 't', url: 'u', head, state: 'open' as const, approved: true, issue: null });
+  const H1 = '1'.repeat(40);
+  const H2 = '2'.repeat(40);
+  const note = (stage: string) => ({ summary: `${stage} done`, handoff: '', artifacts: [] as string[] });
+  /** A release run driven to its first gate, with the activities it has read. */
+  function atPlanGate(heads: string) {
+    const d = drive(flow, startInput({ issue: { ref: 'release:0.6.0', iid: 0, title: 'Release 0.6.0', url: null }, cycleId: 'release-flow', subject: subject({ activities: [activity(7, heads)] }) }));
+    while (d.run.stage !== 'gate1') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    return d;
+  }
+  const planned = (d: ReturnType<typeof drive>) => d.run.subject?.planned;
+
+  it('are frozen by the approval itself, or the skip of the plan gate, and by nothing that is refused', () => {
+    const d = atPlanGate(H1);
+    expect(planned(d)).toBeUndefined();
+    // a skip with no reason is refused, and froze nothing
+    expect(() => gateSkip(d.run, flow, '  ', at(50))).toThrow(RunError);
+    expect(planned(d)).toBeUndefined();
+    d.do((r, when) => gateApprove(r, flow, when));
+    expect(planned(d)).toEqual({ '7': H1 });
+    const skipped = atPlanGate(H2);
+    skipped.do((r, when) => gateSkip(r, flow, 'seen it', when));
+    expect(planned(skipped)).toEqual({ '7': H2 });
+  });
+
+  it('are taken again for a plan that was rejected: the next acceptance freezes what the run has read by then', () => {
+    const d = atPlanGate(H1);
+    d.do((r, when) => gateReject(r, flow, 'the plan misses a pull request', when));
+    expect(planned(d)).toBeUndefined();
+    // the run reads the host again while the plan is redone: the pull request has a new head
+    d.do((r, when) => recordSubject(r, { activities: [activity(7, H2), activity(8, H1)] }, when));
+    while (d.run.stage !== 'gate1') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    d.do((r, when) => gateApprove(r, flow, when));
+    expect(planned(d)).toEqual({ '7': H2, '8': H1 });
+  });
+
+  it('are kept at a later gate, which never takes them again', () => {
+    const d = atPlanGate(H1);
+    d.do((r, when) => gateApprove(r, flow, when));
+    d.do((r, when) => recordSubject(r, { activities: [activity(7, H2)] }, when));
+    while (d.run.stage !== 'gate2') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    d.do((r, when) => gateApprove(r, flow, when));
+    expect(planned(d)).toEqual({ '7': H1 });
+  });
+
+  it('are cleared by a send-back to a stage before the plan gate, and kept by one after it', () => {
+    const d = atPlanGate(H1);
+    d.do((r, when) => gateApprove(r, flow, when));
+    while (d.run.stage !== 'gate2') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    // sent back to a stage after the plan gate: the plan stands
+    d.do((r, when) => sendBackTo(r, flow, { toStage: 'plan', note: 'again' }, when));
+    expect(planned(d)).toEqual({ '7': H1 });
+    while (d.run.stage !== 'gate2') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    // sent back to a stage before it: the plan is to be accepted again
+    d.do((r, when) => sendBackTo(r, flow, { toStage: 'refine', note: 'redo the refinement' }, when));
+    expect(planned(d)).toBeUndefined();
+    d.do((r, when) => recordSubject(r, { activities: [activity(7, H2)] }, when));
+    while ((d.run.stage as string) !== 'gate1') d.do((r, when) => stageDone(r, flow, note(r.stage), when));
+    d.do((r, when) => gateApprove(r, flow, when));
+    expect(planned(d)).toEqual({ '7': H2 });
   });
 });

@@ -43,6 +43,8 @@ export interface ForgePr {
   fork?: boolean;
   /** Who approved it, and how the host knows them (default: `ana`, a member), and the commit the approval was given on (default: the head). */
   approval?: { by?: string; association?: string; commit?: string };
+  /** When the pull request was last updated, as the host says it (default: not said). */
+  updatedAt?: string;
   /** The commit checks: `failing`, or `unreadable` (the host does not answer). Default: no checks. */
   checks?: 'failing' | 'unreadable';
   /** Its title and description (a description that says `Closes #N` links the issue). */
@@ -63,6 +65,8 @@ export interface ForgeIssue {
   milestone?: string | null;
   /** Who opened it (the user the app acts as when not said). */
   author?: string;
+  /** It is a pull request (the issue search lists those too, flagged). */
+  pull?: boolean;
 }
 
 /** A release the forge shows for a tag: a draft is not shown by the tags endpoint. */
@@ -135,7 +139,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     return made;
   };
   const allPrs = (): ForgePr[] => [...(forge.pr ? [forge.pr] : []), ...forge.others];
-  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: pr.title ?? 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head, repo: { full_name: pr.fork ? 'someone/project' : PROJECT } }, base: { ref: pr.base, repo: { full_name: PROJECT } }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: pr.body ?? '' });
+  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: pr.title ?? 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, ...(pr.updatedAt ? { updated_at: pr.updatedAt } : {}), draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head, repo: { full_name: pr.fork ? 'someone/project' : PROJECT } }, base: { ref: pr.base, repo: { full_name: PROJECT } }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: pr.body ?? '' });
   const threadNode = (t: Thread) => ({ id: t.id, isResolved: t.resolved, path: t.path, line: t.line, originalLine: t.line, comments: { nodes: t.comments.map((c) => ({ databaseId: c.databaseId, author: { login: 'runner-bot' }, body: c.body, createdAt: '2026-10-03T12:00:00Z', url: `https://example.test/${PROJECT}/pull/7#discussion_r${c.databaseId}` })) } });
   const openThread = (path: string, line: number | null, body: string): void => {
     const databaseId = nextId++;
@@ -169,7 +173,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if (path === 'search/issues') {
       const q = new URLSearchParams(endpoint.split('?')[1] ?? '').get('q') ?? '';
       const label = /label:"([^"]+)"/.exec(q)?.[1];
-      const items = [...forge.issues.values()].filter((i) => i.state === 'open' && (!label || i.labels.includes(label))).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${i.number}`, user: { login: i.author ?? 'runner-bot' }, assignees: [], body: i.body, milestone: i.milestone ? { title: i.milestone } : null }));
+      const items = [...forge.issues.values()].filter((i) => i.state === 'open' && (!label || i.labels.includes(label))).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${i.number}`, user: { login: i.author ?? 'runner-bot' }, assignees: [], body: i.body, ...(i.pull ? { pull_request: {} } : {}), milestone: i.milestone ? { title: i.milestone } : null }));
       return { items };
     }
     if ((m = /^repos\/[^/]+\/[^/]+\/releases\/tags\/([\w.%-]+)$/.exec(path))) {

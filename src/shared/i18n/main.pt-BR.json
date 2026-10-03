@@ -1212,9 +1212,10 @@
   "main.runner.release.branch.remote": "existe só no remoto",
   "main.runner.release.branch.none": "ainda não existe",
   "main.runner.release.none": "nenhuma",
-  "main.runner.release.activity.merged": "- [{crMark}{pr} {title}]({url}): integrado{closes}",
-  "main.runner.release.activity.ready": "- [{crMark}{pr} {title}]({url}): aprovado e pronto para integrar{closes}",
-  "main.runner.release.activity.waiting": "- [{crMark}{pr} {title}]({url}): ainda não aprovado{closes}",
+  "main.runner.release.activity.merged": "- [{crMark}{pr} {title}]({url}): integrado{at}{closes}",
+  "main.runner.release.activity.ready": "- [{crMark}{pr} {title}]({url}): aprovado e pronto para integrar{at}{closes}",
+  "main.runner.release.activity.waiting": "- [{crMark}{pr} {title}]({url}): ainda não aprovado{at}{closes}",
+  "main.runner.release.activity.at": " (em `{sha}`)",
   "main.runner.release.activity.closes": ", fecha [#{issue}]({url})",
   "main.runner.release.activities.none": "Nada aponta para {branch} ainda.",
   "main.runner.release.milestone.title": "Issues abertas do milestone {version} que ainda não estão em um {crLong} que aponte para a branch:",
@@ -1265,5 +1266,9 @@
   "main.release.notPlanned": "O {crLong} #{pr} não estava no plano que você aprovou neste commit (é novo, ou recebeu push depois): nada foi integrado. Devolva a execução ao plano para ele ser planejado de novo.",
   "main.release.worktreeFailed": "O worktree desta release não pôde ser criado em {path}: {detail}",
   "main.release.scriptTimedOut": "O script de release ({mode}) passou do limite de {minutes} minutos e foi parado, com tudo que ele tinha iniciado; o worktree voltou como estava.",
-  "main.forum.code.runner.release.trackingNotAdopted": "Existe uma issue aberta com o título da release, mas não é da própria pessoa e não tem rótulo desta versão, então não foi usada: {url} (de {author}). Uma nova issue de acompanhamento é criada."
+  "main.forum.code.runner.release.trackingNotAdopted": "Existe uma issue aberta com o título da release, mas não é da própria pessoa e não tem rótulo desta versão, então não foi usada: {url} (de {author}). Uma nova issue de acompanhamento é criada.",
+  "main.release.branchExists": "A branch {branch} já existe (aqui ou no remoto): ela não é aberta de novo, e nada foi rodado. As integrações e os cortes seguem na branch que está lá.",
+  "main.release.tagNotOnMain": "A tag {tag} não está em cima do que o remoto tem da main, então não é para ela que a main anda: nada foi enviado.",
+  "main.forum.code.runner.release.movedSincePlan": "O {crLong} #{pr} estava em {was} quando você aceitou o plano e agora está em {now} no host. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo.",
+  "main.forum.code.runner.release.notInPlan": "O {crLong} #{pr} (em {now}) não estava no plano que você aceitou. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo."
 }

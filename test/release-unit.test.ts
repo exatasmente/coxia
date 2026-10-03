@@ -18,7 +18,7 @@ describe('the unit of a release action', () => {
   it('accepts each operation with the fields it has', () => {
     expect(parseReleaseUnit({ op: 'open', version: '0.6.0' })).toEqual({ op: 'open', version: '0.6.0' });
     expect(parseReleaseUnit({ op: 'open', version: '0.4.1', from: 'v0.4.0', runId: RUN })).toEqual({ op: 'open', version: '0.4.1', from: 'v0.4.0', runId: RUN });
-    expect(parseReleaseUnit({ op: 'merge-pr', version: '0.6.0', pr: 12, head: 'ABCDEF1234' })).toEqual({ op: 'merge-pr', version: '0.6.0', pr: 12, head: 'abcdef1234' });
+    expect(parseReleaseUnit({ op: 'merge-pr', version: '0.6.0', pr: 12, head: 'ABCDEF1234'.repeat(4) })).toEqual({ op: 'merge-pr', version: '0.6.0', pr: 12, head: 'abcdef1234'.repeat(4) });
     expect(parseReleaseUnit({ op: 'beta', version: '0.6.0' })).toEqual({ op: 'beta', version: '0.6.0' });
     expect(parseReleaseUnit({ op: 'stable', version: '0.6.0' })).toEqual({ op: 'stable', version: '0.6.0' });
     expect(parseReleaseUnit({ op: 'push-branch', version: '0.6.0' })).toEqual({ op: 'push-branch', version: '0.6.0' });
@@ -50,6 +50,11 @@ describe('the unit of a release action', () => {
     expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head: 'not a sha' })).toBe('bad-head');
     expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head: 'abc' })).toBe('bad-head');
     expect(code({ op: 'beta', version: '0.6.0', head: 'abcdef1' })).toBe('field-not-for-op');
+  });
+
+  it('wants the head in full: an abbreviation could be the prefix of another commit', () => {
+    for (const head of ['abcdef1', 'abcdef1234', 'a'.repeat(39), 'a'.repeat(41), 'a'.repeat(63), `${'a'.repeat(39)}g`]) expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head }), head).toBe('bad-head');
+    for (const head of ['a'.repeat(40), 'B'.repeat(40), 'c'.repeat(64)]) expect(code({ op: 'merge-pr', version: '0.6.0', pr: 7, head }), head).toBe('ok');
   });
 
   it('takes --from only for open, and only a stable tag', () => {

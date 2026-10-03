@@ -137,7 +137,7 @@ describe('approving a step', () => {
     expect(w.remote('branch', '--list')).not.toContain('release/0.5.0');
     await approve(push.id);
     expect(w.remote('rev-parse', 'release/0.5.0')).toBe(w.steps.git('rev-parse', 'HEAD'));
-    expect(listAudit()[0]).toMatchObject({ kind: 'push', via: 'git', ok: true, target: 'git push origin HEAD:refs/heads/release/0.5.0', fields: { op: 'push-branch', version: '0.5.0' } });
+    expect(listAudit()[0]).toMatchObject({ kind: 'push', via: 'git', ok: true, target: 'git push origin <sha>:refs/heads/release/0.5.0', fields: { op: 'push-branch', version: '0.5.0' } });
   });
 
   it('merges an approved pull request into the release branch locally, reading it from the host, never calling the host\'s merge', async () => {
@@ -214,8 +214,10 @@ describe('approving a step', () => {
     expect((await attempt('a3', { checks: 'failing' })).output).toMatch(/checks .* are failing/);
     // a CI nobody could read is not "no checks": it counts as still running
     expect((await attempt('a4', { checks: 'unreadable' })).output).toMatch(/checks .* are running/);
+    // no checks at all, on a pull request that was updated a minute ago, may be checks that have not started: still running; long ago, there are none to wait for
+    expect((await attempt('a4b', { updatedAt: new Date(Date.now() - 60_000).toISOString() })).output).toMatch(/checks .* are running/);
     expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
-    expect((await attempt('a5', { approval: { association: 'COLLABORATOR' } })).state).toBe('done');
+    expect((await attempt('a5', { approval: { association: 'COLLABORATOR' }, updatedAt: new Date(Date.now() - 3_600_000).toISOString() })).state).toBe('done');
   });
 
   it('judges the stored unit again: an action edited on disk to name a path or a flag fails and runs nothing', async () => {
@@ -269,7 +271,7 @@ describe('approving a step', () => {
     w.steps.change('Added', 'a thing');
     const push = propose('p', unit({ op: 'push-branch' }));
     const preview = await actions.previewAction(push.id);
-    expect(preview).toContain('git push origin HEAD:refs/heads/release/0.5.0');
+    expect(preview).toContain('git push origin <sha>:refs/heads/release/0.5.0');
     expect(preview).toContain('feat: a thing');
   });
 });

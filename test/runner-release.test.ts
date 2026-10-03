@@ -140,6 +140,12 @@ describe('starting a release', () => {
     expect(current(labelled.b, labelled.run).subject?.tracking).toMatchObject({ iid: 160 });
   });
 
+  it('never takes a pull request for the tracking issue, whatever its title', async () => {
+    forge.issues.set(150, { number: 150, title: 'Release 0.5.0', body: '', labels: [], state: 'open', pull: true });
+    const { b, run } = await start();
+    expect(current(b, run).subject?.tracking).toMatchObject({ iid: 200 });
+  });
+
   it('does not take a closed issue of that title, and refuses a version that is not X.Y.Z, a flow it does not have and a second run for the same version', async () => {
     forge.issues.set(150, { number: 150, title: 'Release 0.5.0', body: '', labels: [], state: 'closed' });
     const { b, run } = await start();
@@ -233,9 +239,16 @@ describe('the release from the plan to the stable', () => {
     expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7 })]);
     // the author pushes again after the plan was written and before the person says yes to it
     forge.others[0].head = 'a'.repeat(40);
+    // a call the gate refuses (no reason for a skip, an action that is none) freezes nothing
+    expect(() => b.runner.gate(run.id, 'skip', '')).toThrow();
+    expect(() => b.runner.gate(run.id, 'bogus' as never)).toThrow();
+    expect(current(b, run).subject?.planned).toBeUndefined();
     b.runner.gate(run.id, 'approve');
     await b.settle();
     expect(current(b, run).subject?.planned).toEqual({ '7': planned });
+    // the host is read again at once, and the person is told the pull request moved since the plan
+    expect(b.thread(run).some((m) => m.kind === 'system' && m.code === 'runner.release.movedSincePlan')).toBe(true);
+    expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7, head: 'a'.repeat(40) })]);
     expect(asked).toHaveLength(2);
     expect(asked.every((a) => /^Did not happen:.*was not in the plan you approved/.test(a))).toBe(true);
     expect(w.git('log', '-1', '--format=%s', 'release/0.5.0')).not.toMatch(/Merge pull request/);
@@ -264,7 +277,7 @@ describe('the release from the plan to the stable', () => {
     expect(onIssue.some((c) => c.includes('**Release plan ready to approve**') && c.includes('It is 0.5.0: a feature.'))).toBe(true);
     // the activities of the version are listed there too, with the pull request, its link and the issue it closes
     const activities = onIssue.find((c) => c.includes('**Activities of the release**'));
-    expect(activities).toContain('[#7 Add the x](https://example.test/group/project/pull/7): approved and ready to merge');
+    expect(activities).toContain(`[#7 Add the x](https://example.test/group/project/pull/7): approved and ready to merge (at \`${pr.head.slice(0, 9)}\`)`);
     expect(now.subject?.activities).toEqual([expect.objectContaining({ pr: 7, state: 'open', approved: true, issue: 12 })]);
 
     // the gate is approved: the Release manager merges the approved pull request into the branch, locally, and the run waits for the merges to be in
@@ -298,7 +311,7 @@ describe('the release from the plan to the stable', () => {
     expect(w.remote('tag', '--list')).not.toContain('beta');
     for (const op of ['push-branch', 'push-tag']) await actions.approveAction(say(op));
     expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
-    expect(listAudit().filter((l) => l.kind === 'push').map((l) => l.target)).toEqual(['git push origin refs/tags/v0.5.0-beta.<latest>', 'git push origin HEAD:refs/heads/release/0.5.0']);
+    expect(listAudit().filter((l) => l.kind === 'push').map((l) => l.target)).toEqual(['git push origin refs/tags/v0.5.0-beta.<latest>', 'git push origin <sha>:refs/heads/release/0.5.0']);
 
     // the run waits for the beta to be out for a day: nothing happens before the host shows it published, nor before the day, nor with a blocking issue open
     expect(await b.runner.tick()).toEqual([]);
@@ -438,7 +451,7 @@ describe('what the sweep and the waits read from the host', () => {
     return { b, run, over: async () => (await publisher.waitOver(run.id)).over };
   }
 
-  const pr = (number: number, over: Partial<NonNullable<Forge['pr']>> = {}) => forge.others.push({ number, branch: `feat/${number}`, head: `${number}`.repeat(10), base: 'release/0.5.0', files: [], ...over });
+  const pr = (number: number, over: Partial<NonNullable<Forge['pr']>> = {}) => forge.others.push({ number, branch: `feat/${number}`, head: `${number}`.repeat(40), base: 'release/0.5.0', files: [], ...over });
 
   it('release-approved goes on when no pull request is open against the branch, and not before', async () => {
     const { over } = await waiting('release-approved');
@@ -449,7 +462,7 @@ describe('what the sweep and the waits read from the host', () => {
     forge.others[0].merged = true;
     expect(await over()).toBe(true);
     // a pull request aimed at another branch is not this release's
-    forge.others.push({ number: 9, branch: 'feat/9', head: '9'.repeat(10), base: 'main', files: [] });
+    forge.others.push({ number: 9, branch: 'feat/9', head: '9'.repeat(40), base: 'main', files: [] });
     expect(await over()).toBe(true);
   });
 

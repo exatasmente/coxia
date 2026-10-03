@@ -459,8 +459,26 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     await deliver(runId, { key, stage: e.stage.id, kinds: ['question'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: e.agent.id, autonomous: e.autonomous, announce: false });
   }
 
+  /**
+   * The plan was just accepted and its heads frozen from what the run had read (what the person was shown): the host is read again at once, and a pull request that
+   * moved in the meantime, or that was not in the plan, is said in the thread. It is not merged either way (a merge needs the frozen head), so this only tells.
+   */
+  async function reportMovedSincePlan(runId: string): Promise<void> {
+    if (!need(runId).subject?.planned) return;
+    await refreshActivities(runId);
+    const run = need(runId);
+    const planned = run.subject?.planned ?? {};
+    for (const a of run.subject?.activities ?? []) {
+      if (a.state !== 'open') continue;
+      const was = planned[String(a.pr)];
+      if (!was) say(run, 'runner.release.notInPlan', { pr: a.pr, now: a.head.slice(0, 9) });
+      else if (was.toLowerCase() !== a.head.toLowerCase()) say(run, 'runner.release.movedSincePlan', { pr: a.pr, was: was.slice(0, 9), now: a.head.slice(0, 9) });
+    }
+  }
+
   async function gate(runId: string, e: { stage: FlowStage; action: GateAction; reason: string; autonomous: boolean }): Promise<void> {
     const config = deps.config();
+    if (e.action !== 'reject' && need(runId).subject && flowOfRun(need(runId), config).find((s) => s.type === 'gate')?.id === e.stage.id) await reportMovedSincePlan(runId).catch(() => undefined);
     const tpl = config.devCycle.comments.gate;
     if (!tpl) return;
     const run = need(runId);
@@ -1130,9 +1148,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   }
 
   /** How many betas of one version the wait looks for on the host. */
-const MAX_BETAS = 30;
+  const MAX_BETAS = 30;
 
-const stepKey = (u: ReleaseUnit): string => [u.op, u.pr, u.branch, u.channel, u.from].filter((x) => x !== undefined).join(':');
+  const stepKey = (u: ReleaseUnit): string => [u.op, u.pr, u.branch, u.channel, u.from].filter((x) => x !== undefined).join(':');
 
   function stepSummary(u: ReleaseUnit): string {
     const p = { version: u.version, pr: u.pr ?? '', tag: u.from ?? '' };

@@ -4,6 +4,7 @@ import type { Run } from '../../../../shared/runs';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
+import { isWeb } from '../../platform';
 import { BackIcon } from '../icons';
 import { RunBadge } from './RunBadge';
 import { agentName, squadName } from './names';
@@ -108,7 +109,8 @@ export function RunsScreen({ go }: { go: (s: Screen) => void }) {
           </div>
           <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.runs.forum')}</button>
         </header>
-        {config?.devCycle.flows?.release && <StartRelease go={go} />}
+        {/* Starting a release belongs to the desktop window (the channel is desktop-only); a paired browser follows a release and answers its gates, but is not offered the field. */}
+        {config?.devCycle.flows?.release && !isWeb() && <StartRelease go={go} />}
         <div className="filters cy-filters" role="group" aria-label={t('ui.runs.filter.label')}>
           {RUN_FILTERS.map((f) => (
             <button key={f} type="button" className={`filter ${filter === f ? 'on' : ''}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>

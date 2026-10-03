@@ -40,6 +40,13 @@ Finish the wizard with the engineering or the agent cycle and the integration fo
 4. A paired browser (the PWA) cannot start a release (D19): `runs:startRelease` answers as a desktop-only channel; it can follow the run and answer its gates.
 5. Automated: `test/runner-release.test.ts` (the cuts and the pushes of the beta and of the stable are proposals with an autonomous agent; a plan accepted freezes the heads and a moved head is not merged; adoption of the tracking issue; the latest beta read from the host), `test/release-actions.test.ts` ("a step an agent's autonomy lets go out": a push, a beta and a stable are refused by `runReleaseAuto`; "is refused in a test workspace").
 
+#### 3b. `open` and the pushes cannot be turned against you
+
+1. After a pull request that changes `scripts/release.sh` was merged into the release branch (a throwaway one that only writes a file), ask the agent to open the same version again: it is refused ("already exists") and the file is not written. Open another version: the worktree stands on `origin/main` first, and the file is not written either.
+2. Set `git config push.followTags true` and an extra `remote.origin.push` in your clone, cut a beta, then say yes to *push the release branch*: `git ls-remote --tags origin` shows no beta tag, and no other local branch went.
+3. Create the stable tag by hand as a lightweight tag (`git tag v0.2.0 release/0.2.0` in the steps worktree) and say yes to the push of `main`: it is refused.
+4. Automated: `test/release-git.test.ts` ("open runs main's script", "a push sends the one ref", "main goes out only with the stable tag").
+
 ### 4. The unit is judged again, and an agent cannot reach `--emergency`
 
 1. Open `<data>/workspaces/<id>/acoes.json`, find a pending `release-git` action and add `"cwd": "/etc"` or `"emergency": true` to its `unit`. Say yes in Actions: it fails with `unknown-field`, nothing runs, nothing is logged.

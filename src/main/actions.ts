@@ -983,7 +983,11 @@ async function releaseContextOf(unit: ReleaseUnit): Promise<ReleaseContext> {
   return { run, clone, project: repo.projectPath };
 }
 
-const checksOf = (ci: { status: string } | null): ReleasePr['checks'] => (!ci ? 'none' : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
+// No checks at all is accepted only when the pull request was last touched more than this long ago: a push whose checks have not started yet shows no checks, and a repository
+// that requires them would be merged unchecked. (Whether the repository requires checks is not asked: that needs rights the app does not have.)
+const CHECKS_START_MS = 10 * 60_000;
+
+const checksOf = (ci: { status: string } | null, updatedAt: string | null = null): ReleasePr['checks'] => (!ci ? (updatedAt && Date.now() - Date.parse(updatedAt) < CHECKS_START_MS ? 'running' : 'none') : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
 
 /** One release step, run and audited. The unit is read again from what was stored: nothing in it is believed until it passes `parseReleaseUnit` here. */
 async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
@@ -992,10 +996,12 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
   const id = getConfig().runner.identity;
   const identity = { name: id.name.trim(), email: id.email.trim() };
   if (!identity.name || !identity.email) throw new Error(t('main.release.noIdentity'));
+  let plannedHead: string | undefined;
   // A merge brings in only the head the person approved with the plan: a pull request that was not in it, or that moved since, is not merged by the agent.
   if (unit.op === 'merge-pr') {
     const planned = run.subject?.planned?.[String(unit.pr)];
     if (!planned || !sameSha(planned, unit.head as string)) throw new Error(t('main.release.notPlanned', { pr: unit.pr as number }));
+    plannedHead = planned;
   }
   const push = isReleasePush(unit.op);
   const fields: Record<string, string> = { op: unit.op, version: unit.version, run: run.id, repo: run.repo, ...(unit.pr !== undefined ? { pr: String(unit.pr) } : {}) };
@@ -1005,10 +1011,11 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
       // The steps run in a worktree of their own next to the run's: the person's checkout is never touched. Derived from the run, never from the unit.
       worktree: join(dirname(run.worktree), `release-${unit.version}-steps`),
       identity,
+      ...(plannedHead ? { planned: plannedHead } : {}),
       pr: async (n) => {
         const mr = await vcsProvider().getMr(project ?? issueProjectKey(), n, { approvals: true });
         // What a merge may rely on: an approval bound to the head by a member of the project where the host can say (GitHub), the host's plain approval where it cannot.
-        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.onHead ?? mr.approvals?.approved === true, checks: checksOf(mr.ci), fork: mr.fromFork !== false };
+        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.onHead ?? mr.approvals?.approved === true, checks: checksOf(mr.ci, mr.updatedAt), fork: mr.fromFork !== false };
       },
     });
     fields.before = r.before ?? '';
