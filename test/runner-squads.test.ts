@@ -214,6 +214,60 @@ describe('an issue two squads claim', () => {
   });
 });
 
+describe('the switch of a squad', () => {
+  it('off holds every member, the shared agents stay as they are, and a member\'s own switch applies when the squad is on', async () => {
+    const { b } = await build((c) => {
+      (c.squads ?? [])[0].autonomy = false;
+      (c.agents.team.find((a) => a.id === 'dev-b') as { autonomous: boolean }).autonomous = false;
+    });
+    // squad A is off: the shared front door runs by itself, the developer of A waits for the person to start it
+    const inA = await b.runner.start('app#101', 'app');
+    await b.settle();
+    expect(b.runner.get(inA.id)).toMatchObject({ status: 'to-start', stage: 'implement' });
+    expect(b.runner.get(inA.id)?.stages.map((s) => [s.stage, s.autonomous])).toEqual([['triage', true], ['implement', false]]);
+    expect(agentsOf(b)).toEqual(['support']);
+    b.runner.startStage(inA.id);
+    await b.settle();
+    // its result waits for the person to accept it too
+    expect(b.runner.get(inA.id)).toMatchObject({ status: 'to-accept', stage: 'implement' });
+    b.runner.accept(inA.id);
+    await b.settle();
+    expect(b.runner.get(inA.id)?.status).toBe('done');
+    // squad B is on, but its developer's own switch is off: it waits as well; its security agent runs by itself
+    const inB = await b.runner.start('app#102', 'web');
+    await b.settle();
+    expect(b.runner.get(inB.id)).toMatchObject({ status: 'to-start', stage: 'implement' });
+    b.runner.startStage(inB.id);
+    await b.settle();
+    expect(b.runner.get(inB.id)).toMatchObject({ status: 'to-accept' });
+    b.runner.accept(inB.id);
+    await b.settle();
+    expect(b.runner.get(inB.id)?.stages.map((s) => [s.stage, s.autonomous])).toEqual([['triage', true], ['implement', false], ['security', true], ['ready', false]]);
+    expect(b.runner.get(inB.id)?.status).toBe('done');
+  });
+
+  it('is captured by the stage like an agent\'s switch: a switch changed in the middle of a stage reaches the next one, not the one that is running', async () => {
+    const { b } = await build();
+    b.engine.script('dev-b', () => {
+      // the person switches the squad off while its developer works
+      b.runner.setSquadAutonomous('b', false);
+      return work('Built.', { artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    const started = await b.runner.start('app#102', 'web');
+    await b.settle();
+    // the developer's stage went on by itself (it was entered while the squad was on); the next one waits
+    expect(b.runner.get(started.id)).toMatchObject({ status: 'to-start', stage: 'security' });
+    expect(b.runner.get(started.id)?.stages.map((s) => [s.stage, s.autonomous])).toEqual([['triage', true], ['implement', true], ['security', false]]);
+    expect(b.deps.config().squads?.[1].autonomy).toBe(false);
+    // switched back on, the stage that waits starts when the person says so, and the squad's agents run by themselves again from the next stage
+    b.runner.setSquadAutonomous('b', true);
+    b.runner.startStage(started.id);
+    await b.settle();
+    expect(b.runner.get(started.id)).toMatchObject({ status: 'done' });
+    expect(() => b.runner.setSquadAutonomous('ghost', true)).toThrow(/ghost/);
+  });
+});
+
 describe('a workspace with no squads', () => {
   it('runs exactly as a single team: no squad, no routing, no choice, and the same agents in the same order', async () => {
     const { b } = await build((c) => {

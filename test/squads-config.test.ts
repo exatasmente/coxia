@@ -2,7 +2,7 @@
 // inside a squad, and the pure edits. Nothing here starts a run.
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { addSquad, flowStagesOf, hasSquads, liaisonFor, membersOf, newSquad, removeSquad, scopedTeam, setAgentSquad, squadView, turnTarget, updateSquad } from '../src/shared/config/squads';
+import { addSquad, autonomousOf, effectiveTeam, flowStagesOf, hasSquads, liaisonFor, membersOf, newSquad, removeSquad, scopedTeam, setAgentSquad, squadView, turnTarget, updateSquad } from '../src/shared/config/squads';
 import { addAgent, removeAgent } from '../src/shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlowEngineering, applyTemplate, templateFromConfig } from '../src/shared/cycles';
@@ -218,6 +218,36 @@ describe('the runtime chain of a squad', () => {
   it('a liaison that is not in the team, or not a member, is not used', () => {
     const c = config((x) => ((x.squads ?? [])[0].liaison = 'lead-b'));
     expect(turnTarget(c, agent(c, 'dev-a'))).toBeNull();
+  });
+});
+
+describe('the switch of a squad', () => {
+  it('off holds every member, the liaison included; on leaves each agent\'s own switch; a shared agent and a squad the config lacks are untouched', () => {
+    const c = config((x) => {
+      (x.squads ?? [])[0].autonomy = false;
+      agent(x, 'dev-b').autonomous = false;
+    });
+    const live = Object.fromEntries(effectiveTeam(c).filter((a) => !a.system).map((a) => [a.id, a.autonomous]));
+    expect(live).toEqual({ support: true, 'dev-a': false, 'lead-a': false, 'dev-b': false, 'sec-b': true, 'lead-b': true });
+    expect(autonomousOf(c, agent(c, 'dev-a'))).toBe(false);
+    expect(autonomousOf(c, agent(c, 'support'))).toBe(true);
+    expect(autonomousOf(c, { autonomous: true, squad: 'ghost' })).toBe(true);
+    // the config itself is not changed: the combination is read, never written
+    expect(agent(c, 'dev-a').autonomous).toBe(true);
+  });
+
+  it('is what a squad\'s flow reads, and the whole workspace\'s too (an agent of a squad that is off holds there as well)', () => {
+    const c = config((x) => ((x.squads ?? [])[0].autonomy = false));
+    const flow = (squad: string | null) => flowOf(squadView(c, squad), squadView(c, squad).devCycle.stages).map((s) => [s.id, s.agent, s.autonomous]);
+    expect(flow('a')).toEqual([['triage', 'support', true], ['implement', 'dev-a', false], ['ready', null, false]]);
+    expect(flow('b')).toEqual([['triage', 'support', true], ['implement', 'dev-b', true], ['security', 'sec-b', true], ['ready', null, false]]);
+    expect(flow(null)).toEqual([['triage', 'support', true], ['implement', 'dev-a', false], ['ready', null, false]]);
+  });
+
+  it('is edited with updateSquad and read by the validator without complaint', () => {
+    const off = updateSquad(config(), 'a', { autonomy: false });
+    expect(off.squads?.[0].autonomy).toBe(false);
+    expect(validateConfig(off).errors).toEqual([]);
   });
 });
 

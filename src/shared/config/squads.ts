@@ -35,8 +35,14 @@ export const isShared = (a: Pick<AgentDef, 'squad'>): boolean => !a.squad;
 /** The agents that belong to a squad. */
 export const membersOf = (c: TeamView, squadId: string): AgentDef[] => c.agents.team.filter((a) => a.squad === squadId);
 
+/**
+ * The team as the switches of the squads leave it: a member of a squad that is switched off is not autonomous, whatever its own switch says (the squad's switch
+ * holds every member; the agent's own applies when the squad's is on). What the runner reads the agents from, so a stage captures the combined value.
+ */
+export const effectiveTeam = (c: TeamView): AgentDef[] => c.agents.team.map((a) => (a.autonomous && !autonomousOf(c, a) ? { ...a, autonomous: false } : a));
+
 /** The agents a squad's runs may use: its members and the shared ones. */
-export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => c.agents.team.filter((a) => a.squad === squadId || isShared(a));
+export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => effectiveTeam(c).filter((a) => a.squad === squadId || isShared(a));
 
 /** The stages a squad's runs follow: its own flow when it has one, the workspace's otherwise. `null`: the workspace's. */
 export const flowStagesOf = (c: Pick<CycleView, 'devCycle'>, squadId: string | null | undefined): StageDef[] => (squadId ? (c.devCycle.flows?.[squadId] ?? c.devCycle.stages) : c.devCycle.stages);
@@ -46,7 +52,7 @@ export const flowStagesOf = (c: Pick<CycleView, 'devCycle'>, squadId: string | n
  * longer has), the whole workspace.
  */
 export function squadView(c: CycleView, squadId: string | null | undefined): { agents: { team: AgentDef[] }; devCycle: { stages: StageDef[] } } {
-  if (!squadId || !squadOf(c, squadId)) return { agents: { team: c.agents.team }, devCycle: { stages: c.devCycle.stages } };
+  if (!squadId || !squadOf(c, squadId)) return { agents: { team: effectiveTeam(c) }, devCycle: { stages: c.devCycle.stages } };
   return { agents: { team: scopedTeam(c, squadId) }, devCycle: { stages: flowStagesOf(c, squadId) } };
 }
 

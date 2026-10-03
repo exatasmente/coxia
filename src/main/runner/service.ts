@@ -55,7 +55,7 @@ import {
   waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
-import { autonomousOf, membersOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf } from '../../shared/config/squads';
+import { autonomousOf, membersOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { cycleText } from '../../shared/cycles/text';
 import { updateAgent } from '../../shared/config/team';
 import { withActivityContext } from '../activity';
@@ -157,6 +157,8 @@ export interface Runner {
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
   removeSquad(squad: string, confirm: boolean): { removed: boolean; runs: string[] };
   setAutonomous(agentId: string, on: boolean): WorkspaceConfig;
+  /** The switch of a whole squad: off holds every member (each agent's own switch applies when it is on). Takes effect at the next stage start or publication. */
+  setSquadAutonomous(squad: string, on: boolean): WorkspaceConfig;
   /** A person's post in a run's thread that answers the run's pending question: the answer is recorded and the stage goes on. Null when the post answers nothing. */
   answerPost(thread: string, text: string): ForumMessage | null;
   /** Reacts to a message of the forum: a person's `@agent` in a run's thread has that agent answer, read only. */
@@ -180,7 +182,7 @@ const iso = (d: Date): string => d.toISOString();
 
 export function createRunner(deps: RunnerDeps): Runner {
   const now = (): string => iso(deps.now?.() ?? new Date());
-  const flowNow = (): FlowStage[] => flowOf(deps.config());
+  const flowNow = (): FlowStage[] => flowOf(squadView(deps.config(), null));
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
@@ -586,6 +588,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       deps.updateConfig((c) => removeSquadConfig(c, squadId));
       for (const r of affected) move(r.id, (x, _f, at) => leaveSquad(x, at));
       return { removed: true, runs: affected.map((r) => r.id) };
+    },
+    setSquadAutonomous(squadId, on) {
+      if (!squadOf(deps.config(), squadId)) throw new RunError('unknown-squad', { squad: squadId.slice(0, 48) });
+      return deps.updateConfig((c) => updateSquad(c, squadId, { autonomy: on }));
     },
     setAutonomous(agentId, on) {
       if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });

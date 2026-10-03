@@ -81,6 +81,11 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:undoPost', (run: unknown, key: unknown) => r.undoPost(id(run), text(key)));
   ctx.handle('runs:setSquad', (run: unknown, squad: unknown) => r.setSquad(id(run), typeof squad === 'string' && squad ? squad : null));
   ctx.handle('runs:removeSquad', (squad: unknown, confirm?: unknown) => r.removeSquad(text(squad), confirm === true));
+  ctx.handle('runs:setSquadAutonomous', (squad: unknown, on: unknown) => {
+    if (typeof on !== 'boolean') throw new RunError('unknown-squad', { squad: '' });
+    r.setSquadAutonomous(text(squad), on);
+    return getConfig().squads?.find((q) => q.id === squad)?.autonomy ?? true;
+  });
   ctx.handle('runs:setAutonomous', (agent: unknown, on: unknown) => {
     if (typeof agent !== 'string' || typeof on !== 'boolean') throw new RunnerError('unknown-agent', { agent: '' });
     r.setAutonomous(agent, on);
