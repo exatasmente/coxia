@@ -18,13 +18,14 @@ describe('the team and cycle catalogs', () => {
   it('define every key the screens name, in both languages', () => {
     expect(literals.size).toBeGreaterThan(30);
     for (const key of literals) {
-      expect(CATALOGS['pt-BR'][key], `pt-BR ${key}`).toBeTruthy();
-      expect(CATALOGS.en[key], `en ${key}`).toBeTruthy();
+      for (const language of ['pt-BR', 'en'] as const) expect(CATALOGS[language][key] ?? CATALOGS[language][`${key}_other`], `${language} ${key}`).toBeTruthy();
     }
   });
 
   it('hold no key that no screen names', () => {
-    const unused = Object.keys(team).filter((k) => !literals.has(k) && !templates.some((re) => re.test(k)));
+    // A plural key (`_one`, `_other`) is named by its plain key.
+    const named = (k: string) => literals.has(k) || literals.has(k.replace(/_(one|other)$/, '')) || templates.some((re) => re.test(k));
+    const unused = Object.keys(team).filter((k) => !named(k));
     expect(unused).toEqual([]);
   });
 });

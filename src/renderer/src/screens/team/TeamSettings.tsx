@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { Notice } from '../../wizard/ui';
+import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
 import { teamApi, useConfigView } from './teamApi';
 import { onTeamRequest, takeTeamRequest, TEAM_TABS, type TeamTab } from './teamNav';
@@ -14,7 +15,7 @@ import './team.css';
 // The tabs that exist, in order; the labels are `ui.team.tab.<name>`.
 const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow: (squad?: string) => void }) => ReactNode) | null> = {
   team: (p) => <TeamSection {...p} />,
-  squads: null,
+  squads: (p) => <SquadsSection {...p} />,
   flow: null,
   comments: null,
   runner: null,
