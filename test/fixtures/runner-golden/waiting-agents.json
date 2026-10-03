@@ -1,0 +1,1222 @@
+{
+ "status": "done",
+ "stage": "ready",
+ "stages": [
+  [
+   "refine",
+   "refiner",
+   "done",
+   [
+    "1_SPEC.md"
+   ],
+   1,
+   true
+  ],
+  [
+   "gate1",
+   null,
+   "done",
+   [],
+   1,
+   false
+  ],
+  [
+   "plan",
+   "planner",
+   "done",
+   [
+    "2_PLAN.md"
+   ],
+   1,
+   false
+  ],
+  [
+   "gate2",
+   null,
+   "done",
+   [],
+   1,
+   false
+  ],
+  [
+   "implement",
+   "developer",
+   "done",
+   [
+    "3_IMPLEMENTATION.md"
+   ],
+   2,
+   true
+  ],
+  [
+   "review",
+   "reviewer",
+   "done",
+   [
+    "4_REVIEW.md"
+   ],
+   2,
+   false
+  ],
+  [
+   "qa",
+   "qa",
+   "done",
+   [
+    "5_TEST_PLAN.md"
+   ],
+   1,
+   true
+  ],
+  [
+   "ready",
+   null,
+   "done",
+   [],
+   1,
+   false
+  ]
+ ],
+ "history": [
+  [
+   "started",
+   null,
+   "person",
+   null
+  ],
+  [
+   "stage-started",
+   "refine",
+   "app",
+   "refiner"
+  ],
+  [
+   "stage-done",
+   "refine",
+   "refiner",
+   null
+  ],
+  [
+   "stage-started",
+   "gate1",
+   "app",
+   null
+  ],
+  [
+   "comment",
+   "refine",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "refine",
+   "app",
+   "published"
+  ],
+  [
+   "gate-approved",
+   "gate1",
+   "person",
+   null
+  ],
+  [
+   "stage-waiting",
+   "plan",
+   "app",
+   "planner"
+  ],
+  [
+   "comment",
+   "decision-gate1-1",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "decision-gate1-1",
+   "app",
+   "published"
+  ],
+  [
+   "stage-started",
+   "plan",
+   "person",
+   "planner"
+  ],
+  [
+   "stage-ready",
+   "plan",
+   "planner",
+   null
+  ],
+  [
+   "comment",
+   "plan",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "plan",
+   "app",
+   "proposed"
+  ],
+  [
+   "stage-accepted",
+   "plan",
+   "person",
+   "ok"
+  ],
+  [
+   "stage-started",
+   "gate2",
+   "app",
+   null
+  ],
+  [
+   "gate-approved",
+   "gate2",
+   "person",
+   null
+  ],
+  [
+   "stage-started",
+   "implement",
+   "app",
+   "developer"
+  ],
+  [
+   "comment",
+   "decision-gate2-1",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "decision-gate2-1",
+   "app",
+   "proposed"
+  ],
+  [
+   "stage-done",
+   "implement",
+   "developer",
+   null
+  ],
+  [
+   "stage-waiting",
+   "review",
+   "app",
+   "reviewer"
+  ],
+  [
+   "comment",
+   "implement",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "implement",
+   "app",
+   "published"
+  ],
+  [
+   "comment",
+   "pr",
+   "app",
+   "draft"
+  ],
+  [
+   "stage-started",
+   "review",
+   "person",
+   "reviewer"
+  ],
+  [
+   "review",
+   "review",
+   "reviewer",
+   "1: changes"
+  ],
+  [
+   "stage-ready",
+   "review",
+   "reviewer",
+   null
+  ],
+  [
+   "comment",
+   "review-1",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "pr",
+   "app",
+   "published"
+  ],
+  [
+   "comment",
+   "review-1",
+   "app",
+   "proposed"
+  ],
+  [
+   "stage-accepted",
+   "review",
+   "person",
+   "ok"
+  ],
+  [
+   "handback",
+   "review",
+   "reviewer",
+   "implement"
+  ],
+  [
+   "stage-started",
+   "implement",
+   "app",
+   "developer"
+  ],
+  [
+   "stage-done",
+   "implement",
+   "developer",
+   null
+  ],
+  [
+   "stage-waiting",
+   "review",
+   "app",
+   "reviewer"
+  ],
+  [
+   "comment",
+   "implement",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "implement",
+   "app",
+   "published"
+  ],
+  [
+   "comment",
+   "pr",
+   "app",
+   "draft"
+  ],
+  [
+   "stage-started",
+   "review",
+   "person",
+   "reviewer"
+  ],
+  [
+   "review",
+   "review",
+   "reviewer",
+   "2: approved"
+  ],
+  [
+   "stage-ready",
+   "review",
+   "reviewer",
+   null
+  ],
+  [
+   "comment",
+   "review-2",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "review-2",
+   "app",
+   "proposed"
+  ],
+  [
+   "stage-accepted",
+   "review",
+   "person",
+   "ok"
+  ],
+  [
+   "stage-started",
+   "qa",
+   "app",
+   "qa"
+  ],
+  [
+   "qa",
+   "qa",
+   "qa",
+   "pass"
+  ],
+  [
+   "stage-done",
+   "qa",
+   "qa",
+   null
+  ],
+  [
+   "completed",
+   "ready",
+   "app",
+   null
+  ],
+  [
+   "comment",
+   "qa",
+   "app",
+   "draft"
+  ],
+  [
+   "comment",
+   "qa",
+   "app",
+   "published"
+  ]
+ ],
+ "thread": [
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   null,
+   "run.started",
+   {
+    "issue": "app#101"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "refine",
+   "run.stage.started",
+   {
+    "stage": "Refine",
+    "agent": "refiner"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "refiner"
+   },
+   "refine",
+   null,
+   {},
+   "Spec written.",
+   null,
+   true,
+   [
+    {
+     "path": "1_SPEC.md"
+    }
+   ],
+   "issue"
+  ],
+  [
+   "handoff",
+   {
+    "type": "agent",
+    "id": "refiner"
+   },
+   "refine",
+   null,
+   {},
+   "Plan it.",
+   "person",
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "gate1",
+   "run.stage.gate",
+   {
+    "stage": "Gate 1"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "gate1",
+   "runner.comment.posted",
+   {
+    "target": "the issue",
+    "title": "Refinement",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5000"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "decision",
+   {
+    "type": "person"
+   },
+   "gate1",
+   "gate.approved",
+   {
+    "stage": "Gate 1"
+   },
+   "",
+   null,
+   true,
+   [],
+   "issue"
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "plan",
+   "run.stage.waitStart",
+   {
+    "stage": "Plan",
+    "agent": "planner"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "plan",
+   "runner.comment.posted",
+   {
+    "target": "the issue",
+    "title": "Gate decision",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5001"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "plan",
+   "run.stage.started",
+   {
+    "stage": "Plan",
+    "agent": "planner"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "planner"
+   },
+   "plan",
+   null,
+   {},
+   "Plan written.",
+   null,
+   true,
+   [
+    {
+     "path": "2_PLAN.md"
+    }
+   ],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "plan",
+   "run.stage.waitAccept",
+   {
+    "stage": "Plan"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "plan",
+   "runner.comment.proposed",
+   {
+    "title": "Plan"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "decision",
+   {
+    "type": "person"
+   },
+   "plan",
+   "stage.accepted",
+   {
+    "stage": "Plan"
+   },
+   "ok",
+   null,
+   true,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "gate2",
+   "run.stage.gate",
+   {
+    "stage": "Gate 2"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "decision",
+   {
+    "type": "person"
+   },
+   "gate2",
+   "gate.approved",
+   {
+    "stage": "Gate 2"
+   },
+   "",
+   null,
+   true,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "run.stage.started",
+   {
+    "stage": "Implement",
+    "agent": "developer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "runner.comment.proposed",
+   {
+    "title": "Gate decision"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "developer"
+   },
+   "implement",
+   null,
+   {},
+   "Built.",
+   null,
+   true,
+   [
+    {
+     "path": "3_IMPLEMENTATION.md"
+    }
+   ],
+   "issue"
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.waitStart",
+   {
+    "stage": "Review",
+    "agent": "reviewer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "runner.comment.posted",
+   {
+    "target": "the issue",
+    "title": "Implementation",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5002"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "runner.push.proposed",
+   {
+    "branch": "cycle/101-add-the-thing-101"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.started",
+   {
+    "stage": "Review",
+    "agent": "reviewer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "reviewer"
+   },
+   "review",
+   null,
+   {},
+   "A point.\n\n[blocks] src/feature.ts:1: The constant must be 2.",
+   null,
+   true,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.waitAccept",
+   {
+    "stage": "Review"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "runner.review.proposed",
+   {
+    "round": 1
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "decision",
+   {
+    "type": "person"
+   },
+   "review",
+   "stage.accepted",
+   {
+    "stage": "Review"
+   },
+   "ok",
+   null,
+   true,
+   [],
+   null
+  ],
+  [
+   "handoff",
+   {
+    "type": "agent",
+    "id": "reviewer"
+   },
+   "review",
+   null,
+   {},
+   "A point.\n\n[blocks] src/feature.ts:1: The constant must be 2.",
+   "developer",
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "run.stage.started",
+   {
+    "stage": "Implement",
+    "agent": "developer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "developer"
+   },
+   "implement",
+   null,
+   {},
+   "Built.",
+   null,
+   true,
+   [
+    {
+     "path": "3_IMPLEMENTATION.md"
+    }
+   ],
+   "issue"
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.waitStart",
+   {
+    "stage": "Review",
+    "agent": "reviewer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "runner.comment.edited",
+   {
+    "target": "the issue",
+    "title": "Implementation",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5002"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "implement",
+   "runner.push.proposed",
+   {
+    "branch": "cycle/101-add-the-thing-101"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.started",
+   {
+    "stage": "Review",
+    "agent": "reviewer"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "reviewer"
+   },
+   "review",
+   null,
+   {},
+   "Fine.",
+   null,
+   true,
+   [
+    {
+     "path": "4_REVIEW.md"
+    }
+   ],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "run.stage.waitAccept",
+   {
+    "stage": "Review"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "review",
+   "runner.review.proposed",
+   {
+    "round": 2
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "decision",
+   {
+    "type": "person"
+   },
+   "review",
+   "stage.accepted",
+   {
+    "stage": "Review"
+   },
+   "ok",
+   null,
+   true,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "qa",
+   "run.stage.started",
+   {
+    "stage": "QA",
+    "agent": "qa"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "post",
+   {
+    "type": "agent",
+    "id": "qa"
+   },
+   "qa",
+   null,
+   {},
+   "Passes.",
+   null,
+   true,
+   [
+    {
+     "path": "5_TEST_PLAN.md"
+    }
+   ],
+   "issue"
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "ready",
+   "run.completed",
+   {
+    "stage": "Ready"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
+   "system",
+   {
+    "type": "app"
+   },
+   "ready",
+   "runner.comment.posted",
+   {
+    "target": "the issue",
+    "title": "QA",
+    "url": "https://example.test/group/project/issues/101#issuecomment-5003"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ]
+ ],
+ "writes": [
+  [
+   "POST",
+   "repos/group/project/issues/101/comments",
+   {
+    "body": "**Spec ready for gate 1**\n\n### What is asked\n\n> The thing must do X.\n\n### Acceptance\n\nX happens.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=refine -->\n"
+   }
+  ],
+  [
+   "POST",
+   "repos/group/project/issues/101/comments",
+   {
+    "body": "**Gate 1: approved**\n\nStage comment: https://example.test/group/project/issues/101#issuecomment-5000\n\n<!-- coxia:run=<run> stage=decision-gate1-1 -->\n"
+   }
+  ],
+  [
+   "POST",
+   "repos/group/project/issues/101/comments",
+   {
+    "body": "**Implementation ready for review**\n\n### What changed for the person using it\n\nThe feature exists (1).\n\n### How to verify\n\nUse the feature and see X.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=implement -->\n"
+   }
+  ],
+  [
+   "PATCH",
+   "repos/group/project/issues/comments/5002",
+   {
+    "body": "**Implementation ready for review**\n\n### What changed for the person using it\n\nThe feature exists (2).\n\n### How to verify\n\nUse the feature and see X.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=implement -->\n"
+   }
+  ],
+  [
+   "POST",
+   "repos/group/project/issues/101/comments",
+   {
+    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nThe thing does X: passed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+   }
+  ]
+ ],
+ "comments": {
+  "refine": [
+   "issue",
+   "published",
+   5000,
+   "Spec ready for gate 1"
+  ],
+  "decision-gate1-1": [
+   "issue",
+   "published",
+   5001,
+   "Gate 1: approved"
+  ],
+  "plan": [
+   "issue",
+   "proposed",
+   null,
+   "Plan ready for gate 2"
+  ],
+  "decision-gate2-1": [
+   "issue",
+   "proposed",
+   null,
+   "Gate 2: approved"
+  ],
+  "implement": [
+   "issue",
+   "published",
+   5002,
+   "Implementation ready for review"
+  ],
+  "pr": [
+   "mr",
+   "published",
+   7,
+   "Ready for review"
+  ],
+  "review-1": [
+   "mr",
+   "proposed",
+   null,
+   "Review: changes requested (round 1)"
+  ],
+  "review-2": [
+   "mr",
+   "proposed",
+   null,
+   "Review: approved (round 2)"
+  ],
+  "qa": [
+   "issue",
+   "published",
+   5003,
+   "QA: all scenarios passed"
+  ]
+ },
+ "proposals": [
+  [
+   "vcs",
+   "pending",
+   "Review (2)"
+  ],
+  [
+   "run-push",
+   "pending",
+   "Push the branch cycle/101-add-the-thing-101"
+  ],
+  [
+   "vcs",
+   "pending",
+   "Review (1)"
+  ],
+  [
+   "run-push",
+   "skipped",
+   "Push the branch cycle/101-add-the-thing-101"
+  ],
+  [
+   "vcs",
+   "pending",
+   "Gate decision"
+  ],
+  [
+   "vcs",
+   "pending",
+   "Plan"
+  ]
+ ]
+}
