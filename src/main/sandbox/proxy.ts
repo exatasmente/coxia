@@ -1,3 +1,4 @@
+// i18n-lint: allow-file the status lines of an HTTP proxy: protocol text, not prose for a person
 import { lookup } from 'node:dns/promises';
 import { chmodSync, existsSync, rmSync } from 'node:fs';
 import { type Server, type Socket, connect, createServer, isIP } from 'node:net';

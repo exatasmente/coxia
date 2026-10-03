@@ -122,3 +122,23 @@ describe('a run from start to ready, with its thread', () => {
     expect(s.forum.read(runThreadId(startInput().id))!.messages.map((m) => m.kind)).toEqual(['question']);
   });
 });
+
+describe('the evidence of a scenario', () => {
+  it('reads evidence and the commands it cites, and drops what is not a command number', async () => {
+    const { readScenario } = await import('../src/shared/runs');
+    expect(readScenario({ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1, 'x', 0, 2.5, 3] })).toMatchObject({ evidence: 'executed', commands: [1, 3] });
+    expect(readScenario({ name: 'a', result: 'pass', detail: '', evidence: 'ran' })).not.toHaveProperty('evidence');
+  });
+
+  it('is checked against the stage\'s commands, and everything is "read" when the agent was not asked', async () => {
+    const { backEvidence } = await import('../src/shared/runs');
+    const log = [{ n: 1, exitCode: 0, timedOut: false }, { n: 2, exitCode: 1, timedOut: false }, { n: 3, exitCode: null, timedOut: true }];
+    const s = (result: 'pass' | 'fail' | 'not-run', commands: number[]) => ({ name: 'x', result, detail: '', evidence: 'executed' as const, commands });
+    expect(backEvidence([s('pass', [1])], log, true)[0]).toMatchObject({ evidence: 'executed', commands: [1] });
+    expect(backEvidence([s('pass', [2])], log, true)[0]).toMatchObject({ evidence: 'read', unbacked: true });
+    expect(backEvidence([s('fail', [2])], log, true)[0]).toMatchObject({ evidence: 'executed' });
+    expect(backEvidence([s('fail', [3])], log, true)[0]).toMatchObject({ evidence: 'executed' });
+    expect(backEvidence([s('pass', [])], log, true)[0]).toMatchObject({ evidence: 'read', unbacked: true });
+    expect(backEvidence([s('pass', [1])], log, false)[0]).toEqual({ name: 'x', result: 'pass', detail: '', evidence: 'read' });
+  });
+});

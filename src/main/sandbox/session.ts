@@ -165,6 +165,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
     const onLine = (line: string): void => {
       if (line === 'ready' || line === 'no-node' || line === 'no-forwarder') {
         clearTimeout(timer);
+        lines.splice(lines.indexOf(onLine), 1);
         resolve(line === 'ready' ? null : line);
       }
     };

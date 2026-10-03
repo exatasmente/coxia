@@ -1,3 +1,4 @@
+// i18n-lint: allow-file what the Shell tool tells a model: English by design, like the other tool texts of the engines
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import type { ExecResult, SandboxSession } from './session';
 
