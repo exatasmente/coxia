@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Sending a run back to an earlier stage, as the person's own action (`runs:sendBack`, also from the paired browser): from a wait, a gate, a stage to start or to accept, a failure, a question and from the end of the run, which it reopens. The stage you pick (by default the one the flow names, or the nearest earlier stage whose agent changes the code) starts again as a new attempt with your note as a handoff, together with what the review and QA left open (the latest review's findings, suggestions included, and the QA scenarios that did not pass or could not be checked); the stages after it run again, the review sees the next round with the earlier ones, and no review or QA round is spent. A run that was cancelled cannot be sent back. On the run screen it is **Send back to a stage**, in every state where the run waits for you and once it is finished.
+- The thread's box says, while a mention is typed and the run can be sent back, that naming an agent only asks it something (it answers read only) and points to **Send back to a stage**.
+
+### Changed
+
+- The action of a waiting run is no longer "Stop waiting": it reads "Go on without waiting for the merge" (or the reply, the label, the linked issue, the time), says which stage comes next, and only moves forward. When the reason typed there names an agent with `@` or reads like a request to send the work back (volte, devolva, refaça, go back, send back, return), the screen does not go on: it offers to send back instead, with "Go on anyway" at hand.
+- The commands the app runs for a run (QA's, the ones an agent that writes may run, the conflict verification, the code host's CLIs) start with the `PATH` of your login shell in front of the app's, read once when the app starts (`COXIA_NO_LOGIN_SHELL=1` turns it off).
+
+### Fixed
+
+- QA could pass a delivery whose test and typecheck commands never ran: a command the environment could not start (not found, not executable, or the shell's exit code 126 or 127) is now recorded as "could not run" in the QA pass (`notRun`), told in the thread with the reason ("npm was not found by the app", or what the shell said, such as "vitest: not found"), and QA's prompt marks it and tells QA not to pass a scenario that depends on it, but to mark it not run.
+- The installed app (an AppImage opened from the desktop) did not see the tools of your terminal's `PATH`, such as a Node installed with nvm, so commands like `npm test` could fail to start; they now find what your login shell finds.
+
 ## [0.4.1] - 2026-10-03
 
 ### Changed
