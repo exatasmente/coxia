@@ -16,7 +16,7 @@ const withComments = (comments: Record<string, Partial<CommentTemplate>>): Works
 
 describe('the templates the agent cycle brings', () => {
   it('has one for each work stage and for the gate decision, the question and the pull request', () => {
-    expect(Object.keys(agentFlow().devCycle.comments).sort()).toEqual(['gate', 'implement', 'plan', 'pr', 'qa', 'question', 'refine', 'review']);
+    expect(Object.keys(agentFlow().devCycle.comments).sort()).toEqual(['communicate', 'gate', 'implement', 'plan', 'pr', 'qa', 'question', 'refine', 'review', 'triage']);
     for (const key of COMMENT_EVENT_KEYS) expect(agentFlow().devCycle.comments[key]).toBeTruthy();
   });
 
@@ -29,7 +29,9 @@ describe('the templates the agent cycle brings', () => {
     expect(headings('review')).toEqual(['Findings that block', 'Suggestions that do not block']);
     expect(headings('qa')).toEqual(['Scenarios verified and their result', 'What was not verified']);
     expect(['refine', 'plan', 'implement', 'review', 'qa', 'pr'].map((id) => c[id].technicalDetail)).toEqual([true, true, true, true, true, true]);
-    expect([c.gate.technicalDetail, c.question.technicalDetail]).toEqual([false, false]);
+    expect([c.gate.technicalDetail, c.question.technicalDetail, c.triage.technicalDetail, c.communicate.technicalDetail]).toEqual([false, false, false, false]);
+    expect(headings('triage')).toEqual(['How it was understood', 'Can it be reproduced or understood', 'What is missing', 'Related issues']);
+    expect(headings('communicate')).toEqual(['What changed', 'How to use it', 'Anything to know']);
     expect(cycleText(c.review.status, 'en', { result: 'changes requested', round: 1 })).toBe('Review: changes requested (round 1)');
     expect(cycleText(c.gate.status, 'en', { stage: 'Gate 1', decision: 'approved' })).toBe('Gate 1: approved');
   });
@@ -47,10 +49,10 @@ describe('the templates the agent cycle brings', () => {
     }
   });
 
-  it('is the only built-in cycle that has any: the others post nothing', () => {
+  it('are only in the two agent cycles: the others post nothing', () => {
     for (const t of BUILT_IN_TEMPLATES) {
       const c = applyTemplate(neutralConfig(), t);
-      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id === 'agent-flow');
+      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id.startsWith('agent-flow'));
     }
   });
 

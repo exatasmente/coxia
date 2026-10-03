@@ -966,5 +966,18 @@
   "main.forum.code.runner.status.set": "The label \"{label}\" was set on the issue.",
   "main.forum.code.runner.status.proposed": "The label \"{label}\" waits for your yes in Actions.",
   "main.forum.code.runner.status.refused": "This workspace does not write to the code host: the label \"{label}\" was not set.",
-  "main.forum.code.runner.status.failed": "The label \"{label}\" could not be set: {reason}"
+  "main.forum.code.runner.status.failed": "The label \"{label}\" could not be set: {reason}",
+  "prompt.sdd.runner.output.priority": "You may also propose the issue's priority in the field priority, one of: {labels} (otherwise null), and a milestone as short text in the field milestone (otherwise null), with the reason in the summary. They are proposals: the person accepts or refuses them, and nothing is changed on the tracker until they do.",
+  "main.runner.priority.summary": "Priority {label} for {ref}",
+  "main.runner.priority.detail": "{agent} proposes the priority {label} for this issue. It changes the issue's priority label only after your yes.",
+  "main.runner.priority.detailMilestone": "Proposed milestone: {milestone}. There is no automatic change for it: set it on the tracker if you agree.",
+  "main.runner.priority.noWrite.unconfigured": "the workspace has no priority labels",
+  "main.runner.priority.noWrite.unmapped": "that is not one of the priority labels that can be written",
+  "main.runner.priority.noWrite.unidentified": "the issue is not known on the tracker",
+  "main.runner.priority.noWrite.same": "the issue already has that priority",
+  "main.forum.code.runner.priority.proposed": "{agent} proposed the priority {label}: it waits for your yes in Actions.",
+  "main.forum.code.runner.priority.milestone": "{agent} proposed the milestone \"{milestone}\". Set it on the tracker if you agree.",
+  "main.forum.code.runner.priority.noWrite": "The proposed priority \"{to}\" was not written: {reason}.",
+  "main.forum.code.runner.priority.refused": "This workspace does not write to the code host: the priority \"{to}\" was not proposed.",
+  "main.forum.code.run.completed.noAgent": "Run finished: the stage {stage} has no agent, so nothing was done at it. Add an agent to it in the team to have it worked next time."
 }

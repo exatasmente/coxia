@@ -88,7 +88,8 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
       messages.push({ ...base, kind: 'system', code: `run.stage.wait.${stage.waitsFor.kind}`, params: { stage: stage.label, label: stage.waitsFor.label ?? '', minutes: stage.waitsFor.minutes ?? 0 } });
     }
   } else if (stage.next === null && !stage.agent) {
-    complete(run, stage, at, messages);
+    // A stage that was meant to produce something and has no agent any more: the run ends there, and says that nothing was done at it.
+    complete(run, stage, at, messages, stage.artifacts.length > 0);
   } else if (!stage.agent) {
     run.status = 'failed';
     rec.status = 'failed';
@@ -112,13 +113,13 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
 }
 
 // The run ends at this stage.
-function complete(run: Run, stage: FlowStage, at: string, messages: ForumDraft[]): void {
+function complete(run: Run, stage: FlowStage, at: string, messages: ForumDraft[], unstaffed = false): void {
   const rec = record(run, stage.id) as StageRecord;
   run.status = 'done';
   rec.status = 'done';
   rec.endedAt = at;
   log(run, at, 'completed', stage.id, 'app');
-  messages.push({ author: app, stage: stage.id, kind: 'system', code: 'run.completed', params: { stage: stage.label } });
+  messages.push({ author: app, stage: stage.id, kind: 'system', code: unstaffed ? 'run.completed.noAgent' : 'run.completed', params: { stage: stage.label } });
 }
 
 /** The stage after `from`, or null when the run ends there. A `next` that names a stage the flow lacks is a refusal. */

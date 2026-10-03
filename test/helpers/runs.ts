@@ -1,14 +1,17 @@
 import { neutralConfig } from '../../src/shared/config';
 import type { WorkspaceConfig } from '../../src/shared/config/types';
-import { agentFlow, applyTemplate } from '../../src/shared/cycles';
+import { agentFlow, agentFlowEngineering, applyTemplate } from '../../src/shared/cycles';
 import type { ForumDraft } from '../../src/shared/forum';
 import { flowOf, startRun, type FlowStage, type Run, type StartInput, type Transition } from '../../src/shared/runs';
 
 export const AT = '2026-10-03T10:00:00.000Z';
 export const at = (minutes: number): string => new Date(Date.parse(AT) + minutes * 60_000).toISOString();
 
-/** A workspace config with the agent cycle applied. */
-export const agentFlowConfig = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
+/** A workspace config with the engineering cycle applied (refine to ready: the agent cycle as it was before the business roles). The runner's tests are written for it. */
+export const agentFlowConfig = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlowEngineering);
+
+/** A workspace config with the agent cycle applied: triage to communicate, with the business team. */
+export const businessFlowConfig = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlowEngineering);
 
 export const agentFlowStages = (): FlowStage[] => flowOf(agentFlowConfig());
 

@@ -25,6 +25,7 @@ import {
   renderComment,
 } from '../../shared/runs';
 import type { ReleaseAction, VcsCommand } from '../../shared/types';
+import { priorityOf, resolvePriority } from '../../shared/priority';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
 import type { RunStore } from '../runs-core';
@@ -652,6 +653,31 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  // ---- the priority an agent proposes ------------------------------------------------------------------------------------------------
+
+  /** A priority is the person's decision: whatever the agent's autonomy, it only ever waits in Actions for a "yes". */
+  async function proposePriority(runId: string, end: StageEnd): Promise<void> {
+    const to = end.output.priority.trim();
+    if (!to) return;
+    const config = deps.config();
+    const run = need(runId);
+    const levels = config.devCycle.priority.labels;
+    if (end.output.milestone) say(run, 'runner.priority.milestone', { milestone: end.output.milestone, agent: end.agent.id }, end.stage.id);
+    if (door.refusal()) return say(run, 'runner.priority.refused', { to }, end.stage.id);
+    const provider = door.provider();
+    if (!provider) return;
+    const { issue } = projects(run);
+    const labels = (await provider.getIssue(issue, run.issue.iid)).labels;
+    const change = resolvePriority({ labels, priority: priorityOf(labels, levels), project: issue, iid: String(run.issue.iid), title: run.issue.title }, to, levels);
+    if (change.noWrite || !change.label) return say(run, 'runner.priority.noWrite', { to, reason: tr(`main.runner.priority.noWrite.${change.noWrite ?? 'unmapped'}`) }, end.stage.id);
+    const commands = await provider.planWrite({ op: 'setIssueLabels', project: issue, iid: run.issue.iid, add: change.add ? [change.add] : [], remove: change.remove });
+    if (!commands.length) return;
+    const summary = tr('main.runner.priority.summary', { label: change.label, ref: run.issue.ref });
+    const detail = [tr('main.runner.priority.detail', { agent: end.agent.id, label: change.label }), end.output.milestone ? tr('main.runner.priority.detailMilestone', { milestone: end.output.milestone }) : '', end.output.summary].filter(Boolean).join('\n\n');
+    const created = door.propose({ key: `priority:${runId}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail, unit: { runId, purpose: 'priority', key: 'priority', stage: end.stage.id }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+    if (created) say(run, 'runner.priority.proposed', { label: change.label, agent: end.agent.id }, end.stage.id);
+  }
+
   // ---- what a waiting run waits for -----------------------------------------------------------------------------------------------
 
   /** The pull request of the run, in any state: the recorded one, else one from its branch that the issue links to. */
@@ -736,6 +762,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       guarded(runId, async () => {
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
+        if (end.output.priority) await proposePriority(runId, end);
         if (end.kind === 'work' && pushStageOf(deps.config(), flowOfRun(need(runId), deps.config()))?.id === end.stage.id) await pushStage(runId, end);
       }),
     asked: (runId, e) => guarded(runId, () => question(runId, e)),

@@ -14,7 +14,7 @@ import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
 import { neutralConfig } from '../../src/shared/config';
 import type { WorkspaceConfig } from '../../src/shared/config/types';
-import { agentFlow, applyTemplate } from '../../src/shared/cycles';
+import { agentFlow, agentFlowEngineering, applyTemplate } from '../../src/shared/cycles';
 import { type ForumMessage, runThreadId } from '../../src/shared/forum';
 import type { Run } from '../../src/shared/runs';
 import { IDENTITY, git } from './conflictRepos';
@@ -173,6 +173,8 @@ export interface BootOptions {
   publish?: boolean;
   /** Changes the workspace config of the test before the run (the language, the templates, an agent's autonomy). */
   configure?: (c: WorkspaceConfig) => void;
+  /** Which built-in flow the workspace has: the engineering one (refine to ready, the default of the runner's tests) or the agent cycle with the business team. */
+  flow?: 'engineering' | 'business';
   repo?: Repo;
   engine?: FakeEngine;
   issues?: FakeIssues;
@@ -181,8 +183,8 @@ export interface BootOptions {
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
-export function runnerConfig(c: WorkspaceConfig, repo: Repo, over: (c: WorkspaceConfig) => void = () => undefined): WorkspaceConfig {
-  const next = applyTemplate(c, agentFlow);
+export function runnerConfig(c: WorkspaceConfig, repo: Repo, over: (c: WorkspaceConfig) => void = () => undefined, flow: 'engineering' | 'business' = 'engineering'): WorkspaceConfig {
+  const next = applyTemplate(c, flow === 'business' ? agentFlow : agentFlowEngineering);
   next.projects.repos = [{ id: 'app', path: repo.clone, remoteUrl: null, vcsId: null, projectPath: 'group/project' }];
   next.projects.issues = { vcsId: null, project: 'group/project', projectId: null, refPrefix: 'app#' };
   next.runner = { ...next.runner, worktreesDir: repo.worktrees, identity: { name: 'Runner Test', email: 'runner@example.test' } };
@@ -195,7 +197,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
   const repo = options.repo ?? makeRepo();
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), 'cerimonias-runner-data-'));
   // Every boot starts from a fresh configuration: what an earlier test switched (an agent's autonomy, say) must not leak into the next.
-  updateConfig(() => runnerConfig(neutralConfig(), repo, options.configure));
+  updateConfig(() => runnerConfig(neutralConfig(), repo, options.configure, options.flow));
   const runs = createRunStore(join(dir, 'runs'));
   const forum = createForumStore(join(dir, 'forum'));
   const issues = options.issues ?? fakeIssues();

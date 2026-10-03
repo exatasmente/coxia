@@ -966,5 +966,18 @@
   "main.forum.code.runner.status.set": "O rótulo \"{label}\" foi aplicado na issue.",
   "main.forum.code.runner.status.proposed": "O rótulo \"{label}\" espera o seu sim em Ações.",
   "main.forum.code.runner.status.refused": "Este espaço de trabalho não escreve no servidor de código: o rótulo \"{label}\" não foi aplicado.",
-  "main.forum.code.runner.status.failed": "Não foi possível aplicar o rótulo \"{label}\": {reason}"
+  "main.forum.code.runner.status.failed": "Não foi possível aplicar o rótulo \"{label}\": {reason}",
+  "prompt.sdd.runner.output.priority": "Você também pode propor a prioridade da issue no campo priority, uma de: {labels} (senão null), e um marco como texto curto no campo milestone (senão null), com o motivo no resumo. São propostas: a pessoa aceita ou recusa, e nada muda no rastreador até ela aceitar.",
+  "main.runner.priority.summary": "Prioridade {label} para {ref}",
+  "main.runner.priority.detail": "{agent} propõe a prioridade {label} para esta issue. O rótulo de prioridade da issue só muda depois do seu sim.",
+  "main.runner.priority.detailMilestone": "Marco proposto: {milestone}. Não há mudança automática para ele: defina no rastreador se concordar.",
+  "main.runner.priority.noWrite.unconfigured": "o espaço de trabalho não tem rótulos de prioridade",
+  "main.runner.priority.noWrite.unmapped": "esse não é um dos rótulos de prioridade que podem ser escritos",
+  "main.runner.priority.noWrite.unidentified": "a issue não é conhecida no rastreador",
+  "main.runner.priority.noWrite.same": "a issue já tem essa prioridade",
+  "main.forum.code.runner.priority.proposed": "{agent} propôs a prioridade {label}: ela espera o seu sim em Ações.",
+  "main.forum.code.runner.priority.milestone": "{agent} propôs o marco \"{milestone}\". Defina no rastreador se concordar.",
+  "main.forum.code.runner.priority.noWrite": "A prioridade proposta \"{to}\" não foi escrita: {reason}.",
+  "main.forum.code.runner.priority.refused": "Este espaço de trabalho não escreve no servidor de código: a prioridade \"{to}\" não foi proposta.",
+  "main.forum.code.run.completed.noAgent": "Execução concluída: a etapa {stage} não tem agente, então nada foi feito nela. Atribua um agente a ela no time para que seja trabalhada da próxima vez."
 }

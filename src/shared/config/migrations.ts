@@ -3,6 +3,7 @@ import { mergeDeep, neutralConfig, neutralRunner, withConfigDefaults } from './d
 import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
 import { agentFlowComments } from '../cycles/templates/agentFlowComments';
+import { AGENT_FLOW_STAGES, agentFlowTeam } from '../cycles/templates/agentFlow';
 import { systemAgents } from './team';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type WorkspaceConfig } from './types';
 
@@ -14,7 +15,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v5  runner (the section that takes an issue through the agent cycle by itself), off by default.
 //   v6  devCycle.comments (the templates of the comments the runner leaves on the tracker): the agent cycle's own, none for any other cycle.
 //   v7  the stages of an agent cycle are a flow: `type` (work, gate, wait), `produces` (was `artifacts`), `returnsTo` and `roundLimit` (the review and QA rules the
-//       runner used to have built in), and the order of the list is the order of the run (it used to be the rank).
+//       runner used to have built in), and the order of the list is the order of the run (it used to be the rank). The agent cycle itself grew a business team
+//       (support, product owner, tech lead, customer success): a workspace still on its untouched default gets it, any other keeps what it has.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -153,7 +155,36 @@ function v6ToV7(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   });
   if (ordered.some((s, i) => s !== undefined && list[i] !== undefined && s.id !== list[i].id)) notes.push('the stages of the agent cycle are listed in the order a run goes through them (they were ordered by rank)');
   notes.push('the stages of the agent cycle became a flow (type, produces, returnsTo, roundLimit)');
-  return { ...old, schemaVersion: 7, devCycle: { ...cycle, stages } };
+  const flowDoc = { ...old, schemaVersion: 7, devCycle: { ...cycle, stages } };
+  return cycle.templateId === 'agent-flow' ? withBusinessTeam(flowDoc, stages, notes) : flowDoc;
+}
+
+// The agent cycle as it was before it had a business team, written as what identifies it: the stages, their agents, files and returns.
+const ENGINEERING_SIGNATURE = 'refine:work:refiner:1_SPEC.md:|gate1:gate:::|plan:work:planner:2_PLAN.md:|gate2:gate:::|implement:work:developer:3_IMPLEMENTATION.md:|review:work:reviewer:4_REVIEW.md:implement|qa:work:qa:5_TEST_PLAN.md:implement|ready:work:::';
+const signatureOf = (stages: Doc[]): string => stages.map((s) => [s.id, s.type, s.agentId ?? '', Array.isArray(s.produces) ? s.produces.join(',') : '', s.returnsTo ?? ''].join(':')).join('|');
+
+// A workspace whose agent cycle is still exactly the one the app delivered gets the new default: triage, the business roles and the communication after the pull
+// request is merged. Its own agents are not renamed or touched (the refiner, the planner and the reviewer stay in the team; the stages now name the product owner
+// and the tech lead instead), and the agents the app adds are added by id. A cycle the person changed keeps its stages and agents, and the notes say what is new.
+function withBusinessTeam(doc: Doc, stages: Doc[], notes: string[]): Doc {
+  if (signatureOf(stages) !== ENGINEERING_SIGNATURE) {
+    notes.push('the agent cycle has a new default flow (triage, product owner, tech lead, customer success, communicate): your stages and agents were left as they are; apply the agent cycle template to try it');
+    return doc;
+  }
+  const agents = pick(doc.agents);
+  const team = (Array.isArray(agents.team) ? (agents.team as unknown[]).filter(isObject) : []).map((a) => ({ ...a }));
+  const have = new Set(team.map((a) => a.id));
+  const brought = agentFlowTeam().filter((a) => !have.has(a.id));
+  // The developer and QA that were delivered turn to the tech lead; one the person already pointed somewhere is left alone.
+  for (const a of team) if ((a.id === 'developer' || a.id === 'qa') && a.turnsTo === undefined) a.turnsTo = 'tech-lead';
+  const cycle = pick(doc.devCycle);
+  const comments = { ...agentFlowComments(true), ...pick(cycle.comments) };
+  const layout = pick(cycle.specLayout);
+  const phases = Array.isArray(layout.phaseFiles) ? (layout.phaseFiles as Doc[]) : [];
+  const phase = (file: string, key: string): Doc => ({ file, label: `cycle.agentFlow.phase.${key}` });
+  const phaseFiles = [...(phases.some((p) => p.file === '6_RELEASE_NOTE.md') ? [] : [phase('6_RELEASE_NOTE.md', 'releaseNote')]), ...phases, ...(phases.some((p) => p.file === '0_TRIAGE.md') ? [] : [phase('0_TRIAGE.md', 'triage')])];
+  notes.push(`the agent cycle got its new default flow: triage, product owner, tech lead, customer success and communicate after the pull request is merged (added: ${brought.map((a) => a.id).join(', ') || 'no new agent'}); Refiner is now the Product Owner, Planner and Reviewer the Tech Lead, and your agents stay in the team`);
+  return { ...doc, agents: { ...agents, team: [...team, ...brought] }, devCycle: { ...cycle, stages: structuredClone(AGENT_FLOW_STAGES), comments, ...(Object.keys(layout).length ? { specLayout: { ...layout, phaseFiles } } : {}) } };
 }
 
 // Index N migrates a version N document to N+1.

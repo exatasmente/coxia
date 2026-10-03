@@ -18,6 +18,7 @@ function template(id: string, sections: number, technicalDetail: boolean): Comme
 
 /** The stages and events that have a template, with how many sections each has. The catalogs define the texts. */
 export const AGENT_FLOW_COMMENT_SHAPE: Record<string, { sections: number; technicalDetail: boolean }> = {
+  triage: { sections: 4, technicalDetail: false },
   refine: { sections: 5, technicalDetail: true },
   plan: { sections: 4, technicalDetail: true },
   implement: { sections: 3, technicalDetail: true },
@@ -26,8 +27,16 @@ export const AGENT_FLOW_COMMENT_SHAPE: Record<string, { sections: number; techni
   gate: { sections: 1, technicalDetail: false },
   question: { sections: 1, technicalDetail: false },
   pr: { sections: 3, technicalDetail: true },
+  communicate: { sections: 3, technicalDetail: false },
 };
 
-export function agentFlowComments(): Record<string, CommentTemplate> {
-  return Object.fromEntries(Object.entries(AGENT_FLOW_COMMENT_SHAPE).map(([id, s]) => [id, template(id, s.sections, s.technicalDetail)]));
+/** The comments only the business cycle has: what the support agent says at the door and what customer success tells the reporter at the end. */
+const BUSINESS_ONLY = ['triage', 'communicate'];
+
+export function agentFlowComments(business = true): Record<string, CommentTemplate> {
+  return Object.fromEntries(
+    Object.entries(AGENT_FLOW_COMMENT_SHAPE)
+      .filter(([id]) => business || !BUSINESS_ONLY.includes(id))
+      .map(([id, s]) => [id, template(id, s.sections, s.technicalDetail)]),
+  );
 }

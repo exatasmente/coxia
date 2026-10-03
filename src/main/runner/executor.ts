@@ -7,6 +7,7 @@ import { type FlowStage, type OutputKind, type Run, type StageOutput, outputKind
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
+import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, commitAll, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
@@ -127,6 +128,9 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const comment = askOf(stage.comment);
   // The first stage of a flow is where an issue comes in: the agent that works it may ask the person who reported it what is missing.
   const reporter = kind === 'work' && flow[0]?.id === stage.id;
+  // A stage before development (intake, refinement) may propose the priority, from the levels the workspace can write to the tracker.
+  const levels = stage.kind === 'backlog' && kind === 'work' ? writableLabels(config.devCycle.priority.labels) : [];
+  const priority = levels.length ? levels : undefined;
   const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
 
   const input: StageInput = {
@@ -145,6 +149,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     comment,
     pr,
     reporter,
+    priority,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -160,7 +165,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,

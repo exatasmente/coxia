@@ -38,6 +38,10 @@ export interface StageOutput {
   question: string;
   /** Something only the person who reported the issue can say; non-empty makes the stage wait for their reply on the issue. */
   reporterQuestion: string;
+  /** A priority the agent proposes for the issue, one of the configured labels; always a proposal for the person to accept. */
+  priority: string;
+  /** A milestone the agent proposes, as text; there is no write for it, so it is said in the thread and in the proposal. */
+  milestone: string;
   /** Review only. */
   verdict: 'approved' | 'changes' | null;
   findings: Finding[];
@@ -65,6 +69,8 @@ const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sec
 export interface OutputWants {
   /** The agent may ask the person who reported the issue: ask for `reporterQuestion`. */
   reporter?: boolean;
+  /** The agent may propose a priority and a milestone: ask for `priority` and `milestone`. */
+  priority?: boolean;
   /** The stage has a comment template: ask for `comment`. */
   comment?: boolean;
   /** The stage ends with the push: ask for the pull request description too. */
@@ -83,6 +89,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: scenario } });
   if (wants.reporter) base.reporterQuestion = strOrNull;
+  if (wants.priority) Object.assign(base, { priority: strOrNull, milestone: strOrNull });
   if (wants.comment) base.comment = commentText();
   if (wants.pr) base.pr = commentText({ title: str });
   return obj(base);
@@ -160,6 +167,8 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     handoff: text(o.handoff),
     question: text(o.question),
     reporterQuestion: text(o.reporterQuestion),
+    priority: text(o.priority, 200),
+    milestone: text(o.milestone, 200),
     verdict,
     findings,
     scenarios: kind === 'qa' ? list(o.scenarios).flatMap((s) => readScenario(s) ?? []) : [],
