@@ -74,6 +74,15 @@ describe('the cards past the limit', () => {
     expect(r.total).toBe(5);
   });
 
+  it('hold a whole tracker: thirty issues nobody is assigned to fill the agenda of eight and the list of the rest, none lost', async () => {
+    reportMock.items = Array.from({ length: 30 }, (_, i) => issue(i + 1, { updated_at: `2026-09-${String(i + 1).padStart(2, '0')}T09:00:00Z` }));
+    const r = await loadCards(8);
+    expect(r.cards).toHaveLength(8);
+    expect(r.rest).toHaveLength(22);
+    expect(r.total).toBe(30);
+    expect([...r.cards, ...(r.rest ?? [])].map((c) => c.iid).sort((a, b) => Number(a) - Number(b))).toEqual(Array.from({ length: 30 }, (_, i) => String(i + 1)));
+  });
+
   it('leave no rest when everything fits', async () => {
     many();
     const r = await loadCards(5);

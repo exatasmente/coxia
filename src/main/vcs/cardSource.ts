@@ -44,6 +44,8 @@ export async function providerReport(): Promise<CardReport | null> {
   const { report, state } = await buildCardReport(provider, {
     issueProject: own ? issues.project : null,
     refPrefix: own ? issues.refPrefix : '',
+    scope: issues.cardScope,
+    labels: issues.cardLabels,
     stages: rc().stages,
     stageMapping: getConfig().devCycle.stageMapping,
     projects: workspaceProjects(provider.id, own ? issues.project : null),
