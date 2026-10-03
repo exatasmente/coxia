@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A run's worktree had no `node_modules` or `.venv`, so the commands the app runs before QA and an agent's `npm test` failed with "vitest: not found": the app now links the dependency folders your clone has into the worktree when the run starts and again before every stage that runs commands (so a run made earlier gets them when it is sent back), only where the repository ignores them, never over something already there and never into a commit; the thread says which folders were linked, or that the clone has none. An agent still cannot write through the links (the guard refuses them); the commands the app runs use the clone's dependencies. Switch it off with `runner.linkDependencies` (Settings › Runner, also in the paired browser; on by default, no config migration).
 - QA could pass a delivery whose test and typecheck commands never ran: a command the environment could not start (not found, not executable, or the shell's exit code 126 or 127) is now recorded as "could not run" in the QA pass (`notRun`), told in the thread with the reason ("npm was not found by the app", or what the shell said, such as "vitest: not found"), and QA's prompt marks it and tells QA not to pass a scenario that depends on it, but to mark it not run.
 - The installed app (an AppImage opened from the desktop) did not see the tools of your terminal's `PATH`, such as a Node installed with nvm, so commands like `npm test` could fail to start; they now find what your login shell finds.
 

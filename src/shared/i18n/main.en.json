@@ -902,6 +902,8 @@
   "main.forum.code.runner.denied": "{agent} tried {tool} on {target}: refused ({reason}).",
   "main.forum.code.runner.artifactIgnored": "{agent} returned the document \"{name}\", which this stage does not produce: it was ignored.",
   "main.forum.code.runner.noCodeChange": "{agent} ended this pass without changing any code (only the stage's documents were written): what it said it fixed is not in the diff.",
+  "main.forum.code.runner.deps.linked": "A run's worktree has no dependencies of its own, so the tests could not run. The app linked from the clone: {list}. They stay out of the commits; the commands the app runs here use the clone's dependencies.",
+  "main.forum.code.runner.deps.none": "The clone has no dependency folder (node_modules, .venv) to link into this worktree, so QA may not be able to run the tests. Install them in your clone and the next stage that runs commands links them.",
   "main.forum.code.runner.qa.commands": "Before QA the app ran in the worktree: {list}.",
   "main.forum.code.runner.qa.notRun": "These commands could not run, which says nothing about the code: {list}. QA was told to mark as not run anything that depends on them.",
   "main.runner.qa.reason.missing": "{tool} was not found by the app (it is not in the PATH of your login shell nor in the app's own)",

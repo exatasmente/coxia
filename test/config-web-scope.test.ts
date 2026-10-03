@@ -44,6 +44,7 @@ describe('what a browser may change', () => {
   it('accepts the runner switches, the label, the cap, the turns, the timeouts and the commit message', () => {
     expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; })).toEqual([]);
     expect(refused((c) => { c.runner.turns.write = 120; })).toEqual([]);
+    expect(refused((c) => { c.runner.linkDependencies = false; })).toEqual([]);
   });
 
   it('refuses what names a program or a folder: the runner commands, the worktrees folder and the identity', () => {

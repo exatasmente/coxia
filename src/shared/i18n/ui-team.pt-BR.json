@@ -204,6 +204,8 @@
   "ui.runner.identityNone": "A identidade que o repositório já tem",
   "ui.runner.idle": "Silêncio máximo do agente (minutos)",
   "ui.runner.idleHint": "De {min} a {max}. Se o agente não der sinal nenhum (texto, uma ferramenta, uso do modelo) por esse tempo, a etapa falha e pode ser tentada de novo. Quem trabalha sem parar nunca chega a ele.",
+  "ui.runner.linkDeps": "Dar a cada execução as dependências do clone",
+  "ui.runner.linkDepsHint": "O worktree de uma execução nasce sem node_modules nem .venv, e os testes não rodam. Ligado, o app liga os que o seu clone tem (nunca vão para um commit); os comandos que ele roda ali usam as dependências do clone.",
   "ui.runner.saved": "Configuração das execuções salva.",
   "ui.runner.trigger": "Rótulo que pede uma execução",
   "ui.runner.triggerHint": "Maiúsculas e minúsculas não importam.",

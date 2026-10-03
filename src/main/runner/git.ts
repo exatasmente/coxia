@@ -90,6 +90,10 @@ export const headSha = async (wt: string): Promise<string | null> => ((await git
 // signing (it can prompt), and a file-system monitor (it is a program the repository names).
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'core.fsmonitor=false'];
 
+// The dependency folders a worktree may carry as links to the clone's (dependencies.ts). A link is not a directory to git, so `node_modules/` in a .gitignore does
+// not cover it: every command of the app that adds or lists changes leaves them out by name.
+const DEPENDENCY_EXCLUDES = ['node_modules', '.venv'].map((n) => `:(exclude,glob)**/${n}`);
+
 const ATTRIBUTION = /co-authored-by|generated (?:with|by)|\bclaude\b|\banthropic\b|\bai[- ](?:generated|assisted)\b/i;
 
 // The conventional prefix a model adds out of habit ("feat(core): ", "fix: "): the repository's template says the type, and where the issue number goes.
@@ -130,15 +134,15 @@ export const commitMessage = (template: string, summary: string, iid: number): s
  * command. Returns the new commit, or null when there was nothing to commit.
  */
 export async function commitAll(wt: string, message: string, identity: Identity): Promise<string | null> {
-  await git(wt, ['add', '-A']);
-  if (!(await out(wt, ['status', '--porcelain']))) return null;
+  await git(wt, ['add', '-A', '--', '.', ...DEPENDENCY_EXCLUDES]);
+  if (!(await out(wt, ['status', '--porcelain', '--', '.', ...DEPENDENCY_EXCLUDES]))) return null;
   await git(wt, [...SAFE, '-c', `user.name=${identity.name}`, '-c', `user.email=${identity.email}`, 'commit', '--no-verify', '--quiet', '-m', message]);
   return out(wt, ['rev-parse', 'HEAD']);
 }
 
 /** Whether the worktree has a change (tracked or not) outside `exclude`, the cycle folder: what a pass that writes code leaves before the app commits it. */
 export async function changedOutside(wt: string, exclude: string): Promise<boolean> {
-  return !!(await git(wt, ['status', '--porcelain', '--', '.', `:(exclude)${exclude}`], { fail: false })).stdout.trim();
+  return !!(await git(wt, ['status', '--porcelain', '--', '.', `:(exclude)${exclude}`, ...DEPENDENCY_EXCLUDES], { fail: false })).stdout.trim();
 }
 
 /** What the branch changed since it was cut, outside `exclude` (the cycle folder), as a reviewer reads it: no external diff or text conversion program runs. */

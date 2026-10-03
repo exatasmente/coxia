@@ -21,6 +21,7 @@ export const WEB_EDITABLE = [
   'runner.stageIdleMs',
   'runner.stageMaxMs',
   'runner.commitMessage',
+  'runner.linkDependencies',
 ] as const;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

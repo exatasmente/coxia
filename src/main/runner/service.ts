@@ -78,6 +78,7 @@ import { updateAgent } from '../../shared/config/team';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { findClone, git } from '../conflictGit';
+import { ensureDependencies } from './dependencies';
 import { redact } from '../errorlog-core';
 import type { ResolvedRepo } from '../config-resolve';
 import type { ForumStore } from '../forum-core';
@@ -537,6 +538,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       throw e;
     }
     tell(null, run);
+    await ensureDependencies(exec, run, null, repo.path);
     // The label of the squad goes onto an issue the squad's own request created already: it was born with it.
     if (squad && !force) labelSquad(run, squad.id);
     pump(run.id);

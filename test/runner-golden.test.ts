@@ -108,7 +108,7 @@ function pin(name: string, got: Record<string, unknown>): void {
 async function scenario(configure: (c: WorkspaceConfig) => void = () => undefined): Promise<Boot> {
   forge = makeForge();
   setVcsRuntimeForTests(forge.runtime());
-  const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; configure(c); } });
+  const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.linkDependencies = false; configure(c); } });
   script(b);
   return b;
 }
