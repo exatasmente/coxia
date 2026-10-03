@@ -41,7 +41,7 @@ Everything in section 1 with "Bitbucket" and "PR", except:
 ## 3. The cycle's own words
 
 1. In Settings or `config.json`, set the daily ceremony's label to something of your own ("morning sync"), a summary target ("the #team channel") and the retro window to 10 days.
-2. Today, the call title, the minutes title, the history entries, the Help screen, the Settings reminder and the tray say "morning sync"; the minutes screen says "For the #team channel"; "You paste it into the #team channel; nothing is published from here"; the retro says "Last 10 days".
+2. Today, the call title, the minutes title, the history entries, the Help screen, the Settings reminder and the tray say "morning sync"; the minutes screen says "For the #team channel"; "You paste it into the #team channel; nothing is published from here"; the retro says "Last 10 days" and its heading is "Retro" (not "Weekly retro"); back on the factory values (7 days, the default label and no target) the texts read "Weekly retro", "pre-daily" and "For the team daily" again.
 
 ## 4. "Continue in Claude Code"
 
@@ -55,12 +55,12 @@ Everything in section 1 with "Bitbucket" and "PR", except:
 
 ## 6. A GitLab workspace does not change
 
-1. Start from the SDD template with a GitLab integration: every text reads as before ("MR", `app!7`, "pipeline", "GitLab"); the issue status block of Quick actions shows when `devCycle.quickTransitions` has entries.
+1. Start from the SDD template with a GitLab integration and its default parameters: every text reads as before ("MR", `app!7`, "pipeline", "GitLab", "Weekly retro", "For the team daily", "Plan", "playbook"); the only difference is that a few pt-BR texts that said "a MR" now say "o MR" (the ten keys listed in `test/gitlab-catalogs-unchanged.test.ts`). The issue status block of Quick actions and the "GitLab" button of an activity show as before, on a card with no merge request too; the list of transitions inside the block waits for `devCycle.quickTransitions`.
 2. The six prompt goldens pass without `UPDATE_GOLDEN` (`npx vitest run test/cycle-parity*.test.ts test/same-day*.test.ts`).
 
 ## What the tests already cover
 
-`test/terms.test.ts` (the table, the variants, the view), `test/host-terms-leak.test.ts` (every catalog key and prompt on GitHub and Bitbucket, both languages, voice on and off; the words of the SDD cycle in a cycle of its own), `test/cr-ref.test.ts` and `test/vcs-cards.test.ts` (refs and cards), `test/host-view.test.ts` (what is hidden), `test/vcs-read-policy.test.ts` and `test/engine-open-tools.test.ts` (the agent side), `test/glossary.test.ts` (spoken refs).
+`test/gitlab-catalogs-unchanged.test.ts` (every key of `main` on a GitLab workspace on SDD: nothing but the masculine normalisation changes), `test/terms.test.ts` (the table, the host and cycle variants, the view), `test/terms-cache.test.ts` (the first-paint cache), `test/host-terms-leak.test.ts` (every catalog key and prompt on GitHub and Bitbucket, both languages, voice on and off; the words of the SDD cycle in a cycle of its own), `test/cr-ref.test.ts` and `test/vcs-cards.test.ts` (refs and cards), `test/host-view.test.ts` (what is hidden), `test/vcs-read-policy.test.ts` and `test/engine-open-tools.test.ts` (the agent side), `test/glossary.test.ts` (spoken refs).
 
 ## Not verified
 

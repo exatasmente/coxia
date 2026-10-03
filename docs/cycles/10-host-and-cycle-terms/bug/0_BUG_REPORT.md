@@ -55,7 +55,7 @@ Everything above, plus:
 2. The noun for a change request follows the host: "MR" and "merge request" for GitLab, "PR" and "pull request" for GitHub and Bitbucket. Refs follow it too: `app!7` on GitLab, `app#7` elsewhere.
 3. A feature the configured host does not have is **hidden**, not renamed: work item status transitions and manual CI jobs (GitLab), the CLI switch where there is no CLI, the tracker MCP switch where no server is configured.
 4. A text that names a step, a document or a tool of the cycle (the daily ceremony, gate, QA, spec, plan, retro window, summary target) follows the cycle configuration, or is not shown when the cycle does not have the step.
-5. On a GitLab workspace with the SDD template nothing changes: the prompts the migrated profile gets stay byte for byte as they are (`test/golden/*`).
+5. On a GitLab workspace with the SDD template and its default parameters nothing changes, in the interface or in the prompts: the prompts the migrated profile gets stay byte for byte as they are (`test/golden/*`) and every catalog text reads as it did on `main`, except the pt-BR masculine normalisation ("o MR" where a few texts said "a MR"). Neutral or configuration-driven wording appears only when the host, the cycle template or its parameters differ.
 
 ## Scope
 
@@ -66,7 +66,7 @@ The inventory is in [`1_INVESTIGATION.md`](1_INVESTIGATION.md). In numbers (cata
 - 56 keys name the daily ceremony (26), a cycle document or step (25) or the retro window (5) with a fixed word; 10 more name the summary target or the retro window.
 - 24 spots in code build or hard-code the text outside the catalogs (the `GitLab` button and `MRs` label in `TodayParts.tsx`, the `'MR'` fallback in `actions.ts`, the ref in six places, the shell denial hint, the Settings and Help lists, ...); 19 of them need a change.
 
-Out of scope: adding a host, changing what a provider can do, redesigning the Quick actions screen, and changing the text of the SDD template for a GitLab workspace.
+Out of scope: adding a host, changing what a provider can do, redesigning the Quick actions screen, and changing the text of the SDD template for a GitLab workspace. The "Resolve conflict" button not showing for cards built from a provider (a pt-BR sentence matched by `MR_CONFLICT`) was a separate defect that came up in the investigation; #20 fixed it.
 
 ## How to reproduce
 
