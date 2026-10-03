@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { RUN_FILTERS, type RunFilter, currentAgent, filterCounts, listRuns, needsPerson, stageLabelOf } from '../../../../shared/runs/view';
 import type { Run } from '../../../../shared/runs';
 import type { Screen } from '../../App';
+import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
+import { isWeb } from '../../platform';
 import { BackIcon } from '../icons';
 import { RunBadge } from './RunBadge';
 import { agentName, squadName } from './names';
-import { useRunConfig, useRuns } from './runsApi';
+import { patchRun, runsApi, useRunConfig, useRuns } from './runsApi';
 import './cycle.css';
 
 const FILTER_KEY: Record<RunFilter, string> = {
@@ -46,6 +48,47 @@ function Row({ run, go }: { run: Run; go: (s: Screen) => void }) {
   );
 }
 
+/** Starts the run of a release: a version, and the stable tag a patch is cut from. Only a workspace that has the release flow offers it. */
+function StartRelease({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
+  const [version, setVersion] = useState('');
+  const [from, setFrom] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const start = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const run = await runsApi.startRelease(version.trim(), from.trim() || undefined);
+      patchRun(run);
+      go({ name: 'run', id: run.id, from: 'runs' });
+    } catch (e) {
+      setError(errorText(e));
+    }
+    setBusy(false);
+  };
+  return (
+    <section className="panel cy-release-start" aria-label={t('ui.runs.release.title')}>
+      <h2 className="cy-release-title">{t('ui.runs.release.title')}</h2>
+      <p className="small muted">{t('ui.runs.release.hint')}</p>
+      <div className="row cy-release-fields">
+        <label className="cy-field">
+          <span className="small muted">{t('ui.runs.release.version')}</span>
+          <input className="text-input mono" value={version} spellCheck={false} maxLength={40} placeholder="0.6.0" onChange={(e) => setVersion(e.target.value)} />
+        </label>
+        <label className="cy-field">
+          <span className="small muted">{t('ui.runs.release.from')}</span>
+          <input className="text-input mono" value={from} spellCheck={false} maxLength={40} placeholder="v0.5.0" /* i18n-ignore: an example tag */ onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <button type="button" className="btn btn-dark" disabled={busy || !version.trim()} onClick={() => void start()}>
+          {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.runs.release.start')}
+        </button>
+      </div>
+      {error && <span className="error cy-inline-error" role="alert">{error}</span>}
+    </section>
+  );
+}
+
 /** Every run of the workspace, filtered by what it waits for and by squad: what waits for the person first. */
 export function RunsScreen({ go }: { go: (s: Screen) => void }) {
   const t = useT();
@@ -66,6 +109,8 @@ export function RunsScreen({ go }: { go: (s: Screen) => void }) {
           </div>
           <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.runs.forum')}</button>
         </header>
+        {/* Starting a release belongs to the desktop window (the channel is desktop-only); a paired browser follows a release and answers its gates, but is not offered the field. */}
+        {config?.devCycle.flows?.release && !isWeb() && <StartRelease go={go} />}
         <div className="filters cy-filters" role="group" aria-label={t('ui.runs.filter.label')}>
           {RUN_FILTERS.map((f) => (
             <button key={f} type="button" className={`filter ${filter === f ? 'on' : ''}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>

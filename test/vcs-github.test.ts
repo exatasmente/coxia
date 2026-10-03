@@ -80,7 +80,8 @@ describe('reads over the API transport', () => {
       ['acme/uploader', 9, ['reviewer'], false, 'running', false, 'feature/retry'],
     ]);
     // CHANGES_REQUESTED followed by APPROVED by the same person is an approval; a bare comment counts for nothing
-    expect(mrs[0].approvals).toEqual({ approved: true, by: ['carol-dev'], changesRequestedBy: [] });
+    // the recorded review carries no commit and no association: it is an approval, but not one a merge may rely on
+    expect(mrs[0].approvals).toEqual({ approved: true, by: ['carol-dev'], changesRequestedBy: [], onHead: false });
     expect(mrs[0].reviewers.map((r) => r.username)).toEqual(['carol-dev']);
     expect(mrs[0].issueRefs).toEqual([12]);
     expect(host?.hits.find((h) => h.path.endsWith('/search/issues'))?.query.get('q')).toBe('is:pr is:open author:ana-dev');
@@ -91,6 +92,24 @@ describe('reads over the API transport', () => {
     const mr = await rt.provider.getMr('acme/app', 7, { behind: true, approvals: true });
     expect(mr.behind).toBe(4);
     expect(mr.state).toBe('open');
+  });
+
+  it('does not say an approval is on the head when there are more reviews than it read: what it did not see is not known', async () => {
+    const sha = 'aaaa1111bbbb2222cccc3333dddd4444eeee5555';
+    const review = (n: number) => ({ user: { login: `reviewer-${n}` }, state: 'COMMENTED', submitted_at: '2026-10-03T12:00:00Z', commit_id: sha, author_association: 'MEMBER' });
+    const approved = { user: { login: 'ana' }, state: 'APPROVED', submitted_at: '2026-10-03T12:01:00Z', commit_id: sha, author_association: 'MEMBER' };
+    const read = async (rows: unknown[]) => {
+      const rt = await api({
+        ...pullRoutes,
+        [`GET ${API}/repos/acme/app/pulls/7/reviews`]: { json: rows },
+      });
+      return (await rt.provider.getMr('acme/app', 7, { approvals: true })).approvals;
+    };
+    const page = Array.from({ length: 100 }, (_, i) => review(i));
+    // a few reviews: read in full
+    expect(await read([approved])).toMatchObject({ approved: true, onHead: true });
+    // the host answers the same full page for every page asked: three full pages are read, the fourth is never seen
+    expect(await read([approved, ...page.slice(1)])).toMatchObject({ approved: true, onHead: false });
   });
 
   it('reads review threads with the resolved state through GraphQL', async () => {

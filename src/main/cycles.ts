@@ -40,7 +40,10 @@ function describeTemplate(t: CycleTemplate, builtIn: boolean, language: Language
 
 /** The templates of this machine (built-in first, then the ones imported), with the cycle each one sets. */
 export function listCycleTemplates(language: Language = getLanguage()): WizardTemplate[] {
-  return allTemplates().map(({ template, builtIn }) => describeTemplate(template, builtIn, language));
+  // A template for a kind of run (the release flow) adds a flow next to the cycle; it is not a cycle to choose for the whole workspace, so the wizard does not offer it.
+  return allTemplates()
+    .filter(({ template }) => !template.runKind)
+    .map(({ template, builtIn }) => describeTemplate(template, builtIn, language));
 }
 
 export interface AgentPrepResult {

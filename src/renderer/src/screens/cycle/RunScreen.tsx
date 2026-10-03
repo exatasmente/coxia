@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import { squadView } from '../../../../shared/config/squads';
+import { effectiveTeam, releaseFlowOf, squadView } from '../../../../shared/config/squads';
 import { runThreadId } from '../../../../shared/forum';
 import { unreadOf } from '../../../../shared/forumView';
 import { type Run, flowOf, flowOfRun, snapshotOf } from '../../../../shared/runs';
@@ -95,7 +95,12 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
   const config = useRunConfig();
   // The flow the run keeps (its own copy), with the agents as they are now; and the hash of the cycle's flow today.
   const flow = useMemo(() => (run && config ? flowOfRun(run, config) : (run?.flow?.stages ?? [])), [run, config]);
-  const currentHash = useMemo(() => (run && config ? snapshotOf(flowOf(squadView(config, run.squad))).hash : ''), [run, config]);
+  const currentHash = useMemo(() => {
+    if (!run || !config) return '';
+    // A release run follows the release flow, not the flow of the issues.
+    const release = run.subject ? releaseFlowOf(config) : null;
+    return snapshotOf(release ? flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages: release } }, release) : flowOf(squadView(config, run.squad))).hash;
+  }, [run, config]);
 
   const header = (title: string) => (
     <header className="row spread cy-top">
@@ -125,7 +130,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           <div className="row cy-top-main">
             <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(back)}><BackIcon /></button>
             <h1 className="cy-title">
-              {run.issue.url ? <a href={run.issue.url} target="_blank" rel="noreferrer" className="mono cy-ref">{run.issue.ref}</a> : <span className="mono cy-ref">{run.issue.ref}</span>} {run.issue.title}
+              {(run.issue.url ?? run.subject?.tracking?.url) ? <a href={(run.issue.url ?? run.subject?.tracking?.url) as string} target="_blank" rel="noreferrer" className="mono cy-ref">{run.issue.ref}</a> : <span className="mono cy-ref">{run.issue.ref}</span>} {run.issue.title}
             </h1>
           </div>
           <RunBadge run={run} withStage />

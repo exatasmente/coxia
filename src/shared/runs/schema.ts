@@ -197,6 +197,36 @@ const routing = {
   type: ['object', 'null'],
 } as JsonSchema;
 
+const VERSION = '^(?:0|[1-9][0-9]{0,8})\\.(?:0|[1-9][0-9]{0,8})\\.(?:0|[1-9][0-9]{0,8})$';
+
+const activity = object(
+  'One pull request of a release, as the run last read it.',
+  {
+    pr: { type: 'integer', description: 'The pull request number.', minimum: 1 },
+    title: string('Title.', { maxLength: 500 }),
+    url: string('Web address.', { maxLength: 1000 }),
+    head: string('The commit it was at.', { maxLength: 80 }),
+    state: enumOf('open, merged or closed.', ['open', 'merged', 'closed']),
+    approved: { type: 'boolean', description: 'Approved on the host.' },
+    issue: { type: ['integer', 'null'], description: 'The issue it closes.', minimum: 0 },
+  },
+  ['pr', 'title', 'url', 'head', 'state', 'approved', 'issue'],
+);
+
+const subject = object(
+  'What the run is about when it is not one issue: a release of a version.',
+  {
+    kind: enumOf('The kind of subject.', ['release']),
+    version: string('X.Y.Z.', { pattern: VERSION, maxLength: 40 }),
+    from: { type: ['string', 'null'], description: 'The stable tag a patch is cut from.', maxLength: 40 },
+    tracking: { ...object('The tracking issue on the tracker.', { iid: { type: 'integer', description: 'Its number.', minimum: 1 }, url: nullableString('Web address.'), closed: { type: 'boolean', description: 'The app closed it: the stable version was published.' } }, ['iid', 'url']), type: ['object', 'null'] },
+    activities: { type: 'array', description: 'The pull requests of the version, as last read.', items: activity, maxItems: 200 },
+    seen: { type: 'object', description: 'The head of each pull request (by number) when the run entered the plan gate: what the person is shown there.', additionalProperties: string('A commit.', { maxLength: 80 }) },
+    planned: { type: 'object', description: 'The head of each pull request (by number) when the person accepted the plan.', additionalProperties: string('A commit.', { maxLength: 80 }) },
+  },
+  ['kind', 'version', 'from', 'tracking', 'activities'],
+);
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -234,6 +264,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     reviews: { type: 'array', description: 'Every review pass with its findings.', items: review, maxItems: 100 },
     qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
     base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
+    subject,
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },

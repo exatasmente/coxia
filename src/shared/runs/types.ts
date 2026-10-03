@@ -278,6 +278,49 @@ export interface RoutingState {
   result: { by: string; summary: string; handoff: string; artifacts: string[] } | null;
 }
 
+/** One activity of a release: a pull request that goes into (or was merged into) the release branch, as the run last read it. */
+export interface ReleaseActivity {
+  /** The pull request's number. */
+  pr: number;
+  title: string;
+  url: string;
+  /** The commit it was at when the run read it. */
+  head: string;
+  /** open, merged or closed on the host. */
+  state: 'open' | 'merged' | 'closed';
+  /** The host's approval (and, when it has checks, their result) when it was read. */
+  approved: boolean;
+  /** The issue it closes, when the host says so. */
+  issue: number | null;
+}
+
+/**
+ * What a run is about when it is not one issue: a release of a version (`kind: 'release'`). Such a run has a synthesized `issue` (`release:X.Y.Z`, number 0) that
+ * keeps "one run at a time" working, a tracking issue on the tracker (`tracking`, once it exists), and the activities of the version as last read. A run with no
+ * subject is an issue run, as before.
+ */
+export interface RunSubject {
+  kind: 'release';
+  /** `X.Y.Z`. */
+  version: string;
+  /** The stable tag a patch is cut from (`vA.B.C`); null for a version cut from main. */
+  from: string | null;
+  /** The issue "Release X.Y.Z" on the tracker: the stage comments go there; `closed` once the app closed it (the stable was published). Null until it exists (it may wait for a "yes" in Actions). */
+  tracking: { iid: number; url: string | null; closed?: boolean } | null;
+  /** The pull requests of the version, as the run last read them (the plan's list; the waits and the tracking issue's list are worked out from them). */
+  activities: ReleaseActivity[];
+  /**
+   * The head of each pull request (by number) as the run had read it when it ENTERED the plan gate, the commits the person is shown there. Taken once on entry and never
+   * rewritten by a later read of the host (`activities` is, every sweep): a push made during the wait is therefore not in it. Absent until the plan gate is first entered.
+   */
+  seen?: Record<string, string>;
+  /**
+   * The head of each pull request (by number) the person accepted with the plan: a copy of `seen` made by the gate at its first gate: the only commits a `merge-pr` may bring in.
+   * Absent until that gate is accepted. A pull request added, or pushed to, after it needs a new plan.
+   */
+  planned?: Record<string, string>;
+}
+
 export interface Run {
   version: typeof RUN_VERSION;
   /** Grows by one on every save of the store. */
@@ -328,6 +371,8 @@ export interface Run {
   qa: QaRecord[];
   /** The commit the branch was cut from; what the review's diff starts at. Null for a run made before it was recorded. */
   base: string | null;
+  /** What the run is about when it is not an issue: a release. Absent for an issue run. */
+  subject?: RunSubject;
   createdAt: string;
   updatedAt: string;
 }

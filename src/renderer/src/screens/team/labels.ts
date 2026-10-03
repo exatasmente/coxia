@@ -55,6 +55,8 @@ export const WAIT_LABEL: Record<WaitKind, string> = {
   label: 'ui.flow.wait.label',
   'linked-done': 'ui.flow.wait.linked-done',
   time: 'ui.flow.wait.time',
+  'release-approved': 'ui.flow.wait.release-approved',
+  'beta-age': 'ui.flow.wait.beta-age',
 };
 
 export const EVENT_LABEL: Record<CommentEventKey, string> = {

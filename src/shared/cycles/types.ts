@@ -25,6 +25,11 @@ export interface CycleTemplate {
   needs: TemplateNeed[];
   /** The cycle: every field left out takes the neutral default. */
   devCycle: DeepPartial<DevCycleConfig>;
+  /**
+   * What the flow is for, when it is not the one issues follow: `release` is the flow of a release run. Applying such a template adds its stages to
+   * `devCycle.flows` (next to the workspace's own flow, which stays as it is) and brings its comments and agents; nothing else of the cycle changes.
+   */
+  runKind?: 'release';
   /** The agents the cycle brings. Applying the template adds those the workspace lacks (by id) and never touches one it already has. Never a system agent. */
   team?: AgentDef[];
 }

@@ -18,7 +18,7 @@ const STATE_LABEL: Record<ReleaseAction['state'], string> = {
 };
 
 function title(a: ReleaseAction): string {
-  if (a.kind === 'gitlab' || a.kind === 'vcs') return a.summary ?? t('vcs.action.title');
+  if (a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'release-git') return a.summary ?? t('vcs.action.title');
   if (a.kind === 'sync') return t('ui.actions.title.sync', { issue: a.issue });
   if (a.kind === 'qa-comment') return t('ui.actions.title.qaComment', { issue: a.issue });
   if (a.kind === 'conflict-push') return a.summary ?? t('ui.actions.title.conflictPush', { issue: a.issue });
@@ -32,6 +32,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'qa-comment') return a.noteId ? t('ui.actions.what.qaComment.edit', { noteId: a.noteId }) : t('ui.actions.what.qaComment.post');
   if (a.kind === 'conflict-push') return t('ui.actions.what.conflictPush');
   if (a.kind === 'run-push') return t('ui.actions.what.runPush');
+  if (a.kind === 'release-git') return t('ui.actions.what.releaseGit');
   return tv('call.explainsConflict');
 }
 
@@ -135,7 +136,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (
                 <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', t('ui.actions.job.preview'), () => api.previewAction(a.id))}>
-                  {previewing ? <span className="spinner" /> : null} {t(a.kind === 'sync' ? 'ui.actions.view.preview' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' || a.kind === 'run-push' ? 'ui.actions.view.push' : 'ui.actions.view.comment')}
+                  {previewing ? <span className="spinner" /> : null} {t(a.kind === 'sync' ? 'ui.actions.view.preview' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' || a.kind === 'run-push' || a.kind === 'release-git' ? 'ui.actions.view.push' : 'ui.actions.view.comment')}
                 </button>
               )}
               {confirming ? (
@@ -147,9 +148,11 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
                       ? t('ui.actions.confirm.conflictPush')
                       : a.kind === 'run-push'
                         ? t('ui.actions.confirm.runPush')
-                        : a.kind === 'gitlab' || a.kind === 'vcs'
-                          ? t('ui.actions.confirm.vcs', { action: t('vcs.action.confirm') })
-                          : t('ui.actions.confirm.post')}
+                        : a.kind === 'release-git'
+                          ? t('ui.actions.confirm.releaseGit')
+                          : a.kind === 'gitlab' || a.kind === 'vcs'
+                            ? t('ui.actions.confirm.vcs', { action: t('vcs.action.confirm') })
+                            : t('ui.actions.confirm.post')}
                 </button>
               ) : (
                 <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>{t('ui.actions.go')}</button>

@@ -254,6 +254,10 @@ export interface BootOptions {
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
+  /** The clock the runner and its publisher read (a release run's waits are about how long ago something was published). */
+  now?: () => Date;
+  /** The tags a release run's wait for its beta reads. */
+  localTags?: (run: Run) => Promise<string[]>;
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -291,11 +295,12 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     sandbox: options.sandbox,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
+    now: options.now,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');
     const { realDoor } = await import('../../src/main/runner/door');
-    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor });
+    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: options.now, localTags: options.localTags });
   }
   const runner = createRunner(deps);
   return {

@@ -44,6 +44,18 @@ export const effectiveTeam = (c: TeamView): AgentDef[] => c.agents.team.map((a) 
 /** The agents a squad's runs may use: its members and the shared ones. */
 export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => effectiveTeam(c).filter((a) => a.squad === squadId || isShared(a));
 
+/**
+ * The key of `devCycle.flows` that holds the flow of a release run (a run whose subject is a version, not an issue). It is a flow per run kind next to the flows of
+ * the squads, so a squad cannot be called this.
+ */
+export const RELEASE_FLOW_KEY = 'release';
+
+/** The comments the app writes by itself on the tracking issue of a release: the activities of the version, a beta published, the stable published. */
+export const RELEASE_COMMENT_EVENTS = ['activities', 'beta-published', 'stable-published'] as const;
+
+/** The stages a release run follows, when the workspace has the release flow (the `release-flow` template puts it there); null otherwise. */
+export const releaseFlowOf = (c: Pick<CycleView, 'devCycle'>): StageDef[] | null => c.devCycle.flows?.[RELEASE_FLOW_KEY] ?? null;
+
 /** The stages a squad's runs follow: its own flow when it has one, the workspace's otherwise. `null`: the workspace's. */
 export const flowStagesOf = (c: Pick<CycleView, 'devCycle'>, squadId: string | null | undefined): StageDef[] => (squadId ? (c.devCycle.flows?.[squadId] ?? c.devCycle.stages) : c.devCycle.stages);
 

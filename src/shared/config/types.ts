@@ -180,15 +180,17 @@ export type StageType = (typeof STAGE_TYPES)[number];
 /**
  * What a wait stage waits for. `pr-merged`: the run's pull request is merged. `reporter-reply`: a new comment of a person on the issue. `label`: the issue
  * carries `label`. `linked-done`: every run this one asked another squad for has ended, or its issue was closed (a run that asked for nothing has nothing to wait for). `time`: `minutes` have passed.
+ * The two of a release run: `release-approved`: every pull request of the version that the run read is merged into the release branch, and none is open against it.
+ * `beta-age`: the latest beta of the version has been published for `minutes`, and no open issue carries the blocking label (`label`, `beta-blocker` when left out).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
   kind: WaitKind;
-  /** For `label`: the label name. */
+  /** For `label`: the label name. For `beta-age`: the label of an issue that blocks the stable (`beta-blocker` when left out). */
   label?: string;
-  /** For `time`: minutes after the stage is entered. */
+  /** For `time`: minutes after the stage is entered. For `beta-age`: minutes since the latest beta was published. */
   minutes?: number;
 }
 

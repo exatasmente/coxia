@@ -104,6 +104,17 @@ describe('the errors', () => {
     expect(check(wait({ kind: 'label', label: 'shipped' }))).toEqual([]);
   });
 
+  it('the waits of a release: the beta needs the minutes it is to be out for, the merges need nothing', () => {
+    const wait = (waitsFor?: StageDef['waitsFor']) => (c: WorkspaceConfig) => {
+      Object.assign(byId(c, 'ready'), { type: 'wait', waitsFor });
+    };
+    expect(codes(check(wait({ kind: 'beta-age' })))).toEqual(['E:wait-no-event:ready']);
+    expect(codes(check(wait({ kind: 'beta-age', label: 'beta-blocker' })))).toEqual(['E:wait-no-event:ready']);
+    expect(check(wait({ kind: 'beta-age', minutes: 1440 }))).toEqual([]);
+    expect(check(wait({ kind: 'beta-age', minutes: 60, label: 'beta-blocker' }))).toEqual([]);
+    expect(check(wait({ kind: 'release-approved' }))).toEqual([]);
+  });
+
   it('a gate or a review with no work stage before it to go back to', () => {
     const issues = check((c) => c.devCycle.stages.splice(0, 1, stage('wait0', { type: 'wait', waitsFor: { kind: 'time', minutes: 1 } })));
     expect(codes(issues)).toContain('E:no-return-target:gate1');

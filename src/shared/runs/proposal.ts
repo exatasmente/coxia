@@ -6,7 +6,7 @@ import { type FindingThread, reviewRounds } from './view';
 // description, the labels. It is worked out from the run (which keeps the text it proposed) and, for what the run does not keep, from the writes themselves.
 // Pure: it reads an action and a run and returns plain data.
 
-export const PROPOSAL_PURPOSES = ['comment', 'review', 'run-pr', 'undo', 'priority', 'status', 'request-issue', 'squad', 'push'] as const;
+export const PROPOSAL_PURPOSES = ['comment', 'review', 'run-pr', 'undo', 'priority', 'status', 'request-issue', 'squad', 'push', 'release', 'release-tracking', 'release-close'] as const;
 export type ProposalPurpose = (typeof PROPOSAL_PURPOSES)[number];
 
 export interface ReviewLine {
@@ -86,6 +86,7 @@ const factsOf = (commands: readonly VcsCommand[]): { title: string | null; body:
 
 export const proposalPurpose = (a: Pick<ReleaseAction, 'kind' | 'unit'>): ProposalPurpose | null => {
   if (a.kind === 'run-push') return 'push';
+  if (a.kind === 'release-git') return typeof a.unit?.runId === 'string' ? 'release' : null;
   const p = a.unit?.purpose;
   return typeof a.unit?.runId === 'string' && typeof p === 'string' && (PROPOSAL_PURPOSES as readonly string[]).includes(p) ? (p as ProposalPurpose) : null;
 };
@@ -123,7 +124,10 @@ export function proposalView(a: ReleaseAction, run: Run | null): ProposalView | 
       return { ...view, title: pr?.title || facts.title || a.summary || '', body: pr?.body ?? facts.body, target: 'mr' };
     }
     case 'request-issue':
+    case 'release-tracking':
       return { ...view, title: facts.title ?? a.summary ?? '', body: facts.body, target: 'issue' };
+    case 'release-close':
+      return { ...view, title: a.summary ?? '', target: 'issue' };
     case 'priority':
     case 'status':
     case 'squad':
@@ -144,5 +148,7 @@ export function proposalView(a: ReleaseAction, run: Run | null): ProposalView | 
     }
     case 'push':
       return view;
+    case 'release':
+      return { ...view, title: a.summary ?? '' };
   }
 }

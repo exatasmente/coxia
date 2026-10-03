@@ -66,8 +66,8 @@ interface GhPull {
   merged?: boolean;
   merged_at?: string | null;
   draft?: boolean;
-  head: { ref: string; sha: string };
-  base: { ref: string };
+  head: { ref: string; sha: string; repo?: { full_name?: string } | null };
+  base: { ref: string; repo?: { full_name?: string } | null };
   html_url: string;
   user?: { login: string } | null;
   requested_reviewers?: GhUser[];
@@ -119,6 +119,9 @@ export interface GitHubOptions {
   host: string;
   transport: RestTransport;
 }
+
+/** How many pages of open pull requests of one branch are read (100 each): more than a release can have. */
+const OPEN_PAGES = 5;
 
 const checkSha = (sha: string): string => {
   if (!/^[0-9a-f]{7,64}$/i.test(sha)) throw new VcsError('invalid', { detail: sha });
@@ -189,6 +192,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     mergedAt: iso(pr.merged_at),
     description: pr.body ?? '',
     roles,
+    ...(pr.head.repo !== undefined && pr.base.repo !== undefined ? { fromFork: !pr.head.repo || !pr.base.repo || pr.head.repo.full_name !== pr.base.repo.full_name } : {}),
     issueRefs: issueRefsOf(`${pr.title}\n${pr.body ?? ''}`, pr.head.ref),
   });
 
@@ -203,10 +207,19 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
 
   async function ciOf(project: string, sha: string): Promise<VcsCi | null> {
     if (!sha) return null;
+    // A read that fails is not "no checks": the state is unknown, which counts as still running (a merge must not go ahead on a CI nobody could read).
+    let unreadable = false;
     const [checks, combined] = await Promise.all([
-      tr.get<{ check_runs?: { status: string; conclusion: string | null }[] }>(`${repo(project)}/commits/${sha}/check-runs?per_page=100`).catch(() => ({ check_runs: [] })),
-      tr.get<{ state?: string; statuses?: unknown[] }>(`${repo(project)}/commits/${sha}/status`).catch(() => ({ state: 'pending', statuses: [] })),
+      tr.get<{ check_runs?: { status: string; conclusion: string | null }[] }>(`${repo(project)}/commits/${sha}/check-runs?per_page=100`).catch(() => {
+        unreadable = true;
+        return { check_runs: [] };
+      }),
+      tr.get<{ state?: string; statuses?: unknown[] }>(`${repo(project)}/commits/${sha}/status`).catch(() => {
+        unreadable = true;
+        return { state: 'pending', statuses: [] };
+      }),
     ]);
+    if (unreadable) return { status: 'pending', raw: 'unreadable', runId: null, webUrl: `${web}/${project}/commit/${sha}/checks` };
     const states: VcsCiStatus[] = (checks.check_runs ?? []).map((c) => checkState(c.status, c.conclusion));
     // The legacy commit status API reports "pending" for a commit with no statuses at all: only count it when there are some.
     if ((combined.statuses ?? []).length) states.push(combined.state === 'success' ? 'success' : combined.state === 'pending' ? 'pending' : 'failed');
@@ -214,18 +227,28 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     return status ? { status, raw: status, runId: null, webUrl: `${web}/${project}/commit/${sha}/checks` } : null;
   }
 
-  async function approvalsOf(project: string, iid: number): Promise<VcsApprovals> {
-    const reviews = await tr.pages<{ user?: { login: string } | null; state: string; submitted_at?: string }>(`${repo(project)}/pulls/${iid}/reviews`, { maxPages: 3 });
-    const latest = new Map<string, string>();
+  // GitHub's `author_association` says how the reviewer relates to the repository (owner, member, collaborator: an invitation, or an organisation seat), which is NOT the same
+  // as a right to write to it: it is the best the reviews carry, and the docs say so.
+  const MEMBER = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+  const REVIEW_PAGES = 3;
+
+  async function approvalsOf(project: string, iid: number, head = ''): Promise<VcsApprovals> {
+    const reviews = await tr.pages<{ user?: { login: string } | null; state: string; submitted_at?: string; commit_id?: string; author_association?: string }>(`${repo(project)}/pulls/${iid}/reviews`, { maxPages: REVIEW_PAGES });
+    // Reviews beyond the pages read were not seen: what a merge may rely on is then not known, and `onHead` is false (the plain approval is still reported).
+    const truncated = reviews.length >= REVIEW_PAGES * 100;
+    const latest = new Map<string, { state: string; commit: string; member: boolean }>();
     for (const r of [...reviews].sort((a, b) => (a.submitted_at ?? '').localeCompare(b.submitted_at ?? ''))) {
       const login = r.user?.login;
       if (!login) continue;
-      if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED') latest.set(login, r.state);
+      if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED') latest.set(login, { state: r.state, commit: r.commit_id ?? '', member: MEMBER.has(r.author_association ?? '') });
       else if (r.state === 'DISMISSED') latest.delete(login);
     }
-    const by = [...latest].filter(([, s]) => s === 'APPROVED').map(([l]) => l);
-    const changes = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED').map(([l]) => l);
-    return { approved: by.length > 0 && changes.length === 0, by, changesRequestedBy: changes };
+    const by = [...latest].filter(([, s]) => s.state === 'APPROVED').map(([l]) => l);
+    const changes = [...latest].filter(([, s]) => s.state === 'CHANGES_REQUESTED').map(([l]) => l);
+    // What a merge may rely on: an approval by a member of the project, given on the commit the pull request is at now, with no member asking for changes.
+    const standing = [...latest.values()].filter((s) => s.member && s.state === 'APPROVED' && !!head && s.commit.toLowerCase() === head.toLowerCase());
+    const blocked = [...latest.values()].some((s) => s.member && s.state === 'CHANGES_REQUESTED');
+    return { approved: by.length > 0 && changes.length === 0, by, changesRequestedBy: changes, onHead: !truncated && standing.length > 0 && !blocked };
   }
 
   async function gql<T>(query: string): Promise<T> {
@@ -324,7 +347,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           const pr = await tr.get<GhPull>(`${repo(f.project)}/pulls/${f.number}`);
           const mr = mrOf(pr, f.project, f.roles);
           if (!opts.detail) return mr;
-          const [ci, approvals] = await Promise.all([ciOf(f.project, mr.sha), approvalsOf(f.project, f.number)]);
+          const [ci, approvals] = await Promise.all([ciOf(f.project, mr.sha), approvalsOf(f.project, f.number, mr.sha)]);
           return { ...mr, ci, approvals };
         } catch (e) {
           console.error(`[vcs:github] ${f.project}#${f.number}`, (e as Error).message);
@@ -340,7 +363,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
       const mr = mrOf(pr, project);
       const [ci, approvals, behind] = await Promise.all([
         ciOf(project, mr.sha),
-        opts.approvals ? approvalsOf(project, iid) : Promise.resolve(null),
+        opts.approvals ? approvalsOf(project, iid, mr.sha) : Promise.resolve(null),
         opts.behind ? tr.get<{ behind_by?: number }>(`${repo(project)}/compare/${enc(mr.targetBranch)}...${mr.sha}`).then((c) => c.behind_by ?? null, () => null) : Promise.resolve(null),
       ]);
       return { ...mr, ci, approvals, behind };
@@ -386,6 +409,27 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           issueRefs: [],
         }),
       );
+    },
+
+    async listMrsByTarget(project, branch, opts = {}) {
+      const base = `${repo(project)}/pulls?base=${enc(checkBranch(branch))}`;
+      // The open ones are asked for by themselves (every one of them, up to a bound), so a branch with many merged or closed pull requests cannot push an open one off the list.
+      const [open, closed] = await Promise.all([
+        tr.pages<GhPull>(`${base}&state=open&sort=updated&direction=desc`, { maxPages: OPEN_PAGES }),
+        tr.pages<GhPull>(`${base}&state=closed&sort=updated&direction=desc`, { maxPages: Math.ceil((opts.limit ?? 100) / 100) || 1 }),
+      ]);
+      return [...open.map((pr) => mrOf(pr, project)), ...closed.map((pr) => mrOf(pr, project)).filter((m) => m.state === 'merged').slice(0, opts.limit ?? 100)];
+    },
+
+    async getRelease(project, tag) {
+      try {
+        const r = await tr.get<{ tag_name: string; name?: string | null; draft?: boolean; prerelease?: boolean; published_at?: string | null; html_url: string }>(`${repo(project)}/releases/tags/${enc(checkBranch(tag))}`);
+        return { tag: r.tag_name, name: r.name || r.tag_name, draft: Boolean(r.draft), prerelease: Boolean(r.prerelease), publishedAt: iso(r.published_at), webUrl: r.html_url };
+      } catch (e) {
+        // A tag with no published release (a draft is not shown here either) is a 404: it has none.
+        if (e instanceof VcsError && e.code === 'not_found') return null;
+        throw e;
+      }
     },
 
     async listMrCommits(project, iid) {
@@ -527,6 +571,8 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           };
           return [call('POST', `${repo(op.project)}/pulls/${n}/reviews`, review), ...onFiles.map((c) => call('POST', `${repo(op.project)}/pulls/${n}/comments`, { body: c.body, commit_id: sha, path: c.path, subject_type: 'file' }))];
         }
+        case 'closeIssue':
+          return [call('PATCH', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
         case 'createIssue':
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
         case 'createMr':

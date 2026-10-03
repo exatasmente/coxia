@@ -10,6 +10,7 @@ import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegist
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
+import { RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY } from './squads';
 import { isSystemId } from './team';
 import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
@@ -86,6 +87,15 @@ function flowRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     // A stored config is never refused for the problems of its flow (the runner will not start on them and the editor shows them), only a saved one is.
     (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: flowIssueText(issue, en) });
   }
+  // The flow of a release run is checked as a flow of its own, over the whole team.
+  const release = c.devCycle.flows?.[RELEASE_FLOW_KEY];
+  if (release?.length) {
+    for (const issue of checkFlow({ stages: release, team: c.agents.team }, { asFlow: true })) {
+      if (issue.agent) continue;
+      const i = issue.stage ? release.findIndex((s) => s.id === issue.stage) : -1;
+      (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path: i >= 0 ? `devCycle.flows.${RELEASE_FLOW_KEY}[${i}].${issue.field}` : `devCycle.flows.${RELEASE_FLOW_KEY}`, message: flowIssueText(issue, en) });
+    }
+  }
 }
 
 // The squads: their model (who belongs where, the liaison, the chains) and the flow each follows, with the one check the runner and the editor use too.
@@ -94,6 +104,9 @@ function squadRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigI
   const squads = c.squads ?? [];
   const flows = c.devCycle.flows ?? {};
   for (const key of Object.keys(flows)) if (!new RegExp(ID).test(key)) errors.push({ path: `devCycle.flows.${key}`, message: 'the key must be a squad id' });
+  squads.forEach((s, i) => {
+    if (s.id === RELEASE_FLOW_KEY) errors.push({ path: `squads[${i}].id`, message: `the id "${RELEASE_FLOW_KEY}" is the key of the flow of a release run: choose another` });
+  });
   const repos = c.projects.autoDiscover ? undefined : c.projects.repos.map((r) => r.id);
   for (const issue of checkSquads({ squads, team: c.agents.team, stages: c.devCycle.stages, flows, repos }, { checkSharedFlow: isFlowCycle(c.devCycle.stages) })) {
     const q = issue.squad ? squads.findIndex((s) => s.id === issue.squad) : -1;
@@ -159,8 +172,10 @@ const COMMENT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 // The templates of the comments the runner leaves on the tracker. A key names a stage or an event; a template for anything else is kept (a template file may
 // travel between cycles) but said so, because nothing will ever use it.
 function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
-  const stages = new Map(c.devCycle.stages.map((s) => [s.id, s]));
-  const events = new Set<string>(COMMENT_EVENT_KEYS);
+  // The stages of the release flow are stages too, and the comments the app writes itself on a release's tracking issue are its events.
+  const release = c.devCycle.flows?.[RELEASE_FLOW_KEY] ?? [];
+  const stages = new Map([...c.devCycle.stages, ...release].map((s) => [s.id, s]));
+  const events = new Set<string>([...COMMENT_EVENT_KEYS, ...(release.length ? RELEASE_COMMENT_EVENTS : [])]);
   for (const [key, tpl] of Object.entries(c.devCycle.comments)) {
     const at = (field: string) => `devCycle.comments.${key}.${field}`;
     if (!COMMENT_KEY.test(key)) {

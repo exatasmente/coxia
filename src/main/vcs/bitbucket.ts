@@ -47,7 +47,7 @@ interface BbPr {
   state: string;
   draft?: boolean;
   description?: string;
-  source: { branch: { name: string }; commit?: { hash: string } | null };
+  source: { branch: { name: string }; commit?: { hash: string } | null; repository?: { full_name?: string } };
   destination: { branch: { name: string }; repository?: { full_name: string } };
   links?: { html?: { href?: string } };
   author?: BbUser;
@@ -158,9 +158,23 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       mergedAt: pr.state === 'MERGED' ? iso(pr.updated_on) : null,
       description: pr.description ?? '',
       roles,
+      ...(pr.source.repository?.full_name && pr.destination.repository?.full_name ? { fromFork: pr.source.repository.full_name !== pr.destination.repository.full_name } : {}),
       issueRefs: issueRefsOf(`${pr.title}\n${pr.description ?? ''}`, pr.source.branch.name),
     };
   };
+
+  // Bitbucket names the commit of a pull request by a 12-character hash. A head is compared exactly and as a full name everywhere a merge is decided, so the full one is read
+  // from the commit itself (`GET commit/<hash>`); one that cannot be read stays as it is, and then no comparison with it can succeed (it fails closed).
+  const FULL = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+  async function withFullSha(project: string, mr: VcsMr): Promise<VcsMr> {
+    if (!mr.sha || FULL.test(mr.sha) || !/^[0-9a-f]{4,39}$/i.test(mr.sha)) return mr;
+    try {
+      const full = (await c.getJson<{ hash?: string }>(`${repo(project)}/commit/${mr.sha}`)).hash ?? '';
+      return FULL.test(full) && full.toLowerCase().startsWith(mr.sha.toLowerCase()) ? { ...mr, sha: full } : mr;
+    } catch {
+      return mr;
+    }
+  }
 
   function approvalsOf(pr: BbPr): VcsApprovals {
     const rev = (pr.participants ?? []).filter((p) => p.role === 'REVIEWER' || p.approved);
@@ -170,7 +184,13 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
   }
 
   async function ciOf(project: string, iid: number): Promise<VcsCi | null> {
-    const rows = await c.values<{ state: string; url?: string }>(`${repo(project)}/pullrequests/${iid}/statuses`, { maxPages: 2 }).catch(() => []);
+    // A read that fails is not "no checks": unknown counts as still running (a merge must not go ahead on a CI nobody could read).
+    let unreadable = false;
+    const rows = await c.values<{ state: string; url?: string }>(`${repo(project)}/pullrequests/${iid}/statuses`, { maxPages: 2 }).catch(() => {
+      unreadable = true;
+      return [] as { state: string; url?: string }[];
+    });
+    if (unreadable) return { status: 'pending', raw: 'unreadable', runId: null, webUrl: null };
     const status = worstCi(rows.map((r) => CI[r.state] ?? 'pending'));
     return status ? { status, raw: rows.map((r) => r.state).join(',').toLowerCase(), runId: null, webUrl: rows.find((r) => r.url)?.url ?? null } : null;
   }
@@ -315,7 +335,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       checkIid(iid);
       const pr = await c.getJson<BbPr>(`${repo(project)}/pullrequests/${iid}`, undefined, `#${iid}`);
       const mr = mrOf(pr);
-      return { ...mr, project: mr.project || project, ci: await ciOf(project, iid) };
+      return { ...(await withFullSha(mr.project || project, mr)), project: mr.project || project, ci: await ciOf(project, iid) };
     },
 
     async linkedMrs(project, iid) {
@@ -331,6 +351,26 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
       const query = `title ~ "${q.text.replace(/["\\]/g, '')}" AND created_on >= ${q.createdAfter}`;
       const rows = await c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: query, state: 'OPEN', pagelen: 20 }, maxPages: 1 });
       return rows.map((r) => mrOf(r));
+    },
+
+    async listMrsByTarget(project, branch, opts = {}) {
+      if (!/^[\w][\w./-]{0,200}$/.test(branch) || branch.includes('..')) throw new VcsError('invalid', { detail: branch });
+      // The open ones are asked for by themselves (every one of them, up to a bound), so a branch with many merged pull requests cannot push an open one off the list.
+      const ask = (state: 'OPEN' | 'MERGED', pages: number) =>
+        // i18n-ignore: query language of the code host
+        c.values<BbPr>(`${repo(project)}/pullrequests`, { query: { q: `destination.branch.name="${branch}" AND state="${state}"`, sort: '-updated_on' }, maxPages: pages });
+      const [open, merged] = await Promise.all([ask('OPEN', 5), ask('MERGED', Math.ceil((opts.limit ?? 100) / 100) || 1)]);
+      const all = [...open, ...merged.slice(0, opts.limit ?? 100)].map((r) => {
+        const m = mrOf(r);
+        return { ...m, project: m.project || project };
+      });
+      // Only the open ones are merge candidates: their commit is read in full (a merged one is history).
+      return Promise.all(all.map((m) => (m.state === 'open' ? withFullSha(project, m) : m)));
+    },
+
+    // Bitbucket has no release objects (a tag is a tag, and downloads are not releases): a release run on it cannot see a beta published.
+    async getRelease() {
+      return null;
     },
 
     async listMrCommits(project, iid) {
@@ -444,6 +484,8 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         }
         case 'deleteNote':
           return [call('DELETE', `${repo(op.project)}/${op.target === 'issue' ? 'issues' : 'pullrequests'}/${checkIid(op.iid)}/comments/${checkIid(Number(op.noteId))}`)];
+        case 'closeIssue':
+          return [call('PUT', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
         case 'createIssue':
           // Bitbucket's issues have no labels: the squad's label is left out (the request is linked in the run and in the description).
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), content: { raw: op.body } })];

@@ -35,6 +35,8 @@ export const WAIT_KEY: Record<WaitKind, string> = {
   label: 'ui.cycle.wait.label',
   'linked-done': 'ui.cycle.wait.linkedDone',
   time: 'ui.cycle.wait.time',
+  'release-approved': 'ui.cycle.wait.releaseApproved',
+  'beta-age': 'ui.cycle.wait.betaAge',
 };
 
 /** The button that leaves a wait, worded by what it stops waiting for: it moves forward, and says so. */
@@ -44,4 +46,6 @@ export const SKIP_WAIT_KEY: Record<WaitKind, string> = {
   label: 'ui.cycle.action.skipWait.label',
   'linked-done': 'ui.cycle.action.skipWait.linkedDone',
   time: 'ui.cycle.action.skipWait.time',
+  'release-approved': 'ui.cycle.action.skipWait.releaseApproved',
+  'beta-age': 'ui.cycle.action.skipWait.betaAge',
 };

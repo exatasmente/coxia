@@ -11,6 +11,7 @@ In short: a version is **opened** as a branch (`release/X.Y.Z`), its work is mer
 - [The process](#the-process)
 - [Merging locally](#merging-locally)
 - [Hotfix](#hotfix)
+- [From the app: the release as a run](#from-the-app-the-release-as-a-run)
 - [What a tag triggers](#what-a-tag-triggers)
 - [The changelog](#the-changelog)
 - [Verifying a draft](#verifying-a-draft)
@@ -66,7 +67,7 @@ Three steps, each a mode of `scripts/release.sh`. The numbers follow semver: a f
 | Beta | on `release/X.Y.Z` | `vX.Y.Z-beta.N` | people on the **beta** channel (`beta-linux.yml`) |
 | Stable | on `main`, after `release/X.Y.Z` is merged into it | `vX.Y.Z` | everyone (`latest-linux.yml`) |
 
-The script never pushes, never writes `git config` and takes the identity from `--author` or `RELEASE_AUTHOR`. Options: `--dry-run`, `--skip-checks`, `--date`, `-m`, `--allow-branch`, `--emergency`; `scripts/release.sh --help` lists them.
+The script never pushes, never writes `git config` and takes the identity from `--author` or `RELEASE_AUTHOR`. Options: `--dry-run`, `--skip-checks`, `--date`, `-m`, `--allow-branch`, `--emergency`, `--worktree` (for a place where `main` is not a branch: `open` cuts from `origin/main`, and a stable is cut on a detached HEAD that holds the release merged into `origin/main`'s commit; the app's release steps use it, and so may you in a `git worktree`); `scripts/release.sh --help` lists them.
 
 ### 1. Open the version
 
@@ -155,6 +156,22 @@ scripts/release.sh stable --author "..."
 
 **When even a beta cannot wait** (an incident), `scripts/release.sh 0.6.1 --emergency --author "..."` on `main` cuts the stable without the beta, merge and remote rules. It is loud on purpose: a banner on standard error naming every rule it skipped, the same lines again at the end, and the skipped rules written in the tag's message (`git show v0.6.1`). It never skips the checks, the public audit, the changelog or the version order. Do not make it a habit; a rule you have to skip twice a month is a rule to change.
 
+## From the app: the release as a run
+
+The same process can be driven from the app, as a **release run** (the `release-flow` template, [`docs/runner.md`](docs/runner.md#a-release); the decisions are in `docs/cycles/27-release-process/feat/1_SPEC.md`, section 6). Nothing here is another way to release: every step is what this document does by hand, run by the repository's own `scripts/release.sh` or by plain `git`, in **a worktree of the run's own** (never in your checkout: its branch, its files and its `main` are not touched; the worktree is made from your clone on the first step, next to the run's folder), signed with the identity of the runner settings (the app refuses a step when none is configured).
+
+0. **Before you start.** Nothing to do in your checkout; if you have `release/0.6.0` checked out there, switch it away first (a branch cannot be checked out twice, and the app says so instead of taking it).
+1. **Start it.** On the runs screen, *Start a release*, with the version (`0.6.0`, and the stable tag `v0.5.0` for a patch). The run makes a tracking issue **Release 0.6.0** (or adopts an open one with that title), lists there the pull requests aimed at `release/0.6.0`, and opens the branch (`scripts/release.sh open`) if it does not exist. You push that branch yourself or approve the push (step 3); the pull requests of the version target it, as above.
+2. **Approve the plan.** The Release manager writes `RELEASE_PLAN.md` (the number, what goes in, the changelog, what is left out) and the run waits at a gate. Say yes, or send it back with a reason.
+3. **Merge and cut the beta.** For each pull request that is approved, not a draft, green and aimed at the release branch, the agent asks for a local `git merge --no-ff` with your identity (the host's merge button is never used). It then waits until no pull request is open against the branch, and asks for `scripts/release.sh beta`. **The cut and every push wait for your yes in Actions**, whatever the agent's autonomy (a cut runs the repository's own script and the code of the merged pull requests, unsandboxed, as you): push the branch first and then the tag, as in [the process](#3-close-the-release-the-beta); *See the push* shows what would be sent. A merge an agent that does not run by itself asks for waits there too, and a step that fails (the script refuses it) can be approved again once the cause is fixed.
+4. **Check and publish the draft** on the Releases page, as in [Verifying a draft](#verifying-a-draft) and [Publishing](#publishing). The run waits until the host shows the beta published for the minutes the stage names (a day by default) and no open issue carries the blocking label (`beta-blocker` by default); a bug seen in the beta is reported with that label, fixed in the release branch, and the run is sent back to cut the next beta. On Bitbucket (no releases, no labels on issues) the run cannot see any of this: move it on with *Go on without waiting*.
+5. **Approve the stable.** The second gate. The agent asks for `scripts/release.sh stable` (the worktree stands on a detached HEAD at `origin/main`, `release/0.6.0` is merged into that commit and the stable tag is made on it; your local `main` does not move: pull it afterwards), then for the push of `main` and of the tag `v0.6.0`; the cut and both pushes wait for your yes. Publish the draft.
+6. **Closing.** When the host shows `v0.6.0` published, the run says so on the tracking issue and closes it (by itself when the agent runs by itself, otherwise as a proposal). The release branch is deleted by you, after the draft is published, with the commands the script prints.
+
+**Trust boundary.** A cut (`beta`, `stable`) **runs the repository's own `scripts/release.sh` and the code of the pull requests merged into the release, as you, unsandboxed** (it calls `npm`, the tests and the build): that is why it always waits for your yes, like a push, even for an autonomous Release manager (decision D18); an agent in a run does by itself only `open` (which runs **`main`'s** script, never the one of a release branch, and is refused when the branch exists), the `merge-pr` of a pull request approved at the head the plan froze, and its comments. Starting a release is possible from the desktop window only (a paired browser follows the run and answers its gates, but cannot start one, D19). Your checkout is not touched (its files, its branch and its HEAD), but the steps' worktree **shares references with your repository**: the branch `release/X.Y.Z`, the tags it cuts, the `origin/*` a fetch updates and an entry in `.git/worktrees` are in your repository too and show in `git branch`, `git tag` and `git worktree list`. A stable cut in the worktree (a detached HEAD at `origin/main`) is accepted by the script because of `--worktree`; all its other rules still apply. Caveats: the app's pushes ignore your `push.followTags` and mirroring (each sends exactly the one ref it names) but use the rest of your transport configuration as it is (`pushurl`, `insteadOf`, `core.sshCommand`, credential helpers, `push.pushOption`); the filters and merge drivers in your own git configuration (LFS, git-crypt and the like) run on the `.gitattributes` a pull request brings, during a merge; and a worktree folder you deleted is taken over with `git worktree add --force` for that one path (the app never runs a repository-wide `git worktree prune`; this needs git 2.31 or newer, and a locked worktree is never taken).
+
+What the app never does, from a run: push or cut without your yes, use `--emergency` or `--allow-branch` (an emergency stable is cut by a person in a terminal, see [Hotfix](#hotfix)), run a command or write a file for the agent, or click a merge or publish button on the host. What it does not verify: the workflow's build, the draft's files and the publication (you do, steps above).
+
 ## What a tag triggers
 
 The tag triggers **Release** (`.github/workflows/release.yml`):
@@ -234,6 +251,7 @@ For private testing only, `electron-updater` can authenticate with a token: buil
 | Windows and macOS (experimental) | same workflow | manual, with `experimental_platforms` |
 | Open a release branch; version bump, changelog, commit and tag of a beta or the stable | `scripts/release.sh` (`open`, `beta`, `stable`) and `scripts/release-changelog.mjs` | you, on your machine |
 | Release notes of one version | `scripts/release-notes.sh <version>` | the workflow and `release.sh` |
+| The same steps as a run: open, merge, beta, stable, the pushes and the tracking issue | `src/main/releaseGit.ts` (the steps, in a worktree of their own), `src/main/runner/` (the run), the Actions screen (the pushes) | the app, with your yes for every push |
 | Name, version and checksum of the Linux files | `scripts/verify-release-files.sh <version> [dir]` | the workflow, and you |
 
 CI does not run the Python voice sidecar (`sidecar/voice_sidecar.py`): it needs the speech models and an audio stack and has no automated tests of its own. The Node version used everywhere is in `.nvmrc`; change it there (and in your local Node) together.

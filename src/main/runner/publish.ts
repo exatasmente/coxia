@@ -1,16 +1,21 @@
 import { createHash } from 'node:crypto';
+import { autonomousOf } from '../../shared/config/squads';
 import type { AgentDef, CommentTemplate, WorkspaceConfig } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
 import { type ForumMessage, type PublishedRef, runThreadId } from '../../shared/forum';
 import { createTranslator } from '../../shared/i18n';
+import { crMarkOf } from '../../shared/i18n/terms';
+import { type ReleaseUnit, alwaysWaits, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../../shared/release';
 import {
   type CommentProblem,
   type CommentTarget,
   type FlowStage,
   type OutputKind,
+  type ReleaseActivity,
   type Run,
   type StageComment,
   type StageOutput,
+  type WaitState,
   checkComment,
   checkText,
   findMarked,
@@ -19,6 +24,7 @@ import {
   priorityStageOf,
   pushStageOf,
   readMarker,
+  recordSubject,
   recordCommentDraft,
   recordCommentProposal,
   recordCommentPublished,
@@ -35,6 +41,7 @@ import type { ForumStore } from '../forum-core';
 import type { RunStore } from '../runs-core';
 import { moveRun } from '../runs-forum';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
+import { type BranchState, type MilestoneIssue, type ReleaseBrief, activitiesText, releaseRecord, releaseTitle } from './release';
 import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
 
 // What the runner leaves on the code host: the comment of each stage on the issue, the decision of each gate, the questions of the agents, the review of
@@ -63,6 +70,16 @@ export interface ProposalMeta {
   notify?: { title: string; body: string };
 }
 
+/** One step of a release that waits in Actions for a "sim". */
+export interface ReleaseMeta {
+  key: string;
+  issue: number;
+  issueTitle: string;
+  summary: string;
+  unit: ReleaseUnit;
+  notify?: { title: string; body: string };
+}
+
 export interface PushMeta {
   key: string;
   issue: number;
@@ -84,6 +101,10 @@ export interface Door {
   /** Puts the commands in Actions as one proposal; false when the same proposal is already there. */
   propose(meta: ProposalMeta, commands: VcsCommand[]): boolean;
   proposePush(meta: PushMeta): boolean;
+  /** Puts one step of a release in Actions as a proposal; false when the same proposal is already there. */
+  proposeRelease(meta: ReleaseMeta): boolean;
+  /** Runs one local step of a release by itself, audited as the agent. A push is refused by the door whatever is asked. Throws the reason it did not happen. */
+  release(meta: { issue: number; key: string; summary: string; by: string }, unit: ReleaseUnit): Promise<string>;
 }
 
 export interface PublisherEnv {
@@ -100,6 +121,8 @@ export interface PublisherDeps {
   env(): PublisherEnv;
   door: Door;
   now?(): Date;
+  /** The tags of the repository of a release run, as the local clone has them (a release run reads the beta it waits for from there). Without it the beta waits never end by themselves. */
+  localTags?(run: Run): Promise<string[]>;
 }
 
 export interface StageEnd {
@@ -142,6 +165,14 @@ export interface Publisher {
   squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
   stageEntered(runId: string, e: { stage: FlowStage; previous: FlowStage | null; autonomous: boolean }): Promise<void>;
+  /** What a release is made of right now, read from the host before its run exists: the pull requests aimed at its branch and the open issues of its milestone. Never throws. */
+  releaseBrief(i: { version: string; repo: string; branch: BranchState; from: string | null }): Promise<{ brief: ReleaseBrief; text: string }>;
+  /** A release run began: its tracking issue is created (or adopted), its activities are listed there, and the branch is opened (or asked to be) when it does not exist. */
+  releaseStarted(runId: string, e: { branchExists: boolean }): Promise<void>;
+  /** One step of the release, asked through the `ReleaseAction` tool: the answer is what the agent is told (it ran, or it waits for the person, or why it was refused). */
+  releaseStep(runId: string, input: unknown, who: { by: string; autonomous: boolean; stage: string; attempt: number }): Promise<string>;
+  /** What the sweep looks at in a release run: the activities, the betas and the stable that were published, and the tracking issue. Never throws. */
+  releaseTick(runId: string): Promise<void>;
 }
 
 const iso = (d: Date): string => d.toISOString();
@@ -206,6 +237,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   };
 
+  /** The issue a run's comments go to: its own issue, or, for a release, the tracking issue (0 until it exists). */
+  const trackIid = (run: Run): number => (run.subject ? (run.subject.tracking?.iid ?? 0) : run.issue.iid);
+
   const projects = (run: Run): { issue: string; repo: string } => {
     const env = deps.env();
     return { issue: env.issueProject, repo: env.repos.find((r) => r.id === run.repo)?.projectPath || env.issueProject };
@@ -233,7 +267,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function commentsOf(provider: VcsProvider, run: Run, target: CommentTarget, pr: { project: string; iid: number } | null): Promise<VcsComment[]> {
     const { issue } = projects(run);
-    const list = target === 'issue' ? await provider.listIssueComments(issue, run.issue.iid) : pr ? await provider.listMrComments(pr.project, pr.iid) : [];
+    const list = target === 'issue' ? await provider.listIssueComments(issue, trackIid(run)) : pr ? await provider.listMrComments(pr.project, pr.iid) : [];
     return list.filter((c) => !c.system);
   }
 
@@ -274,7 +308,12 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       say(run, 'runner.comment.noHost', { title: x.title });
       return;
     }
-    const where = x.target === 'issue' ? { project: projects(run).issue, iid: run.issue.iid } : await prOf(run, provider);
+    // A release run comments on its tracking issue; until that exists the comment stays a draft and goes out when it does (`flushTracking`).
+    if (x.target === 'issue' && run.subject && !trackIid(run)) {
+      say(run, 'runner.release.noTracking', { title: x.title });
+      return;
+    }
+    const where = x.target === 'issue' ? { project: projects(run).issue, iid: trackIid(run) } : await prOf(run, provider);
     if (!where) {
       say(run, 'runner.review.waiting', { round: x.key.replace(/^\D+/, '') || '1' });
       return;
@@ -292,11 +331,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         : { op: x.target === 'issue' ? 'editIssueNote' : 'editMrNote', project: where.project, iid: where.iid, noteId, body: x.body };
     const commands = await provider.planWrite(op);
 
-    const meta = { issue: run.issue.iid, summary: x.title, by: x.by, bodyHash: hash };
+    const meta = { issue: trackIid(run), summary: x.title, by: x.by, bodyHash: hash };
     const unit = { runId, purpose: 'comment', key: x.key, stage: x.stage, kinds: x.kinds, target: x.target, bodyHash: hash, project: where.project, iid: where.iid, edit: noteId !== null };
 
     if (!x.autonomous || x.problems.length) {
-      const created = door.propose({ key: `comment:${runId}:${x.key}:${hash.slice(0, 12)}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: x.title, detail: [x.problems.length ? tr('main.runner.comment.heldDetail', { problems: problemsText(x.problems) }) : '', x.body].filter(Boolean).join('\n\n'), unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: x.title } }, commands);
+      const created = door.propose({ key: `comment:${runId}:${x.key}:${hash.slice(0, 12)}`, issue: trackIid(run), issueTitle: run.issue.title, summary: x.title, detail: [x.problems.length ? tr('main.runner.comment.heldDetail', { problems: problemsText(x.problems) }) : '', x.body].filter(Boolean).join('\n\n'), unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: x.title } }, commands);
       moveRun(d, runId, (r) => recordCommentProposal(r, x.key, { target: x.target, bodyHash: hash, ...details }, now()));
       if (created) say(run, x.problems.length ? 'runner.comment.held' : 'runner.comment.proposed', x.problems.length ? { title: x.title, problems: problemsText(x.problems) } : { title: x.title });
       return;
@@ -358,7 +397,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       try {
         const body = `${tr(url ? 'main.runner.comment.notable' : 'main.runner.comment.notableNoLink', { status: p.headline, url: url ?? '' })}\n\n${markerOf(run.id, `${p.key}-notice`)}\n`;
         const cmds = await p.provider.planWrite({ op: p.target === 'issue' ? 'commentIssue' : 'commentMr', project: p.where.project, iid: p.where.iid, body });
-        await door.post({ issue: run.issue.iid, key: `notice:${run.id}:${p.key}:${hashOf(p.headline).slice(0, 8)}`, summary: p.title, by: stageAgent(run, p.key), bodyHash: hashOf(body) }, cmds);
+        await door.post({ issue: trackIid(run), key: `notice:${run.id}:${p.key}:${hashOf(p.headline).slice(0, 8)}`, summary: p.title, by: stageAgent(run, p.key), bodyHash: hashOf(body) }, cmds);
       } catch (e) {
         say(run, 'runner.comment.failed', { title: p.title, reason: message(e) });
       }
@@ -420,8 +459,42 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     await deliver(runId, { key, stage: e.stage.id, kinds: ['question'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: e.agent.id, autonomous: e.autonomous, announce: false });
   }
 
+  /**
+   * The plan was just accepted and its heads frozen from what the run had read (what the person was shown): the host is read again at once, and a pull request that
+   * moved in the meantime, or that was not in the plan, is said in the thread. It is not merged either way (a merge needs the frozen head), so this only tells.
+   */
+  async function reportMovedSincePlan(runId: string): Promise<void> {
+    if (!need(runId).subject?.planned) return;
+    await refreshActivities(runId);
+    const run = need(runId);
+    const planned = run.subject?.planned ?? {};
+    for (const a of run.subject?.activities ?? []) {
+      if (a.state !== 'open') continue;
+      const was = planned[String(a.pr)];
+      if (!was) say(run, 'runner.release.notInPlan', { pr: a.pr, now: a.head.slice(0, 9) });
+      else if (was.toLowerCase() !== a.head.toLowerCase()) say(run, 'runner.release.movedSincePlan', { pr: a.pr, was: was.slice(0, 9), now: a.head.slice(0, 9) });
+    }
+  }
+
+  /**
+   * The run has just entered the plan gate with the heads it had read (`seen`, taken by the transition): the host is read once more and `seen` is taken again from that, so what
+   * the person is shown is as fresh as the end of the plan stage. After this nothing rewrites it (a sweep rewrites `activities`, not `seen`): the gate freezes `seen`.
+   */
+  async function sealSeen(runId: string): Promise<void> {
+    const run = need(runId);
+    if (!run.subject || run.subject.planned || run.status !== 'gate') return;
+    const first = flowOfRun(run, deps.config()).find((s) => s.type === 'gate');
+    if (!first || first.id !== run.stage) return;
+    await refreshActivities(runId);
+    const fresh = need(runId);
+    if (!fresh.subject || fresh.subject.planned || fresh.status !== 'gate' || fresh.stage !== first.id) return;
+    const seen = Object.fromEntries(fresh.subject.activities.map((a) => [String(a.pr), a.head]));
+    moveRun(d, runId, (r) => recordSubject(r, { seen }, now()));
+  }
+
   async function gate(runId: string, e: { stage: FlowStage; action: GateAction; reason: string; autonomous: boolean }): Promise<void> {
     const config = deps.config();
+    if (e.action !== 'reject' && need(runId).subject && flowOfRun(need(runId), config).find((s) => s.type === 'gate')?.id === e.stage.id) await reportMovedSincePlan(runId).catch(() => undefined);
     const tpl = config.devCycle.comments.gate;
     if (!tpl) return;
     const run = need(runId);
@@ -698,12 +771,20 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (deps.runs.get(runId)) await pullRequest(runId);
       return;
     }
+    if (a.kind === 'release-git') return releaseStepDone(a);
     const unit = a.unit ?? {};
     const runId = String(unit.runId ?? '');
     const run = deps.runs.get(runId);
     if (!run) return;
     const provider = door.provider();
     if (unit.purpose === 'run-pr') return pullRequestOpened(runId, responses);
+    if (unit.purpose === 'release-tracking') return trackingMade(runId, responses);
+    if (unit.purpose === 'release-close') {
+      const tracking = run.subject?.tracking;
+      if (!tracking) return;
+      moveRun(d, runId, (r) => recordSubject(r, { tracking: { ...tracking, closed: true } }, now()));
+      return say(run, 'runner.release.closed', { url: tracking.url ?? '' });
+    }
     if (unit.purpose === 'undo') {
       const key = String(unit.key);
       if (!run.comments[key]) return;
@@ -796,6 +877,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (!provider) return { over: false };
       const { issue } = projects(run);
       if (w.kind === 'pr-merged') return { over: (await prState(run, provider)) === 'merged' };
+      if (w.kind === 'release-approved') return { over: await releaseMerged(run, provider) };
+      if (w.kind === 'beta-age') return { over: await betaAged(run, provider, w) };
       if (w.kind === 'label') {
         const want = (w.label ?? '').trim().toLowerCase();
         return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
@@ -905,6 +988,359 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  // ---- a release run -----------------------------------------------------------------------------------------------------------------
+  // A release run has no issue: it has a version. Its comments go to a tracking issue "Release X.Y.Z" (made, or adopted when one is open with that title); the
+  // steps of the release are asked through the `ReleaseAction` tool and leave the machine only through the door, a push never by itself; and what the host says
+  // (the pull requests aimed at the branch, the release a tag was published as) is read here and nowhere else.
+
+  /** The agent that speaks for the release (the first work stage's), and whether it runs by itself: what decides the tracking issue and the app's own comments. */
+  const releaseAgentOf = (run: Run): { by: string; autonomous: boolean } => {
+    const config = deps.config();
+    const stage = flowOfRun(run, config).find((s) => s.type === 'work' && s.agent);
+    const agent = stage ? config.agents.team.find((a) => a.id === stage.agent) : undefined;
+    return { by: agent?.id ?? 'app', autonomous: !!agent && autonomousOf(config, agent) };
+  };
+
+  const releaseRepos = (repo: string): { repo: string; issue: string } => {
+    const env = deps.env();
+    return { repo: env.repos.find((r) => r.id === repo)?.projectPath || env.issueProject, issue: env.issueProject };
+  };
+
+  async function inChunks<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const out: R[] = [];
+    for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+    return out;
+  }
+
+  const checksPass = (ci: { status: string } | null): boolean => !ci || ci.status === 'success' || ci.status === 'skipped';
+
+  /** The pull requests aimed at the release branch (open and merged), with approvals for the open ones, and the open issues of the milestone that none of them carries. */
+  async function readActivities(provider: VcsProvider, where: { repo: string; issue: string }, version: string): Promise<{ activities: ReleaseActivity[]; milestone: MilestoneIssue[] }> {
+    const listed = await provider.listMrsByTarget(where.repo, releaseBranchOf(version), { limit: 100 });
+    const mrs = await inChunks(listed, 5, async (m) => (m.state === 'open' ? provider.getMr(where.repo, m.iid, { approvals: true }).catch(() => m) : m));
+    const activities = mrs
+      .map((m): ReleaseActivity => ({ pr: m.iid, title: m.title, url: m.webUrl, head: m.sha, state: m.state === 'merged' ? 'merged' : 'open', approved: m.state === 'merged' || (m.approvals?.approved === true && !m.draft && checksPass(m.ci)), issue: m.issueRefs[0] ?? null }))
+      .sort((a, b) => a.pr - b.pr);
+    let milestone: MilestoneIssue[] = [];
+    try {
+      if (provider.caps.issues) {
+        const carried = new Set(activities.map((a) => a.issue));
+        milestone = (await provider.listIssues({ project: where.issue, scope: 'all', limit: 100 }))
+          .filter((i) => i.state === 'open' && i.milestone?.trim() === version && !carried.has(i.iid))
+          .map((i) => ({ iid: i.iid, title: i.title, url: i.webUrl }));
+      }
+    } catch (e) {
+      console.error('[runner] could not read the milestone of a release', message(e));
+    }
+    return { activities, milestone };
+  }
+
+  async function releaseBrief(i: { version: string; repo: string; branch: BranchState; from: string | null }): Promise<{ brief: ReleaseBrief; text: string }> {
+    const empty: ReleaseBrief = { version: i.version, from: i.from, branch: i.branch, activities: [], milestone: [], read: false };
+    const provider = door.provider();
+    let brief = empty;
+    if (provider) {
+      try {
+        brief = { ...empty, ...(await readActivities(provider, releaseRepos(i.repo), i.version)), read: true };
+      } catch (e) {
+        console.error('[runner] could not read what a release is made of', message(e));
+      }
+    }
+    const { issue } = releaseRepos(i.repo);
+    return { brief, text: releaseRecord(brief, lang(), (n) => (provider ? provider.issueUrl(issue, n) : null), crMarkOf(provider?.kind ?? null)) };
+  }
+
+  const issueLink = (provider: VcsProvider, run: Run) => (n: number): string | null => provider.issueUrl(projects(run).issue, n);
+
+  /** A comment the app writes itself on the tracking issue, through a template of the cycle: it is a draft until the issue exists, and edited in place after. */
+  async function appComment(runId: string, e: { key: string; template: string; body: string }): Promise<void> {
+    const config = deps.config();
+    const tpl = config.devCycle.comments[e.template];
+    if (!tpl) return;
+    const run = need(runId);
+    const marker = markerOf(run.id, e.key);
+    const content: StageComment = { sections: [{ heading: '', body: e.body }], technical: '' };
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: '' }, content, { marker });
+    const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: false });
+    const agent = releaseAgentOf(run);
+    await deliver(runId, { key: e.key, stage: e.key, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: agent.by, autonomous: agent.autonomous, announce: false });
+  }
+
+  /** The template a record key of the run is written with: the key of a stage is the template's, a beta's comment has its own. */
+  const templateKeyOf = (key: string): string => (/^beta-\d+$/.test(key) ? 'beta-published' : key);
+
+  /** The comments that were written before the tracking issue existed go out now. */
+  async function flushTracking(runId: string): Promise<void> {
+    const run = deps.runs.get(runId);
+    if (!run?.subject?.tracking) return;
+    const config = deps.config();
+    for (const [key, rec] of Object.entries(run.comments)) {
+      if (rec.status !== 'draft' || rec.target !== 'issue' || !rec.body) continue;
+      const tpl = config.devCycle.comments[templateKeyOf(key)];
+      const marker = markerOf(run.id, key);
+      const checked = checkComment(rec.body, { ...checkOptions(run, config), status: rec.headline ?? '', marker, technicalDetail: tpl?.technicalDetail ?? true });
+      const kinds: ForumMessage['kind'][] = key.startsWith('decision-') ? ['decision'] : key.startsWith('question-') ? ['question'] : ['post'];
+      const app = !run.stages.some((s) => s.stage === key);
+      await deliver(runId, { key, stage: key, kinds, target: 'issue', body: checked.body, headline: rec.headline ?? '', title: rec.title ?? key, problems: checked.problems, by: app ? releaseAgentOf(run).by : stageAgent(run, key), autonomous: app ? releaseAgentOf(run).autonomous : stageAutonomy(run, key), announce: false });
+    }
+  }
+
+  /** Reads the activities again: the run keeps the list, and the comment of the tracking issue that shows it is edited when it says something new. */
+  async function refreshActivities(runId: string): Promise<void> {
+    const run = need(runId);
+    if (!run.subject) return;
+    const provider = door.provider();
+    if (!provider) return;
+    let read: { activities: ReleaseActivity[]; milestone: MilestoneIssue[] };
+    try {
+      read = await readActivities(provider, projects(run), run.subject.version);
+    } catch (e) {
+      console.error('[runner] could not read the activities of a release', runId, message(e));
+      return;
+    }
+    if (JSON.stringify(read.activities) !== JSON.stringify(run.subject.activities)) moveRun(d, runId, (r) => recordSubject(r, { activities: read.activities }, now()));
+    await appComment(runId, { key: 'activities', template: 'activities', body: activitiesText(run.subject.version, read.activities, read.milestone, lang(), issueLink(provider, run), crMarkOf(provider.kind)) });
+  }
+
+  /** The tracking issue exists: the run knows where it is, the drafts that waited go out, and the activities are listed on it. */
+  async function trackingKnown(runId: string, tracking: { iid: number; url: string | null }): Promise<void> {
+    const run = need(runId);
+    if (!run.subject || run.subject.tracking) return;
+    moveRun(d, runId, (r) => recordSubject(r, { tracking: { iid: tracking.iid, url: tracking.url } }, now()));
+    await flushTracking(runId);
+    await refreshActivities(runId);
+  }
+
+  /** The issue "Release X.Y.Z": adopted when one is open with that title, else made through the door (by itself for an autonomous agent, as a proposal otherwise). */
+  async function ensureTracking(runId: string): Promise<void> {
+    const run = need(runId);
+    if (!run.subject || run.subject.tracking) return;
+    if (door.refusal()) return say(run, 'runner.release.trackingRefused');
+    const provider = door.provider();
+    if (!provider) return say(run, 'runner.release.trackingNoHost');
+    const { issue: project } = projects(run);
+    const title = releaseTitle(run.subject.version);
+    try {
+      // An open issue with the title is taken only when it is the person's own (its author is the user the app acts as) or carries the label that names this version (the
+      // cycle's `releaseLabelPattern`): somebody else's issue of that title is not where a release reports, and a new one is made.
+      const same = (await provider.listIssues({ project, scope: 'all', limit: 100 })).filter((i) => i.state === 'open' && i.title.trim().toLowerCase() === title.toLowerCase());
+      const me = await provider.currentUser().catch(() => null);
+      let pattern: RegExp | null = null;
+      try {
+        pattern = new RegExp(deps.config().devCycle.releaseLabelPattern, 'i');
+      } catch {
+        pattern = null;
+      }
+      const version = run.subject.version;
+      const ours = (i: (typeof same)[number]): boolean => (!!me && !!i.author && i.author.toLowerCase() === me.username.toLowerCase()) || i.labels.some((l) => pattern?.exec(l)?.[1] === version);
+      const found = same.find(ours);
+      for (const other of same.filter((i) => !ours(i))) say(run, 'runner.release.trackingNotAdopted', { url: other.webUrl, author: other.author ?? '—' });
+      if (found) {
+        say(run, 'runner.release.trackingAdopted', { url: found.webUrl });
+        return trackingKnown(runId, { iid: found.iid, url: found.webUrl || null });
+      }
+    } catch (e) {
+      return say(run, 'runner.release.trackingFailed', { reason: message(e) });
+    }
+    const body = tr('main.runner.release.trackingBody', { version: run.subject.version });
+    const key = `release:${runId}:tracking`;
+    const summary = tr('main.runner.release.summary.tracking', { version: run.subject.version });
+    const who = releaseAgentOf(run);
+    try {
+      const commands = await provider.planWrite({ op: 'createIssue', project, title, body, labels: [] });
+      if (!who.autonomous) {
+        const created = door.propose({ key, issue: 0, issueTitle: run.issue.title, summary, detail: body, unit: { runId, purpose: 'release-tracking' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+        if (created) say(run, 'runner.release.trackingProposed', { title });
+        return;
+      }
+      const responses = await door.post({ issue: 0, key, summary, by: who.by, bodyHash: hashOf(body) }, commands);
+      const made = prRefOf(responses[0]);
+      if (made.iid === null) return say(run, 'runner.release.trackingFailed', { reason: tr('main.runner.comment.noId') });
+      say(run, 'runner.release.trackingCreated', { url: made.url ?? '' });
+      await trackingKnown(runId, { iid: made.iid, url: made.url });
+    } catch (e) {
+      say(run, 'runner.release.trackingFailed', { reason: message(e) });
+    }
+  }
+
+  /** How many betas of one version the wait looks for on the host. */
+  const MAX_BETAS = 30;
+
+  const stepKey = (u: ReleaseUnit): string => [u.op, u.pr, u.branch, u.channel, u.from].filter((x) => x !== undefined).join(':');
+
+  function stepSummary(u: ReleaseUnit): string {
+    const p = { version: u.version, pr: u.pr ?? '', tag: u.from ?? '' };
+    if (u.op === 'open') return tr(u.from ? 'main.runner.release.summary.open.from' : 'main.runner.release.summary.open', p);
+    if (u.op === 'push-branch') return tr(u.branch === 'main' ? 'main.runner.release.summary.push-branch.main' : 'main.runner.release.summary.push-branch', p);
+    if (u.op === 'push-tag') return tr(`main.runner.release.summary.push-tag.${u.channel ?? 'stable'}`, p);
+    return tr(`main.runner.release.summary.${u.op}`, p);
+  }
+
+  /**
+   * One step of the release, asked by an agent's tool call. The answer is plain text for the model. A push always waits in Actions for a "sim"; a local step runs by itself
+   * only when the agent that asked does (audited, as that agent) and waits in Actions otherwise. The unit is judged here and again when it runs.
+   */
+  async function releaseStep(runId: string, input: unknown, who: { by: string; autonomous: boolean; stage: string; attempt: number }): Promise<string> {
+    const run = need(runId);
+    if (!run.subject) return 'This run is not a release: there is nothing to ask for.';
+    let unit: ReleaseUnit;
+    try {
+      unit = parseReleaseUnit({ ...rec(input), runId });
+    } catch (e) {
+      say(run, 'runner.release.stepRefused', { reason: message(e) }, who.stage);
+      return `Refused, nothing was done: ${message(e)}.`;
+    }
+    if (unit.version !== run.subject.version) {
+      say(run, 'runner.release.stepRefused', { reason: `version ${unit.version}` }, who.stage);
+      return `Refused, nothing was done: this run releases ${run.subject.version}, not ${unit.version}.`;
+    }
+    const summary = stepSummary(unit);
+    // Each time a stage runs (the person may send it back for another beta) is its own step: the proposal of an earlier attempt that was carried out is not this one.
+    const key = `release:${runId}:${who.stage}:${who.attempt}:${stepKey(unit)}`;
+    // A push, a beta and a stable wait for the person whatever the agent's autonomy (D6, D18); `open` and `merge-pr` follow it.
+    if (alwaysWaits(unit.op) || !who.autonomous) {
+      const created = door.proposeRelease({ key, issue: trackIid(run), issueTitle: run.issue.title, summary, unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } });
+      if (created) say(run, alwaysWaits(unit.op) ? 'runner.release.alwaysWaits' : 'runner.release.proposed', { summary }, who.stage);
+      return created ? `Waiting for the person: "${summary}" is in Actions and happens when they say yes. Nothing was done yet.` : `Already waiting in Actions (or already done): "${summary}".`;
+    }
+    try {
+      const out = await door.release({ issue: trackIid(run), key, summary, by: who.by }, unit);
+      say(run, 'runner.release.done', { summary }, who.stage);
+      await refreshActivities(runId).catch(() => undefined);
+      return `Done: ${summary}.\n${out.slice(-1500)}`;
+    } catch (e) {
+      say(run, 'runner.release.failed', { summary, reason: message(e) }, who.stage);
+      return `Did not happen: ${summary}. ${message(e)}`;
+    }
+  }
+
+  async function releaseStarted(runId: string, e: { branchExists: boolean }): Promise<void> {
+    const run = need(runId);
+    if (!run.subject) return;
+    await ensureTracking(runId);
+    const who = releaseAgentOf(run);
+    if (!e.branchExists) await releaseStep(runId, { op: 'open', version: run.subject.version, ...(run.subject.from ? { from: run.subject.from } : {}) }, { by: who.by, autonomous: who.autonomous, stage: 'start', attempt: 1 });
+    await refreshActivities(runId);
+  }
+
+  /** A step of the release that waited in Actions was carried out. */
+  async function releaseStepDone(a: ReleaseAction): Promise<void> {
+    const runId = String(a.unit?.runId ?? '');
+    const run = deps.runs.get(runId);
+    if (!run?.subject) return;
+    say(run, 'runner.release.stepDone', { summary: a.summary ?? '' });
+    await refreshActivities(runId);
+  }
+
+  /** The tracking issue a proposal made: the run learns where it is. */
+  async function trackingMade(runId: string, responses: unknown[]): Promise<void> {
+    const run = need(runId);
+    const made = prRefOf(responses[0]);
+    if (made.iid === null) return say(run, 'runner.release.trackingFailed', { reason: tr('main.runner.comment.noId') });
+    say(run, 'runner.release.trackingCreated', { url: made.url ?? '' });
+    await trackingKnown(runId, { iid: made.iid, url: made.url });
+  }
+
+  /** The release is published: the tracking issue is closed (by itself for an autonomous agent, as a proposal otherwise). */
+  async function closeTracking(runId: string): Promise<void> {
+    const run = need(runId);
+    const tracking = run.subject?.tracking;
+    if (!run.subject || !tracking || tracking.closed) return;
+    if (door.refusal()) return;
+    const provider = door.provider();
+    if (!provider) return;
+    const { issue: project } = projects(run);
+    const key = `release:${runId}:close`;
+    const summary = tr('main.runner.release.summary.close', { version: run.subject.version });
+    const commands = await provider.planWrite({ op: 'closeIssue', project, iid: tracking.iid });
+    const who = releaseAgentOf(run);
+    if (!who.autonomous) {
+      const created = door.propose({ key, issue: tracking.iid, issueTitle: run.issue.title, summary, unit: { runId, purpose: 'release-close' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+      if (created) say(run, 'runner.release.closeProposed', { summary });
+      return;
+    }
+    try {
+      await door.post({ issue: tracking.iid, key, summary, by: who.by }, commands);
+      moveRun(d, runId, (r) => recordSubject(r, { tracking: { ...tracking, closed: true } }, now()));
+      say(run, 'runner.release.closed', { url: tracking.url ?? '' });
+    } catch (e) {
+      say(run, 'runner.release.closeFailed', { reason: message(e) });
+    }
+  }
+
+  const betaTagsOf = async (run: Run): Promise<string[]> => {
+    const version = run.subject?.version ?? '';
+    const names = (await deps.localTags?.(run)) ?? [];
+    return names.filter((n) => new RegExp(`^v${version.replace(/\./g, '\\.')}-beta\\.[1-9][0-9]*$`).test(n)).sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop()));
+  };
+
+  /** The release the host published for a tag, or null when it is a draft, unknown or unreadable. */
+  const publishedRelease = async (provider: VcsProvider, run: Run, tag: string) => {
+    const rel = await provider.getRelease(projects(run).repo, tag).catch(() => null);
+    return rel && !rel.draft && rel.publishedAt ? rel : null;
+  };
+
+  const blockingLabelOf = (run: Run, wait?: { label?: string }): string => {
+    const stage = flowOfRun(run, deps.config()).find((s) => s.waitsFor?.kind === 'beta-age');
+    return (wait?.label ?? stage?.waitsFor?.label ?? '').trim() || 'beta-blocker';
+  };
+
+  /**
+   * The betas of the version: the highest number there is (the clone's tags and what the host has published, the host asked tag by tag from beta.1 on, so a beta cut elsewhere
+   * counts too) and the published release of each beta the host shows.
+   */
+  async function betasOf(run: Run, provider: VcsProvider): Promise<{ latest: number; published: Map<number, NonNullable<Awaited<ReturnType<typeof publishedRelease>>>> }> {
+    const version = run.subject?.version ?? '';
+    const local = await betaTagsOf(run);
+    const localMax = local.length ? Number(local[local.length - 1].split('.').pop()) : 0;
+    const published = new Map<number, NonNullable<Awaited<ReturnType<typeof publishedRelease>>>>();
+    for (let n = 1; n <= MAX_BETAS; n++) {
+      const rel = await publishedRelease(provider, run, `v${version}-beta.${n}`);
+      if (rel) published.set(n, rel);
+      else if (n > localMax) break;
+    }
+    return { latest: Math.max(localMax, ...published.keys()), published };
+  }
+
+  async function releaseTick(runId: string): Promise<void> {
+    const run = deps.runs.get(runId);
+    if (!run?.subject || run.status === 'cancelled' || run.subject.tracking?.closed) return;
+    const provider = door.provider();
+    if (!provider) return;
+    // The tracking issue was not made at the start (the host was down, or the proposal was skipped): it is looked for, and made, again.
+    if (!run.subject.tracking) await ensureTracking(runId);
+    await refreshActivities(runId);
+    await flushTracking(runId);
+    for (const [n, rel] of (await betasOf(run, provider)).published) {
+      if (need(runId).comments[`beta-${n}`]?.status === 'published') continue;
+      await appComment(runId, { key: `beta-${n}`, template: 'beta-published', body: `${tr('main.runner.release.betaLine', { tag: `v${run.subject.version}-beta.${n}`, url: rel.webUrl })}\n\n${tr('main.runner.release.betaWait', { label: blockingLabelOf(run) })}` });
+    }
+    const stable = await publishedRelease(provider, run, releaseTagOf(run.subject.version));
+    if (stable && !stable.prerelease) {
+      await appComment(runId, { key: 'stable-published', template: 'stable-published', body: tr('main.runner.release.stableLine', { version: run.subject.version, url: stable.webUrl }) });
+      await closeTracking(runId);
+    }
+  }
+
+  /** Whether no pull request is open against the release branch any more: what a wait for `release-approved` ends on. */
+  async function releaseMerged(run: Run, provider: VcsProvider): Promise<boolean> {
+    if (!run.subject) return false;
+    const list = await provider.listMrsByTarget(projects(run).repo, releaseBranchOf(run.subject.version), { limit: 100 });
+    return !list.some((m) => m.state === 'open');
+  }
+
+  /** Whether the latest beta has been published for `minutes` and no issue with the blocking label is open: what a wait for `beta-age` ends on. */
+  async function betaAged(run: Run, provider: VcsProvider, w: WaitState): Promise<boolean> {
+    if (!run.subject || !w.minutes) return false;
+    const { latest, published } = await betasOf(run, provider);
+    // The latest beta there is must be the one that is out: a newer one the host does not show yet starts the wait over.
+    const rel = latest ? published.get(latest) : undefined;
+    if (!rel?.publishedAt || Date.parse(rel.publishedAt) + w.minutes * 60_000 > (deps.now?.() ?? new Date()).getTime()) return false;
+    // The blocking report is an open issue with the label: where the host cannot say (no labels on issues), nothing is known, and the wait goes on.
+    const blocking = await provider.listIssues({ project: projects(run).issue, scope: 'labels', labels: [blockingLabelOf(run, w)], limit: 20 });
+    return !blocking.some((i) => i.state === 'open');
+  }
+
   // Anything that goes wrong while publishing is said in the thread and never fails the stage or the run.
   const guarded = (runId: string, work: () => Promise<void>): Promise<void> =>
     work().catch((e) => {
@@ -916,6 +1352,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   return {
     stageEnded: (runId, end) =>
       guarded(runId, async () => {
+        await sealSeen(runId);
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
         if (end.output.priority) await proposePriority(runId, end);
@@ -930,6 +1367,10 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
     squadRouted: (runId, e) => guarded(runId, () => squadRouted(runId, e)),
     requestIssue: (runId, e) => requestIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
+    releaseBrief,
+    releaseStarted: (runId, e) => guarded(runId, () => releaseStarted(runId, e)),
+    releaseStep: (runId, input, who) => releaseStep(runId, input, who).catch((e) => `Did not happen: ${message(e)}`),
+    releaseTick: (runId) => guarded(runId, () => releaseTick(runId)),
   };
 }
 

@@ -47,13 +47,20 @@ describe('the run screen in a browser', () => {
 
   it('lets the switches of autonomy, the squad choice, the undo, the flow move and the start through', () => {
     for (const channel of ['runs:setAutonomous', 'runs:setSquadAutonomous', 'runs:setSquad', 'runs:removeSquad', 'runs:undoPost', 'runs:migrateFlow', 'runs:start', 'runs:startStage']) expect(webAccess(channel), channel).toBe('allow');
+    // the start of a release run is the window's (D19)
+    expect(webAccess('runs:startRelease')).toBe('deny');
   });
 
   it('has no desktop-only branch left: no screen of the cycle reads the platform, and no text says the app on the computer must do it', () => {
     for (const f of readdirSync(CYCLE).filter((n) => /\.tsx?$/.test(n))) {
       const text = source(CYCLE, f);
-      expect(text, f).not.toMatch(/isWeb\(|platform'|desktopOnly|\bweb[=:}]/);
+      // The one exception (D19): starting a release is a desktop-only channel, and only the runs screen reads the platform, to leave that field out of a paired browser.
+      const allowed = f === 'RunsScreen.tsx' ? /desktopOnly|\bweb[=:}]/ : /isWeb\(|platform'|desktopOnly|\bweb[=:}]/;
+      expect(text, f).not.toMatch(allowed);
+      if (f === 'RunsScreen.tsx') expect(text.match(/isWeb\(/g)).toHaveLength(1);
     }
+    const runs = source(CYCLE, 'RunsScreen.tsx');
+    expect(runs).toMatch(/flows\?\.release && !isWeb\(\) && <StartRelease/);
   });
 
   it('calls only channels that exist: each runs: and forum: channel in the screens is served by a module', () => {

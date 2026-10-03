@@ -18,6 +18,9 @@ const PURPOSE_KEY: Record<ProposalPurpose, string> = {
   'request-issue': 'ui.proposal.purpose.issue',
   squad: 'ui.proposal.purpose.squad',
   push: 'ui.proposal.purpose.push',
+  release: 'ui.proposal.purpose.release',
+  'release-tracking': 'ui.proposal.purpose.releaseTracking',
+  'release-close': 'ui.proposal.purpose.releaseClose',
 };
 
 const WHAT_KEY: Record<ProposalPurpose, string> = {
@@ -30,6 +33,9 @@ const WHAT_KEY: Record<ProposalPurpose, string> = {
   'request-issue': 'ui.proposal.what.issue',
   squad: 'ui.proposal.what.labels',
   push: 'ui.proposal.what.push',
+  release: 'ui.proposal.what.release',
+  'release-tracking': 'ui.proposal.what.releaseTracking',
+  'release-close': 'ui.proposal.what.releaseClose',
 };
 
 const THREAD_KEY: Record<FindingThread, string> = {

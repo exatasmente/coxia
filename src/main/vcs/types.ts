@@ -65,6 +65,12 @@ export interface VcsApprovals {
   by: string[];
   /** Reviewers that asked for changes (GitHub). */
   changesRequestedBy: string[];
+  /**
+   * Whether an approval stands for the commit the pull request is at now, by someone who is a member of the project (GitHub: the review's `commit_id` is the head and the
+   * reviewer's `author_association` is OWNER, MEMBER or COLLABORATOR, and nobody of those asks for changes). Absent where the host cannot say: GitLab and Bitbucket do not
+   * bind an approval to a commit in what they answer (the project's setting that drops approvals when commits are added does), so `approved` is all there is.
+   */
+  onHead?: boolean;
 }
 
 export type VcsMrState = 'open' | 'merged' | 'closed';
@@ -93,6 +99,8 @@ export interface VcsMr {
   mergedAt: string | null;
   /** The text the issue links are read from (description). */
   description: string;
+  /** The branch comes from another repository than the one the change request is aimed at (a fork); absent when the host's list does not say. */
+  fromFork?: boolean;
   /** Roles of the current user on it: author and/or reviewer (list calls only). */
   roles: ('author' | 'reviewer')[];
   /** Issue numbers the host says this MR closes or references; empty when unknown. */
@@ -147,6 +155,18 @@ export interface VcsRepo {
   webUrl: string;
 }
 
+/** What a host published for a tag: a release (GitHub, GitLab), as far as a release run needs it. */
+export interface VcsRelease {
+  tag: string;
+  name: string;
+  /** A draft is not public: it has no publication time yet. */
+  draft: boolean;
+  prerelease: boolean;
+  /** When it was published; null while it is a draft. */
+  publishedAt: string | null;
+  webUrl: string;
+}
+
 export type { VcsCaps };
 
 export type VcsTransport = 'cli' | 'api';
@@ -196,6 +216,8 @@ export type VcsWriteOp =
    * with no labels on issues (Bitbucket) leaves them out.
    */
   | { op: 'createIssue'; project: string; title: string; body: string; labels: string[] }
+  /** An issue closed (what a tracking issue becomes when its work is done). */
+  | { op: 'closeIssue'; project: string; iid: number }
   /** A pull request from a branch of the same repository. */
   | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string };
 
@@ -248,6 +270,13 @@ export interface VcsProvider {
   /** MRs that reference the issue (open or merged), in the issue's own project. */
   linkedMrs(project: string, iid: number): Promise<VcsMr[]>;
   searchMrs(project: string, query: { text: string; createdAfter: string }): Promise<VcsMr[]>;
+  /**
+   * The merge or pull requests aimed at `branch`, open and merged (a release is made of them), newest update first. A list read: approvals and checks are not in it
+   * (`getMr` fills them one by one).
+   */
+  listMrsByTarget(project: string, branch: string, opts?: { limit?: number }): Promise<VcsMr[]>;
+  /** The release the host published for `tag`, or null when it has none: a tag that was never published, a draft the host does not show, or a host with no releases (Bitbucket). */
+  getRelease(project: string, tag: string): Promise<VcsRelease | null>;
   listMrCommits(project: string, iid: number): Promise<VcsCommit[]>;
   listMrChanges(project: string, iid: number): Promise<VcsFileChange[]>;
   listMrCi(project: string, iid: number): Promise<VcsCiRun[]>;

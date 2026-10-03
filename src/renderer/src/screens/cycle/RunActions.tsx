@@ -3,7 +3,7 @@ import type { AgentDef, SquadDef, WorkspaceConfig } from '../../../../shared/con
 import { shownText } from '../../../../shared/cycles/text';
 import { autonomousOf, squadOf } from '../../../../shared/config/squads';
 import { type FlowStage, type Run, type RunFailure, defaultSendBackTarget, looksLikeSendBack, sendBackTargets } from '../../../../shared/runs';
-import { type RunAction, type RunActionId, currentAgent, currentStage, runActions, skipWaitOutcome } from '../../../../shared/runs/view';
+import { type RunAction, type RunActionId, currentAgent, currentStage, planHeads, runActions, shortSha, skipWaitOutcome } from '../../../../shared/runs/view';
 import type { Card, ReleaseAction } from '../../../../shared/types';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
@@ -67,6 +67,30 @@ interface Props {
 }
 
 /** The text the person reads about what the run waits for, by state. */
+/** The commits the plan at this gate was written for, one per pull request: accepting the plan freezes exactly these. */
+function PlanHeads({ run }: { run: Run }) {
+  const t = useT();
+  const heads = planHeads(run);
+  if (!heads) return null;
+  return (
+    <div className="cy-plan-heads small">
+      <span className="muted">{t('ui.cycle.planHeads.title')}</span>
+      {heads.length === 0 ? (
+        <p className="muted">{t('ui.cycle.planHeads.none')}</p>
+      ) : (
+        <ul>
+          {heads.map((h) => (
+            <li key={h.pr}>
+              <span className="mono">{t('ui.cycle.planHeads.item', { pr: h.pr, sha: shortSha(h.seen) })}</span>
+              {h.now && <span className="error"> · {t('ui.cycle.planHeads.moved', { pr: h.pr, now: shortSha(h.now) })}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Waiting({ run, flow, config }: { run: Run; flow: readonly FlowStage[]; config: WorkspaceConfig | null }) {
   const t = useT();
   const team = config?.agents.team;
@@ -273,6 +297,7 @@ export function RunActions({ run, flow, config, card, actions, go, sendBackAsk =
         <RunBadge run={run} withStage />
       </div>
       <Waiting run={run} flow={flow} config={config} />
+      <PlanHeads run={run} />
       {proposals > 0 && (
         <p className="small cy-proposals">
           {t('ui.cycle.proposals', { count: proposals })}{' '}

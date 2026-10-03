@@ -5,7 +5,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type StageUsage, type Transition } from './types';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -72,6 +72,8 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
   run.wait = null;
   const base = { author: app, stage: stageId } as const;
   if (stage.type === 'gate') {
+    // The plan gate of a release shows the person the heads the run had read when it got there; this snapshot is the only thing the gate freezes (see `freezeAtPlanGate`).
+    if (run.subject && planGateOf(flow)?.id === stageId) run.subject.seen = headsOf(run.subject);
     run.status = 'gate';
     rec.status = 'waiting';
     log(run, at, 'stage-started', stageId, 'app');
@@ -169,6 +171,8 @@ export interface StartInput {
   cycleId: string;
   /** The commit the branch was cut from. */
   base?: string | null;
+  /** The run is a release of a version (its `issue` is the synthesized `release:X.Y.Z`). */
+  subject?: RunSubject;
 }
 
 /** What keeps a run from starting: an empty flow, or a stage that must have an agent and has none. Throws the refusal `startRun` gives. */
@@ -206,6 +210,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     base: input.base ?? null,
     createdAt: at,
     updatedAt: at,
+    ...(input.subject ? { subject: structuredClone(input.subject) } : {}),
   };
   log(run, at, 'started', null, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
@@ -281,10 +286,32 @@ function park(out: Run, pending: PendingResult, artifacts: string[], at: string)
 
 const waitAccept = (flow: FlowStage[], stageId: string): ForumDraft => ({ kind: 'system', author: app, code: 'run.stage.waitAccept', params: { stage: labelOf(flow, stageId) }, stage: stageId });
 
+// The plan gate of a release run is the first gate of its flow: accepting it (approving or skipping) freezes the heads of the activities the run has read, in the same
+// transition, so a call that is refused (not at a gate, no reason) freezes nothing. Sending the run back to the plan (a rejected plan gate, or a send-back to a stage before
+// it) clears them, so the next acceptance of the plan freezes again; a later gate never freezes or clears.
+const planGateOf = (flow: FlowStage[]): FlowStage | undefined => flow.find((s) => s.type === 'gate');
+
+const headsOf = (subject: RunSubject): Record<string, string> => Object.fromEntries(subject.activities.map((a) => [String(a.pr), a.head]));
+
+// What the gate freezes is what the run recorded on entering it (`seen`), never the activities as they stand at the click: a sweep rewrites those, and the click could freeze a head
+// the person never saw. A pull request pushed to during the wait is not in `seen`, so it fails closed. A run with no snapshot freezes nothing (every merge is then refused).
+function freezeAtPlanGate(out: Run, flow: FlowStage[]): void {
+  if (!out.subject || out.subject.planned || planGateOf(flow)?.id !== out.stage) return;
+  out.subject.planned = { ...(out.subject.seen ?? {}) };
+}
+
+function clearPlanBefore(out: Run, flow: FlowStage[], toStage: string): void {
+  const gate = planGateOf(flow);
+  if (!out.subject?.planned || !gate) return;
+  const index = (id: string): number => flow.findIndex((s) => s.id === id);
+  if (index(toStage) >= 0 && index(toStage) < index(gate.id)) delete out.subject.planned;
+}
+
 // Sends the run back to an earlier stage with the reason as a handoff from `from` to that stage's agent. The stage it leaves is marked rejected.
 // `start`: the person asked for it, so the stage starts at once even when its agent is not autonomous.
 function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDraft['author'], text: string, at: string, messages: ForumDraft[], start: boolean): void {
   finishStage(out, at, 'rejected');
+  clearPlanBefore(out, flow, toStage.id);
   messages.push({ kind: 'handoff', author: from, text, to: toStage.agent, stage: out.stage });
   enter(out, flow, toStage.id, at, messages, start);
 }
@@ -293,6 +320,7 @@ function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDr
 export function gateApprove(run: Run, flow: FlowStage[], at: string, note = ''): Transition {
   need(run, 'gate');
   const out = clone(run, at);
+  freezeAtPlanGate(out, flow);
   finishStage(out, at, 'done');
   log(out, at, 'gate-approved', run.stage, 'person', note.trim() || null);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
@@ -320,6 +348,7 @@ export function gateSkip(run: Run, flow: FlowStage[], reason: string, at: string
   const why = reason.trim();
   if (!why) throw new RunError('empty-reason');
   const out = clone(run, at);
+  freezeAtPlanGate(out, flow);
   finishStage(out, at, 'skipped');
   log(out, at, 'gate-skipped', run.stage, 'person', why);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.skipped', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
@@ -558,6 +587,7 @@ export function sendBackTo(run: Run, flow: FlowStage[], input: SendBackInput, at
   out.question = null;
   out.pending = null;
   if (reopened) log(out, at, 'reopened', run.stage, 'person', note || null);
+  clearPlanBefore(out, flow, target.id);
   log(out, at, 'sent-back', run.stage, 'person', `${target.id}${note ? `: ${note}` : ''}`);
   const messages: ForumDraft[] = [
     { kind: 'decision', author: person, code: reopened ? 'run.reopened' : 'run.sentBack', params: { stage: target.label }, text: note, stage: run.stage, public: true },
@@ -830,6 +860,29 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
   out.flow = snapshotOf(flow);
   log(out, at, 'flow-migrated', run.stage, 'person', out.flow.hash);
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
+}
+
+// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
+
+/** What a release run learns about its subject: where its tracking issue is, and the activities of the version as last read. A run with no subject is refused. */
+export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities' | 'seen'>>, at: string): Transition {
+  if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
+  const out = clone(run, at);
+  out.subject = { ...(out.subject as RunSubject), ...structuredClone(patch) };
+  return { run: out, messages: [] };
+}
+
+/**
+ * The heads the run saw on entering the plan gate (`seen`) are frozen as the plan's (once, until the run is sent back to the plan). The gates do this themselves in their own
+ * transition (`gateApprove`, `gateSkip` at the plan gate); this is the same step on its own. What a merge
+ * brings in is checked against them, so a commit pushed to a pull request after the plan was approved is not merged by the agent.
+ */
+export function freezePlan(run: Run, at: string): Transition {
+  if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
+  if (run.subject.planned) return { run, messages: [] };
+  const out = clone(run, at);
+  (out.subject as RunSubject).planned = { ...(run.subject.seen ?? {}) };
+  return { run: out, messages: [] };
 }
 
 // ---- tracker comments --------------------------------------------------------------------------------------------------------------------

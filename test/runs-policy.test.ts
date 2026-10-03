@@ -10,6 +10,8 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact'];
 const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
 const OPEN = [...READS, ...MOVES];
+// Starting a release run is the window's: it ends in the repository's own scripts and merged code, run as the person (D19). A paired browser follows the run and answers its gates.
+const DESKTOP = ['runs:startRelease'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
@@ -23,8 +25,13 @@ describe('web policy for the runs', () => {
     }
   });
 
-  it('lists no runs: channel as desktop-only', () => {
-    expect([...DESKTOP_ONLY].filter((c) => c.startsWith('runs:'))).toEqual([]);
+  it('lists as desktop-only the start of a release run and nothing else of the runs', () => {
+    expect([...DESKTOP_ONLY].filter((c) => c.startsWith('runs:'))).toEqual(DESKTOP);
+    for (const channel of DESKTOP) {
+      expect(webAccess(channel), channel).toBe('deny');
+      expect(webRefusal(channel, true), channel).not.toBeNull();
+      expect(webRefusal(channel, false), channel).not.toBeNull();
+    }
   });
 
   it('puts none of them behind the external-effects switch: nothing in a run reaches the code host', () => {
@@ -39,7 +46,7 @@ describe('web policy for the runs', () => {
 
   it('are exactly the channels the module serves, each one classified here', () => {
     const served = [...source('module.ts').matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1]);
-    expect(served.sort()).toEqual([...OPEN].sort());
+    expect(served.sort()).toEqual([...OPEN, ...DESKTOP].sort());
   });
 });
 
@@ -79,7 +86,7 @@ describe('the runner writes to a code host through one door', () => {
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
     const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
     expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
-    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl']));
+    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl', 'listMrsByTarget', 'getRelease', 'listIssues', 'issueUrl']));
     for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });
 });

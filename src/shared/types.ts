@@ -387,7 +387,9 @@ export type GitlabCommand = VcsCommand;
 
 // 'gitlab' is a write to GitLab (what every action saved before providers existed is); 'vcs' a write to GitHub or Bitbucket.
 // 'run-push' is the push of a run's branch (the runner proposes it; it always waits for its own "sim").
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push';
+// 'release-git' is one step of a release (open the branch, merge a pull request into it, cut a beta or the stable, push the branch or a tag): its `unit` is a
+// `ReleaseUnit` (shared/release.ts) and nothing else.
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push' | 'release-git';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {

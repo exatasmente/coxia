@@ -25,6 +25,7 @@ export const runsApi = {
   list: () => api.invoke<Run[]>('runs:list'),
   get: (id: string) => api.invoke<Run | null>('runs:get', id),
   start: (ref: string, repo?: string) => api.invoke<Run>('runs:start', ref, repo),
+  startRelease: (version: string, from?: string, repo?: string) => api.invoke<Run>('runs:startRelease', version, from, repo),
   startStage: (id: string) => api.invoke<Run>('runs:startStage', id),
   accept: (id: string, note?: string) => api.invoke<Run>('runs:accept', id, note),
   returnStage: (id: string, note: string) => api.invoke<Run>('runs:return', id, note),

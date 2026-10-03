@@ -7,6 +7,7 @@
   "ui.audit.kind.noteEdit": "Note edit",
   "ui.audit.kind.publish": "Publishing",
   "ui.audit.kind.push": "Branch push",
+  "ui.audit.kind.release": "Release step",
   "ui.audit.kind.sync": "Sync",
   "ui.audit.loading": "Reading the log…",
   "ui.audit.none": "No writes performed yet.",

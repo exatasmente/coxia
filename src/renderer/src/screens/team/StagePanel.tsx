@@ -69,7 +69,7 @@ export function StagePanel(p: StagePanelProps) {
     const kind = patch.kind ?? stage.waitsFor?.kind ?? 'pr-merged';
     const label = 'label' in patch ? patch.label : stage.waitsFor?.label;
     const minutes = 'minutes' in patch ? patch.minutes : stage.waitsFor?.minutes;
-    p.onPatch({ waitsFor: { kind, ...(kind === 'label' ? { label: label ?? '' } : {}), ...(kind === 'time' ? { minutes } : {}) } });
+    p.onPatch({ waitsFor: { kind, ...(kind === 'label' ? { label: label ?? '' } : {}), ...(kind === 'beta-age' && label?.trim() ? { label } : {}), ...(kind === 'time' || kind === 'beta-age' ? { minutes } : {}) } });
   };
 
   return (
@@ -219,13 +219,13 @@ export function StagePanel(p: StagePanelProps) {
                 </select>
               )}
             </Labeled>
-            {stage.waitsFor?.kind === 'label' && (
-              <Labeled label={t('ui.flow.f.waitLabel')}>
+            {(stage.waitsFor?.kind === 'label' || stage.waitsFor?.kind === 'beta-age') && (
+              <Labeled label={t(stage.waitsFor.kind === 'beta-age' ? 'ui.flow.f.waitBlockingLabel' : 'ui.flow.f.waitLabel')} hint={stage.waitsFor.kind === 'beta-age' ? t('ui.flow.f.waitBlockingLabelHint') : undefined}>
                 {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={stage.waitsFor?.label ?? ''} onChange={(e) => setWait({ label: e.target.value })} />}
               </Labeled>
             )}
-            {stage.waitsFor?.kind === 'time' && (
-              <Labeled label={t('ui.flow.f.waitMinutes')}>
+            {(stage.waitsFor?.kind === 'time' || stage.waitsFor?.kind === 'beta-age') && (
+              <Labeled label={t(stage.waitsFor.kind === 'beta-age' ? 'ui.flow.f.waitBetaMinutes' : 'ui.flow.f.waitMinutes')}>
                 {(id) => <input id={id} type="number" min={1} className="text-input" style={{ maxWidth: 160 }} value={stage.waitsFor?.minutes ?? ''} onChange={(e) => setWait({ minutes: e.target.value === '' ? undefined : Number(e.target.value) })} />}
               </Labeled>
             )}
