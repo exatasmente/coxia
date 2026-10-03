@@ -4,6 +4,7 @@ import { conflictApi } from '../conflictApi';
 import { VERIFY_SUGGESTION } from '../conflictVerifyDefaults';
 import { tNodes, useT } from '../i18n';
 import { isWeb } from '../platform';
+import '../conflict.css';
 
 const EXAMPLE_COMMAND = 'source ~/.nvm/nvm.sh; nvm use 18 >/dev/null; ln -sfn "$CLONE_DIR/node_modules" node_modules; npx jest'; // i18n-ignore: shell command
 
@@ -96,7 +97,7 @@ export function ConflictVerifySection() {
         </div>
       )}
       {orphans.length > 0 && (
-        <div role="note" style={{ display: 'grid', gap: 8, padding: 12, borderRadius: 10, border: '1px solid var(--field-line)' }}> {/* i18n-ignore: CSS values */}
+        <div role="note" className="cv-unclaimed">
           <strong>{t('ui.verify.unclaimed.title')}</strong>
           <span className="small muted">{t('ui.verify.unclaimed.hint')}</span>
           {orphans.map((p) => (

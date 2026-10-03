@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expandHome } from '../shared/config/paths';
 import type { WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
-import { ownVerifyProjects } from '../shared/verifyCommands';
+import { VERIFY_COMMAND_MAX, ownVerifyProjects } from '../shared/verifyCommands';
 import { readConfigFile, writeConfigFile } from './config-bootstrap';
 import { mirroredProjects } from './verifyProjects';
 import { readRegistry, workspaceDir, workspacesDir } from './workspaces-core';
@@ -49,15 +49,26 @@ function backupName(root: string, now: Date): string {
   return existsSync(first) ? `${first}-${now.toISOString().replace(/[:.]/g, '-')}` : first;
 }
 
-function parseOld(file: string): Record<string, string> | null {
+// An error reading the file is not the same as a file that is not a command list: the first waits for the next start, the second is kept aside.
+function parseOld(file: string): { kind: 'io'; message: string } | { kind: 'unusable' } | { kind: 'ok'; entries: Record<string, string> } {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
-    return Object.fromEntries(Object.entries(raw).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : [])));
-  } catch {
-    return null;
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    return { kind: 'io', message: e instanceof Error ? e.message : String(e) };
   }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { kind: 'unusable' };
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { kind: 'unusable' };
+  return { kind: 'ok', entries: Object.fromEntries(Object.entries(raw).flatMap(([k, v]) => (typeof v === 'string' && v.trim() ? [[k, v.trim()]] : []))) };
 }
+
+// What the config schema accepts as a command: a value it refuses would make the stored config invalid and get the whole map reset on load.
+const movable = (command: string): boolean => command.length <= VERIFY_COMMAND_MAX && !command.includes('\0');
 
 /** The commands no workspace claimed at the move, for the settings note. Empty when there are none or the file cannot be read. */
 export function readUnclaimed(root: string): Record<string, string> {
@@ -94,8 +105,14 @@ export function moveVerifyCommands(deps: MoveDeps): MoveResult {
   const result: MoveResult = { status: 'none', copied: {}, unclaimed: [], deferred: [], backup: null };
   try {
     if (!existsSync(file)) return result;
-    const old = parseOld(file);
-    if (!old) {
+    const parsed = parseOld(file);
+    if (parsed.kind === 'io') {
+      result.status = 'deferred';
+      // i18n-ignore: migration log written for developers
+      note(deps, `${VERIFY_FILE} not moved: it cannot be read (${parsed.message}), trying again at the next start`);
+      return result;
+    }
+    if (parsed.kind === 'unusable') {
       result.backup = backupName(deps.root, deps.now());
       renameSync(file, result.backup);
       result.status = 'unusable';
@@ -103,6 +120,7 @@ export function moveVerifyCommands(deps: MoveDeps): MoveResult {
       note(deps, `${VERIFY_FILE} is not a JSON object: kept as ${result.backup}, nothing moved`);
       return result;
     }
+    const old = parsed.entries;
     const registry = readRegistry(deps.root);
     if (!registry) {
       result.status = 'deferred';
@@ -125,12 +143,20 @@ export function moveVerifyCommands(deps: MoveDeps): MoveResult {
       }
       const config = checked.config;
       const mine = new Set(ownVerifyProjects(config, mirrorsOf(config, deps)));
-      const claims = Object.entries(old).filter(([project]) => mine.has(project));
+      const claims = Object.entries(old).filter(([project, command]) => mine.has(project) && movable(command));
       for (const [project] of claims) claimed.add(project);
       const added = claims.filter(([project]) => !(config.projects.verifyCommands[project] ?? '').trim());
       if (!added.length) continue;
+      const merged = { ...config, projects: { ...config.projects, verifyCommands: { ...config.projects.verifyCommands, ...Object.fromEntries(added) } } };
+      const mergedCheck = validateConfig(merged);
+      if (!mergedCheck.ok) {
+        result.deferred.push(w.id);
+        // i18n-ignore: migration log written for developers
+        note(deps, `workspace ${w.id}: the config would be invalid with the commands added, left as it is (${summarizeIssues(mergedCheck.errors, 2)})`);
+        continue;
+      }
       try {
-        writeConfigFile(dir, { ...config, projects: { ...config.projects, verifyCommands: { ...config.projects.verifyCommands, ...Object.fromEntries(added) } } });
+        writeConfigFile(dir, merged);
         result.copied[w.id] = added.map(([project]) => project).sort();
         // i18n-ignore: migration log written for developers
         note(deps, `workspace ${w.id}: ${added.length} verification command(s) copied (${result.copied[w.id].join(', ')})`);
@@ -148,7 +174,15 @@ export function moveVerifyCommands(deps: MoveDeps): MoveResult {
     }
     const orphans = Object.entries(old).filter(([project]) => !claimed.has(project));
     result.unclaimed = orphans.map(([project]) => project).sort();
-    if (orphans.length) atomicWrite(join(deps.root, VERIFY_UNCLAIMED_FILE), `${JSON.stringify({ ...readUnclaimed(deps.root), ...Object.fromEntries(orphans) }, null, 2)}\n`);
+    if (orphans.length) {
+      // An entry already in the sidecar is kept as it is: a command put aside earlier is never replaced by a later file.
+      const earlier = readUnclaimed(deps.root);
+      for (const [project, command] of orphans) {
+        // i18n-ignore: migration log written for developers
+        if (project in earlier && earlier[project] !== command) note(deps, `${VERIFY_UNCLAIMED_FILE} already has a command for ${project}: kept, the one in the old file stays in the backup only`);
+      }
+      atomicWrite(join(deps.root, VERIFY_UNCLAIMED_FILE), `${JSON.stringify({ ...Object.fromEntries(orphans), ...earlier }, null, 2)}\n`);
+    }
     result.backup = backupName(deps.root, deps.now());
     renameSync(file, result.backup);
     result.status = 'moved';

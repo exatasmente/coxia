@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
+import { validateConfig } from '../src/shared/config/validate';
+import { VERIFY_COMMAND_MAX } from '../src/shared/verifyCommands';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { CONFIG_FILE, bootstrapConfigs, readConfigFile, writeConfigFile } from '../src/main/config-bootstrap';
 import { VERIFY_BACKUP_FILE, VERIFY_FILE, VERIFY_UNCLAIMED_FILE, moveVerifyCommands, readUnclaimed, type MoveDeps } from '../src/main/verify-move';
@@ -114,6 +116,30 @@ describe('moving the old shared file into the workspaces', () => {
     expect(readUnclaimed(root)).toEqual({ 'acme/older': 'make older', 'acme/gone': 'make gone' });
   });
 
+  it('keeps the command already in the sidecar for a project and says a later one was not used', () => {
+    writeOld({ 'acme/gone': 'second', 'acme/same': 'x' });
+    writeFileSync(join(root, VERIFY_UNCLAIMED_FILE), JSON.stringify({ 'acme/gone': 'first', 'acme/same': 'x' }));
+    moveVerifyCommands(deps());
+    expect(readUnclaimed(root)).toEqual({ 'acme/gone': 'first', 'acme/same': 'x' });
+    expect(logs.filter((l) => l.includes('already has a command for acme/gone'))).toHaveLength(1);
+    expect(logs.some((l) => l.includes('acme/same: kept'))).toBe(false);
+    expect(JSON.parse(readFileSync(join(root, VERIFY_BACKUP_FILE), 'utf8'))['acme/gone']).toBe('second');
+  });
+
+  it('sends a value the schema refuses to the unclaimed ones and leaves the workspace config valid, with its own command intact', () => {
+    setConfig('principal', (c) => {
+      c.projects.repos = [repo('web', 'acme/web'), repo('api', 'acme/api'), repo('ui', 'acme/ui'), repo('ok', 'acme/ok')];
+      c.projects.verifyCommands = { 'acme/web': 'mine' };
+    });
+    writeOld({ 'acme/api': 'x'.repeat(VERIFY_COMMAND_MAX + 1), 'acme/ui': 'a\0b', 'acme/ok': 'x'.repeat(VERIFY_COMMAND_MAX) });
+    const r = moveVerifyCommands(deps());
+    expect(r.status).toBe('moved');
+    expect(r.unclaimed).toEqual(['acme/api', 'acme/ui']);
+    expect(commandsOf('principal')).toEqual({ 'acme/web': 'mine', 'acme/ok': 'x'.repeat(VERIFY_COMMAND_MAX) });
+    expect(validateConfig(readConfigFile(workspaceDir(root, 'principal'))).ok).toBe(true);
+    expect(readUnclaimed(root)).toMatchObject({ 'acme/ui': 'a\0b' });
+  });
+
   it('is safe to run twice: the second run finds nothing and changes nothing', () => {
     setConfig('principal', (c) => { c.projects.repos = [repo('web', 'acme/web')]; });
     writeOld({ 'acme/web': 'npm test', 'acme/gone': 'make gone' });
@@ -185,6 +211,15 @@ describe('when something cannot be moved', () => {
     expect(readFileSync(r.backup as string, 'utf8')).toBe('{ broken');
     writeFileSync(join(root, VERIFY_FILE), '["a"]');
     expect(moveVerifyCommands(deps()).status).toBe('unusable');
+  });
+
+  it('waits, keeping the file, when the old file cannot be read', () => {
+    mkdirSync(join(root, VERIFY_FILE));
+    const r = moveVerifyCommands(deps());
+    expect(r.status).toBe('deferred');
+    expect(existsSync(join(root, VERIFY_FILE))).toBe(true);
+    expect(existsSync(join(root, VERIFY_BACKUP_FILE))).toBe(false);
+    expect(logs.join('\n')).toContain('cannot be read');
   });
 
   it('waits when the workspaces registry cannot be read', () => {
