@@ -207,7 +207,6 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
   };
 
   const needsText = available.some((a) => a.input !== 'none');
-  const blockedByWeb = web && available.some((a) => a.desktopOnly);
   const gateQuiz = run.status === 'gate' && card;
 
   return (
@@ -242,7 +241,7 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
                 key={a.id}
                 type="button"
                 className={`btn ${a.id === 'cancel' ? (confirming ? 'btn-red' : '') : a.id === 'approve' || a.id === 'accept' || a.id === 'startStage' || a.id === 'answer' || a.id === 'retry' ? 'btn-dark' : ''}`}
-                disabled={busy || missing || (web && a.desktopOnly)}
+                disabled={busy || missing}
                 onClick={() => doIt(a)}
               >
                 {busy && !confirming ? <span className="spinner" aria-hidden="true" /> : null} {confirming ? t('ui.cycle.action.cancelConfirm') : t(ACTION_LABEL[a.id])}
@@ -258,7 +257,6 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
         </div>
       )}
       {confirmCancel && <p className="small muted">{t('ui.cycle.action.cancelHint')}</p>}
-      {blockedByWeb && <p className="small muted" role="note">{t('ui.cycle.desktopOnly')}</p>}
       {error && <div className="error" role="alert">{error}</div>}
       {agent && config && <Autonomy run={run} agent={agent} config={config} web={web} busy={busy} call={(fn) => call(fn)} />}
     </section>

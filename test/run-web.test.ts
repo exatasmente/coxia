@@ -26,14 +26,14 @@ const CHANNEL: Record<RunActionId, string> = {
 };
 
 describe('the run screen in a browser', () => {
-  it('marks as the app\'s own exactly the buttons whose channel a paired browser is refused', () => {
+  it('offers no button whose channel a paired browser is refused', () => {
     const question = { by: 'developer', holder: null, kind: 'agent' as const, text: 'x', askedAt: '', stage: 'plan' };
     const seen = new Set<RunActionId>();
     for (const status of RUN_STATUSES) {
       for (const question_ of [null, question, { ...question, kind: 'squad' as const }]) {
         for (const a of runActions({ status, question: question_ })) {
           seen.add(a.id);
-          expect(a.desktopOnly, `${status}/${a.id}`).toBe(webAccess(CHANNEL[a.id]) === 'deny');
+          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe('allow');
         }
       }
     }
@@ -44,8 +44,8 @@ describe('the run screen in a browser', () => {
     for (const channel of ['runs:list', 'runs:get', 'runs:artifact', 'forum:list', 'forum:read', 'forum:post', 'forum:create', 'config:get', 'actions:list']) expect(webAccess(channel), channel).toBe('allow');
   });
 
-  it('keeps the switches of autonomy, the squad choice, the undo and the flow move to the app', () => {
-    for (const channel of ['runs:setAutonomous', 'runs:setSquadAutonomous', 'runs:undoPost', 'runs:migrateFlow', 'runs:start']) expect(webAccess(channel), channel).toBe('deny');
+  it('lets the switches of autonomy, the squad choice, the undo, the flow move and the start through', () => {
+    for (const channel of ['runs:setAutonomous', 'runs:setSquadAutonomous', 'runs:setSquad', 'runs:removeSquad', 'runs:undoPost', 'runs:migrateFlow', 'runs:start', 'runs:startStage']) expect(webAccess(channel), channel).toBe('allow');
   });
 
   it('calls only channels that exist: each runs: and forum: channel in the screens is served by a module', () => {

@@ -5,37 +5,41 @@ import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/mai
 
 const SRC = join(import.meta.dirname, '../src/main/runner');
 
-// What a paired browser may do to a run. Reading (the list, a run, a document of its cycle folder), and answering the question a stage is waiting on, are open: the phone is where a person answers, and
-// an answer only lets the stage that asked go on. Everything else starts work or changes a run, or what an agent may do by itself: the window only.
-const OPEN = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact'];
-const WINDOW_ONLY = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+// What a paired browser may do to a run: all of it. Reading, answering, and every move that starts a stage, decides a gate, retries, cancels, picks a squad, moves a run to the
+// current flow, takes a comment back or switches an agent's autonomy. What a run may execute is still decided by the configuration, which a browser can only change in a scoped way.
+const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact'];
+const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+const OPEN = [...READS, ...MOVES];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
 
 describe('web policy for the runs', () => {
-  it('lets a paired browser read the runs and answer a question', () => {
+  it('lets a paired browser read the runs, answer a question and make every move on a run', () => {
     for (const channel of OPEN) {
       expect(webAccess(channel), channel).toBe('allow');
       expect(webRefusal(channel, false), channel).toBeNull();
+      expect(DESKTOP_ONLY.has(channel), channel).toBe(false);
     }
   });
 
-  it('keeps everything that starts work, changes a run or changes what an agent does by itself to the window', () => {
-    for (const channel of WINDOW_ONLY) {
-      expect(webAccess(channel), channel).toBe('deny');
-      expect(DESKTOP_ONLY.has(channel), channel).toBe(true);
-      expect(webRefusal(channel, true), channel).not.toBeNull();
-    }
+  it('lists no runs: channel as desktop-only', () => {
+    expect([...DESKTOP_ONLY].filter((c) => c.startsWith('runs:'))).toEqual([]);
   });
 
   it('puts none of them behind the external-effects switch: nothing in a run reaches the code host', () => {
-    for (const channel of [...OPEN, ...WINDOW_ONLY]) expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
+    for (const channel of OPEN) expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
+  });
+
+  it('keeps the approval of a proposal under the existing web setting', () => {
+    expect(webAccess('actions:approve')).toBe('external');
+    expect(webRefusal('actions:approve', false)).not.toBeNull();
+    expect(webRefusal('actions:approve', true)).toBeNull();
   });
 
   it('are exactly the channels the module serves, each one classified here', () => {
     const served = [...source('module.ts').matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1]);
-    expect(served.sort()).toEqual([...OPEN, ...WINDOW_ONLY].sort());
+    expect(served.sort()).toEqual([...OPEN].sort());
   });
 });
 

@@ -71,18 +71,16 @@ export interface RunAction {
   id: RunActionId;
   /** What the person types with it: nothing, a note they may leave out, or a text without which the move is refused. */
   input: 'none' | 'optional' | 'required';
-  /** Only the app on the computer may do it (a browser sees it disabled, with a note): everything that starts work or changes a run. */
-  desktopOnly: boolean;
   /** Needs a second click: what cannot be taken back. */
   confirm: boolean;
 }
 
-const act = (id: RunActionId, input: RunAction['input'] = 'none', over: Partial<RunAction> = {}): RunAction => ({ id, input, desktopOnly: true, confirm: false, ...over });
+const act = (id: RunActionId, input: RunAction['input'] = 'none', over: Partial<RunAction> = {}): RunAction => ({ id, input, confirm: false, ...over });
 
 /**
  * What the person may do for a run in the state it is in, in the order the screen offers it. This is the table of the transitions of `runs/transitions.ts` seen
  * from the screen: the same states, the same notes that are required (a rejection, a skip and a return carry a reason; an approval and an acceptance may not).
- * Answering a question is the one thing a browser may do; cancelling asks for a second click.
+ * Every move is open to a paired browser as much as to the window; cancelling asks for a second click.
  */
 export function runActions(run: Pick<Run, 'status' | 'question'>): RunAction[] {
   const cancel = act('cancel', 'none', { confirm: true });
@@ -94,7 +92,7 @@ export function runActions(run: Pick<Run, 'status' | 'question'>): RunAction[] {
     case 'gate':
       return [act('approve', 'optional'), act('reject', 'required'), act('skip', 'required'), cancel];
     case 'question':
-      return [run.question?.kind === 'squad' ? act('chooseSquad') : act('answer', 'required', { desktopOnly: false }), cancel];
+      return [run.question?.kind === 'squad' ? act('chooseSquad') : act('answer', 'required'), cancel];
     case 'waiting':
       return [act('skipWait', 'required'), cancel];
     case 'failed':

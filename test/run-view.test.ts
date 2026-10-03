@@ -63,7 +63,7 @@ describe('what the person can do about a run, by state', () => {
     const d = until('plan');
     d.do((r, when) => ask(r, { by: 'planner', text: 'Which way?' }, when));
     expect(d.run.status).toBe('question');
-    expect(runActions(d.run).map((a) => [a.id, a.input, a.desktopOnly])).toEqual([['answer', 'required', false], ['cancel', 'none', true]]);
+    expect(runActions(d.run).map((a) => [a.id, a.input])).toEqual([['answer', 'required'], ['cancel', 'none']]);
     expect(ids({ status: 'question', question: { by: 'support', kind: 'squad', text: '', askedAt: '', stage: 'triage' } })).toEqual(['chooseSquad', 'cancel']);
   });
 
@@ -74,14 +74,12 @@ describe('what the person can do about a run, by state', () => {
     expect(ids({ status: 'waiting', question: null })).toEqual(['skipWait', 'cancel']);
   });
 
-  it('keeps everything but answering to the window, and asks twice before cancelling', () => {
+  it('asks twice before cancelling, and only before cancelling', () => {
     for (const status of RUN_STATUSES) {
       for (const a of runActions({ status, question: null })) {
-        expect(a.desktopOnly, `${status}/${a.id}`).toBe(a.id !== 'answer');
         expect(a.confirm, `${status}/${a.id}`).toBe(a.id === 'cancel');
       }
     }
-    expect(runActions({ status: 'question', question: { by: 'planner', kind: 'agent', text: 'x', askedAt: '', stage: 'plan' } })[0].desktopOnly).toBe(false);
   });
 });
 
