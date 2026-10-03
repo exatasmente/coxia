@@ -1,7 +1,7 @@
 // i18n-lint: allow-file default values of the config: model names, commands and ids, not prose
 import { neutralDevCycle } from '../cycles/neutral';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type RunnerConfig, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -13,6 +13,10 @@ const NEUTRAL_ROLE_MODELS: Record<LlmRole, string> = { turn: 'haiku', reply: 'ha
 
 function roles<T>(make: (role: LlmRole) => T): Record<LlmRole, T> {
   return Object.fromEntries(LLM_ROLES.map((r) => [r, make(r)])) as Record<LlmRole, T>;
+}
+
+export function neutralRunner(): RunnerConfig {
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageTimeoutMs: 30 * 60_000, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' };
 }
 
 export function neutralConfig(): WorkspaceConfig {
@@ -51,6 +55,7 @@ export function neutralConfig(): WorkspaceConfig {
       terminal: { command: null, args: [] },
       claudeCli: { command: 'claude', cwd: null },
     },
+    runner: neutralRunner(),
   };
 }
 

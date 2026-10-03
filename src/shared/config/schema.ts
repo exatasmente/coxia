@@ -2,7 +2,7 @@
 import type { JsonSchema } from './jsonSchema';
 import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 4). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 5). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -229,7 +229,7 @@ const command = { enabled: boolean('The integration is on.'), command: string('E
 
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $id: 'urn:coxia:schema:workspace-config:4',
+  $id: 'urn:coxia:schema:workspace-config:5',
   title: 'Coxia workspace configuration',
   ...object(
     'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
@@ -350,6 +350,16 @@ export const CONFIG_SCHEMA: JsonSchema = {
         timeExport: object('Time tracking export.', { ...command, format: string('Layout the export command reads: "none" or the name of a layout.', { pattern: '^[a-z0-9][a-z0-9-]{0,31}$' }) }),
         terminal: object('Terminal used by "continue in Claude Code".', { command: nullableString('Emulator; null: gnome-terminal, then x-terminal-emulator.'), args: strings('Arguments before the shell command.') }),
         claudeCli: object('Claude CLI that resumes sessions.', { command: string('Executable.', { minLength: 1 }), cwd: nullableString('Starting directory; null: the projects root.') }),
+      }),
+      runner: object('What takes an issue through the agent cycle by itself.', {
+        enabled: boolean('The app starts runs by itself for the issues that carry the trigger label. Starting a run by hand does not need it.'),
+        triggerLabel: string('The issue label that asks for a run; case does not matter.', { maxLength: 100 }),
+        maxConcurrentRuns: integer('How many runs the app starts by itself while others are still working; a run the person starts is never held back.', 1, 10),
+        worktreesDir: nullableString('Where the runs\' worktrees are made ("~/" expands); null: the worktrees folder of the workspace data folder.'),
+        commands: { type: ['array', 'null'], description: 'The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, ;, && or redirect). null: the test and typecheck scripts the repository declares. []: none.', items: string('One command.', { minLength: 1, maxLength: 300 }), maxItems: 20 },
+        stageTimeoutMs: integer('A stage that has not finished after this long fails and can be retried (ms).', 10_000, 21_600_000),
+        identity: object('Who the app\'s commits in a worktree are made as; both empty: the identity the repository already has.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
+        commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
       }),
     },
     ['schemaVersion'],

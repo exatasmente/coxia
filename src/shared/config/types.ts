@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 4): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 5): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 4;
+export const CONFIG_SCHEMA_VERSION = 5;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -524,6 +524,34 @@ export interface ExternalToolsConfig {
   claudeCli: ClaudeCliConfig;
 }
 
+/** Who the app's commits in a run's worktree are made as. Both empty: the identity the repository already has. */
+export interface RunnerIdentity {
+  name: string;
+  email: string;
+}
+
+/** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
+export interface RunnerConfig {
+  /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
+  enabled: boolean;
+  /** The issue label that asks for a run (case does not matter). */
+  triggerLabel: string;
+  /** How many runs the app starts by itself while others are still working; a run the person starts is never held back. */
+  maxConcurrentRuns: number;
+  /** Where the runs' worktrees are made ("~/" expands). null: the `worktrees` folder of the workspace's data folder. */
+  worktreesDir: string | null;
+  /**
+   * The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, `;`, `&&` or redirect).
+   * null: the test and typecheck scripts the repository declares (`npm test`, `npm run typecheck`). []: none.
+   */
+  commands: string[] | null;
+  /** A stage that has not finished after this long fails (and can be retried). */
+  stageTimeoutMs: number;
+  identity: RunnerIdentity;
+  /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
+  commitMessage: string;
+}
+
 export interface ScheduleConfig {
   preDaily: string;
   days: number[];
@@ -569,6 +597,7 @@ export interface WorkspaceConfig {
   voice: VoiceConfig;
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
+  runner: RunnerConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

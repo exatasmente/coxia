@@ -73,6 +73,24 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
   });
 }
 
+const COMMAND_OPERATORS = /[;&|<>`$\\\n\r]/;
+
+function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const r = c.runner;
+  if (r.enabled && !r.triggerLabel.trim()) errors.push({ path: 'runner.triggerLabel', message: 'is empty but the runner is enabled' });
+  (r.commands ?? []).forEach((cmd, i) => {
+    if (!cmd.trim() || cmd !== cmd.trim()) errors.push({ path: `runner.commands[${i}]`, message: 'must not be empty or start or end with a space' });
+    else if (COMMAND_OPERATORS.test(cmd)) errors.push({ path: `runner.commands[${i}]`, message: 'must be one plain command: no pipe, ;, && or redirect' });
+  });
+  for (const id of duplicates(r.commands ?? [])) warnings.push({ path: 'runner.commands', message: `"${id}" is listed twice` });
+  if (!r.commitMessage.includes('{summary}')) errors.push({ path: 'runner.commitMessage', message: 'must contain {summary}' });
+  if (/[\n\r]/.test(r.commitMessage)) errors.push({ path: 'runner.commitMessage', message: 'must be one line' });
+  const { name, email } = r.identity;
+  if (!!name.trim() !== !!email.trim()) errors.push({ path: 'runner.identity', message: 'needs both a name and an email, or neither' });
+  else if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+$/.test(email.trim())) errors.push({ path: 'runner.identity.email', message: 'is not an email address' });
+  if (r.enabled && c.devCycle.templateId !== 'agent-flow') warnings.push({ path: 'runner.enabled', message: 'the runner only works with the agent cycle (devCycle.templateId "agent-flow")' });
+}
+
 function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
@@ -81,6 +99,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   }
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
+  runnerRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });
   for (const id of duplicates(c.projects.repos.map((r) => r.id))) errors.push({ path: 'projects.repos', message: `duplicate repo id "${id}"` });

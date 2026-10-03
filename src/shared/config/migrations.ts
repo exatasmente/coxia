@@ -1,5 +1,5 @@
 // i18n-lint: allow-file English diagnostics of the config migration, written to the log
-import { mergeDeep, neutralConfig, withConfigDefaults } from './defaults';
+import { mergeDeep, neutralConfig, neutralRunner, withConfigDefaults } from './defaults';
 import type { LegacyProfile } from './legacy';
 import { validateConfig, type ConfigIssue } from './validate';
 import { systemAgents } from './team';
@@ -10,6 +10,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v2  WorkspaceConfig (types.ts).
 //   v3  devCycle.priority, and the card fields `priority` and `milestone` offered to the agents.
 //   v4  agents.team (the five system agents, seeded from agents.roles) and, on a stage, `agentId`, `artifacts` and `human`.
+//   v5  runner (the section that takes an issue through the agent cycle by itself), off by default.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -101,8 +102,15 @@ function v3ToV4(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 4, agents: { ...agents, team: systemAgents(seeds) } };
 }
 
+// The runner starts switched off with its defaults, so a workspace that never heard of it behaves exactly as before.
+function v4ToV5(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (isObject(old.runner)) return { ...old, schemaVersion: 5 };
+  notes.push('runner section created with its defaults (off)');
+  return { ...old, schemaVersion: 5, runner: neutralRunner() };
+}
+
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
