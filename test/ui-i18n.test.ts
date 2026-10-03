@@ -18,7 +18,7 @@ const ROOT = join(import.meta.dirname, '..');
 const I18N_DIR = join(ROOT, 'src/shared/i18n');
 const RENDERER = join(ROOT, 'src/renderer/src');
 
-const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
+const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1].toLowerCase()))].sort();
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {

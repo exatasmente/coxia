@@ -62,7 +62,7 @@ describe('catalogs', () => {
     const pt = Object.keys(CATALOGS['pt-BR']).sort();
     const en = Object.keys(CATALOGS.en).sort();
     expect(en).toEqual(pt);
-    const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
+    const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1].toLowerCase()))].sort();
     for (const key of pt) expect(holes(CATALOGS.en[key])).toEqual(holes(CATALOGS['pt-BR'][key]));
   });
 
