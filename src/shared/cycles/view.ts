@@ -68,13 +68,16 @@ export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): Cycle
 
 // What the screens show or hide, from what the workspace has. Pure, so a test settles it without a screen.
 
-/** The "host" button of an activity opens the Quick actions screen: worth it when the card has a change request to act on, or a status to move. */
+/** The "host" button of an activity opens the Quick actions screen: worth it when the card has a change request to act on, or a status the app reads (GitLab). */
 export function showQuickActions(card: Pick<Card, 'mrPaths'>, host: HostFacts): boolean {
   return host.kind !== null && (card.mrPaths.length > 0 || host.issueStatus);
 }
 
-/** The issue status block (status, stage labels, transitions) of the Quick actions screen: only a host with a status the app moves. */
+/** The issue status block (status, stage labels, transitions) of the Quick actions screen: only a host with a status the app reads. */
 export const showIssueStatus = (host: HostFacts): boolean => host.issueStatus;
+
+/** The list of transitions inside that block: only when the cycle has rules for moving the status. */
+export const showTransitions = (host: HostFacts): boolean => host.issueStatus && host.quickTransitions;
 
 export type ToolSwitch = 'files' | 'skills' | 'gitlabMcp' | 'glab' | 'subagents';
 

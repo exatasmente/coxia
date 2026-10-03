@@ -4,7 +4,7 @@ import type { Card } from '../../../shared/types';
 import type { Screen } from '../App';
 import { errorText } from '../api';
 import { useCycle } from '../cycleApi';
-import { showIssueStatus } from '../../../shared/cycles/view';
+import { showIssueStatus, showTransitions } from '../../../shared/cycles/view';
 import { useT } from '../i18n';
 import { quickApi } from '../gitlabQuickApi';
 import { jobs, useJobs } from '../useJobs';
@@ -160,7 +160,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
             <div className="small muted">
               {t('ui.quick.stageLabels', { labels: ctx.issue.stageLabels.join(', ') || t('ui.quick.stageLabels.none') })}
             </div>
-            {ctx.issue.transitions.map((tr) => (
+            {showTransitions(host) && ctx.issue.transitions.map((tr) => (
               <Transition key={tr.to} transition={tr} status={ctx.issue?.status ?? null} busy={busy} onPropose={() => propose({ kind: 'transition', issue: ctx.issue?.iid ?? 0, to: tr.to })} />
             ))}
             <p className="small faint">{t('ui.quick.statusNote')}</p>

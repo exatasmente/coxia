@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ceremoniesListed, buildCycleView, hostFacts, showContinueInClaude, showIssueStatus, showQuickActions, visibleTools } from '../src/shared/cycles';
+import { ceremoniesListed, buildCycleView, hostFacts, showContinueInClaude, showIssueStatus, showQuickActions, showTransitions, visibleTools } from '../src/shared/cycles';
 import type { QuickTransitionRule } from '../src/shared/config/types';
 import { hostConfig } from './helpers/config';
 
@@ -10,24 +10,28 @@ const view = (kind: 'gitlab' | 'github' | 'bitbucket' | null, template = 'sdd') 
 const card = (paths: number) => ({ mrPaths: Array.from({ length: paths }, (_, i) => ({ ref: `app#${i}`, project: 'acme/app', iid: i })) });
 
 describe('the Quick actions screen', () => {
-  it('has the issue status block only on a host with a status the cycle moves', () => {
+  it('has the issue status block on GitLab whether or not the cycle has rules to move it, and on no other host', () => {
     const gitlab = hostConfig('gitlab');
-    expect(showIssueStatus(hostFacts(gitlab))).toBe(false);
+    expect(gitlab.devCycle.quickTransitions).toEqual([]);
+    expect(showIssueStatus(hostFacts(gitlab))).toBe(true);
+    // the list of transitions inside the block waits for the rules
+    expect(showTransitions(hostFacts(gitlab))).toBe(false);
     gitlab.devCycle.quickTransitions = [TRANSITION];
     expect(showIssueStatus(hostFacts(gitlab))).toBe(true);
-    for (const kind of ['github', 'bitbucket'] as const) {
+    expect(showTransitions(hostFacts(gitlab))).toBe(true);
+    for (const kind of ['github', 'bitbucket', null] as const) {
       const c = hostConfig(kind);
       c.devCycle.quickTransitions = [TRANSITION];
-      expect(showIssueStatus(hostFacts(c)), kind).toBe(false);
+      expect(showIssueStatus(hostFacts(c)), String(kind)).toBe(false);
+      expect(showTransitions(hostFacts(c)), String(kind)).toBe(false);
     }
   });
 
-  it('is reachable from an activity that has a change request, or a status to move, and from none without a host', () => {
+  it('is reachable from a GitLab activity as it always was, from another host only with a change request, and from none without a host', () => {
+    expect(showQuickActions(card(0), view('gitlab').host)).toBe(true);
     expect(showQuickActions(card(1), view('github').host)).toBe(true);
     expect(showQuickActions(card(0), view('github').host)).toBe(false);
-    const gitlab = hostConfig('gitlab');
-    gitlab.devCycle.quickTransitions = [TRANSITION];
-    expect(showQuickActions(card(0), hostFacts(gitlab))).toBe(true);
+    expect(showQuickActions(card(0), view('bitbucket').host)).toBe(false);
     expect(showQuickActions(card(2), view(null).host)).toBe(false);
   });
 

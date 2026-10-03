@@ -10,8 +10,10 @@ export interface HostFacts {
   kind: VcsKind | null;
   /** "GitLab", "GitHub", "Bitbucket" or a neutral phrase (the same word as `{vcsName}`). */
   name: string;
-  /** The host has an issue status of its own and the cycle has rules to move it: the Quick actions screen shows the status block. */
+  /** The host has an issue status the app reads and proposes to move (GitLab): the Quick actions screen shows the status block. */
   issueStatus: boolean;
+  /** The cycle has rules for moving that status: without them the block shows the status and the stage labels, and no transition. */
+  quickTransitions: boolean;
   /** CI jobs that wait for a person exist on this host. */
   manualJobs: boolean;
   /** Choosing another reviewer replaces the current ones (GitLab); elsewhere reviewers are added. */
@@ -38,8 +40,9 @@ export function hostFacts(config: WorkspaceConfig): HostFacts {
   return {
     kind,
     name: hostWords(kind, config.language).vcsName,
-    // The app moves a status only on GitLab (gitlabQuick.ts); a host that has one but no rule for it has nothing to show.
-    issueStatus: kind === 'gitlab' && !!caps?.issueStatus && config.devCycle.quickTransitions.length > 0,
+    // The app reads and moves a status only on GitLab (gitlabQuick.ts), whether or not the cycle has rules for the moves.
+    issueStatus: kind === 'gitlab' && !!caps?.issueStatus,
+    quickTransitions: config.devCycle.quickTransitions.length > 0,
     manualJobs: !!caps?.manualJobs,
     reviewerReplaces: kind === 'gitlab',
     readSwitch: primary !== null,
