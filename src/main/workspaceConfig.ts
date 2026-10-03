@@ -8,6 +8,7 @@ import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-boot
 import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
 import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
 import { loadLegacyProfile } from './legacy-profile';
+import { moveVerifyCommands } from './verify-move';
 import { secrets, seedLegacySecrets } from './secrets';
 
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
@@ -26,6 +27,8 @@ function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
   if (!bootstrapped) {
     bootstrapped = true;
     legacyWorkspace = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log, profile }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
+    // After every config is at the current schema and before the active one is read: it may receive commands from the old shared file.
+    moveVerifyCommands({ root: DATA_ROOT, home: HOME, now: () => new Date(), log });
   }
   const stored = readConfigFile(ATAS);
   const checked = validateConfig(stored);
