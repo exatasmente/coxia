@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The runner: an issue goes through the agent cycle by itself. Starting a run (`runs:start`) makes a branch `cycle/<n>-<title>` and a git worktree of the issue's repository, copies the issue and its comments (read only) into `docs/cycles/<n>-<title>/0_ISSUE.md`, and runs the agent of each stage in turn: it reads the issue, the earlier documents and the run's thread, and answers with its summary, its documents, a note for the next stage, and, if it needs the person, a question. The app writes the documents and commits them in the worktree, as the configured identity (or the one the repository already has), with hooks off and no attribution of any tool. Agents that are autonomous go straight on; one that waits stops at "start" and at "accept". A review sends findings (path, line, severity, suggestion) back to the developer, a failed QA scenario does too, and the run asks the person after two rounds. A question pauses the run until a person answers, in `runs:answer` or in the run's thread; naming an agent in the thread makes it answer, read only. A stage past its limit fails and can be retried; reopening the app starts the interrupted stage over; cancelling deletes nothing. With the runner on, issues that carry the `coxia` label (assigned to you) are started up to a number at a time. Nothing is written to the code host yet. See [`docs/runner.md`](docs/runner.md).
+- An agent with the `worktree` permission can change files only inside its run's worktree, on the Claude Agent SDK and on the open engine (which gains `Write` and `Edit` tools for this), through one shared guard: no path outside, none through a link that leads out, nothing in `.git`, hook folders or secret files, no command but the ones listed in `runner.commands` (by default the repository's test and typecheck scripts), no network and no push. Every refusal is posted in the run's thread and shown in the live activity.
+- A `runner` section in the workspace configuration (on/off, trigger label, runs at a time, worktrees folder, allowed commands, stage timeout, commit identity and message), which moves the configuration to schema 5; existing files migrate on first start with the runner off.
+- A run keeps the findings of each review pass and the scenarios of each QA pass as the agents gave them, and the commit the branch was cut from. The issue's description is now read from GitHub, GitLab and Bitbucket.
+
 ## [0.2.0] - 2026-10-03
 
 ### Added

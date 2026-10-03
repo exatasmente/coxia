@@ -112,7 +112,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
-  const commands = writes ? (config.runner.commands ?? declaredCommands(wt)) : [];
+  const commands = writes ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;

@@ -1,7 +1,7 @@
 // How a team agent is run: the options the Claude SDK gets for a reader and for an agent that writes, and the same agent on the open engine.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type Msg = Record<string, unknown>;
+type Msg = Record<string, unknown> | ((options: Record<string, any>) => Promise<void>);
 const calls: { prompt: string; options: Record<string, any> }[] = [];
 let script: Msg[] = [];
 
@@ -9,7 +9,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: ({ prompt, options }: { prompt: string; options: Record<string, any> }) => {
     calls.push({ prompt, options });
     return (async function* () {
-      for (const m of script) yield m;
+      for (const m of script) {
+        if (typeof m === 'function') await m(options);
+        else yield m;
+      }
     })();
   },
 }));
@@ -17,6 +20,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { activityLog, withActivityContext } from '../src/main/activity';
 import { runAgent, obj, str } from '../src/main/agents';
 import { confinedHooks } from '../src/main/runner/hooks';
 import { newAgent } from '../src/shared/config/team';
@@ -70,6 +74,28 @@ describe('runAgent on the Claude SDK', () => {
     expect(o.abortController).toBe(abort);
     const matchers = (o.hooks.PreToolUse as { matcher: string }[]).map((g) => g.matcher);
     expect(matchers).toEqual(['Edit|Write|MultiEdit|NotebookEdit', 'Read|Grep|Glob', 'Bash', 'WebFetch|WebSearch']);
+  });
+
+  it('shows in the live activity, under the run, what the hooks refuse, and tells the runner', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-write-'));
+    const denied: string[] = [];
+    const hooks = confinedHooks({ root, commands: ['npm test'], onDenied: (d) => denied.push(`${d.tool}:${d.code}`) });
+    script = [
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      async (options: Record<string, any>) => {
+        const run = (group: { matcher: string; hooks: ((i: unknown, id: undefined, o: { signal: AbortSignal }) => Promise<unknown>)[] }, input: Record<string, unknown>) => group.hooks[0](input, undefined, { signal: new AbortController().signal });
+        const pre = options.hooks.PreToolUse as { matcher: string; hooks: never[] }[];
+        await run(pre[0] as never, { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/etc/cron.d/x', content: 'x' }, cwd: root });
+        await run(pre[2] as never, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf .' }, cwd: root });
+        await run(pre[2] as never, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: root });
+      },
+      { type: 'result', subtype: 'success', session_id: 's1', structured_output: { fala: 'ok' } },
+    ] as never;
+    activityLog.clear();
+    await withActivityContext('run:r-test-0002', () => runAgent({ agent: writer, prompt: 'p', schema, system: 's', cwd: root, label: 'developer', maxTurns: 5, confine: { root, hooks } }, ['npm test']));
+    const blocked = activityLog.get('run:r-test-0002').filter((e) => e.state === 'blocked');
+    expect(blocked.map((e) => e.label)).toEqual(['Bloqueado: Write /etc/cron.d/x', 'Bloqueado: Bash rm -rf .']);
+    expect(denied).toEqual(['Write:outside', 'Bash:command']);
   });
 
   it('turns the shell off for an agent that writes when it was given no command', async () => {

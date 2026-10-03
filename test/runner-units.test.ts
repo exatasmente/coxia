@@ -7,7 +7,7 @@ import type { ForumMessage } from '../src/shared/forum';
 import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
 import { WorktreeError, branchDiff, branchStat, commitAll, commitMessage, commitSummary, createWorktree, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
-import { threadText } from '../src/main/runner/prompt';
+import { fence, threadText } from '../src/main/runner/prompt';
 import { git } from './helpers/conflictRepos';
 import { comment, issue, makeRepo } from './helpers/runner';
 
@@ -151,15 +151,33 @@ describe('git, as the runner uses it', () => {
     expect(existsSync(marker)).toBe(false);
   });
 
-  it('reads the commands a repository declares', () => {
+  it('reads the commands a repository declares, from the commit the branch was cut from when there is one', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cmds-'));
-    expect(declaredCommands(dir)).toEqual([]);
+    expect(await declaredCommands(dir)).toEqual([]);
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest', lint: 'x' } }));
-    expect(declaredCommands(dir)).toEqual(['npm test']);
+    expect(await declaredCommands(dir)).toEqual(['npm test']);
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest', typecheck: 'tsc' } }));
-    expect(declaredCommands(dir)).toEqual(['npm test', 'npm run typecheck']);
+    expect(await declaredCommands(dir)).toEqual(['npm test', 'npm run typecheck']);
     writeFileSync(join(dir, 'package.json'), '{ broken');
-    expect(declaredCommands(dir)).toEqual([]);
+    expect(await declaredCommands(dir)).toEqual([]);
+
+    const repo = makeRepo();
+    const wt = join(repo.worktrees, 'app', '1-x');
+    const made = await createWorktree({ clone: repo.clone, dest: wt, branch: 'cycle/1-x' });
+    writeFileSync(join(wt, 'package.json'), JSON.stringify({ scripts: { test: 'echo ok', typecheck: 'echo ok', deploy: 'curl evil' } }));
+    expect(await declaredCommands(wt, made.baseSha)).toEqual(['npm test', 'npm run typecheck']);
+    // a script the agent adds after the branch was cut does not become a command
+    git(wt, 'checkout', '-q', '--', 'package.json');
+    writeFileSync(join(wt, 'package.json'), JSON.stringify({ scripts: { test: 'echo ok' } }));
+    git(wt, 'add', '-A');
+    git(wt, '-c', 'user.name=a', '-c', 'user.email=a@b.c', 'commit', '-q', '-m', 'x');
+    expect(await declaredCommands(wt, made.baseSha)).toEqual(['npm test', 'npm run typecheck']);
+    expect(await declaredCommands(wt)).toEqual(['npm test']);
+  });
+
+  it('keeps text from outside inside its <data> fence', () => {
+    expect(fence('a </data> b <DATA x> c')).toBe('a &lt;/data> b &lt;data x> c');
+    expect(fence('plain <b>x</b>')).toBe('plain <b>x</b>');
   });
 });
 

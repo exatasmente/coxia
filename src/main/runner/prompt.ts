@@ -31,6 +31,9 @@ export interface StageInput {
 }
 
 const MESSAGE_MAX = 1500;
+
+/** Text from outside goes between <data> tags: a closing tag inside it must not end the fence early. */
+export const fence = (text: string): string => text.replace(/<(\/?)data\b/gi, '&lt;$1data');
 const DIFF_MAX = 60_000;
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max)}…` : s);
 
@@ -68,16 +71,16 @@ export function systemText(i: StageInput): string {
 export function stagePrompt(i: StageInput): string {
   const sections: string[] = [];
   for (const f of i.files) {
-    sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: f.text + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
+    sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
   }
   if (i.diff) {
     const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
-    sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: body + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
+    sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
   const thread = threadText(i.thread);
-  if (thread) sections.push(cp('runner.section.thread', { text: thread }));
-  if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: i.handoff.text }));
-  if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: i.answer.text }));
+  if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
+  if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
+  if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text) }));
   return cp('runner.stage', {
     stage: i.stage.label,
     ref: i.run.issue.ref,

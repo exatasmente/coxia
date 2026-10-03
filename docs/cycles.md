@@ -48,7 +48,7 @@ O modelo `agent-flow` descreve o trabalho de um time de agentes, não os status 
 
 O modelo traz um time padrão (`team` do modelo): Refinador, Planejador, Desenvolvedor, Revisor e QA, todos autônomos, com as permissões `read`, `read`, `worktree`, `read`, `read`. Só o desenvolvedor pode alterar arquivos, e só dentro do worktree da execução. Cada agente liga ou desliga a própria autonomia, então o ciclo pode ser híbrido: agentes autônomos, gates da pessoa e agentes que esperam por ela. Aplicar o modelo a um workspace que já tem agentes **mantém os agentes da pessoa**: o que já existe com o mesmo `id` não é tocado, os que faltam são acrescentados, e as etapas que o novo ciclo não tem saem da lista `stages` de cada agente. Um arquivo de modelo exportado leva os agentes que não são nativos. As definições do time, do `agentId` e da permissão estão em [`configuration.md`](configuration.md).
 
-O executor que leva uma issue por essas etapas ainda não existe.
+O executor que leva uma issue por essas etapas é o [runner](runner.md).
 
 ### Execuções
 
@@ -62,7 +62,7 @@ Cada execução tem uma conversa (*thread*), e há conversas gerais. É onde os 
 
 Uma mensagem tem um tipo (`post`: o que um agente fez; `question`: precisa da pessoa e a etapa espera; `answer`: guarda de qual pergunta é; `handoff`: de um agente para o próximo, com o que foi produzido e o que fazer; `decision`: resultado de um gate ou um pulo com o motivo; `system`: mudança de etapa), o autor (um agente, a pessoa ou o app), o texto, os agentes mencionados (`@developer`, só ids que existem no time), referências a artefatos, a etapa e a passagem. As mensagens que o app redige (`system`, e o cabeçalho de uma `decision`) guardam um `code` e `params`, e o texto sai na hora de mostrar, no idioma de então. O que um agente escreve passa pela redação de segredos antes de ser gravado. `public` marca o que pode aparecer no tracker (o que um agente fez, perguntou, a resposta e as decisões; passagens e mudanças de etapa ficam internas) e `published` guarda o link depois que a mensagem foi espelhada; como o arquivo não se reescreve, o link é uma linha de anotação que a leitura junta à mensagem. Ser público não publica: espelhar exige a opção do workspace e um "sim" próprio (fase seguinte).
 
-Canais (todos abertos ao navegador pareado, pois só tocam nos arquivos do próprio workspace): `forum:list`, `forum:read(conversa, depoisDe?, limite?)`, `forum:post(conversa, texto)` (uma mensagem da pessoa, com as menções resolvidas contra o time) e `forum:create(título)` (uma conversa geral). Cada mensagem nova também é empurrada como o evento `forum:message`, pelo mesmo caminho do `agent:activity`. Quem executa uma menção é o executor (fase seguinte), e só com um agente que lê.
+Canais (todos abertos ao navegador pareado, pois só tocam nos arquivos do próprio workspace): `forum:list`, `forum:read(conversa, depoisDe?, limite?)`, `forum:post(conversa, texto)` (uma mensagem da pessoa, com as menções resolvidas contra o time) e `forum:create(título)` (uma conversa geral). Cada mensagem nova também é empurrada como o evento `forum:message`, pelo mesmo caminho do `agent:activity`. Quem executa uma menção é o [runner](runner.md), e só com um agente que lê; uma mensagem da pessoa na conversa de uma execução que espera uma resposta é a resposta (por isso `forum:post` não passa só pelo arquivo da conversa).
 
 ### Prioridade
 
@@ -186,7 +186,7 @@ The `agent-flow` template describes the work of a team of agents, not tracker st
 
 The template brings a default team (the template's `team`): Refiner, Planner, Developer, Reviewer and QA, all autonomous, with permissions `read`, `read`, `worktree`, `read`, `read`. Only the developer may change files, and only inside the run's worktree. Each agent switches its own autonomy on or off, so a cycle can be hybrid: autonomous agents, the person's gates and agents that wait for the person. Applying the template to a workspace that already has agents **keeps the person's agents**: one with the same `id` is not touched, missing ones are added, and the stages the new cycle lacks are dropped from every agent's `stages`. An exported template file carries the agents that are not built in. The definitions of the team, `agentId` and the permission are in [`configuration.md`](configuration.md).
 
-The executor that takes an issue through these stages does not exist yet.
+The executor that takes an issue through these stages is the [runner](runner.md).
 
 ### Runs
 
@@ -200,7 +200,7 @@ Every run has a thread, and there are general threads. It is where agents say wh
 
 A message has a kind (`post`: what an agent did; `question`: needs the person and the stage waits; `answer`: remembers which question it answers; `handoff`: from one agent to the next, with what was produced and what to do; `decision`: a gate result or a skip with its reason; `system`: a stage change), an author (an agent, the person or the app), the text, the agents mentioned (`@developer`, only ids the team has), references to artifacts, the stage and the handoff target. The messages the app words (`system`, and the heading of a `decision`) store a `code` and `params`, and the text is produced when it is shown, in the language of the moment. What an agent writes goes through secret redaction before it is stored. `public` marks what may appear on the tracker (what an agent did, asked, the answer and the decisions; handoffs and stage changes stay internal) and `published` holds the link once the message was mirrored; since the file is never rewritten, the link is an annotation line that reading folds into the message. Being public does not publish: mirroring needs the workspace option and its own "yes" (next phase).
 
-Channels (all open to a paired browser, since they only touch the workspace's own files): `forum:list`, `forum:read(thread, afterSeq?, limit?)`, `forum:post(thread, text)` (a person's message, with mentions resolved against the team) and `forum:create(title)` (a general thread). Each new message is also pushed as the `forum:message` event, through the same path as `agent:activity`. Running a mention is the runner's job (next phase), and only with an agent that reads.
+Channels (all open to a paired browser, since they only touch the workspace's own files): `forum:list`, `forum:read(thread, afterSeq?, limit?)`, `forum:post(thread, text)` (a person's message, with mentions resolved against the team) and `forum:create(title)` (a general thread). Each new message is also pushed as the `forum:message` event, through the same path as `agent:activity`. Running a mention is the [runner](runner.md)'s job, and only with an agent that reads; a person's message in the thread of a run that waits for an answer is the answer (so `forum:post` does not go through the thread file alone).
 
 ### Priority
 

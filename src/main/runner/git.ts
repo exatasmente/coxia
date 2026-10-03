@@ -124,10 +124,15 @@ export async function branchStat(wt: string, base: string | null, exclude: strin
   return (await git(wt, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--stat', `${base}..HEAD`, '--', '.', `:(exclude)${exclude}`], { fail: false })).stdout.trim();
 }
 
-/** The test and typecheck scripts the repository declares, as commands: what an agent that writes may run when the workspace names none. */
-export function declaredCommands(wt: string): string[] {
+/**
+ * The test and typecheck scripts the repository declares, as commands: what an agent that writes may run when the workspace names none. They are read from
+ * the commit the branch was cut from when there is one, so an agent cannot make a new command name available by editing the file; what a script does is
+ * still the repository's code, which is why the commands are the person's to choose (`runner.commands`).
+ */
+export async function declaredCommands(wt: string, base: string | null = null): Promise<string[]> {
   try {
-    const pkg = JSON.parse(readFileSync(join(wt, 'package.json'), 'utf8')) as { scripts?: Record<string, unknown> };
+    const raw = base ? await out(wt, ['show', `${base}:package.json`]) : readFileSync(join(wt, 'package.json'), 'utf8');
+    const pkg = JSON.parse(raw) as { scripts?: Record<string, unknown> };
     const has = (name: string) => typeof pkg.scripts?.[name] === 'string';
     // i18n-ignore-next-line: the commands themselves
     return [...(has('test') ? ['npm test'] : []), ...(has('typecheck') ? ['npm run typecheck'] : [])];

@@ -5,7 +5,7 @@ import type { Run } from '../../shared/runs';
 import type { AgentCall } from '../agents';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { FolderFile } from './cycleFolder';
-import { threadText } from './prompt';
+import { fence, threadText } from './prompt';
 
 // What an agent is given when a person names it in a run's thread: the question, the cycle folder and the recent thread. It only reads: the call
 // has no confinement to write in, so whatever the agent's own permission is, a mention can never change a file or run a command.
@@ -31,10 +31,10 @@ export function mentionCall(i: MentionInput): AgentCall {
   ]
     .filter(Boolean)
     .join('\n\n');
-  const sections = [...i.files.map((f) => cp('runner.section.file', { name: f.name, text: f.text + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })), threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: threadText(i.thread.slice(-40)) }) : ''].filter(Boolean);
+  const sections = [...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })), threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : ''].filter(Boolean);
   return {
     agent: i.agent,
-    prompt: cp('runner.mention.main', { who: t('main.runner.author.person'), message: i.message.text, sections: sections.join('\n\n') }),
+    prompt: cp('runner.mention.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') }),
     schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
     system,
     cwd: i.cwd,
