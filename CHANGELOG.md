@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.3] - 2026-10-03
+
 ### Fixed
 
 - For maintainers: the draft the release workflow creates came back from GitHub with the tag `untagged-<hash>` aimed at `main`, and publishing it would have created that tag on `main` instead of linking the pushed version tag. The workflow now sets the draft's tag to the version tag, for a beta and a stable, and fails if the draft is linked to anything else.
@@ -187,7 +189,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.2...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.3...HEAD
+[0.5.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.1...v0.5.0-beta.2
 [0.5.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0-beta.1
 [0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2
