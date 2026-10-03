@@ -22,7 +22,7 @@ import type {
   VcsWriteOp,
 } from './types';
 import { type PatchIndex, indexPatch } from './diffLines';
-import { checkIid, checkProject, enc, iso, issueRefsOf, noteNum, num, pool } from './util';
+import { ISSUE_TITLE_MAX, checkIid, checkLabel, checkProject, checkTitle, enc, iso, issueRefsOf, noteNum, num, pool } from './util';
 
 // GitLab, REST v4 plus the one GraphQL read the work item status needs. The transport is the glab CLI (the migrated user's setup) or
 // fetch with a token; this file does not know which. Endpoints and fields are the ones the app called before providers existed.
@@ -498,6 +498,8 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
         case 'deleteNote':
           // A comment of a review is a note of a discussion: the same resource as any note of the merge request.
           return [rest('DELETE', `${repoPath(op.project)}/${op.target === 'issue' ? 'issues' : 'merge_requests'}/${checkIid(op.iid)}/notes/${noteNum(op.noteId)}`, {})];
+        case 'createIssue':
+          return [rest('POST', `${repoPath(op.project)}/issues`, { title: checkTitle(op.title), description: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel).join(',') } : {}) })];
         case 'createMr':
           return [rest('POST', `${repoPath(op.project)}/merge_requests`, { source_branch: op.sourceBranch, target_branch: op.targetBranch, title: op.title, description: op.body })];
         case 'submitReview': {
@@ -539,6 +541,7 @@ const FIELD_RULES: { method: VcsCommand['method']; re: RegExp; allowed: RegExp; 
     required: ['body'],
     check: (f) => Object.entries(f).every(([k, v]) => (/_sha\]$/.test(k) ? /^[0-9a-f]{7,64}$/i.test(v) : /_line\]$/.test(k) ? /^[1-9]\d{0,8}$/.test(v) : k === 'position[position_type]' ? v === 'text' || v === 'file' : true)),
   },
+  { method: 'POST', re: /^projects\/[\w%.-]+\/issues$/, allowed: /^(?:title|description|labels)$/, required: ['title'], check: (f) => f.title.trim().length > 0 && f.title.length <= ISSUE_TITLE_MAX && !('labels' in f && !f.labels.trim()) },
   { method: 'POST', re: /^projects\/[\w%.-]+\/merge_requests$/, allowed: /^(?:source_branch|target_branch|title|description)$/, required: ['source_branch', 'target_branch', 'title'] },
   { method: 'PUT', re: /^projects\/[\w%.-]+\/merge_requests\/\d+\/notes\/\d+$/, allowed: /^body$/, required: ['body'] },
   { method: 'DELETE', re: /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\/\d+$/, allowed: /^$/, required: [] },

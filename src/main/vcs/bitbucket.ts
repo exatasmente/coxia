@@ -19,7 +19,7 @@ import type {
   VcsWriteOp,
 } from './types';
 import { indexPatch } from './diffLines';
-import { checkIid, enc, iso, issueRefsOf, pool, splitUnifiedDiff, worstCi } from './util';
+import { ISSUE_TITLE_MAX, checkIid, checkTitle, enc, iso, issueRefsOf, pool, splitUnifiedDiff, worstCi } from './util';
 
 // Bitbucket Cloud, REST 2.0 (api.bitbucket.org). A "project" is "workspace/repo-slug". Bitbucket has no CLI: this provider only uses
 // the HTTP transport. Its issue tracker is optional (a repository may have it off): a repository without one simply has no issues.
@@ -430,6 +430,9 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
         }
         case 'deleteNote':
           return [call('DELETE', `${repo(op.project)}/${op.target === 'issue' ? 'issues' : 'pullrequests'}/${checkIid(op.iid)}/comments/${checkIid(Number(op.noteId))}`)];
+        case 'createIssue':
+          // Bitbucket's issues have no labels: the squad's label is left out (the request is linked in the run and in the description).
+          return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), content: { raw: op.body } })];
         case 'createMr':
           return [call('POST', `${repo(op.project)}/pullrequests`, { title: op.title, description: op.body, source: { branch: { name: op.sourceBranch } }, destination: { branch: { name: op.targetBranch } } })];
         case 'submitReview': {
@@ -463,6 +466,7 @@ const WRITES: { method: VcsCommand['method']; re: RegExp; allowed: string[]; req
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments$`), allowed: ['content', 'parent', 'inline'], required: ['content'] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/request-changes$`), allowed: [], required: [] },
+  { method: 'POST', re: new RegExp(`^repositories/${R}/issues$`), allowed: ['title', 'content'], required: ['title', 'content'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests$`), allowed: ['title', 'description', 'source', 'destination'], required: ['title', 'source', 'destination'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+/resolve$`), allowed: [], required: [] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/issues/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
@@ -497,6 +501,7 @@ export function validateBitbucketCommand(cmd: VcsCommand): void {
   if ('parent' in body && !Number.isSafeInteger((body.parent as { id?: unknown })?.id)) throw new Error(t('vcs.validate.body'));
   if ('draft' in body && typeof body.draft !== 'boolean') throw new Error(t('vcs.validate.body'));
   if ('title' in body && typeof body.title !== 'string') throw new Error(t('vcs.validate.body'));
+  if (cmd.endpoint.endsWith('/issues') && !(typeof body.title === 'string' && body.title.trim() && body.title.length <= ISSUE_TITLE_MAX)) throw new Error(t('vcs.validate.body'));
   if ('description' in body && typeof body.description !== 'string') throw new Error(t('vcs.validate.body'));
   if ('inline' in body) {
     const i = body.inline as { path?: unknown; to?: unknown; from?: unknown } | null;

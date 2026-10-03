@@ -20,7 +20,7 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
-import { checkIid, enc, iso, issueRefsOf, noteNum, num, pool, worstCi } from './util';
+import { ISSUE_TITLE_MAX, checkIid, checkLabel, checkTitle, enc, iso, issueRefsOf, noteNum, num, pool, worstCi } from './util';
 
 // GitHub (github.com and GitHub Enterprise Server): REST for everything, GraphQL for what REST cannot say or do: whether a review
 // thread is resolved, resolving it, and the draft state of a pull request. Issues are GitHub issues (no separate workflow status:
@@ -513,6 +513,8 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           };
           return [call('POST', `${repo(op.project)}/pulls/${n}/reviews`, review), ...onFiles.map((c) => call('POST', `${repo(op.project)}/pulls/${n}/comments`, { body: c.body, commit_id: sha, path: c.path, subject_type: 'file' }))];
         }
+        case 'createIssue':
+          return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
         case 'createMr':
           return [call('POST', `${repo(op.project)}/pulls`, { title: op.title, head: checkBranch(op.sourceBranch), base: checkBranch(op.targetBranch), body: op.body })];
       }
@@ -540,6 +542,8 @@ const WRITES: { method: VcsCommand['method']; re: RegExp; keys: string[]; option
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/reviews$`), keys: ['event', 'body', 'commit_id', 'comments'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/comments$`), keys: ['body', 'commit_id', 'path', 'subject_type'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls$`), keys: ['title', 'head', 'base', 'body'] },
+  // A new issue: its title and description, and the labels it is born with.
+  { method: 'POST', re: new RegExp(`^repos/${R}/issues$`), keys: ['title', 'body'], optional: ['labels'] },
 ];
 
 const REVIEW_EVENTS = ['REQUEST_CHANGES', 'COMMENT'];
@@ -585,5 +589,6 @@ export function validateGitHubCommand(c: VcsCommand): void {
   if ('comments' in body && !(Array.isArray(body.comments) && body.comments.length <= 100 && body.comments.every(reviewCommentOk))) throw new Error(t('vcs.validate.body'));
   if ('subject_type' in body && body.subject_type !== 'file') throw new Error(t('vcs.validate.body'));
   if ('commit_id' in body && !/^[0-9a-f]{7,64}$/i.test(String(body.commit_id))) throw new Error(t('vcs.validate.body'));
+  if (c.endpoint.endsWith('/issues') && !(typeof body.title === 'string' && body.title.trim() && body.title.length <= ISSUE_TITLE_MAX)) throw new Error(t('vcs.validate.body'));
   if (c.endpoint.endsWith('/pulls') && !(/^[\w][\w./-]*$/.test(String(body.head)) && /^[\w][\w./-]*$/.test(String(body.base)))) throw new Error(t('vcs.validate.body'));
 }

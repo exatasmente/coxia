@@ -202,6 +202,11 @@ export type VcsWriteOp =
    * merge or pull request (`mr`), and a comment of a review on a line or a file (`review`; on GitHub a different resource from the conversation's).
    */
   | { op: 'deleteNote'; project: string; iid: number; noteId: string | number; target: 'issue' | 'mr' | 'review' }
+  /**
+   * A new issue in a project, with its description and the labels it is born with (the squad's label on the issue another squad's request turns into). A host
+   * with no labels on issues (Bitbucket) leaves them out.
+   */
+  | { op: 'createIssue'; project: string; title: string; body: string; labels: string[] }
   /** A pull request from a branch of the same repository. */
   | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string };
 
