@@ -614,6 +614,7 @@
   "main.web.appOnly": "This command only works in the app window, not from the browser.",
   "main.config.noIssueProject": "This workspace has no issue project configured.",
   "main.config.invalid": "invalid configuration: {issues}",
+  "main.config.webScope": "this can only be changed on the computer ({paths}). If you did not touch it, reload the screen and try again: the configuration may have changed there",
   "main.config.tooBig": "the configuration file is over 1 MB",
   "main.config.unusedSecret": "the file does not use the secret \"{ref}\"",
   "main.config.noProvider": "the provider \"{provider}\" of the role {role} does not exist in the configuration",

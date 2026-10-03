@@ -72,8 +72,8 @@ const flowInputs = (c: unknown): string => {
   ]);
 };
 
-/** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
-export function saveConfig(next: unknown): WorkspaceConfig {
+/** Validates a whole config the way a save does and returns it normalized. Throws with every problem named when it is invalid. */
+export function checkConfig(next: unknown): WorkspaceConfig {
   let checked = validateConfig(next);
   // A flow with a problem was kept as the person left it when the app opened it: it must not make an unrelated change (the theme, an agent's switch) unsavable.
   // Only a change to the flow itself, to the squads' structure, or to who turns to whom, is held to its checks.
@@ -82,13 +82,19 @@ export function saveConfig(next: unknown): WorkspaceConfig {
     if (tolerant.ok) checked = tolerant;
   }
   if (!checked.ok || !checked.config) throw new Error(t('main.config.invalid', { issues: summarizeIssues(checked.errors) }));
-  writeConfigFile(ATAS, checked.config);
-  state = { config: checked.config, resolved: resolveConfig(checked.config, context()) };
-  setLanguage(checked.config.language);
-  setTerms(termsFor(checked.config, checked.config.language));
-  setVoiceEnabled(checked.config.voice.enabled);
-  for (const fn of listeners) fn(checked.config);
   return checked.config;
+}
+
+/** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
+export function saveConfig(next: unknown): WorkspaceConfig {
+  const config = checkConfig(next);
+  writeConfigFile(ATAS, config);
+  state = { config, resolved: resolveConfig(config, context()) };
+  setLanguage(config.language);
+  setTerms(termsFor(config, config.language));
+  setVoiceEnabled(config.voice.enabled);
+  for (const fn of listeners) fn(config);
+  return config;
 }
 
 export function updateConfig(change: (current: WorkspaceConfig) => WorkspaceConfig): WorkspaceConfig {

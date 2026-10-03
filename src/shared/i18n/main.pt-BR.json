@@ -614,6 +614,7 @@
   "main.web.appOnly": "Este comando só funciona na janela do app, não pelo navegador.",
   "main.config.noIssueProject": "Este workspace não tem um projeto de issues configurado.",
   "main.config.invalid": "configuração inválida: {issues}",
+  "main.config.webScope": "isto só se muda no computador ({paths}). Se você não mexeu nisso, recarregue a tela e tente de novo: a configuração pode ter mudado lá",
   "main.config.tooBig": "o arquivo de configuração passa de 1 MB",
   "main.config.unusedSecret": "o arquivo não usa o segredo \"{ref}\"",
   "main.config.noProvider": "o provedor \"{provider}\" do papel {role} não existe na configuração",
