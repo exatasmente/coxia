@@ -195,15 +195,17 @@ A reader with a sandbox gets the tree copied (without `.git`) into a folder of t
 - Closing the pre-existing gap that an unconfined reader on the Claude Agent SDK engine can read outside the worktree (D6).
 - Running the ceremonies' agents (daily, unblock, retro) in a sandbox: they run no commands.
 
-## 8. Open decisions for the maintainer
+## 8. Decisions of the maintainer
 
-- **D1** Migration of a reader's `tracker`: keep what it has today (this spec) or set `none` as the issue says.
-- **D2** `allowlist` only for agents that write (this spec) or also for readers.
-- **D3** A reader with a sandbox works in a **throwaway copy** (this spec) versus the real worktree read-write as the issue states. The copy costs disk and time and guarantees QA cannot change the branch.
-- **D4** Registry mode needs `node` inside the sandbox for the forwarder. The alternatives are `socat` (not installed everywhere) or a network that is fully open (rejected: it reopens T4).
-- **D5** The defaults of the sandbox limits (2 GiB, 256 processes, 256 MiB files, 5 minutes a command, 30 minutes a stage).
-- **D6** Closing the unconfined-reader gap (T9, last column) is a separate change.
-- **D7** Docker as a second backend later.
+Reviewed and **approved by the maintainer on 2026-10-03**, each decision as this spec recommends it (D6 is to be opened as a separate issue).
+
+- **D1** (approved) Migration of a reader's `tracker`: keep what it has today (this spec) or set `none` as the issue says.
+- **D2** (approved) `allowlist` only for agents that write (this spec) or also for readers.
+- **D3** (approved) A reader with a sandbox works in a **throwaway copy** (this spec) versus the real worktree read-write as the issue states. The copy costs disk and time and guarantees QA cannot change the branch.
+- **D4** (approved) Registry mode needs `node` inside the sandbox for the forwarder. The alternatives are `socat` (not installed everywhere) or a network that is fully open (rejected: it reopens T4).
+- **D5** (approved) The defaults of the sandbox limits (2 GiB, 256 processes, 256 MiB files, 5 minutes a command, 30 minutes a stage).
+- **D6** (approved) Closing the unconfined-reader gap (T9, last column) is a separate change.
+- **D7** (approved) Docker as a second backend later.
 
 ## 9. Acceptance
 
