@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseRemote } from '../../shared/wizard';
 import { ATAS } from '../env';
 import { getConfig, rc } from '../workspaceConfig';
 import { type CardReport, type CardState, buildCardReport } from './cards';
@@ -25,6 +26,14 @@ function writeState(state: CardState): void {
   renameSync(`${FILE()}.tmp`, FILE());
 }
 
+// The workspace's repos on this integration, plus the issue project; empty when none is known, so nothing is filtered out.
+function workspaceProjects(vcsId: string, issueProject: string | null): string[] {
+  const repos = rc()
+    .repos.filter((r) => r.vcsId === vcsId)
+    .map((r) => r.projectPath ?? parseRemote(r.remoteUrl)?.projectPath ?? null);
+  return [...repos, issueProject].filter((p): p is string => !!p);
+}
+
 /** The report built from the primary integration, or null when the workspace has none that is usable. */
 export async function providerReport(): Promise<CardReport | null> {
   if (!vcsReady()) return null;
@@ -37,6 +46,7 @@ export async function providerReport(): Promise<CardReport | null> {
     refPrefix: own ? issues.refPrefix : '',
     stages: rc().stages,
     stageMapping: getConfig().devCycle.stageMapping,
+    projects: workspaceProjects(provider.id, own ? issues.project : null),
     kind: provider.kind,
     state: readState(),
     now: () => new Date(),
