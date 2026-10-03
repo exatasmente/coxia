@@ -129,7 +129,10 @@ describe('the prompt catalogs', () => {
     // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`).
     const computed = /^effects\.kind\./;
     // A ".novoice" text is the same prompt worded for a conversation without voice: it is read through its base id.
-    const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !used.has(id) && !direct.has(id) && !computed.test(id));
+    // A host or cycle variant (".on-github", ".off-sdd") is read through its base id, which must exist.
+    const variant = /\.(on-(github|gitlab|bitbucket)|off-sdd|own-(ceremony|target|retro))$/;
+    for (const id of fam[BASE_FAMILY].filter((x) => variant.test(x))) expect(fam[BASE_FAMILY], id).toContain(id.replace(variant, ''));
+    const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !variant.test(id) && !used.has(id) && !direct.has(id) && !computed.test(id));
     for (const id of fam[BASE_FAMILY].filter((x) => x.endsWith('.novoice'))) expect(fam[BASE_FAMILY], id).toContain(id.replace(/\.novoice$/, ''));
     expect(unused).toEqual([]);
   });

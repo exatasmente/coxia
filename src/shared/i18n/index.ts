@@ -16,7 +16,8 @@ import wizardPtBR from './wizard.pt-BR.json';
 // A key missing in the active language falls back to pt-BR (the source language); a key missing everywhere returns the key itself,
 // so a gap is visible on screen and in `npm run i18n:lint`, never a crash.
 // A placeholder the call does not pass is looked up in the workspace's terms (host name, change-request noun, ceremony name...): see ./terms.
-// A key may also have a variant for the host (`key.on-github`), which wins over the plain key while the workspace uses that host.
+// A key may also have a variant for the host (`key.on-github`), which wins over the plain key while the workspace uses that host, and variants
+// for the cycle (`key.off-sdd`, `key.own-target`...: see CYCLE_VARIANTS in ./terms) while the cycle configuration differs from the SDD template's.
 
 export type Catalog = Record<string, string>;
 export type Params = Record<string, string | number>;
@@ -64,13 +65,21 @@ export function termsKind(): string | null {
   return terms.kind;
 }
 
+/** The cycle variants in force (`off-sdd`...). */
+export function termsFlags(): string[] {
+  return terms.flags;
+}
+
+/** The suffixes of the variants of a key in force, most specific first: the host's (".on-github"), then the cycle's (".off-sdd"). */
+const variantSuffixes = (kind: string | null, flags: string[]): string[] => [...(kind ? [kindSuffix(kind)] : []), ...flags.map((f) => `.${f}`)];
+
 /**
- * The catalog keys a text may be stored under, most specific first: with voice off the ".novoice" ones, and for each the host's variant
- * (".on-github") before the plain key.
+ * The catalog keys a text may be stored under, most specific first: with voice off the ".novoice" ones, and for each the variants in force
+ * (".on-github", ".off-sdd") before the plain key.
  */
-export function keyCandidates(key: string, voice: boolean, kind: string | null = termsKind()): string[] {
-  const withKind = (k: string) => (kind ? [`${k}${kindSuffix(kind)}`, k] : [k]);
-  return [...(voice ? [] : withKind(`${key}${NOVOICE_SUFFIX}`)), ...withKind(key)];
+export function keyCandidates(key: string, voice: boolean, kind: string | null = termsKind(), flags: string[] = termsFlags()): string[] {
+  const withVariants = (k: string) => [...variantSuffixes(kind, flags).map((suffix) => `${k}${suffix}`), k];
+  return [...(voice ? [] : withVariants(`${key}${NOVOICE_SUFFIX}`)), ...withVariants(key)];
 }
 
 /** Voice-aware translator: with voice off it prefers `<key>.novoice` and falls back to the plain key (most strings are the same either way). */
@@ -81,7 +90,7 @@ export function createVoiceTranslator(language: Language, voice: boolean, catalo
   return (key, params) => base(hasVariant(key) ? `${key}${NOVOICE_SUFFIX}` : key, params);
 }
 
-export function createTranslator(language: Language, catalogs: Record<Language, Catalog> = CATALOGS, kind: () => string | null = termsKind): Translate {
+export function createTranslator(language: Language, catalogs: Record<Language, Catalog> = CATALOGS, kind: () => string | null = termsKind, flags: () => string[] = termsFlags): Translate {
   const active = catalogs[language] ?? {};
   const base = catalogs[FALLBACK_LANGUAGE] ?? {};
   const find = (key: string, params?: Params): string | undefined => {
@@ -89,8 +98,7 @@ export function createTranslator(language: Language, catalogs: Record<Language, 
     return (plural && (active[plural] ?? base[plural])) ?? active[key] ?? base[key];
   };
   return (key, params) => {
-    const k = kind();
-    const template = (k ? find(`${key}${kindSuffix(k)}`, params) : undefined) ?? find(key, params);
+    const template = keyCandidates(key, true, kind(), flags()).reduce<string | undefined>((found, candidate) => found ?? find(candidate, params), undefined);
     return template === undefined ? key : fillTemplate(template, params);
   };
 }

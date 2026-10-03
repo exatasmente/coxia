@@ -1,5 +1,5 @@
 import type { Language, VcsIntegration, VcsKind, WorkspaceConfig } from '../config/types';
-import { hostWords, upperFirstWord, type Terms } from '../i18n/terms';
+import { CYCLE_VARIANTS, GITLAB_TRACKER_MCP, hostWords, upperFirstWord, type CycleVariant, type Terms } from '../i18n/terms';
 import { cycleText, userTerms } from './text';
 
 // The standard placeholders of a workspace (see ../i18n/terms.ts), built from its configuration: the integration that holds the issues, the
@@ -18,6 +18,24 @@ export function configuredCli(v: Pick<VcsIntegration, 'kind' | 'cliPreference' |
   return v.cliPreference === 'api' ? null : (v.cliCommand ?? DEFAULT_CLI[v.kind] ?? null);
 }
 
+/** The id of the template whose wording the plain keys have, and the label key of its daily ceremony. */
+const SDD_TEMPLATE = 'sdd';
+const SDD_CEREMONY_LABEL = 'cycle.label.preDaily';
+/** The days the retro looks back over in the wording of the plain keys ("weekly"). */
+const WEEK = 7;
+
+/** The variants of the cycle that apply to a workspace (see CYCLE_VARIANTS), in the order of that list. */
+export function cycleVariants(config: Pick<WorkspaceConfig, 'devCycle'>): CycleVariant[] {
+  const { templateId, ceremonyParams } = config.devCycle;
+  const on: Record<CycleVariant, boolean> = {
+    'off-sdd': templateId !== SDD_TEMPLATE,
+    'own-ceremony': ceremonyParams.preDaily.label !== SDD_CEREMONY_LABEL,
+    'own-target': ceremonyParams.preDaily.summaryTarget.trim() !== '',
+    'own-retro': ceremonyParams.retro.windowDays !== WEEK,
+  };
+  return CYCLE_VARIANTS.filter((v) => on[v]);
+}
+
 /** The terms of a workspace in a language. `cli` is empty when the host is read through the app's own tool or there is no integration. */
 export function termsFor(config: WorkspaceConfig, language: Language): Terms {
   const primary = primaryIntegration(config);
@@ -27,6 +45,7 @@ export function termsFor(config: WorkspaceConfig, language: Language): Terms {
   const ceremony = cycleText(preDaily.label, language, user);
   return {
     kind,
+    flags: cycleVariants(config),
     words: {
       ...hostWords(kind, language),
       ceremony,
@@ -34,6 +53,7 @@ export function termsFor(config: WorkspaceConfig, language: Language): Terms {
       summaryTarget: cycleText(preDaily.summaryTarget || 'cycle.summary.chat', language, user),
       retroDays: String(retro.windowDays),
       cli: primary ? (configuredCli(primary) ?? '') : '',
+      trackerMcp: config.agents.tools.trackerMcpServer.trim() || (kind === null || kind === 'gitlab' ? GITLAB_TRACKER_MCP : ''),
     },
   };
 }
