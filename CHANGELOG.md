@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- For contributors: running the tests on a fresh clone no longer downloads the Electron binary. The tests get a stub for the `electron` package, so a first `npx vitest run` after `npm ci` does not reach the network, and CI no longer fetches the binary before them.
+
 ## [0.4.2] - 2026-10-03
 
 ### Added
