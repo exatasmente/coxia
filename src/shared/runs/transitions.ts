@@ -122,13 +122,15 @@ export interface StartInput {
   base?: string | null;
 }
 
+/** What keeps a run from starting: an empty flow, or a stage that must have an agent and has none. Throws the refusal `startRun` gives. */
+export function assertStartable(flow: FlowStage[]): void {
+  const [problem] = flowProblems(flow);
+  if (problem) throw new RunError(problem.code === 'empty' ? 'no-flow' : 'no-agent', { stage: problem.stage ? labelOf(flow, problem.stage) : '' });
+}
+
 /** A run is created at the first stage. It does not start when the flow is empty or a stage that must have an agent has none: nothing is created then. */
 export function startRun(input: StartInput, flow: FlowStage[], at: string): Transition {
-  const problems = flowProblems(flow);
-  if (problems.length) {
-    const [p] = problems;
-    throw new RunError(p.code === 'empty' ? 'no-flow' : 'no-agent', { stage: p.stage ? labelOf(flow, p.stage) : '' });
-  }
+  assertStartable(flow);
   const run: Run = {
     version: RUN_VERSION,
     rev: 0,

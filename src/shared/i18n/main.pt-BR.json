@@ -867,5 +867,9 @@
   "main.runner.notice.done.body": "{title} chegou ao fim do ciclo. A branch e o worktree estão prontos para você.",
   "main.forum.code.runner.denied": "{agent} tentou {tool} em {target}: recusado ({reason}).",
   "main.forum.code.runner.artifactIgnored": "{agent} devolveu o documento \"{name}\", que esta etapa não produz: foi ignorado.",
-  "main.forum.code.runner.mentionFailed": "{agent} não conseguiu responder: {reason}"
+  "main.forum.code.runner.mentionFailed": "{agent} não conseguiu responder: {reason}",
+  "main.runner.error.branch-exists": "A branch {detail} já existe no repositório: o runner não reaproveita o que não criou. Apague ou renomeie essa branch e tente de novo.",
+  "main.runner.error.dest-exists": "A pasta {detail} já existe: o runner não escreve por cima do que não criou.",
+  "main.runner.error.not-worktree": "{detail} não é uma cópia de trabalho do git (é um repositório sem arquivos?).",
+  "main.runner.error.cancelled": "A etapa foi interrompida porque a execução foi cancelada."
 }

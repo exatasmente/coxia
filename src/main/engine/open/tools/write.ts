@@ -29,8 +29,8 @@ async function writeFile(path: string, content: string): Promise<void> {
 }
 
 export const writeTool: ToolImpl = {
-  name: 'Write',
-  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  name: 'Write', // i18n-ignore: the tool's name
+  // i18n-ignore-next-line: prompt and tool texts the open engine sends the model: English by design
   description: 'Writes a file inside the working directory, creating it (and its folders) or replacing it. file_path is relative to the working directory or absolute inside it.',
   parameters: {
     type: 'object',
@@ -52,8 +52,8 @@ export const writeTool: ToolImpl = {
 };
 
 export const editTool: ToolImpl = {
-  name: 'Edit',
-  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  name: 'Edit', // i18n-ignore: the tool's name
+  // i18n-ignore-next-line: prompt and tool texts the open engine sends the model: English by design
   description: 'Replaces text in a file inside the working directory. old_string must appear exactly once unless replace_all is true.',
   parameters: {
     type: 'object',

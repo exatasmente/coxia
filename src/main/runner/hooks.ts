@@ -70,10 +70,10 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   const patterns = o.commands.map((c) => new RegExp(`^${escapeRe(c)}$`));
   const listed = shellAllowlist(patterns);
   const bashGuard: HookCallback = async (input, id, opts) => {
-    if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
+    if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {}; // i18n-ignore: the tool's name
     const out = await listed(input, id, opts);
     const denied = (out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision === 'deny';
-    return denied ? say('Bash', (input.tool_input as { command?: unknown }).command, 'command') : out;
+    return denied ? say(input.tool_name, (input.tool_input as { command?: unknown }).command, 'command') : out;
   };
 
   const networkGuard: HookCallback = async (input) => (input.hook_event_name === 'PreToolUse' ? say(input.tool_name, (input.tool_input as { url?: unknown; query?: unknown }).url ?? (input.tool_input as { query?: unknown }).query, 'network') : {});
@@ -82,7 +82,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
     PreToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [writeGuard] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuard] },
-      { matcher: 'Bash', hooks: [bashGuard] },
+      { matcher: 'Bash', hooks: [bashGuard] }, // i18n-ignore: the tool's name
       { matcher: 'WebFetch|WebSearch', hooks: [networkGuard] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],

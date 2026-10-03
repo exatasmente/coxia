@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ThreadRead, type ThreadSummary, parseMentions } from '../shared/forum';
+import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, parseMentions } from '../shared/forum';
 import { t } from '../shared/i18n';
 import { ATAS } from './env';
 import { redact } from './errorlog-core';
@@ -12,6 +12,15 @@ import { getConfig } from './workspaceConfig';
 // A post only ever says something; an agent a mention calls on answers read-only, whatever its own permission (the runner, phase 2).
 
 let store: ForumStore | null = null;
+
+// A person's post can be the answer to a run's question: the runner (which this module knows nothing about) asks to see each post first and
+// takes the ones that answer, recording them as answers in the thread. The post is checked before it is shown to anyone.
+type PostInterceptor = (thread: string, text: string) => ForumMessage | null;
+let interceptor: PostInterceptor | null = null;
+
+export function interceptPosts(fn: PostInterceptor | null): void {
+  interceptor = fn;
+}
 
 export function forumStore(): ForumStore {
   store ??= createForumStore(join(ATAS, 'forum'), { redact: (text) => redact(text) });
@@ -42,7 +51,10 @@ export const forumModule: Module = (ctx) => {
     if (typeof thread !== 'string') return null;
     return forum.read(thread, typeof afterSeq === 'number' ? afterSeq : 0, typeof limit === 'number' ? limit : undefined);
   });
-  ctx.handle('forum:post', (thread: unknown, text: unknown) => personPost(forum, getConfig().agents.team.map((a) => a.id), thread, text));
+  ctx.handle('forum:post', (thread: unknown, text: unknown) => {
+    const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text) : null;
+    return answered ?? personPost(forum, getConfig().agents.team.map((a) => a.id), thread, text);
+  });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');
     return forum.createGeneral(title);
