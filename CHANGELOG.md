@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- For contributors: the test of cancelling the voice install could fail under load (it read the fake tool's pid file before the pid was written and then probed pid 0); it now waits for a complete pid and expects the tool to be gone as soon as the cancel settles.
+
 ## [0.4.2] - 2026-10-03
 
 ### Added
