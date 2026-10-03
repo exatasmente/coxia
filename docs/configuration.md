@@ -107,6 +107,7 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 | `config:get` | `{ config, secrets, storage, requirements, claudeSdk, workspaceId }` | permitido |
 | `config:schema`, `config:validate` | JSON Schema; valida um documento | permitido |
 | `config:save` | valida e grava o config inteiro | só desktop |
+| `config:cycle-save` | valida e grava o config como `config:save`, mas só aceita a mudança se todo caminho que difere do config guardado estiver em: `agents.team`, `squads`, `devCycle.stages`, `.flows`, `.comments`, `.priority` e `runner.{enabled, triggerLabel, maxConcurrentRuns, turns, stageIdleMs, stageMaxMs, commitMessage}`; qualquer outra coisa (`runner.commands`, `runner.worktreesDir`, `runner.identity`, `externalTools`, `docs`, `projects`, `llm`, `vcs`, `voice`...) é recusada. A diferença é calculada no app contra o config guardado (`src/main/configScope.ts`), nunca pelo que o cliente diz | aberto: é o que Time e ciclo usa no navegador |
 | `config:secret-set` / `-remove` / `-check`, `config:secrets-accept-insecure` | gerencia as fontes dos segredos | só desktop |
 | `config:export` | abre "salvar como" e grava o arquivo | só desktop |
 | `config:import-pick` | abre "abrir arquivo" | só desktop |
@@ -246,6 +247,7 @@ Channels (`configModule.ts`; those that write or touch files are **desktop only*
 | `config:get` | `{ config, secrets, storage, requirements, claudeSdk, workspaceId }` | allowed |
 | `config:schema`, `config:validate` | the JSON Schema; validates a document | allowed |
 | `config:save` | validates and writes the whole config | desktop only |
+| `config:cycle-save` | validates and writes the config like `config:save`, but accepts the change only if every path that differs from the stored config is in: `agents.team`, `squads`, `devCycle.stages`, `.flows`, `.comments`, `.priority` and `runner.{enabled, triggerLabel, maxConcurrentRuns, turns, stageIdleMs, stageMaxMs, commitMessage}`; anything else (`runner.commands`, `runner.worktreesDir`, `runner.identity`, `externalTools`, `docs`, `projects`, `llm`, `vcs`, `voice`...) is refused. The difference is computed in the app against the stored config (`src/main/configScope.ts`), never from what the client says | open: what Team and cycle uses in a browser |
 | `config:secret-set` / `-remove` / `-check`, `config:secrets-accept-insecure` | manages the secret sources | desktop only |
 | `config:export` | opens "save as" and writes the file | desktop only |
 | `config:import-pick` | opens "open file" | desktop only |

@@ -150,7 +150,7 @@ Nothing else. Speech recognition is always local. Secrets (API keys, tokens) are
 - **Confirmation for every write.** External effects are proposals with the literal command, validated against a per-provider shape before they are stored and again before they run. One code path executes them.
 - **Audit log.** Every executed action is appended to `auditoria.jsonl` in the workspace, with the body and without the token.
 - **Test workspaces.** A "test" mark keeps every effect on the machine.
-- **Phone companion (PWA).** Off by default and bound to loopback. Pairing uses a short-lived one-time code (12 characters, valid 10 minutes) shown on the desktop; sessions are device-bound, expire, and failed attempts are rate-limited. Anything that changes the machine (configuration, files, updates, installing software, secrets) is desktop-only, and approving external effects from a phone is off unless you turn it on.
+- **Phone companion (PWA).** Off by default and bound to loopback. Pairing uses a short-lived one-time code (12 characters, valid 10 minutes) shown on the desktop; sessions are device-bound, expire, and failed attempts are rate-limited. Runs and the team and cycle settings (the team, squads, flow and comment templates) work from the phone; anything that would make the machine run a program or read a folder (the runner's commands, tools, folders, updates, installing software, secrets) is desktop-only, and approving external effects from a phone is off unless you turn it on.
 - **Updates.** HTTPS feed only, sha512 checked on the downloaded AppImage, no downgrade, install only on your decision. On Linux the AppImage is not code-signed: trust follows the repository's release process.
 
 To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
