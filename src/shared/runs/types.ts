@@ -33,7 +33,7 @@ export interface StageRecord {
   autonomous: boolean;
 }
 
-export const QUESTION_KINDS = ['agent', 'review-limit'] as const;
+export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
 /** How many agents a question may pass through before it goes to the person, whatever the agents say. */
@@ -58,7 +58,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -181,6 +181,28 @@ export interface RunIssue {
   url: string | null;
 }
 
+/** Why the scope rules did not pick a squad for an issue: more than one matched, or none did. */
+export const ROUTING_WHY = ['several', 'none'] as const;
+export type RoutingWhy = (typeof ROUTING_WHY)[number];
+
+/** How a run came to be in its squad: by the scope rules (and which one), by the front door's proposal or by the person. */
+export const ROUTED_BY = ['repo', 'label', 'path', 'unclaimed', 'agent', 'person'] as const;
+export type RoutedBy = (typeof ROUTED_BY)[number];
+
+/**
+ * A run whose squad is not decided yet: the scope rules left several squads (or none), so the run starts in the workspace's flow at its front door, whose
+ * agent proposes the squad as part of its answer; the run goes on in the squad when that agent runs by itself, and waits for the person's choice otherwise.
+ */
+export interface RoutingState {
+  /** The squads the issue may belong to: those the scope rules could not tell apart, or every squad when none matched. */
+  candidates: string[];
+  why: RoutingWhy;
+  /** The squad the front-door agent proposed, once it did. */
+  proposal: { squad: string; by: string; reason: string } | null;
+  /** What the front door produced when it ended, held until the squad is chosen: the run goes on from it in the squad's flow. */
+  result: { by: string; summary: string; handoff: string; artifacts: string[] } | null;
+}
+
 export interface Run {
   version: typeof RUN_VERSION;
   /** Grows by one on every save of the store. */
@@ -208,6 +230,12 @@ export interface Run {
   returns: Record<string, number>;
   /** What the run waits for while its status is `waiting`; null otherwise. */
   wait: WaitState | null;
+  /** The squad the run works in (a `squads` id); absent or null: no squad, the run follows the workspace's flow with the whole team. */
+  squad?: string | null;
+  /** How the run came to be in its squad; absent when it has none. */
+  routedBy?: RoutedBy | null;
+  /** Set while the squad is not decided (see `RoutingState`); null or absent once it is, and for a workspace with no squads. */
+  routing?: RoutingState | null;
   /**
    * The flow the run started with, and keeps following when the cycle is edited afterwards (`runs:migrateFlow` moves it to the current one). Absent in a run
    * written before flows were copied: it follows the current flow.

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { turnTarget } from '../../shared/config/squads';
+import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
@@ -139,6 +139,9 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const levels = stage.kind === 'backlog' && kind === 'work' ? writableLabels(config.devCycle.priority.labels) : [];
   const priority = levels.length ? levels : undefined;
   const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
+  // The front door of a run whose squad is not decided proposes it: the squads it may name, and why the scope rules left it open.
+  const candidates = run.routing && flow[0]?.id === stage.id ? squadsOf(config).filter((q) => run.routing?.candidates.includes(q.id)) : [];
+  const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;
 
   const input: StageInput = {
     run,
@@ -157,6 +160,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     pr,
     reporter,
     priority,
+    routing,
+    squad: squadOf(config, run.squad),
     turnsTo: askTarget(config, agent),
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
@@ -173,7 +178,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent) }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id) }),
     system: systemText(input),
     cwd: wt,
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,

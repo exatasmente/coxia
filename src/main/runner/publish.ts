@@ -127,6 +127,8 @@ export interface Publisher {
   waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
   /** Proposes deleting what an automatic post of the run put on the tracker (always a "yes"). `proposed` is false when there was nothing to propose and `reason` says why. */
   undo(runId: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
+  /** The run started in a squad that carries a label on the tracker: the issue gets it, by itself when the squad's liaison runs by itself and as a proposal otherwise. */
+  squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
   stageEntered(runId: string, e: { stage: FlowStage; previous: FlowStage | null; autonomous: boolean }): Promise<void>;
 }
@@ -806,6 +808,33 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  // ---- the label of the squad ---------------------------------------------------------------------------------------------------
+
+  async function squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void> {
+    const label = e.label.trim();
+    if (!label) return;
+    const run = need(runId);
+    if (door.refusal()) return say(run, 'runner.squad.refused', { label });
+    const provider = door.provider();
+    if (!provider) return;
+    const { issue } = projects(run);
+    const commands = await provider.planWrite({ op: 'setIssueLabels', project: issue, iid: run.issue.iid, add: [label], remove: [] });
+    if (!commands.length) return;
+    const key = `squad:${runId}:${e.squad}`;
+    const summary = tr('main.runner.squad.summary', { label, squad: e.squad });
+    if (!e.autonomous) {
+      const created = door.propose({ key, issue: run.issue.iid, issueTitle: run.issue.title, summary, unit: { runId, purpose: 'squad', squad: e.squad }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+      if (created) say(run, 'runner.squad.proposed', { label });
+      return;
+    }
+    try {
+      await door.post({ issue: run.issue.iid, key, summary, by: e.by }, commands);
+      say(run, 'runner.squad.set', { label });
+    } catch (err) {
+      say(run, 'runner.squad.failed', { label, reason: message(err) });
+    }
+  }
+
   // Anything that goes wrong while publishing is said in the thread and never fails the stage or the run.
   const guarded = (runId: string, work: () => Promise<void>): Promise<void> =>
     work().catch((e) => {
@@ -829,6 +858,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     waitOver,
     undo: (runId, key) => undo(runId, key),
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
+    squadRouted: (runId, e) => guarded(runId, () => squadRouted(runId, e)),
   };
 }
 

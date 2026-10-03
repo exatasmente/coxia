@@ -61,6 +61,12 @@ export function liaisonFor(c: TeamView, agent: Pick<AgentDef, 'id' | 'squad'>): 
 }
 
 /**
+ * Whether `agent` runs by itself: its own switch, and, for a member of a squad, the squad's switch (a squad that is off holds every member, the liaison
+ * included). The switch of a squad the config no longer has counts as on.
+ */
+export const autonomousOf = (c: TeamView, agent: Pick<AgentDef, 'autonomous' | 'squad'>): boolean => agent.autonomous && (squadOf(c, agent.squad)?.autonomy ?? true);
+
+/**
  * Who a question of `agent` goes to first: the agent it turns to, when that is another agent of the team; else, for a member of a squad that is not its
  * liaison, the liaison (a member that turns to the person goes through the liaison first); else the person (null).
  */

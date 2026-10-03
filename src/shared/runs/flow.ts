@@ -1,4 +1,5 @@
 import { DEFAULT_ROUND_LIMIT, type DevCycleConfig, type StageDef, type WorkspaceConfig } from '../config/types';
+import { squadView, type CycleView } from '../config/squads';
 import { stageAgent } from '../config/team';
 import type { FlowSnapshot, FlowStage, Run } from './types';
 
@@ -68,12 +69,14 @@ export const snapshotOf = (stages: FlowStage[]): FlowSnapshot => ({ hash: flowHa
  * The flow a run follows: the copy it started with, the agents as they are now (autonomy is read when a stage starts or publishes, so a switch applies from
  * the next one; an agent that left the team is replaced by the one the cycle names for the stage today). A run with no copy follows the current flow.
  */
-export function flowOfRun(run: Pick<Run, 'flow'>, config: FlowConfig): FlowStage[] {
-  if (!run.flow) return flowOf(config);
-  const team = config.agents.team;
+export function flowOfRun(run: Pick<Run, 'flow' | 'squad'>, config: CycleView): FlowStage[] {
+  // A run in a squad reads its agents from the squad's members and the shared ones, and the stages of the squad's flow.
+  const view = squadView(config, run.squad);
+  if (!run.flow) return flowOf(view, view.devCycle.stages);
+  const team = view.agents.team;
   return run.flow.stages.map((s) => {
     if (s.type !== 'work' || !s.agent) return s;
-    const agent = team.find((a) => a.id === s.agent) ?? stageAgent(team, config.devCycle.stages, s.id);
+    const agent = team.find((a) => a.id === s.agent) ?? stageAgent(team, view.devCycle.stages, s.id);
     return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false };
   });
 }

@@ -1,12 +1,12 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
 
-export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting'] as const;
+export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing'] as const;
 export type RunErrorCode = (typeof RUN_ERROR_CODES)[number];
 
 export class RunError extends Error {
@@ -150,6 +150,10 @@ const labelOf = (flow: FlowStage[], stageId: string): string => flow.find((s) =>
 const clone = (run: Run, at: string): Run => ({ ...structuredClone(run), updatedAt: at });
 
 export interface StartInput {
+  /** The squad the scope rules picked: the run starts in it, with the flow the caller resolved for it. */
+  squad?: { id: string; name: string; rule: RoutedBy } | null;
+  /** The scope rules could not pick a squad: the run starts at the front door of the workspace's flow and the squad is decided there (see `RoutingState`). */
+  routing?: { candidates: string[]; why: RoutingWhy } | null;
   id: string;
   issue: RunIssue;
   repo: string;
@@ -199,8 +203,28 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
   };
   log(run, at, 'started', null, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
-  // The person who starts the run starts its first stage too.
-  enter(run, flow, flow[0].id, at, messages, true);
+  if (input.squad) {
+    run.squad = input.squad.id;
+    run.routedBy = input.squad.rule;
+    log(run, at, 'squad-routed', null, 'app', `${input.squad.rule}:${input.squad.id}`);
+    messages.push({ kind: 'system', author: app, code: `run.squad.routed.${input.squad.rule}`, params: { squad: input.squad.name } });
+  }
+  if (input.routing) {
+    run.routing = { candidates: [...input.routing.candidates], why: input.routing.why, proposal: null, result: null };
+    messages.push({ kind: 'system', author: app, code: `run.squad.triage.${input.routing.why}`, params: { squads: input.routing.candidates.join(', ') } });
+  }
+  const front = flow[0];
+  if (input.routing && !(front.type === 'work' && front.agent)) {
+    // Nobody works the first stage to propose a squad: the person chooses before anything runs.
+    run.stages.push({ stage: front.id, agent: null, status: 'waiting', artifacts: [], startedAt: null, endedAt: null, attempts: 0, autonomous: false });
+    run.status = 'question';
+    run.question = { by: 'app', holder: null, hops: 0, kind: 'squad', text: t('main.runs.squad.question', { squads: input.routing.candidates.join(', ') }), askedAt: at, stage: front.id };
+    log(run, at, 'squad-asked', front.id, 'app');
+    messages.push({ kind: 'question', author: app, code: 'run.squad.ask', params: { squads: input.routing.candidates.join(', ') }, to: 'person', stage: front.id, public: true });
+  } else {
+    // The person who starts the run starts its first stage too.
+    enter(run, flow, front.id, at, messages, true);
+  }
   return { run, messages };
 }
 
@@ -350,6 +374,8 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   const said = text.trim();
   if (!said) throw new RunError('empty-text');
   const q = run.question;
+  // Which squad the run works in is decided with `routeSquad`, not answered in words.
+  if (q?.kind === 'squad') throw new RunError('wrong-state', { status: run.status });
   const out = clone(run, at);
   out.question = null;
   log(out, at, 'answer', run.stage, 'person', said);
@@ -536,6 +562,98 @@ export function resumeAfterRestart(run: Run, flow: FlowStage[], at: string): Tra
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.stage.restarted', params: { stage: labelOf(flow, run.stage) }, stage: run.stage }];
   enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
+}
+
+// ---- the squad of a run ----------------------------------------------------------------------------------------------------------------------
+// A run the scope rules could not place starts at the front door of the workspace's flow. When that stage ends, the squad is decided: by the agent's proposal
+// when it runs by itself, by the person's choice otherwise, and the run goes on in the squad's flow from the stage after the front door.
+
+export interface FrontDoorResult {
+  by: string;
+  summary: string;
+  handoff: string;
+  artifacts: string[];
+}
+
+/** The front door ended and the person is to choose the squad: the agent proposed none, or it does not run by itself. What it produced waits for the choice. */
+export function askSquad(run: Run, input: FrontDoorResult & { proposal: { squad: string; reason: string } | null }, at: string): Transition {
+  need(run, 'working');
+  if (!run.routing) throw new RunError('wrong-state', { status: run.status });
+  const out = clone(run, at);
+  const squads = run.routing.candidates.join(', ');
+  const proposal = input.proposal ? { squad: input.proposal.squad, by: input.by, reason: input.proposal.reason } : null;
+  out.routing = { ...run.routing, proposal, result: { by: input.by, summary: input.summary, handoff: input.handoff, artifacts: [...input.artifacts] } };
+  out.status = 'question';
+  out.question = { by: input.by, holder: null, hops: 0, kind: 'squad', text: t('main.runs.squad.question', { squads }), askedAt: at, stage: run.stage };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'squad-asked', run.stage, input.by, proposal?.squad ?? null);
+  const post: ForumDraft = { kind: 'post', author: agent(input.by), text: input.summary, refs: refsOf(input.artifacts), stage: run.stage, public: true };
+  const ask: ForumDraft = { kind: 'question', author: agent(input.by), code: proposal ? 'run.squad.ask.proposal' : 'run.squad.ask', params: { squads, proposal: proposal?.squad ?? '', reason: proposal?.reason ?? '' }, to: 'person', stage: run.stage, public: true };
+  return { run: out, messages: [post, ask] };
+}
+
+export interface RouteSquadInput {
+  /** The squad the run goes on in; null: no squad (the person chose to go on without one). */
+  squad: string | null;
+  /** Its name, for the thread. */
+  name: string;
+  /** The flow of that squad, resolved by the caller (the workspace's own when the squad has none, or when there is no squad). */
+  flow: FlowStage[];
+  /** The agent that proposed it, or "person". */
+  by: string;
+  reason: string;
+  how: Extract<RoutedBy, 'agent' | 'person'>;
+  /** The front door's result, when the stage just ended and the agent decided by itself; absent when the run was waiting for the person (it is in `routing.result`). */
+  result?: FrontDoorResult;
+}
+
+/**
+ * The squad is decided: the run goes on in its flow. The stage after the front door in that flow is entered (the flow's first stage when the front door never
+ * ran or the squad's flow does not have it), with the agents of the squad.
+ */
+export function routeSquad(run: Run, input: RouteSquadInput, at: string): Transition {
+  need(run, 'working', 'question');
+  if (!run.routing) throw new RunError('wrong-state', { status: run.status });
+  const asked = run.status === 'question';
+  if (asked && run.question?.kind !== 'squad') throw new RunError('wrong-state', { status: run.status });
+  if (!input.flow.length) throw new RunError('no-flow');
+  const result = input.result ?? run.routing.result;
+  const out = clone(run, at);
+  out.squad = input.squad;
+  out.routedBy = input.squad ? input.how : null;
+  out.routing = null;
+  out.question = null;
+  out.flow = snapshotOf(input.flow);
+  log(out, at, 'squad-routed', run.stage, input.by, input.squad ? `${input.how}:${input.squad}` : `${input.how}:none`);
+  const messages: ForumDraft[] = [];
+  if (asked) messages.push({ kind: 'answer', author: person, code: 'run.squad.chosen', params: { squad: input.name }, text: input.reason.trim(), stage: run.stage, public: true });
+  else messages.push({ kind: 'system', author: app, code: 'run.squad.proposed', params: { squad: input.name, agent: input.by, reason: input.reason }, stage: run.stage });
+  const at0 = input.flow.findIndex((s) => s.id === run.stage);
+  if (result) {
+    if (!asked && input.result) messages.push({ kind: 'post', author: agent(result.by), text: result.summary, refs: refsOf(result.artifacts), stage: run.stage, public: true });
+    finishStage(out, at, 'done', result.artifacts);
+    log(out, at, 'stage-done', run.stage, result.by);
+    const to = at0 >= 0 ? followOf(input.flow, input.flow[at0]) : input.flow[0];
+    if (result.handoff.trim() && to) messages.push({ kind: 'handoff', author: agent(result.by), text: result.handoff, to: handoffTo(to), stage: run.stage });
+    if (at0 >= 0) advance(out, input.flow, input.flow[at0], at, messages);
+    else enter(out, input.flow, input.flow[0].id, at, messages);
+  } else {
+    // The front door never ran: the stage it was to run is not run at all.
+    finishStage(out, at, 'skipped');
+    enter(out, input.flow, input.flow[0].id, at, messages);
+  }
+  return { run: out, messages };
+}
+
+/** The squad of the run was removed (after the person confirmed): the run goes on with no squad, following the flow it has. */
+export function leaveSquad(run: Run, at: string): Transition {
+  if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
+  const out = clone(run, at);
+  const was = run.squad ?? '';
+  out.squad = null;
+  out.routedBy = null;
+  log(out, at, 'squad-routed', run.stage, 'person', `none:${was}`);
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'run.squad.removed', params: { squad: was }, stage: run.stage }] };
 }
 
 // ---- waiting ---------------------------------------------------------------------------------------------------------------------------------

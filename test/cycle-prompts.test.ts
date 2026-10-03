@@ -126,8 +126,8 @@ describe('the prompt catalogs', () => {
     }
     // Ids rendered by the rules of baseParams (cyclePrompts.ts) rather than named at a call.
     const direct = new Set(['rules.speech', 'rules.speechExamples', 'rules.chat', 'options.rule']);
-    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`).
-    const computed = /^(effects\.kind|runner\.denied)\./;
+    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`), and so is the squad request of a front door (`runner.output.squad.${why}`).
+    const computed = /^(effects\.kind|runner\.denied|runner\.output\.squad)\./;
     // A ".novoice" text is the same prompt worded for a conversation without voice: it is read through its base id.
     const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !used.has(id) && !direct.has(id) && !computed.test(id));
     for (const id of fam[BASE_FAMILY].filter((x) => x.endsWith('.novoice'))) expect(fam[BASE_FAMILY], id).toContain(id.replace(/\.novoice$/, ''));

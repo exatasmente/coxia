@@ -61,14 +61,20 @@ export function docsSources(): ResolvedDocs {
 
 const flowInputs = (c: unknown): string => {
   const x = c as Partial<WorkspaceConfig> | null;
-  return JSON.stringify([x?.devCycle?.stages ?? null, (x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null])]);
+  // The flow, the flows of the squads, who belongs to which squad, who is its liaison, what its scope is, and who turns to whom.
+  return JSON.stringify([
+    x?.devCycle?.stages ?? null,
+    x?.devCycle?.flows ?? null,
+    (x?.squads ?? []).map((q) => [q.id, q.liaison ?? null, q.scope ?? null]),
+    (x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null, a.squad ?? null]),
+  ]);
 };
 
 /** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
 export function saveConfig(next: unknown): WorkspaceConfig {
   let checked = validateConfig(next);
   // A flow with a problem was kept as the person left it when the app opened it: it must not make an unrelated change (the theme, an agent's switch) unsavable.
-  // Only a change to the flow itself, or to who turns to whom, is held to its checks.
+  // Only a change to the flow itself, to the squads' structure, or to who turns to whom, is held to its checks.
   if (!checked.ok && state && flowInputs(next) === flowInputs(state.config)) {
     const tolerant = validateConfig(next, { tolerateFlow: true });
     if (tolerant.ok) checked = tolerant;

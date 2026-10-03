@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -143,6 +143,26 @@ const flowStage = object(
   ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
 );
 
+const routing = {
+  ...object(
+    'A run whose squad is not decided yet.',
+    {
+      candidates: { type: 'array', description: 'The squads the issue may belong to.', items: string('A squad id.', { pattern: ID }), maxItems: 50 },
+      why: enumOf('Why the scope rules did not decide: several squads matched, or none.', ROUTING_WHY),
+      proposal: {
+        ...object('The squad the front-door agent proposed.', { squad: string('A squad id.', { pattern: ID }), by: string('The agent id.', { maxLength: 48 }), reason: string('Why.', { maxLength: 4000 }) }, ['squad', 'by', 'reason']),
+        type: ['object', 'null'],
+      },
+      result: {
+        ...object('What the front door produced, held until the squad is chosen.', { by: string('The agent id.', { maxLength: 48 }), summary: string('What it did.', { maxLength: 20_000 }), handoff: string('What the next stage is to do.', { maxLength: 20_000 }), artifacts: fileNames }, ['by', 'summary', 'handoff', 'artifacts']),
+        type: ['object', 'null'],
+      },
+    },
+    ['candidates', 'why', 'proposal', 'result'],
+  ),
+  type: ['object', 'null'],
+} as JsonSchema;
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -165,6 +185,9 @@ export const RUN_SCHEMA: JsonSchema = object(
     pending,
     returns: { type: 'object', description: 'How many times the work went back to each stage, by that stage.', additionalProperties: { type: 'integer', minimum: 0, maximum: 1000 } },
     wait: { ...object('What the run waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time.', minimum: 1, maximum: 525_600 }, since: time('Since when.'), by: string('The agent that asked.', { maxLength: 48 }) }, ['kind', 'since']), type: ['object', 'null'] },
+    squad: { type: ['string', 'null'], description: 'The squad the run works in; absent or null: none.', pattern: ID },
+    routedBy: { type: ['string', 'null'], description: 'How the run came to be in its squad.', enum: [...ROUTED_BY, null] },
+    routing,
     flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
     review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {

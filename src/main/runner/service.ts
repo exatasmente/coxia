@@ -1,16 +1,19 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
-import type { IssueProjectConfig, WorkspaceConfig } from '../../shared/config/types';
+import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, parseMentions, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import {
   type FlowStage,
+  type RoutedBy,
   type Run,
   RunError,
+  type StageOutput,
   type Transition,
   acceptStage,
   askReporter,
+  askSquad,
   assertStartable,
   answer as answerMove,
   answerByAgent,
@@ -29,6 +32,7 @@ import {
   gateSkip,
   handBack,
   isTerminal,
+  leaveSquad,
   MAX_QUESTION_HOPS,
   newRunId,
   passQuestion,
@@ -37,6 +41,8 @@ import {
   recordReview,
   resumeAfterRestart,
   retry as retryMove,
+  routeIssue,
+  routeSquad,
   returnStage as returnMove,
   reviewReturn,
   stageDone,
@@ -49,7 +55,8 @@ import {
   waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
-import { squadsOf } from '../../shared/config/squads';
+import { autonomousOf, membersOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf } from '../../shared/config/squads';
+import { cycleText } from '../../shared/cycles/text';
 import { updateAgent } from '../../shared/config/team';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
@@ -145,6 +152,10 @@ export interface Runner {
   skipWait(id: string, reason: string): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
   migrateFlow(id: string): Run;
+  /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
+  setSquad(id: string, squad: string | null): Run;
+  /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
+  removeSquad(squad: string, confirm: boolean): { removed: boolean; runs: string[] };
   setAutonomous(agentId: string, on: boolean): WorkspaceConfig;
   /** A person's post in a run's thread that answers the run's pending question: the answer is recorded and the stage goes on. Null when the post answers nothing. */
   answerPost(thread: string, text: string): ForumMessage | null;
@@ -329,6 +340,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!holder) publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
+    if (run.routing && flow[0]?.id === stage) {
+      routeFrontDoor(run, { agent, out, written: r.written, autonomous });
+      ended();
+      return;
+    }
     if (r.kind === 'review') {
       const recorded = moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
       const text = findingsText(out.summary, out.findings);
@@ -411,7 +427,20 @@ export function createRunner(deps: RunnerDeps): Runner {
 
     const { issue, comments } = await deps.issues.get(iid);
     if (issue.state === 'closed') throw new RunnerError('issue-closed', { ref });
-    const repo = await repoFor(env.issues.project, repoId);
+    // The squads that can take work, and what the issue says about which one is its: its labels, and the files its text mentions.
+    const routable = squadsOf(config).filter((q) => membersOf(config, q.id).length);
+    const text = [issue.title, issue.body, ...comments.filter((c) => !c.system).map((c) => c.body)].join('\n');
+    const repo = await repoFor(env.issues.project, repoId ?? (routable.length ? repoOfSquad(routable, issue.labels, text, env) : undefined));
+    const routed = routable.length ? routeIssue(routable, { repo: repo.id, labels: issue.labels, text }) : null;
+    // The flow the run starts with: its squad's when the scope rules picked one, the workspace's otherwise (the front door then proposes the squad).
+    let startFlow = flow;
+    let squad: { id: string; name: string; rule: Extract<RoutedBy, 'repo' | 'label' | 'path' | 'unclaimed'> } | null = null;
+    if (routed?.kind === 'matched') {
+      const view = squadView(config, routed.squad);
+      startFlow = flowOf(view, view.devCycle.stages);
+      assertStartable(startFlow);
+      squad = { id: routed.squad, name: cycleText(squadOf(config, routed.squad)?.name ?? routed.squad, config.language), rule: routed.rule };
+    }
     const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (deps.identity ?? repoIdentity)(repo.path);
     if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
 
@@ -429,8 +458,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(dest, commitMessage(config.runner.commitMessage, 'add the issue record', iid), identity);
       const started = startRun(
-        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha },
-        flow,
+        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, squad, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
+        startFlow,
         now(),
       );
       run = beginRun(d, started);
@@ -439,8 +468,45 @@ export function createRunner(deps: RunnerDeps): Runner {
       throw e;
     }
     tell(null, run);
+    if (squad) labelSquad(run, squad.id);
     pump(run.id);
     return run;
+  }
+
+  // The repository of an issue the caller did not name, when the project has several: the one the squad that labels or paths pick owns, if it owns exactly one.
+  function repoOfSquad(squads: SquadDef[], labels: string[], text: string, env: RunnerEnv): string | undefined {
+    const own = env.repos.filter((r) => r.projectPath === env.issues.project);
+    if (own.length < 2) return undefined;
+    const routed = routeIssue(squads, { repo: null, labels, text });
+    if (routed.kind !== 'matched') return undefined;
+    const mine = (squads.find((q) => q.id === routed.squad)?.scope.repos ?? []).filter((id) => own.some((r) => r.id === id));
+    return mine.length === 1 ? mine[0] : undefined;
+  }
+
+  // The label of a squad goes onto the issue when a run starts in it, under the autonomy of the squad's liaison (a proposal when it does not run by itself).
+  function labelSquad(run: Run, squadId: string): void {
+    const config = deps.config();
+    const q = squadOf(config, squadId);
+    if (!q?.label?.trim() || !deps.publisher) return;
+    const liaison = config.agents.team.find((a) => a.id === q.liaison);
+    publish(run.id, (p) => p.squadRouted(run.id, { squad: q.id, label: q.label as string, by: liaison?.id ?? 'app', autonomous: !!liaison && autonomousOf(config, liaison) }));
+  }
+
+  // The front door ended on a run whose squad is not decided: the agent's proposal decides it when the agent runs by itself; otherwise the person chooses.
+  function routeFrontDoor(run: Run, e: { agent: AgentDef; out: StageOutput; written: string[]; autonomous: boolean }): void {
+    const config = deps.config();
+    const routing = run.routing as NonNullable<Run['routing']>;
+    const result = { by: e.agent.id, summary: e.out.summary, handoff: e.out.handoff, artifacts: e.written };
+    const proposed = routing.candidates.includes(e.out.squad) ? e.out.squad : null;
+    if (proposed && e.autonomous) {
+      const view = squadView(config, proposed);
+      const flow = flowOf(view, view.devCycle.stages);
+      const name = cycleText(squadOf(config, proposed)?.name ?? proposed, config.language);
+      tell(run, moveRun(d, run.id, (x) => routeSquad(x, { squad: proposed, name, flow, by: e.agent.id, reason: e.out.squadReason, how: 'agent', result }, now())));
+      labelSquad(run, proposed);
+      return;
+    }
+    tell(run, moveRun(d, run.id, (x) => askSquad(x, { ...result, proposal: proposed ? { squad: proposed, reason: e.out.squadReason } : null }, now())));
   }
 
   // A worktree and a branch this call made, left by a start that did not complete: the only thing the runner ever removes.
@@ -492,10 +558,34 @@ export function createRunner(deps: RunnerDeps): Runner {
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
     migrateFlow(id) {
       const config = deps.config();
-      const broken = flowErrors({ stages: config.devCycle.stages, team: config.agents.team }, { asFlow: true });
+      // The flow a run moves to is its squad's (the workspace's when it has none).
+      const view = squadView(config, need(id).squad);
+      const broken = flowErrors({ stages: view.devCycle.stages, team: view.agents.team }, { asFlow: true });
       if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
-      const flow = flowOf(config);
+      const flow = flowOf(view, view.devCycle.stages);
       return move(id, (r, _f, at) => migrateFlowMove(r, flow, at));
+    },
+    setSquad(id, squadId) {
+      const run = need(id);
+      if (!run.routing || run.status !== 'question' || run.question?.kind !== 'squad') throw new RunError('not-routing');
+      const config = deps.config();
+      const q = squadId === null ? null : squadOf(config, squadId);
+      if (squadId !== null && !q) throw new RunError('unknown-squad', { squad: squadId.slice(0, 48) });
+      const view = squadView(config, squadId);
+      const flow = flowOf(view, view.devCycle.stages);
+      assertStartable(flow);
+      const name = q ? cycleText(q.name, config.language) : t('main.runs.squad.none');
+      const moved = move(id, (r, _f, at) => routeSquad(r, { squad: squadId, name, flow, by: 'person', reason: '', how: 'person' }, at));
+      if (squadId) labelSquad(moved, squadId);
+      return moved;
+    },
+    removeSquad(squadId, confirm) {
+      if (!squadOf(deps.config(), squadId)) throw new RunError('unknown-squad', { squad: squadId.slice(0, 48) });
+      const affected = deps.runs.list().filter((r) => r.squad === squadId && !isTerminal(r));
+      if (!confirm) return { removed: false, runs: affected.map((r) => r.id) };
+      deps.updateConfig((c) => removeSquadConfig(c, squadId));
+      for (const r of affected) move(r.id, (x, _f, at) => leaveSquad(x, at));
+      return { removed: true, runs: affected.map((r) => r.id) };
     },
     setAutonomous(agentId, on) {
       if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
@@ -504,7 +594,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     answerPost(thread, text) {
       const id = thread.startsWith('run-') ? thread.slice(4) : '';
       const run = id ? deps.runs.get(id) : null;
-      if (!run || run.status !== 'question' || !text.trim()) return null;
+      if (!run || run.status !== 'question' || run.question?.kind === 'squad' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
       if (parseMentions(text, deps.config().agents.team.map((a) => a.id)).length) return null;
       api.answer(run.id, text);

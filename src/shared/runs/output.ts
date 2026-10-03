@@ -44,6 +44,10 @@ export interface StageOutput {
   priority: string;
   /** A milestone the agent proposes, as text; there is no write for it, so it is said in the thread and in the proposal. */
   milestone: string;
+  /** The squad the agent proposes for the issue (a squad id), asked of the front door of a run whose squad is not decided; empty: none. */
+  squad: string;
+  /** Why that squad. */
+  squadReason: string;
   /** Review only. */
   verdict: 'approved' | 'changes' | null;
   findings: Finding[];
@@ -75,6 +79,8 @@ export interface OutputWants {
   priority?: boolean;
   /** The agent turns to another agent before the person: ask whether the question is the person's alone (`needsPerson`). */
   ask?: boolean;
+  /** The agent proposes the squad of the issue, one of these ids (the front door of a run whose squad the scope rules could not pick): ask for `squad` and `squadReason`. */
+  squads?: string[];
   /** The stage has a comment template: ask for `comment`. */
   comment?: boolean;
   /** The stage ends with the push: ask for the pull request description too. */
@@ -95,6 +101,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
   if (wants.ask) base.needsPerson = { type: 'boolean' };
   if (wants.reporter) base.reporterQuestion = strOrNull;
   if (wants.priority) Object.assign(base, { priority: strOrNull, milestone: strOrNull });
+  if (wants.squads?.length) Object.assign(base, { squad: { type: ['string', 'null'], enum: [...wants.squads, null] }, squadReason: strOrNull });
   if (wants.comment) base.comment = commentText();
   if (wants.pr) base.pr = commentText({ title: str });
   return obj(base);
@@ -175,6 +182,8 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     reporterQuestion: text(o.reporterQuestion),
     priority: text(o.priority, 200),
     milestone: text(o.milestone, 200),
+    squad: text(o.squad, 48),
+    squadReason: text(o.squadReason, 2000),
     verdict,
     findings,
     scenarios: kind === 'qa' ? list(o.scenarios).flatMap((s) => readScenario(s) ?? []) : [],

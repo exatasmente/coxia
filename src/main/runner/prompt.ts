@@ -1,6 +1,6 @@
-import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, messageText } from '../../shared/forum';
-import type { OutputKind } from '../../shared/runs';
+import type { OutputKind, RoutingWhy } from '../../shared/runs';
 import type { FlowStage, Run } from '../../shared/runs';
 import { t } from '../../shared/i18n';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
@@ -42,6 +42,10 @@ export interface StageInput {
   turnsTo?: string | null;
   /** The agent may ask the person who reported the issue, on the issue. */
   reporter?: boolean;
+  /** The squad the run works in: its mission is told to the agent. */
+  squad?: SquadDef | null;
+  /** The agent proposes the squad of the issue: the squads it may name and why the scope rules did not pick one. */
+  routing?: { squads: SquadDef[]; why: RoutingWhy };
   /** The labels the agent may propose as the issue's priority (the ones that can be written to the tracker); empty or absent: it proposes none. */
   priority?: string[];
 }
@@ -74,6 +78,7 @@ export function systemText(i: StageInput): string {
   const agents = i.config.agents;
   return [
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: i.stage.label }),
+    i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
     cp('runner.rules.data'),
     agents.persona.trim(),
@@ -83,6 +88,12 @@ export function systemText(i: StageInput): string {
     .filter(Boolean)
     .join('\n\n');
 }
+
+const squadLine = (q: SquadDef): string => {
+  const none = '—';
+  const scope = cp('runner.squad.scope', { repos: q.scope.repos.join(', ') || none, labels: q.scope.labels.join(', ') || none, paths: q.scope.paths.map((p) => `${p.repo}:${p.prefix}`).join(', ') || none });
+  return cp('runner.squad.line', { id: q.id, name: cycleWord(q.name), mission: q.mission.trim() ? cycleWord(q.mission) : none, scope });
+};
 
 const sectionLines = (ask: CommentAsk): string => ask.sections.map((s) => `- ${cycleWord(s.heading)}: ${cycleWord(s.guidance)}`).join('\n');
 
@@ -116,6 +127,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? cp('runner.output.review') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }
