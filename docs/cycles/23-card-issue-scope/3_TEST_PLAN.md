@@ -35,7 +35,7 @@ Automated: `test/card-scope.test.ts` ("a current file without them opens as assi
 ### Switching to every open issue
 
 1. Settings -> "Settings and workspaces" -> "Open the wizard" -> Integrations. Under "Where the issues live" the new "Which issues become cards" has three options: "Assigned to me", "All open issues of the issue project", "Open issues with any of these labels".
-2. Choose "All open issues of the issue project", continue to the end of the wizard (or save), and go to Today without waiting five minutes. The cards are A, B, C, D and E: assigned or not. F (closed) is not there. The pull request you opened is not a card of its own issue list entry of C, D or E, and the pull request does not appear as an issue.
+2. Choose "All open issues of the issue project", continue to the end of the wizard (or save), and go to Today without waiting five minutes. The cards are A, B, C, D and E: assigned or not. F (closed) is not there. The pull request does not show up as an issue card: pull requests are never counted among the issues.
 3. The linked pull request is still shown under A. Other people's pull requests, if the repository has any, are still not cards.
 4. Open the call: the agenda lists the cards in the order blocked, priority, last update, as before.
 
