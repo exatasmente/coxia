@@ -16,14 +16,14 @@ export const VCS_MCP_TOOL_NAME = `mcp__${VCS_MCP_SERVER}__vcs_read`;
 
 const message = (e: unknown): string => (e instanceof VcsError ? e.message : (e as Error).message.split('\n')[0]);
 
-export function vcsReadToolImpl(provider: () => VcsProvider, allowed: () => readonly string[] = () => []): ToolImpl {
+export function vcsReadToolImpl(provider: () => VcsProvider, allowed: () => readonly string[] = () => [], strict = false): ToolImpl {
   return {
     name: VCS_READ_TOOL_NAME,
     description: VCS_READ_DESCRIPTION,
     parameters: VCS_READ_SCHEMA as unknown as Json,
     async run(input, ctx) {
       try {
-        const text = await runVcsRead(provider(), input, allowed());
+        const text = await runVcsRead(provider(), input, allowed(), strict);
         return { response: text, render: (r) => clip(String(r), ctx.outputMax) };
       } catch (e) {
         throw new ToolError(message(e));
@@ -36,7 +36,7 @@ export function vcsReadToolImpl(provider: () => VcsProvider, allowed: () => read
  * The same tool as an in-process MCP server for the Claude Agent SDK. It needs zod (a peer dependency of the SDK) to describe the
  * input; when the SDK or zod cannot be loaded the answer is null and the agent runs without the tool.
  */
-export async function vcsMcpServer(provider: () => VcsProvider, allowed: () => readonly string[] = () => []): Promise<Record<string, unknown> | null> {
+export async function vcsMcpServer(provider: () => VcsProvider, allowed: () => readonly string[] = () => [], strict = false): Promise<Record<string, unknown> | null> {
   try {
     const sdk = await loadClaudeSdkModule();
     const { z } = await import('zod');
@@ -45,7 +45,7 @@ export async function vcsMcpServer(provider: () => VcsProvider, allowed: () => r
       tools: [
         sdk.tool('vcs_read', VCS_READ_DESCRIPTION, { op: z.enum(VCS_READ_OPS), project: z.string(), iid: z.number().int().positive() }, async (args) => {
           try {
-            return { content: [{ type: 'text' as const, text: await runVcsRead(provider(), args, allowed()) }] };
+            return { content: [{ type: 'text' as const, text: await runVcsRead(provider(), args, allowed(), strict) }] };
           } catch (e) {
             return { content: [{ type: 'text' as const, text: message(e) }], isError: true };
           }

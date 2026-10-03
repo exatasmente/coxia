@@ -33,7 +33,7 @@ import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
 
-/** The projects of the code host the workspace works with: its issue project and the project of each repository (what the cards are limited to). */
+/** The projects of the code host the workspace works with (a team agent of a run, which sets `tracker`, is refused when there are none; the ceremonies are not): its issue project and the project of each repository (what the cards are limited to). */
 export function workspaceProjects(): string[] {
   const issues = rc().issues.project;
   return [...new Set([...(issues ? [issues] : []), ...rc().repos.flatMap((r) => (r.projectPath ? [r.projectPath] : []))])];
@@ -434,7 +434,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : [])];
   return runOpenOnce<T>({
     selection,
@@ -476,7 +476,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const query = await loadClaudeQuery();
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
-  const vcs = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider(), workspaceProjects) : null;
+  const vcs = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider(), workspaceProjects, req.tracker !== undefined) : null;
   const shell = req.exec ? await shellMcpServer(req.exec) : null;
   // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
   if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));

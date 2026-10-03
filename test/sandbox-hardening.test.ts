@@ -212,8 +212,23 @@ describe('S4 and S5: what VcsRead reads and of which projects', () => {
     await expect(runVcsRead(provider(), { op: 'issue_linked_mrs', project: 'acme/app', iid: 12 }, allowed)).resolves.toContain('Fix it');
     expect(projectAllowed('ACME/lib', allowed)).toBe(true);
     expect(projectAllowed('acme/app-secret', allowed)).toBe(false);
-    // A workspace that names no project has no limit to apply, as its cards are every project the host lists for the person.
+    // A workspace that names no project has no limit to apply to the ceremonies, as its cards are every project the host lists for the person...
     expect(projectAllowed('any/thing', [])).toBe(true);
+    await expect(runVcsRead(provider(), { op: 'issue', project: 'any/thing', iid: 1 }, [])).resolves.toContain('12');
+    // ...and nothing at all to a team agent of a run, which is told what to configure.
+    expect(projectAllowed('any/thing', [], true)).toBe(false);
+    await expect(runVcsRead(provider(), { op: 'issue', project: 'any/thing', iid: 1 }, [], true)).rejects.toThrow(/names no issue project and no repository project.*set the issue project or the repositories/s);
+    await expect(runVcsRead(provider(), { op: 'issue', project: 'acme/app', iid: 1 }, ['acme/app'], true)).resolves.toContain('12');
+  });
+
+  it('S5: only the call of a team agent of a run is strict: the tool of the engines refuses it with no project, and the ceremonies\' call does not', async () => {
+    const { vcsReadToolImpl } = await import('../src/main/vcs/engineTool');
+    const ctx = { outputMax: 10_000 } as never;
+    const run = vcsReadToolImpl(provider, () => [], true);
+    const ceremony = vcsReadToolImpl(provider, () => []);
+    await expect(run.run({ op: 'issue', project: 'x/y', iid: 1 }, ctx)).rejects.toThrow(/names no issue project/);
+    const ok = await ceremony.run({ op: 'issue', project: 'x/y', iid: 1 }, ctx);
+    expect(ok.render(ok.response)).toContain('12');
   });
 
   it('S5: the tool of the engines carries the limit, and the list is the issue project and the projects of the repositories', async () => {
