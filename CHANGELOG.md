@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Buttons and texts name the integration the workspace has instead of GitLab: GitHub and Bitbucket workspaces read "PR", `app#7` and, on GitHub, "checks"; the agents are told the same, and are no longer sent to `glab` on a host that has no CLI. What a host does not have is hidden (the issue status block of Quick actions, the tracker MCP switch without a server, "Continue in Claude Code" for open-engine sessions, the Help entries of ceremonies the cycle does not have), and the texts that named the daily ceremony, the retro window or the summary target follow the cycle. On a GitLab workspace the prompts the agents get are unchanged.
+
 ## [0.2.0] - 2026-10-03
 
 ### Added

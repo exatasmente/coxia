@@ -73,6 +73,10 @@ Limites por provedor: status de issue do GitLab depende dos ids de status da ins
 
 Sem `externalTools.cardSource`, os cartões vêm do provedor (`vcs/cards.ts`): uma issue por issue atribuída a você, MRs ligados por `Closes #n` no texto, no nome da branch ou pelo que o host diz. O estágio vem do mapeamento do workspace (`devCycle.stages`: `match` contra o status e as labels, o de maior `rank` vence). Com `devCycle.stages` vazio valem padrões por provedor (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" e equivalentes em inglês; sem sinal nenhum, o estágio sai do que os MRs fazem (rascunho, aberto, aprovado, mergeado). O item de issue leva também as labels, o milestone e a hora da última atualização (`updated_at`), de onde saem a prioridade do cartão e a ordem da lista ([`cycles.md`](cycles.md#prioridade)). O que mudou desde o começo do dia fica em `vcs-cards.json` do workspace.
 
+### O que a interface mostra por host
+
+Os textos dizem o host configurado e o seu vocabulário (`{vcsName}`, `{cr}`, `{crMark}`: [`cycles.md`](cycles.md)): "MR" e `app!7` no GitLab, "PR" e `app#7` no GitHub e no Bitbucket, "checks" (e não "pipeline") no GitHub. O que o host não tem some em vez de ser renomeado: o bloco de status de issue da tela de ações rápidas só existe no GitLab com `devCycle.quickTransitions` (as transições são só do GitLab); jobs manuais só no GitLab; "escolher outro reviewer substitui os atuais" só no GitLab; a chave "agentes leem o VCS" vale para a CLI do host quando há uma e para a ferramenta `VcsRead` quando não há, e a chave do MCP do tracker só aparece com um servidor configurado. Uma issue e um MR de mesmo número no Bitbucket (as duas numerações são separadas) não colidem: o MR ganha o caminho completo na referência. Não coberto: issues em um host e código em outro (os cartões, as ações rápidas e o feedback usam só a integração principal).
+
 ### Leitura dos agentes
 
 | Integração | O que o agente pode rodar |
@@ -168,6 +172,10 @@ Limits per provider: GitLab issue status depends on the instance's status ids (e
 ### Cards and stages
 
 Without `externalTools.cardSource`, cards come from the provider (`vcs/cards.ts`): one card per issue assigned to you, MRs linked by `Closes #n` in their text, the branch name or what the host says. The stage comes from the workspace mapping (`devCycle.stages`: `match` against the status and labels, the highest `rank` wins). With `devCycle.stages` empty, per-provider defaults apply (`vcs/stages.ts`): "In progress", "In review", "Ready to test", "Done" and equivalents; with no signal at all the stage comes from what the MRs are doing (draft, open, approved, merged). An issue item also carries the labels, the milestone and the time of the last update (`updated_at`), which is where a card's priority and the order of the list come from ([`cycles.md`](cycles.md#priority)). What changed since the day began is kept in the workspace's `vcs-cards.json`.
+
+### What the interface shows per host
+
+Texts name the configured host and its vocabulary (`{vcsName}`, `{cr}`, `{crMark}`: [`cycles.md`](cycles.md)): "MR" and `app!7` on GitLab, "PR" and `app#7` on GitHub and Bitbucket, "checks" (not "pipeline") on GitHub. What the host does not have is hidden rather than renamed: the issue status block of the Quick actions screen exists only on GitLab with `devCycle.quickTransitions` (the transitions are GitLab-only); manual jobs only on GitLab; "choosing another reviewer replaces the current ones" only on GitLab; the "agents read the VCS" switch governs the host's CLI when it has one and the `VcsRead` tool when it does not, and the tracker MCP switch appears only with a configured server. An issue and a pull request of the same number on Bitbucket (the two are numbered separately) do not collide: the pull request gets its full path in the ref. Not covered: issues on one host and code on another (the cards, the quick actions and the feedback use only the primary integration).
 
 ### What agents may read
 
