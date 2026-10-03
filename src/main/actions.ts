@@ -146,6 +146,13 @@ function describe(c: VcsCommand): string {
 export const validateGitlabCommand = validateVcsCommand;
 export { validateVcsCommand };
 
+/** A proposal of the same thing from the same run (a newer text of the comment that still waits) replaces the one that waits: only the latest is worth a "sim". */
+function supersede(list: ReleaseAction[], unit: Record<string, unknown> | undefined): ReleaseAction[] {
+  if (!unit?.runId || !unit.key || !unit.purpose) return list;
+  const at = new Date().toISOString();
+  return list.map((a) => (a.state === 'pending' && a.unit?.runId === unit.runId && a.unit?.key === unit.key && a.unit?.purpose === unit.purpose ? { ...a, state: 'skipped' as const, finishedAt: at, output: t('main.actions.replaced') } : a));
+}
+
 /**
  * Any module proposes a write to the code host here (GitLab, GitHub or Bitbucket). Nothing runs until the user says "seguir" and
  * confirms in the Actions screen. `key` deduplicates: the same proposal is not created (nor notified) twice.
@@ -177,7 +184,7 @@ export function proposeVcsAction(input: {
     unit: input.unit ?? null,
     output: [input.detail, describe(input.command)].filter(Boolean).join('\n\n'),
   });
-  write({ ...store, actions: [action, ...store.actions] });
+  write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
   return action;
 }
@@ -205,7 +212,7 @@ export function proposeVcsGroup(input: Omit<Parameters<typeof proposeVcsAction>[
     unit: input.unit ?? null,
     output: [input.detail, ...commands.map((c, i) => `${i + 1}/${commands.length}  ${describe(c)}`)].filter(Boolean).join('\n\n'),
   });
-  write({ ...store, actions: [action, ...store.actions] });
+  write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
   return action;
 }
@@ -890,7 +897,7 @@ export function proposeRunPush(input: { key: string; issue: number; issueTitle?:
   const store = read();
   if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
   const now = new Date().toISOString();
-  const replaced = store.actions.map((a) => (a.kind === 'run-push' && a.state === 'pending' && a.unit?.runId === input.runId ? { ...a, state: 'skipped' as const, finishedAt: now, output: t('main.actions.pushReplaced') } : a));
+  const replaced = store.actions.map((a) => (a.kind === 'run-push' && a.state === 'pending' && a.unit?.runId === input.runId ? { ...a, state: 'skipped' as const, finishedAt: now, output: t('main.actions.replaced') } : a));
   const action = blank({
     key: input.key,
     kind: 'run-push',

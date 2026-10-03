@@ -346,6 +346,26 @@ describe('what waits for the person', () => {
     expect(b.runner.get(run.id)!.comments.plan).toMatchObject({ status: 'published', noteId: posted.noteId });
   });
 
+  it('keeps only the latest text of a comment that waits: a newer one replaces the proposal that was never answered', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
+    script(b);
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'Another way.']]) }));
+    const run = await start(b);
+    b.runner.gate(run.id, 'approve');
+    await b.settle();
+    b.runner.startStage(run.id);
+    await b.settle();
+    b.runner.returnStage(run.id, 'Think again.');
+    await b.settle();
+    const plan = actions.listActions().filter((a) => (a.unit as { key?: string } | null)?.key === 'plan');
+    expect(plan.map((a) => a.state).sort()).toEqual(['pending', 'skipped']);
+    expect(JSON.parse(plan.find((a) => a.state === 'pending')!.command!.json!).body).toContain('Another way.');
+    // nothing about the plan reached the host: the spec's comment and gate 1's decision are all it has
+    expect(issueNotes().map(([, body]) => body.split('\n')[0])).toEqual(['**Spec ready for gate 1**', '**Gate 1: approved**']);
+  });
+
   it('holds a comment that fails its check for a "yes" even when the agent is autonomous, after masking what it could', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
@@ -480,6 +500,18 @@ describe('the push and the pull request', () => {
     expect(after.comments['review-2'].status).toBe('published');
     expect(after.comments['review-1'].status).toBe('draft');
     expect(b.thread(end).some((m) => m.code === 'runner.pr.created')).toBe(true);
+  });
+
+  it('asks for changes by commenting on a pull request of the person\'s own, which the hosts do not take a request for changes on', async () => {
+    forge = makeForge({ author: 'runner-bot' });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    script(b);
+    b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Findings that block', 'One.']]), findings: [finding({})] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    const run = await start(b);
+    await through(b, run);
+    expect(forge.reviews[0]).toMatchObject({ event: 'COMMENT' });
+    expect(forge.reviews[0].body.startsWith('**Review: changes requested (round 1)**')).toBe(true);
   });
 
   it('finds a pull request the person opened by hand, and reviews on it without proposing another', async () => {

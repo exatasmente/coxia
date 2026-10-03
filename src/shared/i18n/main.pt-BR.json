@@ -887,7 +887,6 @@
   "main.runner.comment.decision.skipped": "pulado",
   "main.runner.comment.notable": "{status}. O comentário completo: {url}",
   "main.runner.comment.notableNoLink": "{status}. Veja o comentário desta etapa acima.",
-  "main.actions.pushReplaced": "Substituída por um push mais novo da mesma branch.",
   "main.actions.pushNoRun": "A execução {run} deste push não está mais neste workspace: nada foi enviado.",
   "main.actions.pushWrongBranch": "O worktree está em {here}, não na branch da execução, {branch}: nada foi enviado.",
   "main.runner.review.blocking": "**Bloqueia a mudança.**",
@@ -923,5 +922,6 @@
   "main.runner.comment.heldDetail": "Conferido antes de postar e retido: {problems}. Leia antes de dizer sim.",
   "main.runner.comment.proposalTitle": "{ref}: algo espera o seu sim em Ações",
   "main.runner.comment.noId": "o host de código não disse o que criou",
-  "main.runner.push.summary": "Enviar a branch {branch}"
+  "main.runner.push.summary": "Enviar a branch {branch}",
+  "main.actions.replaced": "Substituída por uma proposta mais nova para a mesma coisa."
 }

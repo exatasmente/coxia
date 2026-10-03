@@ -887,7 +887,6 @@
   "main.runner.comment.decision.skipped": "skipped",
   "main.runner.comment.notable": "{status}. The full comment: {url}",
   "main.runner.comment.notableNoLink": "{status}. See the comment of this stage above.",
-  "main.actions.pushReplaced": "Replaced by a newer push of the same branch.",
   "main.actions.pushNoRun": "The run {run} of this push is not in this workspace any more: nothing was pushed.",
   "main.actions.pushWrongBranch": "The worktree is on {here}, not on the run's branch {branch}: nothing was pushed.",
   "main.runner.review.blocking": "**Blocks the change.**",
@@ -923,5 +922,6 @@
   "main.runner.comment.heldDetail": "Checked before posting and held: {problems}. Read it before saying yes.",
   "main.runner.comment.proposalTitle": "{ref}: something waits for your yes in Actions",
   "main.runner.comment.noId": "the code host did not say what it made",
-  "main.runner.push.summary": "Push the branch {branch}"
+  "main.runner.push.summary": "Push the branch {branch}",
+  "main.actions.replaced": "Replaced by a newer proposal for the same thing."
 }

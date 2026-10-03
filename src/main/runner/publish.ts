@@ -489,8 +489,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const general = checkComment(withTail(draft.body, generalFindings(fresh, lang())), { ...checkOptions(run, config), status: draft.headline ?? '', marker: markerOf(run.id, 'review', round), technicalDetail: tpl?.technicalDetail ?? true });
     problems.push(...general.problems);
 
-    // Whatever still blocks asks for changes again, answered thread or not; nothing the app writes ever approves.
-    const blocking = record.findings.some((f) => f.severity === 'blocking');
+    // Whatever still blocks asks for changes again, answered thread or not; nothing the app writes ever approves. On a pull request of the person's own
+    // the hosts do not take a request for changes (the one who opened it cannot ask itself), so the review is a comment and the status line says the rest.
+    const me = await provider.currentUser().catch(() => null);
+    const own = !!me && !!mr.author && me.username.toLowerCase() === mr.author.toLowerCase();
+    const blocking = record.findings.some((f) => f.severity === 'blocking') && !own;
     const commitSha = /^[0-9a-f]{7,64}$/i.test(mr.sha) ? mr.sha : record.head ?? '';
     ops.push({ op: 'submitReview', project: pr.project, iid: pr.iid, event: blocking ? 'request_changes' : 'comment', body: general.body, comments: reviewComments(fresh, bodies), commitSha });
     const commands = (await Promise.all(ops.map((o) => provider.planWrite(o)))).flat();
@@ -526,6 +529,12 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   // ---- the push and the pull request ------------------------------------------------------------------------------------------------
 
+  /** The line that makes the host close the issue when the pull request is merged: the keyword is the host's, in English whatever the workspace's language. */
+  const closesOf = (run: Run): string => {
+    const { issue, repo } = projects(run);
+    return `Closes ${issue === repo ? '' : issue}#${run.issue.iid}`;
+  };
+
   /** At the end of the stage that ends with the push: the pull request's description is written, and the push waits in Actions. */
   async function pushStage(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
@@ -533,8 +542,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const pr = config.devCycle.comments.pr;
     if (pr) {
       const marker = markerOf(run.id, 'pr');
-      const { issue, repo } = projects(run);
-      const closes = `Closes ${issue === repo ? '' : issue}#${run.issue.iid}`;
+      const closes = closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: end.stage.label }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
@@ -556,7 +564,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const draft = run.comments.pr;
       const { repo } = projects(run);
       const title = (draft?.title || run.issue.title).trim();
-      const body = draft?.body ?? '';
+      // The description comes from the template; a cycle with none still says which issue the pull request closes.
+      const closes = closesOf(run);
+      const body = draft?.body ? draft.body : `${closes}\n`;
       const target = (await provider.getRepo(repo)).defaultBranch;
       const commands = await provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: body, unit: { runId, purpose: 'run-pr' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);

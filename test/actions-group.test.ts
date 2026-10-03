@@ -120,6 +120,19 @@ describe('a group of writes', () => {
   });
 });
 
+describe('a newer proposal of the same thing', () => {
+  it('replaces the one that still waits for the same run, key and purpose, and leaves the others', () => {
+    const unit = (over: Record<string, unknown> = {}) => ({ runId: 'r-a-0001', key: 'plan', purpose: 'comment', ...over });
+    const first = actions.proposeVcsAction({ ...input('c:1'), command: note('v1'), unit: unit() }) as { id: string };
+    const other = actions.proposeVcsAction({ ...input('c:2'), command: note('other'), unit: unit({ key: 'refine' }) }) as { id: string };
+    const elsewhere = actions.proposeVcsAction({ ...input('c:3'), command: note('run b'), unit: unit({ runId: 'r-b-0001' }) }) as { id: string };
+    const second = actions.proposeVcsGroup({ ...input('c:4'), unit: unit() }, [note('v2'), note('v2 again')]) as { id: string };
+    const state = (id: string) => actions.listActions().find((a) => a.id === id);
+    expect([state(first.id)?.state, state(other.id)?.state, state(elsewhere.id)?.state, state(second.id)?.state]).toEqual(['skipped', 'pending', 'pending', 'pending']);
+    expect(state(first.id)?.output).toMatch(/Substituída|Replaced/);
+  });
+});
+
 describe('a write an agent\'s autonomy lets go out', () => {
   const meta = { issue: 101, key: 'comment:r-1:refine', summary: 'Refinement', by: 'refiner', bodyHash: 'abc123' };
 

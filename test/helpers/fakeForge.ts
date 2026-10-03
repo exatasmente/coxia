@@ -59,7 +59,7 @@ export const PATCHES = {
   'docs/notes.md': '@@ -1,2 +1,3 @@\n # Notes\n+A line.\n More.\n',
 };
 
-export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean } = {}): Forge {
+export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean; author?: string } = {}): Forge {
   let nextId = 5000;
   const forge: Forge = {
     writes: [],
@@ -78,7 +78,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     forge.notes.set(n, [...(forge.notes.get(n) ?? []), made]);
     return made;
   };
-  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: 'A pull request', state: 'open', head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: 'runner-bot' }, requested_reviewers: [], body: '' });
+  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: 'A pull request', state: 'open', head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: '' });
   const threadNode = (t: Thread) => ({ id: t.id, isResolved: t.resolved, path: t.path, line: t.line, originalLine: t.line, comments: { nodes: t.comments.map((c) => ({ databaseId: c.databaseId, author: { login: 'runner-bot' }, body: c.body, createdAt: '2026-10-03T12:00:00Z', url: `https://example.test/${PROJECT}/pull/7#discussion_r${c.databaseId}` })) } });
   const openThread = (path: string, line: number | null, body: string): void => {
     const databaseId = nextId++;
@@ -88,6 +88,7 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
   const get = async (endpoint: string): Promise<unknown> => {
     const path = endpoint.split('?')[0];
     let m: RegExpExecArray | null;
+    if (path === 'user') return { id: 1, login: 'runner-bot', name: 'Runner' };
     if (path === `repos/${PROJECT}`) return { default_branch: 'main', html_url: `https://example.test/${PROJECT}`, full_name: PROJECT };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path))) return (forge.notes.get(Number(m[1])) ?? []).map((n) => ({ ...n, html_url: url(Number(m?.[1]), n.id) }));
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/timeline$/.exec(path))) return forge.linked && forge.pr ? [{ event: 'cross-referenced', source: { issue: { number: forge.pr.number, pull_request: {}, repository: { full_name: PROJECT } } } }] : [];
