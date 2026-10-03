@@ -92,6 +92,7 @@ describe.each(hosts)('%s card source: the conflict button', (_name, build, issue
     expect(conflictMrs(card).map((m) => m.ref)).toEqual([mrRef]);
     const row = needsYou({ cards: [card], ...EMPTY_NEEDS }).find((n) => n.id === `blocked:${card.ref}`);
     expect(row?.conflictCard).toBe(card);
+    expect(row?.conflictRef).toBe(mrRef);
   });
 
   it('offers nothing when the merge request does not conflict', async () => {
@@ -100,6 +101,7 @@ describe.each(hosts)('%s card source: the conflict button', (_name, build, issue
     expect(conflictMrs(card)).toEqual([]);
     const row = needsYou({ cards: [card], ...EMPTY_NEEDS }).find((n) => n.id === `blocked:${card.ref}`);
     expect(row?.conflictCard).toBeUndefined();
+    expect(row?.conflictRef).toBeUndefined();
   });
 });
 
@@ -131,6 +133,13 @@ describe('the Today row', () => {
     const [row] = needsYou({ cards: [c], ...EMPTY_NEEDS });
     expect(row.conflictCard).toBe(c);
     expect(row.conflictRef).toBeUndefined();
+  });
+
+  it('keeps the button of the first blocker merge request only, while the card still has both', () => {
+    const c = card(['web!1: Pipeline falhou', 'web!2: Conflito com a branch de destino'], ['web!1', 'web!2']);
+    const [row] = needsYou({ cards: [c], ...EMPTY_NEEDS });
+    expect(row.conflictRef).toBe('web!1');
+    expect(conflictMrs(c).map((m) => m.ref)).toEqual(['web!1', 'web!2']);
   });
 
   it('shows only the button of the merge request the row is about', () => {

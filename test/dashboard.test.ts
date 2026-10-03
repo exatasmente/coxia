@@ -195,6 +195,14 @@ describe('MR conflicts', () => {
     expect(conflictMrs({ ...flagged, mrConflicts: [web.ref], blockers: [`${hub.ref}: MR com conflitos`] })).toEqual([web, hub]);
   });
 
+  it('ignores a flagged ref the card has no path for', () => {
+    const c = card('25', { mrPaths: [web], blockers: ['gateway!303: Conflicts with the target branch'], mrConflicts: [hub.ref] });
+    expect(conflictMrs(c)).toEqual([]);
+    const [row] = needsYou({ cards: [c], turns: {}, answered: {}, actions: [], alerts: [] });
+    expect(row.kind).toBe('blocked');
+    expect(row.conflictCard).toBeUndefined();
+  });
+
   it('marks the blocked row so it can offer to resolve the conflict', () => {
     const [b] = needsYou({ cards: [conflicted], turns: {}, answered: {}, actions: [], alerts: [] });
     expect(b).toMatchObject({ kind: 'blocked', title: 'gateway!303: MR com conflitos', conflictCard: conflicted });
