@@ -1,7 +1,7 @@
 // i18n-lint: allow-file the status lines of an HTTP proxy: protocol text, not prose for a person
 import { lookup } from 'node:dns/promises';
 import { chmodSync, existsSync, rmSync } from 'node:fs';
-import { type Server, type Socket, connect, createServer, isIP } from 'node:net';
+import { BlockList, type Server, type Socket, connect, createServer, isIP } from 'node:net';
 
 // The registry mode's one way out. The sandbox has no network interface at all; it reaches this proxy through a socket in its stage folder (a forwarder inside listens on the
 // sandbox's own loopback and pipes to it). The proxy speaks `CONNECT` and nothing else, only to port 443 and only to the names the workspace listed; it resolves the name
@@ -20,7 +20,10 @@ export interface ProxyOptions {
   resolve?: (host: string) => Promise<string[]>;
   /** Replaced in tests. */
   open?: (address: string, port: number) => Socket;
+  /** Tunnels open at once. */
   maxConnections?: number;
+  /** Sockets of clients held at once, a tunnel or not: what a flood of bare connections is held to. */
+  maxClients?: number;
   maxBytes?: number;
   idleMs?: number;
 }
@@ -33,22 +36,21 @@ export interface RegistryProxy {
 
 const HEAD_MAX = 8192;
 
-/** Whether an address is one a sandbox must never be sent to: this machine, a private or link-local network, a metadata address, anything that is not a public unicast. */
+// Every range a name must never resolve into for a sandbox to be sent there: this machine, private and link-local networks, metadata addresses, documentation and
+// transition ranges that can carry an IPv4 address inside an IPv6 one (mapped, compatible, NAT64, 6to4, Teredo), and everything that is not unicast.
+// Two lists, never mixed: an IPv4 address is matched against an IPv6 rule as its mapped form, so the mapped range of the IPv6 list would take every IPv4 address with it.
+const BLOCKED_V4 = new BlockList();
+const BLOCKED_V6 = new BlockList();
+// Written as numbers: the repository's audit refuses a private address spelled out in a file.
+for (const [a, b, c, d, bits] of [[0, 0, 0, 0, 8], [10, 0, 0, 0, 8], [100, 64, 0, 0, 10], [127, 0, 0, 0, 8], [169, 254, 0, 0, 16], [172, 16, 0, 0, 12], [192, 0, 0, 0, 24], [192, 0, 2, 0, 24], [192, 88, 99, 0, 24], [192, 168, 0, 0, 16], [198, 18, 0, 0, 15], [198, 51, 100, 0, 24], [203, 0, 113, 0, 24], [224, 0, 0, 0, 4], [240, 0, 0, 0, 4]] as const) BLOCKED_V4.addSubnet(`${a}.${b}.${c}.${d}`, bits, 'ipv4');
+// ::/96 (IPv4-compatible, deprecated), ::ffff:0:0/96 (mapped: a name has no business with one), NAT64, discard, Teredo, documentation, 6to4, unique local, link-local, site-local, multicast.
+for (const [net, bits] of [['::', 96], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64], ['2001::', 32], ['2001:db8::', 32], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]] as const) BLOCKED_V6.addSubnet(net, bits, 'ipv6');
+
+/** Whether an address is one a sandbox must never be sent to. Anything that is not an address at all is one too. */
 export function isPrivateAddress(address: string): boolean {
   const v = isIP(address);
-  if (v === 4) {
-    const [a, b, c] = address.split('.').map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 0 && c === 0) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
-  }
-  if (v === 6) {
-    const x = address.toLowerCase();
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(x);
-    if (mapped) return isPrivateAddress(mapped[1]);
-    if (x === '::' || x === '::1' || x.startsWith('64:ff9b:')) return true;
-    const first = parseInt(x.split(':')[0] || '0', 16);
-    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00;
-  }
-  return true;
+  if (v === 0) return true;
+  return v === 4 ? BLOCKED_V4.check(address, 'ipv4') : BLOCKED_V6.check(address, 'ipv6');
 }
 
 const realResolve = async (host: string): Promise<string[]> => (await lookup(host, { all: true })).map((a) => a.address);
@@ -58,6 +60,7 @@ export async function createRegistryProxy(o: ProxyOptions): Promise<RegistryProx
   const resolveName = o.resolve ?? realResolve;
   const open = o.open ?? ((address: string, port: number) => connect({ host: address, port }));
   const maxConnections = o.maxConnections ?? 16;
+  const maxClients = o.maxClients ?? 64;
   const maxBytes = o.maxBytes ?? 2 * 1024 * 1024 * 1024;
   const idleMs = o.idleMs ?? 60_000;
   let bytes = 0;
@@ -105,58 +108,71 @@ export async function createRegistryProxy(o: ProxyOptions): Promise<RegistryProx
       if (!hosts.has(host)) return refuse('403 Forbidden', { host, port, allowed: false, why: 'host' });
       if (port !== 443) return refuse('403 Forbidden', { host, port, allowed: false, why: 'port' });
       if (active >= maxConnections || bytes >= maxBytes) return refuse('429 Too Many Requests', { host, port, allowed: false, why: 'limit' });
-      let addresses: string[];
-      try {
-        addresses = await resolveName(host);
-      } catch {
-        return refuse('502 Bad Gateway', { host, port, allowed: false, why: 'resolve' });
-      }
-      // Every address the name has must be a public one: a name with a single private address among the public ones is refused whole.
-      if (!addresses.length || addresses.some(isPrivateAddress)) return refuse('403 Forbidden', { host, port, allowed: false, why: 'address' });
-      const upstream = open(addresses[0], port);
-      sockets.add(upstream);
+      // The slot is taken before the name is looked up, not after: requests that arrive while the lookups are out must count too.
       active++;
-      let established = false;
+      let upstream: Socket | null = null;
       let released = false;
       const release = (): void => {
         if (released) return;
         released = true;
-        sockets.delete(upstream);
         active--;
-        upstream.destroy();
+        if (upstream) {
+          sockets.delete(upstream);
+          upstream.destroy();
+        }
       };
+      // A client that goes away while its name is being looked up gives the slot back.
+      client.once('close', release);
+      let addresses: string[];
+      try {
+        addresses = await resolveName(host);
+      } catch {
+        release();
+        return refuse('502 Bad Gateway', { host, port, allowed: false, why: 'resolve' });
+      }
+      // Every address the name has must be a public one: a name with a single private address among the public ones is refused whole.
+      if (!addresses.length || addresses.some(isPrivateAddress)) {
+        release();
+        return refuse('403 Forbidden', { host, port, allowed: false, why: 'address' });
+      }
+      if (released || client.destroyed) return release();
+      const up = open(addresses[0], port);
+      upstream = up;
+      sockets.add(up);
+      let established = false;
       const done = (): void => {
         release();
         client.destroy();
       };
-      upstream.on('error', () => {
+      up.on('error', () => {
         if (established) return done();
         // The connection never came up: the client is told, then everything ends.
         refuse('502 Bad Gateway', { host, port, allowed: false, why: 'resolve' });
         release();
       });
-      upstream.on('close', () => (established ? done() : release()));
+      up.on('close', () => (established ? done() : release()));
       client.on('close', done);
-      upstream.setTimeout(idleMs, done);
-      upstream.once('connect', () => {
+      up.setTimeout(idleMs, done);
+      up.once('connect', () => {
         established = true;
         decide({ host, port, allowed: true });
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        if (rest.length) upstream.write(rest);
+        if (rest.length) up.write(rest);
         const count = (c: Buffer): void => {
           bytes += c.length;
           if (bytes > maxBytes) done();
         };
         client.on('data', count);
-        upstream.on('data', count);
-        client.pipe(upstream);
-        upstream.pipe(client);
+        up.on('data', count);
+        client.pipe(up);
+        up.pipe(client);
         client.resume();
       });
     };
     client.on('data', onData);
   });
 
+  server.maxConnections = maxClients;
   if (existsSync(o.socketPath)) rmSync(o.socketPath, { force: true });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

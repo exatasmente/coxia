@@ -1,38 +1,40 @@
-import { constants, copyFileSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { lstat, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SandboxError } from './errors';
 
 // The tree an agent that only reads works in: a copy of the worktree without `.git`, so whatever it installs, builds or writes is thrown away with it and the branch is
-// never touched by it. Symbolic links stay links and are never followed; anything that is not a file, a folder or a link is left out.
+// never touched by it. It is made off the main thread (a walk that yields, and the system's `cp` in a child), because a worktree can be large and the app must stay
+// responsive. Symbolic links stay links and are never followed (`cp -a` keeps them as they are).
 
-function* walk(dir: string, rel = ''): Generator<{ rel: string; kind: 'dir' | 'file' | 'link' }> {
-  for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
-    if (rel === '' && entry.name === '.git') continue;
-    const r = rel ? `${rel}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      yield { rel: r, kind: 'dir' };
-      yield* walk(dir, r);
-    } else if (entry.isSymbolicLink()) yield { rel: r, kind: 'link' };
-    else if (entry.isFile()) yield { rel: r, kind: 'file' };
-  }
-}
-
-/** The size of what a copy would hold, in bytes. */
-export function treeSize(from: string): number {
+/** The size of what a copy would hold, in bytes (files only, without `.git`, never following a link). The walk gives way to the event loop between folders. */
+export async function treeSize(from: string): Promise<number> {
   let total = 0;
-  for (const e of walk(from)) if (e.kind === 'file') total += lstatSync(join(from, e.rel)).size;
+  const stack = [''];
+  while (stack.length) {
+    const rel = stack.pop() as string;
+    for (const entry of await readdir(join(from, rel), { withFileTypes: true })) {
+      if (rel === '' && entry.name === '.git') continue;
+      const r = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) stack.push(r);
+      else if (entry.isFile()) total += (await lstat(join(from, r))).size;
+    }
+  }
   return total;
 }
 
+const run = (args: string[]): Promise<void> =>
+  new Promise((resolve, reject) => {
+    execFile('cp', args, { env: { PATH: '/usr/local/bin:/usr/bin:/bin' } }, (err, _out, stderr) => (err ? reject(new Error(String(stderr || err.message).split('\n')[0])) : resolve()));
+  });
+
 /** Copies `from` (without `.git`) into the new folder `to`. Refuses, before copying anything, a tree over `maxBytes`. */
-export function copyTree(from: string, to: string, maxBytes: number): void {
-  if (treeSize(from) > maxBytes) throw new SandboxError('copy-too-big', { mb: String(Math.round(maxBytes / 1024 / 1024)) });
-  mkdirSync(to, { recursive: true, mode: 0o700 });
-  for (const e of walk(from)) {
-    const src = join(from, e.rel);
-    const dest = join(to, e.rel);
-    if (e.kind === 'dir') mkdirSync(dest, { recursive: true });
-    else if (e.kind === 'link') symlinkSync(readlinkSync(src), dest);
-    else copyFileSync(src, dest, constants.COPYFILE_FICLONE);
+export async function copyTree(from: string, to: string, maxBytes: number): Promise<void> {
+  if ((await treeSize(from)) > maxBytes) throw new SandboxError('copy-too-big', { mb: String(Math.round(maxBytes / 1024 / 1024)) });
+  await mkdir(to, { recursive: true, mode: 0o700 });
+  for (const entry of await readdir(from)) {
+    if (entry === '.git') continue;
+    // `--` ends the options: a file called -rf is a file. A copy that cannot share blocks (reflink) is made again as a plain one.
+    await run(['-a', '--reflink=auto', '--', join(from, entry), `${to}/`]).catch(() => run(['-a', '--', join(from, entry), `${to}/`]));
   }
 }

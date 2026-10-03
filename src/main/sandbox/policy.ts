@@ -87,7 +87,9 @@ export function bwrapArgs(spec: SandboxSpec): string[] {
   const a: string[] = ['--unshare-user', '--unshare-ipc', '--unshare-pid', '--unshare-net', '--unshare-uts', '--unshare-cgroup-try', '--disable-userns', '--die-with-parent', '--new-session', '--clearenv'];
   for (const dir of spec.system.roDirs) a.push('--ro-bind', dir, dir);
   for (const [name, target] of spec.system.links) a.push('--symlink', target, name);
-  a.push('--proc', '/proc', '--dev', '/dev', '--size', String(spec.tmpMb * 1024 * 1024), '--tmpfs', '/tmp');
+  // /dev is a memory filesystem too, as large as half the memory unless it is made read-only: it is, and /dev/shm gets a size of its own like /tmp.
+  const tmp = String(spec.tmpMb * 1024 * 1024);
+  a.push('--proc', '/proc', '--dev', '/dev', '--size', tmp, '--tmpfs', '/dev/shm', '--remount-ro', '/dev', '--size', tmp, '--tmpfs', '/tmp');
   a.push('--bind', `${spec.stageDir}/home`, SANDBOX_HOME);
   a.push('--ro-bind', `${spec.stageDir}/ctl`, CTL, '--bind', `${spec.stageDir}/out`, OUT);
   for (const [src, dest] of spec.roBinds.filter(([, d]) => !d.startsWith(`${spec.worktree}/`) && d !== spec.worktree)) a.push('--ro-bind', src, dest);
@@ -117,8 +119,9 @@ while IFS=' ' read -r id token secs; do
   [ "$id" = quit ] && exit 0
   (
     cd "$COXIA_WT" || exit 126
+    # The output file is opened inside the timed command: a pipe put there by an earlier command would block the open for ever, and only a timeout can end that.
     exec prlimit --data="$COXIA_DATA" --nproc="$COXIA_PROCS" --fsize="$COXIA_FSIZE" --core=0 -- \\
-      timeout -k 3 "$secs" /bin/sh "${CTL}/cmd.$id" >"${OUT}/out.$id" 2>&1 </dev/null
+      timeout -k 3 "$secs" /bin/sh -c 'exec /bin/sh "$1" >"$2" 2>&1 </dev/null' sh "${CTL}/cmd.$id" "${OUT}/out.$id"
   ) &
   wait $!
   printf 'done %s %s %s\\n' "$id" "$token" "$?"

@@ -115,6 +115,38 @@ describe('a stage with a sandbox', () => {
     expect(audit[0].origin.kind).toBe('run-exec');
   });
 
+  it('redacts the command text in the thread, the audit log and the QA record, and keeps what the run file stores short enough to be read back', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
+    easy(b);
+    const token = `ghp_${'a'.repeat(36)}`;
+    const long = `echo ${token} ${'x'.repeat(2000)}`;
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec(long);
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1] }] });
+    });
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const said = JSON.stringify(b.thread(run).filter((m) => m.code === 'runner.exec'));
+    expect(said).not.toContain(token);
+    expect(JSON.stringify(listAudit().filter((e) => e.kind === 'exec'))).not.toContain(token);
+    expect(run.qa[0].commands![0].command).not.toContain(token);
+    expect(run.qa[0].commands![0].command.length).toBeLessThanOrEqual(300);
+    // The run file reads back (a command over the length the file allows would have made it unreadable).
+    expect(b.runs.get(run.id)?.qa[0].commands).toHaveLength(1);
+  });
+
+  it('tells the thread when a folder listed for the sandbox holds a repository', async () => {
+    const sandbox = fakeSandbox({ repoFolders: ['/home/u/tools/nvm'] });
+    const b = await boot({ sandbox, configure: (c) => shellOf(c, 'developer', 'sandbox') });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const note = b.thread(run).find((m) => m.code === 'runner.sandbox.repoFolder');
+    expect(note?.params).toMatchObject({ agent: 'developer', path: '/home/u/tools/nvm' });
+  });
+
   it('runs the commands QA is given the results of inside its sandbox, numbers them, and keeps their numbers and who ran them', async () => {
     const sandbox = fakeSandbox({ table: { 'npm test': { exitCode: 1, output: 'FAIL x' } } });
     const commands = fakeCommands();

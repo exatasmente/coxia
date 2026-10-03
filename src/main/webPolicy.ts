@@ -8,7 +8,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
 // screen: a token never travels through the browser channel).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -32,6 +32,8 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 
 // Pairing and web access settings only exist in the desktop window.
 const WEB_ADMIN = /^web:/;
+
+// sandbox:probe starts a real sandbox process: only the window asks for it (sandbox:status, a cached read, stays open to a paired browser).
 
 // The configuration can name programs to run and folders to read, and the secrets store holds keys: reading the config and its schema is
 // open to a paired browser; saving it, the secrets and export/import files are not. The same goes for applying or importing a cycle template

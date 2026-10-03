@@ -300,7 +300,7 @@ describe('the VcsRead app tool', () => {
       null,
     ]) await expect(runVcsRead(rt.provider, bad), JSON.stringify(bad)).rejects.toBeInstanceOf(VcsError);
     expect(host?.hits.filter((h) => h.method !== 'GET')).toHaveLength(0);
-    expect(VCS_READ_OPS).toEqual(['issue', 'issue_comments', 'mr', 'mr_threads', 'mr_comments', 'mr_changes', 'mr_ci']);
+    expect(VCS_READ_OPS).toEqual(['issue', 'issue_comments', 'issue_linked_mrs', 'mr', 'mr_threads', 'mr_comments', 'mr_changes', 'mr_ci']);
   });
 
   it('only ever sends GET', async () => {

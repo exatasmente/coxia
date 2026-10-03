@@ -142,7 +142,7 @@ function sandboxRules(s: WorkspaceConfig['runner']['sandbox'], errors: ConfigIss
   if (s.network === 'registry' && !s.registryHosts.length) warnings.push({ path: 'runner.sandbox.network', message: 'the registry switch is on and no host is listed: nothing can be reached' });
   s.readOnlyPaths.forEach((p, i) => {
     const why = readOnlyPathProblem(p);
-    if (why) errors.push({ path: `runner.sandbox.readOnlyPaths[${i}]`, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
+    if (why) errors.push({ path: `runner.sandbox.readOnlyPaths[${i}]`, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings) or belongs to the system (/proc, /sys, /dev, /run, /var, /tmp): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
   });
   if (s.readOnlyPaths.length > MAX_READ_ONLY_PATHS) errors.push({ path: 'runner.sandbox.readOnlyPaths', message: `at most ${MAX_READ_ONLY_PATHS} folders` });
   for (const p of duplicates(s.readOnlyPaths)) warnings.push({ path: 'runner.sandbox.readOnlyPaths', message: `"${p}" is listed twice` });

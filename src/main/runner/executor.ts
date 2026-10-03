@@ -191,7 +191,7 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
   const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
     try {
-      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(r.command.replace(/\s+/g, ' '), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(redact(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
       if (mode === 'run') {
         recordWrite({
           kind: 'exec',
@@ -217,8 +217,15 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
       console.error('[runner] could not record a request of the proxy', e instanceof Error ? e.message : e);
     }
   };
+  const onRepoFolder = (path: string): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.sandbox.repoFolder', params: { agent: agent.id, path }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+    }
+  };
   try {
-    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy });
+    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onRepoFolder });
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -350,7 +357,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, session?.log ?? [], !!session);
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's.
-  const ranInSandbox: CommandResult[] | undefined = session ? session.log.filter((e) => !e.refused).map((e) => ({ command: e.command, exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })) : undefined;
+  const ranInSandbox: CommandResult[] | undefined = session ? session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })) : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];

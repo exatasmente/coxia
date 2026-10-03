@@ -63,6 +63,12 @@ export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfi
     if (shellRaised(old.shell, a.shell)) out.push(`agents.team[${a.id}].shell`);
     if (trackerRaised(old.tracker, a.tracker)) out.push(`agents.team[${a.id}].tracker`);
   }
+  // What an agent with commands can reach depends on its permission too: a reader with a sandbox works in a throwaway copy, an agent that changes files in the real
+  // worktree. Giving it that permission while it runs commands is a raise, even though neither command field moved.
+  for (const a of after.agents.team) {
+    const old = was.get(a.id);
+    if (old && old.permission === 'read' && a.permission === 'worktree' && a.shell !== 'none') out.push(`agents.team[${a.id}].permission`);
+  }
   return out;
 }
 

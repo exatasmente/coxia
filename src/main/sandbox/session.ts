@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
@@ -22,6 +22,8 @@ export interface ExecResult {
   exitCode: number | null;
   timedOut: boolean;
   output: string;
+  /** The file the sandbox writes a command's output to was not a plain file (a link, a pipe): nothing of it was read. */
+  outputUnavailable?: true;
   ms: number;
   /** Why the command was not run at all. */
   refused?: 'empty' | 'size' | 'budget' | 'closed';
@@ -62,22 +64,35 @@ export interface SessionDeps {
 
 const OUTPUT_READ = 256 * 1024;
 
-/** The end of a file, at most `max` bytes, as text; empty when it is not there. */
-function tailOfFile(path: string, max: number): string {
+/**
+ * The end of a file the sandbox could write to, at most `max` bytes, as text; null when it is not there or is not a plain file. The sandbox owns that folder, so
+ * what is at the path is what a hostile command put there: a link to a file of the person's, a pipe that never ends. The path is opened without following a link
+ * and without waiting on a pipe, and what was opened is checked on the descriptor itself before a byte is read.
+ */
+export function readTailNoFollow(path: string, max: number): string | null {
   let fd: number | null = null;
   try {
-    const size = statSync(path).size;
-    fd = openSync(path, 'r');
-    const len = Math.min(size, max);
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const st = fstatSync(fd);
+    if (!st.isFile()) return null;
+    const len = Math.min(st.size, max);
     const buf = Buffer.alloc(len);
-    readSync(fd, buf, 0, len, size - len);
-    return buf.toString('utf8');
+    let got = 0;
+    while (got < len) {
+      const n = readSync(fd, buf, got, len - got, st.size - len + got);
+      if (n <= 0) break;
+      got += n;
+    }
+    return buf.subarray(0, got).toString('utf8');
   } catch {
-    return '';
+    return null;
   } finally {
     if (fd !== null) closeSync(fd);
   }
 }
+
+/** The most the app keeps of what the supervisor writes without a line end: it only ever writes short lines. */
+const LINE_MAX = 4096;
 
 export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Promise<SandboxSession> {
   const ctl = join(o.stageDir, 'ctl');
@@ -96,6 +111,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
     buffer += chunk;
+    // A process inside could write to the supervisor's pipe without ever ending a line: only the end of it is kept.
+    if (buffer.length > LINE_MAX && !buffer.includes('\n')) buffer = buffer.slice(-LINE_MAX);
     for (let i = buffer.indexOf('\n'); i >= 0; i = buffer.indexOf('\n')) {
       const line = buffer.slice(0, i);
       buffer = buffer.slice(i + 1);
@@ -213,9 +230,9 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
         if (at >= 0) lines.splice(at, 1);
         const ms = Date.now() - started;
         spent += ms;
-        const text = tailOfFile(join(out, `out.${n}`), OUTPUT_READ);
+        const text = readTailNoFollow(join(out, `out.${n}`), OUTPUT_READ);
         const timedOut = code === 124 || (code === 137 && ms >= secs * 1000);
-        record({ command, exitCode: code, timedOut, output: redact(tail(text)), ms }, 'run');
+        record({ command, exitCode: code, timedOut, output: text === null ? '' : redact(tail(text)), ...(text === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
       };
       const onLine = (line: string): void => {
         const m = /^done (\d+) (\w+) (\d+)$/.exec(line);

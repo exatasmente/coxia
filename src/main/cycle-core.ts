@@ -86,7 +86,7 @@ export function checkTemplateText(text: string): TemplateCheck {
   try {
     return parseTemplate(JSON.parse(text));
   } catch (e) {
-    return { ok: false, template: null, errors: [{ path: '', message: t('main.cycle.notJson', { detail: (e as Error).message }) }], warnings: [] };
+    return { ok: false, template: null, errors: [{ path: '', message: t('main.cycle.notJson', { detail: (e as Error).message }) }], warnings: [], powers: [] };
   }
 }
 

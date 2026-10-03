@@ -133,6 +133,14 @@ describe('the top of the file system', () => {
 });
 
 describe('the addresses a sandbox is never sent to', () => {
+  it('refuses every way of writing an IPv4 address inside an IPv6 one, and the transition and site-local ranges', () => {
+    const v6 = [
+      '::ffff:7f00:1', '::ffff:127.0.0.1', '::127.0.0.1', '::7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:0:0', '::ffff:a00:1', '::ffff:a9fe:a9fe', '::ffff:8.8.8.8',
+      '64:ff9b::7f00:1', '64:ff9b::808:808', '64:ff9b:1::1', '2002:7f00:1::', '2002:a00:1::1', '2001:0:4136:e378:8000:63bf:3fff:fdd2', 'fec0::1', 'fef0::1', 'fd00:ec2::254', 'ff02::1', '100::1', '2001:db8::1',
+    ];
+    for (const a of v6) expect(isPrivateAddress(a), a).toBe(true);
+  });
+
   it('refuses this machine, private networks, link-local and metadata addresses, and non-unicast', () => {
     // Built from parts: the repository's audit refuses a private address written out in a file.
     const v4 = (...n: number[]): string => n.join('.');
@@ -141,6 +149,6 @@ describe('the addresses a sandbox is never sent to', () => {
   });
 
   it('lets public addresses through', () => {
-    for (const a of ['104.16.1.1', '172.15.0.1', '172.32.0.1', '8.8.8.8', '2606:4700::1111', '::ffff:8.8.8.8']) expect(isPrivateAddress(a), a).toBe(false);
+    for (const a of ['104.16.1.1', '172.15.0.1', '172.32.0.1', '8.8.8.8', '93.184.216.34', '2606:4700::1111', '2a00:1450:4001::1']) expect(isPrivateAddress(a), a).toBe(false);
   });
 });

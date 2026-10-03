@@ -189,8 +189,19 @@ describe('the two permissions of an agent, from a paired browser', () => {
     expect(refused((c) => { c.runner.sandbox.limits.memoryMb = 4096; })).toEqual(['runner.sandbox.limits.memoryMb']);
   });
 
-  it('lets a paired browser ask whether a sandbox can be made, which changes nothing', () => {
+  it('lets a paired browser read whether a sandbox can be made, and not start the check itself', () => {
     expect(webAccess('sandbox:status')).toBe('allow');
-    expect(webAccess('sandbox:probe')).toBe('allow');
+    expect(webAccess('sandbox:probe')).toBe('deny');
+  });
+
+  it('may not give an agent that runs commands the permission to change files: a reader\'s sandbox is a copy, a writer\'s is the worktree', () => {
+    const before = withAgent('sandbox', 'none', 'read');
+    expect(refusedPaths(before, agentOf(before, (a) => { a.permission = 'worktree'; }))).toEqual(['agents.team[dev].permission']);
+    // With no commands, the permission to change files is what a browser could always give.
+    const none = withAgent('none', 'none', 'read');
+    expect(refusedPaths(none, agentOf(none, (a) => { a.permission = 'worktree'; }))).toEqual([]);
+    // And taking it away is fine.
+    const writer = withAgent('sandbox', 'none', 'worktree');
+    expect(refusedPaths(writer, agentOf(writer, (a) => { a.permission = 'read'; }))).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -32,6 +32,8 @@ export interface OpenOptions {
   onExec?: (result: ExecResult, mode: 'run' | 'refused') => void;
   /** Told about every request the registry proxy decided on. */
   onProxy?: (decision: ProxyDecision) => void;
+  /** Told, once per folder, about a listed folder that holds a repository: its `.git/config` is shown to the sandbox as it is (the cleaned copy is only for the run's own repository). */
+  onRepoFolder?: (path: string) => void;
 }
 
 export interface SandboxService {
@@ -59,6 +61,16 @@ export const reasonText = (st: SandboxStatus): string => t(`main.sandbox.reason.
 
 const sameOrInside = (path: string, folder: string): boolean => path === folder || path.startsWith(`${folder}/`);
 
+/** Whether `folder` is a repository, or has a repository as a direct child: what a sandbox that is given it would see the `.git/config` of. */
+export function holdsRepository(folder: string): boolean {
+  try {
+    if (existsSync(join(folder, '.git'))) return true;
+    return readdirSync(folder, { withFileTypes: true }).some((e) => e.isDirectory() && existsSync(join(folder, e.name, '.git')));
+  } catch {
+    return false;
+  }
+}
+
 /** The folders the workspace listed, made real and checked against the machine: they must exist and must not be the home, the app's data or anything that looks like a secret place. */
 export function readOnlyFolders(list: string[], home: string, protect: string[]): string[] {
   const out: string[] = [];
@@ -79,6 +91,34 @@ export function readOnlyFolders(list: string[], home: string, protect: string[])
   return out;
 }
 
+/**
+ * The last check before a sandbox is built, over every bind it will make: nothing that sits inside the worktree (or its copy) may be a link, on either side, and the
+ * folders outside it must be where they say they are. bwrap resolves links on both the source and the destination, so a link here is a way to mount something else.
+ */
+export function assertBindsSafe(binds: [string, string][], worktree: string, tree: string): void {
+  const inside = (p: string): boolean => p === worktree || p.startsWith(`${worktree}/`) || p === tree || p.startsWith(`${tree}/`);
+  for (const [src, dest] of binds) {
+    for (const p of [src, dest]) {
+      if (!inside(p)) continue;
+      try {
+        if (lstatSync(p).isSymbolicLink()) throw new SandboxError('hostile-link', { name: p.slice(p.lastIndexOf('/') + 1) });
+      } catch (e) {
+        if (e instanceof SandboxError) throw e;
+      }
+    }
+    if (!inside(src)) {
+      let real: string;
+      try {
+        real = realpathSync(src);
+      } catch {
+        throw new SandboxError('path-missing', { path: src });
+      }
+      // A folder outside the worktree (the repository's directory, a listed folder) is bound as it is written: it must already be its own real path.
+      if (real !== src) throw new SandboxError('path-refused', { path: src });
+    }
+  }
+}
+
 export function createSandboxService(o: SandboxServiceOptions): SandboxService {
   const home = o.home ?? homedir();
   const protect = (o.protect ?? []).map((p) => {
@@ -96,6 +136,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       const st = await status(false);
       if (!st.available) throw new SandboxError('unavailable', { reason: reasonText(st) });
       const roFolders = readOnlyFolders(opts.config.readOnlyPaths, home, protect);
+      for (const f of roFolders) if (holdsRepository(f)) opts.onRepoFolder?.(f);
       mkdirSync(o.dir, { recursive: true, mode: 0o700 });
       const stageDir = join(o.dir, randomUUID().slice(0, 12));
       mkdirSync(join(stageDir, 'ctl'), { recursive: true, mode: 0o700 });
@@ -104,7 +145,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         let tree: string | null = null;
         if (opts.reader) {
           tree = join(stageDir, 'tree');
-          copyTree(opts.worktree, tree, opts.config.limits.copyMb * 1024 * 1024);
+          await copyTree(opts.worktree, tree, opts.config.limits.copyMb * 1024 * 1024);
         }
         const git = gitMounts(opts.worktree, tree ?? opts.worktree, stageDir);
         const registry = opts.config.network === 'registry';
@@ -112,12 +153,14 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
         }
+        const roBinds: [string, string][] = [...git.binds, ...roFolders.map((p): [string, string] => [p, p])];
+        assertBindsSafe(roBinds, opts.worktree, tree ?? opts.worktree);
         const args = bwrapArgs({
           worktree: opts.worktree,
           tree,
           stageDir,
           system: systemLayout(),
-          roBinds: [...git.binds, ...roFolders.map((p): [string, string] => [p, p])],
+          roBinds,
           pathDirs: roFolders.flatMap((p) => [join(p, 'bin'), p]),
           network: registry ? 'proxy' : 'off',
           limits: opts.config.limits,

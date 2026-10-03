@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { SandboxError } from './errors';
 import { isAbsolute, join, resolve } from 'node:path';
 
 // What a sandbox sees of the repository. A worktree's `.git` is a file that points to a directory of the repository it was made from, which holds the objects, the refs and
@@ -72,6 +73,8 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
   } catch {
     return { binds };
   }
+  // The pointer is the app's own, made with the worktree: a link in its place is not.
+  if (st.isSymbolicLink()) throw new SandboxError('hostile-link', { name: '.git' });
   const dir = join(workDir, 'git');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   let common: string;
@@ -109,6 +112,18 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
     binds.push([empty, hooks]);
   }
   // What makes git or a package manager run code by itself, when the repository has it: read-only inside.
-  for (const name of RUNS_CODE) if (existsSync(join(tree, name))) binds.push([join(tree, name), join(worktree, name)]);
+  // lstat, never exists: a link there (`.husky -> ../..`) would be followed by bwrap on both sides and bind a folder of this computer read-only into the sandbox. It is what
+  // a hostile repository or an earlier stage would leave, so the sandbox is refused. Anything that is neither a plain file nor a folder is not bound.
+  for (const name of RUNS_CODE) {
+    const entry = join(tree, name);
+    let kind;
+    try {
+      kind = lstatSync(entry);
+    } catch {
+      continue;
+    }
+    if (kind.isSymbolicLink()) throw new SandboxError('hostile-link', { name });
+    if (kind.isFile() || kind.isDirectory()) binds.push([entry, join(worktree, name)]);
+  }
   return { binds };
 }

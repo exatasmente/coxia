@@ -5,6 +5,9 @@
 const SECRET_LOOKING =
   /(^|\/)(\.ssh|\.gnupg|\.gpg|\.aws|\.azure|\.config|\.docker|\.kube|\.npmrc|\.netrc|\.pypirc|\.git-credentials|\.claude(?:\.json)?|\.env(?:\.[^/]*)?|\.mozilla|\.password-store|keyrings?|id_[a-z0-9]+(?:\.pub)?)(\/|$)|secret|credential|token|passw/i;
 
+// Places of the system that are not a toolchain: the kernel's views, devices, runtime sockets, the container daemon's state, temporary files.
+const SYSTEM_PLACES = /^\/(proc|sys|dev|run|var|tmp)(\/|$)/;
+
 export const MAX_READ_ONLY_PATHS = 20;
 
 /** Why `path` cannot be a read-only folder of a sandbox, or null. */
@@ -17,7 +20,7 @@ export function readOnlyPathProblem(path: string): 'empty' | 'relative' | 'root'
   if (p.split('/').includes('..')) return 'dots';
   const bare = p.replace(/\/+$/, '');
   if (bare === '') return 'root';
-  if (SECRET_LOOKING.test(p)) return 'secret';
+  if (SECRET_LOOKING.test(p) || SYSTEM_PLACES.test(bare)) return 'secret';
   return null;
 }
 

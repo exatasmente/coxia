@@ -5,12 +5,12 @@ import { checkIid } from './util';
 // The app tool the agents read the code host with when they have no CLI (Bitbucket, or an integration that uses the API only).
 // It is read-only by construction: it calls the provider's read methods and nothing else, with a fixed list of operations.
 
-export const VCS_READ_OPS = ['issue', 'issue_comments', 'mr', 'mr_threads', 'mr_comments', 'mr_changes', 'mr_ci'] as const;
+export const VCS_READ_OPS = ['issue', 'issue_comments', 'issue_linked_mrs', 'mr', 'mr_threads', 'mr_comments', 'mr_changes', 'mr_ci'] as const;
 export type VcsReadOp = (typeof VCS_READ_OPS)[number];
 
 export const VCS_READ_DESCRIPTION =
   // i18n-ignore: tool description for the model: English by design
-  'Reads from the code host (read only): an issue, the comments of an issue, a merge or pull request, its review threads, its comments, ' +
+  'Reads from the code host (read only): an issue (with its labels and milestone), the comments of an issue, the merge or pull requests linked to an issue, a merge or pull request, its review threads, its comments, ' +
   // i18n-ignore: tool description for the model: English by design
   'its changed files with diffs, or its CI runs. `project` is "group/repo" (as in mrPaths); `iid` is the issue or MR number.';
 
@@ -40,9 +40,19 @@ function parse(input: unknown): { op: VcsReadOp; project: string; iid: number } 
   return { op, project: i.project, iid: checkIid(i.iid) };
 }
 
-/** Runs one read and returns text for the model. Throws a translated VcsError for a bad input or a failing host. */
-export async function runVcsRead(provider: VcsProvider, input: unknown): Promise<string> {
+/**
+ * Whether `project` is one the workspace works with: its issue project or the project of one of its repositories, the same identity the cards use. An empty list is the
+ * workspace that names none (its cards are every project the host lists for the person), so it names no limit either.
+ */
+export function projectAllowed(project: string, allowed: readonly string[]): boolean {
+  return !allowed.length || allowed.some((p) => p.toLowerCase() === project.toLowerCase());
+}
+
+/** Runs one read and returns text for the model. Throws a translated VcsError for a bad input, a project outside the workspace or a failing host. */
+export async function runVcsRead(provider: VcsProvider, input: unknown, allowed: readonly string[] = []): Promise<string> {
   const { op, project, iid } = parse(input);
+  // i18n-ignore: tool answer for the model: English by design
+  if (!projectAllowed(project, allowed)) throw new VcsError('invalid', { detail: `project "${project.slice(0, 120)}" is not one of this workspace's projects (${allowed.join(', ')})` });
   const comments = (list: { author: string; createdAt: string; body: string }[]) => list.map((c) => ({ author: c.author, at: c.createdAt, body: cut(c.body, BODY_MAX) }));
   let result: unknown;
   switch (op) {
@@ -53,6 +63,9 @@ export async function runVcsRead(provider: VcsProvider, input: unknown): Promise
     }
     case 'issue_comments':
       result = comments((await provider.listIssueComments(project, iid)).filter((c) => !c.system).slice(0, 40));
+      break;
+    case 'issue_linked_mrs':
+      result = (await provider.linkedMrs(project, iid)).slice(0, 20).map((m) => ({ ...m, description: cut(m.description, 400) }));
       break;
     case 'mr': {
       const m = await provider.getMr(project, iid, { approvals: true });

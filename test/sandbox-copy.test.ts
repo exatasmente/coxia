@@ -16,20 +16,20 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('the copy of a tree', () => {
-  it('copies files and folders, keeps a link as a link, and leaves .git out', () => {
-    copyTree(join(root, 'from'), join(root, 'to'), 1e6);
+  it('copies files and folders, keeps a link as a link, and leaves .git out', async () => {
+    await copyTree(join(root, 'from'), join(root, 'to'), 1e6);
     expect(readFileSync(join(root, 'to/src/a.ts'), 'utf8')).toBe('export const a = 1;\n');
     expect(lstatSync(join(root, 'to/outside')).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(root, 'to/outside'))).toBe('/etc/hostname');
     expect(existsSync(join(root, 'to/.git'))).toBe(false);
   });
 
-  it('measures files only, without following a link', () => {
-    expect(treeSize(join(root, 'from'))).toBe('export const a = 1;\n'.length);
+  it('measures files only, without following a link', async () => {
+    expect(await treeSize(join(root, 'from'))).toBe('export const a = 1;\n'.length);
   });
 
-  it('refuses a tree over the limit before copying anything', () => {
-    expect(() => copyTree(join(root, 'from'), join(root, 'to'), 5)).toThrow(/too large|grande demais/);
+  it('refuses a tree over the limit before copying anything', async () => {
+    await expect(copyTree(join(root, 'from'), join(root, 'to'), 5)).rejects.toThrow(/too large|grande demais/);
     expect(existsSync(join(root, 'to'))).toBe(false);
   });
 });

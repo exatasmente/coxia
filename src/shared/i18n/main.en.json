@@ -1148,5 +1148,7 @@
   "prompt.sdd.runner.output.evidence": "For each scenario say in `evidence` whether you executed something to check it (`executed`, with the numbers of the commands that back it in `commands`, as the list of commands shows them: the ones the app ran before you and the ones you ran) or only read (`read`). Mark a scenario `executed` only when a command you can point at shows it: a pass needs a command that ended with exit code 0.",
   "main.runner.scenario.evidenceTitle": "What was executed",
   "main.runner.scenario.evidenceLine": "{executed} of {total} scenarios were executed in the sandbox; the others were only read.",
-  "main.runner.scenario.evidenceUnbacked": "Claimed as executed and not backed by any command of the stage, so recorded as only read: {names}."
+  "main.runner.scenario.evidenceUnbacked": "Claimed as executed and not backed by any command of the stage, so recorded as only read: {names}.",
+  "main.sandbox.error.hostile-link": "{name} in the worktree is a symbolic link. A link in that place would make the sandbox share a folder of this computer, so no sandbox is made and the stage stops. Look at what put it there (the diff of the branch) and remove it.",
+  "main.forum.code.runner.sandbox.repoFolder": "The sandbox of {agent} was given the folder {path}, which holds a repository: its .git/config is visible to the sandbox as it is, not cleaned of credentials. Take that folder off the sandbox's read-only list if it should not be."
 }

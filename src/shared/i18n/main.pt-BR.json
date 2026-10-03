@@ -1148,5 +1148,7 @@
   "prompt.sdd.runner.output.evidence": "Para cada cenário diga em `evidence` se você executou algo para verificá-lo (`executed`, com os números dos comandos que o sustentam em `commands`, como a lista de comandos os mostra: os que o app rodou antes de você e os que você rodou) ou só leu (`read`). Marque `executed` só quando um comando que você possa apontar mostra isso: um \"passou\" precisa de um comando que terminou com código de saída 0.",
   "main.runner.scenario.evidenceTitle": "O que foi executado",
   "main.runner.scenario.evidenceLine": "{executed} de {total} cenários foram executados na sandbox; os outros só foram lidos.",
-  "main.runner.scenario.evidenceUnbacked": "Dados como executados sem nenhum comando da etapa que os sustente, por isso registrados como só lidos: {names}."
+  "main.runner.scenario.evidenceUnbacked": "Dados como executados sem nenhum comando da etapa que os sustente, por isso registrados como só lidos: {names}.",
+  "main.sandbox.error.hostile-link": "{name} no worktree é um link simbólico. Um link nesse lugar faria a sandbox compartilhar uma pasta deste computador, então nenhuma sandbox é criada e a etapa para. Veja o que o colocou ali (o diff da branch) e remova.",
+  "main.forum.code.runner.sandbox.repoFolder": "A sandbox de {agent} recebeu a pasta {path}, que guarda um repositório: o .git/config dela fica visível para a sandbox como está, sem limpar credenciais. Tire essa pasta da lista somente leitura da sandbox se não for o caso."
 }

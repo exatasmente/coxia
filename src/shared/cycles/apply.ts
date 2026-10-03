@@ -1,6 +1,6 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a cycle template file
 import { mergeDeep, neutralConfig } from '../config/defaults';
-import type { AgentDef, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
+import type { AgentDef, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
 import { newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
 import { neutralDevCycle } from './neutral';
@@ -99,6 +99,8 @@ export interface TemplateCheck {
   template: CycleTemplate | null;
   errors: ConfigIssue[];
   warnings: ConfigIssue[];
+  /** What each agent the file brings may run and read: shown before the template is saved or applied, like the programs of a configuration import. */
+  powers: { agent: string; shell: AgentShell; tracker: AgentTracker }[];
 }
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -121,7 +123,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * to the neutral config and the result is validated, so a bad stage pattern or a mapping to a stage that does not exist is reported with its path.
  */
 export function parseTemplate(raw: unknown): TemplateCheck {
-  const fail = (path: string, message: string): TemplateCheck => ({ ok: false, template: null, errors: [{ path, message }], warnings: [] });
+  const fail = (path: string, message: string): TemplateCheck => ({ ok: false, template: null, errors: [{ path, message }], warnings: [], powers: [] });
   if (!isObject(raw)) return fail('', 'expected an object');
   let candidate: unknown = raw;
   if (raw.format !== undefined) {
@@ -136,7 +138,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
   if (typeof t.name !== 'string' || !t.name.trim()) errors.push({ path: 'template.name', message: 'is required' });
   if (t.description !== undefined && typeof t.description !== 'string') errors.push({ path: 'template.description', message: 'must be text' });
   if (!isObject(t.devCycle)) errors.push({ path: 'template.devCycle', message: 'expected an object' });
-  if (errors.length) return { ok: false, template: null, errors, warnings: [] };
+  if (errors.length) return { ok: false, template: null, errors, warnings: [], powers: [] };
 
   const template: CycleTemplate = {
     id: t.id as string,
@@ -155,5 +157,12 @@ export function parseTemplate(raw: unknown): TemplateCheck {
   const checked = validateConfig({ ...base, devCycle: cycleOf(template), agents: { ...base.agents, team: [...base.agents.team, ...(template.team ?? [])] } });
   const prefix = (list: ConfigIssue[]) => list.map((i) => ({ ...i, path: i.path.replace(/^devCycle/, 'template.devCycle').replace(/^agents\.team/, 'template.team') }));
   const issues = prefix(checked.errors);
-  return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: prefix(checked.warnings) };
+  // The agents the file brings that can run commands or read the code host, said before anything is applied: a template file is a way to hand someone a sandbox.
+  const brought = (template.team ?? []).map((a) => newAgent({ ...structuredClone(a), system: false }));
+  const powers = brought.filter((a) => a.shell !== 'none' || a.tracker !== 'none').map((a) => ({ agent: a.id, shell: a.shell, tracker: a.tracker }));
+  const notes: ConfigIssue[] = powers.flatMap((p) => [
+    ...(p.shell === 'sandbox' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run any command, inside a sandbox (only where this computer can make one)' }] : p.shell === 'allowlist' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run the commands of runner.commands in its worktree, outside any sandbox' }] : []),
+    ...(p.tracker === 'read' ? [{ path: `template.team[${p.agent}].tracker`, message: 'the agent may read the code host (never write)' }] : []),
+  ]);
+  return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes], powers };
 }
