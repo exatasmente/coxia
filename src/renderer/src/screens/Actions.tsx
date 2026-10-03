@@ -85,7 +85,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             {a.kind === 'conflict' && open && a.resolve && <span className="badge badge-ask">{conflictProgress(a)}</span>}
             {a.kind === 'conflict' && a.state === 'done' && a.resolve?.publishedAt && <span className="badge badge-quiet">{t('ui.actions.badge.published')}</span>}
           </div>
-          <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {stageText(a.stage)}</div>
+          {(a.issueTitle || a.stage) && <div className="small muted" style={{ marginTop: 4 }}>{a.issueTitle} · {stageText(a.stage)}</div>}
         </div>
       </div>
 

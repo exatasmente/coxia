@@ -1,31 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Improvement, Retro, RetroItem } from '../../../shared/types';
+import type { Retro, RetroItem } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api, errorText } from '../api';
+import { api } from '../api';
 import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { AgentActivity } from '../AgentActivity';
 import { SquadPicker, SquadScope } from './cycle/SquadPicker';
 import { useCycle } from '../cycleApi';
-import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { intlLocale, t, useT, useVoiceEnabled } from '../i18n';
-
-function improvementEntry(m: Improvement): string {
-  return [
-    `### N. ${m.title}`,
-    '',
-    t('ui.retro.entry.dimension', { value: m.dimension }),
-    '',
-    t('ui.retro.entry.problem', { value: m.problem }),
-    '',
-    t('ui.retro.entry.proposal', { value: m.proposal }),
-    '',
-  ].join('\n');
-}
 
 function Items({ title, items, tone }: { title: string; items: RetroItem[]; tone: string }) {
   const t = useT();
@@ -55,7 +41,6 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
   const [squad, setSquad] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [copied, setCopied] = useState<string | null>(null);
   const spoken = useRef<string | null>(null);
   const voice = c.voices?.moderator ?? null;
 
@@ -106,12 +91,6 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
   // The IMPROVEMENTS.md convention and the gate quizzes belong to the SDD cycle; any other cycle gets the neutral wording.
   const sddCycle = useCycle()?.templateId === 'sdd';
   const talk = useTalk(player, ask, setError);
-
-  const copy = async (what: string, text: string) => {
-    await api.copy(text);
-    setCopied(what);
-    setTimeout(() => setCopied(null), 2000);
-  };
 
   const week = retro ? t('ui.retro.range', { from: new Date(retro.from).toLocaleDateString(intlLocale()), to: new Date(retro.to).toLocaleDateString(intlLocale()) }) : '';
 
@@ -172,22 +151,6 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
               <Items title={t('ui.retro.stuck')} items={retro.stuck} tone="var(--warn)" />
               <Items title={t('ui.retro.rework')} items={retro.rework} tone="var(--red)" />
             </div>
-            <section className="panel" style={{ padding: 20, gap: 12 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.retro.improvements.title')}</h2>
-              <p className="small muted">{t(sddCycle ? 'ui.retro.improvements.hint' : 'ui.retro.improvements.hintPlain')}</p>
-              {retro.improvements.map((m) => (
-                <div key={m.title} className="item">
-                  <div className="row spread">
-                    <span style={{ fontWeight: 600 }}>{m.title}</span>
-                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => void copy(m.title, improvementEntry(m))}>{copied === m.title ? t('ui.retro.copied') : t('ui.retro.copyEntry')}</button>
-                  </div>
-                  <span className="small muted">{m.dimension}</span>
-                  <span className="small"><b>{t('ui.retro.problem')}</b> {m.problem}</span>
-                  <span className="small"><b>{t('ui.retro.proposal')}</b> {m.proposal}</span>
-                </div>
-              ))}
-              <ContinueInClaude sessionId={retro.sessionId} />
-            </section>
             <section className="panel" style={{ padding: 20, gap: 10 }}>
               <h2 className="section-title">{t('ui.retro.talk.title')}</h2>
               {retro.talk.map((m, i) => (
