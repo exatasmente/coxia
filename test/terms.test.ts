@@ -14,13 +14,13 @@ afterEach(() => {
 
 describe('host words', () => {
   it('GitLab keeps the merge request words', () => {
-    expect(hostWords('gitlab', 'en')).toEqual({ vcsName: 'GitLab', cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', CrLongs: 'Merge requests', crMark: '!', anCr: 'an MR', ci: 'pipeline' });
+    expect(hostWords('gitlab', 'en')).toEqual({ vcsName: 'GitLab', cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', CrLong: 'Merge request', CrLongs: 'Merge requests', crMark: '!', anCr: 'an MR', ci: 'pipeline' });
   });
 
   it('GitHub and Bitbucket say pull request and mark a ref with #', () => {
     for (const kind of ['github', 'bitbucket'] as const) {
       const w = hostWords(kind, 'pt-BR');
-      expect([w.cr, w.crs, w.crLong, w.crLongs, w.CrLongs, w.crMark]).toEqual(['PR', 'PRs', 'pull request', 'pull requests', 'Pull requests', '#']);
+      expect([w.cr, w.crs, w.crLong, w.crLongs, w.CrLong, w.CrLongs, w.crMark]).toEqual(['PR', 'PRs', 'pull request', 'pull requests', 'Pull request', 'Pull requests', '#']);
     }
     expect(hostWords('github', 'en').vcsName).toBe('GitHub');
     expect(hostWords('bitbucket', 'en').vcsName).toBe('Bitbucket');
@@ -88,7 +88,7 @@ describe('termsFor', () => {
   it('every standard placeholder has a value by default, in both languages', () => {
     for (const language of ['pt-BR', 'en'] as const) {
       const { words } = defaultTerms(language);
-      expect(Object.keys(words).sort()).toEqual(['Ceremony', 'CrLongs', 'anCr', 'ceremony', 'ci', 'cli', 'cr', 'crLong', 'crLongs', 'crMark', 'crs', 'retroDays', 'summaryTarget', 'trackerMcp', 'vcsName']);
+      expect(Object.keys(words).sort()).toEqual(['Ceremony', 'CrLong', 'CrLongs', 'anCr', 'ceremony', 'ci', 'cli', 'cr', 'crLong', 'crLongs', 'crMark', 'crs', 'retroDays', 'summaryTarget', 'trackerMcp', 'vcsName']);
       expect(words.vcsName).not.toBe('');
       expect(words.cr).not.toBe('');
     }

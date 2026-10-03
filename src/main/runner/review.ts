@@ -1,6 +1,7 @@
 import type { VcsKind } from '../../shared/config/types';
 import type { Language } from '../../shared/config/types';
 import { createTranslator } from '../../shared/i18n';
+import { hostWords } from '../../shared/i18n/terms';
 import { type Finding, type StageComment, sameFinding, whereOf } from '../../shared/runs';
 import { covers, indexPatch } from '../vcs/diffLines';
 import type { ReviewComment } from '../vcs/types';
@@ -62,14 +63,17 @@ export function replacementBlock(kind: VcsKind, p: Placed, language: Language): 
   return `${createTranslator(language)('main.runner.review.replacement')}\n\n${fence}\n${code}\n${fence}`;
 }
 
-/** The text of one comment of the review: whether it blocks, what is wrong, where it was meant to be when it could not stand there, and the replacement. */
+/**
+ * The text of one comment of the review: whether it blocks, what is wrong, where it was meant to be when it could not stand there, and the replacement.
+ * It is written for the host it goes to, whichever integration the workspace's own words come from.
+ */
 export function commentText(kind: VcsKind, p: Placed, language: Language): string {
   const tr = createTranslator(language);
   const f = p.finding;
   const parts = [tr(f.severity === 'blocking' ? 'main.runner.review.blocking' : 'main.runner.review.suggestion'), f.body];
   const head = parts.join(' ');
   // A comment that had to move to the file says where the finding was about.
-  const outside = p.where === 'file' && f.line !== null ? `\n\n${tr('main.runner.review.outside', { where: whereOf(f) })}` : '';
+  const outside = p.where === 'file' && f.line !== null ? `\n\n${tr('main.runner.review.outside', { where: whereOf(f), ...hostWords(kind, language) })}` : '';
   const block = replacementBlock(kind, p, language);
   return `${head}${outside}${block ? `\n\n${block}` : ''}`;
 }

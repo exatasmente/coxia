@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A stage is stopped for silence (`runner.stageIdleMs`, 10 minutes with no sign of life from the model) and, apart, by a wall-clock cap (`runner.stageMaxMs`, 2 hours), replacing `runner.stageTimeoutMs` (configuration schema 9, migrated); `runner.turns` sets the step caps of an agent that reads (30) and one that changes files (80). The runner settings screen has the four fields.
 - Each stage of a run records what its model calls used (calls, tokens, and the cost when the provider or the SDK reports one) and the cycle screen shows it per stage.
 - The five-minute job of the runner never waits for a stage to end, and runs one sweep at a time.
+- The runner, the team and the cycle screens name the change request the way the workspace's host does (merge request on GitLab, pull request on GitHub and Bitbucket), in the agents' prompts, the comments the runner leaves, the proposals in Actions and the forum; a review is written for the host it is posted to. A new `{CrLong}` placeholder ("Merge request" or "Pull request") serves a title. A test fails when one of these texts names a host or its noun in a literal.
 
 ### Changed
 

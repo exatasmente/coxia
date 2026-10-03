@@ -1,7 +1,7 @@
 import type { Language, VcsKind } from '../config/types';
 
 // The workspace's own words: the standard placeholders every catalog text may use ({vcsName}, {cr}, {crs}, {crLong}, {crLongs}, {crMark},
-// {ceremony}, {Ceremony}, {summaryTarget}, {retroDays}, {cli}, {trackerMcp}, plus {CrLongs}, {anCr} and {ci}). They are filled by the translator from this table, so a text names the code
+// {ceremony}, {Ceremony}, {summaryTarget}, {retroDays}, {cli}, {trackerMcp}, plus {CrLong}, {CrLongs}, {anCr} and {ci}). They are filled by the translator from this table, so a text names the code
 // host, the change request and the daily ceremony the workspace has, and a caller never passes them by hand. The host words live here, in
 // one place; the workspace-dependent ones (ceremony, summary target, retro window, CLI) are added by `termsFor` in cycles/terms.ts.
 
@@ -76,7 +76,7 @@ export const upperFirstWord = (s: string): string => (s ? s.charAt(0).toUpperCas
  */
 export function hostWords(kind: VcsKind | null, language: Language): TermWords {
   const h: HostWords = kind ? HOSTS[kind] : { ...MERGE, name: FALLBACK[language].host, ci: 'pipeline' };
-  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, CrLongs: upperFirstWord(h.crLongs), crMark: h.mark, anCr: language === 'en' ? `${h.cr === 'MR' ? 'an' : 'a'} ${h.cr}` : h.cr, ci: h.ci };
+  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, CrLong: upperFirstWord(h.crLong), CrLongs: upperFirstWord(h.crLongs), crMark: h.mark, anCr: language === 'en' ? `${h.cr === 'MR' ? 'an' : 'a'} ${h.cr}` : h.cr, ci: h.ci };
 }
 
 /** What a placeholder is before the workspace says anything: no integration, the app's own ceremony, a generic team chat, a week. */
