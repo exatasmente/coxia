@@ -161,7 +161,8 @@ jobs:
         run: |
           set -euo pipefail
           # electron-builder creates either a draft or a published pre-release; GitHub allows both flags, so set the second one here.
-          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -n1)"
+          # A draft has no tag yet: GitHub shows it as untagged-<hash> until it is published, so it is found by its name (the tag, set with releaseName).
+          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
           [ -n "$id" ] || { echo "::error::no draft release for $TAG"; exit 1; }
           gh api --method PATCH "repos/$REPOSITORY/releases/$id" -F prerelease=true --jq '"draft=\(.draft) prerelease=\(.prerelease)"'
 
@@ -173,11 +174,18 @@ jobs:
         run: |
           set -euo pipefail
           feed="$CHANNEL-linux.yml"
-          assets="$(gh api "repos/$REPOSITORY/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .assets[].name")"
+          # By name, as above: the draft of a pre-release is untagged until a person publishes it. The newest one wins (the API lists newest first).
+          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
+          [ -n "$id" ] || { echo "::error::no draft release named $TAG"; exit 1; }
+          assets="$(gh api "repos/$REPOSITORY/releases/$id" --jq '.assets[].name')"
           echo "$assets"
           for want in "coxia-$VERSION.AppImage" "coxia_${VERSION}_amd64.deb" "$feed"; do
             echo "$assets" | grep -qxF "$want" || { echo "::error::the draft release is missing $want"; exit 1; }
           done
+          # The feed belongs to one channel: a pre-release must not carry latest-linux.yml (it would move everyone on the stable channel), and a final
+          # release must not carry another channel's feed.
+          other="$(echo "$assets" | grep -E -- '-linux\.yml$' | grep -vxF "$feed" || true)"
+          [ -z "$other" ] || { echo "::error::the draft release carries a feed of another channel: $other"; exit 1; }
 
       - name: Keep the packages as a workflow artifact (dry run)
         if: needs.prepare.outputs.dry_run == 'true'
