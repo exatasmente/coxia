@@ -351,6 +351,7 @@
   "main.ata.transcript": "### Transcrição",
   "main.ata.noNotes": "a fonte de cartões não grava notas: ficou só na ata",
   "main.ata.whatWrite": "gravar no Plan ou na nota do cartão",
+  "main.priority.whatWrite": "propor a troca de rótulo de prioridade no tracker",
   "main.ata.testOnly": "workspace de testes: ficou só na ata",
   "main.watchers.stop": "Pare: decida com o revisor e registre no Plan. Não rode uma terceira rodada.",
   "main.watchers.gateReady": "{label} da #{iid} pronto: quiz agora?",
@@ -714,5 +715,11 @@
   "main.priority.dest.unmapped": "ata (não gravado no tracker: esse nível de prioridade não é um nome de rótulo)",
   "main.priority.dest.same": "ata (nada a mudar no tracker: a issue já tem {label})",
   "main.priority.dest.unidentified": "ata (não gravado no tracker: a issue deste cartão não foi identificada)",
-  "main.priority.dest.unsupported": "ata (não gravado no tracker: este host não permite trocar rótulos por aqui)"
+  "main.priority.dest.unsupported": "ata (não gravado no tracker: este host não permite trocar rótulos por aqui)",
+  "main.priority.summary": "Prioridade de {ref}: {change}",
+  "main.priority.detail": "A troca de rótulo vem de uma decisão da conversa: só vale depois do seu \"sim\".",
+  "main.priority.noLabel": "nenhum",
+  "main.priority.saved.proposal": "proposta criada em Ações",
+  "main.priority.saved.duplicate": "já existe uma proposta igual em Ações",
+  "main.priority.saved.failed": "proposta não criada: {reason}"
 }

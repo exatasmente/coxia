@@ -14,6 +14,8 @@ import { rc } from './workspaceConfig';
 import { upperFirst } from '../shared/cycles/text';
 import { modeText } from './agentVoice';
 import { t } from '../shared/i18n';
+import { proposeVcsCommands } from './actions';
+import { vcsProvider } from './vcs';
 
 const run = promisify(execFile);
 
@@ -106,6 +108,28 @@ async function writeDailyNote(d: Decision): Promise<Written & { note?: string }>
   return { ok: true, detail, note };
 }
 
+// A priority decision that can be written becomes the label change on the issue, as a proposal that waits in Actions for its own "yes".
+async function proposePriority(d: Decision): Promise<Written> {
+  const c = d.priority;
+  if (!c || c.project === null || c.iid === null) return { ok: false, detail: t('main.priority.saved.failed', { reason: t('main.priority.dest.unidentified') }) };
+  try {
+    const commands = await vcsProvider().planWrite({ op: 'setIssueLabels', project: c.project, iid: c.iid, add: c.add ? [c.add] : [], remove: c.remove });
+    const made = proposeVcsCommands(
+      {
+        key: `priority:${d.ref}:${c.label ?? c.to}:${today()}`,
+        issue: c.iid,
+        issueTitle: c.title,
+        summary: t('main.priority.summary', { ref: d.ref, change: `${c.remove.join(', ') || t('main.priority.noLabel')} → ${c.label ?? c.to}` }),
+        detail: t('main.priority.detail'),
+      },
+      commands,
+    );
+    return made.some((a) => a !== null) ? { ok: true, detail: t('main.priority.saved.proposal') } : { ok: true, detail: t('main.priority.saved.duplicate'), duplicate: true };
+  } catch (e) {
+    return { ok: false, detail: t('main.priority.saved.failed', { reason: (e as Error).message.split('\n')[0] }) };
+  }
+}
+
 // The same decision written by an earlier version of the day, if one did.
 function earlierWrite(d: Decision, earlier: { n: number; written: WrittenDecision[] }[]): number | null {
   for (const v of [...earlier].reverse()) {
@@ -129,12 +153,17 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[],
       written.push({ ref: w.ref, dest: w.dest, ok: w.ok, detail: w.detail, ...(w.duplicateOf !== undefined ? { duplicateOf: w.duplicateOf } : {}) });
       records.push({ ...w, text: d.text, target: d.target });
     };
-    const blocked = d.target === 'ata' ? null : externalRefusal(t('main.ata.whatWrite'));
+    // A priority decision that cannot be written has nothing to refuse: it is in the minutes, and its destination says why.
+    if (d.target === 'priority' && (!d.priority || d.priority.noWrite)) {
+      record({ ref: d.ref, dest: d.dest, ok: true, detail: ataPath });
+      continue;
+    }
+    const blocked = d.target === 'ata' ? null : externalRefusal(d.target === 'priority' ? t('main.priority.whatWrite') : t('main.ata.whatWrite'));
     if (blocked) {
       record({ ref: d.ref, dest: d.dest, ok: false, detail: t('main.ata.testOnly') });
       continue;
     }
-    const before = d.target === 'ata' ? null : earlierWrite(d, version.earlier);
+    const before = d.target === 'ata' || d.target === 'priority' ? null : earlierWrite(d, version.earlier);
     if (before !== null) {
       record({ ref: d.ref, dest: d.dest, ok: true, detail: cycleWord('minutes.duplicate.version', { n: before }), duplicateOf: before });
       continue;
@@ -147,6 +176,9 @@ export async function saveMinutes(m: Minutes, teams: string, selected: number[],
       } else if (d.target === 'note') {
         const r = await writeDailyNote(d);
         if (r.note) recordSelfWrite(date, { note: { ref: d.ref, text: r.note } });
+        record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });
+      } else if (d.target === 'priority') {
+        const r = await proposePriority(d);
         record({ ref: d.ref, dest: d.dest, ok: r.ok, detail: r.detail, ...(r.duplicate ? { duplicateOf: 'document' as const } : {}) });
       } else record({ ref: d.ref, dest: d.dest, ok: true, detail: ataPath });
     } catch (e) {

@@ -351,6 +351,7 @@
   "main.ata.transcript": "### Transcript",
   "main.ata.noNotes": "the card source does not write notes: it stayed in the minutes only",
   "main.ata.whatWrite": "write to the plan or to the card note",
+  "main.priority.whatWrite": "propose the priority label change on the tracker",
   "main.ata.testOnly": "test workspace: it stayed in the minutes only",
   "main.watchers.stop": "Stop: decide with the reviewer and record it in the plan. Do not run a third round.",
   "main.watchers.gateReady": "{label} of #{iid} is ready: quiz now?",
@@ -714,5 +715,11 @@
   "main.priority.dest.unmapped": "minutes (not written to the tracker: that priority level is not a label name)",
   "main.priority.dest.same": "minutes (nothing to change in the tracker: the issue already has {label})",
   "main.priority.dest.unidentified": "minutes (not written to the tracker: the issue of this card was not identified)",
-  "main.priority.dest.unsupported": "minutes (not written to the tracker: this host does not allow changing labels from here)"
+  "main.priority.dest.unsupported": "minutes (not written to the tracker: this host does not allow changing labels from here)",
+  "main.priority.summary": "Priority of {ref}: {change}",
+  "main.priority.detail": "The label change comes from a decision in the conversation: it only counts after your \"yes\".",
+  "main.priority.noLabel": "none",
+  "main.priority.saved.proposal": "proposal created in Actions",
+  "main.priority.saved.duplicate": "an identical proposal already exists in Actions",
+  "main.priority.saved.failed": "proposal not created: {reason}"
 }
