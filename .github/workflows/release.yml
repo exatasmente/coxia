@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the branches, to check that the tag's commit is on one
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -87,6 +89,14 @@ jobs:
             echo "dry_run=$dry_run"
           } >> "$GITHUB_OUTPUT"
           echo "Releasing $tag (version $version, channel $channel, prerelease: $prerelease, dry run: $dry_run)"
+
+      # A stable tag must sit on a commit of origin/main and a beta on one of origin/release/<version>: a tag from a local-only or stale commit publishes what no
+      # branch carries (RELEASING.md: push the branch first, then the tag).
+      - name: Check that the tag's commit is on its branch
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: scripts/verify-release-origin.sh "$VERSION" "$GITHUB_SHA"
 
   linux:
     name: Linux (AppImage and deb)

@@ -35,6 +35,13 @@ describe('release.yml finds the draft of a pre-release', () => {
     expect(none.stdout.trim()).toBe('');
   });
 
+  it('checks, over a full checkout, that the tag commit is on its branch before building anything', () => {
+    const yml = text('.github/workflows/release.yml');
+    expect(yml).toMatch(/fetch-depth: 0/);
+    expect(yml).toContain('scripts/verify-release-origin.sh "$VERSION" "$GITHUB_SHA"');
+    expect(yml.indexOf('verify-release-origin.sh')).toBeLessThan(yml.indexOf('linux:\n    name: Linux'));
+  });
+
   it('asserts the feed of the channel, and no feed of another', () => {
     const yml = text('.github/workflows/release.yml');
     expect(yml).toContain('feed="$CHANNEL-linux.yml"');
