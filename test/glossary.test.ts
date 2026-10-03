@@ -30,12 +30,20 @@ describe('spoken', () => {
 describe('spoken refs of a host that marks a change request with #', () => {
   const github = { noun: 'PR', mark: '#' };
 
-  it('reads app#7 as a PR and a bare #101 as the issue', () => {
-    expect(spoken('O web#202 resolve a #101.', [], 'edge', github)).toBe('O web, PR 202 resolve a 101.');
+  it('reads app#12 neutrally, since it may be an issue, and a bare #101 as the issue number', () => {
+    expect(spoken('O web#202 resolve a #101.', [], 'edge', github)).toBe('O web, 202 resolve a 101.');
+  });
+
+  it('reads a ref known to be a change request as one', () => {
+    expect(spoken('O web#202 resolve a web#101 e (web#202).', [], 'edge', { ...github, known: ['web#202'] })).toBe('O web, PR 202 resolve a web, 101 e (web, PR 202).');
   });
 
   it('leaves a "!" alone: it is not a ref there', () => {
     expect(spoken('Uau!202', [], 'edge', github)).toBe('Uau!202');
+  });
+
+  it('keeps reading a repository ref of a host that marks with ! as a change request, whatever the noun', () => {
+    expect(spoken('O web!202 e a #101.', [], 'edge', { noun: 'MR', mark: '!' })).toBe('O web, MR 202 e a 101.');
   });
 
   it('follows the workspace terms when no words are passed', async () => {
@@ -44,7 +52,7 @@ describe('spoken refs of a host that marks a change request with #', () => {
     const { hostConfig } = await import('./helpers/config');
     setTerms(termsFor(hostConfig('github'), 'en'));
     try {
-      expect(spoken('O web#202 está aprovado.', [], 'edge')).toBe('O web, PR 202 está aprovado.');
+      expect(spoken('O web#202 está aprovado.', [], 'edge')).toBe('O web, 202 está aprovado.');
     } finally {
       resetTerms();
     }

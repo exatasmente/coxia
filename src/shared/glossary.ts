@@ -66,23 +66,35 @@ export function pronunciation(t: Term, engine: VoiceEngine): string {
   return ((engine === 'kokoro' ? t.sayKokoro?.trim() : '') || t.say).trim();
 }
 
-/** How a ref of a change request is written and said on the workspace's host: "web!202" and "MR 202", "web#202" and "PR 202". */
+/** How a ref of a change request is written and said on the workspace's host: "web!202" and "MR 202" on GitLab. */
 export interface RefWords {
   noun: string;
   mark: string;
+  /**
+   * On a host that marks a change request with "#" an issue is written the same way ("app#12"), so a ref reads as a change request only when it
+   * is known to be one ("app#7" in this list); any other "repo#N" is read neutrally, "app, 12".
+   */
+  known?: readonly string[];
 }
 
 const currentRefWords = (): RefWords => ({ noun: getTerms().words.cr, mark: getTerms().words.crMark });
 
 export function spoken(text: string, terms: Term[], engine: VoiceEngine, ref: RefWords = currentRefWords()): string {
-  const mark = ref.mark === '#' ? '#' : '!';
-  // A ref of a repository ("web!202") reads as "web, MR 202" and a bare one as "MR 202"; on a host that marks a change request with "#" the
-  // bare "#101" is the issue, which reads as "101".
-  const withRepo = new RegExp(`(\\S)${mark}(\\d+)`, 'g');
-  const bare = new RegExp(`(^|\\s)${mark}(\\d+)`, 'g');
-  let refs = text.replace(withRepo, `$1, ${ref.noun} $2`);
-  if (mark === '!') refs = refs.replace(bare, `$1${ref.noun} $2`);
-  refs = refs.replace(/#(\d+)/g, '$1');
+  let refs: string;
+  if (ref.mark === '#') {
+    // "app#7" is "app, PR 7" when it is known to be a PR and "app, 7" otherwise; a bare "#101" is the issue, which reads as "101".
+    const known = new Set(ref.known ?? []);
+    refs = text.replace(/(\S*)#(\d+)/g, (_, prefix: string, n: string) => {
+      if (!prefix) return n;
+      return `${prefix}, ${known.has(`${prefix.replace(/^\W+/, '')}#${n}`) ? `${ref.noun} ` : ''}${n}`;
+    });
+  } else {
+    // A ref of a repository ("web!202") reads as "web, MR 202" and a bare one as "MR 202"; "#101" as "101".
+    refs = text
+      .replace(/(\S)!(\d+)/g, `$1, ${ref.noun} $2`)
+      .replace(/(^|\s)!(\d+)/g, `$1${ref.noun} $2`)
+      .replace(/#(\d+)/g, '$1');
+  }
   return replaceAll(
     refs,
     terms.filter((t) => pronunciation(t, engine)).map((t) => ({ from: t.term, to: pronunciation(t, engine) })),

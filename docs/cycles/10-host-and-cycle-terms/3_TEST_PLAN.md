@@ -25,7 +25,7 @@ How a person checks the fix in the app, with one GitHub workspace and one Bitbuc
 | Settings, web access | "Approve release actions and writes to GitHub, push included" |
 | Help | every ceremony of the cycle listed, with "GitHub" where the host is named |
 | Radar | "your open PRs", "nothing is commented on or changed in GitHub" |
-| Read aloud (voice on) | "web#202" is said "web, PR 202"; a bare "#101" is said "101" |
+| Read aloud (voice on) | "web#202" is said "web, 202" (it may be an issue: a "#" host writes both alike) and a bare "#101" is said "101"; on GitLab "web!202" is still said "web, MR 202" |
 
 The words **GitLab**, **MR**, **merge request** and **glab** must not appear anywhere on these screens, in either language.
 
