@@ -67,6 +67,7 @@ describe('reads over the API transport', () => {
   it('reads an issue and its comments, newest first', async () => {
     const rt = await api({ [`GET ${API}/repos/acme/app/issues/12`]: { json: F.issue_12 }, [`GET ${API}/repos/acme/app/issues/12/comments`]: { json: F.issue_comments } });
     expect((await rt.provider.getIssue('acme/app', 12)).title).toBe('Export fails with accents');
+    expect((await rt.provider.getIssue('acme/app', 12)).body).toBe('Accented names break the export.');
     expect((await rt.provider.listIssueComments('acme/app', 12)).map((c) => [c.id, c.author])).toEqual([[5002, 'bob-qa'], [5001, 'ana-dev']]);
     expect(await rt.provider.issueStatuses('acme/app', [12])).toEqual(new Map());
   });
@@ -207,6 +208,16 @@ describe('planWrite', () => {
     expect(await plan({ op: 'editIssueNote', project: 'acme/app', iid: 12, noteId: 5002, body: 'x' })).toEqual([cmd({ method: 'PATCH', endpoint: 'repos/acme/app/issues/comments/5002', json: '{"body":"x"}' })]);
   });
 
+  it('deletes a comment: a conversation comment of an issue or a pull request, and a comment of a review on a line or a file', async () => {
+    const del = (endpoint: string) => cmd({ method: 'DELETE', endpoint });
+    expect(await plan({ op: 'deleteNote', project: 'acme/app', iid: 12, noteId: 5002, target: 'issue' })).toEqual([del('repos/acme/app/issues/comments/5002')]);
+    // a pull request's conversation comments are issue comments on GitHub
+    expect(await plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: 5002, target: 'mr' })).toEqual([del('repos/acme/app/issues/comments/5002')]);
+    expect(await plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: 7001, target: 'review' })).toEqual([del('repos/acme/app/pulls/comments/7001')]);
+    for (const c of await plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: 7001, target: 'review' })) expect(() => validateGitHubCommand(c)).not.toThrow();
+    await expect(plan({ op: 'deleteNote', project: 'acme/app', iid: 7, noteId: '7001/../..', target: 'review' })).rejects.toThrow();
+  });
+
   it('replies to a thread on its first comment, reading the thread first', async () => {
     const out = await plan({ op: 'replyThread', project: 'acme/app', iid: 7, threadId: 'PRRT_kwDOAbCdEf5Abc1', body: 'done' }, { 'POST /api/graphql': { json: F.threads_graphql } });
     expect(out).toEqual([cmd({ endpoint: 'repos/acme/app/pulls/7/comments/7001/replies', json: '{"body":"done"}' })]);
@@ -256,6 +267,8 @@ describe('validateCommand: what a GitHub write may look like', () => {
       ok({ endpoint: 'repos/acme/app/pulls/7/requested_reviewers', json: '{"reviewers":["a"]}' }),
       ok({ endpoint: 'repos/acme/app/issues/1/labels', json: '{"labels":["a","b"]}' }),
       ok({ method: 'DELETE', endpoint: 'repos/acme/app/issues/1/labels/a%20b', json: undefined }),
+      ok({ method: 'DELETE', endpoint: 'repos/acme/app/issues/comments/9', json: undefined }),
+      ok({ method: 'DELETE', endpoint: 'repos/acme/app/pulls/comments/9', json: undefined }),
       ok({ method: 'PATCH', endpoint: 'repos/acme/app/issues/comments/9' }),
       ok({ method: 'PATCH', endpoint: 'repos/acme/app/issues/1', json: '{"state":"open"}' }),
       ok({ endpoint: 'graphql', json: undefined, fields: { query: MUT } }),
@@ -265,7 +278,10 @@ describe('validateCommand: what a GitHub write may look like', () => {
   const refused: [string, Partial<VcsCommand>][] = [
     ['a read endpoint', { method: 'POST', endpoint: 'user' }],
     ['another method on a write endpoint', { method: 'PUT' }],
-    ['deleting an issue comment', { method: 'DELETE', endpoint: 'repos/acme/app/issues/comments/9', json: undefined }],
+    ['deleting an issue', { method: 'DELETE', endpoint: 'repos/acme/app/issues/9', json: undefined }],
+    ['deleting a pull request review', { method: 'DELETE', endpoint: 'repos/acme/app/pulls/7/reviews/9', json: undefined }],
+    ['deleting a comment with a body', { method: 'DELETE', endpoint: 'repos/acme/app/issues/comments/9', json: '{"body":"x"}' }],
+    ['deleting a repository', { method: 'DELETE', endpoint: 'repos/acme/app', json: undefined }],
     ['merging a PR', { method: 'PUT', endpoint: 'repos/acme/app/pulls/7/merge', json: '{}' }],
     ['closing a PR through pulls', { method: 'PATCH', endpoint: 'repos/acme/app/pulls/7', json: '{"state":"closed"}' }],
     ['a body key that is not allowed', { json: '{"body":"x","assignees":["a"]}' }],

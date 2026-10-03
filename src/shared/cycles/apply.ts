@@ -1,7 +1,8 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a cycle template file
 import { mergeDeep, neutralConfig } from '../config/defaults';
-import type { DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
+import type { AgentDef, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
+import { newAgent, pruneAgentStages } from '../config/team';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
 
@@ -16,7 +17,8 @@ export interface ApplyOptions {
 
 /** The cycle section a template stands for: the neutral cycle with the template's fields over it. Arrays are replaced, never merged. */
 export function cycleOf(template: CycleTemplate): DevCycleConfig {
-  const merged = mergeDeep(neutralDevCycle(), template.devCycle as unknown as Record<string, unknown>) as DevCycleConfig;
+  // Cloned: the template's own stages and texts must never be the objects of a workspace's config.
+  const merged = mergeDeep(neutralDevCycle(), structuredClone(template.devCycle) as unknown as Record<string, unknown>) as DevCycleConfig;
   return { ...merged, templateId: template.id, stageMapping: merged.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) };
 }
 
@@ -27,7 +29,20 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
   // The priority labels are the team's tracker conventions, like the QA account: a template that names none leaves the workspace's alone.
   if (!next.priority.labels.length) next.priority = structuredClone(config.devCycle.priority);
   if (options.keepReleaseLabelPattern) next.releaseLabelPattern = config.devCycle.releaseLabelPattern;
-  return { ...structuredClone(config), devCycle: next };
+  // The flows of the squads are the workspace's own (squads are not part of a template): a new cycle for the workspace leaves them as they are.
+  if (config.devCycle.flows && Object.keys(config.devCycle.flows).length) next.flows = structuredClone(config.devCycle.flows);
+  const out = { ...structuredClone(config), devCycle: next };
+  out.agents.team = mergeTemplateTeam(out.agents.team, template.team ?? [], next);
+  return out;
+}
+
+// The agents the person already has stay exactly as they are; the template adds the ones that are missing. A stage the new cycle does not have
+// is dropped from every agent, so the swap leaves no dangling reference.
+export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages' | 'flows'>): WorkspaceConfig['agents']['team'] {
+  const have = new Set(current.map((a) => a.id));
+  // A template has no squads: an agent it brings is shared until the person puts it in one.
+  const added = brought.filter((a) => !have.has(a.id)).map((a) => newAgent({ ...structuredClone(a), system: false, squad: undefined }));
+  return pruneAgentStages([...current, ...added], cycle);
 }
 
 /** What the template still needs from the workspace: derived from what it switches on and the fields that are empty. */
@@ -51,9 +66,14 @@ export interface TemplateMeta {
  */
 export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta): CycleTemplate {
   const cycle = structuredClone(config.devCycle);
+  delete cycle.flows;
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
-  return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle) };
+  const team = config.agents.team.filter((a) => !a.system).map((a) => {
+    const { squad: _squad, ...rest } = structuredClone(a);
+    return rest;
+  });
+  return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
 }
 
 function withoutNeutral(cycle: DevCycleConfig): DeepPartial<DevCycleConfig> {
@@ -75,6 +95,18 @@ export interface TemplateCheck {
 }
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+
+// A template file written before the stages were a flow says `human` for a gate and `artifacts` for what a stage produces.
+function withFlowFields(devCycle: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(devCycle.stages)) return devCycle;
+  const stages = devCycle.stages.map((s) => {
+    if (!isObject(s) || (s.human === undefined && s.artifacts === undefined)) return s;
+    const { human, artifacts, ...rest } = s;
+    return { ...rest, ...(s.type === undefined ? { type: human === true ? 'gate' : 'work' } : {}), ...(artifacts !== undefined && rest.produces === undefined ? { produces: artifacts } : {}) };
+  });
+  return { ...devCycle, stages };
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
@@ -104,10 +136,17 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     name: (t.name as string).trim(),
     description: typeof t.description === 'string' ? t.description : '',
     needs: Array.isArray(t.needs) ? (t.needs.filter((n) => typeof n === 'string') as TemplateNeed[]) : [],
-    devCycle: t.devCycle as DeepPartial<DevCycleConfig>,
+    devCycle: withFlowFields(t.devCycle as Record<string, unknown>) as DeepPartial<DevCycleConfig>,
   };
-  const checked = validateConfig({ ...neutralConfig(), devCycle: cycleOf(template) });
-  const prefix = (list: ConfigIssue[]) => list.map((i) => ({ ...i, path: i.path.replace(/^devCycle/, 'template.devCycle') }));
+  if (t.team !== undefined) {
+    if (!Array.isArray(t.team) || !t.team.every(isObject)) return fail('template.team', 'expected a list of agents');
+    if (t.team.some((a) => (a as Record<string, unknown>).system === true)) return fail('template.team', 'a template cannot define built-in agents');
+    template.team = t.team as unknown as AgentDef[];
+  }
+  // Checked as it would be applied: over a neutral workspace, the template's own agents (as written) next to the built-in ones.
+  const base = neutralConfig();
+  const checked = validateConfig({ ...base, devCycle: cycleOf(template), agents: { ...base.agents, team: [...base.agents.team, ...(template.team ?? [])] } });
+  const prefix = (list: ConfigIssue[]) => list.map((i) => ({ ...i, path: i.path.replace(/^devCycle/, 'template.devCycle').replace(/^agents\.team/, 'template.team') }));
   const issues = prefix(checked.errors);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: prefix(checked.warnings) };
 }

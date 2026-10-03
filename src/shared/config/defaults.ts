@@ -1,6 +1,8 @@
 // i18n-lint: allow-file default values of the config: model names, commands and ids, not prose
 import { neutralDevCycle } from '../cycles/neutral';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type WorkspaceConfig } from './types';
+import { newSquad } from './squads';
+import { ensureSystemAgents, newAgent, systemAgents } from './team';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type RoleModel, type RunnerConfig, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -12,6 +14,10 @@ const NEUTRAL_ROLE_MODELS: Record<LlmRole, string> = { turn: 'haiku', reply: 'ha
 
 function roles<T>(make: (role: LlmRole) => T): Record<LlmRole, T> {
   return Object.fromEntries(LLM_ROLES.map((r) => [r, make(r)])) as Record<LlmRole, T>;
+}
+
+export function neutralRunner(): RunnerConfig {
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, commitMessage: 'feat: {summary} #{iid}' };
 }
 
 export function neutralConfig(): WorkspaceConfig {
@@ -39,7 +45,9 @@ export function neutralConfig(): WorkspaceConfig {
       extraInstructions: '',
       persona: '',
       roles: roles<AgentRoleConfig>((r) => ({ modelRole: r, extraInstructions: '', promptOverride: '', persona: '', maxTurns: null, docs: { claudeMd: true, skills: true, rules: true, agents: true, knowledge: true, mcp: true } })),
+      team: systemAgents(),
     },
+    squads: [],
     voice: { enabled: false, engine: 'edge', sttModel: 'small', depsInstalled: false, kokoroDir: null, autoStop: true, silenceMs: 1200, speak: true, prosody: true, bargeIn: true },
     claudeSdk: { installed: false, version: null, path: null },
     externalTools: {
@@ -49,6 +57,7 @@ export function neutralConfig(): WorkspaceConfig {
       terminal: { command: null, args: [] },
       claudeCli: { command: 'claude', cwd: null },
     },
+    runner: neutralRunner(),
   };
 }
 
@@ -89,6 +98,8 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
     llm: { ...c.llm, providers: c.llm.providers.map(completeProvider) },
     projects: { ...c.projects, repos: c.projects.repos.map((r) => ({ ...REPO_DEFAULTS, ...r })) },
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
-    devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })) },
+    devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })), comments: Object.fromEntries(Object.entries(c.devCycle.comments ?? {}).map(([id, tpl]) => [id, { ...tpl, sections: tpl.sections ?? [], technicalDetail: tpl.technicalDetail ?? false }])) },
+    squads: Array.isArray(c.squads) ? c.squads.map(newSquad) : [],
+    agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
   };
 }

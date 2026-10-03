@@ -6,6 +6,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { t, tv, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
+import { RunProposal, isRunProposal } from './cycle/RunProposal';
 import { BackIcon } from './icons';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
@@ -21,6 +22,7 @@ function title(a: ReleaseAction): string {
   if (a.kind === 'sync') return t('ui.actions.title.sync', { issue: a.issue });
   if (a.kind === 'qa-comment') return t('ui.actions.title.qaComment', { issue: a.issue });
   if (a.kind === 'conflict-push') return a.summary ?? t('ui.actions.title.conflictPush', { issue: a.issue });
+  if (a.kind === 'run-push') return a.summary ?? t('vcs.action.title');
   return t('ui.actions.title.conflict', { issue: a.issue });
 }
 
@@ -29,6 +31,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'sync') return t(a.retest ? 'ui.actions.what.sync.retest' : 'ui.actions.what.sync.noRetest', { branches: a.mrs.map((m) => m.branch).join(', ') });
   if (a.kind === 'qa-comment') return a.noteId ? t('ui.actions.what.qaComment.edit', { noteId: a.noteId }) : t('ui.actions.what.qaComment.post');
   if (a.kind === 'conflict-push') return t('ui.actions.what.conflictPush');
+  if (a.kind === 'run-push') return t('ui.actions.what.runPush');
   return tv('call.explainsConflict');
 }
 
@@ -94,6 +97,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
         ))}
       </div>
       <p className="small" style={{ lineHeight: 1.5 }}>{what(a)}</p>
+      <RunProposal a={a} go={go} />
 
       {a.files.length > 0 && (
         <details>
@@ -119,7 +123,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           </div>
         </div>
       )}
-      {a.output && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {a.output && !isRunProposal(a) && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
 
@@ -131,7 +135,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
             <>
               {!(a.kind === 'qa-comment' && a.proposedBody) && (
                 <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', t('ui.actions.job.preview'), () => api.previewAction(a.id))}>
-                  {previewing ? <span className="spinner" /> : null} {t(a.kind === 'sync' ? 'ui.actions.view.preview' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' ? 'ui.actions.view.push' : 'ui.actions.view.comment')}
+                  {previewing ? <span className="spinner" /> : null} {t(a.kind === 'sync' ? 'ui.actions.view.preview' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' || a.kind === 'run-push' ? 'ui.actions.view.push' : 'ui.actions.view.comment')}
                 </button>
               )}
               {confirming ? (
@@ -141,9 +145,11 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
                     ? t('ui.actions.confirm.sync')
                     : a.kind === 'conflict-push'
                       ? t('ui.actions.confirm.conflictPush')
-                      : a.kind === 'gitlab' || a.kind === 'vcs'
-                        ? t('ui.actions.confirm.vcs', { action: t('vcs.action.confirm') })
-                        : t('ui.actions.confirm.post')}
+                      : a.kind === 'run-push'
+                        ? t('ui.actions.confirm.runPush')
+                        : a.kind === 'gitlab' || a.kind === 'vcs'
+                          ? t('ui.actions.confirm.vcs', { action: t('vcs.action.confirm') })
+                          : t('ui.actions.confirm.post')}
                 </button>
               ) : (
                 <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>{t('ui.actions.go')}</button>

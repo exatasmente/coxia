@@ -8,6 +8,7 @@ import type { Ceremony } from '../ceremony';
 import { ReplayButton } from './Bubble';
 import { ContinueInClaude } from './ContinueInClaude';
 import { FixHeard } from './FixHeard';
+import { SquadScope } from './cycle/SquadPicker';
 import { BackIcon, ClockIcon, MicIcon, NextIcon, StopIcon } from './icons';
 import { Presence } from './Avatar';
 import { tv, useT, useVoiceEnabled } from '../i18n';
@@ -270,6 +271,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
             <button type="button" className="btn icon-btn" aria-label={t('ui.call.backToToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('ui.call.title')}</h1>
             {versionN !== null && <span className="pill">{versionTitle(versionN, date)}</span>}
+            {c.squad ? <SquadScope squad={c.squad} /> : null}
             <span className="pill" style={{ background: 'var(--chip-teal-bg)', color: 'var(--chip-teal-ink)', borderColor: 'var(--chip-teal-bg)', fontWeight: 600 }}>
               <span className="live-dot" />{phase === 'ended' ? t('ui.call.ended') : t('ui.call.live')} · {clock(c.startedAt ?? now, now)}
             </span>

@@ -3,14 +3,18 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
+import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
+import type { AgentDef } from '../shared/config/types';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
+import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
@@ -349,8 +353,12 @@ function extraDirs(cwd: string, role: ModelRole): string[] {
 }
 
 // The call as SDK options, which is also the shape the open engine takes: the permissions, hooks and limits are one policy for both engines.
+// A call with `confine` is an agent that changes files inside its run's worktree: it gets Edit and Write, the hooks of the confinement
+// instead of the read-only ones, and a shell only for the exact commands it was given. Everything else stays denied.
 function sdkOptions(req: EngineRequest): Options {
-  const hooks = agentHooks(req.shell.patterns);
+  const confine = req.confine;
+  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns);
+  const shellOff = confine ? !req.shell.rules.length : !(vcsReadPolicy().via === 'cli' || req.shell.rules.length);
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -358,9 +366,8 @@ function sdkOptions(req: EngineRequest): Options {
     systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
     allowedTools: req.allowedTools,
     disallowedTools: [
-      ...(vcsReadPolicy().via === 'cli' || req.shell.rules.length ? [] : ['Bash']),
-      'Edit',
-      'Write',
+      ...(shellOff ? ['Bash'] : []),
+      ...(confine ? [] : ['Edit', 'Write']),
       'NotebookEdit',
       'WebFetch',
       'WebSearch',
@@ -370,6 +377,7 @@ function sdkOptions(req: EngineRequest): Options {
     outputFormat: { type: 'json_schema', schema: req.schema },
     maxTurns: 8,
     ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
+    ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
   };
 }
@@ -403,7 +411,7 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
 
 // Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
 function wantsVcsTool(req: EngineRequest): boolean {
-  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  if (req.confine || req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   return vcsReadPolicy().via === 'tool';
 }
 
@@ -418,11 +426,27 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     extraTools: tool ? [vcsReadToolImpl(() => vcsProvider())] : undefined,
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
-    shellEnv: vcsShellEnv(),
+    // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
+    shellEnv: req.confine ? {} : vcsShellEnv(),
+    writeRoot: req.confine?.root,
+    signal: req.abort?.signal,
     describeTool: source,
     events: {
-      onSession: (id) => noteSession(id, req.role, req.prompt),
-      onToolUse: (name, input) => req.activity?.tool(source(name, input)),
+      onSession: (id) => {
+        req.beat?.();
+        noteSession(id, req.role, req.prompt);
+      },
+      onToolUse: (name, input) => {
+        req.beat?.();
+        req.activity?.tool(source(name, input));
+      },
+      onToolResult: () => req.beat?.(),
+      onUsage: (u) => {
+        req.beat?.();
+        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd } : {}), ...(u.estimated ? { estimated: true } : {}) });
+      },
+      onText: () => req.beat?.(),
+      onReasoning: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
@@ -436,20 +460,34 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
   const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
+  const env = claudeSdkEnv(req.target);
+  // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
+  // without the credential-looking variables (the open engine cleans its own environment instead).
+  const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req),
+      ...sdkOptions({ ...(mcp ? { ...req, allowedTools: [...req.allowedTools, VCS_MCP_TOOL_NAME] } : req), confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
-      env: claudeSdkEnv(req.target),
+      env,
       ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
     },
   });
+  const counted = new Set<string>();
   for await (const m of q) {
+    req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
+      // Each content block of one response is a message of its own with the same id: its use is counted once.
+      const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
+      const id = (m.message as { id?: string }).id;
+      if (used && (!id || !counted.has(id))) {
+        if (id) counted.add(id);
+        const cached = used.cache_read_input_tokens ?? 0;
+        req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
+      }
       for (const block of m.message.content) {
         if (block.type === 'text') req.activity?.text(block.text);
         if (block.type !== 'tool_use') continue;
@@ -465,6 +503,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     }
     if (m.type === 'result') {
       sessionId = m.session_id;
+      // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
+      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       // i18n-ignore: developer error from the SDK result
       if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
@@ -812,6 +852,71 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
     ...(r.partial ? { partial: true } : {}),
     items: r.data.trechos.map((t) => ({ id: t.id, resolution: t.resolucao, explanation: t.explicacao, confidence: t.confianca, test: t.testar })),
   };
+}
+
+/** One call of a team agent for a run: the stage's prompt, the agent's own model, and (for an agent that writes) its confinement. */
+export interface AgentCall {
+  agent: AgentDef;
+  prompt: string;
+  schema: Schema;
+  /** The agent's system text: its job, its instructions and the rules of the stage (built by the runner). */
+  system: string;
+  /** The run's worktree for an agent that writes; where a reader looks at the code too. */
+  cwd: string;
+  confine?: Confinement;
+  /** What the live activity calls it (the agent's id). */
+  label: string;
+  maxTurns: number;
+  abort?: AbortController;
+  /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
+  beat?: () => void;
+  /** Called once per model call with what it used, and what it cost when the provider or the SDK said. */
+  onUsage?: (usage: UsageReport) => void;
+}
+
+// What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
+// An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given.
+function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy } {
+  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep'), shell: { rules: [], patterns: [] } };
+  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] } };
+}
+
+/**
+ * Runs a team agent once. The model comes from the agent (a borrowed role or an explicit provider and model), the engine from that provider.
+ * A call that runs out of turns throws MaxTurnsError: a stage must not be reported done from a half-finished answer.
+ */
+export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
+  const resolved = rc().agentModel(call.agent.model);
+  const target = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
+  const activity = beginActivity(call.label, (p) => secretPath(p, call.cwd));
+  activity.status('started');
+  try {
+    const { allowedTools, shell } = toolsOf(call);
+    const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
+    const modelRole = call.agent.model.role ?? 'deep';
+    const r = await runnerFor(target)<T>({
+      role: target.role,
+      prompt: call.prompt,
+      schema: call.schema,
+      target,
+      system: call.system,
+      cwd: call.cwd,
+      allowedTools: [...allowedTools, ...rules],
+      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole),
+      shell: { rules, patterns: shell.patterns },
+      extra: { maxTurns: call.maxTurns },
+      activity,
+      confine: call.confine,
+      abort: call.abort,
+      beat: call.beat,
+      onUsage: call.onUsage,
+    });
+    activity.status('finished');
+    return r;
+  } catch (e) {
+    activity.status('failed', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).

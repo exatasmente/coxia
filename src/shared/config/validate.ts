@@ -1,10 +1,16 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
+import { createTranslator } from '../i18n';
+import { isFlowCycle } from '../runs/flow';
+import { checkFlow, flowIssueText } from '../runs/flowCheck';
+import { checkSquads, squadIssueText } from '../runs/squadCheck';
 import { promptFamilies } from '../cycles/prompts';
+import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
-import { CONFIG_SCHEMA } from './schema';
-import { CONFIG_SCHEMA_VERSION, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA, ID } from './schema';
+import { isSystemId } from './team';
+import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
 export interface ConfigIssue {
   path: string;
@@ -40,19 +46,129 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
 }
 
+function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const team = c.agents.team;
+  const providers = new Set(c.llm.providers.map((p) => p.id));
+  // A stage of a squad's own flow is a stage an agent may list too.
+  const stageIds = new Set([...c.devCycle.stages, ...Object.values(c.devCycle.flows ?? {}).flat()].map((s) => s.id));
+  for (const id of duplicates(team.map((a) => a.id))) errors.push({ path: 'agents.team', message: `duplicate agent id "${id}"` });
+  for (const role of LLM_ROLES) if (!team.some((a) => a.id === role && a.system)) errors.push({ path: 'agents.team', message: `the built-in agent "${role}" is missing` });
+  team.forEach((a, i) => {
+    const at = (field: string) => `agents.team[${i}].${field}`;
+    if (isSystemId(a.id) && !a.system) errors.push({ path: at('system'), message: `the id "${a.id}" belongs to a built-in agent` });
+    if (a.system && !isSystemId(a.id)) errors.push({ path: at('system'), message: 'only the built-in agents are system agents' });
+    a.stages.forEach((s, j) => {
+      if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
+    });
+    if (a.model.role === null) {
+      if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
+      if (!a.model.model.trim()) errors.push({ path: at('model.model'), message: 'is required when the agent names no role' });
+    } else if (a.model.provider || a.model.model) {
+      warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
+    }
+  });
+  const agentIds = new Set(team.map((a) => a.id));
+  c.devCycle.stages.forEach((s, i) => {
+    if (s.agentId && agentIds.has(s.agentId) && (s.type ?? 'work') === 'work' && !team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
+  });
+}
+
+// The flow of the cycle and the chain of who turns to whom: one check, shared with the editor and the runner (runs/flowCheck.ts).
+function flowRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerate: boolean): void {
+  const en = createTranslator('en');
+  for (const issue of checkFlow({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() })) {
+    const i = issue.stage ? c.devCycle.stages.findIndex((s) => s.id === issue.stage) : -1;
+    const a = issue.agent ? c.agents.team.findIndex((x) => x.id === issue.agent) : -1;
+    const path = a >= 0 ? `agents.team[${a}].${issue.field}` : i >= 0 ? `devCycle.stages[${i}].${issue.field}` : 'devCycle.stages';
+    // A stored config is never refused for the problems of its flow (the runner will not start on them and the editor shows them), only a saved one is.
+    (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: flowIssueText(issue, en) });
+  }
+}
+
+// The squads: their model (who belongs where, the liaison, the chains) and the flow each follows, with the one check the runner and the editor use too.
+function squadRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerate: boolean): void {
+  const en = createTranslator('en');
+  const squads = c.squads ?? [];
+  const flows = c.devCycle.flows ?? {};
+  for (const key of Object.keys(flows)) if (!new RegExp(ID).test(key)) errors.push({ path: `devCycle.flows.${key}`, message: 'the key must be a squad id' });
+  const repos = c.projects.autoDiscover ? undefined : c.projects.repos.map((r) => r.id);
+  for (const issue of checkSquads({ squads, team: c.agents.team, stages: c.devCycle.stages, flows, repos }, { checkSharedFlow: isFlowCycle(c.devCycle.stages) })) {
+    const q = issue.squad ? squads.findIndex((s) => s.id === issue.squad) : -1;
+    const a = issue.agent ? c.agents.team.findIndex((x) => x.id === issue.agent) : -1;
+    let path = 'squads';
+    if (issue.flow) {
+      const own = issue.squad ? flows[issue.squad] : undefined;
+      const j = own && issue.stage ? own.findIndex((s) => s.id === issue.stage) : -1;
+      path = own && j >= 0 ? `devCycle.flows.${issue.squad}[${j}].${issue.field}` : q >= 0 ? `squads[${q}]` : 'squads';
+    } else if (q >= 0 && ['liaison', 'scope', 'id'].includes(issue.field)) path = `squads[${q}].${issue.field}`;
+    else if (a >= 0) path = `agents.team[${a}].${issue.field}`;
+    else if (issue.field === 'flows') path = `devCycle.flows.${issue.params.squad ?? ''}`;
+    else if (q >= 0) path = `squads[${q}]`;
+    (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: squadIssueText(issue, en) });
+  }
+}
+
+const COMMAND_OPERATORS = /[;&|<>`$\\\n\r]/;
+
+function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const r = c.runner;
+  if (r.enabled && !r.triggerLabel.trim()) errors.push({ path: 'runner.triggerLabel', message: 'is empty but the runner is enabled' });
+  (r.commands ?? []).forEach((cmd, i) => {
+    if (!cmd.trim() || cmd !== cmd.trim()) errors.push({ path: `runner.commands[${i}]`, message: 'must not be empty or start or end with a space' });
+    else if (COMMAND_OPERATORS.test(cmd)) errors.push({ path: `runner.commands[${i}]`, message: 'must be one plain command: no pipe, ;, && or redirect' });
+  });
+  for (const id of duplicates(r.commands ?? [])) warnings.push({ path: 'runner.commands', message: `"${id}" is listed twice` });
+  if (r.stageIdleMs > r.stageMaxMs) warnings.push({ path: 'runner.stageIdleMs', message: 'is longer than runner.stageMaxMs: the cap ends the stage first' });
+  if (!r.commitMessage.includes('{summary}')) errors.push({ path: 'runner.commitMessage', message: 'must contain {summary}' });
+  if (/[\n\r]/.test(r.commitMessage)) errors.push({ path: 'runner.commitMessage', message: 'must be one line' });
+  const { name, email } = r.identity;
+  if (!!name.trim() !== !!email.trim()) errors.push({ path: 'runner.identity', message: 'needs both a name and an email, or neither' });
+  else if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+$/.test(email.trim())) errors.push({ path: 'runner.identity.email', message: 'is not an email address' });
+  if (r.enabled && !isFlowCycle(c.devCycle.stages)) warnings.push({ path: 'runner.enabled', message: 'the runner only works with a cycle whose stages have a type (the agent cycle)' });
+}
+
+const COMMENT_PLACEHOLDERS = new Set(['stage', 'round', 'result', 'decision', 'ref']);
+const COMMENT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+
+// The templates of the comments the runner leaves on the tracker. A key names a stage or an event; a template for anything else is kept (a template file may
+// travel between cycles) but said so, because nothing will ever use it.
+function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const stages = new Map(c.devCycle.stages.map((s) => [s.id, s]));
+  const events = new Set<string>(COMMENT_EVENT_KEYS);
+  for (const [key, tpl] of Object.entries(c.devCycle.comments)) {
+    const at = (field: string) => `devCycle.comments.${key}.${field}`;
+    if (!COMMENT_KEY.test(key)) {
+      errors.push({ path: `devCycle.comments.${key}`, message: 'the key must be a stage id or one of gate, question, pr' });
+      continue;
+    }
+    const stage = stages.get(key);
+    if (!stage && !events.has(key)) warnings.push({ path: `devCycle.comments.${key}`, message: `no stage "${key}" and not one of ${COMMENT_EVENT_KEYS.join(', ')}: this template is never used` });
+    if (stage && events.has(key) && key !== 'pr') warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is both a stage and an event: the template serves the event, pick another id for the stage` });
+    if (stage?.type === 'gate') warnings.push({ path: `devCycle.comments.${key}`, message: `"${key}" is a gate: its decision is posted from the "gate" template` });
+    const status = catalogText(tpl.status, 'pt-BR') ?? tpl.status;
+    for (const m of status.matchAll(/\{(\w+)\}/g)) if (!COMMENT_PLACEHOLDERS.has(m[1])) warnings.push({ path: at('status'), message: `{${m[1]}} is not a placeholder of a status: use ${[...COMMENT_PLACEHOLDERS].map((p) => `{${p}}`).join(', ')}` });
+    for (const h of duplicates(tpl.sections.map((x) => (catalogText(x.heading, 'pt-BR') ?? x.heading).trim().toLowerCase()))) warnings.push({ path: at('sections'), message: `two sections are headed "${h}"` });
+  }
+}
+
 const CARD_SCOPE_FALLBACK = {
   noProject: 'this scope needs the issue project; until it is set, only the issues assigned to you become cards',
   noLabels: 'the labels scope has no labels; until some are listed, only the issues assigned to you become cards',
   noLabelSupport: 'the issue tracker of this host has no labels; only the issues assigned to you become cards',
 } as const;
 
-function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[], tolerateFlow: boolean): void {
   const providers = new Set(c.llm.providers.map((p) => p.id));
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
   for (const [role, rm] of Object.entries(c.llm.roles)) {
     if (!providers.has(rm.provider)) errors.push({ path: `llm.roles.${role}.provider`, message: `unknown provider "${rm.provider}"` });
   }
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
+  teamRules(c, errors, warnings);
+  flowRules(c, errors, warnings, tolerateFlow);
+  squadRules(c, errors, warnings, tolerateFlow);
+  runnerRules(c, errors, warnings);
+  commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });
   for (const id of duplicates(c.projects.repos.map((r) => r.id))) errors.push({ path: 'projects.repos', message: `duplicate repo id "${id}"` });
@@ -76,6 +192,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
     }),
   );
   const stageIds = new Set(c.devCycle.stages.map((s) => s.id));
+  if (stageIds.has('pr')) warnings.push({ path: 'devCycle.stages', message: 'the stage id "pr" is where a run keeps the comment of the pull request: pick another id for the stage' });
   c.devCycle.stageMapping.forEach((r, i) => {
     if (!stageIds.has(r.stage)) errors.push({ path: `devCycle.stageMapping[${i}].stage`, message: `unknown stage "${r.stage}"` });
     try {
@@ -111,7 +228,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
 }
 
 /** Validates a current-schema document: schema first, then the cross references the schema cannot express. Does not migrate (see migrations.ts). */
-export function validateConfig(raw: unknown): ValidationResult {
+export function validateConfig(raw: unknown, options: { tolerateFlow?: boolean } = {}): ValidationResult {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, errors: [{ path: '', message: 'expected an object' }], warnings: [], config: null };
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
   if (typeof version === 'number' && version > CONFIG_SCHEMA_VERSION) {
@@ -121,7 +238,7 @@ export function validateConfig(raw: unknown): ValidationResult {
   const warnings: ConfigIssue[] = [];
   if (errors.length) return { ok: false, errors, warnings, config: null };
   const config = withConfigDefaults(raw as Record<string, unknown>);
-  semantic(config, errors, warnings);
+  semantic(config, errors, warnings, !!options.tolerateFlow);
   return errors.length ? { ok: false, errors, warnings, config: null } : { ok: true, errors, warnings, config };
 }
 

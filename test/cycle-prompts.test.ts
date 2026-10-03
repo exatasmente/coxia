@@ -126,8 +126,8 @@ describe('the prompt catalogs', () => {
     }
     // Ids rendered by the rules of baseParams (cyclePrompts.ts) rather than named at a call.
     const direct = new Set(['rules.speech', 'rules.speechExamples', 'rules.chat', 'options.rule']);
-    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`).
-    const computed = /^effects\.kind\./;
+    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`), and so is the squad request of a front door (`runner.output.squad.${why}`).
+    const computed = /^(effects\.kind|runner\.denied|runner\.output\.squad|runner\.request\.kind)\./;
     // A ".novoice" text is the same prompt worded for a conversation without voice: it is read through its base id.
     // A host or cycle variant (".on-github", ".off-sdd") is read through its base id, which must exist.
     const variant = /\.(on-(github|gitlab|bitbucket)|off-sdd|own-(ceremony|target|retro))$/;

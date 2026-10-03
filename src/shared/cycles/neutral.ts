@@ -33,6 +33,7 @@ export function neutralDevCycle(): DevCycleConfig {
     ceremonies: Object.fromEntries(CEREMONY_IDS.map((c) => [c, c !== 'qaHandoff' && c !== 'releaseConflicts'])) as Record<CeremonyId, boolean>,
     ceremonyParams: defaultCeremonyParams(),
     stages: [],
+    flows: {},
     stageMapping: [],
     meanings: defaultMeanings(),
     enrichment: { specFolder: true, cardFields: [...CARD_FIELDS], extraFiles: [] },
@@ -49,6 +50,7 @@ export function neutralDevCycle(): DevCycleConfig {
       decisionLog: { heading: '' },
       documents: { gateQuiz: 'GATE_QUIZ.md', completion: 'ISSUE_COMPLETION.md', qaChecklist: 'QA_CHECKLIST.md' },
     },
+    comments: {},
     quickTransitions: [],
     qa: { user: null },
   };

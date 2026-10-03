@@ -6,6 +6,10 @@ import { useIsPhone } from '../useIsPhone';
 import { ActionsIcon, CallIcon, ChatIcon, HistoryIcon, HomeIcon, MoreIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
 import { badgeTitle, useSaudeBadge } from './SaudeButton';
+import { totalUnread } from '../../../shared/forumView';
+import { useSeen, useThreads } from './cycle/forumApi';
+import { useRuns } from './cycle/runsApi';
+import { waitingRuns } from './cycle/RunNeeds';
 import { Sheet } from './Sheet';
 
 interface Props {
@@ -19,12 +23,16 @@ interface Props {
 function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => void }) {
   const t = useT();
   const badge = useSaudeBadge();
+  const waiting = waitingRuns(useRuns() ?? []).length;
+  const unread = totalUnread(useThreads() ?? [], useSeen());
   const open = (s: Screen) => {
     onClose();
     go(s);
   };
   const rows: { label: string; screen: Screen; badge?: number; badgeLabel?: string }[] = [
     { label: t('ui.nav.settings'), screen: { name: 'settings' } },
+    { label: t('ui.runs.nav'), screen: { name: 'runs' }, badge: waiting, badgeLabel: t('ui.runs.navBadge', { count: waiting }) },
+    { label: t('ui.forum.nav'), screen: { name: 'forum' }, badge: unread, badgeLabel: t('ui.forum.list.unreadAll', { count: unread }) },
     { label: t('ui.nav.cost'), screen: { name: 'custo' } },
     { label: t('ui.nav.radar'), screen: { name: 'radar' } },
     { label: t('ui.nav.health'), screen: { name: 'saude' }, badge: badge.total, badgeLabel: badgeTitle(badge) },

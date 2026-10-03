@@ -10,6 +10,7 @@ Start with the [project README](../README.md). These documents go deeper. Severa
 | [Model providers](llm-providers.md) | The two agent engines, the providers each one supports, the connection test, what was tested, limits of local models | pt-BR, en |
 | [Code hosts](vcs-providers.md) | GitLab, GitHub and Bitbucket: how the provider is chosen, token permissions, what agents may read, how writes are confirmed | pt-BR, en |
 | [Development cycles](cycles.md) | The cycle templates (SDD, Scrum, Kanban, GitHub Flow, Minimal), stages, prompts, making and sharing your own | pt-BR, en |
+| [The runner](runner.md) | How an issue goes through the agent cycle: the worktree, the stages, the guard on an agent that writes, the commits, autonomy, the scheduler, what was not verified | pt-BR, en |
 | [Voice](voice.md) | Voice is optional: what "off" means, the call/chat wording, the voice setup, Edge and Kokoro engines | en |
 | [Updates](updates.md) | How an installed app updates itself, channels, security of the update feed | pt-BR, en |
 

@@ -1,14 +1,16 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
-import { CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, CARD_SCOPES } from './types';
+import { AGENT_PERMISSIONS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 4). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 9). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
 export const SECRET_REF = '^[a-z0-9][a-z0-9._-]{0,63}$';
 export const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
 const NO_NUL = '^[^\\u0000]*$';
+const ARTIFACT = '^[A-Za-z0-9][A-Za-z0-9._-]*$';
+const PROVIDER_OR_EMPTY = '^([a-z0-9][a-z0-9_-]{0,47})?$';
 // A card label is looked up in the query language of each host: no separator, quote or escape may reach it, and no space at the ends.
 const CARD_LABEL = '^[^\\s,"\\\\\\u0000-\\u001f](?:[^,"\\\\\\u0000-\\u001f]*[^\\s,"\\\\\\u0000-\\u001f])?$';
 
@@ -91,6 +93,18 @@ const vcs = object(
   ['id', 'kind', 'host'],
 );
 
+const fileList = (description: string): JsonSchema => list(description, string('File name.', { pattern: ARTIFACT, maxLength: 100 }), { maxItems: 20, uniqueItems: true });
+
+const waitFor = object(
+  'What a wait stage waits for.',
+  {
+    kind: enumOf('pr-merged: the pull request of the run is merged. reporter-reply: a person comments on the issue. label: the issue carries a label. linked-done: every run this one asked another squad for has ended, or its issue was closed. time: some minutes pass.', WAIT_KINDS),
+    label: string('For label: the label name.', { maxLength: 200 }),
+    minutes: integer('For time: minutes after the stage is entered.', 1, 525_600),
+  },
+  ['kind'],
+);
+
 const stage = object(
   'A stage of the flow an issue goes through.',
   {
@@ -99,8 +113,29 @@ const stage = object(
     match: strings('Case-insensitive regular expressions tested against the card stage or issue status.'),
     kind: enumOf('What the stage means.', STAGE_KINDS),
     rank: integer('Position in the flow: higher is closer to done.', 0, 100),
+    type: enumOf('Flow cycles only. work: an agent produces something; gate: the person decides; wait: the run waits for an event.', STAGE_TYPES),
+    agentId: string('The agent of agents.team that works this stage in a run; it wins over the stages list of the agents.', { pattern: ID }),
+    produces: fileList('Files, in the cycle folder, that this stage must produce: plain names, none starting with a dot.'),
+    reads: fileList('Artifacts the stage is given; left out: every earlier one.'),
+    next: { type: ['string', 'null'], description: 'The stage that follows; left out: the next in the list; null: the run ends after this stage.', pattern: ID },
+    returnsTo: string('Where the work goes back to (a rejected gate, a review with blocking findings, a QA failure); left out: the work stage nearest before.', { pattern: ID }),
+    roundLimit: integer('How many returns this stage may cause before the run asks the person; left out: 2.', 1, 20),
+    waitsFor: waitFor,
+    comment: { type: ['string', 'null'], description: 'The key of this stage\'s comment template in devCycle.comments; left out: the stage id; null or empty: no comment.', maxLength: 48 },
+    trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
   },
   ['id', 'kind'],
+);
+
+const commentTemplate = object(
+  'What a comment the runner leaves on the tracker looks like.',
+  {
+    title: string('What the comment is called where the app lists it (a catalog key or a literal).', { minLength: 1, maxLength: 200 }),
+    status: string('The first line of the comment; it may use {stage}, {round}, {result}, {decision} and {ref} (a catalog key or a literal).', { minLength: 1, maxLength: 400 }),
+    sections: list('The sections after the status, in order; one with nothing to say is left out.', object('One section.', { heading: string('Its heading (a catalog key or a literal).', { minLength: 1, maxLength: 200 }), guidance: string('What it must say, as the agent is told (a catalog key or a literal).', { maxLength: 2000 }) }, ['heading']), { maxItems: 20 }),
+    technicalDetail: boolean('Ends the comment with a collapsed technical section: file, function and line names go only there.'),
+  },
+  ['title', 'status'],
 );
 
 const phaseFile = object('A document whose presence says where an issue is.', { file: string('Base name of the document.', { minLength: 1 }), label: string('Phase text shown on the card.') }, ['file']);
@@ -144,6 +179,60 @@ const agentRole = object(
       mcp: boolean('MCP config files.'),
     }),
   },
+);
+
+const agentModel = object('Which model an agent uses.', {
+  role: { type: ['string', 'null'], description: 'Borrow the provider and model of this llm.roles entry; null: use provider and model.', enum: [...LLM_ROLES, null] },
+  provider: string('A provider id; empty while role is set.', { pattern: PROVIDER_OR_EMPTY }),
+  model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
+});
+
+const agentDef = object(
+  'A member of the agent team.',
+  {
+    id: string('Lowercase letters, digits, "-" and "_"; also the name an @mention uses.', { pattern: ID }),
+    name: string('Name shown to the person (a catalog key or a literal).', { minLength: 1, maxLength: 80 }),
+    job: string('What the agent does (a catalog key or a literal).', { maxLength: 2000 }),
+    model: agentModel,
+    stages: list('Ids of the devCycle.stages the agent works.', string('A stage id.', { pattern: ID }), { maxItems: 60, uniqueItems: true }),
+    permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
+    autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
+    turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
+    squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
+    instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
+    system: boolean('One of the five built-in agents: it can be edited and never removed.'),
+  },
+  ['id', 'name'],
+);
+
+const squadPath = object(
+  'A folder of a repository.',
+  {
+    repo: string('A projects.repos id.', { pattern: ID }),
+    prefix: string('The folder, relative to the repository root ("services/billing").', { minLength: 1, maxLength: 300 }),
+  },
+  ['repo', 'prefix'],
+);
+
+const squadScope = object('Which work is the squad\'s.', {
+  repos: list('Repositories of the workspace (projects.repos ids) the squad owns.', string('A repository id.', { pattern: ID }), { maxItems: 50, uniqueItems: true }),
+  labels: list('Issue labels the squad takes (case does not matter).', string('A label.', { minLength: 1, maxLength: 200 }), { maxItems: 50, uniqueItems: true }),
+  paths: list('Folders of a repository the squad owns: an issue that mentions a file under one is the squad\'s.', squadPath, { maxItems: 100 }),
+  unclaimed: boolean('The squad takes the issues no scope claims.'),
+});
+
+const squad = object(
+  'A squad: agents with a scope, a flow and a liaison of their own.',
+  {
+    id: string('Lowercase letters, digits, "-" and "_".', { pattern: ID }),
+    name: string('Name shown to the person (a catalog key or a literal).', { minLength: 1, maxLength: 80 }),
+    mission: string('What the squad is for, in a sentence the agents read.', { maxLength: 2000 }),
+    scope: squadScope,
+    liaison: { type: ['string', 'null'], description: 'The member that speaks for the squad to the other squads: questions and requests from them arrive to it, and its members\' questions about another squad leave through it.', pattern: ID },
+    autonomy: boolean('A squad-wide switch: off makes every member wait for the person (each agent\'s own switch applies when it is on).'),
+    label: nullableString('A label the issue gets on the tracker when a run starts in the squad; null: none.'),
+  },
+  ['id', 'name'],
 );
 
 const stageRule = object(
@@ -204,7 +293,7 @@ const command = { enabled: boolean('The integration is on.'), command: string('E
 
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $id: 'urn:coxia:schema:workspace-config:2',
+  $id: 'urn:coxia:schema:workspace-config:6',
   title: 'Coxia workspace configuration',
   ...object(
     'Everything a workspace decides. Secrets never appear here, only references (secretRef).',
@@ -260,6 +349,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
         ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
+        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
         stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
         meanings,
         enrichment: object('What the agent is given about each card.', {
@@ -280,6 +370,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           decisionLog: object('Where the decisions of the ceremonies are recorded in the plan.', { heading: text('Heading text (catalog key or literal); empty: decisions stay in the minutes.') }),
           documents: object('Names of the documents the app writes.', { gateQuiz: string('Gate quiz record.', { minLength: 1 }), completion: string('Issue completion record.', { minLength: 1 }), qaChecklist: string('QA checklist.', { minLength: 1 }) }),
         }),
+        comments: { type: 'object', description: 'The comments the runner leaves on the tracker, by stage id and by event (gate, question, pr). A stage with no entry posts nothing.', additionalProperties: commentTemplate },
         quickTransitions: list('Status changes the quick actions of a card offer on GitLab.', quickTransition, { maxItems: 20 }),
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
       }),
@@ -295,7 +386,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
         persona: string('Persona or tone shared by every agent.', { maxLength: 2000 }),
         roles: byRole('Per agent role.', agentRole),
+        team: list('The agent team: who works which stages of a run. The five built-in agents (one per LLM role) are always present.', agentDef, { maxItems: 40 }),
       }),
+      squads: list('The squads of the workspace; empty: the workspace is one team.', squad, { maxItems: 20 }),
       voice: object('Speech.', {
         enabled: boolean('Voice is on; off turns calls into text conversations.'),
         engine: enumOf('Text-to-speech engine.', VOICE_ENGINES),
@@ -326,6 +419,18 @@ export const CONFIG_SCHEMA: JsonSchema = {
         timeExport: object('Time tracking export.', { ...command, format: string('Layout the export command reads: "none" or the name of a layout.', { pattern: '^[a-z0-9][a-z0-9-]{0,31}$' }) }),
         terminal: object('Terminal used by "continue in Claude Code".', { command: nullableString('Emulator; null: gnome-terminal, then x-terminal-emulator.'), args: strings('Arguments before the shell command.') }),
         claudeCli: object('Claude CLI that resumes sessions.', { command: string('Executable.', { minLength: 1 }), cwd: nullableString('Starting directory; null: the projects root.') }),
+      }),
+      runner: object('What takes an issue through the agent cycle by itself.', {
+        enabled: boolean('The app starts runs by itself for the issues that carry the trigger label. Starting a run by hand does not need it.'),
+        triggerLabel: string('The issue label that asks for a run; case does not matter.', { maxLength: 100 }),
+        maxConcurrentRuns: integer('How many runs the app starts by itself while others are still working; a run the person starts is never held back.', 1, 10),
+        worktreesDir: nullableString('Where the runs\' worktrees are made ("~/" expands); null: the worktrees folder of the workspace data folder.'),
+        commands: { type: ['array', 'null'], description: 'The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, ;, && or redirect). null: the test and typecheck scripts the repository declares. []: none.', items: string('One command.', { minLength: 1, maxLength: 300 }), maxItems: 20 },
+        stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
+        stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
+        turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
+        identity: object('Who the app\'s commits in a worktree are made as; both empty: the identity the repository already has.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
+        commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
       }),
     },
     ['schemaVersion'],

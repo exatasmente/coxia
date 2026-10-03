@@ -23,7 +23,8 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
-import { checkIid, checkProject, enc, iso, issueRefsOf, num, pool } from './util';
+import { type PatchIndex, indexPatch } from './diffLines';
+import { ISSUE_TITLE_MAX, checkIid, checkLabel, checkProject, checkTitle, enc, iso, issueRefsOf, noteNum, num, pool } from './util';
 
 // GitLab, REST v4 plus the one GraphQL read the work item status needs. The transport is the glab CLI (the migrated user's setup) or
 // fetch with a token; this file does not know which. Endpoints and fields are the ones the app called before providers existed.
@@ -76,6 +77,7 @@ interface GlIssue {
   updated_at?: string;
   closed_at?: string | null;
   web_url: string;
+  description?: string | null;
   references?: { full?: string };
 }
 interface GlMr {
@@ -138,6 +140,34 @@ export interface GitLabOptions {
   transport: RestTransport;
 }
 
+interface GlChange {
+  old_path: string;
+  new_path: string;
+  new_file?: boolean;
+  deleted_file?: boolean;
+  diff?: string;
+}
+
+/** GitLab answers a comment on a whole file (position_type file) from this version on; before it, the comment goes on the first changed line. */
+export const GITLAB_FILE_COMMENTS_SINCE = [16, 10] as const;
+
+export function versionAtLeast(version: string, min: readonly [number, number]): boolean {
+  const m = /^(\d+)\.(\d+)/.exec(version);
+  return !!m && (Number(m[1]) > min[0] || (Number(m[1]) === min[0] && Number(m[2]) >= min[1]));
+}
+
+/** The fields of a discussion that anchors a comment to a place of the diff: the three commits, the paths and the line numbers of both sides. */
+export function positionFields(refs: { base_sha: string; start_sha: string; head_sha: string }, file: GlChange, c: { line: number | null; side: 'new' | 'old'; path: string }, fileComments: boolean): Record<string, string> {
+  const at: Record<string, string> = { 'position[base_sha]': refs.base_sha, 'position[start_sha]': refs.start_sha, 'position[head_sha]': refs.head_sha, 'position[new_path]': file.new_path, 'position[old_path]': file.old_path };
+  if (c.line === null && fileComments) return { ...at, 'position[position_type]': 'file' };
+  const index: PatchIndex = indexPatch(file.diff ?? '');
+  // A comment on a whole file, on a host that cannot do it, stands on the first line the change touches.
+  const line = c.line === null ? index.first : ((c.side === 'old' ? index.old : index.new).get(c.line) ?? null);
+  if (!line) throw new VcsError('invalid', { detail: `${c.path}:${c.line ?? ''}` });
+  // A line that was added has only a new number, one that was removed only an old one; a line that did not change has both.
+  return { ...at, 'position[position_type]': 'text', ...(line.new !== null ? { 'position[new_line]': String(line.new) } : {}), ...(line.old !== null ? { 'position[old_line]': String(line.old) } : {}) };
+}
+
 export function createGitLabProvider(o: GitLabOptions): VcsProvider {
   const tr = o.transport;
   const web = `https://${o.host}`;
@@ -157,6 +187,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     updatedAt: iso(i.updated_at),
     closedAt: iso(i.closed_at),
     webUrl: i.web_url,
+    body: i.description ?? null,
   });
 
   const mrOf = (m: GlMr, project?: string, roles: VcsMr['roles'] = []): VcsMr => ({
@@ -214,6 +245,15 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
       me = null;
     });
     return me;
+  };
+
+  let fileComments: Promise<boolean> | null = null;
+  const fileCommentsSupported = (): Promise<boolean> => {
+    fileComments ??= tr.get<{ version?: string }>('version').then(
+      (v) => versionAtLeast(v.version ?? '', GITLAB_FILE_COMMENTS_SINCE),
+      () => false,
+    );
+    return fileComments;
   };
 
   // Statuses come from one GraphQL read per project; a failed read leaves them empty, never fails the list.
@@ -472,6 +512,37 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
         }
         case 'playJob':
           return [rest('POST', `${repoPath(op.project)}/jobs/${num(op.jobId)}/play`, {})];
+        case 'editMrNote':
+          return [rest('PUT', `${repoPath(op.project)}/merge_requests/${checkIid(op.iid)}/notes/${num(op.noteId)}`, { body: op.body })];
+        case 'deleteNote':
+          // A comment of a review is a note of a discussion: the same resource as any note of the merge request.
+          return [rest('DELETE', `${repoPath(op.project)}/${op.target === 'issue' ? 'issues' : 'merge_requests'}/${checkIid(op.iid)}/notes/${noteNum(op.noteId)}`, {})];
+        case 'createIssue':
+          return [rest('POST', `${repoPath(op.project)}/issues`, { title: checkTitle(op.title), description: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel).join(',') } : {}) })];
+        case 'createMr':
+          return [rest('POST', `${repoPath(op.project)}/merge_requests`, { source_branch: op.sourceBranch, target_branch: op.targetBranch, title: op.title, description: op.body })];
+        case 'submitReview': {
+          const n = checkIid(op.iid);
+          const base = `${repoPath(op.project)}/merge_requests/${n}`;
+          // The positions of a discussion name the three commits the diff is between: read them now, and refuse when the head moved since the comments were placed.
+          const mr = await tr.get<GlMr & { diff_refs?: { base_sha?: string; start_sha?: string; head_sha?: string } | null }>(base, `!${n}`);
+          const refs = mr.diff_refs;
+          if (!refs?.base_sha || !refs.start_sha || !refs.head_sha) throw new VcsError('unsupported', { kind: 'GitLab', what: t('vcs.write.reviewNoRefs') });
+          if (op.commitSha && !refs.head_sha.startsWith(op.commitSha) && !op.commitSha.startsWith(refs.head_sha)) throw new VcsError('invalid', { detail: `head ${refs.head_sha.slice(0, 9)} is not ${op.commitSha.slice(0, 9)}` });
+          const changes = op.comments.length ? (await tr.get<{ changes?: GlChange[] }>(`${base}/changes`)).changes ?? [] : [];
+          const fileComments = op.comments.some((c) => c.line === null) ? await fileCommentsSupported() : false;
+          const cmds: VcsCommand[] = op.comments.map((c) => {
+            const file = changes.find((x) => x.new_path === c.path || x.old_path === c.path);
+            if (!file) throw new VcsError('invalid', { detail: c.path });
+            const fields = positionFields(refs as { base_sha: string; start_sha: string; head_sha: string }, file, c, fileComments);
+            // A comment on a whole file that has to stand on a line says so.
+            const body = c.line === null && fields['position[position_type]'] === 'text' ? `${t('vcs.write.aboutFile')}\n\n${c.body}` : c.body;
+            return rest('POST', `${base}/discussions`, { body, ...fields });
+          });
+          // GitLab has no "request changes" call: the verdict is in the status line of the general comment.
+          cmds.push(rest('POST', `${base}/notes`, { body: op.body }));
+          return cmds;
+        }
       }
     },
 
@@ -480,7 +551,25 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
   return provider;
 }
 
-/** What a GitLab write may look like: GraphQL only for the status mutation, REST only under projects/. */
+// The REST writes whose fields are listed (every other write under projects/ is judged by its address alone, as before the review existed).
+const FIELD_RULES: { method: VcsCommand['method']; re: RegExp; allowed: RegExp; required: string[]; check?: (fields: Record<string, string>) => boolean }[] = [
+  {
+    method: 'POST',
+    re: /^projects\/[\w%.-]+\/merge_requests\/\d+\/discussions$/,
+    allowed: /^(?:body|position\[(?:position_type|base_sha|start_sha|head_sha|new_path|old_path|new_line|old_line)\])$/,
+    required: ['body'],
+    check: (f) => Object.entries(f).every(([k, v]) => (/_sha\]$/.test(k) ? /^[0-9a-f]{7,64}$/i.test(v) : /_line\]$/.test(k) ? /^[1-9]\d{0,8}$/.test(v) : k === 'position[position_type]' ? v === 'text' || v === 'file' : true)),
+  },
+  { method: 'POST', re: /^projects\/[\w%.-]+\/issues$/, allowed: /^(?:title|description|labels)$/, required: ['title'], check: (f) => f.title.trim().length > 0 && f.title.length <= ISSUE_TITLE_MAX && !('labels' in f && !f.labels.trim()) },
+  { method: 'POST', re: /^projects\/[\w%.-]+\/merge_requests$/, allowed: /^(?:source_branch|target_branch|title|description)$/, required: ['source_branch', 'target_branch', 'title'] },
+  { method: 'PUT', re: /^projects\/[\w%.-]+\/merge_requests\/\d+\/notes\/\d+$/, allowed: /^body$/, required: ['body'] },
+  { method: 'DELETE', re: /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\/\d+$/, allowed: /^$/, required: [] },
+];
+
+// The only thing that may be deleted is a note of an issue or of a merge request.
+const DELETE_NOTE = /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\/\d+$/;
+
+/** What a GitLab write may look like: GraphQL only for the status mutation, REST only under projects/, and the review calls with only their own fields. */
 export function validateGitLabCommand(command: VcsCommand): void {
   if (command.endpoint === 'graphql') {
     const keys = Object.keys(command.fields);
@@ -489,7 +578,15 @@ export function validateGitLabCommand(command: VcsCommand): void {
     }
   } else if (!/^projects\/[\w%.-]+\/[\w/?=&%.-]+$/.test(command.endpoint) || /\.\.|%2e/i.test(command.endpoint)) {
     throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
-  } else if (command.json !== undefined) {
+  } else if (command.json !== undefined || (command.method === 'DELETE' && !DELETE_NOTE.test(command.endpoint))) {
     throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
+  } else {
+    const rule = FIELD_RULES.find((r) => r.method === command.method && r.re.test(command.endpoint));
+    if (rule) {
+      const keys = Object.keys(command.fields);
+      if (keys.some((k) => !rule.allowed.test(k)) || rule.required.some((k) => !keys.includes(k)) || (rule.check && !rule.check(command.fields)) || (command.via !== 'glab' && command.via !== 'api')) {
+        throw new Error(t('vcs.validate.body'));
+      }
+    }
   }
 }

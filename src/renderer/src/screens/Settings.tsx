@@ -19,6 +19,7 @@ import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
 import { UpdateSection } from './UpdateSection';
 import { ConfigWorkspacesSection } from './ConfigWorkspacesSection';
+import { TeamSettings } from './team/TeamSettings';
 
 // The tables hold catalog keys; they are translated at render so the language switches live.
 const ROLES: [ModelRole, string, string][] = [
@@ -129,6 +130,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         {error && <div className="error">{error}</div>}
 
         <ConfigWorkspacesSection go={go} />
+        <TeamSettings />
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>

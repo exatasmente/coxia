@@ -1,0 +1,160 @@
+import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
+import { type ForumMessage, messageText } from '../../shared/forum';
+import type { OutputKind, RoutingWhy } from '../../shared/runs';
+import { type FlowStage, type ReviewRecord, type Run, findingText } from '../../shared/runs';
+import { t } from '../../shared/i18n';
+import { prompt as cp, text as cycleWord } from '../cyclePrompts';
+import type { CommandResult } from './commands';
+import { type FolderFile, ISSUE_FILE } from './cycleFolder';
+
+// The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
+// language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
+// it is material, not instructions.
+
+/** What the agent is asked to write for a tracker comment: the sections of the template (heading and what each must say), and whether there is a technical part. */
+export interface CommentAsk {
+  sections: { heading: string; guidance: string }[];
+  technical: boolean;
+}
+
+export interface StageInput {
+  run: Run;
+  stage: FlowStage;
+  agent: AgentDef;
+  config: WorkspaceConfig;
+  kind: OutputKind;
+  /** The agent may change files (and run `commands`). */
+  writes: boolean;
+  commands: string[];
+  files: FolderFile[];
+  thread: ForumMessage[];
+  attempt: number;
+  /** A note the previous stage left for this agent. */
+  handoff: { from: string; text: string } | null;
+  /** The person's answer to what this agent asked before. */
+  answer: { question: string; text: string; by: string } | null;
+  /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
+  commandResults?: CommandResult[];
+  /** The review passes of this stage that came before this one, for a review that is not the first. */
+  earlier?: ReviewRecord[];
+  /** The branch's diff, for the stage that reads it. */
+  diff: { text: string; stat: string; clipped: boolean } | null;
+  /** The comment this stage leaves on the tracker; null when its template says none. */
+  comment?: CommentAsk | null;
+  /** The pull request description, for the stage that ends with the push. */
+  pr?: CommentAsk | null;
+  /** The agent a question of this agent goes to first (`AgentDef.turnsTo`), when it is in the team; absent: it goes to the person. */
+  turnsTo?: string | null;
+  /** The agent may ask the person who reported the issue, on the issue. */
+  reporter?: boolean;
+  /** The squad the run works in: its mission is told to the agent. */
+  squad?: SquadDef | null;
+  /** The agent proposes the squad of the issue: the squads it may name and why the scope rules did not pick one. */
+  routing?: { squads: SquadDef[]; why: RoutingWhy };
+  /** The labels the agent may propose as the issue's priority (the ones that can be written to the tracker); empty or absent: it proposes none. */
+  priority?: string[];
+  /** The levels a stage before the one that owns the priority may suggest in its documents (not propose). */
+  priorityHint?: string[];
+}
+
+const MESSAGE_MAX = 1500;
+
+/** Text from outside goes between <data> tags: a closing tag inside it must not end the fence early. */
+export const fence = (text: string): string => text.replace(/<(\/?)data\b/gi, '&lt;$1data');
+const DIFF_MAX = 60_000;
+const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max)}…` : s);
+
+/** The recent messages of the thread, oldest first, as lines a model can read; the app's own bookkeeping is left out. */
+export function threadText(messages: ForumMessage[]): string {
+  return messages
+    .filter((m) => m.kind !== 'system')
+    .map((m) => {
+      const who = m.author.type === 'agent' ? m.author.id : m.author.type === 'person' ? t('main.runner.author.person') : t('main.runner.author.app');
+      return `#${m.seq} ${who} (${t(`main.runner.kind.${m.kind}`)}): ${clip(messageText(m), MESSAGE_MAX)}`;
+    })
+    .join('\n');
+}
+
+export const DIFF_LIMIT = DIFF_MAX;
+
+export function systemText(i: StageInput): string {
+  const folder = i.run.cycleFolder;
+  const rules = i.writes
+    ? cp('runner.rules.write', { folder, commands: i.commands.length ? i.commands.join(', ') : cp('runner.denied.noCommands') })
+    : cp('runner.rules.read', { folder });
+  const agents = i.config.agents;
+  return [
+    cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
+    i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
+    rules,
+    cp('runner.rules.data'),
+    cp('runner.rules.claims'),
+    agents.persona.trim(),
+    agents.extraInstructions.trim(),
+    cycleWord(i.agent.instructions).trim(),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+const squadLine = (q: SquadDef): string => {
+  const none = '—';
+  const scope = cp('runner.squad.scope', { repos: q.scope.repos.join(', ') || none, labels: q.scope.labels.join(', ') || none, paths: q.scope.paths.map((p) => `${p.repo}:${p.prefix}`).join(', ') || none });
+  return cp('runner.squad.line', { id: q.id, name: cycleWord(q.name), mission: q.mission.trim() ? cycleWord(q.mission) : none, scope });
+};
+
+const sectionLines = (ask: CommentAsk): string => ask.sections.map((s) => `- ${cycleWord(s.heading)}: ${cycleWord(s.guidance)}`).join('\n');
+
+/** What the agent is told about the tracker comment (and the pull request description) it writes in this stage: the template's sections and the comment standard. */
+export function commentPrompt(i: StageInput): string {
+  const parts: string[] = [];
+  if (i.comment) {
+    parts.push(cp('runner.comment', { sections: sectionLines(i.comment), technical: i.comment.technical ? cp('runner.comment.technical') : cp('runner.comment.noTechnical') }));
+  }
+  if (i.pr) parts.push(cp('runner.comment.pr', { sections: sectionLines(i.pr), technical: i.pr.technical ? cp('runner.comment.technical') : cp('runner.comment.noTechnical') }));
+  return parts.join('\n\n');
+}
+
+/** What the app ran before QA, as the stage reads it: each command with how it ended and the end of its output, or the plain statement that nothing ran. */
+export function commandsSection(results: CommandResult[]): string {
+  if (!results.length) return cp('runner.section.commandsNone');
+  const head = (r: CommandResult): string => (r.timedOut ? cp('runner.commands.timeout', { command: r.command }) : r.exitCode === null ? cp('runner.commands.notRun', { command: r.command }) : cp('runner.commands.exit', { command: r.command, code: r.exitCode }));
+  const text = results.map((r) => `${head(r)}\n${r.output ? fence(r.output) : cp('runner.commands.noOutput')}`).join('\n\n');
+  return cp('runner.section.commands', { text });
+}
+
+/** The earlier review passes as lines a model can read: each round's verdict and summary, then its findings (blocking ones first). */
+export function roundsText(rounds: ReviewRecord[]): string {
+  return rounds
+    .map((r) => {
+      const order = [...r.findings].sort((a, b) => Number(b.severity === 'blocking') - Number(a.severity === 'blocking'));
+      return [cp('runner.rounds.round', { round: r.round, verdict: r.verdict, summary: clip(r.summary, 600) }), ...order.map(findingText)].join('\n');
+    })
+    .join('\n\n');
+}
+
+export function stagePrompt(i: StageInput): string {
+  const sections: string[] = [];
+  for (const f of i.files) {
+    sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
+  }
+  if (i.diff) {
+    const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
+    sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
+  }
+  if (i.commandResults) sections.push(commandsSection(i.commandResults));
+  if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
+  const thread = threadText(i.thread);
+  if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
+  if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
+  if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text), from: i.answer.by }));
+  return cp('runner.stage', {
+    stage: cycleWord(i.stage.label),
+    ref: i.run.issue.ref,
+    attempt: i.attempt,
+    folder: i.run.cycleFolder,
+    expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
+    sections: sections.join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? cp('runner.output.qa') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+  });
+}

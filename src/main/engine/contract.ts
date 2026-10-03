@@ -2,6 +2,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
+import type { UsageReport } from '../../shared/runs/usage';
 
 // The contract between the ceremonies (main/agents.ts `run`) and an agent engine.
 // An engine takes one structured request and returns the model's JSON answer plus the sources it read; it never knows about ceremonies.
@@ -35,6 +36,14 @@ export interface ShellPolicy {
   patterns: RegExp[];
 }
 
+/** What an agent that writes is confined to: only a stage of a run whose agent has the `worktree` permission carries one. */
+export interface Confinement {
+  /** The run's worktree: the only folder the agent may change, and its working directory. */
+  root: string;
+  /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
+  hooks: NonNullable<Options['hooks']>;
+}
+
 export interface EngineRequest {
   role: LlmRole;
   prompt: string;
@@ -53,6 +62,14 @@ export interface EngineRequest {
   shell: ShellPolicy;
   /** Per-call options of the Claude Agent SDK: resume, maxTurns, tools. Other engines read maxTurns and resume and may ignore the rest. */
   extra: Partial<Options>;
+  /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
+  confine?: Confinement;
+  /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
+  abort?: AbortController;
+  /** Called once per model call with what it used (and what it cost, when the provider or the SDK said). */
+  onUsage?: (usage: UsageReport) => void;
+  /** Called at every sign of life from the model: a piece of text, a tool call, a usage report, a message of the SDK. */
+  beat?: () => void;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
 }

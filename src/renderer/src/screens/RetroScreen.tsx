@@ -6,6 +6,7 @@ import { type usePlayer, useTalk } from '../audio';
 import type { Ceremony } from '../ceremony';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { AgentActivity } from '../AgentActivity';
+import { SquadPicker, SquadScope } from './cycle/SquadPicker';
 import { useCycle } from '../cycleApi';
 import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
@@ -50,6 +51,8 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
   const t = useT();
   const [retro, setRetro] = useState<Retro | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // The squad the retro is held for; null: the whole workspace.
+  const [squad, setSquad] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -57,11 +60,18 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
   const voice = c.voices?.moderator ?? null;
 
   useEffect(() => {
-    api.latestRetro().then((r) => {
-      setRetro((prev) => prev ?? r);
+    let live = true;
+    setLoaded(false);
+    void api.latestRetro(squad).then((r) => {
+      if (!live) return;
+      // A different squad is a different retro: what the last one showed is not this one's.
+      setRetro((prev) => (prev && (prev.squad ?? null) === squad ? prev : r));
       setLoaded(true);
     });
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [squad]);
 
   // Main keeps the retro; a job that finished while this screen was closed is applied as it would have been.
   const running = useJobs<Retro>('retro:', {
@@ -116,14 +126,16 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600 }}>{week ? t('ui.retro.headingWeek', { week }) : t('ui.retro.heading')}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{t('ui.retro.tagline')}</div>
+            <div style={{ marginTop: 6 }}><SquadScope squad={retro ? retro.squad : squad} /></div>
           </div>
+          <SquadPicker value={squad} onChange={setSquad} disabled={!!busy} />
           <Presence recording={talk.recording} thinking={!!busy || talk.transcribing} on={!!player.speaking || talk.recording} color={talk.recording ? 'var(--rec-blue)' : 'var(--teal-bright)'} level={talk.level} small />
           {retro && voiceOn && (
             <button type="button" className={`btn ${talk.recording ? 'btn-rec' : ''}`} style={talk.recording ? undefined : { background: 'transparent', color: 'var(--night-teal)', borderColor: 'var(--teal-bright)' }} disabled={!!busy || talk.transcribing} onClick={() => void talk.talk()}>
               <MicIcon /> {talk.recording ? t('ui.retro.talk.send') : t('ui.retro.talk.start')}
             </button>
           )}
-          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!!busy} onClick={() => act('prepare', t('ui.retro.job.prepareLabel'), t('ui.retro.job.prepareBusy'), () => api.prepareRetro())}>
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={!!busy} onClick={() => act('prepare', t('ui.retro.job.prepareLabel'), t('ui.retro.job.prepareBusy'), () => api.prepareRetro(squad))}>
             {retro ? t('ui.retro.rebuild') : t('ui.retro.build')}
           </button>
         </header>

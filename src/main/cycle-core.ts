@@ -58,7 +58,7 @@ function summarize(t: CycleTemplate, builtIn: boolean, language: Language): Temp
     builtIn,
     needs: t.needs,
     ceremonies: (Object.keys(cycle.ceremonies) as CeremonyId[]).filter((c) => cycle.ceremonies[c]),
-    stages: cycle.stages.map((s) => s.label),
+    stages: cycle.stages.map((s) => cycleText(s.label, language)),
   };
 }
 

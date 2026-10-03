@@ -1,5 +1,5 @@
 import type { VcsProbeResult } from './vcs';
-import type { CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
+import type { AgentDef, CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
 import { LLM_ROLES, defaultEngine } from './config/types';
 import type { SdkLocationView } from './configView';
 import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInput, type SecretSourceType } from './secrets';
@@ -335,6 +335,8 @@ export interface CycleTemplateInfo {
   stages: { id: string; label: string }[];
   /** What the person still has to provide for the template to be fully useful ("specsDir", "qaUser"...). */
   needs?: string[];
+  /** The agents the template brings; choosing it adds those the workspace lacks. */
+  team?: AgentDef[];
 }
 
 export interface CycleTemplatesResult {

@@ -12,4 +12,8 @@ export interface AuditEntry {
   code: number | null;
   result: string;
   origin: { actionId: string; kind: string; key: string; summary: string | null };
+  /** Who wrote it when no person approved it first: the id of the agent whose autonomy let it go out. Absent for what a person approved. */
+  by?: string | null;
+  /** Hash of the body of a comment, so the log says which text went out without keeping it. */
+  bodyHash?: string | null;
 }

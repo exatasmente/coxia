@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
+import { BUILT_IN_TEMPLATES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
+import { removeAgent } from '../src/shared/config/team';
+import { checkFlow, flowOf, isFlowCycle } from '../src/shared/runs';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { CATALOGS } from '../src/shared/i18n';
 
 const apply = (id: string) => applyTemplate(neutralConfig(), builtInTemplate(id)!);
 
 describe('the shipped templates', () => {
-  it('are the five the wizard lists, in order', () => {
-    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal']);
+  it('are the ones the wizard lists, in order', () => {
+    expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
+  });
+
+  it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s has a flow with nothing to say about it', (id) => {
+    const c = apply(id);
+    expect(checkFlow({ stages: c.devCycle.stages, team: c.agents.team })).toEqual([]);
   });
 
   it.each(BUILT_IN_TEMPLATES.map((t) => [t.id]))('%s produces a valid workspace config', (id) => {
@@ -266,5 +273,169 @@ describe('template files', () => {
     const r = parseTemplate({ id: 'x', name: 'X', devCycle: { ceremony: true } });
     expect(r.ok).toBe(false);
     expect(r.errors[0].path).toBe('template.devCycle.ceremony');
+  });
+});
+
+describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (id) => {
+  const flow = builtInTemplate(id)!;
+  const applied = () => applyTemplate(neutralConfig(), flow);
+  const business = id === 'agent-flow';
+
+  it('has every text in both catalogs, the agents\' too', () => {
+    const keys = [
+      ...flow.team!.flatMap((a) => [a.name, a.job, a.instructions]),
+      cycleOf(flow).meanings.blocker.text,
+      cycleOf(flow).specLayout.decisionLog.heading,
+      ...cycleOf(flow).specLayout.phaseFiles.map((p) => p.label),
+      ...cycleOf(flow).specLayout.gateFiles.flatMap((g) => g.files.map(([, l]) => l)),
+    ];
+    for (const key of keys) for (const l of ['pt-BR', 'en'] as const) expect(CATALOGS[l][key], `${l} ${key}`).toBeTruthy();
+  });
+
+  it('is a flow with no problem: nothing to say about it, no loop of who turns to whom', () => {
+    const c = applied();
+    expect(validateConfig(c).errors).toEqual([]);
+    expect(validateConfig(c).warnings).toEqual([]);
+    expect(checkFlow({ stages: c.devCycle.stages, team: c.agents.team })).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = applied();
+    expect(applyTemplate(once, flow)).toEqual(once);
+  });
+
+  it('never hands a workspace the objects of the template itself', () => {
+    const c = applied();
+    c.devCycle.stages[0].label = 'Changed';
+    expect(flow.devCycle.stages?.[0]?.label).not.toBe('Changed');
+  });
+
+  it('keeps the agents when another template replaces the cycle, dropping the stages they worked', () => {
+    const c = applyTemplate(applied(), builtInTemplate('scrum')!);
+    expect(validateConfig(c).errors).toEqual([]);
+    const developer = c.agents.team.find((a) => a.id === 'developer')!;
+    expect(developer.permission).toBe('worktree');
+    expect(developer.stages).toEqual([]);
+    expect(c.devCycle.stages.some((s) => s.agentId)).toBe(false);
+  });
+
+  it('travels in a template file: the agents of a workspace are exported and read back, the system ones left out', () => {
+    const source = applied();
+    const template = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(template.team?.map((a) => a.id)).toEqual(flow.team!.map((a) => a.id));
+    const check = parseTemplate(JSON.parse(exportTemplateText(template, new Date('2026-10-02T12:00:00Z'))));
+    expect(check.errors).toEqual([]);
+    expect(applyTemplate(neutralConfig(), check.template!)).toEqual({ ...source, devCycle: { ...source.devCycle, templateId: 'mine' } });
+    expect(templateFromConfig(neutralConfig(), { id: 'plain', name: 'Plain', description: '' }).team).toBeUndefined();
+  });
+
+  it('lists in the setup wizard with its team', async () => {
+    const { listCycleTemplates } = await import('../src/main/cycles');
+    const entry = listCycleTemplates('en').find((t) => t.id === id)!;
+    expect(entry).toMatchObject({ builtIn: true, needs: ['issueProject'] });
+    expect(entry.team.map((a) => a.id)).toEqual(flow.team!.map((a) => a.id));
+    expect(entry.stages.map((s) => s.id)).toContain('gate1');
+  });
+
+  it('merges into a team by id for the wizard too: the person\'s agents stay, the stages the cycle lacks are dropped', () => {
+    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', autonomous: false, turnsTo: null, instructions: '', system: false }]);
+    const merged = mergeTemplateTeam(own, flow.team!, cycleOf(flow));
+    expect(merged.find((a) => a.id === 'developer')).toMatchObject({ name: 'Dev', permission: 'read', stages: ['implement'] });
+    expect(merged.map((a) => a.id).filter((x) => x === 'developer')).toHaveLength(1);
+    expect(merged.map((a) => a.id)).toContain('qa');
+  });
+
+  it('keeps the agents the person already has, adds the missing ones, and never touches a system agent', () => {
+    const own = neutralConfig();
+    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', autonomous: false, turnsTo: null, instructions: 'careful', system: false });
+    own.agents.team.find((a) => a.id === 'turn')!.instructions = 'short';
+    const next = applyTemplate(own, flow);
+    expect(next.agents.team.find((a) => a.id === 'developer')).toEqual(own.agents.team.find((a) => a.id === 'developer'));
+    expect(next.agents.team.map((a) => a.id)).toEqual(expect.arrayContaining(flow.team!.map((a) => a.id)));
+    expect(next.agents.team.filter((a) => a.id === 'developer')).toHaveLength(1);
+    expect(next.agents.team.find((a) => a.id === 'turn')?.instructions).toBe('short');
+    // The stage names the agent, so the person's developer still works "implement" even though it does not list it.
+    expect(validateConfig(next).errors).toEqual([]);
+    expect(validateConfig(next).warnings.map((w) => w.path)).toContain(`devCycle.stages[${next.devCycle.stages.findIndex((st) => st.id === 'implement')}].agentId`);
+  });
+
+  it('runs by itself by default: the agents are autonomous, the built-in ones are not', () => {
+    const team = applied().agents.team;
+    expect(team.filter((a) => !a.system).map((a) => a.autonomous)).toEqual(flow.team!.map(() => true));
+    expect(team.filter((a) => a.system).map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
+  });
+
+  it('has the comment templates of its stages and events, and the stage fields of a flow', () => {
+    const c = applied();
+    expect(Object.keys(c.devCycle.comments).sort()).toEqual(business ? ['communicate', 'gate', 'implement', 'plan', 'pr', 'qa', 'question', 'refine', 'review', 'triage'] : ['gate', 'implement', 'plan', 'pr', 'qa', 'question', 'refine', 'review']);
+    expect(isFlowCycle(c.devCycle.stages)).toBe(true);
+    // every stage that leaves a comment has its template
+    for (const st of flowOf(c)) if (st.type === 'work' && st.agent && st.comment) expect(c.devCycle.comments[st.comment], st.id).toBeTruthy();
+  });
+});
+
+describe('the agent cycle template: the business team', () => {
+  const flow = builtInTemplate('agent-flow')!;
+  const applied = () => applyTemplate(neutralConfig(), flow);
+
+  it('goes from triage to the note for the reporter, with the person at the two gates and the run waiting for the pull request to be merged', () => {
+    const c = applied();
+    expect(c.devCycle.templateId).toBe('agent-flow');
+    expect(c.devCycle.stages.map((s) => [s.id, s.type])).toEqual([['triage', 'work'], ['refine', 'work'], ['gate1', 'gate'], ['plan', 'work'], ['gate2', 'gate'], ['implement', 'work'], ['review', 'work'], ['qa', 'work'], ['ready', 'wait'], ['communicate', 'work']]);
+    expect(c.devCycle.stages.find((s) => s.id === 'ready')).toMatchObject({ waitsFor: { kind: 'pr-merged' }, kind: 'reviewApproved' });
+    expect(c.devCycle.stages.filter((s) => s.agentId).map((s) => [s.id, s.agentId])).toEqual([['triage', 'support'], ['refine', 'product-owner'], ['plan', 'tech-lead'], ['implement', 'developer'], ['review', 'tech-lead'], ['qa', 'qa'], ['communicate', 'customer-success']]);
+    expect(c.devCycle.stages.flatMap((s) => s.produces ?? [])).toEqual(['0_TRIAGE.md', '1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md', '6_RELEASE_NOTE.md']);
+    expect(c.devCycle.stages.filter((s) => s.returnsTo).map((s) => [s.id, s.returnsTo, s.roundLimit])).toEqual([['review', 'implement', 2], ['qa', 'implement', 2]]);
+  });
+
+  it('has the team of a product: only the developer writes, and each turns to the one it needs before it asks the person', () => {
+    const team = applied().agents.team.filter((a) => !a.system);
+    expect(team.map((a) => [a.id, a.permission, a.stages, a.turnsTo])).toEqual([
+      ['support', 'read', ['triage'], 'product-owner'],
+      ['product-owner', 'read', ['refine'], null],
+      ['tech-lead', 'read', ['plan', 'review'], 'product-owner'],
+      ['developer', 'worktree', ['implement'], 'tech-lead'],
+      ['qa', 'read', ['qa'], 'tech-lead'],
+      ['customer-success', 'read', ['communicate'], 'product-owner'],
+    ]);
+  });
+
+  it('lays the cycle folder out for the new files: the release note and the triage are phases too', () => {
+    const layout = applied().devCycle.specLayout;
+    expect(layout.phaseFiles.map((p) => p.file)).toEqual(['6_RELEASE_NOTE.md', '5_TEST_PLAN.md', '4_REVIEW.md', '3_IMPLEMENTATION.md', '2_PLAN.md', '1_SPEC.md', '0_TRIAGE.md']);
+    expect(layout.gateFiles.map((g) => [g.sub, g.gate, g.files[0][0]])).toEqual([['', 1, '1_SPEC.md'], ['', 2, '2_PLAN.md']]);
+    expect(CEREMONY_IDS.filter((c) => applied().devCycle.ceremonies[c])).toEqual(['preDaily', 'unblock', 'gate', 'retro']);
+  });
+
+  it('with no customer success agent, communicate has no agent: the flow check warns and the run ends there without it', () => {
+    const c = applied();
+    const without = removeAgent(c, 'customer-success');
+    expect(without.devCycle.stages.find((s) => s.id === 'communicate')?.agentId).toBeUndefined();
+    const issues = checkFlow({ stages: without.devCycle.stages, team: without.agents.team });
+    expect(issues.map((i) => [i.severity, i.code, i.stage])).toEqual([['warning', 'end-no-agent', 'communicate']]);
+    expect(validateConfig(without).errors).toEqual([]);
+  });
+
+  it('refuses a loop of turnsTo in the team', () => {
+    const c = applied();
+    c.agents.team.find((a) => a.id === 'product-owner')!.turnsTo = 'support';
+    expect(validateConfig(c).errors.map((e) => e.message)).toContain('Agents turn to each other in a circle (support → product-owner → support): a question would never reach the person.');
+  });
+
+  it('the engineering template is what the agent cycle was: no business roles, ending at ready', () => {
+    const c = applyTemplate(neutralConfig(), builtInTemplate('agent-flow-engineering')!);
+    expect(c.devCycle.stages.map((s) => s.id)).toEqual(['refine', 'gate1', 'plan', 'gate2', 'implement', 'review', 'qa', 'ready']);
+    expect(c.agents.team.filter((a) => !a.system).map((a) => [a.id, a.turnsTo])).toEqual([['refiner', null], ['planner', null], ['developer', null], ['reviewer', null], ['qa', null]]);
+  });
+
+  it('refuses a file whose team is not coherent: a built-in agent, an unknown stage, a stage that names a missing agent', () => {
+    const base = { id: 'x', name: 'X', devCycle: { stages: [{ id: 'a', label: 'A', match: [], kind: 'development', rank: 1 }] } };
+    expect(parseTemplate({ ...base, team: [{ id: 'turn', name: 'T', system: true }] }).ok).toBe(false);
+    expect(parseTemplate({ ...base, team: 'nobody' }).ok).toBe(false);
+    const unknownStage = parseTemplate({ ...base, team: [{ id: 'w', name: 'W', stages: ['ghost'] }] });
+    expect(unknownStage.errors.map((e) => e.path)).toEqual(['template.team[5].stages[0]']);
+    const missingAgent = parseTemplate({ ...base, devCycle: { stages: [{ id: 'a', label: 'A', match: [], kind: 'development', rank: 1, agentId: 'ghost' }] } });
+    expect(missingAgent.errors.map((e) => e.path)).toEqual(['template.devCycle.stages[0].agentId']);
+    expect(parseTemplate({ ...base, team: [{ id: 'w', name: 'W', stages: ['a'] }] }).ok).toBe(true);
   });
 });

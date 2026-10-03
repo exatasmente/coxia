@@ -32,6 +32,7 @@ export function listHistory(): HistoryEntry[] {
       {
         id,
         kind: s.kind,
+        ...(s.squad ? { squad: s.squad } : {}),
         date: s.date,
         startedAt: s.startedAt,
         endedAt: s.endedAt,

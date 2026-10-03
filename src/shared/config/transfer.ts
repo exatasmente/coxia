@@ -145,6 +145,7 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
   add('externalTools.terminal.command', t.terminal.command);
   add('externalTools.claudeCli.command', t.claudeCli.command);
   for (const v of c.vcs) add(`vcs.${v.id}.cliCommand`, v.cliCommand);
+  (c.runner.commands ?? []).forEach((cmd, i) => add(`runner.commands[${i}]`, cmd));
   return found;
 }
 
@@ -162,6 +163,7 @@ export function collectPaths(c: WorkspaceConfig): { field: string; path: string 
   add('externalTools.releaseSync.mirrorsDir', c.externalTools.releaseSync.mirrorsDir);
   add('externalTools.cardSource.stateFile', c.externalTools.cardSource.stateFile);
   add('externalTools.claudeCli.cwd', c.externalTools.claudeCli.cwd);
+  add('runner.worktreesDir', c.runner.worktreesDir);
   c.llm.providers.forEach((p) => add(`llm.providers.${p.id}.envFile`, p.envFile));
   return found;
 }

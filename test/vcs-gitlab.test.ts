@@ -62,6 +62,7 @@ describe('reads over the API transport', () => {
   it('reads one issue with its status and work item id, or just the issue', async () => {
     const rt = await api({ 'GET /api/v4/projects/acme%2Fapp/issues/101': { json: F.issue_101 }, 'POST /api/graphql': { json: F.workitem_status } });
     expect((await rt.provider.getIssue('acme/app', 101)).status).toBeNull();
+    expect((await rt.provider.getIssue('acme/app', 101)).body).toBe('Accented names break the export.\n\nSteps: export a file named café.');
     const full = await rt.provider.getIssue('acme/app', 101, { status: true });
     expect(full).toMatchObject({ status: 'In development', nodeId: 'gid://gitlab/WorkItem/5001', labels: ['STAGE:: Doing', 'bug'] });
   });
@@ -313,6 +314,15 @@ describe('planWrite: the commands are the ones the app always proposed', () => {
     expect(await plan(true, { op: 'commentIssue', project: 'acme/app', iid: 101, body: 'hi' })).toEqual([cmd({ endpoint: `projects/${P}/issues/101/notes`, fields: { body: 'hi' } })]);
     expect(await plan(true, { op: 'commentMr', project: 'acme/app', iid: 7, body: 'hi' })).toEqual([cmd({ endpoint: `projects/${P}/merge_requests/7/notes`, fields: { body: 'hi' } })]);
     expect(await plan(true, { op: 'editIssueNote', project: '1', iid: 101, noteId: 903, body: 'new' })).toEqual([cmd({ method: 'PUT', endpoint: 'projects/1/issues/101/notes/903', fields: { body: 'new' } })]);
+  });
+
+  it('deletes a note of an issue or of a merge request, a comment of a review being a note of the merge request', async () => {
+    const del = (endpoint: string) => cmd({ method: 'DELETE', endpoint });
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 101, noteId: 903, target: 'issue' })).toEqual([del('projects/1/issues/101/notes/903')]);
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: 904, target: 'mr' })).toEqual([del('projects/1/merge_requests/7/notes/904')]);
+    expect(await plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: 905, target: 'review' })).toEqual([del('projects/1/merge_requests/7/notes/905')]);
+    for (const via of [true, false]) for (const c of await plan(via, { op: 'deleteNote', project: '1', iid: 7, noteId: 905, target: 'review' })) expect(() => validateGitLabCommand(c)).not.toThrow();
+    await expect(plan(true, { op: 'deleteNote', project: '1', iid: 7, noteId: '905/x', target: 'mr' })).rejects.toThrow();
   });
 
   it('every planned command passes its own validator', async () => {

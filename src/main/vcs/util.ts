@@ -31,6 +31,23 @@ export function checkIid(iid: number): number {
   return iid;
 }
 
+/** The longest title of a new issue the app writes: the hosts take 256 characters (GitHub, Bitbucket) and more (GitLab). */
+export const ISSUE_TITLE_MAX = 256;
+
+/** The title of a new issue: one line of text that is not empty, trimmed. */
+export function checkTitle(title: string): string {
+  const one = title.replace(/\s+/g, ' ').trim();
+  if (!one || one.length > ISSUE_TITLE_MAX) throw new VcsError('invalid', { detail: title.slice(0, 40) });
+  return one;
+}
+
+/** A label to give a new issue: text, no comma (GitLab joins them with one) and no line break. */
+export function checkLabel(label: string): string {
+  const one = label.trim();
+  if (!one || one.length > 200 || /[,\n\r]/.test(one)) throw new VcsError('invalid', { detail: label.slice(0, 40) });
+  return one;
+}
+
 const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?|see|related to)\s*:?\s+(?:[\w./-]*#)?(\d+)\b/gi;
 const HASH = /(?:^|[\s(\[])#(\d{1,9})\b/g;
 const BRANCH = /(?:^|[/_-])(\d{2,9})(?:$|[/_-])/;
@@ -55,6 +72,13 @@ export function str(value: unknown, fallback = ''): string {
 
 export function num(value: unknown): number {
   return typeof value === 'number' ? value : Number(value) || 0;
+}
+
+/** The id of a note to delete: a positive whole number, never what `num` makes of text (0), because a delete must name exactly what it removes. */
+export function noteNum(value: string | number): number {
+  const n = typeof value === 'number' ? value : /^\d+$/.test(value) ? Number(value) : 0;
+  if (!Number.isSafeInteger(n) || n <= 0) throw new VcsError('invalid', { detail: String(value).slice(0, 40) });
+  return n;
 }
 
 /** Worst-first merge of several CI states into the one the card shows. */

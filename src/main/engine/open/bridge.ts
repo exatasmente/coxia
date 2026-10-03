@@ -64,6 +64,9 @@ export interface BridgeArgs {
   secret: { isSecret: (path: string) => boolean; globs: string[] };
   shellEnv?: Record<string, string>;
   extraTools?: OpenRunParams['extraTools'];
+  // The folder an agent that writes may change; Write and Edit are only offered with it.
+  writeRoot?: string;
+  signal?: AbortSignal;
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
   makeMaxTurnsError: (sessionId: string, sources: string[]) => Error;
@@ -97,6 +100,8 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       sessionsDir: a.sessionsDir,
       shellEnv: a.shellEnv,
       extraTools: a.extraTools,
+      writeRoot: a.writeRoot,
+      signal: a.signal,
       describeTool: a.describeTool,
       events: a.events,
     });

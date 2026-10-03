@@ -1,0 +1,49 @@
+import type { AgentPermission, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { TeamTab } from './teamNav';
+
+// The catalog keys of the values a screen of the team and cycle shows by name. Tables, not built keys, so each key is written out where a search and the
+// unused-key test can find it (the same way Settings holds its tables).
+
+export const TAB_LABEL: Record<TeamTab, string> = {
+  team: 'ui.team.tab.team',
+  squads: 'ui.team.tab.squads',
+  flow: 'ui.team.tab.flow',
+  comments: 'ui.team.tab.comments',
+  runner: 'ui.team.tab.runner',
+};
+
+export const PERMISSION_HINT: Record<AgentPermission, string> = {
+  read: 'ui.team.permission.read.hint',
+  worktree: 'ui.team.permission.worktree.hint',
+};
+
+export const TYPE_LABEL: Record<StageType, string> = { work: 'ui.flow.type.work', gate: 'ui.flow.type.gate', wait: 'ui.flow.type.wait' };
+export const TYPE_HINT: Record<StageType, string> = { work: 'ui.flow.type.work.hint', gate: 'ui.flow.type.gate.hint', wait: 'ui.flow.type.wait.hint' };
+/** The name a stage added of this type starts with. */
+export const NEW_STAGE_LABEL: Record<StageType, string> = { work: 'ui.flow.new.work', gate: 'ui.flow.new.gate', wait: 'ui.flow.new.wait' };
+
+export const KIND_LABEL: Record<StageKind, string> = {
+  backlog: 'ui.flow.kind.backlog',
+  development: 'ui.flow.kind.development',
+  review: 'ui.flow.kind.review',
+  reviewApproved: 'ui.flow.kind.reviewApproved',
+  qa: 'ui.flow.kind.qa',
+  qaApproved: 'ui.flow.kind.qaApproved',
+  returned: 'ui.flow.kind.returned',
+  done: 'ui.flow.kind.done',
+  blocked: 'ui.flow.kind.blocked',
+};
+
+export const WAIT_LABEL: Record<WaitKind, string> = {
+  'pr-merged': 'ui.flow.wait.pr-merged',
+  'reporter-reply': 'ui.flow.wait.reporter-reply',
+  label: 'ui.flow.wait.label',
+  'linked-done': 'ui.flow.wait.linked-done',
+  time: 'ui.flow.wait.time',
+};
+
+export const EVENT_LABEL: Record<CommentEventKey, string> = {
+  gate: 'ui.comments.event.gate',
+  question: 'ui.comments.event.question',
+  pr: 'ui.comments.event.pr',
+};

@@ -11,6 +11,7 @@ import type { Card } from '../../../shared/types';
 import { getLanguage } from '../../../shared/i18n';
 import { clockOf } from '../../../shared/sameDay';
 import { t } from '../i18n';
+import { CardRunActions, CardRunBadge, CardRunFacts } from './cycle/CardRun';
 import { ChevronIcon } from './dashIcons';
 import { ResolveConflict } from './ResolveConflict';
 import { WorktreeBadge } from './radarSlots';
@@ -148,6 +149,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
         </span>
         {card.priority && <span className="badge badge-prio" title={t('ui.today.row.priorityTitle', { label: card.priority.label })}>{card.priority.label}</span>}
         {markText && <span className={`badge ${mark?.kind === 'unchanged' ? 'badge-quiet' : 'badge-ask'}`}>{markText}</span>}
+        <CardRunBadge cardRef={card.ref} />
         {blocked && <span className="badge badge-block">{t('ui.today.row.blocker')}</span>}
         {!blocked && asking && <span className="badge badge-ask">{t('ui.today.row.question')}</span>}
         <span className={`chev ${open ? 'open' : ''}`}><ChevronIcon /></span>
@@ -172,6 +174,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
                 <dd>{card.milestone}</dd>
               </>
             )}
+            <CardRunFacts cardRef={card.ref} />
             <dt>{t('ui.today.row.crsLabel')}</dt>
             <dd>{card.mrs.join(' · ') || t('ui.today.noMr')}</dd>
             {blocked && (
@@ -212,6 +215,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <div className="act-actions">
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
+            <CardRunActions card={card} go={go} />
             {cycle && showQuickActions(card, cycle.host) && <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>{t('ui.today.row.hostButton')}</button>}
             {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>{t('ui.today.row.qaReturn')}</button>}
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>{t('ui.today.row.discussions')}</button>}

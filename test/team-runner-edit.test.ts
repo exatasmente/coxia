@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest';
+import { neutralConfig, validateConfig } from '../src/shared/config';
+import type { RunnerConfig } from '../src/shared/config/types';
+import { draftOfRunner, runnerOf, runnerProblems, withCommand, type RunnerDraft } from '../src/renderer/src/screens/team/runnerEdit';
+
+const base = (): RunnerDraft => draftOfRunner(neutralConfig().runner);
+const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) => `${p.severity}:${p.key.split('.').pop()}`);
+
+describe('the runner draft', () => {
+  it('round trips the defaults and a configured runner', () => {
+    expect(runnerOf(base())).toEqual(neutralConfig().runner);
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, commitMessage: 'fix: {summary} {iid}' };
+    expect(runnerOf(draftOfRunner(r))).toEqual(r);
+    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
+  });
+
+  it('no commands list means the repository\'s own scripts, and an empty list means none', () => {
+    expect(runnerOf({ ...base(), commandsMode: 'repo', commands: ['x'] }).commands).toBeNull();
+    expect(runnerOf({ ...base(), commandsMode: 'custom', commands: [] }).commands).toEqual([]);
+  });
+
+  it('trims the text fields and turns an empty folder into the default', () => {
+    const r = runnerOf({ ...base(), triggerLabel: ' coxia ', worktreesDir: '  ', identityName: ' A ', identityEmail: ' a@example.com ' });
+    expect(r).toMatchObject({ triggerLabel: 'coxia', worktreesDir: null, identity: { name: 'A', email: 'a@example.com' } });
+  });
+});
+
+describe('the problems of the runner draft', () => {
+  it('is quiet for the defaults, on or off', () => {
+    expect(keys(base())).toEqual([]);
+    expect(keys({ ...base(), enabled: true })).toEqual([]);
+  });
+
+  it('asks for a trigger label only when the runner is on', () => {
+    expect(keys({ ...base(), triggerLabel: '' })).toEqual([]);
+    expect(keys({ ...base(), enabled: true, triggerLabel: ' ' })).toEqual(['error:trigger']);
+  });
+
+  it('keeps the numbers in range', () => {
+    expect(keys({ ...base(), maxConcurrentRuns: 0 })).toEqual(['error:concurrent']);
+    expect(keys({ ...base(), maxConcurrentRuns: 11 })).toEqual(['error:concurrent']);
+    expect(keys({ ...base(), maxConcurrentRuns: 2.5 })).toEqual(['error:concurrent']);
+    expect(keys({ ...base(), idleMinutes: 0.5 })).toEqual(['error:idle']);
+    expect(keys({ ...base(), idleMinutes: 361 })).toEqual(['error:idle', 'warning:idleLonger']);
+    expect(keys({ ...base(), idleMinutes: 360, maxMinutes: 1440 })).toEqual([]);
+    expect(keys({ ...base(), maxMinutes: 0.5 })).toEqual(['error:max', 'warning:idleLonger']);
+    expect(keys({ ...base(), maxMinutes: 1441 })).toEqual(['error:max']);
+    expect(keys({ ...base(), idleMinutes: 30, maxMinutes: 20 })).toEqual(['warning:idleLonger']);
+  });
+
+  it('keeps the turn caps whole numbers from 1 to 500', () => {
+    expect(keys({ ...base(), turnsRead: 0 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsWrite: 501 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsWrite: 2.5 })).toEqual(['error:turns']);
+    expect(keys({ ...base(), turnsRead: 1, turnsWrite: 500 })).toEqual([]);
+    expect(runnerOf({ ...base(), turnsRead: 5, turnsWrite: 9 }).turns).toEqual({ read: 5, write: 9 });
+  });
+
+  it('wants plain commands, one each', () => {
+    const d = (commands: string[]): RunnerDraft => ({ ...base(), commandsMode: 'custom', commands });
+    expect(keys(d(['npm test', 'npm run typecheck']))).toEqual([]);
+    for (const bad of ['npm test | tee x', 'a; b', 'a && b', 'a > f', 'echo `x`', 'echo $HOME', 'a\\b']) expect(keys(d([bad])), bad).toEqual(['error:commandPlain']);
+    expect(keys(d([' npm test']))).toEqual(['error:commandBlank']);
+    expect(keys(d([]))).toEqual(['warning:noCommands']);
+    expect(keys({ ...d(['a; b']), commandsMode: 'repo' })).toEqual([]);
+  });
+
+  it('wants both halves of an identity, or neither, and an address', () => {
+    expect(keys({ ...base(), identityName: 'Bot' })).toEqual(['error:identityPair']);
+    expect(keys({ ...base(), identityEmail: 'bot@example.com' })).toEqual(['error:identityPair']);
+    expect(keys({ ...base(), identityName: 'Bot', identityEmail: 'nope' })).toEqual(['error:email']);
+    expect(keys({ ...base(), identityName: 'Bot', identityEmail: 'bot@example.com' })).toEqual([]);
+  });
+
+  it('wants {summary} in one line of at most 200 characters', () => {
+    expect(keys({ ...base(), commitMessage: 'feat: stuff' })).toEqual(['error:commitSummary']);
+    expect(keys({ ...base(), commitMessage: 'feat: {summary}\nmore' })).toEqual(['error:commitLine']);
+    expect(keys({ ...base(), commitMessage: `{summary}${'x'.repeat(200)}` })).toEqual(['error:commitLong']);
+  });
+
+  it('warns that the runner works only with a flow cycle', () => {
+    expect(keys({ ...base(), enabled: true }, false)).toEqual(['warning:notFlow']);
+    expect(keys(base(), false)).toEqual([]);
+  });
+
+  it('adds a command trimmed and once', () => {
+    expect(withCommand(['a'], ' b ')).toEqual(['a', 'b']);
+    expect(withCommand(['a'], 'a')).toEqual(['a']);
+    expect(withCommand(['a'], '  ')).toEqual(['a']);
+  });
+
+  it('agrees with the config validator about every error', () => {
+    const cases: Partial<RunnerDraft>[] = [
+      { enabled: true, triggerLabel: '' },
+      { commandsMode: 'custom', commands: ['a | b'] },
+      { commandsMode: 'custom', commands: [' a'] },
+      { identityName: 'x' },
+      { identityName: 'x', identityEmail: 'bad' },
+      { commitMessage: 'nope' },
+      { commitMessage: '{summary}\nx' },
+      { maxConcurrentRuns: 0 },
+      { idleMinutes: 0.01 },
+      { maxMinutes: 0.01 },
+      {},
+      { enabled: true },
+      { commandsMode: 'custom', commands: ['npm test'] },
+      { identityName: 'x', identityEmail: 'x@example.com' },
+    ];
+    for (const over of cases) {
+      const d = { ...base(), ...over };
+      const c = neutralConfig();
+      c.runner = runnerOf(d);
+      const mine = runnerProblems(d, true).some((p) => p.severity === 'error');
+      const theirs = !validateConfig(c).ok;
+      expect(mine, JSON.stringify(over)).toBe(theirs);
+    }
+  });
+});

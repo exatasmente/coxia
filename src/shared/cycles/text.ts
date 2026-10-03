@@ -1,5 +1,5 @@
 import type { Language, WorkspaceConfig } from '../config/types';
-import { CATALOGS, FALLBACK_LANGUAGE, fillTemplate, keyCandidates, voiceEnabled, type Params } from '../i18n';
+import { CATALOGS, FALLBACK_LANGUAGE, fillTemplate, getLanguage, keyCandidates, voiceEnabled, type Params } from '../i18n';
 
 // Text of the development cycle: catalog keys or literals, placeholders, and the way the agents address the person.
 
@@ -24,6 +24,14 @@ export function voiceText(key: string, language: Language, voice: boolean = voic
 export function cycleText(value: string, language: Language, params?: Params): string {
   const found = keyCandidates(value, true).reduce<string | undefined>((text, key) => text ?? catalogText(key, language), undefined);
   return fill(found ?? value, params);
+}
+
+/** A config text (a stage name, an agent's name) in the language the running process uses: the one a person reads on screen or in a message the app words. */
+export const shownText = (value: string): string => cycleText(value, getLanguage());
+
+/** The params of a message with the stage name (a catalog key in the stored flow) put in the language in force: the message words the stage when it is shown. */
+export function withStageName<T extends Record<string, string | number>>(params: T): T {
+  return typeof params.stage === 'string' ? { ...params, stage: shownText(params.stage) } : params;
 }
 
 const upper = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);

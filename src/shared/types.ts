@@ -188,6 +188,8 @@ export interface DeepOption {
 }
 
 export interface Minutes {
+  /** The squad the ceremony was held for (its runs and cards only); null or absent: the whole workspace. */
+  squad?: string | null;
   startedAt: string;
   endedAt: string;
   decisions: Decision[];
@@ -235,6 +237,8 @@ export interface DeepState {
 export interface SavedCeremony {
   version: 1;
   id: string;
+  /** The squad the ceremony is held for; null or absent: the whole workspace. */
+  squad?: string | null;
   kind: 'pre-daily';
   date: string;
   cards: CardsResult | null;
@@ -257,6 +261,8 @@ export interface SavedCeremony {
 export interface HistoryEntry {
   id: string;
   kind: 'pre-daily';
+  /** The squad it was held for; null: the whole workspace. */
+  squad?: string | null;
   date: string;
   startedAt: number | null;
   endedAt: number | null;
@@ -355,7 +361,10 @@ export interface Improvement {
 }
 
 export interface Retro {
+  /** Its date; a retro held for one squad has the squad after it ("2026-10-02-core"). */
   id: string;
+  /** The squad it was held for; null or absent: the whole workspace. */
+  squad?: string | null;
   from: string;
   to: string;
   sessionId: string | null;
@@ -385,7 +394,8 @@ export interface VcsCommand {
 export type GitlabCommand = VcsCommand;
 
 // 'gitlab' is a write to GitLab (what every action saved before providers existed is); 'vcs' a write to GitHub or Bitbucket.
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs';
+// 'run-push' is the push of a run's branch (the runner proposes it; it always waits for its own "sim").
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {
@@ -411,6 +421,10 @@ export interface ReleaseAction {
   unit: Record<string, unknown> | null;
   summary: string | null;
   command: VcsCommand | null;
+  /** A group of writes that belong together (a review round: its comments, replies and verdict) and wait for one "sim"; `command` is the first. Absent for a single write. */
+  commands?: VcsCommand[];
+  /** How many of `commands` already ran: a retry after a failure goes on from there instead of posting the first ones again. */
+  done?: number;
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }
@@ -433,7 +447,8 @@ export interface Api {
   saveState(state: SavedCeremony): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
   getHistory(id: string): Promise<SavedCeremony | null>;
-  loadCards(limit: number, refresh?: boolean): Promise<CardsResult>;
+  /** `squad`: only the cards of that squad (its runs and the issues its scope claims); absent or null: the whole workspace. */
+  loadCards(limit: number, refresh?: boolean, squad?: string | null): Promise<CardsResult>;
   prepareTurn(card: Card, options?: TurnOptions): Promise<AgentTurn>;
   reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult>;
   deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer>;
@@ -477,8 +492,9 @@ export interface Api {
   getQa(iid: string): Promise<QaHandoff | null>;
   askQa(iid: string, question: string): Promise<QaHandoff>;
   writeQaChecklist(iid: string): Promise<QaHandoff>;
-  prepareRetro(): Promise<Retro>;
-  latestRetro(): Promise<Retro | null>;
+  /** `squad`: the retro of one squad (its ceremonies and its runs' issues); absent or null: the whole workspace. */
+  prepareRetro(squad?: string | null): Promise<Retro>;
+  latestRetro(squad?: string | null): Promise<Retro | null>;
   askRetro(id: string, question: string): Promise<Retro>;
   onEvent(cb: (event: AppEvent) => void): () => void;
 }

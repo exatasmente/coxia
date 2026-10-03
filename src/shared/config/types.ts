@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 4): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 9): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 4;
+export const CONFIG_SCHEMA_VERSION = 9;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -173,14 +173,59 @@ export type CeremonyId = (typeof CEREMONY_IDS)[number];
 export const STAGE_KINDS = ['backlog', 'development', 'review', 'reviewApproved', 'qa', 'qaApproved', 'returned', 'done', 'blocked'] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
+/** What a stage of an agent cycle is: work (an agent produces something), a gate (the person decides) or a wait (the run waits for an event). */
+export const STAGE_TYPES = ['work', 'gate', 'wait'] as const;
+export type StageType = (typeof STAGE_TYPES)[number];
+
+/**
+ * What a wait stage waits for. `pr-merged`: the run's pull request is merged. `reporter-reply`: a new comment of a person on the issue. `label`: the issue
+ * carries `label`. `linked-done`: every run this one asked another squad for has ended, or its issue was closed (a run that asked for nothing has nothing to wait for). `time`: `minutes` have passed.
+ */
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time'] as const;
+export type WaitKind = (typeof WAIT_KINDS)[number];
+
+export interface WaitFor {
+  kind: WaitKind;
+  /** For `label`: the label name. */
+  label?: string;
+  /** For `time`: minutes after the stage is entered. */
+  minutes?: number;
+}
+
+/** How many times a stage may send the work back before the run stops and asks the person. */
+export const DEFAULT_ROUND_LIMIT = 2;
+
 export interface StageDef {
   id: string;
   label: string;
   /** Case-insensitive regular expressions (source text) tested against the card stage or issue status. */
   match: string[];
   kind: StageKind;
-  /** Position in the flow: higher is closer to done. */
+  /** Position in the flow: higher is closer to done. A cycle with typed stages (an agent cycle) runs its stages in the order they are listed. */
   rank: number;
+  /**
+   * The flow fields: only a stage of an agent cycle has them. A cycle where no stage has a `type` is one of the ceremonies' (the card's stage by its regular
+   * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
+   */
+  type?: StageType;
+  /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
+  agentId?: string;
+  /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */
+  produces?: string[];
+  /** The artifacts (and the issue record) the stage is given. Left out: every earlier one. */
+  reads?: string[];
+  /** The stage that follows. Left out: the next in the list (the last stage ends the run); null: the run ends after this stage. */
+  next?: string | null;
+  /** Where the work goes back to: a rejected gate, a review with blocking findings, a QA failure. Left out: the work stage nearest before. */
+  returnsTo?: string;
+  /** How many returns this stage may cause before the run asks the person. Left out: 2. */
+  roundLimit?: number;
+  /** Wait stages only. */
+  waitsFor?: WaitFor;
+  /** The key of the comment template (`devCycle.comments`) of this stage. Left out: the stage's own id; null or empty: no comment. */
+  comment?: string | null;
+  /** A label the issue gets on the tracker when the run enters the stage (and loses when it leaves it). */
+  trackerStatus?: string;
 }
 
 export interface PhaseFile {
@@ -339,12 +384,39 @@ export interface PriorityConfig {
   labels: string[];
 }
 
+/** One section of a tracker comment: its heading and what it must say. Both are catalog keys or literals in the team's language. */
+export interface CommentSection {
+  heading: string;
+  guidance: string;
+}
+
+/**
+ * What a comment the runner leaves on the tracker looks like. `title` names it where the app lists it (Actions, the thread); the comment itself opens
+ * with `status`, a text that may use {stage}, {round}, {result}, {decision} and {ref}. `sections` come next, in this order, each only when it has
+ * something to say; `technicalDetail` adds the collapsed section at the end.
+ */
+export interface CommentTemplate {
+  title: string;
+  status: string;
+  sections: CommentSection[];
+  technicalDetail: boolean;
+}
+
+/** The keys of `devCycle.comments` that are not stage ids: a gate decision, an agent's question, and the pull request description. */
+export const COMMENT_EVENT_KEYS = ['gate', 'question', 'pr'] as const;
+export type CommentEventKey = (typeof COMMENT_EVENT_KEYS)[number];
+
 export interface DevCycleConfig {
   /** Template this section was filled from ("none", "sdd", "scrum", "kanban", "github-flow", "minimal", or a custom one). Informational once edited. */
   templateId: string;
   ceremonies: Record<CeremonyId, boolean>;
   ceremonyParams: CeremonyParams;
   stages: StageDef[];
+  /**
+   * The flow of a squad that has one of its own, by squad id (`squads`): the stages its runs follow. A squad with no entry follows `stages`. The agents of a
+   * squad's flow come from the one team, limited to the squad's members and the shared agents.
+   */
+  flows?: Record<string, StageDef[]>;
   /** How a provider's states and labels map to the stages above, first match wins; StageDef.match is the fallback on free text. */
   stageMapping: StageMappingRule[];
   /** What blocker, question for me and ready for QA mean here. */
@@ -360,6 +432,8 @@ export interface DevCycleConfig {
   /** Regular expression for the label that says an issue shipped in a version. Group 1, when present, is the version shown. */
   releaseLabelPattern: string;
   specLayout: SpecLayout;
+  /** The comments the runner leaves on the tracker, by stage id and by event (`gate`, `question`, `pr`). A stage with no entry posts nothing. */
+  comments: Record<string, CommentTemplate>;
   /** Status changes the card's quick actions offer on GitLab (custom status ids differ per instance, so each workspace lists its own). Empty: none. */
   quickTransitions: QuickTransitionRule[];
   qa: {
@@ -404,6 +478,89 @@ export interface AgentToolsConfig {
   subagents: boolean;
 }
 
+/** What an agent of the team may do to the files of its run: read them, or also change them inside the run's worktree and nowhere else. */
+export const AGENT_PERMISSIONS = ['read', 'worktree'] as const;
+export type AgentPermission = (typeof AGENT_PERMISSIONS)[number];
+
+export interface AgentModel {
+  /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
+  role: LlmRole | null;
+  /** An LlmProvider id; empty while `role` is set. */
+  provider: string;
+  /** Model id as the provider spells it; empty while `role` is set. */
+  model: string;
+}
+
+/** A member of the agent team: who works which stages of a run, with which model and which permission. */
+export interface AgentDef {
+  /** Lowercase letters, digits, "-" and "_"; also the name an @mention uses. */
+  id: string;
+  /** A catalog key or a literal. */
+  name: string;
+  /** What the agent does, in a sentence or two. A catalog key or a literal. */
+  job: string;
+  model: AgentModel;
+  /** Ids of the `devCycle.stages` the agent works. */
+  stages: string[];
+  permission: AgentPermission;
+  /**
+   * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
+   * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
+   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
+   * wait for the person. The ceremonies ignore it. A change takes effect at the next stage start or publication, never in the middle of a stage.
+   */
+  autonomous: boolean;
+  /**
+   * Who the agent turns to when it cannot decide: another agent's id, or null for the person. A question goes to that agent first, in the run's thread; it
+   * answers when it can and otherwise passes the question on, and the chain ends at the person. A chain that comes back to where it began is refused.
+   */
+  turnsTo: string | null;
+  /**
+   * The squad the agent belongs to (a `squads` id). Absent or null: a shared agent, which works for every squad (the front door, the one that writes the
+   * release note). An agent belongs to one squad at most.
+   */
+  squad?: string | null;
+  /** Appended to the agent's system prompt. A catalog key or a literal. */
+  instructions: string;
+  /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
+  system: boolean;
+}
+
+/** A folder of a repository: an issue that mentions a file under it is the squad's (a monorepo split by folders). */
+export interface SquadPath {
+  /** A `projects.repos` id. */
+  repo: string;
+  /** The folder, relative to the repository root ("services/billing"). */
+  prefix: string;
+}
+
+/** Which work is a squad's: the repositories it owns, the issue labels it takes, the folders it owns, and whether it takes whatever nobody claims. */
+export interface SquadScope {
+  /** `projects.repos` ids. */
+  repos: string[];
+  /** Issue labels (case does not matter). */
+  labels: string[];
+  paths: SquadPath[];
+  /** The squad takes the issues no scope claims. */
+  unclaimed: boolean;
+}
+
+/** A squad: agents with a scope of their own, a flow of their own and one agent, the liaison, that speaks for them to the other squads. */
+export interface SquadDef {
+  /** Lowercase letters, digits, "-" and "_". */
+  id: string;
+  name: string;
+  /** What the squad is for, in a sentence the agents read. */
+  mission: string;
+  scope: SquadScope;
+  /** The member that is the point of contact: questions and requests from other squads reach it, and its members' questions about another squad's area leave through it. */
+  liaison: string | null;
+  /** A squad-wide switch: off makes every member wait for the person (each agent's own switch applies when it is on). */
+  autonomy: boolean;
+  /** A label the issue gets on the tracker when a run starts in the squad (and the squad's own requests carry). null: none. */
+  label: string | null;
+}
+
 export interface AgentsConfig {
   tools: AgentToolsConfig;
   /** Appended to every agent, before the role's own text. */
@@ -411,6 +568,8 @@ export interface AgentsConfig {
   /** Persona or tone shared by every agent; a role's own persona comes after it. */
   persona: string;
   roles: Record<LlmRole, AgentRoleConfig>;
+  /** The agent team. Always holds the five system agents, one per LLM role. */
+  team: AgentDef[];
 }
 
 export const VOICE_ENGINES = ['edge', 'kokoro'] as const;
@@ -485,6 +644,44 @@ export interface ExternalToolsConfig {
   claudeCli: ClaudeCliConfig;
 }
 
+/** Who the app's commits in a run's worktree are made as. Both empty: the identity the repository already has. */
+export interface RunnerIdentity {
+  name: string;
+  email: string;
+}
+
+/** The turn caps of an agent of the runner, by what it may do. */
+export interface RunnerTurns {
+  read: number;
+  write: number;
+}
+
+/** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
+export interface RunnerConfig {
+  /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
+  enabled: boolean;
+  /** The issue label that asks for a run (case does not matter). */
+  triggerLabel: string;
+  /** How many runs the app starts by itself while others are still working; a run the person starts is never held back. */
+  maxConcurrentRuns: number;
+  /** Where the runs' worktrees are made ("~/" expands). null: the `worktrees` folder of the workspace's data folder. */
+  worktreesDir: string | null;
+  /**
+   * The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, `;`, `&&` or redirect).
+   * null: the test and typecheck scripts the repository declares (`npm test`, `npm run typecheck`). []: none.
+   */
+  commands: string[] | null;
+  /** An agent that shows no sign of life (no model event: text, tool call, usage report) for this long fails the stage, which can be retried. */
+  stageIdleMs: number;
+  /** A stage still going after this long fails whatever the agent shows: the cap on a run that keeps talking and never finishes. */
+  stageMaxMs: number;
+  /** How many steps (model turns) an agent may take in one pass: `read` for an agent that only reads and writes its documents, `write` for one that changes files. */
+  turns: RunnerTurns;
+  identity: RunnerIdentity;
+  /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
+  commitMessage: string;
+}
+
 export interface ScheduleConfig {
   preDaily: string;
   days: number[];
@@ -527,9 +724,12 @@ export interface WorkspaceConfig {
   docs: DocsConfig;
   devCycle: DevCycleConfig;
   agents: AgentsConfig;
+  /** The squads of the workspace. Empty: the workspace is one team, as it always was. */
+  squads?: SquadDef[];
   voice: VoiceConfig;
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
+  runner: RunnerConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

@@ -161,7 +161,7 @@ function handlers(): void {
   handle('state:save', (state: SavedCeremony) => saveState(state));
   handle('history:list', () => listHistory());
   handle('history:get', (id: string) => getHistory(id));
-  handle('cards:load', (limit: number, refresh?: boolean) => loadCards(limit, refresh));
+  handle('cards:load', (limit: number, refresh?: boolean, squad?: unknown) => loadCards(limit, refresh, typeof squad === 'string' && squad ? squad : null));
   handle('agent:prepare', (card: Card, options?: TurnOptions) => prepareTurn(card, options));
   handle('agent:reply', (card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
   handle('deep:ask', (card: Card, question: string, sessionId: string | null) => deepAsk(card, question, sessionId));
@@ -213,8 +213,8 @@ function handlers(): void {
   handle('qa:get', (iid: string) => getQa(iid));
   handle('qa:ask', (iid: string, question: string) => askQa(iid, question));
   handle('qa:write', (iid: string) => writeQaChecklist(iid));
-  handle('retro:prepare', () => prepareRetro());
-  handle('retro:latest', () => latestRetro());
+  handle('retro:prepare', (squad?: unknown) => prepareRetro(typeof squad === 'string' && squad ? squad : null));
+  handle('retro:latest', (squad?: unknown) => latestRetro(typeof squad === 'string' && squad ? squad : null));
   handle('retro:ask', (id: string, question: string) => askRetro(id, question));
   handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
   handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));

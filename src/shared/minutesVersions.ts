@@ -29,6 +29,8 @@ export interface MinutesSnapshot {
 export interface MinutesVersion {
   n: number;
   ceremonyId: string;
+  /** The squad the ceremony was held for; absent: the whole workspace. */
+  squad?: string;
   startedAt: number | null;
   endedAt: number | null;
   // Set when the minutes were written to disk.

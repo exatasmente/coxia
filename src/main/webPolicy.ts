@@ -8,7 +8,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
 // screen: a token never travels through the browser channel).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -16,6 +16,15 @@ const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // the release sync) waits there, so refusing it refuses all of them.
 export const EXTERNAL_EFFECT = new Set(['actions:approve']);
+
+// forum:* (list, read, post, create) read and write the workspace's own thread files and nothing else, so a paired browser may use them: the
+// phone is where a person answers a question. A mention only calls on an agent that reads (never one that writes), and a post is never mirrored to
+// the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
+
+// runs:*: reading the runs (list, get) and answering a run's question (answer, and a forum post that answers it) are open to a paired browser: the phone is
+// where a person answers, and an answer only lets the stage that asked go on, under the same confinement. Everything else starts work or changes a run
+// (start, startStage, accept, return, gate, retry, cancel), decides which squad, flow and agents a run goes on with (setSquad, removeSquad) or changes what an agent may do by itself (setAutonomous, setSquadAutonomous), and creates branches and worktrees on this
+// machine: desktop only. test/runs-policy.test.ts pins the list.
 
 // push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.
 // They take the same path as every other call: session cookie, X-Cerimonias header, this policy.

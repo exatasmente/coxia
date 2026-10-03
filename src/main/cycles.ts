@@ -1,4 +1,4 @@
-import type { WorkspaceConfig, CeremonyId, Language } from '../shared/config/types';
+import type { AgentDef, WorkspaceConfig, CeremonyId, Language } from '../shared/config/types';
 import { cycleOf, cycleText, type CycleTemplate } from '../shared/cycles';
 import { getLanguage } from '../shared/i18n';
 import { proposeDocs, scanWorkspace, targetsOf } from './agentPrep-core';
@@ -19,6 +19,8 @@ export interface WizardTemplate {
   patch: { devCycle: ReturnType<typeof cycleOf> };
   ceremonies: Record<CeremonyId, boolean>;
   stages: { id: string; label: string }[];
+  /** The agents the template brings, merged into the workspace's team when it is chosen. */
+  team: AgentDef[];
 }
 
 function describeTemplate(t: CycleTemplate, builtIn: boolean, language: Language): WizardTemplate {
@@ -31,7 +33,8 @@ function describeTemplate(t: CycleTemplate, builtIn: boolean, language: Language
     needs: t.needs,
     patch: { devCycle: cycle },
     ceremonies: cycle.ceremonies,
-    stages: cycle.stages.map((s) => ({ id: s.id, label: s.label })),
+    stages: cycle.stages.map((s) => ({ id: s.id, label: cycleText(s.label, language) })),
+    team: t.team ?? [],
   };
 }
 

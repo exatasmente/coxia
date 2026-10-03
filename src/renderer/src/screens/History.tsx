@@ -6,6 +6,7 @@ import { api, errorText } from '../api';
 import { ContinueInClaude } from './ContinueInClaude';
 import { EfeitoStatus } from './EfeitoStatus';
 import { intlLocale, t, tv, useT } from '../i18n';
+import { SquadScope } from './cycle/SquadPicker';
 import { BackIcon } from './icons';
 import { RichText } from './Diagram';
 import { ChangeSummary, DayPanel, DeleteSheet, TrashSection, clockTime, versionTitle } from './MinutesParts';
@@ -117,6 +118,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
+                      {e.squad ? <span style={{ display: 'block', marginTop: 6 }}><SquadScope squad={e.squad} /></span> : null}
                     </button>
                   ))}
               </div>

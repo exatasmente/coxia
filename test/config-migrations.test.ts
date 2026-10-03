@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
-import { neutralConfig } from '../src/shared/config/defaults';
+import { neutralConfig, neutralRunner } from '../src/shared/config/defaults';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
@@ -49,7 +50,7 @@ describe('migrateConfig', () => {
     expect(r.fromVersion).toBe(1);
     expect(r.changed).toBe(true);
     const c = r.config;
-    expect(c.schemaVersion).toBe(4);
+    expect(c.schemaVersion).toBe(9);
     expect(c.setupComplete).toBe(true);
     expect(c.llm.roles).toEqual({ turn: { provider: 'openrouter', model: 'a/b' }, reply: { provider: 'openrouter', model: 'c/d' }, deep: { provider: 'openrouter', model: 'e/f' }, teams: { provider: 'openrouter', model: 'g/h' }, fix: { provider: 'openrouter', model: 'c/d' } });
     expect(c.schedule.preDaily).toBe('10:15');
@@ -108,7 +109,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(v2, { legacyInstall: false });
     expect(r.fromVersion).toBe(2);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(4);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(['ref', 'title', 'blockers', 'priority', 'milestone']);
     expect(r.notes.join(' ')).toContain('priority, milestone');
@@ -130,9 +131,108 @@ describe('migrateConfig', () => {
 
   it('a v1 file ends at the current schema with the new fields in place', () => {
     const r = migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() });
-    expect(r.config.schemaVersion).toBe(4);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(expect.arrayContaining(['priority', 'milestone']));
+  });
+
+  // What the released 0.3.0 wrote: its own neutral config, with the card scope set (schema 4 there means the card scope, not the agent team).
+  describe('a file written by the released app (schema 4, the card scope)', () => {
+    const released = (): Record<string, any> => JSON.parse(readFileSync(join(__dirname, 'fixtures/config-0.3.0.json'), 'utf8'));
+
+    it('goes through every step of this app, keeping the card scope the person chose', () => {
+      const file = released();
+      expect(file.schemaVersion).toBe(4);
+      expect(file).not.toHaveProperty('runner');
+      expect(file.agents).not.toHaveProperty('team');
+      const r = migrateConfig(file, { legacyInstall: false });
+      expect(r.fromVersion).toBe(4);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.projects.issues).toMatchObject({ project: 'group/app', refPrefix: 'app#', cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] });
+      expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
+      expect(r.config.runner).toEqual(neutralRunner());
+      expect(r.config.devCycle.comments).toEqual({});
+      expect(r.config.devCycle.stages).toEqual(file.devCycle.stages);
+      expect(r.config).toMatchObject({ language: 'en', userName: 'Ana', devCycle: { priority: { labels: ['^P0$', '^P1$'] } } });
+      expect(r.config.vcs).toEqual(file.vcs);
+      expect(r.config.projects.repos).toEqual(file.projects.repos);
+      expect(r.notes.join(' ')).toContain('agent team created');
+      expect(r.notes.join(' ')).toContain('runner section created');
+      expect(validateConfig(r.config).ok).toBe(true);
+      // what was written is read again as it is
+      const again = migrateConfig(JSON.parse(JSON.stringify(r.config)), { legacyInstall: false });
+      expect(again.changed).toBe(false);
+      expect(again.config).toEqual(r.config);
+    });
+
+    it('a file on the agent cycle template written by the released app gets the comment templates of that cycle', () => {
+      const file = released();
+      file.devCycle.templateId = 'agent-flow';
+      const r = migrateConfig(file, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(Object.keys(r.config.devCycle.comments)).toContain('review');
+      expect(r.config.devCycle.templateId).toBe('agent-flow');
+    });
+
+    it('a schema 3 file from before the card scope goes through the released step first and ends at the same document', () => {
+      const v4 = released();
+      const v3 = released();
+      v3.schemaVersion = 3;
+      delete v3.projects.issues.cardScope;
+      delete v3.projects.issues.cardLabels;
+      const r = migrateConfig(v3, { legacyInstall: false });
+      expect(r.fromVersion).toBe(3);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.projects.issues).toMatchObject({ project: 'group/app', cardScope: 'assigned', cardLabels: [] });
+      // the same as the released file would have become, but for the scope it never had
+      expect(migrateConfig(v4, { legacyInstall: false }).config).toEqual({ ...r.config, projects: { ...r.config.projects, issues: { ...r.config.projects.issues, cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] } } });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+  });
+
+  describe('schema 8 to 9: the stage timeout becomes an idle limit and a cap', () => {
+    const v8 = (runner: Record<string, unknown> | undefined): Record<string, any> => {
+      const c = { ...neutralConfig(), schemaVersion: 8 } as Record<string, any>;
+      if (runner === undefined) delete c.runner;
+      else c.runner = { ...c.runner, ...runner };
+      delete c.runner?.stageIdleMs;
+      delete c.runner?.stageMaxMs;
+      return c;
+    };
+
+    it('turns the old default into the two new defaults and drops the old field', () => {
+      const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
+      expect(r.fromVersion).toBe(8);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(9);
+      expect(r.config.runner).toMatchObject({ stageIdleMs: 600_000, stageMaxMs: 7_200_000 });
+      expect(r.config.runner).not.toHaveProperty('stageTimeoutMs');
+      expect(r.notes.join(' ')).toContain('became two limits');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a limit the person set as the cap on a stage, and as the idle limit too when it is shorter than the default one', () => {
+      const long = migrateConfig(v8({ stageTimeoutMs: 45 * 60_000 }), { legacyInstall: false });
+      expect(long.config.runner).toMatchObject({ stageIdleMs: 600_000, stageMaxMs: 2_700_000 });
+      expect(long.notes.join(' ')).toContain('is now runner.stageMaxMs');
+      const short = migrateConfig(v8({ stageTimeoutMs: 5 * 60_000 }), { legacyInstall: false });
+      expect(short.config.runner).toMatchObject({ stageIdleMs: 300_000, stageMaxMs: 300_000 });
+      expect(validateConfig(short.config).ok).toBe(true);
+    });
+
+    it('gives the turn caps the runner always had, since a file of schema 8 has none', () => {
+      const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
+      expect(r.config.runner.turns).toEqual({ read: 30, write: 80 });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('touches nothing else, and a file with no runner section gets the defaults', () => {
+      const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000, enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 }), { legacyInstall: false });
+      expect(r.config.runner).toMatchObject({ enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 });
+      const bare = migrateConfig(v8(undefined), { legacyInstall: false });
+      expect(bare.config.runner).toEqual(neutralConfig().runner);
+    });
   });
 
   it('leaves a current document alone and refuses a newer one', () => {
@@ -141,7 +241,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(c, { legacyInstall: true });
     expect(r.changed).toBe(false);
     expect(r.config.language).toBe('en');
-    expect(() => migrateConfig({ schemaVersion: 9 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 10 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });
 
@@ -154,7 +254,7 @@ describe('startup on the real current layout', () => {
     expect(boot.migrated).toEqual(['testes']);
     const dir = workspaceDir(root, 'testes');
     const config = readConfigFile(dir) as Record<string, unknown>;
-    expect(config.schemaVersion).toBe(4);
+    expect(config.schemaVersion).toBe(9);
     expect(validateConfig(config).ok).toBe(true);
     const v = validateConfig(config).config;
     expect(v?.vcs[0].host).toBe('git.acme.test');

@@ -1,12 +1,14 @@
 import type { Minutes, SavedCeremony } from './types';
 
-type MinutesSource = Pick<SavedCeremony, 'cards' | 'turns' | 'answered' | 'decisions' | 'effects' | 'log' | 'startedAt' | 'endedAt'>;
+type MinutesSource = Pick<SavedCeremony, 'squad' | 'cards' | 'turns' | 'answered' | 'decisions' | 'effects' | 'log' | 'startedAt' | 'endedAt'>;
 
 export function buildMinutes(s: MinutesSource): Minutes {
   const unanswered = (s.cards?.cards ?? [])
     .map((c) => ({ ref: c.ref, question: s.turns[c.ref]?.question ?? null }))
     .filter((u): u is { ref: string; question: string } => !!u.question && !s.answered[u.ref]);
   return {
+    // Said only when it is a squad's: a ceremony of the whole workspace reads as it always did.
+    ...(s.squad ? { squad: s.squad } : {}),
     startedAt: new Date(s.startedAt ?? Date.now()).toISOString(),
     endedAt: new Date(s.endedAt ?? Date.now()).toISOString(),
     decisions: s.decisions,

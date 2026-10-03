@@ -86,7 +86,7 @@ describe('which ceremonies the workspace offers', () => {
 describe('applying and managing templates', () => {
   it('lists the built-in templates in the language of the workspace', () => {
     const pt = core.listTemplates('pt-BR');
-    expect(pt.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal']);
+    expect(pt.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
     expect(pt[0]).toMatchObject({ name: 'SDD (spec-driven, gates e QA)', builtIn: true });
     expect(pt[0].ceremonies).toHaveLength(6);
     expect(core.listTemplates('en')[4].name).toBe('Minimal (only the daily prep and unblocking)');
@@ -147,7 +147,7 @@ describe('what the setup wizard is given', () => {
   it('a list of templates in the shape its normaliser reads: each one carries the cycle it sets and what the person still provides', () => {
     const listed = cycles.listCycleTemplates('en');
     const info = normalizeTemplates(listed);
-    expect(info.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal']);
+    expect(info.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering']);
     const scrum = info.find((t) => t.id === 'scrum')!;
     expect(scrum).toMatchObject({ name: 'Scrum', available: true, ceremonies: { preDaily: true, gate: false, retro: true }, needs: ['issueProject'] });
     expect(scrum.stages.map((s) => s.id)).toContain('in-progress');

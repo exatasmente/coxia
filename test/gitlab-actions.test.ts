@@ -106,11 +106,18 @@ describe('REST endpoints', () => {
     expect(() => validateGitlabCommand(rest(endpoint))).toThrow(/endpoint inválido/);
   });
 
-  it('lets the REST endpoints through any write method and either transport', () => {
-    for (const method of ['POST', 'PUT', 'DELETE'] as const) {
+  it('lets the REST endpoints through the methods that write and either transport', () => {
+    for (const method of ['POST', 'PUT'] as const) {
       for (const via of ['glab', 'curl'] as const) {
         expect(() => validateGitlabCommand(rest('projects/1/issues/1/notes', { method, via }))).not.toThrow();
       }
+    }
+  });
+
+  it('lets a note be deleted, and nothing else', () => {
+    for (const endpoint of ['projects/1/issues/1/notes/5', 'projects/1/merge_requests/2/notes/5']) expect(() => validateGitlabCommand(rest(endpoint, { method: 'DELETE', via: 'glab', fields: {} }))).not.toThrow();
+    for (const endpoint of ['projects/1/issues/1/notes', 'projects/1/issues/1', 'projects/1/merge_requests/2', 'projects/1/labels/5', 'projects/1/issues/1/notes/5/award_emoji/3']) {
+      expect(() => validateGitlabCommand(rest(endpoint, { method: 'DELETE', fields: {} })), endpoint).toThrow(/endpoint inválido/);
     }
   });
 });

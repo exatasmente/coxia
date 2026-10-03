@@ -22,7 +22,7 @@ import type {
   VcsUser,
   VcsWriteOp,
 } from './types';
-import { checkIid, enc, iso, issueRefsOf, num, pool, worstCi } from './util';
+import { ISSUE_TITLE_MAX, checkIid, checkLabel, checkTitle, enc, iso, issueRefsOf, noteNum, num, pool, worstCi } from './util';
 
 // GitHub (github.com and GitHub Enterprise Server): REST for everything, GraphQL for what REST cannot say or do: whether a review
 // thread is resolved, resolving it, and the draft state of a pull request. Issues are GitHub issues (no separate workflow status:
@@ -120,6 +120,16 @@ export interface GitHubOptions {
   transport: RestTransport;
 }
 
+const checkSha = (sha: string): string => {
+  if (!/^[0-9a-f]{7,64}$/i.test(sha)) throw new VcsError('invalid', { detail: sha });
+  return sha;
+};
+
+const checkBranch = (name: string): string => {
+  if (!/^[\w][\w./-]{0,200}$/.test(name) || name.includes('..') || name.endsWith('/') || name.endsWith('.lock')) throw new VcsError('invalid', { detail: name });
+  return name;
+};
+
 const checkRepo = (project: string): string => {
   if (!/^[\w.-]+\/[\w.-]+$/.test(project) || project.split('/').some((s) => /^\.+$/.test(s))) throw new VcsError('invalid', { detail: project });
   return project;
@@ -155,6 +165,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     updatedAt: iso(i.updated_at),
     closedAt: iso(i.closed_at),
     webUrl: i.html_url,
+    body: i.body ?? null,
   });
 
   const mrOf = (pr: GhPull, project: string, roles: VcsMr['roles'] = []): VcsMr => ({
@@ -494,6 +505,32 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         }
         case 'playJob':
           throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.playJob') });
+        case 'editMrNote':
+          // A pull request's conversation comments are issue comments on GitHub.
+          return [call('PATCH', `${repo(op.project)}/issues/comments/${num(op.noteId)}`, { body: op.body })];
+        case 'deleteNote':
+          checkIid(op.iid);
+          // The conversation comments of an issue and of a pull request are the same resource on GitHub; a comment on a line or a file of a review is not.
+          return [call('DELETE', op.target === 'review' ? `${repo(op.project)}/pulls/comments/${noteNum(op.noteId)}` : `${repo(op.project)}/issues/comments/${noteNum(op.noteId)}`, undefined)];
+        case 'submitReview': {
+          const n = checkIid(op.iid);
+          const sha = checkSha(op.commitSha);
+          const side = (c: { side: 'new' | 'old' }): 'RIGHT' | 'LEFT' => (c.side === 'old' ? 'LEFT' : 'RIGHT');
+          const onLines = op.comments.filter((c) => c.line !== null);
+          // The reviews endpoint takes comments on lines; a comment on a whole file is a review comment of its own (subject_type file).
+          const onFiles = op.comments.filter((c) => c.line === null);
+          const review = {
+            event: op.event === 'request_changes' ? 'REQUEST_CHANGES' : 'COMMENT',
+            body: op.body,
+            commit_id: sha,
+            comments: onLines.map((c) => ({ path: c.path, body: c.body, line: c.line, side: side(c), ...(c.startLine !== null ? { start_line: c.startLine, start_side: side(c) } : {}) })),
+          };
+          return [call('POST', `${repo(op.project)}/pulls/${n}/reviews`, review), ...onFiles.map((c) => call('POST', `${repo(op.project)}/pulls/${n}/comments`, { body: c.body, commit_id: sha, path: c.path, subject_type: 'file' }))];
+        }
+        case 'createIssue':
+          return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
+        case 'createMr':
+          return [call('POST', `${repo(op.project)}/pulls`, { title: op.title, head: checkBranch(op.sourceBranch), base: checkBranch(op.targetBranch), body: op.body })];
       }
     },
 
@@ -503,15 +540,39 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
 }
 
 const R = '[\\w.-]+/[\\w.-]+';
-const WRITES: { method: VcsCommand['method']; re: RegExp; keys: string[] }[] = [
+// `keys` are required, `optional` may be there; anything else is refused.
+const WRITES: { method: VcsCommand['method']; re: RegExp; keys: string[]; optional?: string[] }[] = [
   { method: 'POST', re: new RegExp(`^repos/${R}/issues/\\d+/comments$`), keys: ['body'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/issues/\\d+/labels$`), keys: ['labels'] },
   { method: 'DELETE', re: new RegExp(`^repos/${R}/issues/\\d+/labels/[\\w%.-]+$`), keys: [] },
   { method: 'PATCH', re: new RegExp(`^repos/${R}/issues/comments/\\d+$`), keys: ['body'] },
+  // Only a comment the runner wrote can be taken back: the conversation comment of an issue or pull request, and the comment of a review.
+  { method: 'DELETE', re: new RegExp(`^repos/${R}/issues/comments/\\d+$`), keys: [] },
+  { method: 'DELETE', re: new RegExp(`^repos/${R}/pulls/comments/\\d+$`), keys: [] },
   { method: 'PATCH', re: new RegExp(`^repos/${R}/issues/\\d+$`), keys: ['state'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/requested_reviewers$`), keys: ['reviewers'] },
   { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/comments/\\d+/replies$`), keys: ['body'] },
+  // A review: its verdict is a comment or a request for changes, never an approval.
+  { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/reviews$`), keys: ['event', 'body', 'commit_id', 'comments'] },
+  { method: 'POST', re: new RegExp(`^repos/${R}/pulls/\\d+/comments$`), keys: ['body', 'commit_id', 'path', 'subject_type'] },
+  { method: 'POST', re: new RegExp(`^repos/${R}/pulls$`), keys: ['title', 'head', 'base', 'body'] },
+  // A new issue: its title and description, and the labels it is born with.
+  { method: 'POST', re: new RegExp(`^repos/${R}/issues$`), keys: ['title', 'body'], optional: ['labels'] },
 ];
+
+const REVIEW_EVENTS = ['REQUEST_CHANGES', 'COMMENT'];
+const isText = (v: unknown): v is string => typeof v === 'string';
+const isLine = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 1;
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function reviewCommentOk(c: unknown): boolean {
+  if (!isObject(c)) return false;
+  const keys = Object.keys(c);
+  const allowed = ['path', 'body', 'line', 'side', 'start_line', 'start_side'];
+  if (keys.some((k) => !allowed.includes(k)) || !isText(c.path) || !isText(c.body) || !isLine(c.line) || !['LEFT', 'RIGHT'].includes(String(c.side))) return false;
+  if ('start_line' in c && !(isLine(c.start_line) && c.start_line < c.line && c.start_side === c.side)) return false;
+  return !('start_side' in c) || 'start_line' in c;
+}
 
 /** What a GitHub write may look like: the listed REST calls with only the listed body keys, and the three GraphQL mutations. */
 export function validateGitHubCommand(c: VcsCommand): void {
@@ -533,8 +594,15 @@ export function validateGitHubCommand(c: VcsCommand): void {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new Error(t('vcs.validate.body'));
   }
   const keys = Object.keys(body);
-  if (keys.length !== rule.keys.length || keys.some((k) => !rule.keys.includes(k))) throw new Error(t('vcs.validate.body'));
+  const optional = rule.optional ?? [];
+  if (keys.some((k) => !rule.keys.includes(k) && !optional.includes(k)) || rule.keys.some((k) => !keys.includes(k))) throw new Error(t('vcs.validate.body'));
   if (rule.keys.includes('state') && body.state !== 'open' && body.state !== 'closed') throw new Error(t('vcs.validate.body'));
   for (const k of ['labels', 'reviewers']) if (k in body && !(Array.isArray(body[k]) && (body[k] as unknown[]).every((x) => typeof x === 'string'))) throw new Error(t('vcs.validate.body'));
-  for (const k of ['body']) if (k in body && typeof body[k] !== 'string') throw new Error(t('vcs.validate.body'));
+  for (const k of ['body', 'title', 'head', 'base', 'path', 'commit_id']) if (k in body && typeof body[k] !== 'string') throw new Error(t('vcs.validate.body'));
+  if ('event' in body && !REVIEW_EVENTS.includes(String(body.event))) throw new Error(t('vcs.validate.body'));
+  if ('comments' in body && !(Array.isArray(body.comments) && body.comments.length <= 100 && body.comments.every(reviewCommentOk))) throw new Error(t('vcs.validate.body'));
+  if ('subject_type' in body && body.subject_type !== 'file') throw new Error(t('vcs.validate.body'));
+  if ('commit_id' in body && !/^[0-9a-f]{7,64}$/i.test(String(body.commit_id))) throw new Error(t('vcs.validate.body'));
+  if (c.endpoint.endsWith('/issues') && !(typeof body.title === 'string' && body.title.trim() && body.title.length <= ISSUE_TITLE_MAX)) throw new Error(t('vcs.validate.body'));
+  if (c.endpoint.endsWith('/pulls') && !(/^[\w][\w./-]*$/.test(String(body.head)) && /^[\w][\w./-]*$/.test(String(body.base)))) throw new Error(t('vcs.validate.body'));
 }

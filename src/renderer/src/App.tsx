@@ -19,6 +19,9 @@ import { Deep } from './screens/Deep';
 import { Discussions } from './screens/Discussions';
 import { Gate } from './screens/Gate';
 import { History } from './screens/History';
+import { ForumScreen } from './screens/cycle/ForumScreen';
+import { RunScreen } from './screens/cycle/RunScreen';
+import { RunsScreen } from './screens/cycle/RunsScreen';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
 import { Reentry } from './screens/Reentry';
@@ -60,6 +63,9 @@ export type Screen =
   | { name: 'help' }
   | { name: 'glossario' }
   | { name: 'wizard' }
+  | { name: 'run'; id: string; tab?: 'cycle' | 'forum'; from?: 'runs' }
+  | { name: 'runs' }
+  | { name: 'forum'; thread?: string }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -190,6 +196,12 @@ export function App() {
     case 'help':
       return <Ajuda go={go} />;
     // slot: routes of feature modules
+    case 'forum':
+      return <ForumScreen go={go} thread={screen.thread} />;
+    case 'runs':
+      return <RunsScreen go={go} />;
+    case 'run':
+      return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
       return <Auditoria go={go} />;
     case 'radar':

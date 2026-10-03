@@ -8,15 +8,20 @@ import type { VcsKind } from '../../shared/config/types';
 import { VcsError, scrubSecrets } from './errors';
 import type { HttpClient } from './http';
 import { type CliRun, cliFailure, defaultCliRun } from './transport';
-import type { VcsCommand } from './types';
+import type { ExecMeta, VcsCommand } from './types';
 
 // The only code that writes to a code host. It runs a command the confirmation flow already approved (approveAction in actions.ts):
 // nothing else imports it, and a test keeps it that way. Each executor refuses a command its provider's validator would refuse, so a
 // command read back from disk is judged again right before it runs.
 
-export interface ExecMeta {
-  /** Filled with the HTTP status when the host answered. */
-  code?: number;
+export type { ExecMeta };
+
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 export interface VcsExecutor {
@@ -85,6 +90,7 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
             const errors = graphqlErrors(JSON.parse(out));
             if (errors.length) throw new Error(t('vcs.exec.refused', { host: d.host, detail: scrubSecrets(errors.join(' ')).slice(0, 500) }));
           }
+          meta.response = parsed(out);
           return out.slice(0, RESULT_MAX);
         });
       }
@@ -98,6 +104,7 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
         const code = /HTTP (\d+)\s*$/.exec(stdout)?.[1];
         if (code) meta.code = Number(code);
         if (!code || Number(code) >= 400) throw new Error(t('vcs.exec.responded', { host: d.host, code: code ?? '?', body: scrubSecrets(stdout).slice(0, 500) }));
+        meta.response = parsed(stdout.replace(/\nHTTP \d+\s*$/, ''));
         return stdout.slice(0, RESULT_MAX);
       }
       if (c.via === 'api') {
@@ -112,7 +119,8 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
         if (!d.client) throw new VcsError('not_configured', { kind: 'GitLab' });
         const r = await d.client.request(c.method, c.endpoint, { form: c.fields });
         meta.code = r.status;
-        return JSON.stringify(r.body).slice(0, RESULT_MAX);
+        meta.response = r.body;
+        return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
       }
       throw new Error(t('vcs.validate.endpoint', { endpoint: c.endpoint }));
     },
@@ -149,6 +157,7 @@ export function githubExecutor(d: GitHubExecDeps): VcsExecutor {
             const errors = graphqlErrors(JSON.parse(out));
             if (errors.length) throw new Error(t('vcs.exec.refused', { host: d.host, detail: scrubSecrets(errors.join(' ')).slice(0, 500) }));
           }
+          meta.response = parsed(out);
           return out.slice(0, RESULT_MAX);
         });
       }
@@ -164,6 +173,7 @@ export function githubExecutor(d: GitHubExecDeps): VcsExecutor {
         if (!d.client) throw new VcsError('not_configured', { kind: 'GitHub' });
         const r = await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
         meta.code = r.status;
+        meta.response = r.body;
         return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
       }
       throw new Error(t('vcs.validate.endpoint', { endpoint: c.endpoint }));
@@ -177,6 +187,7 @@ export function bitbucketExecutor(d: { client: HttpClient; validate: (c: VcsComm
       d.validate(c);
       const r = await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
       meta.code = r.status;
+      meta.response = r.body;
       return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
     },
   };

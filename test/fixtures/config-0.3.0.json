@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 4,
+  "setupComplete": true,
+  "language": "en",
+  "userName": "Ana",
+  "userArticle": "a",
+  "appearance": {
+    "theme": "system"
+  },
+  "notifications": true,
+  "closeToTray": true,
+  "retention": {
+    "enabled": false,
+    "days": 30
+  },
+  "schedule": {
+    "preDaily": "09:40",
+    "days": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "statusEveryMin": 30,
+    "from": "08:00",
+    "to": "19:00",
+    "retroDay": 5,
+    "retroTime": "16:00"
+  },
+  "llm": {
+    "providers": [
+      {
+        "id": "anthropic",
+        "kind": "anthropic",
+        "engine": "claude-sdk",
+        "baseUrl": "https://api.anthropic.com",
+        "models": [
+          "haiku",
+          "sonnet",
+          "opus"
+        ],
+        "secretRef": "llm.anthropic",
+        "envFile": null,
+        "options": {},
+        "capabilities": null,
+        "structured": "auto",
+        "headers": {},
+        "maxOutputTokens": null,
+        "temperature": null,
+        "timeoutMs": null,
+        "legacyCustomEndpoint": false
+      }
+    ],
+    "roles": {
+      "turn": {
+        "provider": "anthropic",
+        "model": "haiku"
+      },
+      "reply": {
+        "provider": "anthropic",
+        "model": "haiku"
+      },
+      "deep": {
+        "provider": "anthropic",
+        "model": "sonnet"
+      },
+      "teams": {
+        "provider": "anthropic",
+        "model": "haiku"
+      },
+      "fix": {
+        "provider": "anthropic",
+        "model": "haiku"
+      }
+    }
+  },
+  "projects": {
+    "roots": [],
+    "repos": [
+      {
+        "id": "app",
+        "path": "~/work/app",
+        "remoteUrl": null,
+        "vcsId": "host",
+        "projectPath": "group/app"
+      }
+    ],
+    "autoDiscover": true,
+    "issues": {
+      "vcsId": "host",
+      "project": "group/app",
+      "projectId": null,
+      "refPrefix": "app#",
+      "cardScope": "labels",
+      "cardLabels": [
+        "ready",
+        "sprint 12"
+      ]
+    }
+  },
+  "vcs": [
+    {
+      "id": "host",
+      "kind": "github",
+      "host": "github.com",
+      "apiUrl": "",
+      "user": "",
+      "secretRef": null,
+      "cliPreference": "auto",
+      "cliCommand": null
+    }
+  ],
+  "docs": {
+    "autoDetect": true,
+    "claudeMdRoots": [],
+    "skillsDirs": [],
+    "rulesDirs": [],
+    "agentsDirs": [],
+    "knowledgeDirs": [],
+    "mcpConfigFiles": [],
+    "specsDir": null
+  },
+  "devCycle": {
+    "templateId": "none",
+    "ceremonies": {
+      "preDaily": true,
+      "unblock": true,
+      "gate": true,
+      "qaHandoff": false,
+      "retro": true,
+      "releaseConflicts": false
+    },
+    "ceremonyParams": {
+      "preDaily": {
+        "label": "cycle.label.preDaily",
+        "speechWords": 60,
+        "specReads": 3,
+        "summaryTarget": "",
+        "summaryStyle": "cycle.summary.style"
+      },
+      "unblock": {
+        "speechWords": 80
+      },
+      "gate": {
+        "maxQuestions": 3,
+        "questionKinds": [
+          "cycle.kind.prediction",
+          "cycle.kind.counterfactual",
+          "cycle.kind.boundary",
+          "cycle.kind.sideEffect",
+          "cycle.kind.rollback",
+          "cycle.kind.regression"
+        ],
+        "summaryWords": 150
+      },
+      "qaHandoff": {
+        "speechWords": 150
+      },
+      "retro": {
+        "windowDays": 7,
+        "speechWords": 150
+      },
+      "releaseConflicts": {
+        "speechWords": 90
+      }
+    },
+    "stages": [],
+    "stageMapping": [],
+    "meanings": {
+      "blocker": {
+        "stageKinds": [
+          "blocked"
+        ],
+        "text": ""
+      },
+      "question": {
+        "enabled": true,
+        "text": "cycle.meaning.question"
+      },
+      "readyForQa": {
+        "stageKinds": [],
+        "requiresSpec": true,
+        "text": ""
+      }
+    },
+    "enrichment": {
+      "specFolder": true,
+      "cardFields": [
+        "ref",
+        "iid",
+        "title",
+        "stage",
+        "mrs",
+        "mrPaths",
+        "blockers",
+        "pending",
+        "changes",
+        "note",
+        "url",
+        "priority",
+        "milestone"
+      ],
+      "extraFiles": []
+    },
+    "priority": {
+      "labels": [
+        "^P0$",
+        "^P1$"
+      ]
+    },
+    "prompts": {
+      "turn": "sdd",
+      "reply": "sdd",
+      "deep": "sdd",
+      "teams": "sdd",
+      "gate": "sdd",
+      "qa": "sdd",
+      "retro": "sdd",
+      "conflict": "sdd"
+    },
+    "promptOverrides": {},
+    "pipelineSkill": "",
+    "releaseLabelPattern": "^v?(\\d+\\.\\d+\\.\\d+)$",
+    "specLayout": {
+      "folderPrefix": "#{iid}-",
+      "phaseFiles": [],
+      "planFiles": [],
+      "gateFiles": [],
+      "decisionLog": {
+        "heading": ""
+      },
+      "documents": {
+        "gateQuiz": "GATE_QUIZ.md",
+        "completion": "ISSUE_COMPLETION.md",
+        "qaChecklist": "QA_CHECKLIST.md"
+      }
+    },
+    "quickTransitions": [],
+    "qa": {
+      "user": null
+    }
+  },
+  "agents": {
+    "tools": {
+      "files": true,
+      "skills": true,
+      "trackerMcp": true,
+      "trackerMcpServer": "",
+      "vcsCli": true,
+      "subagents": true
+    },
+    "extraInstructions": "",
+    "persona": "",
+    "roles": {
+      "turn": {
+        "modelRole": "turn",
+        "extraInstructions": "",
+        "promptOverride": "",
+        "persona": "",
+        "maxTurns": null,
+        "docs": {
+          "claudeMd": true,
+          "skills": true,
+          "rules": true,
+          "agents": true,
+          "knowledge": true,
+          "mcp": true
+        }
+      },
+      "reply": {
+        "modelRole": "reply",
+        "extraInstructions": "",
+        "promptOverride": "",
+        "persona": "",
+        "maxTurns": null,
+        "docs": {
+          "claudeMd": true,
+          "skills": true,
+          "rules": true,
+          "agents": true,
+          "knowledge": true,
+          "mcp": true
+        }
+      },
+      "deep": {
+        "modelRole": "deep",
+        "extraInstructions": "",
+        "promptOverride": "",
+        "persona": "",
+        "maxTurns": null,
+        "docs": {
+          "claudeMd": true,
+          "skills": true,
+          "rules": true,
+          "agents": true,
+          "knowledge": true,
+          "mcp": true
+        }
+      },
+      "teams": {
+        "modelRole": "teams",
+        "extraInstructions": "",
+        "promptOverride": "",
+        "persona": "",
+        "maxTurns": null,
+        "docs": {
+          "claudeMd": true,
+          "skills": true,
+          "rules": true,
+          "agents": true,
+          "knowledge": true,
+          "mcp": true
+        }
+      },
+      "fix": {
+        "modelRole": "fix",
+        "extraInstructions": "",
+        "promptOverride": "",
+        "persona": "",
+        "maxTurns": null,
+        "docs": {
+          "claudeMd": true,
+          "skills": true,
+          "rules": true,
+          "agents": true,
+          "knowledge": true,
+          "mcp": true
+        }
+      }
+    }
+  },
+  "voice": {
+    "enabled": false,
+    "engine": "edge",
+    "sttModel": "small",
+    "depsInstalled": false,
+    "kokoroDir": null,
+    "autoStop": true,
+    "silenceMs": 1200,
+    "speak": true,
+    "prosody": true,
+    "bargeIn": true
+  },
+  "claudeSdk": {
+    "installed": false,
+    "version": null,
+    "path": null
+  },
+  "externalTools": {
+    "cardSource": {
+      "enabled": false,
+      "command": "",
+      "reportArgs": [],
+      "noteArgs": [],
+      "stateFile": null,
+      "historyFile": null,
+      "timeoutMs": 150000
+    },
+    "releaseSync": {
+      "enabled": false,
+      "command": "",
+      "cwd": null,
+      "mirrorsDir": null
+    },
+    "timeExport": {
+      "enabled": false,
+      "command": "",
+      "format": "none"
+    },
+    "terminal": {
+      "command": null,
+      "args": []
+    },
+    "claudeCli": {
+      "command": "claude",
+      "cwd": null
+    }
+  }
+}

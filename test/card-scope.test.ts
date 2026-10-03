@@ -83,7 +83,7 @@ describe('the stored fields', () => {
     expect(neutralConfig().projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
   });
 
-  it('a schema 3 file gets the default written out, keeps the rest of its issue project, and a version 4 file without them is left alone', () => {
+  it('a schema 3 file gets the default written out, keeps the rest of its issue project, and a current file is left alone', () => {
     const stored = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
     delete stored.projects.issues.cardScope;
     delete stored.projects.issues.cardLabels;
@@ -92,7 +92,7 @@ describe('the stored fields', () => {
     const r = migrateConfig(v3, { legacyInstall: false });
     expect(r.fromVersion).toBe(3);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(4);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.projects.issues).toMatchObject({ project: 'acme/app', refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] });
     expect(validateConfig(r.config).ok).toBe(true);
     const v4 = migrateConfig(stored, { legacyInstall: false });
@@ -110,13 +110,13 @@ describe('the stored fields', () => {
     expect(bare.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
   });
 
-  it('a file from before the card fields (schema 2) ends at 4 with the scope and the priority section', () => {
+  it('a file from before the card fields (schema 2) ends at the current schema with the scope and the priority section', () => {
     const v2 = { ...neutralConfig(), schemaVersion: 2 } as Record<string, any>;
     delete v2.devCycle.priority;
     delete v2.projects.issues.cardScope;
     delete v2.projects.issues.cardLabels;
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(4);
+    expect(r.config.schemaVersion).toBe(9);
     expect(r.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
   });
