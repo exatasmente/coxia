@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.4] - 2026-10-03
+
 ### Fixed
 
 - The conflict verification commands belong to the workspace. Settings › Conflict verification used to list, in every workspace, the projects of every other one (the commands lived in one file shared by all) and never the workspace's own repositories. It now lists the active workspace's repositories, the projects of its release mirrors and the projects that already have a command there, and the conflict flow runs that workspace's command. The command is part of the workspace configuration (`projects.verifyCommands`), so it is validated, exported and imported with the rest, and the import preview shows it among the programs the file would run; writing stays in the app window only. Commands you already had are moved at the first start: each goes to the workspaces whose repository or mirror is that project, the old file is kept as `conflict-verify.json.migrated`, and a command no workspace lists is kept (a note on the screen offers it with "Use here") instead of being dropped. The workspace configuration moves to schema 11 (an empty `verifyCommands` map, written by the migration); an older app refuses a version 11 file. Help no longer lists the verification commands among what is shared by all workspaces.
@@ -194,7 +196,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.3...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.4...HEAD
+[0.5.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.3...v0.5.0-beta.4
 [0.5.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.1...v0.5.0-beta.2
 [0.5.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0-beta.1
