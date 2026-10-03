@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { Notice } from '../../wizard/ui';
+import { CommentsEditor } from './CommentsEditor';
 import { FlowEditor } from './FlowEditor';
 import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
@@ -18,7 +19,7 @@ const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow:
   team: (p) => <TeamSection {...p} />,
   squads: (p) => <SquadsSection {...p} />,
   flow: (p) => <FlowEditor {...p} />,
-  comments: null,
+  comments: (p) => <CommentsEditor {...p} />,
   runner: null,
 };
 
