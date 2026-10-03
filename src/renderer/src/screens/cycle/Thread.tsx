@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
-import { type ForumMessage, type MessageKind, messageText } from '../../../../shared/forum';
+import { type ForumMessage, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
 import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
-import type { Run } from '../../../../shared/runs';
+import { type Run, canSendBack } from '../../../../shared/runs';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { RichText } from '../Diagram';
@@ -123,7 +123,7 @@ function Chain({ chain, messages, ctx }: { chain: QuestionChain; messages: Forum
 }
 
 /** The box a person writes in, with `@agent` completed from the team as they type. */
-function Composer({ thread, team, note, onSent }: { thread: string; team: readonly AgentDef[] | undefined; note: string | null; onSent: (m: ForumMessage) => void }) {
+function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; team: readonly AgentDef[] | undefined; note: string | null; onSent: (m: ForumMessage) => void; /** Present when the run can be sent back: a mention in the text is then said not to do it, with the way to. */ onSendBack?: () => void }) {
   const t = useT();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -170,6 +170,12 @@ function Composer({ thread, team, note, onSent }: { thread: string; team: readon
   return (
     <div className="cy-composer">
       {note && <p className="small muted cy-composer-note">{note}</p>}
+      {onSendBack && parseMentions(text, named.map((a) => a.id)).length > 0 && (
+        <p className="small cy-composer-note cy-sendback-hint" role="note">
+          {t('ui.forum.noteSendBack')}{' '}
+          <button type="button" className="cy-link" onClick={onSendBack}>{t('ui.forum.noteSendBackOpen')}</button>
+        </p>
+      )}
       <div className="cy-composer-box">
         <textarea
           ref={box}
@@ -247,10 +253,12 @@ interface Props {
   title?: string;
   /** A channel does not call an agent: the box says so. */
   channel?: boolean;
+  /** Opens the form that sends the run back to a stage (the run screen's): offered next to the box while a mention is typed and the run can be sent back. */
+  onSendBack?: () => void;
 }
 
 /** A thread read and written: messages by kind with their author and where they stand, the chain of each question, live, and the box to write in. */
-export function Thread({ thread, run = null, team, title, channel = false }: Props) {
+export function Thread({ thread, run = null, team, title, channel = false, onSendBack }: Props) {
   const t = useT();
   const live = useThread(thread);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -296,6 +304,7 @@ export function Thread({ thread, run = null, team, title, channel = false }: Pro
         thread={thread}
         team={team}
         note={note}
+        onSendBack={onSendBack && run && !channel && run.status !== 'question' && canSendBack(run) ? onSendBack : undefined}
         onSent={() => {
           stick.current = true;
         }}

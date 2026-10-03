@@ -21,6 +21,7 @@ const CHANNEL: Record<RunActionId, string> = {
   answer: 'runs:answer',
   chooseSquad: 'runs:setSquad',
   skipWait: 'runs:skipWait',
+  sendBack: 'runs:sendBack',
   retry: 'runs:retry',
   cancel: 'runs:cancel',
 };

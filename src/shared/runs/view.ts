@@ -1,6 +1,7 @@
 import type { RepoConfig } from '../config/types';
 import { shownText } from '../cycles/text';
 import { sameFinding } from './output';
+import { canSendBack, sendBackTargets } from './sendBack';
 import { type FlowStage, type Run, type RunStatus, type StageUsage, isTerminal } from './types';
 
 // What the run screens decide from a run, as plain data: which badge a card carries, who a run waits for, which runs a card has. The screens only draw it.
@@ -64,7 +65,7 @@ export function reposToChoose(repos: readonly Pick<RepoConfig, 'id' | 'projectPa
 
 // ---- what the person can do about a run ---------------------------------------------------------------------------------------------
 
-export const RUN_ACTIONS = ['startStage', 'accept', 'return', 'approve', 'reject', 'skip', 'answer', 'chooseSquad', 'skipWait', 'retry', 'cancel'] as const;
+export const RUN_ACTIONS = ['startStage', 'accept', 'return', 'approve', 'reject', 'skip', 'answer', 'chooseSquad', 'skipWait', 'sendBack', 'retry', 'cancel'] as const;
 export type RunActionId = (typeof RUN_ACTIONS)[number];
 
 export interface RunAction {
@@ -80,28 +81,43 @@ const act = (id: RunActionId, input: RunAction['input'] = 'none', over: Partial<
 /**
  * What the person may do for a run in the state it is in, in the order the screen offers it. This is the table of the transitions of `runs/transitions.ts` seen
  * from the screen: the same states, the same notes that are required (a rejection, a skip and a return carry a reason; an approval and an acceptance may not).
- * Every move is open to a paired browser as much as to the window; cancelling asks for a second click.
+ * Every move is open to a paired browser as much as to the window; cancelling asks for a second click. Sending the work back to an earlier stage is offered
+ * wherever the run waits for the person or an event and once it is done, as long as `flow` (when given) has an earlier work stage to send it to; its note is
+ * written in the form the screen opens for it, not in the box of the other moves.
  */
-export function runActions(run: Pick<Run, 'status' | 'question'>): RunAction[] {
+export function runActions(run: Pick<Run, 'status' | 'question'> & { stage?: string }, flow?: readonly FlowStage[]): RunAction[] {
   const cancel = act('cancel', 'none', { confirm: true });
+  const back = canSendBack(run) && (!flow || sendBackTargets(flow, run.stage ?? '').length > 0) ? [act('sendBack', 'optional')] : [];
   switch (run.status) {
     case 'to-start':
-      return [act('startStage'), cancel];
+      return [act('startStage'), ...back, cancel];
     case 'to-accept':
-      return [act('accept', 'optional'), act('return', 'required'), cancel];
+      return [act('accept', 'optional'), act('return', 'required'), ...back, cancel];
     case 'gate':
-      return [act('approve', 'optional'), act('reject', 'required'), act('skip', 'required'), cancel];
+      return [act('approve', 'optional'), act('reject', 'required'), act('skip', 'required'), ...back, cancel];
     case 'question':
-      return [run.question?.kind === 'squad' ? act('chooseSquad') : act('answer', 'required'), cancel];
+      return [run.question?.kind === 'squad' ? act('chooseSquad') : act('answer', 'required'), ...back, cancel];
     case 'waiting':
-      return [act('skipWait', 'required'), cancel];
+      return [act('skipWait', 'required'), ...back, cancel];
     case 'failed':
-      return [act('retry'), cancel];
+      return [act('retry'), ...back, cancel];
     case 'working':
       return [cancel];
+    case 'done':
+      return back;
     default:
       return [];
   }
+}
+
+/** Where "go on without waiting" takes a waiting run: the stage after the wait, the end of the run, or back into the work stage whose agent asked and gets no answer. */
+export type SkipWaitOutcome = { kind: 'stage'; stage: FlowStage } | { kind: 'end' } | { kind: 'resume'; agent: string | null };
+
+export function skipWaitOutcome(run: Pick<Run, 'stage'>, flow: readonly FlowStage[]): SkipWaitOutcome {
+  const here = flow.find((s) => s.id === run.stage);
+  if (here?.type === 'work') return { kind: 'resume', agent: here.agent };
+  const next = here?.next ? flow.find((s) => s.id === here.next) : undefined;
+  return next ? { kind: 'stage', stage: next } : { kind: 'end' };
 }
 
 // ---- the stages of a run, as a timeline ------------------------------------------------------------------------------------------------
