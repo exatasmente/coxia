@@ -37,7 +37,8 @@ export function RunnerSection({ config, save }: SectionProps) {
     setSaving(true);
     setError(null);
     try {
-      await save({ ...config, runner: runnerOf(draft) });
+      const done = await save({ ...config, runner: runnerOf(draft) });
+      setDraft(draftOfRunner(done.runner));
       setSaved(true);
     } catch (e) {
       setError(errorText(e));

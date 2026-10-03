@@ -6,6 +6,7 @@ import { flowIssueText, type FlowIssue } from '../../../../shared/runs/flowCheck
 import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
 import { DEFAULT_ROUND, stageFieldProblems } from './flowEdit';
+import { KIND_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
 import { agentName } from './text';
 import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
@@ -95,17 +96,17 @@ export function StagePanel(p: StagePanelProps) {
           <legend className="wz-label">{t('ui.flow.f.type')}</legend>
           <div role="group" aria-label={t('ui.flow.f.type')} className="wz-pills">
             {STAGE_TYPES.map((x) => (
-              <button key={x} type="button" aria-pressed={type === x} className={`filter ${type === x ? 'on' : ''}`} onClick={() => setType(x)}>{t(`ui.flow.type.${x}`)}</button>
+              <button key={x} type="button" aria-pressed={type === x} className={`filter ${type === x ? 'on' : ''}`} onClick={() => setType(x)}>{t(TYPE_LABEL[x])}</button>
             ))}
           </div>
-          <div className="small muted">{t(`ui.flow.type.${type}.hint`)}</div>
+          <div className="small muted">{t(TYPE_HINT[type])}</div>
           {msg('type') && <div className="tm-field-error small" role="alert">{msg('type')}</div>}
         </fieldset>
 
         <Labeled label={t('ui.flow.f.kind')} hint={t('ui.flow.f.kindHint')}>
           {(id) => (
             <select id={id} className="text-input" value={stage.kind} onChange={(e) => p.onPatch({ kind: e.target.value })}>
-              {STAGE_KINDS.map((k) => <option key={k} value={k}>{t(`ui.flow.kind.${k}`)}</option>)}
+              {STAGE_KINDS.map((k) => <option key={k} value={k}>{t(KIND_LABEL[k])}</option>)}
             </select>
           )}
         </Labeled>
@@ -213,7 +214,7 @@ export function StagePanel(p: StagePanelProps) {
             <Labeled label={t('ui.flow.f.waitKind')}>
               {(id) => (
                 <select id={id} className="text-input" value={stage.waitsFor?.kind ?? 'pr-merged'} onChange={(e) => setWait({ kind: e.target.value as WaitKind })}>
-                  {WAIT_KINDS.map((k) => <option key={k} value={k}>{t(`ui.flow.wait.${k}`)}</option>)}
+                  {WAIT_KINDS.map((k) => <option key={k} value={k}>{t(WAIT_LABEL[k])}</option>)}
                 </select>
               )}
             </Labeled>

@@ -7,6 +7,7 @@ import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { applyAgent, agentProblems, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { PERMISSION_HINT } from './labels';
 import { teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
 import { Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
@@ -162,7 +163,7 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
 
         <ModelFields config={config} draft={draft} set={set} error={fieldError('model')} />
 
-        <Labeled label={t('ui.team.f.permission')} hint={t(`ui.team.permission.${draft.permission}.hint`)}>
+        <Labeled label={t('ui.team.f.permission')} hint={t(PERMISSION_HINT[draft.permission])}>
           {(id) => (
             <select id={id} className="text-input" value={draft.permission} onChange={(e) => set({ permission: e.target.value as AgentPermission })}>
               <option value="read">{t('ui.team.permission.read')}</option>

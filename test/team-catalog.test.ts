@@ -11,7 +11,7 @@ const files = readdirSync(DIR).filter((f) => /\.tsx?$/.test(f));
 const source = files.map((f) => readFileSync(join(DIR, f), 'utf8')).join('\n');
 
 // Literal keys, and the template ones (`ui.team.tab.${id}`) as patterns.
-const literals = new Set([...source.matchAll(/['"`](ui\.[a-zA-Z0-9]+\.[\w.]*[\w])['"`]/g)].map((m) => m[1]));
+const literals = new Set([...source.matchAll(/['"`](ui\.[a-zA-Z0-9]+\.[\w.-]*[\w])['"`]/g)].map((m) => m[1]));
 const templates = [...source.matchAll(/`(ui\.[a-z]+\.[\w.]*)\$\{[^`]*`/g)].map((m) => new RegExp(`^${m[1].replace(/\./g, '\\.')}`));
 
 describe('the team and cycle catalogs', () => {

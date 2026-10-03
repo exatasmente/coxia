@@ -97,10 +97,10 @@ export function Confirm({ children, confirmLabel, onConfirm, onCancel, danger }:
   );
 }
 
-/** What the container hands every section: the configuration as it is, how to save a whole new one (it throws what the main process refuses), and how to read it again. */
+/** What the container hands every section: the configuration as it is, how to save a whole new one (it gives back what was saved, and throws what the main process refuses), and how to read it again. */
 export interface SectionProps {
   config: WorkspaceConfig;
-  save: (next: WorkspaceConfig) => Promise<void>;
+  save: (next: WorkspaceConfig) => Promise<WorkspaceConfig>;
   reload: () => void;
 }
 

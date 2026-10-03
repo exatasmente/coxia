@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CommentTemplate } from '../../../../shared/config/types';
+import type { CommentEventKey, CommentTemplate } from '../../../../shared/config/types';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { addSection, commentTargets, moveSection, patchSection, patchTemplate, PLACEHOLDERS, removeSection, renderSample, starterTemplate, templateProblems } from './commentEdit';
+import { EVENT_LABEL } from './labels';
 import { shown } from './text';
 import { Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 
@@ -27,7 +28,7 @@ export function CommentsEditor({ config, save }: SectionProps) {
   const targets = useMemo(() => commentTargets(stages, draft), [stages, draft]);
   const current = targets.find((x) => x.key === key) ?? targets[0] ?? null;
   const tpl = current ? draft[current.key] : undefined;
-  const label = (x: { key: string; kind: string; label: string }): string => (x.kind === 'event' ? t(`ui.comments.event.${x.key}`) : x.kind === 'other' ? t('ui.comments.other', { key: x.key }) : x.label);
+  const label = (x: { key: string; kind: string; label: string }): string => (x.kind === 'event' ? t(EVENT_LABEL[x.key as CommentEventKey]) : x.kind === 'other' ? t('ui.comments.other', { key: x.key }) : x.label);
   const language = config.language;
 
   const set = (next: CommentTemplate) => {
@@ -41,7 +42,7 @@ export function CommentsEditor({ config, save }: SectionProps) {
   const elsewhere = all.filter((x) => x.k !== current?.key && x.p.severity === 'error').map((x) => ({ severity: 'error' as const, text: `${x.k}: ${t(x.p.key, x.p.params)}` }));
 
   const sample = tpl && current
-    ? renderSample(tpl, language, current.kind === 'stage' ? current.label : t(`ui.comments.event.${current.key}`), {
+    ? renderSample(tpl, language, current.kind === 'stage' ? current.label : t(EVENT_LABEL[current.key as CommentEventKey]), {
         body: (n) => t('ui.comments.sample.body', { n }),
         technical: t('ui.comments.sample.technical'),
         result: t('ui.comments.sample.result'),
@@ -54,7 +55,8 @@ export function CommentsEditor({ config, save }: SectionProps) {
     setSaving(true);
     setError(null);
     try {
-      await save({ ...config, devCycle: { ...config.devCycle, comments: draft } });
+      const done = await save({ ...config, devCycle: { ...config.devCycle, comments: draft } });
+      setDraft(structuredClone(done.devCycle.comments));
       setSaved(true);
     } catch (e) {
       setError(errorText(e));

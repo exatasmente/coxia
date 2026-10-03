@@ -14,6 +14,7 @@ import {
   stagesOfTarget, withStages, type FlowDraft, type Target,
 } from './flowEdit';
 import { applyBundle, exportFlowText, readFlowText, STARTERS, type FlowBundle } from './flowFile';
+import { NEW_STAGE_LABEL, TYPE_LABEL, WAIT_LABEL } from './labels';
 import { StagePanel } from './StagePanel';
 import { agentName, shown, squadName } from './text';
 import { Confirm, Problems, type Problem, type SectionProps } from './ui';
@@ -96,7 +97,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
   };
 
   const add = (after: number, type: StageType) => {
-    const made = insertStage(stages, after, type, t(`ui.flow.new.${type}`));
+    const made = insertStage(stages, after, type, t(NEW_STAGE_LABEL[type]));
     edit(made.stages);
     setSelected(made.id);
   };
@@ -150,7 +151,8 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
     setSaving(true);
     setError(null);
     try {
-      await save(applyFlows(config, draft));
+      const done = await save(applyFlows(config, draft));
+      setDraft(draftOfFlows(done));
       setSaved(true);
       setSelected(null);
     } catch (e) {
@@ -252,9 +254,9 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
                         <span className="tm-row-body">
                           <span className="tm-row-name">{name}</span>
                           <span className="small muted tm-row-sub">
-                            <span className={`badge badge-quiet tm-type tm-type-${type}`}>{t(`ui.flow.type.${type}`)}</span>
+                            <span className={`badge badge-quiet tm-type tm-type-${type}`}>{t(TYPE_LABEL[type])}</span>
                             {type === 'work' && <span>{agent ? agentName(agent) : t('ui.flow.row.noAgent')}</span>}
-                            {type === 'wait' && s.waitsFor && <span>{t(`ui.flow.wait.${s.waitsFor.kind}`)}</span>}
+                            {type === 'wait' && s.waitsFor && <span>{t(WAIT_LABEL[s.waitsFor.kind])}</span>}
                             {s.produces?.length ? <span className="mono">{s.produces.join(', ')}</span> : null}
                             {f?.returnsTo && (type === 'gate' || s.returnsTo !== undefined || s.kind === 'review' || s.kind === 'qa') ? <span>{t('ui.flow.row.returns', { stage: stages.find((x) => x.id === f.returnsTo)?.label || f.returnsTo })}</span> : null}
                           </span>
@@ -322,7 +324,7 @@ function AddButtons({ after, name, add, t }: { after: number; name: string; add:
   return (
     <div className="tm-add" role="group" aria-label={t('ui.flow.addAria', { name })}>
       {(['work', 'gate', 'wait'] as const).map((type) => (
-        <button key={type} type="button" className="btn tm-mini tm-add-btn" aria-label={t('ui.flow.addTypeAria', { type: t(`ui.flow.type.${type}`), name })} onClick={() => add(after, type)}>+ {t(`ui.flow.type.${type}`)}</button>
+        <button key={type} type="button" className="btn tm-mini tm-add-btn" aria-label={t('ui.flow.addTypeAria', { type: t(TYPE_LABEL[type]), name })} onClick={() => add(after, type)}>+ {t(TYPE_LABEL[type])}</button>
       ))}
     </div>
   );
