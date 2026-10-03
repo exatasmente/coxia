@@ -171,7 +171,7 @@ export function stageFieldProblems(stages: StageDef[], s: StageDef): FieldProble
     if (new Set(list).size !== list.length) out.push({ field, key: 'ui.flow.err.fileTwice' });
   }
   if (s.roundLimit !== undefined && !(Number.isInteger(s.roundLimit) && s.roundLimit >= 1 && s.roundLimit <= 20)) out.push({ field: 'roundLimit', key: 'ui.flow.err.roundLimit' });
-  if (s.waitsFor?.kind === 'time' && s.waitsFor.minutes !== undefined && !(Number.isInteger(s.waitsFor.minutes) && s.waitsFor.minutes >= 1 && s.waitsFor.minutes <= 525_600)) out.push({ field: 'waitsFor', key: 'ui.flow.err.minutes' });
+  if ((s.waitsFor?.kind === 'time' || s.waitsFor?.kind === 'beta-age') && s.waitsFor.minutes !== undefined && !(Number.isInteger(s.waitsFor.minutes) && s.waitsFor.minutes >= 1 && s.waitsFor.minutes <= 525_600)) out.push({ field: 'waitsFor', key: 'ui.flow.err.minutes' });
   if (s.comment && !COMMENT_KEY_RE.test(s.comment)) out.push({ field: 'comment', key: 'ui.flow.err.commentKey' });
   if ((s.trackerStatus ?? '').length > 200) out.push({ field: 'trackerStatus', key: 'ui.flow.err.trackerStatus' });
   return out;

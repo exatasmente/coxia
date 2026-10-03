@@ -89,7 +89,7 @@ function stageIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): vo
 
     if (type === 'wait') {
       const w = s.waitsFor;
-      if (!w || (w.kind === 'label' && !w.label?.trim()) || (w.kind === 'time' && !(w.minutes && w.minutes > 0))) issue('error', 'wait-no-event', s, 'waitsFor');
+      if (!w || (w.kind === 'label' && !w.label?.trim()) || ((w.kind === 'time' || w.kind === 'beta-age') && !(w.minutes && w.minutes > 0))) issue('error', 'wait-no-event', s, 'waitsFor');
     }
 
     for (const file of s.reads ?? []) {

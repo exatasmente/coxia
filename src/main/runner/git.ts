@@ -88,7 +88,7 @@ export const headSha = async (wt: string): Promise<string | null> => ((await git
 
 // The settings a commit of the app must not inherit from the repository: hooks (a tracked hook an agent edited would run outside the confinement),
 // signing (it can prompt), and a file-system monitor (it is a program the repository names).
-const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'core.fsmonitor=false'];
+export const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'core.fsmonitor=false'];
 
 // The dependency folders a worktree may carry as links to the clone's (dependencies.ts). A link is not a directory to git, so `node_modules/` in a .gitignore does
 // not cover it: every command of the app that adds or lists changes leaves them out by name.

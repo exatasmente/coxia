@@ -34,11 +34,13 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
+import { type ReleaseUnit, isReleasePush, parseReleaseUnit } from '../shared/release';
+import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
-import { issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
+import { getConfig, issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
 
 /** The workspace's word for a change request (MR, PR), for a notification of an action that has no ref. */
@@ -361,6 +363,7 @@ export async function previewAction(id: string): Promise<string> {
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
   if (a.kind === 'conflict-push') return a.output ?? '';
   if (a.kind === 'run-push') return a.output ?? '';
+  if (a.kind === 'release-git') return previewReleaseAction(a);
   return a.files.join('\n');
 }
 
@@ -469,6 +472,8 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = await publishConflict(a);
     } else if (a.kind === 'run-push') {
       output = await publishRunBranch(a);
+    } else if (a.kind === 'release-git') {
+      output = await runRelease(originOf(a), a.unit);
     } else if (isVcsAction(a)) {
       // A group runs in order from where it stopped; each write is audited on its own, under the proposal that holds them.
       const all = a.commands ?? [a.command as VcsCommand];
@@ -929,6 +934,93 @@ async function publishRunBranch(a: ReleaseAction): Promise<string> {
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
   // i18n-ignore: a git command line shown as it runs
   return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+}
+
+// ---- the steps of a release -----------------------------------------------------------------------------------------------------------------
+// A release action names an operation and a version (shared/release.ts), never a folder or a command: the run it belongs to says which repository, the
+// configuration says the identity, and the repository's own release script decides whether a version may be cut. What leaves the machine (the push of the
+// branch, the push of a tag) only ever waits here for its own "sim"; the other steps run when a person says "sim" too, or by themselves when the agent that asked
+// is autonomous (`runReleaseAuto`). All of them are audited and refused in a test workspace.
+
+/** Proposes one step of a release. A proposal with the same key that waits, runs or ran is not made twice. */
+export function proposeRelease(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; unit: ReleaseUnit; notify?: { title: string; body: string } }): ReleaseAction | null {
+  const unit = parseReleaseUnit(input.unit);
+  if (!unit.runId) throw new Error(t('main.release.noRun', { version: unit.version }));
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
+  const action = blank({
+    key: input.key,
+    kind: 'release-git',
+    issue: input.issue,
+    issueTitle: input.issueTitle ?? '',
+    summary: input.summary,
+    unit: { ...unit },
+    output: [input.detail, releaseCommandLine(unit)].filter(Boolean).join('\n\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+interface ReleaseContext {
+  run: NonNullable<ReturnType<ReturnType<typeof runStore>['get']>>;
+  clone: string;
+  project: string | null;
+}
+
+/**
+ * The run and the repository a release action works on, read from the run (the unit holds neither a path nor a repository). A run that ended still counts: its
+ * pushes may wait for a "sim" after its stages are over; only a cancelled run stops them.
+ */
+async function releaseContextOf(unit: ReleaseUnit): Promise<ReleaseContext> {
+  const run = unit.runId ? runStore().get(unit.runId) : null;
+  if (!run || run.subject?.kind !== 'release' || run.subject.version !== unit.version || run.status === 'cancelled') throw new Error(t('main.release.noRun', { version: unit.version }));
+  const repo = rc().repos.find((r) => r.id === run.repo);
+  if (!repo) throw new Error(t('main.release.noRepo', { repo: run.repo }));
+  let clone: string | null = existsSync(join(repo.path, '.git')) ? repo.path : null;
+  if (!clone && repo.projectPath && rc().vcsHost) clone = await findClone(repo.projectPath, rc().cloneRoots, rc().vcsHost as string);
+  if (!clone) throw new Error(t('main.release.noRepo', { repo: run.repo }));
+  return { run, clone, project: repo.projectPath };
+}
+
+const checksOf = (ci: { status: string } | null): ReleasePr['checks'] => (!ci ? 'none' : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
+
+/** One release step, run and audited. The unit is read again from what was stored: nothing in it is believed until it passes `parseReleaseUnit` here. */
+async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
+  const unit = parseReleaseUnit(raw);
+  const { run, clone, project } = await releaseContextOf(unit);
+  const id = getConfig().runner.identity;
+  const identity = { name: id.name.trim(), email: id.email.trim() };
+  if (!identity.name || !identity.email) throw new Error(t('main.release.noIdentity'));
+  const push = isReleasePush(unit.op);
+  const fields: Record<string, string> = { op: unit.op, version: unit.version, run: run.id, repo: run.repo, ...(unit.pr !== undefined ? { pr: String(unit.pr) } : {}) };
+  return audited(origin, { kind: push ? 'push' : 'release', target: releaseCommandLine(unit), via: push ? 'git' : 'release.sh', fields }, async () => {
+    const r = await runReleaseOp(unit, {
+      clone,
+      identity,
+      pr: async (n) => {
+        const mr = await vcsProvider().getMr(project ?? issueProjectKey(), n, { approvals: true });
+        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.approved === true, checks: checksOf(mr.ci) };
+      },
+    });
+    fields.before = r.before ?? '';
+    fields.after = r.after ?? '';
+    if (r.tag) fields.tag = r.tag;
+    return r.output;
+  });
+}
+
+/** One release step an agent's autonomy lets go out without a "sim". A push is refused here whatever the caller says: it only ever waits for a person. */
+export async function runReleaseAuto(w: { issue: number; key: string; summary: string; by: string }, raw: unknown): Promise<string> {
+  const unit = parseReleaseUnit(raw);
+  if (isReleasePush(unit.op)) throw new Error(t('main.release.autoPush'));
+  return runRelease({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by }, unit);
+}
+
+async function previewReleaseAction(a: ReleaseAction): Promise<string> {
+  const unit = parseReleaseUnit(a.unit);
+  const { clone } = await releaseContextOf(unit);
+  return previewRelease(unit, clone);
 }
 
 // After a successful push: clean up, close the conflict and hand the QA comment to its own "sim".

@@ -5,7 +5,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type StageRecord, type StageUsage, type Transition } from './types';
+import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -169,6 +169,8 @@ export interface StartInput {
   cycleId: string;
   /** The commit the branch was cut from. */
   base?: string | null;
+  /** The run is a release of a version (its `issue` is the synthesized `release:X.Y.Z`). */
+  subject?: RunSubject;
 }
 
 /** What keeps a run from starting: an empty flow, or a stage that must have an agent and has none. Throws the refusal `startRun` gives. */
@@ -206,6 +208,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     base: input.base ?? null,
     createdAt: at,
     updatedAt: at,
+    ...(input.subject ? { subject: structuredClone(input.subject) } : {}),
   };
   log(run, at, 'started', null, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
