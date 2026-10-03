@@ -67,6 +67,7 @@ describe('reads over the API transport', () => {
   it('reads an issue and its comments, newest first', async () => {
     const rt = await api({ [`GET ${API}/repos/acme/app/issues/12`]: { json: F.issue_12 }, [`GET ${API}/repos/acme/app/issues/12/comments`]: { json: F.issue_comments } });
     expect((await rt.provider.getIssue('acme/app', 12)).title).toBe('Export fails with accents');
+    expect((await rt.provider.getIssue('acme/app', 12)).body).toBe('Accented names break the export.');
     expect((await rt.provider.listIssueComments('acme/app', 12)).map((c) => [c.id, c.author])).toEqual([[5002, 'bob-qa'], [5001, 'ana-dev']]);
     expect(await rt.provider.issueStatuses('acme/app', [12])).toEqual(new Map());
   });

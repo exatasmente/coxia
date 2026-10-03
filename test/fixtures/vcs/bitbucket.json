@@ -13,7 +13,8 @@
   "issue_12": {
     "id": 12, "title": "Export fails with accents", "state": "on hold", "kind": "bug", "priority": "major",
     "assignee": { "uuid": "{11111111-2222-3333-4444-555555555555}", "nickname": "ana-dev" }, "reporter": { "nickname": "bob-qa" },
-    "created_on": "2026-09-01T10:00:00Z", "updated_on": "2026-09-30T09:00:00Z", "links": { "html": { "href": "https://bitbucket.org/acme/app/issues/12" } }
+    "created_on": "2026-09-01T10:00:00Z", "updated_on": "2026-09-30T09:00:00Z", "links": { "html": { "href": "https://bitbucket.org/acme/app/issues/12" } },
+    "content": { "raw": "Accented names break the export." }
   },
   "issue_comments": {
     "values": [

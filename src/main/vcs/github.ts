@@ -153,6 +153,7 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     updatedAt: iso(i.updated_at),
     closedAt: iso(i.closed_at),
     webUrl: i.html_url,
+    body: i.body ?? null,
   });
 
   const mrOf = (pr: GhPull, project: string, roles: VcsMr['roles'] = []): VcsMr => ({

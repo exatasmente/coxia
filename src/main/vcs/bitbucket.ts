@@ -66,6 +66,7 @@ interface BbIssue {
   created_on?: string;
   updated_on?: string;
   links?: { html?: { href?: string } };
+  content?: { raw?: string };
 }
 interface BbComment {
   id: number;
@@ -129,6 +130,7 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     updatedAt: iso(i.updated_on),
     closedAt: null,
     webUrl: i.links?.html?.href ?? `${web}/${project}/issues/${i.id}`,
+    body: i.content?.raw ?? null,
   });
 
   const mrOf = (pr: BbPr, roles: VcsMr['roles'] = []): VcsMr => {

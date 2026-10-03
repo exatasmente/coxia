@@ -55,7 +55,7 @@ describe('reads', () => {
 
   it('maps resolved and closed issue states to closed', async () => {
     const rt = await api({ [`GET ${API}/repositories/acme/app/issues/12`]: { json: { ...F.issue_12, state: 'resolved' } } });
-    expect(await rt.provider.getIssue('acme/app', 12)).toMatchObject({ state: 'closed', status: 'resolved' });
+    expect(await rt.provider.getIssue('acme/app', 12)).toMatchObject({ state: 'closed', status: 'resolved', body: 'Accented names break the export.' });
   });
 
   it('reads issue comments without the deleted ones, newest first', async () => {

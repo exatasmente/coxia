@@ -51,7 +51,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['comment', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['review', 'qa', 'comment', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -98,6 +98,61 @@ export interface PendingResult {
   countRound: boolean;
 }
 
+export const SEVERITIES = ['blocking', 'suggestion'] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
+/** One point of a review, as the reviewer gave it: where it is, how much it matters and what to do. The tracker comments are built from these. */
+export interface Finding {
+  /** File path relative to the repository root. */
+  path: string;
+  /** First line it is about, 1-based; null for a finding about the whole file. */
+  line: number | null;
+  /** Last line of a range; null for a single line. */
+  endLine: number | null;
+  /** new: the code after the change; old: a line the change removes. */
+  side: 'new' | 'old';
+  severity: Severity;
+  body: string;
+  /** A complete replacement for exactly the lines named, when the fix is that concrete; null otherwise. */
+  suggestion: string | null;
+}
+
+export const VERDICTS = ['approved', 'changes'] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+/** One review pass of the reviewer agent. */
+export interface ReviewRecord {
+  /** 1 for the first pass of the run. */
+  round: number;
+  stage: string;
+  by: string;
+  at: string;
+  verdict: Verdict;
+  summary: string;
+  findings: Finding[];
+  /** The commit the pass looked at (the diff positions are those of this commit); null when the branch has none yet. */
+  head: string | null;
+}
+
+export const SCENARIO_RESULTS = ['pass', 'fail', 'not-run'] as const;
+export type ScenarioResult = (typeof SCENARIO_RESULTS)[number];
+
+export interface Scenario {
+  name: string;
+  result: ScenarioResult;
+  detail: string;
+}
+
+/** What the QA agent checked. */
+export interface QaRecord {
+  stage: string;
+  by: string;
+  at: string;
+  summary: string;
+  scenarios: Scenario[];
+  head: string | null;
+}
+
 export interface RunIssue {
   /** As the cards write it ("app#101" or "101"): what identifies the issue for "one run at a time". */
   ref: string;
@@ -132,8 +187,14 @@ export interface Run {
   review: { rounds: number; max: number };
   error: RunFailure | null;
   history: HistoryEntry[];
-  /** The tracker comments of this run, by stage id (and `pr`). Nothing is published in this change: the record is where phase 2 keeps what it needs. */
+  /** The tracker comments of this run, by stage id (and `pr`). The record is where publishing keeps what it needs to edit a comment in place. */
   comments: Record<string, CommentRecord>;
+  /** Every review pass, in order, with its findings as given: what the tracker's line comments are built from. */
+  reviews: ReviewRecord[];
+  /** Every QA pass, with its scenarios. */
+  qa: QaRecord[];
+  /** The commit the branch was cut from; what the review's diff starts at. Null for a run made before it was recorded. */
+  base: string | null;
   createdAt: string;
   updatedAt: string;
 }

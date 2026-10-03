@@ -31,6 +31,8 @@ export interface VcsIssue {
   updatedAt: string | null;
   closedAt: string | null;
   webUrl: string;
+  /** The description as the author wrote it; null or missing when the host did not send one (list reads may omit it). */
+  body?: string | null;
   /** Provider global id (GitLab work item gid); filled by a status read only. */
   nodeId?: string | null;
 }

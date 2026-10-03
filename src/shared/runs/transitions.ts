@@ -1,7 +1,7 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
 import { flowProblems, producerOf } from './flow';
-import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type Run, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -118,6 +118,8 @@ export interface StartInput {
   worktree: string;
   cycleFolder: string;
   cycleId: string;
+  /** The commit the branch was cut from. */
+  base?: string | null;
 }
 
 /** A run is created at the first stage. It does not start when the flow is empty or a stage that must have an agent has none: nothing is created then. */
@@ -146,6 +148,9 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     error: null,
     history: [],
     comments: {},
+    reviews: [],
+    qa: [],
+    base: input.base ?? null,
     createdAt: at,
     updatedAt: at,
   };
@@ -315,14 +320,14 @@ function returnWork(run: Run, flow: FlowStage[], p: PendingResult, post: ForumDr
 }
 
 /** The agent hands the work back to an earlier stage. */
-export function handBack(run: Run, flow: FlowStage[], input: { by: string; toStage: string; text: string }, at: string): Transition {
+export function handBack(run: Run, flow: FlowStage[], input: { by: string; toStage: string; text: string; /** The hand back counts toward the review limit (QA that failed). */ countRound?: boolean }, at: string): Transition {
   need(run, 'working');
   const i = flow.findIndex((s) => s.id === run.stage);
   const j = flow.findIndex((s) => s.id === input.toStage);
   if (j < 0 || j >= i || flow[j].human) throw new RunError('unknown-stage', { stage: input.toStage });
   const text = input.text.trim();
   if (!text) throw new RunError('empty-text');
-  return returnWork(run, flow, { kind: 'return', by: input.by, text: '', handoff: text, toStage: input.toStage, countRound: false }, null, at);
+  return returnWork(run, flow, { kind: 'return', by: input.by, text: input.countRound ? text : '', handoff: text, toStage: input.toStage, countRound: !!input.countRound }, null, at);
 }
 
 export interface ReviewReturnInput {
@@ -489,4 +494,25 @@ export function recordCommentEdited(run: Run, key: string, input: { bodyHash: st
 /** The proposal was refused or skipped (a test workspace, or the person said no). A comment already published stays published. */
 export function recordCommentRefused(run: Run, key: string, target: CommentTarget, at: string): Transition {
   return noteComment(run, key, at, 'refused', (c) => ({ ...(c ?? fresh(target, 'refused', at)), status: c?.noteId !== null && c?.noteId !== undefined ? 'published' : 'refused', updatedAt: at }));
+}
+
+// ---- what the agents found --------------------------------------------------------------------------------------------------------------
+// The structured result of a review or a QA pass is kept in the run, as given, so publishing it (line comments on the pull request, the stage's
+// comment) is a matter of reading it back. Like the comment records, these apply in any status.
+
+/** A review pass ended. The round number is the next one; the record is kept even when the pass approved. */
+export function recordReview(run: Run, input: Omit<ReviewRecord, 'round' | 'at'>, at: string): Transition {
+  const out = clone(run, at);
+  const round = out.reviews.length + 1;
+  out.reviews.push({ ...structuredClone(input), round, at });
+  log(out, at, 'review', input.stage, input.by, `${round}: ${input.verdict}`);
+  return { run: out, messages: [] };
+}
+
+/** A QA pass ended. */
+export function recordQa(run: Run, input: Omit<QaRecord, 'at'>, at: string): Transition {
+  const out = clone(run, at);
+  out.qa.push({ ...structuredClone(input), at });
+  log(out, at, 'qa', input.stage, input.by, input.scenarios.every((s) => s.result === 'pass') ? 'pass' : 'fail');
+  return { run: out, messages: [] };
 }

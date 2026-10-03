@@ -15,7 +15,8 @@
   "issue_12": {
     "number": 12, "title": "Export fails with accents", "state": "open", "labels": [{ "name": "bug" }, { "name": "in progress" }],
     "milestone": { "title": "v1.2" }, "assignees": [{ "login": "ana-dev" }], "user": { "login": "bob-qa" },
-    "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null, "html_url": "https://ghe.test/acme/app/issues/12"
+    "created_at": "2026-09-01T10:00:00Z", "updated_at": "2026-09-30T09:00:00Z", "closed_at": null, "html_url": "https://ghe.test/acme/app/issues/12",
+    "body": "Accented names break the export."
   },
   "issue_comments": [
     { "id": 5001, "body": "Looking into it", "created_at": "2026-09-29T08:00:00Z", "user": { "login": "ana-dev" }, "html_url": "https://ghe.test/acme/app/issues/12#issuecomment-5001" },

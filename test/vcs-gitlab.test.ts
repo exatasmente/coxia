@@ -62,6 +62,7 @@ describe('reads over the API transport', () => {
   it('reads one issue with its status and work item id, or just the issue', async () => {
     const rt = await api({ 'GET /api/v4/projects/acme%2Fapp/issues/101': { json: F.issue_101 }, 'POST /api/graphql': { json: F.workitem_status } });
     expect((await rt.provider.getIssue('acme/app', 101)).status).toBeNull();
+    expect((await rt.provider.getIssue('acme/app', 101)).body).toBe('Accented names break the export.\n\nSteps: export a file named café.');
     const full = await rt.provider.getIssue('acme/app', 101, { status: true });
     expect(full).toMatchObject({ status: 'In development', nodeId: 'gid://gitlab/WorkItem/5001', labels: ['STAGE:: Doing', 'bug'] });
   });

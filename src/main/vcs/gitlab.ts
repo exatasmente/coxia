@@ -74,6 +74,7 @@ interface GlIssue {
   updated_at?: string;
   closed_at?: string | null;
   web_url: string;
+  description?: string | null;
   references?: { full?: string };
 }
 interface GlMr {
@@ -155,6 +156,7 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     updatedAt: iso(i.updated_at),
     closedAt: iso(i.closed_at),
     webUrl: i.web_url,
+    body: i.description ?? null,
   });
 
   const mrOf = (m: GlMr, project?: string, roles: VcsMr['roles'] = []): VcsMr => ({

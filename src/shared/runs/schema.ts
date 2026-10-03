@@ -1,7 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the run file format
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, RUN_ID, RUN_STATUSES, RUN_VERSION, STAGE_STATUSES, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, QUESTION_KINDS, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_RESULTS, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -51,6 +51,53 @@ const comment = object(
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
 
+const finding = object(
+  'One point of a review.',
+  {
+    path: string('File path relative to the repository root.', { minLength: 1, maxLength: 500 }),
+    line: { type: ['integer', 'null'], description: 'First line, 1-based; null for the whole file.', minimum: 1 },
+    endLine: { type: ['integer', 'null'], description: 'Last line of a range.', minimum: 1 },
+    side: enumOf('The code after the change, or a removed line.', ['new', 'old']),
+    severity: enumOf('Whether it blocks.', SEVERITIES),
+    body: string('What is wrong and why it matters.', { maxLength: 8000 }),
+    suggestion: { type: ['string', 'null'], description: 'A complete replacement for exactly the lines named.', maxLength: 8000 },
+  },
+  ['path', 'line', 'endLine', 'side', 'severity', 'body', 'suggestion'],
+);
+
+const review = object(
+  'One review pass.',
+  {
+    round: { type: 'integer', description: 'Pass number, from 1.', minimum: 1 },
+    stage: string('Stage id.', { pattern: ID }),
+    by: string('Agent id.', { maxLength: 48 }),
+    at: time('When.'),
+    verdict: enumOf('Approved, or changes asked for.', VERDICTS),
+    summary: string('What the reviewer said overall.', { maxLength: 20_000 }),
+    findings: { type: 'array', description: 'The findings.', items: finding, maxItems: 200 },
+    head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },
+  },
+  ['round', 'stage', 'by', 'at', 'verdict', 'summary', 'findings', 'head'],
+);
+
+const qaRecord = object(
+  'One QA pass.',
+  {
+    stage: string('Stage id.', { pattern: ID }),
+    by: string('Agent id.', { maxLength: 48 }),
+    at: time('When.'),
+    summary: string('What QA said overall.', { maxLength: 20_000 }),
+    scenarios: {
+      type: 'array',
+      description: 'The scenarios checked.',
+      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }) }, ['name', 'result', 'detail']),
+      maxItems: 200,
+    },
+    head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },
+  },
+  ['stage', 'by', 'at', 'summary', 'scenarios', 'head'],
+);
+
 const pending = {
   ...object(
     'What a non-autonomous agent finished and the person has not accepted yet.',
@@ -94,6 +141,9 @@ export const RUN_SCHEMA: JsonSchema = object(
     },
     history: { type: 'array', description: 'Every transition, in order.', items: history, maxItems: 1000 },
     comments: { type: 'object', description: 'Tracker comments by stage id, and `pr` for the pull request.', additionalProperties: comment },
+    reviews: { type: 'array', description: 'Every review pass with its findings.', items: review, maxItems: 100 },
+    qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
+    base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },
@@ -111,5 +161,7 @@ export function parseRun(raw: unknown): RunParse {
   if (issues.length) return { ok: false, reason: 'invalid', errors: issues.slice(0, 6).map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)) };
   const badKey = Object.keys((raw as { comments: object }).comments).find((k) => !new RegExp(ID).test(k));
   if (badKey) return { ok: false, reason: 'invalid', errors: [`comments.${badKey}: not a stage id`] };
-  return { ok: true, run: raw as Run };
+  // A file written before these fields existed reads as having none.
+  const run = raw as Run;
+  return { ok: true, run: { ...run, reviews: run.reviews ?? [], qa: run.qa ?? [], base: run.base ?? null } };
 }

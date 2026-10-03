@@ -7,3 +7,4 @@ export * from './types';
 export function newRunId(nowMs: number, rand: string): string {
   return `r-${nowMs.toString(36)}-${rand}`;
 }
+export * from './output';
