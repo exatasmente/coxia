@@ -1,6 +1,6 @@
 import { t } from '../../shared/i18n';
 
-export const SANDBOX_ERROR_CODES = ['unavailable', 'no-node', 'copy-too-big', 'path-missing', 'path-refused', 'start-failed', 'hostile-link'] as const;
+export const SANDBOX_ERROR_CODES = ['unavailable', 'no-node', 'copy-too-big', 'path-missing', 'path-refused', 'start-failed', 'hostile-link', 'copy-failed', 'git-untrusted'] as const;
 export type SandboxErrorCode = (typeof SANDBOX_ERROR_CODES)[number];
 
 /** A sandbox that cannot be made, for a reason the person can act on; the message is in the catalog (`main.sandbox.error.<code>`). */

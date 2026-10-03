@@ -183,7 +183,7 @@ export interface FakeSession extends SandboxSession {
  * A sandbox that runs nothing: it answers every command from a table (exit 0 and "ok" otherwise), reports each one the way the real session does, and records when it was
  * closed. `available: false` makes it refuse like a machine without one. `onClose` runs when a session closes (to look at what the world was like then).
  */
-export function fakeSandbox(o: { repoFolders?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
+export function fakeSandbox(o: { onOpen?: (options: OpenOptions) => void; repoFolders?: string[]; depsOutside?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
   const opened: FakeSandbox['opened'] = [];
   const status: SandboxStatus = o.available === false ? { available: false, backend: null, version: null, reason: 'no-bwrap', detail: '' } : { available: true, backend: 'bwrap', version: '0.9.0', reason: null, detail: '' };
   return {
@@ -192,7 +192,9 @@ export function fakeSandbox(o: { repoFolders?: string[]; available?: boolean; ta
     purge: () => undefined,
     async open(options) {
       if (!status.available) throw new SandboxError('unavailable', { reason: 'bubblewrap is not installed' });
-      for (const f of o.repoFolders ?? []) options.onRepoFolder?.(f);
+      o.onOpen?.(options);
+      for (const f of o.repoFolders ?? []) options.onNote?.({ code: 'runner.sandbox.repoFolder', params: { path: f } });
+      for (const name of o.depsOutside ?? []) options.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
       const log: ExecResult[] = [];
       const asked: string[] = [];
       const session: FakeSession = {

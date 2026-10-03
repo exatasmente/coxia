@@ -239,7 +239,7 @@ function PermissionFields({ config, initial, draft, isNew, set, error }: { confi
   const sandbox = status?.available === true;
   const was = { tracker: isNew ? 'none' : initial.tracker, shell: isNew ? 'none' : initial.shell } as { tracker: AgentTracker; shell: AgentShell };
   const trackerChoices = AGENT_TRACKERS.filter((v) => !web || v === draft.tracker || !trackerRaised(was.tracker, v));
-  const shellChoices = AGENT_SHELLS.filter((v) => (v !== 'allowlist' || draft.permission === 'worktree' || draft.shell === v) && (v !== 'sandbox' || sandbox || draft.shell === v) && (!web || v === draft.shell || !shellRaised(was.shell, v)));
+  const shellChoices = AGENT_SHELLS.filter((v) => (v !== 'allowlist' || draft.permission === 'worktree' || draft.shell === v) && (v !== 'sandbox' || sandbox || draft.shell === v) && (!web || v === was.shell || v === 'none'));
   const sb = config.runner.sandbox;
   return (
     <>

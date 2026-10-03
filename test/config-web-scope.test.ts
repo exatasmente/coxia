@@ -44,6 +44,7 @@ describe('what a browser may change', () => {
   it('accepts the runner switches, the label, the cap, the turns, the timeouts and the commit message', () => {
     expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; })).toEqual([]);
     expect(refused((c) => { c.runner.turns.write = 120; })).toEqual([]);
+    expect(refused((c) => { c.runner.linkDependencies = false; })).toEqual([]);
   });
 
   it('refuses what names a program or a folder: the runner commands, the worktrees folder and the identity', () => {
@@ -162,9 +163,17 @@ describe('the two permissions of an agent, from a paired browser', () => {
 
   it('may lower them, and change what is not them', () => {
     const before = withAgent('sandbox', 'read');
-    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'allowlist'; a.tracker = 'none'; }))).toEqual([]);
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'none'; a.tracker = 'none'; }))).toEqual([]);
     expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'none'; a.instructions = 'x'; }))).toEqual([]);
     expect(refusedPaths(before, before)).toEqual([]);
+  });
+
+  it('may lower shell only to none: sandbox to the listed commands swaps one reach for another, and is refused', () => {
+    const before = withAgent('sandbox', 'none');
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'allowlist'; }))).toEqual(['agents.team[dev].shell']);
+    expect(refusedPaths(before, agentOf(before, (a) => { a.shell = 'none'; }))).toEqual([]);
+    const listed = withAgent('allowlist', 'none');
+    expect(refusedPaths(listed, agentOf(listed, (a) => { a.shell = 'none'; }))).toEqual([]);
   });
 
   it('may not raise them, and the refusal names the agent and the field', () => {

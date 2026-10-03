@@ -55,7 +55,7 @@ const run = (agent: ReturnType<typeof newAgent>, over: Record<string, unknown> =
 const mcpNames = (o: Record<string, any>): string[] => Object.keys(o.mcpServers ?? {});
 
 describe('what an agent reads of the code host', () => {
-  it('gives a reader with "read" what the ceremonies get, and a reader with "none" nothing of the host', async () => {
+  it('gives a reader with "read" the VcsRead tool, and a reader with "none" nothing of the host', async () => {
     await run(newAgent({ id: 'po', permission: 'read', tracker: 'read' }));
     expect(mcpNames(calls[0].options)).toEqual(['coxia_vcs']);
     expect(calls[0].options.allowedTools).toContain(VCS_MCP_TOOL_NAME);
@@ -75,11 +75,12 @@ describe('what an agent reads of the code host', () => {
   });
 
   it('reads an agent saved before the field as it behaved: a reader had the read, an agent that writes had none', () => {
-    expect(trackerOf({ permission: 'read' } as never, false)).toBe('workspace');
-    expect(trackerOf({ permission: 'worktree' } as never, true)).toBe('none');
-    expect(trackerOf({ permission: 'worktree', tracker: 'read' }, true)).toBe('tool');
-    expect(trackerOf({ permission: 'read', tracker: 'read' }, false)).toBe('workspace');
-    expect(trackerOf({ permission: 'read', tracker: 'none' }, false)).toBe('none');
+    expect(trackerOf({ permission: 'read' } as never)).toBe('tool');
+    expect(trackerOf({ permission: 'worktree' } as never)).toBe('none');
+    expect(trackerOf({ permission: 'worktree', tracker: 'read' })).toBe('tool');
+    // Every agent of a run that reads the host reads it through the tool, whatever it may change.
+    expect(trackerOf({ permission: 'read', tracker: 'read' })).toBe('tool');
+    expect(trackerOf({ permission: 'read', tracker: 'none' })).toBe('none');
   });
 });
 
@@ -112,5 +113,41 @@ describe('the commands of an agent set to a sandbox', () => {
   it('give an agent with no sandbox no Shell tool', async () => {
     await run(newAgent({ id: 'dev', permission: 'worktree', shell: 'allowlist' }), { confine: { root, hooks: confinedHooks({ root, commands: ['npm test'] }) } }, );
     expect(mcpNames(calls[0].options)).not.toContain('coxia_sandbox');
+  });
+});
+
+describe('a runner reader on a workspace with a host CLI and a tracker MCP server', () => {
+  it('gets the VcsRead tool and neither the CLI nor the MCP server, and a read of another project is refused', async () => {
+    const before = structuredClone(getConfig());
+    const c = structuredClone(before);
+    c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: '', secretRef: 'gh.token', cliPreference: 'cli', cliCommand: 'gh' } as never];
+    c.projects.issues.vcsId = 'gh';
+    c.projects.issues.project = 'acme/app';
+    c.agents.tools.vcsCli = true;
+    c.agents.tools.trackerMcp = true;
+    c.agents.tools.trackerMcpServer = 'tracker';
+    saveConfig(c);
+    setVcsRuntimeForTests({ provider: { getIssue: async () => ({ iid: 1 }) } } as never);
+    try {
+      await run(newAgent({ id: 'po', permission: 'read', tracker: 'read' }));
+      const o = calls[0].options;
+      expect(mcpNames(o)).toEqual(['coxia_vcs']);
+      expect(o.allowedTools).toContain(VCS_MCP_TOOL_NAME);
+      expect(o.allowedTools.filter((t: string) => /gh|glab|^mcp__tracker/.test(t))).toEqual([]);
+      expect(o.disallowedTools).toContain('Bash');
+      // The ceremonies keep the workspace's own paths.
+      const { allowedFor } = await import('../src/main/agents');
+      expect(allowedFor('deep').some((t) => t.startsWith('Bash(gh'))).toBe(true);
+      // And what the tool reads is limited to the workspace's projects, strictly.
+      const tool = (o.mcpServers.coxia_vcs as { tools: { handler: (a: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }> }[] }).tools[0];
+      const refused = await tool.handler({ op: 'issue', project: 'other/private', iid: 1 });
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0].text).toMatch(/not one of this workspace's projects \(acme\/app\)/);
+      const ok = await tool.handler({ op: 'issue', project: 'acme/app', iid: 1 });
+      expect(ok.isError).toBeUndefined();
+    } finally {
+      saveConfig(before);
+      setVcsRuntimeForTests({ provider: {} } as never);
+    }
   });
 });

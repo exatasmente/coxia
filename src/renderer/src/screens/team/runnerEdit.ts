@@ -25,6 +25,7 @@ export interface RunnerDraft {
   commitMessage: string;
   /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
   sandbox: RunnerSandbox;
+  linkDependencies: boolean;
 }
 
 export function draftOfRunner(r: RunnerConfig): RunnerDraft {
@@ -43,6 +44,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
     sandbox: structuredClone(r.sandbox),
+    linkDependencies: r.linkDependencies !== false,
   };
 }
 
@@ -59,6 +61,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()) },
     commitMessage: d.commitMessage,
+    linkDependencies: d.linkDependencies,
   };
 }
 

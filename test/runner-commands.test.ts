@@ -1,9 +1,10 @@
 // The commands the app runs for QA: real processes here (a node one-liner, no network), the environment they get, what is kept of their output.
-import { mkdtempSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { OUTPUT_LIMIT, outcomeOf, runCommand, runCommands, tail } from '../src/main/runner/commands';
+import { createLoginPath, loginEnv } from '../src/main/loginPath';
+import { OUTPUT_LIMIT, createCommandRunner, notRunReport, outcomeOf, runCommand, runCommands, tail } from '../src/main/runner/commands';
 import { commandsSection } from '../src/main/runner/prompt';
 import { setLanguage } from '../src/shared/i18n';
 
@@ -85,5 +86,58 @@ describe('what QA is given', () => {
     expect(text).toContain('agora há pouco, neste worktree');
     expect(text).toContain('observados nesta etapa');
     expect(commandsSection([])).toContain('não rodou nenhum comando');
+  });
+});
+
+// A command is found where the person's own shell would find it: the PATH of their login shell goes in front of the app's. Real processes, a fake login shell.
+describe('the commands of a run in an app that was not started from a terminal', () => {
+  const tools = mkdtempSync(join(tmpdir(), 'runner-login-bin-'));
+  const script = (name: string, body: string, mode = 0o755): void => {
+    mkdirSync(tools, { recursive: true });
+    writeFileSync(join(tools, name), `#!/bin/sh\n${body}\n`);
+    chmodSync(join(tools, name), mode);
+  };
+  script('fakenpm', 'echo "fakenpm ran with $@"');
+  script('needs-vitest', 'echo "sh: 1: vitest: not found" >&2; exit 127');
+  script('not-executable', 'echo no', 0o644);
+  // node is not in /usr/bin on every machine (CI installs it elsewhere): the app's PATH keeps the folder of the node running the tests.
+  const appEnv = { PATH: `/usr/bin:/bin:${dirname(process.execPath)}` } as NodeJS.ProcessEnv;
+  const withLogin = (path: string | null) => createCommandRunner(() => loginEnv(appEnv, createLoginPath({ env: { SHELL: '/bin/fakeshell' }, run: async () => (path === null ? Promise.reject(new Error('no shell')) : `motd\n__coxia_path_start__${path}__coxia_path_end__`) })));
+
+  it('finds a tool that only the login shell\'s PATH has, and does not find it without that PATH', async () => {
+    const found = await withLogin(`${tools}:/usr/bin`)(cwd, 'fakenpm test', { timeoutMs: 20_000 });
+    expect(found).toMatchObject({ exitCode: 0, timedOut: false });
+    expect(found.notRun).toBeUndefined();
+    expect(found.output).toContain('fakenpm ran with test');
+    const lost = await withLogin(null)(cwd, 'fakenpm test', { timeoutMs: 20_000 });
+    expect(lost).toMatchObject({ exitCode: null, notRun: 'enoent' });
+    expect(outcomeOf(lost)).toBe('not-run');
+  });
+
+  it('says a command that could not run is not a failure of the code: not found, not executable, and the shell\'s 127 with what it said', async () => {
+    const run = withLogin(`${tools}:/usr/bin`);
+    const [missing, denied, inner, failed] = await runCommands(['definitely-not-a-command-xyz', 'not-executable', 'needs-vitest', node('process.exit(2)')], cwd, run);
+    expect(missing).toMatchObject({ exitCode: null, notRun: 'enoent' });
+    expect(denied).toMatchObject({ exitCode: null, notRun: 'eacces' });
+    expect(inner).toMatchObject({ exitCode: 127, notRun: 'exit' });
+    expect(inner.output).toContain('vitest: not found');
+    expect([missing, denied, inner].map(outcomeOf)).toEqual(['not-run', 'not-run', 'not-run']);
+    // a command that ran and failed is a failure, and has no such mark
+    expect(failed).toMatchObject({ exitCode: 2 });
+    expect(failed.notRun).toBeUndefined();
+    expect(outcomeOf(failed)).toBe('failed');
+    const report = notRunReport([missing, denied, inner, failed]);
+    expect(report?.count).toBe(3);
+    expect(report?.list).toContain('definitely-not-a-command-xyz: definitely-not-a-command-xyz não foi encontrado pelo app');
+    expect(report?.list).toContain('not-executable: not-executable não pode ser executado');
+    expect(report?.list).toContain('needs-vitest: ele disse: sh: 1: vitest: not found');
+    expect(report?.list).not.toContain('process.exit');
+    expect(notRunReport([failed])).toBeNull();
+  });
+
+  it('still takes the credentials out of what the command is given, whatever the login shell added', async () => {
+    process.env.TEST_PROVIDER_API_KEY = 'sk-test-must-not-leak';
+    const seen = await createCommandRunner(() => loginEnv({ ...process.env, PATH: process.env.PATH }, createLoginPath({ env: { SHELL: '/bin/fakeshell' }, run: async () => `__coxia_path_start__${tools}:/usr/bin__coxia_path_end__` })))(cwd, node('console.log(String(process.env.TEST_PROVIDER_API_KEY), process.env.PATH.split(\':\')[0])'), { timeoutMs: 20_000 });
+    expect(seen.output).toBe(`undefined ${tools}`);
   });
 });

@@ -18,7 +18,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The configuration moves to schema 10 (`tracker` and `shell` on each agent, `runner.sandbox`). The migration raises nothing: an agent that changes files keeps the commands of the runner (or none, when the workspace lists none), an agent that only reads keeps no commands and the code host read it had, and the sandbox starts closed.
+- Every agent of a run that has the code host read gets it through the app's `VcsRead` tool only, limited to the workspace's projects (its issue project and its repositories); the host CLI and the tracker MCP servers stay for the ceremonies. A workspace that names no project gives its agents no host read.
+- The dependency folders the runner links into a worktree (`node_modules`, `.venv`) are shared read-only with a sandbox when the link leads into the run's clone; a link that leads elsewhere is left dangling and said in the run's thread.
 - The runner no longer follows a symbolic link in the cycle folder when it reads the documents for the next stage or for the run screen.
+
+## [0.4.2] - 2026-10-03
+
+### Added
+
+- Sending a run back to an earlier stage, as the person's own action (`runs:sendBack`, also from the paired browser): from a wait, a gate, a stage to start or to accept, a failure, a question and from the end of the run, which it reopens. The stage you pick (by default the one the flow names, or the nearest earlier stage whose agent changes the code) starts again as a new attempt with your note as a handoff, together with what the review and QA left open (the latest review's findings, suggestions included, and the QA scenarios that did not pass or could not be checked); the stages after it run again, the review sees the next round with the earlier ones, and no review or QA round is spent. A run that was cancelled cannot be sent back. On the run screen it is **Send back to a stage**, in every state where the run waits for you and once it is finished.
+- The thread's box says, while a mention is typed and the run can be sent back, that naming an agent only asks it something (it answers read only) and points to **Send back to a stage**.
+
+### Changed
+
+- The action of a waiting run is no longer "Stop waiting": it reads "Go on without waiting for the merge" (or the reply, the label, the linked issue, the time), says which stage comes next, and only moves forward. When the reason typed there names an agent with `@` or reads like a request to send the work back (volte, devolva, refaça, go back, send back, return), the screen does not go on: it offers to send back instead, with "Go on anyway" at hand.
+- The commands the app runs for a run (QA's, the ones an agent that writes may run, the conflict verification, the code host's CLIs) start with the `PATH` of your login shell in front of the app's, read once when the app starts (`COXIA_NO_LOGIN_SHELL=1` turns it off).
+
+### Fixed
+
+- A run's worktree had no `node_modules` or `.venv`, so the commands the app runs before QA and an agent's `npm test` failed with "vitest: not found": the app now links the dependency folders your clone has into the worktree when the run starts and again before every stage that runs commands (so a run made earlier gets them when it is sent back), only where the repository ignores them, never over something already there and never into a commit; the thread says which folders were linked, or that the clone has none. An agent still cannot write through the links (the guard refuses them); the commands the app runs use the clone's dependencies. Switch it off with `runner.linkDependencies` (Settings › Runner, also in the paired browser; on by default, no config migration).
+- QA could pass a delivery whose test and typecheck commands never ran: a command the environment could not start (not found, not executable, or the shell's exit code 126 or 127) is now recorded as "could not run" in the QA pass (`notRun`), told in the thread with the reason ("npm was not found by the app", or what the shell said, such as "vitest: not found"), and QA's prompt marks it and tells QA not to pass a scenario that depends on it, but to mark it not run.
+- The installed app (an AppImage opened from the desktop) did not see the tools of your terminal's `PATH`, such as a Node installed with nvm, so commands like `npm test` could fail to start; they now find what your login shell finds.
 
 ## [0.4.1] - 2026-10-03
 
@@ -137,7 +157,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/exatasmente/coxia/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/exatasmente/coxia/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/exatasmente/coxia/compare/v0.2.2...v0.3.0

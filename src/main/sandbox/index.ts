@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +7,8 @@ import { readOnlyPathProblem } from '../../shared/sandboxPaths';
 import type { SandboxStatus } from '../../shared/sandbox';
 import { t } from '../../shared/i18n';
 import { copyTree } from './copy';
+import { dependencyBinds } from './dependencies';
+import { removeTree } from './remove';
 import { SandboxError } from './errors';
 import { gitMounts } from './gitView';
 import { bwrapArgs } from './policy';
@@ -21,6 +23,11 @@ export { SandboxError } from './errors';
 // The sandbox of the app: what a stage asks for to give an agent commands. It checks the machine (probe), builds the stage folder, the copy an agent that only reads works
 // in, the git binds and the proxy of the registry mode, and returns the session. Everything it makes is the app's own and is removed when the session closes.
 
+export interface SandboxNote {
+  code: 'runner.sandbox.repoFolder' | 'runner.sandbox.depsOutside';
+  params: Record<string, string>;
+}
+
 export interface OpenOptions {
   /** The run's worktree. */
   worktree: string;
@@ -32,8 +39,13 @@ export interface OpenOptions {
   onExec?: (result: ExecResult, mode: 'run' | 'refused') => void;
   /** Told about every request the registry proxy decided on. */
   onProxy?: (decision: ProxyDecision) => void;
-  /** Told, once per folder, about a listed folder that holds a repository: its `.git/config` is shown to the sandbox as it is (the cleaned copy is only for the run's own repository). */
-  onRepoFolder?: (path: string) => void;
+  /**
+   * Told about what the person should know and that does not stop the stage: a listed folder that holds a repository (its `.git/config` is shown as it is, the cleaned
+   * copy is only for the run's own repository), and a dependency link that leads outside the clone (left dangling).
+   */
+  onNote?: (note: SandboxNote) => void;
+  /** Aborting it stops the copy of a reader's tree. */
+  signal?: AbortSignal;
 }
 
 export interface SandboxService {
@@ -96,6 +108,17 @@ export function readOnlyFolders(list: string[], home: string, protect: string[])
  * folders outside it must be where they say they are. bwrap resolves links on both the source and the destination, so a link here is a way to mount something else.
  */
 export function assertBindsSafe(binds: [string, string][], worktree: string, tree: string): void {
+  // The main bind, which the others sit inside: a real folder, at its own real path.
+  for (const main of [...new Set([worktree, tree])]) {
+    let real: string;
+    try {
+      real = realpathSync(main);
+      if (!lstatSync(main).isDirectory()) throw new Error('not a folder');
+    } catch {
+      throw new SandboxError('hostile-link', { name: main.slice(main.lastIndexOf('/') + 1) });
+    }
+    if (real !== main) throw new SandboxError('hostile-link', { name: main.slice(main.lastIndexOf('/') + 1) });
+  }
   const inside = (p: string): boolean => p === worktree || p.startsWith(`${worktree}/`) || p === tree || p.startsWith(`${tree}/`);
   for (const [src, dest] of binds) {
     for (const p of [src, dest]) {
@@ -136,27 +159,31 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       const st = await status(false);
       if (!st.available) throw new SandboxError('unavailable', { reason: reasonText(st) });
       const roFolders = readOnlyFolders(opts.config.readOnlyPaths, home, protect);
-      for (const f of roFolders) if (holdsRepository(f)) opts.onRepoFolder?.(f);
+      for (const f of roFolders) if (holdsRepository(f)) opts.onNote?.({ code: 'runner.sandbox.repoFolder', params: { path: f } });
       mkdirSync(o.dir, { recursive: true, mode: 0o700 });
-      const stageDir = join(o.dir, randomUUID().slice(0, 12));
+      // Everything is mounted by its real path: a data folder under a link (/home -> /var/home) must not make the checks that compare a path with its real one refuse it.
+      const worktree = realpathSync(opts.worktree);
+      const stageDir = join(realpathSync(o.dir), randomUUID().slice(0, 12));
       mkdirSync(join(stageDir, 'ctl'), { recursive: true, mode: 0o700 });
       const cleanup: (() => Promise<void> | void)[] = [];
       try {
         let tree: string | null = null;
         if (opts.reader) {
           tree = join(stageDir, 'tree');
-          await copyTree(opts.worktree, tree, opts.config.limits.copyMb * 1024 * 1024);
+          await copyTree(worktree, tree, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
         }
-        const git = gitMounts(opts.worktree, tree ?? opts.worktree, stageDir);
+        const git = gitMounts(worktree, tree ?? worktree, stageDir);
+        const deps = git.clone ? dependencyBinds(tree ?? worktree, worktree, git.clone) : { binds: [], outside: [] };
+        for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
         const registry = opts.config.network === 'registry';
         if (registry) {
           const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
         }
-        const roBinds: [string, string][] = [...git.binds, ...roFolders.map((p): [string, string] => [p, p])];
-        assertBindsSafe(roBinds, opts.worktree, tree ?? opts.worktree);
+        const roBinds: [string, string][] = [...git.binds, ...deps.binds, ...roFolders.map((p): [string, string] => [p, p])];
+        assertBindsSafe(roBinds, worktree, tree ?? worktree);
         const args = bwrapArgs({
-          worktree: opts.worktree,
+          worktree,
           tree,
           stageDir,
           system: systemLayout(),
@@ -169,13 +196,13 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup }, o.deps);
       } catch (e) {
         for (const c of cleanup) await Promise.resolve(c()).catch(() => undefined);
-        rmSync(stageDir, { recursive: true, force: true });
+        removeTree(stageDir);
         throw e;
       }
     },
     purge() {
       try {
-        for (const name of readdirSync(o.dir)) rmSync(join(o.dir, name), { recursive: true, force: true });
+        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
       } catch {
         // Nothing was ever made.
       }

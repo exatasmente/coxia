@@ -58,9 +58,9 @@ Give QA **Sandbox** and let a run reach QA.
 1. With `bwrap` hidden (or on macOS), set an agent to Sandbox in the file by hand and start a run: it is refused before a worktree exists, naming the agent and the reason. Nothing ran.
 2. Automated: `test/runner-sandbox.test.ts` ("a computer that cannot make a sandbox"), `test/sandbox-session.test.ts`.
 
-### 6. Code host read
+### 6. Code host read (every runner agent reads through the `VcsRead` tool only)
 
-1. A reader with **Read only** (the Product Owner): its stage can read the issue and a linked pull request; with **No reading** it cannot (the tools are not offered).
+1. A reader with **Read only** (the Product Owner): its stage can read the issue and a linked pull request through `VcsRead`, and has no `gh`/`glab` and no tracker MCP tools even when the workspace has them on; with **No reading** it has nothing. A read of a project that is not the issue project or a repository's project is refused (and so is every read when the workspace names none).
 2. An agent that writes with **Read only**: its tools list has `VcsRead` and no `gh`/`glab`/MCP; with **No reading**, nothing.
 3. Nothing in any of these writes to the host: comments, labels and pushes still wait in Actions as before.
 4. Automated: `test/runner-tracker.test.ts`, `test/engine-shell-tool.test.ts`.
@@ -84,6 +84,14 @@ Automated, in `test/sandbox-hardening.test.ts` (the real-`bwrap` ones skip witho
 3. `echo x > /dev/foo` fails; `/dev/shm` is no larger than the `/tmp` cap.
 4. In Settings › Runner list a folder that holds a git checkout as an extra read-only folder: the next stage's thread says so. `/var`, `/tmp` and `/run` are refused when typed.
 5. From a paired browser: the check button is not there, and changing a reader that has a sandbox to "Changes files" is refused.
+
+### 10. After the merge with 0.4.2 and the second review
+
+1. A worktree whose clone has `node_modules`: with a developer set to Sandbox, `ls node_modules` inside works and `echo x > node_modules/pkg/new.js` fails; the same for QA's copy. Change the link by hand to point at a folder outside the clone and start the next stage: the thread says the agent must install its own dependencies, and the folder is not there.
+2. `chmod -R a-w $HOME/go` inside a command (any read-only folder in the sandbox's home): the stage still ends as done and the stage folder is gone.
+3. Put the data folder under a link (`ln -s` a parent) and run a sandboxed stage: it works.
+4. From a paired browser, a developer with Sandbox cannot be set to "Listed commands", only to "None".
+5. Automated: `test/sandbox-dependencies.test.ts` (unit and real `bwrap`), `test/sandbox-hardening.test.ts`, `test/runner-tracker.test.ts`, `test/config-web-scope.test.ts`.
 
 ## What the suite does not prove
 

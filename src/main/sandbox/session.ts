@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
@@ -8,6 +8,7 @@ import { redact } from '../errorlog-core';
 import { tail } from '../runner/commands';
 import { FORWARDER_JS, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
 import { SandboxError } from './errors';
+import { removeTree } from './remove';
 
 // One sandbox for one stage: a `bwrap` process that stays up and runs a supervisor, so a process one command starts (a dev server) is still there for the next, and
 // everything ends together when the stage does. The commands go in as files of a read-only folder and a line on its standard input; the answer is a line on its standard
@@ -173,7 +174,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
         console.error('[sandbox] cleanup', e instanceof Error ? e.message : e);
       }
     }
-    rmSync(o.stageDir, { recursive: true, force: true });
+    removeTree(o.stageDir);
   };
 
   // The supervisor says "ready" (after starting the forwarder, when there is one), or the program that builds the sandbox says why it could not.

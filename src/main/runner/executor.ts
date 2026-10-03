@@ -12,7 +12,8 @@ import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
-import { type CommandResult, type CommandRunner, runCommand, runCommands } from './commands';
+import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
+import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { redact } from '../errorlog-core';
@@ -185,7 +186,7 @@ const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refu
  * Makes the sandbox of the stage, and tells the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot
  * make one fails the stage: the agent is set to run commands in a sandbox, and nothing here falls back to running them without.
  */
-async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean): Promise<SandboxSession> {
+async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal): Promise<SandboxSession> {
   const config = d.config();
   const threadId = runThreadId(run.id);
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
@@ -217,15 +218,15 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
       console.error('[runner] could not record a request of the proxy', e instanceof Error ? e.message : e);
     }
   };
-  const onRepoFolder = (path: string): void => {
+  const onNote = (note: { code: 'runner.sandbox.repoFolder' | 'runner.sandbox.depsOutside'; params: Record<string, string> }): void => {
     try {
-      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.sandbox.repoFolder', params: { agent: agent.id, path }, stage: stage.id });
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: note.code, params: { agent: agent.id, ...note.params }, stage: stage.id });
     } catch (e) {
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
   try {
-    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onRepoFolder });
+    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal });
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -237,15 +238,18 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
  */
 export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void): Promise<StageRun> {
   const config = d.config();
-  const { agent, stage } = pickAgent(config, run, flow);
+  const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const writes = agent.permission === 'worktree';
-  const session = agent.shell === 'sandbox' ? await openStageSandbox(d, run, stage, agent, writes) : null;
+  // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too. It comes
+  // before the sandbox is made, because the sandbox shares the folders those links point to.
+  if (writes || kind === 'qa') await ensureDependencies(d, run, stage.id);
+  const session = agent.shell === 'sandbox' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal) : null;
   try {
     return await runStage(d, run, flow, abort, usage, session);
   } finally {
-    // Whatever happened, nothing the stage started outlives it.
-    await session?.close();
+    // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
+    await session?.close().catch(() => undefined);
   }
 }
 
@@ -287,6 +291,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (ran?.length && !session) {
     const list = ran.map((r) => `${r.command} (${r.timedOut ? 'timeout' : (r.exitCode ?? '—')})`).join(', ');
     d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.commands', params: { list }, stage: stage.id });
+    // A command the environment could not start is said in the thread as such, so the person sees it was not the code that failed.
+    const missed = notRunReport(ran);
+    if (missed) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.notRun', params: { list: missed.list }, stage: stage.id });
   }
 
   const input: StageInput = {
@@ -355,7 +362,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const output = readOutput(data, kind);
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
-  if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, session?.log ?? [], !!session);
+  // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
+  if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), !!session);
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's.
   const ranInSandbox: CommandResult[] | undefined = session ? session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })) : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');

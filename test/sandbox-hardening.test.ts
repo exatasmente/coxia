@@ -333,3 +333,143 @@ describe('N1: what the supervisor says without a line end', () => {
     await session.close();
   });
 });
+
+describe('the removal of what a sandbox made (second review, 1)', () => {
+  it('goes through folders a command made read-only, and never throws', async () => {
+    const { removeTree } = await import('../src/main/sandbox/remove');
+    const { chmodSync, writeFileSync: write, mkdirSync: mk } = await import('node:fs');
+    const dir = mkdtempSync(join(root, 'rm-'));
+    mk(join(dir, 'home', 'go', 'pkg', 'mod'), { recursive: true });
+    write(join(dir, 'home', 'go', 'pkg', 'mod', 'x.go'), 'package x');
+    symlinkSync(secret, join(dir, 'home', 'link-out'));
+    chmodSync(join(dir, 'home', 'go', 'pkg', 'mod'), 0o500);
+    chmodSync(join(dir, 'home', 'go', 'pkg'), 0o500);
+    expect(removeTree(dir)).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+    // A link inside is removed as a link: what it pointed at is untouched.
+    expect(existsSync(secret)).toBe(true);
+    expect(removeTree(join(root, 'never-there'))).toBe(true);
+  });
+});
+
+real('the stage folder, closed over read-only folders, and a data folder under a link', () => {
+  const GO_CACHE = 'mkdir -p $HOME/go/pkg/mod/x && echo package > $HOME/go/pkg/mod/x/a.go && chmod -R a-w $HOME/go';
+  it.each([false, true])('close() removes a stage whose home holds read-only folders, and the stage folder is gone (reader=%s)', async (reader) => {
+    const dir = join(root, `sandbox-ro-${reader}`);
+    const service = createSandboxService({ dir, protect: [root] });
+    const wt = worktree(`ro-${reader}`);
+    const s = await service.open({ worktree: wt, reader, config: neutralSandbox() });
+    const r = await s.exec(reader ? `${GO_CACHE}; mkdir -p ro && echo x > ro/f && chmod a-w ro` : GO_CACHE);
+    expect(r.exitCode).toBe(0);
+    await expect(s.close()).resolves.toBeUndefined();
+    expect(execFileSync('ls', [dir]).toString().trim()).toBe('');
+    // A worktree the writer made read-only is the worktree's: it is not the app's to take away.
+    expect(existsSync(wt)).toBe(true);
+    execFileSync('chmod', ['-R', 'u+w', wt]);
+  }, 60_000);
+
+  it('works when the data folder is reached through a link (/home -> /var/home), where a comparison with the real path used to refuse every sandbox', async () => {
+    const real = join(root, 'real-data');
+    mkdirSync(real);
+    const via = join(root, 'link-data');
+    symlinkSync(real, via);
+    const service = createSandboxService({ dir: join(via, 'sandbox'), protect: [root] });
+    const s = await service.open({ worktree: worktree('linked'), reader: false, config: neutralSandbox() });
+    try {
+      expect((await s.exec('git log --oneline | head -1')).exitCode).toBe(0);
+    } finally {
+      await s.close();
+    }
+    expect(execFileSync('ls', [join(real, 'sandbox')]).toString().trim()).toBe('');
+  }, 60_000);
+
+  it('works when the worktree itself is reached through a link, and mounts it by its real path', async () => {
+    const wt = worktree('real-wt');
+    const via = join(root, 'link-wt');
+    symlinkSync(wt, via);
+    const service = createSandboxService({ dir: join(root, 'sandbox-wtlink'), protect: [root] });
+    const s = await service.open({ worktree: via, reader: false, config: neutralSandbox() });
+    try {
+      const r = await s.exec('pwd; echo ok > made-via-link.txt');
+      expect(r.output).toContain(wt);
+    } finally {
+      await s.close();
+    }
+    expect(existsSync(join(wt, 'made-via-link.txt'))).toBe(true);
+  }, 60_000);
+});
+
+describe('the .git pointer is trusted only when it belongs to the worktree (N1)', () => {
+  it('refuses a pointer whose directory does not name this worktree, and a common directory with no HEAD', () => {
+    const wt = worktree('n1');
+    const other = worktree('n1-other');
+    // The pointer of one worktree copied into another: the directory it names says it belongs to the first.
+    writeFileSync(join(wt, '.git'), execFileSync('cat', [join(other, '.git')]).toString());
+    expect(() => gitMounts(wt, wt, mkdtempSync(join(root, 'w-')))).toThrow(SandboxError);
+    const bare = mkdtempSync(join(root, 'nohead-'));
+    mkdirSync(join(bare, '.git'));
+    expect(() => gitMounts(bare, bare, mkdtempSync(join(root, 'w-')))).toThrow(SandboxError);
+  });
+
+  it('cleans the config of a submodule\'s repository, at any depth, like the main one', () => {
+    const wt = worktree('n1-mod');
+    const common = join(clone, '.git');
+    const modules = join(common, 'modules', 'lib');
+    mkdirSync(join(modules, 'modules', 'inner'), { recursive: true });
+    writeFileSync(join(modules, 'config'), '[core]\n\tbare = false\n[remote "origin"]\n\turl = https://bot:hunter2@example.com/g/lib.git\n');
+    writeFileSync(join(modules, 'modules', 'inner', 'config'), '[remote "origin"]\n\turl = https://bot:hunter3@example.com/g/inner.git\n');
+    try {
+      const { binds } = gitMounts(wt, wt, mkdtempSync(join(root, 'w-')));
+      const cleaned = binds.filter(([, d]) => d.startsWith(join(common, 'modules')));
+      expect(cleaned.map(([, d]) => d).sort()).toEqual([join(modules, 'config'), join(modules, 'modules', 'inner', 'config')].sort());
+      for (const [src] of cleaned) expect(execFileSync('cat', [src]).toString()).not.toMatch(/hunter/);
+    } finally {
+      rmSync(join(common, 'modules'), { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the copy (N2)', () => {
+  it('fails with one error that names no path of this computer, and stops on abort', async () => {
+    const dir = mkdtempSync(join(root, 'c-'));
+    const gone = join(dir, 'nowhere');
+    const err = await copyTree(gone, join(dir, 'to'), 1e6).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(SandboxError);
+    expect((err as SandboxError).code).toBe('copy-failed');
+    expect((err as Error).message).not.toContain(dir);
+    const from = mkdtempSync(join(root, 'cf-'));
+    writeFileSync(join(from, 'a'), 'a');
+    const stop = new AbortController();
+    stop.abort();
+    await expect(copyTree(from, join(dir, 'to2'), 1e6, stop.signal)).rejects.toMatchObject({ code: 'copy-failed' });
+  });
+});
+
+describe('N3, N5, N6: what the reads, the main bind and the evidence count', () => {
+  it('N3: the merge requests an issue links to are shown only for the allowed projects', async () => {
+    const { runVcsRead } = await import('../src/main/vcs/readTool');
+    const mk = (project: string, iid: number) => ({ project, iid, title: `t${iid}`, state: 'open', draft: false, sourceBranch: 'b', targetBranch: 'main', sha: 's', webUrl: 'u', author: 'a', reviewers: [], approvals: null, ci: null, description: '' });
+    const provider = { linkedMrs: async () => [mk('acme/app', 1), mk('other/private', 2)] } as never;
+    const out = JSON.parse(await runVcsRead(provider, { op: 'issue_linked_mrs', project: 'acme/app', iid: 9 }, ['acme/app'], true));
+    expect(out.map((m: { iid: number }) => m.iid)).toEqual([1]);
+    expect(JSON.parse(await runVcsRead(provider, { op: 'issue_linked_mrs', project: 'acme/app', iid: 9 })).map((m: { iid: number }) => m.iid)).toEqual([1, 2]);
+  });
+
+  it('N5: the main bind must be a real folder at its own real path', () => {
+    const wt = worktree('n5');
+    const alias = join(root, 'n5-alias');
+    symlinkSync(wt, alias);
+    expect(() => assertBindsSafe([], alias, alias)).toThrow(SandboxError);
+    expect(() => assertBindsSafe([], join(wt, 'a.txt'), join(wt, 'a.txt'))).toThrow(SandboxError);
+    expect(() => assertBindsSafe([], join(root, 'absent'), join(root, 'absent'))).toThrow(SandboxError);
+    expect(() => assertBindsSafe([], wt, wt)).not.toThrow();
+  });
+
+  it('N6: only a command the agent ran backs an executed claim; the app\'s own commands do not', async () => {
+    const { backEvidence } = await import('../src/shared/runs');
+    const log = [{ n: 1, exitCode: 0, timedOut: false, by: 'app' as const }, { n: 2, exitCode: 0, timedOut: false, by: 'agent' as const }];
+    const s = (commands: number[]) => ({ name: 'x', result: 'pass' as const, detail: '', evidence: 'executed' as const, commands });
+    expect(backEvidence([s([1])], log, true)[0]).toMatchObject({ evidence: 'read', unbacked: true });
+    expect(backEvidence([s([1, 2])], log, true)[0]).toMatchObject({ evidence: 'executed', commands: [2] });
+  });
+});

@@ -6,3 +6,5 @@ import { join } from 'node:path';
 // or the real data. A file that needs a layout of its own sets the variable again before importing the modules.
 process.env.CERIMONIAS_DATA_DIR = mkdtempSync(join(tmpdir(), 'cerimonias-test-data-'));
 process.env.CERIMONIAS_SPECS_DIR = mkdtempSync(join(tmpdir(), 'cerimonias-test-specs-'));
+// The app reads the PATH of the person's login shell for the commands it runs; a test never starts that shell (the tests of that read give it a fake one).
+process.env.COXIA_NO_LOGIN_SHELL = '1';

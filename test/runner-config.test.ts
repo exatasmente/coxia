@@ -9,7 +9,7 @@ const errorsOf = (c: WorkspaceConfig): string[] => validateConfig(c).errors.map(
 
 describe('the runner section', () => {
   it('is off by default, with the label "coxia", one run at a time, the repository\'s own commands and no identity of its own', () => {
-    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: { network: 'off', registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'], readOnlyPaths: [], limits: { commandMs: 300_000, stageMs: 1_800_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 } }, commitMessage: 'feat: {summary} #{iid}' });
+    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: { network: 'off', registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'], readOnlyPaths: [], limits: { commandMs: 300_000, stageMs: 1_800_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 } }, commitMessage: 'feat: {summary} #{iid}', linkDependencies: true });
     expect(validateConfig(neutralConfig()).ok).toBe(true);
   });
 
@@ -18,6 +18,17 @@ describe('the runner section', () => {
     expect(errorsOf(withRunner({ turns: { read: 30, write: 501 } })).join(' ')).toContain('runner.turns.write');
     expect(withConfigDefaults({ runner: { enabled: true } } as unknown as Doc).runner.turns).toEqual({ read: 30, write: 80 });
     expect(withConfigDefaults({ runner: { turns: { write: 120 } } } as unknown as Doc).runner.turns).toEqual({ read: 30, write: 120 });
+  });
+
+  it('links the dependencies of the clone by default, and a stored file without the setting reads as on, with no schema version change', () => {
+    expect(neutralConfig().runner.linkDependencies).toBe(true);
+    expect(withConfigDefaults({ runner: { enabled: true } } as unknown as Doc).runner.linkDependencies).toBe(true);
+    expect(withConfigDefaults({ runner: { linkDependencies: false } } as unknown as Doc).runner.linkDependencies).toBe(false);
+    expect(CONFIG_SCHEMA.properties?.runner?.required).toBeUndefined();
+    expect(validateConfig(withRunner({ linkDependencies: false })).ok).toBe(true);
+    expect(validateConfig(withRunner({ linkDependencies: 'yes' as unknown as boolean })).ok).toBe(false);
+    const { linkDependencies: _omitted, ...stored } = neutralRunner();
+    expect(validateConfig({ ...neutralConfig(), runner: stored as RunnerConfig }).ok).toBe(true);
   });
 
   it('fills what a stored file leaves out, field by field', () => {

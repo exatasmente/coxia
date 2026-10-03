@@ -1,12 +1,14 @@
 // The stage of an agent set to run commands in a sandbox, with a sandbox that runs nothing: when it is made and ended, what goes through it, what the thread, the audit
 // log and the QA record say, and what happens on a machine that cannot make one.
 import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
-import { type Boot, boot, doc, fakeCommands, fakeSandbox, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeCommands, fakeSandbox, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -145,6 +147,21 @@ describe('a stage with a sandbox', () => {
     run = await reach(b, run, 'ready');
     const note = b.thread(run).find((m) => m.code === 'runner.sandbox.repoFolder');
     expect(note?.params).toMatchObject({ agent: 'developer', path: '/home/u/tools/nvm' });
+  });
+
+  it('links the clone\'s dependencies before the sandbox is made, because the sandbox shares what the links lead to, and tells the thread of one that leads outside', async () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo.clone, 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(join(repo.clone, '.git', 'info', 'exclude'), 'node_modules/\n');
+    const seen: boolean[] = [];
+    const sandbox = fakeSandbox({ depsOutside: ['node_modules'], onOpen: (o) => seen.push(existsSync(join(o.worktree, 'node_modules')) && lstatSync(join(o.worktree, 'node_modules')).isSymbolicLink()) });
+    const b = await boot({ repo, sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); c.language = 'en'; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(seen).toEqual([true]);
+    const note = b.thread(run).find((m) => m.code === 'runner.sandbox.depsOutside');
+    expect(note?.params).toMatchObject({ agent: 'developer', name: 'node_modules' });
   });
 
   it('runs the commands QA is given the results of inside its sandbox, numbers them, and keeps their numbers and who ran them', async () => {

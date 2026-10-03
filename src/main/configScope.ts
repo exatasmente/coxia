@@ -22,6 +22,7 @@ export const WEB_EDITABLE = [
   'runner.stageIdleMs',
   'runner.stageMaxMs',
   'runner.commitMessage',
+  'runner.linkDependencies',
 ] as const;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -60,7 +61,8 @@ export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfi
   const out: string[] = [];
   for (const a of after.agents.team) {
     const old = was.get(a.id) ?? { shell: 'none' as const, tracker: 'none' as const };
-    if (shellRaised(old.shell, a.shell)) out.push(`agents.team[${a.id}].shell`);
+    // From here a change of `shell` is only ever to `none`: "lowering" sandbox to the listed commands would swap one reach for another that is not below it.
+    if (a.shell !== old.shell && (a.shell !== 'none' || shellRaised(old.shell, a.shell))) out.push(`agents.team[${a.id}].shell`);
     if (trackerRaised(old.tracker, a.tracker)) out.push(`agents.team[${a.id}].tracker`);
   }
   // What an agent with commands can reach depends on its permission too: a reader with a sandbox works in a throwaway copy, an agent that changes files in the real

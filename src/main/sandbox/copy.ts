@@ -8,10 +8,11 @@ import { SandboxError } from './errors';
 // responsive. Symbolic links stay links and are never followed (`cp -a` keeps them as they are).
 
 /** The size of what a copy would hold, in bytes (files only, without `.git`, never following a link). The walk gives way to the event loop between folders. */
-export async function treeSize(from: string): Promise<number> {
+export async function treeSize(from: string, signal?: AbortSignal): Promise<number> {
   let total = 0;
   const stack = [''];
   while (stack.length) {
+    if (signal?.aborted) throw new SandboxError('copy-failed');
     const rel = stack.pop() as string;
     for (const entry of await readdir(join(from, rel), { withFileTypes: true })) {
       if (rel === '' && entry.name === '.git') continue;
@@ -23,18 +24,31 @@ export async function treeSize(from: string): Promise<number> {
   return total;
 }
 
-const run = (args: string[]): Promise<void> =>
+const run = (args: string[], signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
-    execFile('cp', args, { env: { PATH: '/usr/local/bin:/usr/bin:/bin' } }, (err, _out, stderr) => (err ? reject(new Error(String(stderr || err.message).split('\n')[0])) : resolve()));
+    execFile('cp', args, { env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, signal }, (err) => (err ? reject(err) : resolve()));
   });
 
-/** Copies `from` (without `.git`) into the new folder `to`. Refuses, before copying anything, a tree over `maxBytes`. */
-export async function copyTree(from: string, to: string, maxBytes: number): Promise<void> {
-  if ((await treeSize(from)) > maxBytes) throw new SandboxError('copy-too-big', { mb: String(Math.round(maxBytes / 1024 / 1024)) });
-  await mkdir(to, { recursive: true, mode: 0o700 });
-  for (const entry of await readdir(from)) {
-    if (entry === '.git') continue;
-    // `--` ends the options: a file called -rf is a file. A copy that cannot share blocks (reflink) is made again as a plain one.
-    await run(['-a', '--reflink=auto', '--', join(from, entry), `${to}/`]).catch(() => run(['-a', '--', join(from, entry), `${to}/`]));
+/**
+ * Copies `from` (without `.git`) into the new folder `to`. Refuses, before copying anything, a tree over `maxBytes`. Any failure comes out as one error that names no
+ * path of this computer (the detail goes to the log), and an abort stops the walk and the copy.
+ */
+export async function copyTree(from: string, to: string, maxBytes: number, signal?: AbortSignal): Promise<void> {
+  try {
+    if ((await treeSize(from, signal)) > maxBytes) throw new SandboxError('copy-too-big', { mb: String(Math.round(maxBytes / 1024 / 1024)) });
+    await mkdir(to, { recursive: true, mode: 0o700 });
+    for (const entry of await readdir(from)) {
+      if (entry === '.git') continue;
+      if (signal?.aborted) throw new SandboxError('copy-failed');
+      // `--` ends the options: a file called -rf is a file. A copy that cannot share blocks (reflink) is made again as a plain one.
+      await run(['-a', '--reflink=auto', '--', join(from, entry), `${to}/`], signal).catch((e) => {
+        if (signal?.aborted) throw e;
+        return run(['-a', '--', join(from, entry), `${to}/`], signal);
+      });
+    }
+  } catch (e) {
+    if (e instanceof SandboxError) throw e;
+    console.error('[sandbox] copy', e instanceof Error ? e.message.split('\n')[0] : e);
+    throw new SandboxError('copy-failed');
   }
 }

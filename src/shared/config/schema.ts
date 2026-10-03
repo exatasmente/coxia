@@ -446,6 +446,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
         identity: object('Who the app\'s commits in a worktree are made as; both empty: the identity the repository already has.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
+        linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),
       }),
     },
     ['schemaVersion'],

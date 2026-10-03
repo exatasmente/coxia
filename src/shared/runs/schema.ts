@@ -112,7 +112,7 @@ const qaRecord = object(
     commands: {
       type: 'array',
       description: 'The commands the app ran before this pass.',
-      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' }, n: { type: 'integer', description: 'Its number in the stage\'s list (a stage that ran in a sandbox).', minimum: 1, maximum: 10_000 }, by: enumOf('Who ran it, in that case.', ['app', 'agent']) }, ['command', 'exitCode', 'timedOut']),
+      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' }, n: { type: 'integer', description: 'Its number in the stage\'s list (a stage that ran in a sandbox).', minimum: 1, maximum: 10_000 }, by: enumOf('Who ran it, in that case.', ['app', 'agent']), notRun: { type: 'boolean', description: 'It could not be started (not found, not executable): not a result of the code.' } }, ['command', 'exitCode', 'timedOut']),
       maxItems: 200,
     },
   },

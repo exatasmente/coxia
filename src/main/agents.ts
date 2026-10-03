@@ -19,6 +19,7 @@ import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngin
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
 import { claudeSdkEnv, providerSecret } from './llm';
+import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
@@ -45,7 +46,7 @@ function trackerMcpTools(): string[] {
 }
 
 // Tools pre-approved for a role, from the workspace config; dontAsk denies everything else.
-function allowedFor(role: ModelRole, host = true): string[] {
+export function allowedFor(role: ModelRole, host = true): string[] {
   if (role === 'teams') return [];
   const t = getConfig().agents.tools;
   return [
@@ -425,9 +426,18 @@ function wantsVcsTool(req: EngineRequest): boolean {
   if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
-  // An agent that writes reads the host through the tool only, whichever read path the workspace has (the CLI would run beside repository code with the person's credentials).
-  if (req.confine) return mode === 'tool' && vcsReadPolicy().via !== 'none' && vcsReady();
-  return mode === 'workspace' && vcsReadPolicy().via === 'tool';
+  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the workspace's host-read switches on.
+  if (mode === 'tool') {
+    const tools = getConfig().agents.tools;
+    return (tools.vcsCli || tools.trackerMcp) && vcsReady();
+  }
+  return !req.confine && vcsReadPolicy().via === 'tool';
+}
+
+/** The PATH the commands of an agent start with: the one of the person's login shell in front of the app's, so `npm` and the tools the repository's scripts use are found. */
+async function commandPath(): Promise<Record<string, string>> {
+  const path = mergedPath(await loginPath.resolve(), process.env);
+  return path ? { PATH: path } : {};
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
@@ -444,7 +454,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
-    shellEnv: req.confine ? {} : vcsShellEnv(),
+    shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
     writeRoot: req.confine?.root,
     signal: req.abort?.signal,
     describeTool: source,
@@ -481,7 +491,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
   if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));
   const mcp = vcs || shell ? { ...(vcs ?? {}), ...(shell ?? {}) } : null;
-  const env = claudeSdkEnv(req.target);
+  const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
@@ -900,19 +910,20 @@ export interface AgentCall {
 // What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
 // An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given.
 function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']> } {
-  const tracker = trackerOf(call.agent, !!call.confine);
+  const tracker = trackerOf(call.agent);
   if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace'), shell: { rules: [], patterns: [] }, tracker };
   return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker };
 }
 
 /**
- * What an agent of a run may read from the code host. `none` gives it nothing; `read` gives a reader what the ceremonies get (the workspace's switches decide the path)
- * and an agent that writes the `VcsRead` tool only. An agent saved before the field existed reads as it behaved: a reader had the host read, one that writes had none.
+ * What an agent of a run may read from the code host: nothing (`none`), or the `VcsRead` app tool only (`read`), whichever read path the workspace has and whether the
+ * agent changes files or not. Never the host CLI (it would need the person's credentials in the same process that runs repository code, and its paths are not limited to
+ * the workspace's projects) and never a tracker MCP server (a process with credentials of its own): the tool is the one path whose projects the app limits. An agent saved
+ * before the field existed reads as it behaved: a reader had the host read, one that writes had none.
  */
-export function trackerOf(agent: Pick<AgentDef, 'tracker' | 'permission'>, confined: boolean): NonNullable<EngineRequest['tracker']> {
+export function trackerOf(agent: Pick<AgentDef, 'tracker' | 'permission'>): NonNullable<EngineRequest['tracker']> {
   const value = agent.tracker ?? (agent.permission === 'worktree' ? 'none' : 'read');
-  if (value === 'none') return 'none';
-  return confined ? 'tool' : 'workspace';
+  return value === 'none' ? 'none' : 'tool';
 }
 
 // The live activity shows the call the model made; this adds how it ended, once the command has.

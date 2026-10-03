@@ -73,7 +73,7 @@ export async function runVcsRead(provider: VcsProvider, input: unknown, allowed:
       result = comments((await provider.listIssueComments(project, iid)).filter((c) => !c.system).slice(0, 40));
       break;
     case 'issue_linked_mrs':
-      result = (await provider.linkedMrs(project, iid)).slice(0, 20).map((m) => ({ ...m, description: cut(m.description, 400) }));
+      result = (await provider.linkedMrs(project, iid)).filter((m) => projectAllowed(m.project, allowed, strict)).slice(0, 20).map((m) => ({ ...m, description: cut(m.description, 400) }));
       break;
     case 'mr': {
       const m = await provider.getMr(project, iid, { approvals: true });

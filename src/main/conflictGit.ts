@@ -6,6 +6,7 @@ import type { ConflictFile, ConflictHunk } from '../shared/conflict';
 import { hunkReady, hunkText } from '../shared/conflict';
 import { hasMarkers, parseConflicts, regions, resolveSegments, withTerminator } from './conflictHunks';
 import { t } from '../shared/i18n';
+import { loginEnvNow } from './loginPath';
 
 const run = promisify(execFile);
 
@@ -277,7 +278,7 @@ export function runVerify(p: { wt: string; clone: string; command: string; logFi
   const log = createWriteStream(p.logFile);
   return new Promise((done, fail) => {
     let tail = '';
-    const child = spawn('bash', ['-lc', p.command], { cwd: p.wt, env: { ...process.env, CLONE_DIR: p.clone, WORKTREE_DIR: p.wt, ...ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('bash', ['-lc', p.command], { cwd: p.wt, env: { ...loginEnvNow(), CLONE_DIR: p.clone, WORKTREE_DIR: p.wt, ...ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
     const timer = setTimeout(() => child.kill('SIGKILL'), p.timeoutMs ?? VERIFY_TIMEOUT_MS);
     const take = (chunk: Buffer): void => {
       log.write(chunk);

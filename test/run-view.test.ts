@@ -14,9 +14,9 @@ import {
   type Finding,
   type Run,
 } from '../src/shared/runs';
-import { RUN_FILTERS, RUN_TONE, filterCounts, inFilter, listRuns, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, stageLabelOf, stageRows, usageParams } from '../src/shared/runs/view';
+import { RUN_FILTERS, RUN_TONE, filterCounts, inFilter, listRuns, canUndoPost, commentKey, commentRows, currentAgent, followsOlderFlow, isRunBlocker, needsPerson, reposToChoose, reviewRounds, runActions, runOfCard, skipWaitOutcome, stageLabelOf, stageRows, usageParams } from '../src/shared/runs/view';
 import { RUN_STATUSES } from '../src/shared/runs';
-import { drive, flowWithAutonomy, at } from './helpers/runs';
+import { agentFlowStages, drive, flowWithAutonomy, at } from './helpers/runs';
 
 const done = (name: string) => ({ summary: `${name} done`, handoff: '', artifacts: [`${name}.md`] });
 
@@ -38,40 +38,63 @@ describe('what the person can do about a run, by state', () => {
     const d = until('plan');
     expect(d.run.status).toBe('working');
     expect(ids(d.run)).toEqual(['cancel']);
-    expect(ids({ status: 'done', question: null })).toEqual([]);
     expect(ids({ status: 'cancelled', question: null })).toEqual([]);
   });
 
   it('lets the person start a stage whose agent waits, then accept it or send it back with a note', () => {
     const d = until('plan', { planner: false });
     expect(d.run.status).toBe('to-start');
-    expect(ids(d.run)).toEqual(['startStage', 'cancel']);
+    expect(ids(d.run)).toEqual(['startStage', 'sendBack', 'cancel']);
     d.do((r, when) => startStage(r, d.flow, when));
     d.do((r, when) => stageDone(r, d.flow, done('plan'), when));
     expect(d.run.status).toBe('to-accept');
-    const [accept, back] = runActions(d.run);
-    expect([accept.id, accept.input, back.id, back.input]).toEqual(['accept', 'optional', 'return', 'required']);
+    const [accept, back, again] = runActions(d.run);
+    expect([accept.id, accept.input, back.id, back.input, again.id]).toEqual(['accept', 'optional', 'return', 'required', 'sendBack']);
   });
 
   it('asks for a reason to reject or skip a gate, not to approve it', () => {
     const d = until('gate1');
     expect(d.run.status).toBe('gate');
-    expect(runActions(d.run).map((a) => [a.id, a.input])).toEqual([['approve', 'optional'], ['reject', 'required'], ['skip', 'required'], ['cancel', 'none']]);
+    expect(runActions(d.run).map((a) => [a.id, a.input])).toEqual([['approve', 'optional'], ['reject', 'required'], ['skip', 'required'], ['sendBack', 'optional'], ['cancel', 'none']]);
   });
 
   it('answers a question with a text, and chooses the squad of a run that is routing instead of answering', () => {
     const d = until('plan');
     d.do((r, when) => ask(r, { by: 'planner', text: 'Which way?' }, when));
     expect(d.run.status).toBe('question');
-    expect(runActions(d.run).map((a) => [a.id, a.input])).toEqual([['answer', 'required'], ['cancel', 'none']]);
+    expect(runActions(d.run).map((a) => [a.id, a.input])).toEqual([['answer', 'required'], ['sendBack', 'optional'], ['cancel', 'none']]);
     expect(ids({ status: 'question', question: { by: 'support', kind: 'squad', text: '', askedAt: '', stage: 'triage' } })).toEqual(['chooseSquad', 'cancel']);
   });
 
   it('offers a retry for a failed stage and a way out of a wait', () => {
     const d = until('plan');
     d.do((r, when) => stageFailed(r, 'boom', when));
-    expect(ids(d.run)).toEqual(['retry', 'cancel']);
-    expect(ids({ status: 'waiting', question: null })).toEqual(['skipWait', 'cancel']);
+    expect(ids(d.run)).toEqual(['retry', 'sendBack', 'cancel']);
+    expect(ids({ status: 'waiting', question: null })).toEqual(['skipWait', 'sendBack', 'cancel']);
+  });
+
+  it('offers to send the work back from every state that waits for the person or an event, and from the end, but never while an agent works, once cancelled, or for a squad choice', () => {
+    for (const status of ['to-start', 'to-accept', 'gate', 'question', 'waiting', 'failed', 'done'] as const) expect(ids({ status, question: null }), status).toContain('sendBack');
+    expect(ids({ status: 'done', question: null })).toEqual(['sendBack']);
+    for (const status of ['working', 'cancelled'] as const) expect(ids({ status, question: null }), status).not.toContain('sendBack');
+    expect(ids({ status: 'question', question: { by: 'support', kind: 'squad', text: '', askedAt: '', stage: 'triage' } })).not.toContain('sendBack');
+  });
+
+  it('leaves the offer out when the flow has no earlier work stage to send the work to', () => {
+    const d = until('plan');
+    d.do((r, when) => stageFailed(r, 'boom', when));
+    expect(runActions(d.run, d.flow).map((a) => a.id)).toEqual(['retry', 'sendBack', 'cancel']);
+    const first = drive();
+    first.do((r, when) => stageFailed(r, 'boom', when));
+    expect(first.run.stage).toBe('refine');
+    expect(runActions(first.run, first.flow).map((a) => a.id)).toEqual(['retry', 'cancel']);
+  });
+
+  it('says where "go on without waiting" takes the run: the stage after the wait, the end, or back into the stage of the agent that asked', () => {
+    const flow = agentFlowStages().map((s) => (s.id === 'ready' ? { ...s, type: 'wait' as const, next: 'qa' } : s));
+    expect(skipWaitOutcome({ stage: 'ready' }, flow)).toMatchObject({ kind: 'stage', stage: { id: 'qa' } });
+    expect(skipWaitOutcome({ stage: 'ready' }, agentFlowStages().map((s) => (s.id === 'ready' ? { ...s, type: 'wait' as const, next: null } : s)))).toEqual({ kind: 'end' });
+    expect(skipWaitOutcome({ stage: 'refine' }, flow)).toEqual({ kind: 'resume', agent: 'refiner' });
   });
 
   it('asks twice before cancelling, and only before cancelling', () => {

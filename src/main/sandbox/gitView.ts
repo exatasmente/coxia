@@ -1,6 +1,6 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { SandboxError } from './errors';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 // What a sandbox sees of the repository. A worktree's `.git` is a file that points to a directory of the repository it was made from, which holds the objects, the refs and
 // a `config` that may carry a token in a remote's address. The sandbox gets that directory read-only, with the `config` replaced by a copy that has only the harmless keys
@@ -51,6 +51,8 @@ export function sanitizeGitConfig(text: string): string {
 export interface GitView {
   /** [source, destination] read-only binds: the repository's directory, the cleaned config, empty hooks, the pointer, the files that run code. */
   binds: [string, string][];
+  /** The clone the worktree was made from (the folder that holds the repository's `.git`), when there is one: where the dependency folders a run links come from. */
+  clone: string | null;
 }
 
 const RUNS_CODE = ['.husky', '.githooks', '.gitattributes', '.gitmodules'];
@@ -71,7 +73,7 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
   try {
     st = lstatSync(dotgit);
   } catch {
-    return { binds };
+    return { binds, clone: null };
   }
   // The pointer is the app's own, made with the worktree: a link in its place is not.
   if (st.isSymbolicLink()) throw new SandboxError('hostile-link', { name: '.git' });
@@ -84,11 +86,20 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
     gitdir = dotgit;
   } else {
     const pointer = readPointer(dotgit);
-    if (!pointer) return { binds };
+    if (!pointer) return { binds, clone: null };
     gitdir = isAbsolute(pointer) ? pointer : resolve(worktree, pointer);
     const commondir = join(gitdir, 'commondir');
     common = existsSync(commondir) ? resolve(gitdir, readFileSync(commondir, 'utf8').trim()) : gitdir;
+    // The pointer is trusted only when the directory it names says it belongs to this worktree: git writes that back reference when it makes the worktree.
+    let back = '';
+    try {
+      back = readFileSync(join(gitdir, 'gitdir'), 'utf8').trim();
+    } catch {
+      // No back reference: not a worktree this app made.
+    }
+    if (!back || back !== join(realpathSync(worktree), '.git')) throw new SandboxError('git-untrusted');
   }
+  if (!existsSync(join(common, 'HEAD'))) throw new SandboxError('git-untrusted');
   // The pointer (or the folder) goes over itself, read-only, last of all inside the worktree: see bwrapArgs.
   binds.push([dotgit, dotgit]);
   if (!st.isDirectory()) binds.push([common, common]);
@@ -105,6 +116,35 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
     writeFileSync(copy, sanitizeGitConfig(readFileSync(wtConfig, 'utf8')), { mode: 0o600 });
     binds.push([copy, wtConfig]);
   }
+  // A submodule's own repository keeps a config of its own under modules/, with the same keys that may carry a credential: cleaned the same way.
+  let count = 0;
+  const cleanModules = (dirPath: string, depth: number): void => {
+    let names: string[] = [];
+    try {
+      names = readdirSync(dirPath);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (count >= 50) return;
+      const sub = join(dirPath, name);
+      let st;
+      try {
+        st = lstatSync(sub);
+      } catch {
+        continue;
+      }
+      if (!st.isDirectory()) continue;
+      const cfg = join(sub, 'config');
+      if (existsSync(cfg) && lstatSync(cfg).isFile()) {
+        const copy = join(dir, `module-${count++}`);
+        writeFileSync(copy, sanitizeGitConfig(readFileSync(cfg, 'utf8')), { mode: 0o600 });
+        binds.push([copy, cfg]);
+      }
+      if (depth < 3) cleanModules(join(sub, 'modules'), depth + 1);
+    }
+  };
+  cleanModules(join(common, 'modules'), 0);
   const hooks = join(common, 'hooks');
   if (existsSync(hooks)) {
     const empty = join(dir, 'hooks');
@@ -125,5 +165,5 @@ export function gitMounts(worktree: string, tree: string, workDir: string): GitV
     if (kind.isSymbolicLink()) throw new SandboxError('hostile-link', { name });
     if (kind.isFile() || kind.isDirectory()) binds.push([entry, join(worktree, name)]);
   }
-  return { binds };
+  return { binds, clone: basename(common) === '.git' ? dirname(common) : null };
 }

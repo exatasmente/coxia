@@ -162,6 +162,8 @@ export interface ExecSummary {
   n: number;
   exitCode: number | null;
   timedOut: boolean;
+  /** Who ran it; the app's own commands (before QA) never back a claim. Absent: the agent's. */
+  by?: 'app' | 'agent';
 }
 
 /**
@@ -173,8 +175,9 @@ export function backEvidence(scenarios: Scenario[], log: readonly ExecSummary[],
   return scenarios.map((s) => {
     const { commands, evidence: _claimed, unbacked: _flag, ...rest } = s;
     if (!asked || s.evidence !== 'executed') return { ...rest, evidence: 'read' };
-    const cited = [...new Set((commands ?? []).filter((n) => log.some((l) => l.n === n)))];
-    const ran = (n: number): ExecSummary | undefined => log.find((l) => l.n === n);
+    const own = log.filter((l) => l.by !== 'app');
+    const cited = [...new Set((commands ?? []).filter((n) => own.some((l) => l.n === n)))];
+    const ran = (n: number): ExecSummary | undefined => own.find((l) => l.n === n);
     const backed = cited.some((n) => (s.result === 'pass' ? ran(n)?.exitCode === 0 : s.result === 'fail' ? ran(n)?.exitCode !== null || ran(n)?.timedOut === true : true));
     return backed ? { ...rest, evidence: 'executed', commands: cited } : { ...rest, evidence: 'read', unbacked: true };
   });
