@@ -67,7 +67,7 @@ const configureRelease = (extra: (c: Parameters<NonNullable<Parameters<typeof bo
   extra(c);
 };
 
-async function start(options: { autonomous?: boolean; script?: (b: Boot) => void } = {}): Promise<{ b: Boot; run: Run }> {
+async function start(options: { autonomous?: boolean; script?: (b: Boot) => void; version?: string; from?: string } = {}): Promise<{ b: Boot; run: Run }> {
   const b = await boot({
     dir: ATAS,
     publish: true,
@@ -82,7 +82,7 @@ async function start(options: { autonomous?: boolean; script?: (b: Boot) => void
   // The agents answer from the first moment: the first stage starts as the run does.
   if (options.script) options.script(b);
   else b.engine.script('release-manager', () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN }));
-  const run = await b.runner.startRelease('0.5.0');
+  const run = await b.runner.startRelease(options.version ?? '0.5.0', options.from);
   await b.settle();
   return { b, run };
 }
@@ -288,5 +288,214 @@ describe('the release from the plan to the stable', () => {
     await b.settle();
     expect(forge.writes).toHaveLength(writes);
     void AUTHOR;
+  });
+});
+
+
+describe('the tool the Release manager asks for the steps with', () => {
+  const REFUSED = [
+    ['a path', { op: 'beta', version: '0.5.0', path: '/etc/passwd' }],
+    ['a way to skip the beta', { op: 'stable', version: '0.5.0', emergency: true }],
+    ['a flag', { op: 'beta', version: '0.5.0', flags: '--allow-branch' }],
+    ['another version', { op: 'beta', version: '0.6.0' }],
+    ['a step that is not one', { op: 'push', version: '0.5.0' }],
+    ['a merge of nothing', { op: 'merge-pr', version: '0.5.0' }],
+    ['a suffix on the version', { op: 'beta', version: '0.5.0-beta.1' }],
+    ['a tag push with no channel', { op: 'push-tag', version: '0.5.0' }],
+  ] as const;
+
+  it('refuses what is not one of the six steps of this run\'s version, tells the agent so, and does nothing', async () => {
+    const answers: string[] = [];
+    const { b, run } = await start({
+      script: (x) =>
+        x.engine.script('release-manager', async (call) => {
+          for (const [, input] of REFUSED) answers.push(await call.release!(input));
+          return work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN });
+        }),
+    });
+    expect(answers).toHaveLength(REFUSED.length);
+    for (const a of answers) expect(a).toMatch(/^Refused, nothing was done/);
+    expect(w.argv()).toEqual([['open', '0.5.0', '--author', 'Runner Test <runner@example.test>']]);
+    expect(pending()).toEqual([]);
+    expect(listAudit().filter((l) => l.kind === 'release')).toHaveLength(1);
+    expect(b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.release.stepRefused')).toHaveLength(REFUSED.length);
+  });
+
+  it('is given to the Release manager of a release run only, with the host read and nothing that writes: no shell, no files, no confinement', async () => {
+    const { b } = await start();
+    const call = b.engine.calls[0];
+    expect(typeof call.release).toBe('function');
+    expect(call.agent).toMatchObject({ id: 'release-manager', permission: 'read', tracker: 'read', shell: 'none' });
+    expect(call.confine).toBeUndefined();
+    expect(call.exec).toBeUndefined();
+    expect(call.prompt).toContain('The release this run is about');
+    expect(call.prompt).toContain('release/0.5.0');
+    expect(call.prompt).toContain('does not exist yet');
+    // an issue run gets no such tool
+    const issueRun = await boot({ dir: ATAS, publish: true, repo: repoOf(), configure: (c) => (c.language = 'en') });
+    issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    await issueRun.runner.start('app#101');
+    await issueRun.settle();
+    expect(issueRun.engine.calls[0].release).toBeUndefined();
+    expect(issueRun.engine.calls[0].prompt).not.toContain('The release this run is about');
+  });
+
+  it('proposes a push that an autonomous agent asks for, and a step of a Release manager that waits, and runs neither', async () => {
+    const asked: string[] = [];
+    const { b, run } = await start({
+      autonomous: false,
+      script: (x) =>
+        x.engine.script('release-manager', async (call) => {
+          asked.push(await call.release!({ op: 'beta', version: '0.5.0' }));
+          asked.push(await call.release!({ op: 'push-branch', version: '0.5.0' }));
+          return work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN });
+        }),
+    });
+    // the first stage of the run was started by the person who started it, and its result waits to be accepted
+    expect(current(b, run).status).toBe('to-accept');
+    expect(asked.map((a) => a.slice(0, 22))).toEqual(['Waiting for the person', 'Waiting for the person']);
+    expect(pending().filter((a) => a.kind === 'release-git').map((a) => (a.unit as { op: string }).op).sort()).toEqual(['beta', 'open', 'push-branch']);
+    expect(w.git('tag', '--list')).toBe('v0.4.0');
+    expect(w.remote('branch', '--list')).not.toContain('release/0.5.0');
+  });
+});
+
+describe('what the sweep and the waits read from the host', () => {
+  async function waiting(kind: 'release-approved' | 'beta-age', wait: { minutes?: number; label?: string } = {}): Promise<{ b: Boot; run: Run; over: () => Promise<boolean> }> {
+    const { b, run } = await start();
+    const { createPublisher } = await import('../src/main/runner/publish');
+    const { realDoor } = await import('../src/main/runner/door');
+    const { getConfig } = await import('../src/main/workspaceConfig');
+    const publisher = createPublisher({ runs: b.runs, forum: b.forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: () => clock, localTags: async () => w.git('tag', '--list').split('\n').filter(Boolean) });
+    b.runs.update(run.id, (r) => ({ run: { ...r, status: 'waiting', wait: { kind, since: clock.toISOString(), ...wait } }, messages: [] }));
+    return { b, run, over: async () => (await publisher.waitOver(run.id)).over };
+  }
+
+  const pr = (number: number, over: Partial<NonNullable<Forge['pr']>> = {}) => forge.others.push({ number, branch: `feat/${number}`, head: `${number}`.repeat(10), base: 'release/0.5.0', files: [], ...over });
+
+  it('release-approved goes on when no pull request is open against the branch, and not before', async () => {
+    const { over } = await waiting('release-approved');
+    expect(await over()).toBe(true);
+    pr(7, { approved: true });
+    pr(8, { merged: true });
+    expect(await over()).toBe(false);
+    forge.others[0].merged = true;
+    expect(await over()).toBe(true);
+    // a pull request aimed at another branch is not this release's
+    forge.others.push({ number: 9, branch: 'feat/9', head: '9'.repeat(10), base: 'main', files: [] });
+    expect(await over()).toBe(true);
+  });
+
+  it('beta-age needs a beta tag the host shows published, for the minutes asked, and no open issue with the blocking label', async () => {
+    const { over } = await waiting('beta-age', { minutes: 60, label: 'beta-blocker' });
+    // no beta tag at all
+    expect(await over()).toBe(false);
+    w.change('Added', 'a thing for the version');
+    w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'tag', '-a', 'v0.5.0-beta.1', '-m', 'beta');
+    // a tag nobody published (a draft the host does not show)
+    expect(await over()).toBe(false);
+    forge.releases.set('v0.5.0-beta.1', { draft: true, prerelease: true, publishedAt: null });
+    expect(await over()).toBe(false);
+    // published, but not for long enough
+    forge.releases.set('v0.5.0-beta.1', { draft: false, prerelease: true, publishedAt: new Date(clock.getTime() - 30 * 60_000).toISOString() });
+    expect(await over()).toBe(false);
+    clock = new Date(clock.getTime() + 31 * 60_000);
+    expect(await over()).toBe(true);
+    // a blocking report keeps it going until it is closed; another label does not
+    forge.issues.set(300, { number: 300, title: 'Crash', body: '', labels: ['other'], state: 'open' });
+    expect(await over()).toBe(true);
+    forge.issues.get(300)!.labels = ['beta-blocker'];
+    expect(await over()).toBe(false);
+    forge.close(300);
+    expect(await over()).toBe(true);
+    // the latest beta is the one that counts: a newer one, not published yet, starts it over
+    w.change('Fixed', 'a fix after the beta');
+    w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'tag', '-a', 'v0.5.0-beta.2', '-m', 'beta 2');
+    expect(await over()).toBe(false);
+  });
+
+  it('beta-age reads the blocking label from the wait, and beta-blocker when it names none; and it goes on being unsure where the host cannot say', async () => {
+    const { over } = await waiting('beta-age', { minutes: 1 });
+    w.change('Added', 'a thing for the version');
+    w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'tag', '-a', 'v0.5.0-beta.1', '-m', 'beta');
+    forge.releases.set('v0.5.0-beta.1', { draft: false, prerelease: true, publishedAt: new Date(clock.getTime() - 3_600_000).toISOString() });
+    forge.issues.set(300, { number: 300, title: 'Crash', body: '', labels: ['beta-blocker'], state: 'open' });
+    expect(await over()).toBe(false);
+    forge.close(300);
+    expect(await over()).toBe(true);
+    // a host whose issues have no labels cannot say whether anything blocks: the wait goes on until the person skips it
+    const rt = forge.runtime();
+    const { VcsError } = await import('../src/main/vcs/errors');
+    rt.provider.listIssues = async () => {
+      throw new VcsError('unsupported', { kind: 'Bitbucket', what: 'labels' });
+    };
+    expect(await over()).toBe(false);
+  });
+});
+
+describe('the comments of a release on its tracking issue', () => {
+  it('wait as drafts while the issue does not exist and go out when it does, in place of nothing', async () => {
+    forge.failWith = { status: 500, message: 'the host is down' };
+    const pr = { head: '' };
+    const { b, run } = await start({ script: (x) => x.engine.script('release-manager', () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN })) });
+    void pr;
+    expect(current(b, run).subject?.tracking).toBeNull();
+    expect(current(b, run).comments['release-plan']).toMatchObject({ status: 'draft', target: 'issue' });
+    expect(b.thread(run).some((m) => m.kind === 'system' && m.code === 'runner.release.trackingFailed')).toBe(true);
+    expect(forge.issues.size).toBe(0);
+    forge.failWith = null;
+    await b.runner.tick();
+    await b.settle();
+    expect(current(b, run).subject?.tracking).toMatchObject({ iid: 200 });
+    expect(current(b, run).comments['release-plan']).toMatchObject({ status: 'published' });
+    expect(comments().some((c) => c.includes('**Release plan ready to approve**'))).toBe(true);
+    // one comment per key: asking again edits nothing and posts nothing
+    const writes = forge.writes.length;
+    await b.runner.tick();
+    await b.settle();
+    expect(forge.writes).toHaveLength(writes);
+  });
+
+  it('edits the list of activities in place when a pull request changes, and does not post it again when nothing did', async () => {
+    const { b, run } = await start();
+    w.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    forge.others.push({ number: 7, branch: 'feat/x', head: 'a'.repeat(40), base: 'release/0.5.0', files: [], title: 'Add the x' });
+    await b.runner.tick();
+    await b.settle();
+    const first = forge.bodies(200).filter(([, body]) => body.includes('**Activities of the release**'));
+    expect(first).toHaveLength(1);
+    expect(first[0][1]).toContain('not approved yet');
+    forge.others[0].approved = true;
+    await b.runner.tick();
+    await b.settle();
+    const second = forge.bodies(200).filter(([, body]) => body.includes('**Activities of the release**'));
+    expect(second).toHaveLength(1);
+    expect(second[0][0]).toBe(first[0][0]);
+    expect(second[0][1]).toContain('approved and ready to merge');
+    const edits = forge.writes.filter((x) => x.method === 'PATCH');
+    const writes = forge.writes.length;
+    await b.runner.tick();
+    await b.settle();
+    expect(forge.writes).toHaveLength(writes);
+    expect(edits.length).toBeGreaterThan(0);
+  });
+});
+
+describe('a patch release', () => {
+  it('opens the branch from the stable tag it is a patch of', async () => {
+    const { b, run } = await start({ version: '0.4.1', from: 'v0.4.0' });
+    expect(current(b, run).subject).toMatchObject({ version: '0.4.1', from: 'v0.4.0' });
+    expect(w.argv()[0]).toEqual(['open', '0.4.1', '--from', 'v0.4.0', '--author', 'Runner Test <runner@example.test>']);
+    expect(w.branch).toBe('release/0.4.1');
+    expect(forge.issues.get(200)?.title).toBe('Release 0.4.1');
+  });
+});
+
+describe('moving a release run to the flow of the workspace', () => {
+  it('keeps it in the release flow', async () => {
+    const { b, run } = await start();
+    const moved = b.runner.migrateFlow(run.id);
+    expect(moved.flow?.stages.map((s) => s.id)).toEqual(current(b, run).flow?.stages.map((s) => s.id));
+    expect(moved.flow?.stages.every((s) => s.id.startsWith('release-'))).toBe(true);
   });
 });
