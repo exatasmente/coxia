@@ -89,7 +89,7 @@ import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
-import type { CommandRunner } from './commands';
+import { type CommandRunner, outcomeOf } from './commands';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { mentionCall } from './mention';
@@ -409,7 +409,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       return;
     }
     if (r.kind === 'qa') {
-      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head, ...(r.commands ? { commands: r.commands.map(({ command, exitCode, timedOut }) => ({ command, exitCode, timedOut })) } : {}) }, now()));
+      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head, ...(r.commands ? { commands: r.commands.map((c) => ({ command: c.command, exitCode: c.exitCode, timedOut: c.timedOut, ...(outcomeOf(c) === 'not-run' && !c.timedOut ? { notRun: true } : {}) })) } : {}) }, now()));
       // Only a failure that blocks sends the work back; what QA noted without blocking is reported with its result.
       const failed = out.scenarios.some(scenarioBlocks);
       const back = flow.find((s) => s.id === flowStage.returnsTo);

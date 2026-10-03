@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { loginEnvNow } from '../loginPath';
 import { secrets } from '../secrets';
 import { getConfig, rc } from '../workspaceConfig';
 import type { VcsIntegration } from '../../shared/config/types';
@@ -74,7 +75,7 @@ function settingsOf(id: string | null): VcsSettings | null {
 
 /** The dependencies a runtime is built with: the secrets store, the process environment, and whatever the tests replaced. */
 export function vcsRuntimeDeps(): RuntimeDeps {
-  return { token, env: () => ({ ...process.env }), cliInstalled, hasToken, ...override };
+  return { token, env: () => loginEnvNow(), cliInstalled, hasToken, ...override };
 }
 
 /** The runtime of an integration (the primary one without an id), or null when the workspace has none. */

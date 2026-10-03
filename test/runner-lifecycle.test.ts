@@ -215,6 +215,34 @@ describe('a stage that goes wrong', () => {
     expect(b.thread(run).find((m) => m.code === 'runner.qa.commands')?.params).toEqual({ list: 'npm test (1), npm run typecheck (0)' });
   });
 
+  it('says a command the environment could not start is not a result of the code: recorded as not run, told in the thread, and QA is told not to pass what depends on it', async () => {
+    const commands = fakeCommands({ 'npm test': { exitCode: 127, output: 'sh: 1: vitest: not found', notRun: 'exit' }, 'npm run typecheck': { exitCode: null, output: '', notRun: 'enoent' } });
+    const b = await boot({ commandRunner: commands, configure: (c) => (c.runner.commands = ['npm test', 'npm run typecheck', 'npm run lint']) });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.prompt).toContain('$ npm test  (não pôde rodar');
+    expect(qa.prompt).toContain('$ npm run typecheck  (não pôde rodar');
+    expect(qa.prompt).toContain('$ npm run lint  (saiu com 0)');
+    expect(qa.prompt).toContain('não marque como pass nenhum cenário que dependa deles');
+    // a pass in which every command ran has no such warning
+    expect(run.qa[0].commands).toEqual([
+      { command: 'npm test', exitCode: 127, timedOut: false, notRun: true },
+      { command: 'npm run typecheck', exitCode: null, timedOut: false, notRun: true },
+      { command: 'npm run lint', exitCode: 0, timedOut: false },
+    ]);
+    const told = b.thread(run).find((m) => m.code === 'runner.qa.notRun');
+    expect(told?.params?.list).toContain('npm test: ele disse: sh: 1: vitest: not found');
+    expect(told?.params?.list).toContain('npm run typecheck: npm não foi encontrado pelo app');
+    expect(told?.params?.list).not.toContain('npm run lint');
+    const clean = await boot({ commandRunner: fakeCommands() });
+    easy(clean);
+    const ok = await reach(clean, await clean.runner.start('app#101'), 'ready');
+    expect(clean.engine.calls.find((c) => c.agent.id === 'qa')!.prompt).not.toContain('não pôde rodar');
+    expect(clean.thread(ok).some((m) => m.code === 'runner.qa.notRun')).toBe(false);
+  });
+
   it('falls back to the scripts the repository declares, and tells QA when the workspace lists none', async () => {
     const declared = fakeCommands();
     const b = await boot({ commandRunner: declared });

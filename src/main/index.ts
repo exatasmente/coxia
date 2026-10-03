@@ -31,6 +31,7 @@ import { glossary } from './glossary';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
 import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
 import { t } from '../shared/i18n';
+import { warmLoginPath } from './loginPath';
 
 installProcessHandlers();
 
@@ -267,6 +268,8 @@ if (!app.requestSingleInstanceLock()) {
     else show();
   });
   app.whenReady().then(() => {
+    // The PATH of the person's login shell is what the commands of a run need; reading it takes a moment, so it starts now.
+    warmLoginPath();
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));

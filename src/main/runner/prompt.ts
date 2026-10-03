@@ -118,9 +118,12 @@ export function commentPrompt(i: StageInput): string {
 /** What the app ran before QA, as the stage reads it: each command with how it ended and the end of its output, or the plain statement that nothing ran. */
 export function commandsSection(results: CommandResult[]): string {
   if (!results.length) return cp('runner.section.commandsNone');
-  const head = (r: CommandResult): string => (r.timedOut ? cp('runner.commands.timeout', { command: r.command }) : r.exitCode === null ? cp('runner.commands.notRun', { command: r.command }) : cp('runner.commands.exit', { command: r.command, code: r.exitCode }));
+  // A command the environment could not start is said apart from one that ran and failed: it is not a result of the code.
+  const couldNot = (r: CommandResult): boolean => !r.timedOut && (!!r.notRun || r.exitCode === 126 || r.exitCode === 127);
+  const head = (r: CommandResult): string => (r.timedOut ? cp('runner.commands.timeout', { command: r.command }) : couldNot(r) ? cp('runner.commands.couldNotRun', { command: r.command }) : r.exitCode === null ? cp('runner.commands.notRun', { command: r.command }) : cp('runner.commands.exit', { command: r.command, code: r.exitCode }));
   const text = results.map((r) => `${head(r)}\n${r.output ? fence(r.output) : cp('runner.commands.noOutput')}`).join('\n\n');
-  return cp('runner.section.commands', { text });
+  const section = cp('runner.section.commands', { text });
+  return results.some(couldNot) ? `${section}\n\n${cp('runner.section.commandsUnrunnable')}` : section;
 }
 
 /** The earlier review passes as lines a model can read: each round's verdict and summary, then its findings (blocking ones first). */

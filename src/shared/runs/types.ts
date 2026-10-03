@@ -200,6 +200,8 @@ export interface QaCommand {
   command: string;
   exitCode: number | null;
   timedOut: boolean;
+  /** The command could not be started (not found, not executable): not a result of the code, and not a pass. Absent in a pass recorded before it was told apart. */
+  notRun?: boolean;
 }
 
 export interface RunIssue {

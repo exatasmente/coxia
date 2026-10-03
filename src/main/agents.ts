@@ -19,6 +19,7 @@ import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngin
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
 import { claudeSdkEnv, providerSecret } from './llm';
+import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
 import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
@@ -415,6 +416,12 @@ function wantsVcsTool(req: EngineRequest): boolean {
   return vcsReadPolicy().via === 'tool';
 }
 
+/** The PATH the commands of an agent start with: the one of the person's login shell in front of the app's, so `npm` and the tools the repository's scripts use are found. */
+async function commandPath(): Promise<Record<string, string>> {
+  const path = mergedPath(await loginPath.resolve(), process.env);
+  return path ? { PATH: path } : {};
+}
+
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
@@ -427,7 +434,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     sessionsDir: join(ATAS, 'open-sessions'),
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
-    shellEnv: req.confine ? {} : vcsShellEnv(),
+    shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
     writeRoot: req.confine?.root,
     signal: req.abort?.signal,
     describeTool: source,
@@ -460,7 +467,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
   const mcp = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider()) : null;
-  const env = claudeSdkEnv(req.target);
+  const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;

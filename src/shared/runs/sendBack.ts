@@ -33,9 +33,9 @@ export function defaultSendBackTarget(flow: readonly FlowStage[], stageId: strin
 }
 
 /** How a command of a QA pass ended, as a person reads it: it passed, it failed, it was stopped, or it could not run (not found, not executable). */
-export function commandState(c: Pick<QaCommand, 'exitCode' | 'timedOut'>): 'ok' | 'failed' | 'timeout' | 'not-run' {
+export function commandState(c: Pick<QaCommand, 'exitCode' | 'timedOut'> & { notRun?: unknown }): 'ok' | 'failed' | 'timeout' | 'not-run' {
   if (c.timedOut) return 'timeout';
-  if (c.exitCode === null || c.exitCode === 126 || c.exitCode === 127) return 'not-run';
+  if (c.notRun || c.exitCode === null || c.exitCode === 126 || c.exitCode === 127) return 'not-run';
   return c.exitCode === 0 ? 'ok' : 'failed';
 }
 
