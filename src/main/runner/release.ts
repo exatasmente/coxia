@@ -1,6 +1,6 @@
 import type { Language } from '../../shared/config/types';
 import { createTranslator } from '../../shared/i18n';
-import { releaseBranchOf, releaseTagOf } from '../../shared/release';
+import { releaseBranchOf } from '../../shared/release';
 import type { ReleaseActivity, Run } from '../../shared/runs';
 import { git } from '../conflictGit';
 import { redact } from '../errorlog-core';
@@ -104,6 +104,3 @@ export async function releaseStateOf(wt: string, version: string): Promise<Relea
   const beta = tags.sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop())).at(-1) ?? null;
   return { branch, beta };
 }
-
-/** The stable tag of the run's version. */
-export const stableTagOf = (run: Run): string | null => (run.subject ? releaseTagOf(run.subject.version) : null);

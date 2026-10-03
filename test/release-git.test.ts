@@ -198,6 +198,23 @@ describe('beta', () => {
   });
 });
 
+describe('a release branch that only the remote has', () => {
+  it('is made local, tracking it, for a merge and for a beta, as `git switch` would', async () => {
+    const { w, run } = await opened();
+    w.git('switch', '-q', 'main');
+    w.git('branch', '-D', 'release/0.5.0');
+    expect(w.gitOk('show-ref', '--verify', '--quiet', 'refs/heads/release/0.5.0')).toBe(false);
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    await open(w, async () => green({ sha: head }))(unit({ op: 'merge-pr', pr: 7, head }));
+    expect(w.branch).toBe('release/0.5.0');
+    expect(w.git('rev-parse', '--abbrev-ref', 'release/0.5.0@{upstream}')).toBe('origin/release/0.5.0');
+    w.git('switch', '-q', 'main');
+    w.git('branch', '-D', 'release/0.5.0');
+    const cut = await run(unit({ op: 'beta' }));
+    expect(cut.tag).toBe('v0.5.0-beta.1');
+  });
+});
+
 describe('stable', () => {
   async function betaCut(): Promise<{ w: ReleaseWorld; run: (u: ReleaseUnit) => ReturnType<ReturnType<typeof open>> }> {
     const { w, run } = await opened();

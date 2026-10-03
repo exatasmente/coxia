@@ -90,9 +90,20 @@ async function assertClean(clone: string): Promise<void> {
   if ((await git(clone, ['status', '--porcelain'])).stdout.trim()) throw new Error(t('main.release.dirty'));
 }
 
-async function switchTo(clone: string, branch: string): Promise<void> {
+/**
+ * Makes sure a local branch exists: a branch that only the remote has (somebody opened the release and pushed it) is made local, tracking it, as `git switch` would.
+ * False when neither has it.
+ */
+async function ensureLocal(clone: string, branch: string): Promise<boolean> {
   checkRef(branch);
-  if (!(await exists(clone, `refs/heads/${branch}`))) throw new Error(t('main.release.noBranch', { branch }));
+  if (await exists(clone, `refs/heads/${branch}`)) return true;
+  if (!(await exists(clone, `refs/remotes/origin/${branch}`))) return false;
+  await git(clone, [...SAFE, 'branch', '--quiet', '--track', branch, `refs/remotes/origin/${branch}`]);
+  return true;
+}
+
+async function switchTo(clone: string, branch: string): Promise<void> {
+  if (!(await ensureLocal(clone, branch))) throw new Error(t('main.release.noBranch', { branch }));
   if ((await currentBranch(clone)) === branch) return;
   await git(clone, [...SAFE, 'switch', '--quiet', branch]);
 }
@@ -154,7 +165,8 @@ async function mergePr(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResul
   const branch = releaseBranchOf(unit.version);
   if (!env.pr) throw new Error(t('main.release.noHost'));
   await assertClean(env.clone);
-  if (!(await exists(env.clone, `refs/heads/${branch}`))) throw new Error(t('main.release.noBranch', { branch }));
+  await fetchBranch(env.clone, branch);
+  if (!(await ensureLocal(env.clone, branch))) throw new Error(t('main.release.noBranch', { branch }));
   // What the host says now: the pull request must be open, approved, green, aimed at this release branch and still where the plan read it.
   const mr = await env.pr(pr);
   if (mr.state !== 'open') throw new Error(t('main.release.prNotOpen', { pr, state: mr.state }));
@@ -198,6 +210,8 @@ async function stable(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult
   if (!(await exists(env.clone, 'refs/heads/main'))) throw new Error(t('main.release.noBranch', { branch: 'main' }));
   await switchTo(env.clone, 'main');
   await fetchBranch(env.clone, 'main');
+  await fetchBranch(env.clone, branch);
+  await ensureLocal(env.clone, branch);
   const before = await sha(env.clone, 'HEAD');
   // main must not be behind the remote (the script says so as well): a fast-forward, or nothing.
   if (await exists(env.clone, 'refs/remotes/origin/main')) {

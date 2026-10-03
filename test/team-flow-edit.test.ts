@@ -134,6 +134,9 @@ describe('the fields of a stage on their own', () => {
     expect(keys({ roundLimit: 0 })).toEqual(['roundLimit:roundLimit']);
     expect(keys({ roundLimit: 21 })).toEqual(['roundLimit:roundLimit']);
     expect(keys({ type: 'wait', waitsFor: { kind: 'time', minutes: 0 } })).toEqual(['waitsFor:minutes']);
+    // the wait for a beta has minutes of its own, held to the same range
+    expect(keys({ type: 'wait', waitsFor: { kind: 'beta-age', minutes: 0 } })).toEqual(['waitsFor:minutes']);
+    expect(keys({ type: 'wait', waitsFor: { kind: 'beta-age', minutes: 1440, label: 'beta-blocker' } })).toEqual([]);
     expect(keys({ comment: 'Not A Key' })).toEqual(['comment:commentKey']);
     expect(keys({ trackerStatus: 'x'.repeat(201) })).toEqual(['trackerStatus:trackerStatus']);
   });
