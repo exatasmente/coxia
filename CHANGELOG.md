@@ -6,11 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-03
+
 ### Added
 
-- Several pre-dailies on one day: each is a version of that day's minutes (`<date>-pre-daily.v<N>.md` plus an index), with a "what changed since the previous version" summary, a version switcher and a whole-day view where the latest decision of each activity wins. Decisions already written to a plan's log or a card note by an earlier version are not written again.
-- A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
-- Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 - The card shows the tracker's priority and milestone, in Today and in the call, and the agent that prepares its turn reads them. The priority comes from a new `devCycle.priority.labels` list (highest first, regular expressions, empty by default), so the workspace configuration moves to schema 3; existing files migrate on first start.
 - In the call, "this one goes first", "leave #12 for next week" or "raise #7" produces a priority decision for that card, shown before the call moves on and kept in the minutes (with a line saying so when the workspace has no priority labels, or the host cannot change labels).
 - A priority decision becomes a label change proposal when the minutes are saved: it waits in Actions for its own approval, like every other write to the tracker. A test workspace refuses it; without priority labels (or on Bitbucket) it stays in the minutes with a line saying it was not written.
@@ -24,8 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Today and the call list the cards in one order: blocked first, then priority, then the most recently updated. The reference text is no longer a tie-break, and the old urgency bands of Today (pending question, back from QA, close to QA) are gone.
-- The whole interface is translated: every screen, toast, tooltip and the browser (PWA) gate follow the workspace language, with dates and numbers formatted for it. Strings live in `src/shared/i18n/ui-*.json`; `npm run i18n:lint` now blocks untranslated text in the renderer. Glossary and rules in `docs/i18n.md`.
-- The main process, the shared modules and the agent prompts follow the workspace language (Portuguese or English): errors, notifications, tray, health messages, the minutes, the gate quiz, the QA checklist and the retro digest. The Portuguese texts are unchanged; English has golden tests of its own.
+
+### Fixed
+
+- A workspace's cards show only the merge requests of its own repositories (and of the issue project); on GitHub they used to include every open pull request of the account.
 
 ## [0.1.0] - 2026-10-02
 
@@ -43,6 +44,10 @@ First public version.
 - Desktop app for Linux (AppImage and `.deb`), with a tray, optional autostart, and a paired-browser access (PWA) for the phone.
 - Automatic updates for published AppImages through GitHub Releases (stable and beta channels, differential download, checksum verified), and an update flow for installs made from source.
 - Interface in Portuguese (Brazil) and English, with light and dark themes.
+- Several pre-dailies on one day: each is a version of that day's minutes (`<date>-pre-daily.v<N>.md` plus an index), with a "what changed since the previous version" summary, a version switcher and a whole-day view where the latest decision of each activity wins. Decisions already written to a plan's log or a card note by an earlier version are not written again.
+- A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
+- Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/exatasmente/coxia/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/exatasmente/coxia/releases/tag/v0.1.0
