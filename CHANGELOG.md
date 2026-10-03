@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- For maintainers: the draft the release workflow creates came back from GitHub with the tag `untagged-<hash>` aimed at `main`, and publishing it would have created that tag on `main` instead of linking the pushed version tag. The workflow now sets the draft's tag to the version tag, for a beta and a stable, and fails if the draft is linked to anything else.
 - The app's commits no longer carry the computer's global git identity. When `runner.identity` was empty, a run's commits (and the merge that resolves a conflict) were made as whatever the global git configuration said, which may be another job's address. Now the identity is `runner.identity` or, when that is empty, only the one in the repository's own `.git/config`, passed on each commit's command line; the global configuration and the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables are never used. With neither, a run does not start and a conflict merge is not prepared, and the message says where to set one (Settings › Team and cycle › Runner). **If your workspace has no runner identity, set one before the next run.**
 
 ## [0.5.0-beta.2] - 2026-10-03
