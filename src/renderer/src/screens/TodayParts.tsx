@@ -171,7 +171,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
                 <dd>{card.milestone}</dd>
               </>
             )}
-            <dt /* i18n-ignore */>MRs</dt>
+            <dt>{t('ui.today.row.crsLabel')}</dt>
             <dd>{card.mrs.join(' · ') || t('ui.today.noMr')}</dd>
             {blocked && (
               <>
@@ -211,7 +211,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
           <div className="act-actions">
             <WorktreeBadge iid={card.iid} go={go} />
             {/* slot: per-activity buttons of feature modules */}
-            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })} /* i18n-ignore */>GitLab</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'quick', ref: card.ref, card })}>{t('ui.today.row.hostButton')}</button>
             {cycle && returnedFromQa(cycle, card.stage) && <button type="button" className="btn" onClick={() => go({ name: 'reentry', ref: card.ref, card })}>{t('ui.today.row.qaReturn')}</button>}
             {card.mrPaths.length > 0 && <button type="button" className="btn" onClick={() => go({ name: 'discussions', ref: card.ref, card })}>{t('ui.today.row.discussions')}</button>}
             {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}

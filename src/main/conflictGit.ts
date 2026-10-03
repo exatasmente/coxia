@@ -5,7 +5,6 @@ import { promisify } from 'node:util';
 import type { ConflictFile, ConflictHunk } from '../shared/conflict';
 import { hunkReady, hunkText } from '../shared/conflict';
 import { hasMarkers, parseConflicts, regions, resolveSegments, withTerminator } from './conflictHunks';
-import { vcsName } from './cyclePrompts';
 import { t } from '../shared/i18n';
 
 const run = promisify(execFile);
@@ -174,7 +173,7 @@ export async function prepareWorktree(p: { clone: string; branch: string; target
   try {
     await git(p.dest, ['-c', 'merge.conflictStyle=diff3', 'merge', '--no-ff', '--no-commit', `refs/remotes/origin/${target}`], { fail: false });
     const merging = (await git(p.dest, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { fail: false })).code === 0;
-    if (!merging) throw new Error(t('main.conflictGit.mergeNotStarted', { target, branch, vcs: vcsName() }));
+    if (!merging) throw new Error(t('main.conflictGit.mergeNotStarted', { target, branch }));
     const files = await readConflicts(p.dest);
     snapshotMarkers(p.dest, files);
     return { worktree: p.dest, syncBranch, originSha, mainSha, files };
@@ -335,7 +334,7 @@ export async function assertPublishable(p: { wt: string; branch: string; originS
   if (!existsSync(p.wt)) throw new Error(t('main.conflictGit.worktreeGone'));
   const now = await remoteSha(p.wt, p.branch);
   if (now !== p.originSha) {
-    throw new Error(t('main.conflictGit.branchMoved', { branch: p.branch, vcs: vcsName(), from: p.originSha.slice(0, 9), to: now.slice(0, 9) }));
+    throw new Error(t('main.conflictGit.branchMoved', { branch: p.branch, from: p.originSha.slice(0, 9), to: now.slice(0, 9) }));
   }
   const head = (await git(p.wt, ['rev-parse', 'HEAD'])).stdout.trim();
   if (head !== p.commit) throw new Error(t('main.conflictGit.headMoved'));

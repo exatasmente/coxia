@@ -1,11 +1,11 @@
 import type { Language, VcsKind } from '../config/types';
 
 // The workspace's own words: the standard placeholders every catalog text may use ({vcsName}, {cr}, {crs}, {crLong}, {crLongs}, {crMark},
-// {ceremony}, {Ceremony}, {summaryTarget}, {retroDays}, {cli}). They are filled by the translator from this table, so a text names the code
+// {ceremony}, {Ceremony}, {summaryTarget}, {retroDays}, {cli}, plus {CrLongs}, {anCr} and {ci}). They are filled by the translator from this table, so a text names the code
 // host, the change request and the daily ceremony the workspace has, and a caller never passes them by hand. The host words live here, in
 // one place; the workspace-dependent ones (ceremony, summary target, retro window, CLI) are added by `termsFor` in cycles/terms.ts.
 
-/** The standard placeholders and the host kind that selects a key variant (`vcs.card.ciFailed.github`). */
+/** The standard placeholders and the host kind that selects a key variant (`vcs.card.ciFailed.on-github`). */
 export interface Terms {
   /** The integration the words come from; null when the workspace has none. */
   kind: VcsKind | null;
@@ -22,17 +22,19 @@ interface HostWords {
   crLong: string;
   crLongs: string;
   mark: string;
+  /** What the host calls the automated checks of a change request, as a word in a list. */
+  ci: string;
 }
 
 // "MR" is the neutral default: a workspace with no integration keeps the app's historic noun.
-const MERGE: Omit<HostWords, 'name'> = { cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', mark: '!' };
-const PULL: Omit<HostWords, 'name'> = { cr: 'PR', crs: 'PRs', crLong: 'pull request', crLongs: 'pull requests', mark: '#' };
+const MERGE: Omit<HostWords, 'name' | 'ci'> = { cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', mark: '!' };
+const PULL: Omit<HostWords, 'name' | 'ci'> = { cr: 'PR', crs: 'PRs', crLong: 'pull request', crLongs: 'pull requests', mark: '#' };
 
 // i18n-ignore-start: the names of the hosts and of their change requests are the same in every language
 const HOSTS: Record<VcsKind, HostWords> = {
-  gitlab: { name: 'GitLab', ...MERGE },
-  github: { name: 'GitHub', ...PULL },
-  bitbucket: { name: 'Bitbucket', ...PULL },
+  gitlab: { name: 'GitLab', ...MERGE, ci: 'pipeline' },
+  github: { name: 'GitHub', ...PULL, ci: 'checks' },
+  bitbucket: { name: 'Bitbucket', ...PULL, ci: 'pipeline' },
 };
 // i18n-ignore-end
 
@@ -45,10 +47,13 @@ const FALLBACK: Record<Language, { host: string; ceremony: string; summaryTarget
 
 export const upperFirstWord = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-/** The host words for a kind (null: no integration), in a language. */
+/**
+ * The host words for a kind (null: no integration), in a language. `anCr` is the noun with the English indefinite article ("an MR", "a PR");
+ * Portuguese leaves the article to the text, so there it is the bare noun.
+ */
 export function hostWords(kind: VcsKind | null, language: Language): TermWords {
-  const h = kind ? HOSTS[kind] : { ...MERGE, name: FALLBACK[language].host };
-  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, crMark: h.mark };
+  const h: HostWords = kind ? HOSTS[kind] : { ...MERGE, name: FALLBACK[language].host, ci: 'pipeline' };
+  return { vcsName: h.name, cr: h.cr, crs: h.crs, crLong: h.crLong, crLongs: h.crLongs, CrLongs: upperFirstWord(h.crLongs), crMark: h.mark, anCr: language === 'en' ? `${h.mark === '!' ? 'an' : 'a'} ${h.cr}` : h.cr, ci: h.ci };
 }
 
 /** What a placeholder is before the workspace says anything: no integration, the app's own ceremony, a generic team chat, a week. */

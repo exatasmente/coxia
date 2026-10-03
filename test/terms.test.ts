@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCycleView, hostFacts, termsFor } from '../src/shared/cycles';
-import { CATALOGS, createTranslator, fillTemplate, getTerms, i18nSnapshot, resetTerms, setLanguage, setTerms } from '../src/shared/i18n';
+import { buildCycleView, cycleText, hostFacts, renderPrompt, termsFor } from '../src/shared/cycles';
+import { CATALOGS, createTranslator, fillTemplate, getTerms, i18nSnapshot, resetTerms, setLanguage, setTerms, t } from '../src/shared/i18n';
 import { defaultTerms, hostWords } from '../src/shared/i18n/terms';
 import { hostConfig } from './helpers/config';
 
@@ -13,16 +13,26 @@ afterEach(() => {
 
 describe('host words', () => {
   it('GitLab keeps the merge request words', () => {
-    expect(hostWords('gitlab', 'en')).toEqual({ vcsName: 'GitLab', cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', crMark: '!' });
+    expect(hostWords('gitlab', 'en')).toEqual({ vcsName: 'GitLab', cr: 'MR', crs: 'MRs', crLong: 'merge request', crLongs: 'merge requests', CrLongs: 'Merge requests', crMark: '!', anCr: 'an MR', ci: 'pipeline' });
   });
 
   it('GitHub and Bitbucket say pull request and mark a ref with #', () => {
     for (const kind of ['github', 'bitbucket'] as const) {
       const w = hostWords(kind, 'pt-BR');
-      expect([w.cr, w.crs, w.crLong, w.crLongs, w.crMark]).toEqual(['PR', 'PRs', 'pull request', 'pull requests', '#']);
+      expect([w.cr, w.crs, w.crLong, w.crLongs, w.CrLongs, w.crMark]).toEqual(['PR', 'PRs', 'pull request', 'pull requests', 'Pull requests', '#']);
     }
     expect(hostWords('github', 'en').vcsName).toBe('GitHub');
     expect(hostWords('bitbucket', 'en').vcsName).toBe('Bitbucket');
+  });
+
+  it('the indefinite article of the noun follows its sound in English and is left out in Portuguese', () => {
+    expect([hostWords('gitlab', 'en').anCr, hostWords('github', 'en').anCr, hostWords(null, 'en').anCr]).toEqual(['an MR', 'a PR', 'an MR']);
+    expect([hostWords('gitlab', 'pt-BR').anCr, hostWords('github', 'pt-BR').anCr]).toEqual(['MR', 'PR']);
+  });
+
+  it('the automated checks are "checks" on GitHub and "pipeline" elsewhere', () => {
+    expect(hostWords('github', 'en').ci).toBe('checks');
+    for (const kind of ['gitlab', 'bitbucket', null] as const) expect(hostWords(kind, 'en').ci).toBe('pipeline');
   });
 
   it('no integration keeps the historic noun and a neutral host name, the same the catalog says', () => {
@@ -77,7 +87,7 @@ describe('termsFor', () => {
   it('every standard placeholder has a value by default, in both languages', () => {
     for (const language of ['pt-BR', 'en'] as const) {
       const { words } = defaultTerms(language);
-      expect(Object.keys(words).sort()).toEqual(['Ceremony', 'ceremony', 'cli', 'cr', 'crLong', 'crLongs', 'crMark', 'crs', 'retroDays', 'summaryTarget', 'vcsName']);
+      expect(Object.keys(words).sort()).toEqual(['Ceremony', 'CrLongs', 'anCr', 'ceremony', 'ci', 'cli', 'cr', 'crLong', 'crLongs', 'crMark', 'crs', 'retroDays', 'summaryTarget', 'vcsName']);
       expect(words.vcsName).not.toBe('');
       expect(words.cr).not.toBe('');
     }
@@ -121,13 +131,15 @@ describe('filling the placeholders', () => {
 });
 
 describe('host variants of a key', () => {
-  const catalogs = { 'pt-BR': { 'a.b': 'plain', 'a.b.github': 'github one', 'a.b.novoice': 'plain no voice', c: 'only plain' }, en: {} };
+  const catalogs = { 'pt-BR': { 'a.b': 'plain', 'a.b.on-github': 'github one', 'a.b.github': 'a key that is its own thing', 'a.b.novoice': 'plain no voice', c: 'only plain' }, en: {} };
 
   it('the variant of the host wins, the plain key is the fallback', () => {
     expect(createTranslator('pt-BR', catalogs, () => 'github')('a.b')).toBe('github one');
     expect(createTranslator('pt-BR', catalogs, () => 'gitlab')('a.b')).toBe('plain');
     expect(createTranslator('pt-BR', catalogs, () => null)('a.b')).toBe('plain');
     expect(createTranslator('pt-BR', catalogs, () => 'github')('c')).toBe('only plain');
+    // A key that merely ends in a host's name is its own key, not a variant.
+    expect(createTranslator('pt-BR', catalogs, () => 'github')('a.b.github')).toBe('a key that is its own thing');
   });
 });
 
@@ -144,5 +156,49 @@ describe('what the view carries to the screens', () => {
     c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open' });
     c.llm.roles.deep = { provider: 'local', model: 'some-model' };
     expect(hostFacts(c).engines).toMatchObject({ turn: 'claude-sdk', deep: 'open' });
+  });
+});
+
+describe('the catalogs on each host', () => {
+  const on = (kind: 'gitlab' | 'github' | 'bitbucket', language: 'en' | 'pt-BR' = 'en') => {
+    setLanguage(language);
+    setTerms(termsFor(hostConfig(kind, { language }), language));
+  };
+
+  it('a card says CI the way the host does', () => {
+    on('github');
+    expect(t('vcs.card.ciFailed')).toBe('Checks failed');
+    on('gitlab');
+    expect(t('vcs.card.ciFailed')).toBe('CI failed');
+    on('bitbucket');
+    expect(t('vcs.card.ciFailed')).toBe('CI failed');
+    on('github', 'pt-BR');
+    expect(t('vcs.card.ciRunning')).toBe('Checks em andamento');
+  });
+
+  it('a text of the cycle takes the host noun, its article and its CI word', () => {
+    on('gitlab');
+    expect(cycleText('cycle.sdd.meaning.blocker', 'en')).toContain('an MR with a conflict, a red pipeline');
+    on('github');
+    expect(cycleText('cycle.sdd.meaning.blocker', 'en')).toContain('a PR with a conflict, red checks');
+    on('bitbucket');
+    expect(cycleText('cycle.sdd.meaning.blocker', 'en')).toContain('a PR with a conflict, a red pipeline');
+  });
+
+  it('a prompt picks the variant of the host too', () => {
+    const cycle = hostConfig('github').devCycle;
+    on('github');
+    expect(renderPrompt(cycle, 'effects.kind.mr_pipeline', 'en')).toContain('checks of the PR');
+    expect(renderPrompt(cycle, 'reply.main', 'en')).toContain('(push, PR, status, comment, checks, reviewer, new issue)');
+    on('gitlab');
+    expect(renderPrompt(cycle, 'effects.kind.mr_pipeline', 'en')).toContain('a pipeline of the MR ran');
+    expect(renderPrompt(cycle, 'reply.main', 'en')).toContain('(push, MR, status, comment, pipeline, reviewer, new issue)');
+  });
+
+  it('the effects evidence marks a ref the way the host does', () => {
+    on('github');
+    expect(t('main.efeitos.stillDraft')).toBe('#{iid} is still a draft');
+    on('gitlab');
+    expect(t('main.efeitos.stillDraft')).toBe('!{iid} is still a draft');
   });
 });

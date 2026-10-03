@@ -33,11 +33,16 @@ export interface CycleView {
   terms: Terms;
   /** What the configured host, tools and engines can do: what the screens hide. */
   host: HostFacts;
+  /** Where the cards come from, in a word: the card source tool when one is configured, else the host. */
+  cardsFrom: string;
+  /** The workspace has a specs folder: the documents the cycle names exist. */
+  specs: boolean;
 }
 
 export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): CycleView {
   const { devCycle, language } = config;
   const terms = userTerms(language, config);
+  const host = hostFacts(config);
   return {
     templateId: devCycle.templateId,
     templateName: builtInName(devCycle.templateId, language),
@@ -54,6 +59,8 @@ export function buildCycleView(config: WorkspaceConfig, ctx: ViewContext): Cycle
       minutes: cycleText('cycle.minutes', language),
     },
     terms: termsFor(config, language),
-    host: hostFacts(config),
+    host,
+    cardsFrom: ctx.noteTool ?? host.name,
+    specs: ctx.specs,
   };
 }

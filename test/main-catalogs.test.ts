@@ -17,7 +17,7 @@ function sources(dir: string): string[] {
     .map((f) => join(ROOT, dir, f));
 }
 
-const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
 
 describe('the main process catalogs (main.*.json)', () => {
   it('define the same keys in both languages, with the same placeholders in each text', () => {

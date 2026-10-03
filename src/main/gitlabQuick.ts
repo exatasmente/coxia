@@ -3,7 +3,6 @@ import type { Card } from '../shared/types';
 import type { QuickContext, QuickIssue, QuickJob, QuickMember, QuickMr, QuickRequest, QuickResult, QuickTransition } from '../shared/gitlabQuick';
 import { listActions, proposeVcsAction, proposeVcsCommands } from './actions';
 import { getSettings } from './config';
-import { vcsName } from './cyclePrompts';
 import { getConfig, isIssueRef, issueProjectKey, rc } from './workspaceConfig';
 import type { Module } from './module';
 import { readReport } from './report';
@@ -79,7 +78,7 @@ function transitionsFor(status: string | null, labels: string[]): QuickTransitio
     if (status === r.to) return { ...base, allowed: false, reason: t('main.quick.sameStatus') };
     if (!status || !r.from.includes(status)) return { ...base, allowed: false, reason: t('main.quick.cannotLeave', { status: status ?? t('main.quick.noStatus') }) };
     const foreign = stage.filter((l) => l !== r.label && !r.removable.includes(l));
-    if (foreign.length) return { ...base, allowed: false, reason: t('main.quick.foreign', { labels: foreign.join(', '), vcs: vcsName() }) };
+    if (foreign.length) return { ...base, allowed: false, reason: t('main.quick.foreign', { labels: foreign.join(', ') }) };
     return { ...base, allowed: true, reason: null };
   });
 }
@@ -200,7 +199,7 @@ async function proposeManual(req: QuickRequest): Promise<QuickResult> {
     if (!mr.draft) throw new Error(t('main.quick.notDraft', { ref }));
     // GitLab marks a draft by a prefix in the title; GitHub and Bitbucket by a flag.
     const title = prov.kind === 'gitlab' ? undrafted(mr.title) : undefined;
-    if (title !== undefined && title === mr.title) throw new Error(t('main.quick.noDraftPrefix', { vcs: vcsName() }));
+    if (title !== undefined && title === mr.title) throw new Error(t('main.quick.noDraftPrefix'));
     await propose(
       { key: `quick:undraft:${ref}`, issue, issueTitle: mr.title, summary: t('main.quick.undraft', { ref }) },
       { op: 'setDraft', project: req.projectPath, iid: req.mrIid, draft: false, ...(title !== undefined ? { title } : {}) },
@@ -299,7 +298,7 @@ async function autoRun(notify: (n: Notice) => void): Promise<void> {
     proposeVcsCommands({ key: p.key, issue: p.issue, issueTitle: p.issueTitle, summary: p.summary, notify: each ? p.notify : undefined }, await prov.planWrite(p.op));
   }
   if (!each && getSettings().notifications) {
-    notify({ title: t('main.quick.many', { count: fresh.length, vcs: vcsName() }), body: t('main.quick.manyBody'), onClick: { type: 'navigate', to: 'actions' } });
+    notify({ title: t('main.quick.many', { count: fresh.length }), body: t('main.quick.manyBody'), onClick: { type: 'navigate', to: 'actions' } });
   }
 }
 

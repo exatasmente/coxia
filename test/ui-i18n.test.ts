@@ -18,7 +18,7 @@ const ROOT = join(import.meta.dirname, '..');
 const I18N_DIR = join(ROOT, 'src/shared/i18n');
 const RENDERER = join(ROOT, 'src/renderer/src');
 
-const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const holes = (s: string) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -79,10 +79,18 @@ describe('the renderer sources', () => {
 
   it('leave no ui.* key unused (a key counts as used through its .novoice or _one/_other siblings too)', () => {
     const used = (key: string) => {
-      const base = key.replace(/\.novoice$/, '').replace(/_(one|other)$/, '');
+      const base = key.replace(/\.(novoice|on-github|on-gitlab|on-bitbucket)$/, '').replace(/_(one|other)$/, '');
       return USED.has(key) || USED.has(base) || USED.has(`${base}.novoice`);
     };
     expect(Object.keys(UI_PT_BR).filter((key) => !used(key))).toEqual([]);
+  });
+
+  it('pair every host variant with its plain wording and keep its placeholders', () => {
+    for (const key of Object.keys(UI_PT_BR).filter((k) => /\.on-(github|gitlab|bitbucket)$/.test(k))) {
+      const base = key.replace(/\.on-[a-z]+$/, '');
+      expect(base in UI_PT_BR, key).toBe(true);
+      expect(holes(UI_PT_BR[key]), key).toEqual(holes(UI_PT_BR[base]));
+    }
   });
 
   it('pair every .novoice variant with its voice wording', () => {

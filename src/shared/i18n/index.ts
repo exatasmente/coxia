@@ -16,7 +16,7 @@ import wizardPtBR from './wizard.pt-BR.json';
 // A key missing in the active language falls back to pt-BR (the source language); a key missing everywhere returns the key itself,
 // so a gap is visible on screen and in `npm run i18n:lint`, never a crash.
 // A placeholder the call does not pass is looked up in the workspace's terms (host name, change-request noun, ceremony name...): see ./terms.
-// A key may also have a variant for the host (`key.github`), which wins over the plain key while the workspace uses that host.
+// A key may also have a variant for the host (`key.on-github`), which wins over the plain key while the workspace uses that host.
 
 export type Catalog = Record<string, string>;
 export type Params = Record<string, string | number>;
@@ -56,6 +56,9 @@ export function fillTemplate(template: string, params?: Params): string {
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => (params && name in params ? String(params[name]) : name in terms.words ? terms.words[name] : whole));
 }
 
+/** The suffix of a key's variant for a host kind: `vcs.card.ciFailed.on-github`. A dotted kind alone would collide with keys like `wizard.vcs.scopes.gitlab`. */
+export const kindSuffix = (kind: string): string => `.on-${kind}`;
+
 /** The host kind whose key variants are in force (null: none). */
 export function termsKind(): string | null {
   return terms.kind;
@@ -63,10 +66,10 @@ export function termsKind(): string | null {
 
 /**
  * The catalog keys a text may be stored under, most specific first: with voice off the ".novoice" ones, and for each the host's variant
- * (".github") before the plain key.
+ * (".on-github") before the plain key.
  */
 export function keyCandidates(key: string, voice: boolean, kind: string | null = termsKind()): string[] {
-  const withKind = (k: string) => (kind ? [`${k}.${kind}`, k] : [k]);
+  const withKind = (k: string) => (kind ? [`${k}${kindSuffix(kind)}`, k] : [k]);
   return [...(voice ? [] : withKind(`${key}${NOVOICE_SUFFIX}`)), ...withKind(key)];
 }
 
@@ -87,7 +90,7 @@ export function createTranslator(language: Language, catalogs: Record<Language, 
   };
   return (key, params) => {
     const k = kind();
-    const template = (k ? find(`${key}.${k}`, params) : undefined) ?? find(key, params);
+    const template = (k ? find(`${key}${kindSuffix(k)}`, params) : undefined) ?? find(key, params);
     return template === undefined ? key : fillTemplate(template, params);
   };
 }
