@@ -1,0 +1,306 @@
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { AgentDef } from '../../../../shared/config/types';
+import { type ForumMessage, type MessageKind, messageText } from '../../../../shared/forum';
+import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
+import type { Run } from '../../../../shared/runs';
+import { errorText } from '../../api';
+import { intlLocale, useT } from '../../i18n';
+import { RichText } from '../Diagram';
+import { ArtifactView } from './ArtifactView';
+import { agentName, agentRole, authorName } from './names';
+import { forumApi, markThreadSeen, useThread } from './forumApi';
+import './cycle.css';
+
+const KIND_KEY: Record<MessageKind, string> = {
+  post: 'ui.forum.kind.post',
+  question: 'ui.forum.kind.question',
+  answer: 'ui.forum.kind.answer',
+  handoff: 'ui.forum.kind.handoff',
+  decision: 'ui.forum.kind.decision',
+  system: 'ui.forum.kind.system',
+  request: 'ui.forum.kind.request',
+};
+
+const REQUEST_KIND_KEY = { question: 'ui.forum.request.question', change: 'ui.forum.request.change' } as const;
+
+function stamp(iso: string): string {
+  return new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+interface Ctx {
+  team: readonly AgentDef[] | undefined;
+  runId: string | null;
+  view: (name: string) => void;
+}
+
+function useTarget(team: readonly AgentDef[] | undefined): (to: string | null) => string {
+  const t = useT();
+  return (to) => (!to || to === 'person' ? t('ui.forum.to.person') : to === 'reporter' ? t('ui.forum.to.reporter') : agentName(team, to));
+}
+
+/** One message: who said it, of what kind, whether it is a public record and where it was posted, then its text and the documents it points to. */
+function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inChain?: boolean }) {
+  const t = useT();
+  const to = useTarget(ctx.team);
+  if (m.kind === 'system') {
+    return (
+      <li className="cy-msg cy-msg-system" id={`msg-${m.seq}`}>
+        <span className="cy-msg-system-text">{messageText(m)}</span>
+        <time className="faint small" dateTime={m.at}>{stamp(m.at)}</time>
+      </li>
+    );
+  }
+  const who = authorName(m.author, ctx.team);
+  const role = m.author.type === 'agent' ? agentRole(ctx.team, m.author.id, 48) : '';
+  const params = m.params as Record<string, string | number>;
+  return (
+    <li className={`cy-msg cy-msg-${m.author.type} ${inChain ? 'cy-msg-chain' : ''}`} id={`msg-${m.seq}`}>
+      <div className="cy-msg-head">
+        <strong className="cy-msg-who">{who}</strong>
+        {role && <span className="faint small cy-role">{role}</span>}
+        <span className={`badge cy-kind cy-kind-${m.kind}`}>{t(KIND_KEY[m.kind])}</span>
+        <span className={`badge ${m.public ? 'cy-pub' : 'cy-int'}`} title={t(m.public ? 'ui.forum.publicHint' : 'ui.forum.internalHint')}>{t(m.public ? 'ui.forum.public' : 'ui.forum.internal')}</span>
+        <time className="faint small cy-msg-time" dateTime={m.at}>{stamp(m.at)}</time>
+      </div>
+      {(m.to || m.replyTo) && (
+        <p className="faint small">
+          {m.to ? t('ui.forum.addressed', { who: to(m.to) }) : ''}
+          {m.to && m.replyTo ? ' · ' : ''}
+          {m.replyTo ? t('ui.forum.replyTo', { n: m.replyTo }) : ''}
+        </p>
+      )}
+      {m.kind === 'request' && (
+        <p className="small cy-request-line">{t('ui.forum.request.line', { from: String(params.from ?? ''), squad: String(params.squad ?? ''), kind: t(REQUEST_KIND_KEY[params.kind === 'change' ? 'change' : 'question']), ref: String(params.ref ?? '') })}</p>
+      )}
+      <div className="cy-msg-text">
+        <RichText text={messageText(m)} />
+      </div>
+      {m.mentions.length > 0 && <p className="faint small">{t('ui.forum.mentions', { agents: m.mentions.map((id) => agentName(ctx.team, id)).join(', ') })}</p>}
+      {m.refs.length > 0 && ctx.runId && (
+        <ul className="cy-artifacts" aria-label={t('ui.forum.refs')}>
+          {m.refs.map((r) => (
+            <li key={r.path}>
+              <button type="button" className="cy-file mono" onClick={() => ctx.view(r.path)}>{r.label ?? r.path}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {m.published && (
+        <p className="small cy-published">
+          {m.published.url ? <a href={m.published.url} target="_blank" rel="noreferrer">{t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}</a> : t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/** The way a question went: who asked whom, each time it was passed on, and why it reached the person; the messages that tell it are inside. */
+function Chain({ chain, messages, ctx }: { chain: QuestionChain; messages: ForumMessage[]; ctx: Ctx }) {
+  const t = useT();
+  const to = useTarget(ctx.team);
+  const asker = authorName(chain.asker, ctx.team);
+  const route = [asker, to(chain.first), ...chain.steps.map((s) => to(s.to))];
+  // The asker is the first name; the path is each holder in turn.
+  const path = chain.asker.type === 'app' ? route.slice(1) : route;
+  return (
+    <li className={`cy-chain ${chain.open ? 'cy-chain-open' : ''}`} aria-label={t('ui.forum.chain.title')}>
+      <div className="cy-chain-head">
+        <span className="section-title">{t('ui.forum.chain.title')}</span>
+        <span className={`badge ${chain.open ? 'cy-tone-person' : 'cy-tone-done'}`}>
+          {chain.open ? t(chain.reachedPerson ? 'ui.forum.chain.openPerson' : 'ui.forum.chain.openAgent', { who: to(chain.holder) }) : t('ui.forum.chain.answered', { who: chain.answer ? authorName(chain.answer.author, ctx.team) : '' })}
+        </span>
+      </div>
+      <p className="cy-chain-path small" aria-label={t('ui.forum.chain.path')}>
+        {path.join(' → ')}
+        {chain.steps.length > 0 && <span className="faint"> · {t('ui.forum.chain.hops', { count: chain.steps.length })}</span>}
+      </p>
+      {chain.reachedPerson && chain.why && <p className="small cy-chain-why">{t('ui.forum.chain.why', { reason: chain.why })}</p>}
+      <ol className="cy-msgs cy-msgs-inner">
+        {messages.map((m) => <Message key={m.seq} m={m} ctx={ctx} inChain />)}
+      </ol>
+    </li>
+  );
+}
+
+/** The box a person writes in, with `@agent` completed from the team as they type. */
+function Composer({ thread, team, note, onSent }: { thread: string; team: readonly AgentDef[] | undefined; note: string | null; onSent: (m: ForumMessage) => void }) {
+  const t = useT();
+  const [text, setText] = useState('');
+  const [caret, setCaret] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const listId = useId();
+  const named = useMemo(() => (team ?? []).map((a) => ({ id: a.id, name: agentName(team, a.id) })), [team]);
+  const at = dismissed ? null : mentionAt(text, caret);
+  const options = at ? mentionOptions(named, at.query) : [];
+
+  const send = () => {
+    const body = text.trim();
+    if (!body || busy) return;
+    setBusy(true);
+    setError(null);
+    void forumApi.post(thread, body).then(
+      (m) => {
+        setText('');
+        setBusy(false);
+        onSent(m);
+      },
+      (e) => {
+        setError(errorText(e));
+        setBusy(false);
+      },
+    );
+  };
+
+  const pick = (id: string) => {
+    if (!at) return;
+    const next = applyMention(text, at.start, caret, id);
+    setText(next.text);
+    setCaret(next.caret);
+    setActive(0);
+    requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(next.caret, next.caret);
+    });
+  };
+
+  return (
+    <div className="cy-composer">
+      {note && <p className="small muted cy-composer-note">{note}</p>}
+      <div className="cy-composer-box">
+        <textarea
+          ref={box}
+          className="text-input cy-textarea cy-compose"
+          rows={2}
+          value={text}
+          disabled={busy}
+          aria-label={t('ui.forum.compose')}
+          placeholder={t('ui.forum.composePlaceholder')}
+          role="combobox"
+          aria-expanded={options.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={options.length ? `${listId}-${active}` : undefined}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+            setActive(0);
+            setDismissed(false);
+          }}
+          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
+          onKeyDown={(e) => {
+            if (options.length) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                pick(options[active].id);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setDismissed(true);
+                return;
+              }
+            }
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        {options.length > 0 && (
+          <ul id={listId} role="listbox" className="cy-mentions" aria-label={t('ui.forum.mentionList')}>
+            {options.map((o, i) => (
+              <li key={o.id} id={`${listId}-${i}`} role="option" aria-selected={i === active} className={i === active ? 'on' : ''}>
+                <button type="button" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o.id)}>
+                  <strong>{o.name}</strong> <span className="faint mono">@{o.id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="row spread">
+        <span className="faint small">{t('ui.forum.sendHint')}</span>
+        <button type="button" className="btn btn-dark" disabled={busy || !text.trim()} onClick={send}>
+          {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
+        </button>
+      </div>
+      {error && <div className="error" role="alert">{error}</div>}
+    </div>
+  );
+}
+
+interface Props {
+  /** The thread's id (`run-<id>`, a channel, a general thread). */
+  thread: string;
+  /** The run the thread belongs to: its documents open from the messages, and a question that waits changes what the box says. */
+  run?: Run | null;
+  team: readonly AgentDef[] | undefined;
+  title?: string;
+  /** A channel does not call an agent: the box says so. */
+  channel?: boolean;
+}
+
+/** A thread read and written: messages by kind with their author and where they stand, the chain of each question, live, and the box to write in. */
+export function Thread({ thread, run = null, team, title, channel = false }: Props) {
+  const t = useT();
+  const live = useThread(thread);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const list = useRef<HTMLOListElement>(null);
+  const stick = useRef(true);
+  const rows = useMemo(() => groupThread(live.messages, messageText), [live.messages]);
+  const last = live.messages.at(-1)?.seq ?? 0;
+  const ctx: Ctx = { team, runId: run?.id ?? null, view: setViewing };
+
+  // What is on screen is read: the thread counts as seen up to its last message.
+  useEffect(() => {
+    if (last) markThreadSeen(thread, last);
+  }, [thread, last]);
+
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [rows.length, last]);
+
+  const asking = run?.status === 'question' && run.question?.kind !== 'squad';
+  const note = asking ? t('ui.forum.noteAnswers') : channel ? t('ui.forum.noteChannel') : run ? t('ui.forum.noteMention') : null;
+
+  return (
+    <section className="panel cy-thread" aria-label={title ?? t('ui.forum.thread')}>
+      {title && <h2 className="cy-h">{title}</h2>}
+      {live.loading && <span className="spinner" aria-label={t('ui.forum.loading')} />}
+      {live.missing && <p className="small muted">{t('ui.forum.missing')}</p>}
+      {!live.loading && !live.missing && live.messages.length === 0 && <p className="small muted">{t('ui.forum.empty')}</p>}
+      <ol
+        ref={list}
+        className="cy-msgs cy-msgs-scroll"
+        role="log"
+        aria-label={t('ui.forum.messages')}
+        tabIndex={0}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+      >
+        {rows.map((row) => (row.type === 'chain' ? <Chain key={`c${row.messages[0].seq}`} chain={row.chain} messages={row.messages} ctx={ctx} /> : <Message key={row.message.seq} m={row.message} ctx={ctx} />))}
+      </ol>
+      <Composer
+        thread={thread}
+        team={team}
+        note={note}
+        onSent={() => {
+          stick.current = true;
+        }}
+      />
+      {viewing && run && <ArtifactView runId={run.id} name={viewing} onClose={() => setViewing(null)} />}
+    </section>
+  );
+}

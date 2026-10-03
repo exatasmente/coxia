@@ -118,3 +118,69 @@
   .cy-switch-knob { transition: none; }
   .cy-stage[data-state="running"] .cy-dot { animation: none; }
 }
+
+/* the thread and the forum */
+.cy-side .cy-thread { position: sticky; top: 12px; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+.cy-thread { padding: 14px; gap: 10px; min-height: 0; }
+.cy-msgs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cy-msgs-scroll { flex: 1 1 auto; overflow-y: auto; min-height: 120px; max-height: 60vh; padding-right: 4px; }
+.cy-msgs-inner { gap: 8px; }
+.cy-msg { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface-2); min-width: 0; }
+.cy-msg-person { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); }
+.cy-msg-person .faint, .cy-msg-person .cy-msg-time { color: var(--blue-ink); opacity: 0.8; }
+.cy-msg-system { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 8px; border: 0; background: transparent; }
+.cy-msg-system-text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.cy-msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.cy-msg-who { font-size: 14px; }
+.cy-msg-time { margin-left: auto; }
+.cy-msg-text { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.cy-msg-text .rich { gap: 6px; }
+.cy-kind { background: var(--chip-quiet-bg); color: var(--muted); font-weight: 600; }
+.cy-kind-question, .cy-kind-request { background: var(--blue-chip); color: var(--blue-ink); }
+.cy-kind-answer { background: var(--teal-soft); color: var(--teal-ink); }
+.cy-kind-decision { background: var(--amber-soft); color: var(--amber-ink); }
+.cy-pub { background: var(--teal-soft); color: var(--teal-ink); font-weight: 500; }
+.cy-int { background: var(--chip-quiet-bg); color: var(--muted); font-weight: 500; }
+.cy-request-line { font-weight: 600; }
+.cy-published { overflow-wrap: anywhere; }
+.cy-chain { list-style: none; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 14px; border: 1px dashed var(--blue-line); background: var(--surface); min-width: 0; }
+.cy-chain-open { border-style: solid; border-color: var(--amber-line); }
+.cy-chain-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cy-chain-path { font-weight: 600; overflow-wrap: anywhere; }
+.cy-chain-why { padding: 8px 10px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-msg-chain { background: var(--surface-2); }
+.cy-composer { display: flex; flex-direction: column; gap: 8px; }
+.cy-composer-note { line-height: 1.4; }
+.cy-composer-box { position: relative; }
+.cy-compose { width: 100%; min-height: 64px; }
+.cy-mentions { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0 0 4px; padding: 4px; list-style: none; border-radius: 12px; border: 1px solid var(--field-line); background: var(--surface); box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--night) 60%, transparent); z-index: 5; }
+.cy-mentions li.on { background: var(--blue-soft); border-radius: 8px; }
+.cy-mentions button { width: 100%; min-height: 40px; padding: 0 10px; background: transparent; border: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.cy-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+.cy-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; background: transparent; border: 0; border-bottom: 3px solid transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.cy-tab.on { color: var(--ink); border-bottom-color: var(--teal); }
+.cy-unread { background: var(--red-solid); color: var(--white); min-width: 22px; text-align: center; }
+.cy-title-badge { margin-left: 10px; vertical-align: middle; }
+
+.cy-forum { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.cy-forum-phone { grid-template-columns: minmax(0, 1fr); }
+.cy-forum-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cy-forum-thread { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cy-forum-bar { gap: 8px; }
+.cy-forum-pick { align-self: start; }
+.cy-thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cy-thread-item { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.cy-thread-item.on { border-color: var(--teal); background: var(--teal-soft); color: var(--teal-ink); }
+.cy-thread-item.on .faint { color: var(--teal-ink); }
+.cy-thread-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cy-thread-item .badge { flex: 0 0 auto; }
+.cy-thread-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cy-new-thread { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+.cy-forum .cy-thread { position: static; max-height: none; }
+.cy-forum .cy-msgs-scroll { max-height: 55vh; }
+
+@media (max-width: 900px) {
+  .cy-side .cy-thread { position: static; max-height: none; }
+  .cy-forum { grid-template-columns: minmax(0, 1fr); }
+  .cy-msgs-scroll { max-height: none; overflow: visible; }
+}

@@ -18,6 +18,7 @@ import { Deep } from './screens/Deep';
 import { Discussions } from './screens/Discussions';
 import { Gate } from './screens/Gate';
 import { History } from './screens/History';
+import { ForumScreen } from './screens/cycle/ForumScreen';
 import { RunScreen } from './screens/cycle/RunScreen';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
@@ -61,6 +62,7 @@ export type Screen =
   | { name: 'glossario' }
   | { name: 'wizard' }
   | { name: 'run'; id: string; tab?: 'cycle' | 'forum' }
+  | { name: 'forum'; thread?: string }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -190,6 +192,8 @@ export function App() {
     case 'help':
       return <Ajuda go={go} />;
     // slot: routes of feature modules
+    case 'forum':
+      return <ForumScreen go={go} thread={screen.thread} />;
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} />;
     case 'auditoria':

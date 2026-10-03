@@ -279,6 +279,7 @@ const NAV_ACTIVE: Record<string, NavKey> = {
   help: 'more',
   glossario: 'more',
   run: 'more',
+  forum: 'more',
 };
 
 /** The bottom bar only appears where no floating composer lives: conversations (call, deep, gate, qa...) hide it. */

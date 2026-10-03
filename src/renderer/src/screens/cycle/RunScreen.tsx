@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { squadView } from '../../../../shared/config/squads';
+import { runThreadId } from '../../../../shared/forum';
+import { unreadOf } from '../../../../shared/forumView';
 import { type Run, flowOf, flowOfRun, snapshotOf } from '../../../../shared/runs';
 import { currentStage, followsOlderFlow } from '../../../../shared/runs/view';
 import type { ReleaseAction } from '../../../../shared/types';
@@ -10,10 +12,12 @@ import type { Ceremony } from '../../ceremony';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { BackIcon } from '../icons';
+import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
 import { RunActions } from './RunActions';
 import { RunBadge } from './RunBadge';
 import { StageTimeline } from './StageTimeline';
+import { Thread } from './Thread';
 import { squadName } from './names';
 import { patchRun, runsApi, useRun, useRunConfig } from './runsApi';
 import './cycle.css';
@@ -27,6 +31,21 @@ const ROUTED_KEY = {
   person: 'ui.cycle.routed.person',
   request: 'ui.cycle.routed.request',
 } as const;
+
+const NARROW = '(max-width: 900px)'; // i18n-ignore: media query
+
+/** The screen is too narrow for the stages and the thread side by side: they become two tabs. */
+function useNarrow(): boolean {
+  return useSyncExternalStore(
+    (fn) => {
+      const mq = window.matchMedia(NARROW);
+      mq.addEventListener('change', fn);
+      return () => mq.removeEventListener('change', fn);
+    },
+    () => window.matchMedia(NARROW).matches,
+    () => false,
+  );
+}
 
 interface Props {
   id: string;
@@ -67,8 +86,12 @@ function FlowNote({ run, current, web }: { run: Run; current: string; web: boole
 }
 
 /** One run: who it waits for and what to do about it, the stages as a timeline, the live work of the agent, and the review rounds. */
-export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' } }: Props) {
+export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' }, tab: initialTab = 'cycle' }: Props) {
   const t = useT();
+  const narrow = useNarrow();
+  const [tab, setTab] = useState<'cycle' | 'forum'>(initialTab);
+  const threads = useThreads();
+  const seen = useSeen();
   const run = useRun(id);
   const config = useRunConfig();
   const web = isWeb();
@@ -92,6 +115,8 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' } 
   const squad = squadName(config?.squads, run.squad);
   const pr = run.comments.pr?.url ?? null;
   const record = run.stages.find((s) => s.stage === run.stage);
+  const summary = threads?.find((s) => s.id === runThreadId(run.id));
+  const unread = summary ? unreadOf(summary, seen) : 0;
   const startedAt = record?.startedAt ? Date.parse(record.startedAt) : undefined;
   const stage = currentStage(run, flow);
 
@@ -124,13 +149,29 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' } 
           ) : null}
         </dl>
         <FlowNote run={run} current={currentHash} web={web} />
-        <div className="cy-cols">
-          <div className="cy-main">
-            <RunActions run={run} flow={flow} config={config} web={web} card={card} actions={actions} go={go} />
-            {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
-            <StageTimeline run={run} flow={flow} config={config} web={web} go={go} />
-            <ReviewRounds run={run} config={config} />
+        {narrow && (
+          <div className="cy-tabs" role="tablist" aria-label={t('ui.cycle.tabs')}>
+            <button type="button" role="tab" id="cy-tab-cycle" aria-selected={tab === 'cycle'} aria-controls="cy-panel-cycle" className={`cy-tab ${tab === 'cycle' ? 'on' : ''}`} onClick={() => setTab('cycle')}>{t('ui.cycle.tab.cycle')}</button>
+            <button type="button" role="tab" id="cy-tab-forum" aria-selected={tab === 'forum'} aria-controls="cy-panel-forum" className={`cy-tab ${tab === 'forum' ? 'on' : ''}`} onClick={() => setTab('forum')}>
+              {t('ui.cycle.tab.forum')}
+              {unread > 0 && tab !== 'forum' && <span className="badge cy-unread" aria-label={t('ui.forum.list.unread', { count: unread })}>{unread}</span>}
+            </button>
           </div>
+        )}
+        <div className="cy-cols">
+          {(!narrow || tab === 'cycle') && (
+            <div className="cy-main" id="cy-panel-cycle" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-cycle' : undefined}>
+              <RunActions run={run} flow={flow} config={config} web={web} card={card} actions={actions} go={go} />
+              {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
+              <StageTimeline run={run} flow={flow} config={config} web={web} go={go} />
+              <ReviewRounds run={run} config={config} />
+            </div>
+          )}
+          {(!narrow || tab === 'forum') && (
+            <div className="cy-side" id="cy-panel-forum" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-forum' : undefined}>
+              <Thread thread={runThreadId(run.id)} run={run} team={config?.agents.team} title={t('ui.cycle.forum')} />
+            </div>
+          )}
         </div>
       </div>
     </div>
