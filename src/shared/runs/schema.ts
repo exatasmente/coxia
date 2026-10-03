@@ -109,6 +109,12 @@ const qaRecord = object(
       maxItems: 200,
     },
     head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },
+    commands: {
+      type: 'array',
+      description: 'The commands the app ran before this pass.',
+      items: object('One command.', { command: string('The command as run.', { maxLength: 300 }), exitCode: { type: ['integer', 'null'], description: 'The exit code; null when it did not run to one.' }, timedOut: { type: 'boolean', description: 'It was stopped for taking too long.' } }, ['command', 'exitCode', 'timedOut']),
+      maxItems: 20,
+    },
   },
   ['stage', 'by', 'at', 'summary', 'scenarios', 'head'],
 );

@@ -8,7 +8,7 @@ import { messageText } from '../src/shared/forum';
 import { RunError, type Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { git } from './helpers/conflictRepos';
-import { type Boot, boot, doc, fakeEngine, fakeIssues, issue, makeRepo, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeCommands, fakeEngine, fakeIssues, issue, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -191,6 +191,46 @@ describe('a stage that goes wrong', () => {
     expect(run.stages[0]).toMatchObject({ attempts: 2, usage: { promptTokens: 1200, completionTokens: 120, cachedTokens: 100, calls: 3, costUsd: 0.003 } });
     // a stage whose engine reported nothing has no usage
     expect(run.stages.find((s) => s.stage === 'gate1')?.usage).toBeUndefined();
+  });
+
+  it('runs the workspace\'s commands in the worktree before QA and gives QA the results, and keeps the exit codes', async () => {
+    const commands = fakeCommands({ 'npm test': { exitCode: 1, output: 'FAIL slug accents' } });
+    const b = await boot({ commandRunner: commands, configure: (c) => (c.runner.commands = ['npm test', 'npm run typecheck']) });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    // only QA is given them, once per pass, in the run's worktree, after the developer and the review
+    expect(commands.ran).toEqual([{ cwd: run.worktree, command: 'npm test' }, { cwd: run.worktree, command: 'npm run typecheck' }]);
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.prompt).toContain('$ npm test  (saiu com 1)\nFAIL slug accents');
+    expect(qa.prompt).toContain('$ npm run typecheck  (saiu com 0)\nok');
+    expect(qa.prompt).toContain('você não roda nada');
+    expect(b.engine.calls.filter((c) => c.agent.id !== 'qa').every((c) => !c.prompt.includes('npm run typecheck  (saiu'))).toBe(true);
+    // QA stays a reader
+    expect(qa.confine).toBeUndefined();
+    expect(qa.agent.permission).toBe('read');
+    expect(run.qa[0].commands).toEqual([{ command: 'npm test', exitCode: 1, timedOut: false }, { command: 'npm run typecheck', exitCode: 0, timedOut: false }]);
+    expect(JSON.stringify(run.qa[0])).not.toContain('FAIL slug accents');
+    expect(b.thread(run).find((m) => m.code === 'runner.qa.commands')?.params).toEqual({ list: 'npm test (1), npm run typecheck (0)' });
+  });
+
+  it('falls back to the scripts the repository declares, and tells QA when the workspace lists none', async () => {
+    const declared = fakeCommands();
+    const b = await boot({ commandRunner: declared });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(declared.ran.map((r) => r.command)).toEqual(['npm test', 'npm run typecheck']);
+    const none = fakeCommands();
+    const c = await boot({ commandRunner: none, configure: (cfg) => (cfg.runner.commands = []) });
+    easy(c);
+    const second = await c.runner.start('app#101');
+    await reach(c, second, 'ready');
+    expect(none.ran).toEqual([]);
+    expect(c.engine.calls.find((x) => x.agent.id === 'qa')!.prompt).toContain('não rodou nenhum comando');
+    expect(c.runner.get(second.id)!.qa[0].commands).toEqual([]);
+    expect(c.thread(second).some((m) => m.code === 'runner.qa.commands')).toBe(false);
   });
 
   it('does not stop an agent that keeps showing signs of life, however long it works, until the cap', async () => {

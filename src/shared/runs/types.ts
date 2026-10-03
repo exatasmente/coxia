@@ -191,6 +191,15 @@ export interface QaRecord {
   summary: string;
   scenarios: Scenario[];
   head: string | null;
+  /** The commands the app ran in the worktree before this pass, with how each ended. Absent in a pass recorded before the app ran any. */
+  commands?: QaCommand[];
+}
+
+/** One command the app ran for a QA pass: the exit code (null when it did not run to one) and whether it was stopped for taking too long. The output is not kept. */
+export interface QaCommand {
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
 }
 
 export interface RunIssue {

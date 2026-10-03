@@ -1087,6 +1087,22 @@
    null
   ],
   [
+   "system",
+   {
+    "type": "app"
+   },
+   "qa",
+   "runner.qa.commands",
+   {
+    "list": "npm test (0), npm run typecheck (0)"
+   },
+   "",
+   null,
+   false,
+   [],
+   null
+  ],
+  [
    "post",
    {
     "type": "agent",

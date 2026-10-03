@@ -11,6 +11,7 @@ import { writeTool } from '../../src/main/engine/open/tools/write';
 import { createForumStore } from '../../src/main/forum-core';
 import type { StageEngine } from '../../src/main/runner/executor';
 import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '../../src/main/runner/service';
+import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
 import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
 import { neutralConfig } from '../../src/shared/config';
@@ -155,6 +156,16 @@ export function fakeEngine(): FakeEngine {
 export const work = (summary: string, extra: Record<string, unknown> = {}) => ({ summary, commit: '', artifacts: [], handoff: null, question: null, ...extra });
 export const doc = (name: string, content = `# ${name}\n`) => ({ name, content });
 
+/** A command runner that records what it was asked and answers from a table (exit 0 and "ok" otherwise): a test never starts a real process for QA. */
+export function fakeCommands(table: Record<string, Partial<CommandResult>> = {}): CommandRunner & { ran: { cwd: string; command: string }[] } {
+  const ran: { cwd: string; command: string }[] = [];
+  const run = Object.assign(async (cwd: string, command: string): Promise<CommandResult> => {
+    ran.push({ cwd, command });
+    return { command, exitCode: 0, timedOut: false, output: 'ok', ms: 1, ...table[command] };
+  }, { ran });
+  return run;
+}
+
 export interface Boot {
   repo: Repo;
   runner: Runner;
@@ -180,6 +191,8 @@ export interface BootOptions {
   engine?: FakeEngine;
   issues?: FakeIssues;
   dir?: string;
+  /** What the app's commands before QA answer; a fake that exits 0 by default. */
+  commandRunner?: CommandRunner;
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -216,6 +229,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     engine,
     updateConfig,
     notify: (n) => notices.push({ title: n.title, body: n.body, onClick: n.onClick }),
+    commandRunner: options.commandRunner ?? fakeCommands(),
     timeoutMs: options.timeoutMs,
     limits: options.limits,
   };

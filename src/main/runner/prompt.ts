@@ -4,6 +4,7 @@ import type { OutputKind, RoutingWhy } from '../../shared/runs';
 import { type FlowStage, type ReviewRecord, type Run, findingText } from '../../shared/runs';
 import { t } from '../../shared/i18n';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
+import type { CommandResult } from './commands';
 import { type FolderFile, ISSUE_FILE } from './cycleFolder';
 
 // The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
@@ -32,6 +33,8 @@ export interface StageInput {
   handoff: { from: string; text: string } | null;
   /** The person's answer to what this agent asked before. */
   answer: { question: string; text: string; by: string } | null;
+  /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
+  commandResults?: CommandResult[];
   /** The review passes of this stage that came before this one, for a review that is not the first. */
   earlier?: ReviewRecord[];
   /** The branch's diff, for the stage that reads it. */
@@ -111,6 +114,14 @@ export function commentPrompt(i: StageInput): string {
   return parts.join('\n\n');
 }
 
+/** What the app ran before QA, as the stage reads it: each command with how it ended and the end of its output, or the plain statement that nothing ran. */
+export function commandsSection(results: CommandResult[]): string {
+  if (!results.length) return cp('runner.section.commandsNone');
+  const head = (r: CommandResult): string => (r.timedOut ? cp('runner.commands.timeout', { command: r.command }) : r.exitCode === null ? cp('runner.commands.notRun', { command: r.command }) : cp('runner.commands.exit', { command: r.command, code: r.exitCode }));
+  const text = results.map((r) => `${head(r)}\n${r.output ? fence(r.output) : cp('runner.commands.noOutput')}`).join('\n\n');
+  return cp('runner.section.commands', { text });
+}
+
 /** The earlier review passes as lines a model can read: each round's verdict and summary, then its findings (blocking ones first). */
 export function roundsText(rounds: ReviewRecord[]): string {
   return rounds
@@ -130,6 +141,7 @@ export function stagePrompt(i: StageInput): string {
     const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
+  if (i.commandResults) sections.push(commandsSection(i.commandResults));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));

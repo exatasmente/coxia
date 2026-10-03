@@ -87,6 +87,7 @@ import type { VcsComment, VcsIssue } from '../vcs/types';
 import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
+import type { CommandRunner } from './commands';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { mentionCall } from './mention';
@@ -151,6 +152,8 @@ export interface RunnerDeps {
   now?(): Date;
   newId?(): string;
   identity?(wt: string): Promise<Identity | null>;
+  /** Runs the commands QA is given the results of; the real one by default (tests give a fake). */
+  commandRunner?: CommandRunner;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -210,7 +213,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits };
+  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -395,7 +398,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       return;
     }
     if (r.kind === 'qa') {
-      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head }, now()));
+      moveRun(d, run.id, (x) => recordQa(x, { stage, by, summary: out.summary, scenarios: out.scenarios, head: r.head, ...(r.commands ? { commands: r.commands.map(({ command, exitCode, timedOut }) => ({ command, exitCode, timedOut })) } : {}) }, now()));
       // Only a failure that blocks sends the work back; what QA noted without blocking is reported with its result.
       const failed = out.scenarios.some(scenarioBlocks);
       const back = flow.find((s) => s.id === flowStage.returnsTo);

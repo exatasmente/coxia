@@ -12,6 +12,7 @@ import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, writeArtifact } from './cycleFolder';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitMessage, commitSummary, declaredCommands, headSha, repoIdentity } from './git';
+import { type CommandResult, type CommandRunner, runCommand, runCommands } from './commands';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 
@@ -41,6 +42,8 @@ export interface ExecutorDeps {
   forum: ForumStore;
   /** The identity of a repository, when the workspace names none. */
   identity?: (wt: string) => Promise<Identity | null>;
+  /** Runs the commands QA is given the results of (the real one by default). */
+  commandRunner?: CommandRunner;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -54,6 +57,8 @@ export interface StageRun {
   written: string[];
   /** The commit this attempt made; null when nothing changed. */
   commit: string | null;
+  /** What the app ran in the worktree before a QA pass, in order. */
+  commands?: CommandResult[];
   /** An agent that changes files ended the pass with no change outside the cycle folder. */
   noCodeChange?: boolean;
   /** The branch's commit the agent looked at, before the app committed what the attempt produced: what a review or a QA pass is about. */
@@ -195,6 +200,13 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const candidates = run.routing && flow[0]?.id === stage.id ? squadsOf(config).filter((q) => run.routing?.candidates.includes(q.id)) : [];
   const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;
 
+  // QA is a reader: it cannot run anything, so the app runs what the workspace allows before it and gives it the results.
+  const ran: CommandResult[] | undefined = kind === 'qa' && !writes ? await runCommands(config.runner.commands ?? (await declaredCommands(wt, run.base)), wt, d.commandRunner ?? runCommand, abort.signal) : undefined;
+  if (ran?.length) {
+    const list = ran.map((r) => `${r.command} (${r.timedOut ? 'timeout' : (r.exitCode ?? '—')})`).join(', ');
+    d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.commands', params: { list }, stage: stage.id });
+  }
+
   const input: StageInput = {
     run,
     stage,
@@ -217,6 +229,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     squad: squadOf(config, run.squad),
     turnsTo: askTarget(config, agent),
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
+    commandResults: ran,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
   };
 
@@ -264,7 +277,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     writeArtifact(wt, run.cycleFolder, a.name, a.content);
     written.push(a.name);
   }
-  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked };
+  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ran ? { commands: ran } : {}) };
 
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });
@@ -278,6 +291,6 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const code = writes && !noCodeChange;
   const fallback = commitFallback(stage.label, code);
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
-  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}) };
+  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ran ? { commands: ran } : {}) };
 }
 
