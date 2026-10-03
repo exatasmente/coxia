@@ -835,6 +835,16 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
 }
 
+// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
+
+/** What a release run learns about its subject: where its tracking issue is, and the activities of the version as last read. A run with no subject is refused. */
+export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities'>>, at: string): Transition {
+  if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });
+  const out = clone(run, at);
+  out.subject = { ...(out.subject as RunSubject), ...structuredClone(patch) };
+  return { run: out, messages: [] };
+}
+
 // ---- tracker comments --------------------------------------------------------------------------------------------------------------------
 // A stage keeps ONE comment on the tracker and edits it in place; the run only records where that comment stands. Nothing here publishes: phase 2
 // proposes and executes, then calls these to say what happened. They apply to a run in any status (the pull request comment comes after `done`).

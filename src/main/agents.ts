@@ -26,6 +26,8 @@ import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
+import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
+import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
 import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
@@ -444,8 +446,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
   return runOpenOnce<T>({
     selection,
     prompt: req.prompt,
@@ -490,7 +492,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const shell = req.exec ? await shellMcpServer(req.exec) : null;
   // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
   if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));
-  const mcp = vcs || shell ? { ...(vcs ?? {}), ...(shell ?? {}) } : null;
+  // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
+  const release = req.release ? await releaseMcpServer(keepAlive(req.release, req.beat)) : null;
+  if (req.release && !release) throw new Error(t('main.release.toolMissing'));
+  const mcp = vcs || shell || release ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
@@ -498,7 +503,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,
@@ -888,6 +893,8 @@ async function proposeBatch(p: ProposeInput): Promise<Proposal> {
 /** One call of a team agent for a run: the stage's prompt, the agent's own model, and (for an agent that writes) its confinement. */
 export interface AgentCall {
   agent: AgentDef;
+  /** The `ReleaseAction` tool of an agent of a release run: one step of the release, answered in text for the model. */
+  release?: (input: unknown) => Promise<string>;
   prompt: string;
   schema: Schema;
   /** The agent's system text: its job, its instructions and the rules of the stage (built by the runner). */
@@ -969,6 +976,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       confine: call.confine,
       tracker,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
+      release: call.release,
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,

@@ -59,6 +59,8 @@ export interface StageInput {
   priority?: string[];
   /** The levels a stage before the one that owns the priority may suggest in its documents (not propose). */
   priorityHint?: string[];
+  /** A release run: the section that says which version, the state of its branch and the activities as last read (already fenced). */
+  release?: string;
 }
 
 const MESSAGE_MAX = 1500;
@@ -152,6 +154,7 @@ export function stagePrompt(i: StageInput): string {
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
+  if (i.release) sections.push(i.release);
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));

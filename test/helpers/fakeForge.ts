@@ -1,3 +1,4 @@
+import { VcsError } from '../../src/main/vcs/errors';
 import { createGitHubProvider, validateGitHubCommand } from '../../src/main/vcs/github';
 import type { VcsRuntime, VcsSettings } from '../../src/main/vcs/runtime';
 import { type RestTransport, pagesOver } from '../../src/main/vcs/transport';
@@ -38,6 +39,9 @@ export interface ForgePr {
   /** Someone approved it (its reviews say so). */
   approved?: boolean;
   draft?: boolean;
+  /** Its title and description (a description that says `Closes #N` links the issue). */
+  title?: string;
+  body?: string;
 }
 
 export const HEAD = 'aaaa111122223333aaaa111122223333aaaa1111';
@@ -50,6 +54,14 @@ export interface ForgeIssue {
   body: string;
   labels: string[];
   state: 'open' | 'closed';
+  milestone?: string | null;
+}
+
+/** A release the forge shows for a tag: a draft is not shown by the tags endpoint. */
+export interface ForgeRelease {
+  draft: boolean;
+  prerelease: boolean;
+  publishedAt: string | null;
 }
 
 export interface Forge {
@@ -63,6 +75,10 @@ export interface Forge {
   threads: Thread[];
   reviews: { id: number; event: string; body: string; commit_id: string; comments: Record<string, any>[] }[];
   pr: ForgePr | null;
+  /** The other pull requests of the forge (a release's activities): the reads by number, by target branch and by reviews see them with `pr`. */
+  others: ForgePr[];
+  /** The releases the forge shows, by tag. */
+  releases: Map<string, ForgeRelease>;
   /** The pull request shows in the issue's timeline (a person opened it by hand, or it was made). */
   linked: boolean;
   /** The labels of the issue 101. */
@@ -94,6 +110,8 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     notes: new Map([[101, []]]),
     threads: [],
     reviews: [],
+    others: [],
+    releases: new Map(),
     pr: over.pr === null ? null : { number: 7, branch: 'cycle/101-add-the-thing-101', head: HEAD, base: 'main', files: Object.entries(PATCHES).map(([filename, patch]) => ({ filename, patch })), ...over.pr },
     linked: over.linked ?? true,
     labels: [],
@@ -108,7 +126,8 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     forge.notes.set(n, [...(forge.notes.get(n) ?? []), made]);
     return made;
   };
-  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: '' });
+  const allPrs = (): ForgePr[] => [...(forge.pr ? [forge.pr] : []), ...forge.others];
+  const prJson = (pr: ForgePr) => ({ number: pr.number, node_id: 'PR_kwDOAbCdEf4Abcd', title: pr.title ?? 'A pull request', state: pr.merged ? 'closed' : 'open', merged_at: pr.merged ? '2026-10-03T13:00:00Z' : null, draft: !!pr.draft, head: { ref: pr.branch, sha: pr.head }, base: { ref: pr.base }, html_url: `https://example.test/${PROJECT}/pull/${pr.number}`, user: { login: over.author ?? 'someone-else' }, requested_reviewers: [], body: pr.body ?? '' });
   const threadNode = (t: Thread) => ({ id: t.id, isResolved: t.resolved, path: t.path, line: t.line, originalLine: t.line, comments: { nodes: t.comments.map((c) => ({ databaseId: c.databaseId, author: { login: 'runner-bot' }, body: c.body, createdAt: '2026-10-03T12:00:00Z', url: `https://example.test/${PROJECT}/pull/7#discussion_r${c.databaseId}` })) } });
   const openThread = (path: string, line: number | null, body: string): void => {
     const databaseId = nextId++;
@@ -128,11 +147,28 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path))) return { number: Number(m[1]), title: 'Add the thing', state: 'open', labels: forge.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${m[1]}`, user: { login: 'ana' }, assignees: [], body: '' };
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/timeline$/.exec(path))) return forge.linked && forge.pr ? [{ event: 'cross-referenced', source: { issue: { number: forge.pr.number, pull_request: {}, repository: { full_name: PROJECT } } } }] : [];
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/comments$/.exec(path))) return forge.threads.flatMap((t) => t.comments.map((c) => ({ id: c.databaseId, body: c.body, created_at: '2026-10-03T12:00:00Z', user: { login: 'runner-bot' } })));
-    if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path))) return forge.pr?.number === Number(m[1]) && forge.pr.approved ? [{ user: { login: 'ana' }, state: 'APPROVED', submitted_at: '2026-10-03T12:00:00Z' }] : [];
+    if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path))) return allPrs().find((x) => x.number === Number(m?.[1]))?.approved ? [{ user: { login: 'ana' }, state: 'APPROVED', submitted_at: '2026-10-03T12:00:00Z' }] : [];
+    if (/^repos\/[^/]+\/[^/]+\/pulls$/.test(path)) {
+      const base = new URLSearchParams(endpoint.split('?')[1] ?? '').get('base');
+      return allPrs().filter((x) => !base || x.base === base).map(prJson);
+    }
+    if (path === 'search/issues') {
+      const q = new URLSearchParams(endpoint.split('?')[1] ?? '').get('q') ?? '';
+      const label = /label:"([^"]+)"/.exec(q)?.[1];
+      const items = [...forge.issues.values()].filter((i) => i.state === 'open' && (!label || i.labels.includes(label))).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://example.test/${PROJECT}/issues/${i.number}`, user: { login: 'runner-bot' }, assignees: [], body: i.body, milestone: i.milestone ? { title: i.milestone } : null }));
+      return { items };
+    }
+    if ((m = /^repos\/[^/]+\/[^/]+\/releases\/tags\/([\w.%-]+)$/.exec(path))) {
+      const tag = decodeURIComponent(m[1]);
+      const rel = forge.releases.get(tag);
+      if (!rel || rel.draft) throw new VcsError('not_found', { host: 'example.test', what: tag });
+      return { tag_name: tag, name: tag, draft: false, prerelease: rel.prerelease, published_at: rel.publishedAt, html_url: `https://example.test/${PROJECT}/releases/tag/${tag}` };
+    }
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/files$/.exec(path))) return forge.pr?.number === Number(m[1]) ? forge.pr.files : [];
     if ((m = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/.exec(path))) {
-      if (forge.pr?.number !== Number(m[1])) throw new Error('not found');
-      return prJson(forge.pr);
+      const found = allPrs().find((x) => x.number === Number(m?.[1]));
+      if (!found) throw new Error('not found');
+      return prJson(found);
     }
     throw new Error(`the fake forge has nothing at ${endpoint}`);
   };
@@ -156,6 +192,10 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
     if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(command.endpoint)) && command.method === 'POST') {
       const made = note(Number(m[1]), json.body);
       response = { id: made.id, html_url: url(Number(m[1]), made.id) };
+    } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(command.endpoint)) && command.method === 'PATCH' && json.state === 'closed') {
+      const found = forge.issues.get(Number(m[1]));
+      if (!found) throw new Error('404 not found');
+      found.state = 'closed';
     } else if ((m = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(\d+)$/.exec(command.endpoint)) && command.method === 'PATCH') {
       const all = [...forge.notes.values()].flat();
       const found = all.find((n) => n.id === Number(m?.[1]));

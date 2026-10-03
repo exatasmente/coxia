@@ -46,7 +46,7 @@ describe('the run screen in a browser', () => {
   });
 
   it('lets the switches of autonomy, the squad choice, the undo, the flow move and the start through', () => {
-    for (const channel of ['runs:setAutonomous', 'runs:setSquadAutonomous', 'runs:setSquad', 'runs:removeSquad', 'runs:undoPost', 'runs:migrateFlow', 'runs:start', 'runs:startStage']) expect(webAccess(channel), channel).toBe('allow');
+    for (const channel of ['runs:setAutonomous', 'runs:setSquadAutonomous', 'runs:setSquad', 'runs:removeSquad', 'runs:undoPost', 'runs:migrateFlow', 'runs:start', 'runs:startRelease', 'runs:startStage']) expect(webAccess(channel), channel).toBe('allow');
   });
 
   it('has no desktop-only branch left: no screen of the cycle reads the platform, and no text says the app on the computer must do it', () => {

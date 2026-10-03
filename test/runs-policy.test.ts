@@ -8,7 +8,7 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 // What a paired browser may do to a run: all of it. Reading, answering, and every move that starts a stage, decides a gate, retries, cancels, picks a squad, moves a run to the
 // current flow, takes a comment back or switches an agent's autonomy. What a run may execute is still decided by the configuration, which a browser can only change in a scoped way.
 const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact'];
-const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+const MOVES = ['runs:start', 'runs:startRelease', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
 const OPEN = [...READS, ...MOVES];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
@@ -79,7 +79,7 @@ describe('the runner writes to a code host through one door', () => {
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
     const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
     expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
-    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl']));
+    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl', 'listMrsByTarget', 'getRelease', 'listIssues', 'issueUrl']));
     for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });
 });

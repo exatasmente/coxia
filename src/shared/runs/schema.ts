@@ -219,7 +219,7 @@ const subject = object(
     kind: enumOf('The kind of subject.', ['release']),
     version: string('X.Y.Z.', { pattern: VERSION, maxLength: 40 }),
     from: { type: ['string', 'null'], description: 'The stable tag a patch is cut from.', maxLength: 40 },
-    tracking: { ...object('The tracking issue on the tracker.', { iid: { type: 'integer', description: 'Its number.', minimum: 1 }, url: nullableString('Web address.') }, ['iid', 'url']), type: ['object', 'null'] },
+    tracking: { ...object('The tracking issue on the tracker.', { iid: { type: 'integer', description: 'Its number.', minimum: 1 }, url: nullableString('Web address.'), closed: { type: 'boolean', description: 'The app closed it: the stable version was published.' } }, ['iid', 'url']), type: ['object', 'null'] },
     activities: { type: 'array', description: 'The pull requests of the version, as last read.', items: activity, maxItems: 200 },
   },
   ['kind', 'version', 'from', 'tracking', 'activities'],

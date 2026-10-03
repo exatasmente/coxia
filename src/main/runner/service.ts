@@ -71,7 +71,8 @@ import {
   waitSkip,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
-import { autonomousOf, membersOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import { autonomousOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
 import { updateAgent } from '../../shared/config/team';
@@ -87,7 +88,10 @@ import { beginRun, moveRun } from '../runs-forum';
 import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
-import { cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
+import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
+import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
+import { crMarkOf } from '../../shared/i18n/terms';
+import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitMessage, createWorktree, repoIdentity } from './git';
@@ -102,7 +106,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -172,6 +176,11 @@ export interface Runner {
   list(): Run[];
   get(id: string): Run | null;
   start(ref: string, repoId?: string): Promise<Run>;
+  /**
+   * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
+   * repository's checkout, through the door of Actions. The tracking issue is made (or adopted) and the branch opened (or asked to be) by the publisher.
+   */
+  startRelease(version: string, from?: string, repoId?: string): Promise<Run>;
   startStage(id: string): Run;
   accept(id: string, note?: string): Run;
   returnStage(id: string, note: string): Run;
@@ -219,6 +228,8 @@ export interface Runner {
 }
 
 const MAX_STEPS = 200;
+/** A release run that ended is watched this long for the stable version to be published (and its tracking issue closed). */
+const RELEASE_WATCH_DAYS = 30;
 const iso = (d: Date): string => d.toISOString();
 
 export function createRunner(deps: RunnerDeps): Runner {
@@ -227,7 +238,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox };
+  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -554,6 +565,82 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   }
 
+  // ---- the run of a release ---------------------------------------------------------------------------------------------------------
+
+  async function startRelease(version: string, from: string | undefined, repoId?: string): Promise<Run> {
+    if (!RELEASE_VERSION.test(version)) throw new RunnerError('bad-version', { version: String(version).slice(0, 40) });
+    if (from !== undefined && from !== '' && !RELEASE_FROM.test(from)) throw new RunnerError('bad-version', { version: String(from).slice(0, 40) });
+    const ref = releaseRef(version);
+    if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
+    starting.add(ref);
+    try {
+      return await createRelease(version, from || null, repoId);
+    } finally {
+      starting.delete(ref);
+    }
+  }
+
+  async function createRelease(version: string, from: string | null, repoId?: string): Promise<Run> {
+    const config = deps.config();
+    const ref = releaseRef(version);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const stages = releaseFlowOf(config);
+    if (!stages?.length) throw new RunnerError('no-release-flow');
+    const flow = flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages } }, stages);
+    assertStartable(flow);
+    const broken = flowErrors({ stages, team: config.agents.team }, { asFlow: true });
+    if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+    const env = deps.env();
+    if (!env.issues.project) throw new RunnerError('no-issue-project');
+    const repo = await repoFor(env.issues.project, repoId);
+    const identity = config.runner.identity.name.trim() ? { name: config.runner.identity.name.trim(), email: config.runner.identity.email.trim() } : await (deps.identity ?? repoIdentity)(repo.path);
+    if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
+
+    const branch = `cycle/release-${version}`;
+    const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `release-${version}`);
+    const folder = `${CYCLES_DIR}/release-${version}`;
+    // What the clone says of the release branch decides whether the run asks for it to be opened.
+    const has = async (r: string): Promise<boolean> => (await git(repo.path, ['show-ref', '--verify', '--quiet', r], { fail: false })).code === 0;
+    const state = branchStateOf(await has(`refs/heads/release/${version}`), await has(`refs/remotes/origin/release/${version}`));
+    const read = deps.publisher
+      ? await deps.publisher.releaseBrief({ version, repo: repo.id, branch: state, from })
+      : { brief: { version, from, branch: state, activities: [], milestone: [], read: false }, text: releaseRecord({ version, from, branch: state, activities: [], milestone: [], read: false }, config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) };
+
+    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+      throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
+    });
+    let run: Run;
+    try {
+      writeIssueRecord(dest, folder, read.text);
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
+      await commitAll(dest, commitMessage(config.runner.commitMessage, 'add the release record', 0), identity);
+      const started = startRun(
+        {
+          id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')),
+          issue: { ref, iid: 0, title: releaseTitle(version), url: null },
+          repo: repo.id,
+          branch,
+          worktree: dest,
+          cycleFolder: folder,
+          cycleId: 'release-flow',
+          base: made.baseSha,
+          subject: { kind: 'release', version, from, tracking: null, activities: read.brief.activities },
+        },
+        flow,
+        now(),
+      );
+      run = beginRun(d, started);
+    } catch (e) {
+      await discard(repo.path, dest, branch);
+      throw e;
+    }
+    tell(null, run);
+    // The tracking issue and the branch come before anything the stages say: the publisher does them in order, one thing at a time for the run.
+    publish(run.id, (p) => p.releaseStarted(run.id, { branchExists: state !== 'none' }));
+    pump(run.id);
+    return run;
+  }
+
   // The repository of an issue the caller did not name, when the project has several: the one the squad that labels or paths pick owns, if it owns exactly one.
   function repoOfSquad(squads: SquadDef[], labels: string[], text: string, env: RunnerEnv): string | undefined {
     const own = env.repos.filter((r) => r.projectPath === env.issues.project);
@@ -603,6 +690,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     list: () => deps.runs.list(),
     get: (id) => deps.runs.get(id),
     start,
+    startRelease,
     startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
@@ -652,8 +740,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     migrateFlow(id) {
       const config = deps.config();
-      // The flow a run moves to is its squad's (the workspace's when it has none).
-      const view = squadView(config, need(id).squad);
+      // The flow a run moves to is its squad's (the workspace's when it has none), and a release run's is the release flow.
+      const releasing = need(id).subject ? releaseFlowOf(config) : null;
+      if (need(id).subject && !releasing) throw new RunnerError('no-release-flow');
+      const view = releasing ? { agents: { team: effectiveTeam(config) }, devCycle: { stages: releasing } } : squadView(config, need(id).squad);
       const broken = flowErrors({ stages: view.devCycle.stages, team: view.agents.team }, { asFlow: true });
       if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
       const flow = flowOf(view, view.devCycle.stages);
@@ -1061,6 +1151,16 @@ export function createRunner(deps: RunnerDeps): Runner {
         console.error('[runner] could not send on a waiting run', run.id, e instanceof Error ? e.message : e);
       }
     }
+    // A release run is looked at on every sweep, whatever it is doing: its activities, the betas and the stable the host shows published, its tracking issue. One that
+    // ended long ago and has nothing left to close is not looked at any more.
+    const queued: Promise<void>[] = [];
+    for (const run of deps.runs.list()) {
+      if (!run.subject || run.status === 'cancelled' || run.subject.tracking?.closed || (isTerminal(run) && Date.parse(run.updatedAt) < (deps.now?.() ?? new Date()).getTime() - RELEASE_WATCH_DAYS * 86_400_000)) continue;
+      publish(run.id, (p) => p.releaseTick(run.id));
+      const work = publishing.get(run.id);
+      if (work) queued.push(work);
+    }
+    await Promise.allSettled(queued);
     return sent;
   }
 

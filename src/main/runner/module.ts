@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent } from '../agents';
@@ -5,6 +6,7 @@ import { forumStore, interceptPosts } from '../forum';
 import { RunError, isFlowCycle } from '../../shared/runs';
 import type { Module } from '../module';
 import { runStore } from '../runs';
+import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
@@ -63,6 +65,11 @@ export const runsModule: Module = (ctx) => {
       config: getConfig,
       env: () => ({ issueProject: rc().issues.project ?? '', repos: rc().repos.map((x) => ({ id: x.id, projectPath: x.projectPath })) }),
       door: realDoor,
+      // The tags of the repository of a release run: what the wait for its beta reads (the clone's own, never a path from the run's file but its worktree, which shares them).
+      localTags: async (run) => {
+        const at = existsSync(run.worktree) ? run.worktree : rc().repos.find((x) => x.id === run.repo)?.path;
+        return at ? (await git(at, ['tag', '--list', 'v*'], { fail: false })).stdout.split('\n').filter(Boolean) : [];
+      },
     }),
     updateConfig,
     notify: (n) => ctx.notify(n),
@@ -85,6 +92,8 @@ export const runsModule: Module = (ctx) => {
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
+  // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
+  ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));
   ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run)));
   ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note)));
   ctx.handle('runs:return', (run: unknown, note: unknown) => r.returnStage(id(run), text(note)));

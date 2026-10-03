@@ -305,8 +305,8 @@ export interface RunSubject {
   version: string;
   /** The stable tag a patch is cut from (`vA.B.C`); null for a version cut from main. */
   from: string | null;
-  /** The issue "Release X.Y.Z" on the tracker: the stage comments go there. Null until it exists (it may wait for a "yes" in Actions). */
-  tracking: { iid: number; url: string | null } | null;
+  /** The issue "Release X.Y.Z" on the tracker: the stage comments go there; `closed` once the app closed it (the stable was published). Null until it exists (it may wait for a "yes" in Actions). */
+  tracking: { iid: number; url: string | null; closed?: boolean } | null;
   /** The pull requests of the version, as the run last read them (the plan's list; the waits and the tracking issue's list are worked out from them). */
   activities: ReleaseActivity[];
 }

@@ -19,6 +19,9 @@ import { type ExecResult, type SandboxService, type SandboxSession, SandboxError
 import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
+import { releaseSection, releaseStateOf } from './release';
+import { crMarkOf } from '../../shared/i18n/terms';
+import { primaryIntegration } from '../../shared/cycles/terms';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -54,6 +57,8 @@ export interface ExecutorDeps {
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
   limits?: Partial<Limits>;
+  /** What the `ReleaseAction` tool of a release run's agent calls: one step of the release, answered in text for the model. Without it the agent gets no such tool. */
+  release?: (runId: string, input: unknown, who: { by: string; autonomous: boolean; stage: string; attempt: number }) => Promise<string>;
 }
 
 export interface StageRun {
@@ -322,6 +327,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     numberedCommands: !!session,
     sandbox: session ? { network: config.runner.sandbox.network, reader: !writes } : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
+    // A release run says which version it is about, the state of its branch and what is aimed at it, as of the stage's start.
+    release: run.subject ? releaseSection(run, await releaseStateOf(wt, run.subject.version), config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) : undefined,
   };
 
   // A refusal is told to the thread the moment it happens, so the person sees what the agent tried even when the stage goes on.
@@ -344,6 +351,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
+    // The agent of a release run asks for the steps of the release through the app: the stage and the attempt say whose step it is, and its autonomy at the start decides what waits.
+    release: run.subject && d.release ? (input) => (d.release as NonNullable<ExecutorDeps['release']>)(run.id, input, { by: agent.id, autonomous: run.stages.find((s) => s.stage === stage.id)?.autonomous ?? false, stage: stage.id, attempt }) : undefined,
   };
   const watch = watchdog(abort, limitsOf(config, d));
   call.beat = watch.beat;

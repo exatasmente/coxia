@@ -127,7 +127,7 @@ export function commitFallback(stageLabel: string, writes: boolean): string {
 }
 
 /** The message from the repository's template; `{summary}` and `{iid}` are replaced. */
-export const commitMessage = (template: string, summary: string, iid: number): string => template.replace(/\{summary\}/g, summary).replace(/\{iid\}/g, String(iid));
+export const commitMessage = (template: string, summary: string, iid: number): string => (iid > 0 ? template : template.replace(/\s*#?\{iid\}/g, '')).replace(/\{summary\}/g, summary).replace(/\{iid\}/g, String(iid));
 
 /**
  * Commits everything changed in the worktree as `identity`, with the repository's hooks, signing and file-system monitor switched off for this one

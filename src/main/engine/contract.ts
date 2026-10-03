@@ -71,6 +71,8 @@ export interface EngineRequest {
    * `none`: nothing of the host.
    */
   tracker?: 'workspace' | 'tool' | 'none';
+  /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
+  release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
   /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
