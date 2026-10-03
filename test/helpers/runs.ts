@@ -12,6 +12,13 @@ export const agentFlowConfig = (): WorkspaceConfig => applyTemplate(neutralConfi
 
 export const agentFlowStages = (): FlowStage[] => flowOf(agentFlowConfig());
 
+/** The flow of the agent cycle with the autonomy of some agents set by id (the default team is all autonomous). */
+export function flowWithAutonomy(autonomy: Record<string, boolean>): FlowStage[] {
+  const c = agentFlowConfig();
+  for (const a of c.agents.team) if (a.id in autonomy) a.autonomous = autonomy[a.id];
+  return flowOf(c);
+}
+
 export const startInput = (over: Partial<StartInput> = {}): StartInput => ({
   id: 'r-abc123-x1y2',
   issue: { ref: 'app#101', iid: 101, title: 'Add the thing', url: 'https://example.com/group/project/issues/101' },

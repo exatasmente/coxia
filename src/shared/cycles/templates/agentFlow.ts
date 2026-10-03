@@ -20,9 +20,9 @@ export const AGENT_FLOW_STAGES: StageDef[] = [
 ];
 
 const member = (id: string, key: string, stages: string[], permission: AgentDef['permission'], role: 'deep' | 'turn'): AgentDef =>
-  newAgent({ id, name: `cycle.agentFlow.team.${key}.name`, job: `cycle.agentFlow.team.${key}.job`, instructions: `cycle.agentFlow.team.${key}.instructions`, stages, permission, model: { role } });
+  newAgent({ id, name: `cycle.agentFlow.team.${key}.name`, job: `cycle.agentFlow.team.${key}.job`, instructions: `cycle.agentFlow.team.${key}.instructions`, stages, permission, autonomous: true, model: { role } });
 
-/** The default team of the agent cycle: only the developer may change files, and only inside its run's worktree. */
+/** The default team of the agent cycle: all autonomous (the person is at the two gates), and only the developer may change files, inside its run's worktree. */
 export function agentFlowTeam(): AgentDef[] {
   return [
     member('refiner', 'refiner', ['refine'], 'read', 'deep'),

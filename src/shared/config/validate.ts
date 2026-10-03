@@ -60,6 +60,10 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
       warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
     }
   });
+  const named = new Set(c.devCycle.stages.flatMap((s) => (s.agentId ? [s.agentId] : [])));
+  team.forEach((a, i) => {
+    if (a.autonomous && !a.stages.length && !named.has(a.id)) warnings.push({ path: `agents.team[${i}].autonomous`, message: 'the agent works no stage, so there is nothing for it to run by itself' });
+  });
   const agentIds = new Set(team.map((a) => a.id));
   c.devCycle.stages.forEach((s, i) => {
     if (!s.agentId) return;

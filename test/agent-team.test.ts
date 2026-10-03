@@ -128,7 +128,7 @@ describe('validating the team', () => {
 
   it('describes every agent field in the schema', () => {
     const team = CONFIG_SCHEMA.properties?.agents.properties?.team;
-    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'instructions', 'system']);
+    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'autonomous', 'instructions', 'system']);
     expect(team?.items?.required).toEqual(['id', 'name']);
   });
 });
@@ -254,5 +254,55 @@ describe('who works a stage', () => {
   it('drops stage ids the cycle lacks from every agent', () => {
     const team = pruneAgentStages([newAgent({ id: 'a', stages: ['plan', 'gone'] }), newAgent({ id: 'b', stages: ['plan'] })], c.devCycle);
     expect(team.map((a) => a.stages)).toEqual([['plan'], ['plan']]);
+  });
+});
+
+describe('autonomy of each agent', () => {
+  it('is off for the system agents and for an agent nobody said anything about', () => {
+    expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
+    expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
+    const r = validateConfig({ schemaVersion: 4, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    expect(r.errors).toEqual([]);
+    expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
+  });
+
+  it('is a boolean the schema checks and describes', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.team.push({ id: 'x', name: 'X', autonomous: 'yes' });
+    expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['agents.team[5].autonomous']);
+    expect(CONFIG_SCHEMA.properties?.agents.properties?.team.items?.properties?.autonomous.description).toMatch(/Runs by itself/);
+  });
+
+  it('is edited like any other field, and a system agent keeps ceremonies untouched by it', () => {
+    const c = addAgent(neutralConfig(), { id: 'writer' });
+    expect(updateAgent(c, 'writer', { autonomous: true }).agents.team.find((a) => a.id === 'writer')?.autonomous).toBe(true);
+    const sys = updateAgent(c, 'turn', { autonomous: true });
+    expect(sys.agents.team.find((a) => a.id === 'turn')?.autonomous).toBe(true);
+    expect(sys.agents.roles).toEqual(c.agents.roles);
+  });
+
+  it('warns when an agent that works no stage is autonomous: there is nothing for it to run', () => {
+    const idle = withStages(neutralConfig());
+    idle.agents.team.push(newAgent({ id: 'planner', stages: ['plan'], autonomous: true }), newAgent({ id: 'idle', autonomous: true }), newAgent({ id: 'quiet' }));
+    const r = validateConfig(idle);
+    expect(r.errors).toEqual([]);
+    expect(r.warnings.map((w) => w.path)).toEqual(['agents.team[6].autonomous']);
+    // An agent a stage names counts as working it.
+    idle.devCycle.stages[2].agentId = 'idle';
+    expect(validateConfig(idle).warnings.map((w) => w.path)).toEqual(['devCycle.stages[2].agentId']);
+  });
+
+  it('comes from the migration as off for the five system agents', () => {
+    const v3 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    v3.schemaVersion = 3;
+    delete v3.agents.team;
+    expect(migrateConfig(v3, { legacyInstall: false }).config.agents.team.map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
+    // A v4 file written before the flag existed gets it off.
+    const old = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    old.agents.team.push({ id: 'writer', name: 'Writer', permission: 'read' });
+    for (const a of old.agents.team) delete a.autonomous;
+    const r = migrateConfig(old, { legacyInstall: false });
+    expect(r.changed).toBe(false);
+    expect(r.config.agents.team.every((a) => a.autonomous === false)).toBe(true);
   });
 });

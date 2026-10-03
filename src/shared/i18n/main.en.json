@@ -758,5 +758,9 @@
   "main.forum.error.empty": "The message is empty.",
   "main.forum.error.too-long": "The message is longer than {max} characters.",
   "main.forum.error.bad-title": "Give the thread a title of up to 120 characters.",
-  "main.forum.error.bad-author": "The message does not say who wrote it."
+  "main.forum.error.bad-author": "The message does not say who wrote it.",
+  "main.forum.code.run.stage.waitStart": "Stage {stage}: {agent} is waiting for you to start it.",
+  "main.forum.code.run.stage.waitAccept": "Stage {stage}: the result waits for you to accept it or send it back.",
+  "main.forum.code.stage.accepted": "{stage}: accepted.",
+  "main.forum.code.stage.returned": "{stage}: sent back to be redone. The reason:"
 }

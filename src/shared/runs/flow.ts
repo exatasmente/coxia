@@ -11,7 +11,8 @@ export function flowOf(config: Pick<WorkspaceConfig, 'agents'> & { devCycle: Pic
   return stages.map(({ s }, i) => {
     const human = !!s.human;
     const last = i === stages.length - 1;
-    return { id: s.id, label: s.label || s.id, human, agent: human || last ? null : (stageAgent(config.agents.team, config.devCycle.stages, s.id)?.id ?? null), artifacts: [...(s.artifacts ?? [])] };
+    const who = human || last ? null : stageAgent(config.agents.team, config.devCycle.stages, s.id);
+    return { id: s.id, label: s.label || s.id, human, agent: who?.id ?? null, autonomous: who?.autonomous ?? false, artifacts: [...(s.artifacts ?? [])] };
   });
 }
 

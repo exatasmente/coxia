@@ -27,8 +27,9 @@ const stageRecord = object(
     startedAt: { type: ['string', 'null'], description: 'Start of the latest attempt.', maxLength: 40 },
     endedAt: { type: ['string', 'null'], description: 'End of the latest attempt.', maxLength: 40 },
     attempts: { type: 'integer', description: 'How many times the stage was entered.', minimum: 0, maximum: 10_000 },
+    autonomous: { type: 'boolean', description: 'Whether the agent was autonomous when the stage was entered.' },
   },
-  ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts'],
+  ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts', 'autonomous'],
 );
 
 const history = object(
@@ -50,6 +51,22 @@ const comment = object(
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
 
+const pending = {
+  ...object(
+    'What a non-autonomous agent finished and the person has not accepted yet.',
+    {
+      kind: enumOf('A finished stage, or work handed back.', ['done', 'return']),
+      by: string('The agent id.', { maxLength: 48 }),
+      text: string('The findings of a return.', { maxLength: 20_000 }),
+      handoff: string('What the next stage is to do.', { maxLength: 20_000 }),
+      toStage: { type: ['string', 'null'], description: 'The stage the work goes back to.', maxLength: 48 },
+      countRound: { type: 'boolean', description: 'The return is a review pass.' },
+    },
+    ['kind', 'by', 'text', 'handoff', 'toStage', 'countRound'],
+  ),
+  type: ['object', 'null'],
+} as JsonSchema;
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -69,6 +86,7 @@ export const RUN_SCHEMA: JsonSchema = object(
       ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }) }, ['by', 'kind', 'text', 'askedAt', 'stage']),
       type: ['object', 'null'],
     },
+    pending,
     review: object('Review passes.', { rounds: { type: 'integer', description: 'Passes that ended in findings.', minimum: 0, maximum: 1000 }, max: { type: 'integer', description: 'Passes allowed before the run asks the person.', minimum: 1, maximum: 1000 } }, ['rounds', 'max']),
     error: {
       ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
@@ -79,7 +97,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },
-  ['version', 'rev', 'id', 'issue', 'repo', 'branch', 'worktree', 'cycleFolder', 'cycleId', 'status', 'stage', 'stages', 'question', 'review', 'error', 'history', 'comments', 'createdAt', 'updatedAt'],
+  ['version', 'rev', 'id', 'issue', 'repo', 'branch', 'worktree', 'cycleFolder', 'cycleId', 'status', 'stage', 'stages', 'question', 'pending', 'review', 'error', 'history', 'comments', 'createdAt', 'updatedAt'],
 );
 
 export type RunParse = { ok: true; run: Run } | { ok: false; reason: 'newer' | 'invalid'; errors: string[] };

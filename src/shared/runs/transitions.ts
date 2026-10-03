@@ -1,7 +1,7 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { t } from '../i18n';
 import { flowProblems, producerOf } from './flow';
-import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type Run, type RunIssue, type StageRecord, type Transition } from './types';
+import { MAX_REVIEW_ROUNDS, RUN_VERSION, isTerminal, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type Run, type RunIssue, type StageRecord, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -50,17 +50,18 @@ function finishStage(run: Run, at: string, status: StageRecord['status'], artifa
  * The run enters a stage: a gate waits for the person, the last stage ends the run, a stage with no agent fails (and says so), any other starts
  * its agent. Entering a stage again (after a rejection, a hand back, a restart or a retry) is a new attempt.
  */
-function enter(run: Run, flow: FlowStage[], stageId: string, at: string, messages: ForumDraft[]): void {
+function enter(run: Run, flow: FlowStage[], stageId: string, at: string, messages: ForumDraft[], start = false): void {
   const i = flow.findIndex((s) => s.id === stageId);
   if (i < 0) throw new RunError('unknown-stage', { stage: stageId });
   const stage = flow[i];
   const last = i === flow.length - 1;
   let rec = record(run, stageId);
   if (!rec) {
-    rec = { stage: stageId, agent: null, status: 'running', artifacts: [], startedAt: null, endedAt: null, attempts: 0 };
+    rec = { stage: stageId, agent: null, status: 'running', artifacts: [], startedAt: null, endedAt: null, attempts: 0, autonomous: false };
     run.stages.push(rec);
   }
   rec.agent = stage.agent;
+  rec.autonomous = stage.autonomous;
   rec.attempts += 1;
   rec.startedAt = at;
   rec.endedAt = null;
@@ -85,6 +86,13 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
     run.error = { code: 'no-agent', stage: stageId, detail: null };
     log(run, at, 'failed', stageId, 'app', 'no-agent');
     messages.push({ ...base, kind: 'system', code: 'run.stage.noAgent', params: { stage: stage.label } });
+  } else if (!stage.autonomous && !start) {
+    // The agent does not run by itself: the stage is entered and waits for the person to start it.
+    run.status = 'to-start';
+    rec.status = 'waiting';
+    rec.startedAt = null;
+    log(run, at, 'stage-waiting', stageId, 'app', stage.agent);
+    messages.push({ ...base, kind: 'system', code: 'run.stage.waitStart', params: { stage: stage.label, agent: stage.agent } });
   } else {
     run.status = 'working';
     rec.status = 'running';
@@ -133,6 +141,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     stage: flow[0].id,
     stages: [],
     question: null,
+    pending: null,
     review: { rounds: 0, max: MAX_REVIEW_ROUNDS },
     error: null,
     history: [],
@@ -142,7 +151,8 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
   };
   log(run, at, 'started', null, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
-  enter(run, flow, flow[0].id, at, messages);
+  // The person who starts the run starts its first stage too.
+  enter(run, flow, flow[0].id, at, messages, true);
   return { run, messages };
 }
 
@@ -155,26 +165,45 @@ export interface StageDoneInput {
   artifacts: string[];
 }
 
-/** The working stage is finished: its post and handoff go to the thread and the run enters the next stage. */
+/**
+ * The working stage is finished. An autonomous agent's post and handoff go to the thread and the run enters the next stage; the result of an agent
+ * that is not autonomous waits for the person to accept it (status `to-accept`) before the handoff and the next stage.
+ */
 export function stageDone(run: Run, flow: FlowStage[], done: StageDoneInput, at: string): Transition {
   need(run, 'working');
   const out = clone(run, at);
   const from = flow.find((s) => s.id === run.stage);
-  const to = next(flow, run.stage);
   const by = from?.agent ?? 'app';
+  const post: ForumDraft = { kind: 'post', author: agent(by), text: done.summary, refs: refsOf(done.artifacts), stage: run.stage, public: true };
+  if (!(record(run, run.stage) as StageRecord).autonomous) {
+    park(out, { kind: 'done', by, text: '', handoff: done.handoff, toStage: null, countRound: false }, done.artifacts, at);
+    return { run: out, messages: [post, waitAccept(flow, run.stage)] };
+  }
+  const to = next(flow, run.stage);
   finishStage(out, at, 'done', done.artifacts);
   log(out, at, 'stage-done', run.stage, by);
-  const messages: ForumDraft[] = [{ kind: 'post', author: agent(by), text: done.summary, refs: refsOf(done.artifacts), stage: run.stage, public: true }];
+  const messages: ForumDraft[] = [post];
   if (done.handoff.trim()) messages.push({ kind: 'handoff', author: agent(by), text: done.handoff, to: to.human || !to.agent ? 'person' : to.agent, stage: run.stage });
   enter(out, flow, to.id, at, messages);
   return { run: out, messages };
 }
 
+// A non-autonomous agent's result is kept until the person accepts it: the stage is over for the agent, not yet for the run.
+function park(out: Run, pending: PendingResult, artifacts: string[], at: string): void {
+  finishStage(out, at, 'waiting', artifacts);
+  out.status = 'to-accept';
+  out.pending = pending;
+  log(out, at, 'stage-ready', out.stage, pending.by);
+}
+
+const waitAccept = (flow: FlowStage[], stageId: string): ForumDraft => ({ kind: 'system', author: app, code: 'run.stage.waitAccept', params: { stage: labelOf(flow, stageId) }, stage: stageId });
+
 // Sends the run back to an earlier stage with the reason as a handoff from `from` to that stage's agent. The stage it leaves is marked rejected.
-function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDraft['author'], text: string, at: string, messages: ForumDraft[]): void {
+// `start`: the person asked for it, so the stage starts at once even when its agent is not autonomous.
+function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDraft['author'], text: string, at: string, messages: ForumDraft[], start: boolean): void {
   finishStage(out, at, 'rejected');
   messages.push({ kind: 'handoff', author: from, text, to: toStage.agent, stage: out.stage });
-  enter(out, flow, toStage.id, at, messages);
+  enter(out, flow, toStage.id, at, messages, start);
 }
 
 /** The person approves the gate: the run goes on to the next stage. `note` is optional and goes in the decision. */
@@ -198,7 +227,7 @@ export function gateReject(run: Run, flow: FlowStage[], reason: string, at: stri
   const out = clone(run, at);
   log(out, at, 'gate-rejected', run.stage, 'person', why);
   const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.rejected', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
-  sendBack(out, flow, producer, person, why, at, messages);
+  sendBack(out, flow, producer, person, why, at, messages, true);
   return { run: out, messages };
 }
 
@@ -245,7 +274,7 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
     const producer = producerOf(flow, run.stage);
     if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
     out.review.rounds = 0;
-    sendBack(out, flow, producer, person, said, at, messages);
+    sendBack(out, flow, producer, person, said, at, messages, true);
   } else {
     out.status = 'working';
     (record(out, run.stage) as StageRecord).status = 'running';
@@ -253,7 +282,39 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   return { run: out, messages };
 }
 
-/** The reviewing agent hands the work back to an earlier stage. */
+// The work goes back to an earlier stage. A review pass counts toward the limit: at the limit the run stops and asks the person instead.
+function applyReturn(out: Run, flow: FlowStage[], p: PendingResult, at: string, messages: ForumDraft[]): void {
+  const target = flow.find((x) => x.id === p.toStage);
+  if (!target) throw new RunError('unknown-stage', { stage: p.toStage ?? '' });
+  if (p.countRound) {
+    out.review.rounds += 1;
+    if (out.review.rounds >= out.review.max) {
+      out.status = 'question';
+      out.question = { by: 'app', kind: 'review-limit', text: p.text, askedAt: at, stage: out.stage };
+      (record(out, out.stage) as StageRecord).status = 'waiting';
+      log(out, at, 'question', out.stage, 'app', 'review-limit');
+      messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds: out.review.rounds }, stage: out.stage, public: true });
+      return;
+    }
+  }
+  log(out, at, 'handback', out.stage, p.by, target.id);
+  sendBack(out, flow, target, agent(p.by), p.handoff.trim() || p.text, at, messages, false);
+}
+
+// What an agent hands back is its stage's result: an autonomous agent's goes at once, the other's waits for the person to accept it.
+function returnWork(run: Run, flow: FlowStage[], p: PendingResult, post: ForumDraft | null, at: string): Transition {
+  const out = clone(run, at);
+  const messages: ForumDraft[] = post ? [post] : [];
+  if (!(record(run, run.stage) as StageRecord).autonomous) {
+    park(out, p, [], at);
+    messages.push(waitAccept(flow, run.stage));
+  } else {
+    applyReturn(out, flow, p, at, messages);
+  }
+  return { run: out, messages };
+}
+
+/** The agent hands the work back to an earlier stage. */
 export function handBack(run: Run, flow: FlowStage[], input: { by: string; toStage: string; text: string }, at: string): Transition {
   need(run, 'working');
   const i = flow.findIndex((s) => s.id === run.stage);
@@ -261,11 +322,7 @@ export function handBack(run: Run, flow: FlowStage[], input: { by: string; toSta
   if (j < 0 || j >= i || flow[j].human) throw new RunError('unknown-stage', { stage: input.toStage });
   const text = input.text.trim();
   if (!text) throw new RunError('empty-text');
-  const out = clone(run, at);
-  log(out, at, 'handback', run.stage, input.by, input.toStage);
-  const messages: ForumDraft[] = [];
-  sendBack(out, flow, flow[j], agent(input.by), text, at, messages);
-  return { run: out, messages };
+  return returnWork(run, flow, { kind: 'return', by: input.by, text: '', handoff: text, toStage: input.toStage, countRound: false }, null, at);
 }
 
 export interface ReviewReturnInput {
@@ -278,7 +335,7 @@ export interface ReviewReturnInput {
 
 /**
  * The review ended with findings. With review passes left the work goes back to the stage that produced it; once the limit is reached the run
- * stops and asks the person.
+ * stops and asks the person. A reviewer that is not autonomous waits for the person to accept its findings first.
  */
 export function reviewReturn(run: Run, flow: FlowStage[], input: ReviewReturnInput, at: string): Transition {
   need(run, 'working');
@@ -286,19 +343,61 @@ export function reviewReturn(run: Run, flow: FlowStage[], input: ReviewReturnInp
   if (!findings) throw new RunError('empty-text');
   const producer = producerOf(flow, run.stage);
   if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
+  const post: ForumDraft = { kind: 'post', author: agent(input.by), text: findings, stage: run.stage, public: true };
+  return returnWork(run, flow, { kind: 'return', by: input.by, text: findings, handoff: input.handoff?.trim() || findings, toStage: producer.id, countRound: true }, post, at);
+}
+
+/** The person starts a stage whose agent is not autonomous. The flag counts as it is now: a change takes effect at a stage start. */
+export function startStage(run: Run, flow: FlowStage[], at: string): Transition {
+  need(run, 'to-start');
+  const stage = flow.find((s) => s.id === run.stage);
+  if (!stage?.agent) throw new RunError('no-agent', { stage: stage?.label ?? run.stage });
   const out = clone(run, at);
-  out.review.rounds += 1;
-  const messages: ForumDraft[] = [{ kind: 'post', author: agent(input.by), text: findings, stage: run.stage, public: true }];
-  if (out.review.rounds >= out.review.max) {
-    out.status = 'question';
-    out.question = { by: 'app', kind: 'review-limit', text: findings, askedAt: at, stage: run.stage };
-    (record(out, run.stage) as StageRecord).status = 'waiting';
-    log(out, at, 'question', run.stage, 'app', 'review-limit');
-    messages.push({ kind: 'question', author: app, code: 'review.limit', params: { rounds: out.review.rounds }, stage: run.stage, public: true });
+  const rec = record(out, run.stage) as StageRecord;
+  rec.agent = stage.agent;
+  rec.autonomous = stage.autonomous;
+  rec.status = 'running';
+  rec.startedAt = at;
+  rec.endedAt = null;
+  out.status = 'working';
+  log(out, at, 'stage-started', run.stage, 'person', stage.agent);
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.started', params: { stage: stage.label, agent: stage.agent }, stage: run.stage }] };
+}
+
+/** The person accepts the result of a non-autonomous agent: its handoff goes out and the run moves on (or the work goes back, for a return). */
+export function acceptStage(run: Run, flow: FlowStage[], at: string, note = ''): Transition {
+  need(run, 'to-accept');
+  const p = run.pending as PendingResult;
+  const out = clone(run, at);
+  out.pending = null;
+  log(out, at, 'stage-accepted', run.stage, 'person', note.trim() || null);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'stage.accepted', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
+  if (p.kind === 'return') {
+    applyReturn(out, flow, p, at, messages);
   } else {
-    log(out, at, 'handback', run.stage, input.by, producer.id);
-    sendBack(out, flow, producer, agent(input.by), input.handoff?.trim() || findings, at, messages);
+    const to = next(flow, run.stage);
+    (record(out, run.stage) as StageRecord).status = 'done';
+    if (p.handoff.trim()) messages.push({ kind: 'handoff', author: agent(p.by), text: p.handoff, to: to.human || !to.agent ? 'person' : to.agent, stage: run.stage });
+    enter(out, flow, to.id, at, messages);
   }
+  return { run: out, messages };
+}
+
+/** The person does not accept the result: the same stage does it again, with the note as the handoff. A note is required. */
+export function returnStage(run: Run, flow: FlowStage[], note: string, at: string): Transition {
+  need(run, 'to-accept');
+  const why = note.trim();
+  if (!why) throw new RunError('empty-reason');
+  const p = run.pending as PendingResult;
+  const out = clone(run, at);
+  out.pending = null;
+  log(out, at, 'stage-returned', run.stage, 'person', why);
+  const messages: ForumDraft[] = [
+    { kind: 'decision', author: person, code: 'stage.returned', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true },
+    { kind: 'handoff', author: person, text: why, to: p.by, stage: run.stage },
+  ];
+  finishStage(out, at, 'rejected');
+  enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
 }
 
@@ -319,7 +418,7 @@ export function retry(run: Run, flow: FlowStage[], at: string): Transition {
   const out = clone(run, at);
   log(out, at, 'retried', run.stage, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.stage.retried', params: { stage: labelOf(flow, run.stage) }, stage: run.stage }];
-  enter(out, flow, run.stage, at, messages);
+  enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
 }
 
@@ -334,6 +433,7 @@ export function cancel(run: Run, by: 'person' | 'app', at: string): Transition {
   }
   out.status = 'cancelled';
   out.question = null;
+  out.pending = null;
   log(out, at, 'cancelled', run.stage, by);
   return { run: out, messages: [{ kind: 'system', author: by === 'person' ? person : app, code: 'run.cancelled', stage: run.stage }] };
 }
@@ -347,7 +447,7 @@ export function resumeAfterRestart(run: Run, flow: FlowStage[], at: string): Tra
   const out = clone(run, at);
   log(out, at, 'interrupted', run.stage, 'app');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.stage.restarted', params: { stage: labelOf(flow, run.stage) }, stage: run.stage }];
-  enter(out, flow, run.stage, at, messages);
+  enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
 }
 

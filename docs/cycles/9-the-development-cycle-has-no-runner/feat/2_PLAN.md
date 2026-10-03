@@ -39,6 +39,7 @@ interface AgentDef {
   model: AgentModel;
   stages: string[];      // devCycle.stages ids it works
   permission: 'read' | 'worktree';
+  autonomous: boolean;   // runs by itself (see Autonomy below); off for the five system agents, on for the default team
   instructions: string;  // appended to its system prompt, catalog key or literal
   system: boolean;       // the five built-in agents: edited, never deleted
 }
@@ -49,6 +50,18 @@ The five system agents have the ids of the five LLM roles (`turn`, `reply`, `dee
 ### StageDef additions
 
 `agentId?: string` (the agent that works the stage), `artifacts?: string[]` (file names the stage must produce in the cycle folder), `human?: boolean` (a gate: waits for the person). The agent of a stage is `stage.agentId` when that agent exists, else the first agent of the team whose `stages` lists the stage, else none (the stage cannot start and says so).
+
+### Autonomy
+
+Autonomy belongs to each agent, which the person switches on and off, so a cycle can be hybrid: autonomous agents, human gates and agents that wait for the person.
+
+| | Autonomous | Not autonomous |
+|---|---|---|
+| The stage | starts when the run reaches it | waits for the person to start it (`to-start`) |
+| Its tracker comments and reviews | posted automatically, recorded in the audit log | wait in Actions for a "yes" |
+| Its result | goes to the next stage without waiting | waits for the person to accept it, or send it back with a note (`to-accept`) |
+
+Gates are unchanged. Pushing the branch and opening the pull request always wait for the person, whatever the flag, and a test workspace refuses every external write. A change of the flag takes effect at the next stage start or publication, never in the middle of a stage: a stage record keeps the value its agent had when the stage was entered (and `startStage` refreshes it), and phase 2 reads the flag at the moment it decides to publish. The ceremonies ignore the flag. Phase 1 builds the flag, the two waiting states and their transitions (`startStage`, `acceptStage`, `returnStage`, with `stageDone`, `reviewReturn` and `handBack` parking the result of a non-autonomous agent in `Run.pending`); phase 2 implements the behaviour around them: automatic start, automatic publication with an audit entry, proposals in Actions for the comments of a non-autonomous agent, and the buttons of phase 3.
 
 ### The agent cycle template
 
@@ -72,10 +85,11 @@ interface Run {
   version: 1; rev: number; id: string;
   issue: { ref: string; iid: number; title: string; url: string | null };
   repo: string; branch: string; worktree: string; cycleFolder: string; cycleId: string;
-  status: 'working' | 'gate' | 'question' | 'failed' | 'done' | 'cancelled';
+  status: 'working' | 'gate' | 'question' | 'failed' | 'to-start' | 'to-accept' | 'done' | 'cancelled';
   stage: string;
   stages: StageRecord[];          // one per stage entered: agent, status, artifacts, startedAt, endedAt, attempts
   question: PendingQuestion | null;
+  pending: PendingResult | null;   // the result of a non-autonomous agent, waiting for the person (to-accept)
   review: { rounds: number; max: number };
   error: { code: string; stage: string; detail: string | null } | null;
   history: HistoryEntry[];        // append-only trace of every transition
@@ -93,7 +107,7 @@ interface CommentRecord {
 
 A stage keeps one comment on the tracker and edits it in place; the run only records where that comment stands (phase 2 publishes). Transitions: `recordCommentDraft`, `recordCommentProposal`, `recordCommentPublished` (with the note id the host returned), `recordCommentEdited`, `recordCommentRefused`.
 
-Transitions are pure functions in `src/shared/runs/`, each `(run, flow, input, now) => { run, messages }`: `startRun`, `stageDone`, `gateApprove`, `gateReject`, `gateSkip`, `ask`, `answer`, `handBack`, `reviewReturn`, `stageFailed`, `retry`, `cancel`, `resumeAfterRestart`. `messages` are forum drafts the caller appends to the run's thread, so the thread holds every post, handoff, question, answer and decision, in order. A `flow` is derived from the config (`flowOf`): the stages in rank order with their human flag and resolved agent.
+Transitions are pure functions in `src/shared/runs/`, each `(run, flow, input, now) => { run, messages }`: `startRun`, `stageDone`, `gateApprove`, `gateReject`, `gateSkip`, `ask`, `answer`, `handBack`, `reviewReturn`, `startStage`, `acceptStage`, `returnStage`, `stageFailed`, `retry`, `cancel`, `resumeAfterRestart`. `messages` are forum drafts the caller appends to the run's thread, so the thread holds every post, handoff, question, answer and decision, in order. A `flow` is derived from the config (`flowOf`): the stages in rank order with their human flag and resolved agent.
 
 ### Forum
 
@@ -103,7 +117,7 @@ A message has `public: boolean` (eligible to appear on the tracker: what an agen
 
 ## Phase 1: data model and stores (this change)
 
-Commits, one per part, tests and docs in each:
+Commits, one per part, tests and docs in each (a fifth, added later at the maintainer's request, makes autonomy a flag of each agent with the two waiting states it needs):
 
 1. **Agent team in the config.** `AgentDef` and friends in `types.ts`; `agents.team` in schema, defaults and validation; schema 4 with `v3ToV4` (seeds the five system agents from `agents.roles`); pure helpers in `src/shared/config/team.ts` (`systemAgent`, `ensureSystemAgents`, `stageAgent`, `addAgent`, `updateAgent`, `removeAgent`). Validation: ids unique; id of a system agent reserved and flagged; stages exist; `stage.agentId` exists and a human stage has none; model resolves; artifact names are plain file names. Docs in `configuration.md`.
 2. **The agent-flow template.** `StageDef` fields, the template and its team, `applyTemplate` merging the team without touching the person's agents (and dropping stage references that no longer exist), `templateFromConfig`/`parseTemplate` carrying the team, catalog texts in both languages, `cycles.md`, `CONTRIBUTING.md` note.
@@ -133,7 +147,7 @@ All four are local reads or writes of the workspace's own folder. A browser may 
 4. **Commits** made by the app, never by the agent: `git add -A` then `git commit` in the worktree with `-c user.name -c user.email` from the workspace identity (new `runner.identity`; never `git config`), `-c core.hooksPath=/dev/null` (a hook the agent edited must not run outside the confinement), the message from the developer's structured output checked against `runner.commitPattern`, with no AI attribution. The review stage reads the diff with `--no-ext-diff --no-textconv`.
 5. **Review loop**: the reviewer's verdict `approved` ends the stage; findings go through `reviewReturn`: with a pass count under the maximum (2) the work goes back to the developer with the findings as a handoff, otherwise the run asks the person.
 6. **Writes to the code host**, at the end of implement and of review: `proposeVcsAction` with two new ops. `pushBranch` is described by the provider as a `git` command carrying only the run id (the executor looks the worktree up in the run store, so a stored action cannot name another folder), validated like `assertPlainPush` (one plain `HEAD:refs/heads/<branch>` to `origin`, no force); `createMr` for GitHub (`POST /repos/{o}/{r}/pulls`) and GitLab (`POST projects/:id/merge_requests`), body built from the artifacts and the issue link; Bitbucket's `planWrite` says unsupported and the run ends with a thread message asking for it by hand. The pull request is proposed when the push is done. Both pass through `approveAction`, `audited` and `assertExternalWrite`, so a test workspace refuses them. Mirroring thread messages to the issue is a third proposal kind, off by default (`runner.mirrorToIssue`).
-7. **Autonomy**: `runner.autonomy`, `runner.triggerLabel` (default `coxia`), `runner.maxConcurrentRuns`; a scheduler job lists issues with the label through the provider, skips issues with an active run, starts up to the limit.
+7. **Autonomy of the run**: per-agent behaviour as in the Autonomy table (start, publish, accept); on top of it `runner.autonomy` (the app starting runs by itself), `runner.triggerLabel` (default `coxia`), `runner.maxConcurrentRuns`; a scheduler job lists issues with the label through the provider, skips issues with an active run, starts up to the limit.
 8. **IPC**: `runs:list`, `runs:get`, `runs:start`, `runs:cancel`, `runs:gate` (approve, reject, skip), `runs:answer`, `runs:retry`, `runs:ask-agent` (a mention). `runs:start` and the gate actions are local; web policy `allow`. The push and the pull request stay behind `actions:approve`.
 9. **Schema 5** (`v4ToV5`): the `runner` section above.
 
@@ -201,6 +215,11 @@ Choices taken where the spec is silent.
 24. **Tracker comments are recorded, not published, in phase 1.** `Run.comments` is keyed by stage id and `pr` (a stage with the id `pr` draws a validation warning), each record `{ target, noteId, url, bodyHash, status, updatedAt }` with status `draft | proposed | published | refused`, so a stage can edit its own comment in place instead of posting a second one. A proposal over a published comment keeps its note id (it is an edit); a refusal never demotes a published comment. The transitions apply to a run in any status (the pull request comment comes after `done`); the body hash is computed by phase 2, the model has no hashing. Templates, configuration and the publishing itself are phase 2.
 25. **`public` is a flag, not a message kind**, because a question, a decision and a post are all public records while a handoff of the same author is not. The transitions mark posts, questions, answers and decisions public and leave handoffs and stage changes internal; a person's plain `forum:post` is internal. Being public never publishes: mirroring needs the workspace option and its own approval.
 26. **A message's `published` link is an annotation line**, since thread files are append only; `forum-core` folds the latest annotation into the message when it reads.
+
+27. **Autonomy is a flag on each agent** (`AgentDef.autonomous`), off by default (a new agent, the five system agents) and on for the default team of the agent cycle. A file written before the flag existed reads as off, so no schema bump: the v3 to v4 migration seeds the system agents with it off. Validation warns for an autonomous agent that works no stage.
+28. **Two waiting states, `to-start` and `to-accept`**, with a `pending` result on the run. Entering a stage whose agent is not autonomous waits for `startStage`; the finished result of such an agent (a stage done, review findings, a hand back) is parked and goes out only on `acceptStage`, which also counts a review round; `returnStage` sends the stage back to the same agent with a required note and starts it at once. What the person directs (the run's first stage, rejecting a gate, answering the review limit, retrying, returning with a note) starts the stage at once whatever its agent's flag.
+29. **A stage record keeps the autonomy its agent had when the stage was entered**, so editing the flag never changes a stage in progress; `startStage` re-reads it, which is the "next stage start" the flag change waits for.
+30. **A person's accept is a public decision** (`stage.accepted`), like a gate approval; a return with a note is `stage.returned` plus a handoff from the person to the agent.
 
 ## Not verified yet
 

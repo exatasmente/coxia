@@ -7,8 +7,12 @@ export const RUN_VERSION = 1;
 export const MAX_REVIEW_ROUNDS = 2;
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
-/** working: an agent works `stage`. gate: the person decides. question: waiting for an answer. failed: waiting for a retry or a cancel. */
-export const RUN_STATUSES = ['working', 'gate', 'question', 'failed', 'done', 'cancelled'] as const;
+/**
+ * working: an agent works `stage`. gate: the person decides. question: waiting for an answer. failed: waiting for a retry or a cancel.
+ * to-start: the stage's agent is not autonomous, so the stage waits for the person to start it.
+ * to-accept: that agent finished, and its result waits for the person to accept it (or send it back with a note).
+ */
+export const RUN_STATUSES = ['working', 'gate', 'question', 'failed', 'to-start', 'to-accept', 'done', 'cancelled'] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const STAGE_STATUSES = ['running', 'waiting', 'done', 'rejected', 'skipped', 'failed', 'cancelled'] as const;
@@ -25,6 +29,8 @@ export interface StageRecord {
   startedAt: string | null;
   endedAt: string | null;
   attempts: number;
+  /** Whether the agent was autonomous when the stage was entered: a change of the flag never applies in the middle of a stage. */
+  autonomous: boolean;
 }
 
 export const QUESTION_KINDS = ['agent', 'review-limit'] as const;
@@ -45,7 +51,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['comment', 'started', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['comment', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -74,6 +80,22 @@ export interface CommentRecord {
   bodyHash: string | null;
   status: CommentStatus;
   updatedAt: string;
+}
+
+/** What a non-autonomous agent finished and the person has not accepted yet. */
+export interface PendingResult {
+  /** done: the stage's work is complete. return: the agent hands the work back to an earlier stage (review findings, or a hand back). */
+  kind: 'done' | 'return';
+  /** The agent id. */
+  by: string;
+  /** The findings (for a return); empty for done. */
+  text: string;
+  /** What the next stage (or the one handed back to) is to do. */
+  handoff: string;
+  /** The stage the work goes back to; null for done. */
+  toStage: string | null;
+  /** The return is a review pass: it counts toward the limit. */
+  countRound: boolean;
 }
 
 export interface RunIssue {
@@ -105,6 +127,8 @@ export interface Run {
   /** One record per stage the run has entered, in the order first entered. */
   stages: StageRecord[];
   question: PendingQuestion | null;
+  /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
+  pending: PendingResult | null;
   review: { rounds: number; max: number };
   error: RunFailure | null;
   history: HistoryEntry[];
@@ -122,6 +146,8 @@ export interface FlowStage {
   human: boolean;
   /** The agent id that works it; null for a gate and for the last stage. */
   agent: string | null;
+  /** The agent runs by itself (`AgentDef.autonomous`); false for a gate and the last stage. */
+  autonomous: boolean;
   artifacts: string[];
 }
 

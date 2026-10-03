@@ -428,6 +428,13 @@ export interface AgentDef {
   /** Ids of the `devCycle.stages` the agent works. */
   stages: string[];
   permission: AgentPermission;
+  /**
+   * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
+   * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
+   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
+   * wait for the person. The ceremonies ignore it. A change takes effect at the next stage start or publication, never in the middle of a stage.
+   */
+  autonomous: boolean;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */

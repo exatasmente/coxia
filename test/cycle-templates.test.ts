@@ -297,6 +297,13 @@ describe('the agent cycle template', () => {
     expect(applied().agents.team.filter((a) => a.system)).toHaveLength(5);
   });
 
+  it('runs by itself by default: the five agents are autonomous, the built-in ones are not', () => {
+    const team = applied().agents.team;
+    expect(team.filter((a) => !a.system).map((a) => a.autonomous)).toEqual([true, true, true, true, true]);
+    expect(team.filter((a) => a.system).map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
+    expect(validateConfig(applied()).warnings).toEqual([]);
+  });
+
   it('lays the cycle folder out as the artifacts say: the gates read the spec and the plan, the phase is the latest file', () => {
     const layout = applied().devCycle.specLayout;
     expect(layout.gateFiles.map((g) => [g.sub, g.gate, g.files[0][0]])).toEqual([['', 1, '1_SPEC.md'], ['', 2, '2_PLAN.md']]);
@@ -318,7 +325,7 @@ describe('the agent cycle template', () => {
 
   it('keeps the agents the person already has, adds the missing ones, and never touches a system agent', () => {
     const own = neutralConfig();
-    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', instructions: 'careful', system: false });
+    own.agents.team.push({ id: 'developer', name: 'Dev', job: 'mine', model: { role: null, provider: 'anthropic', model: 'sonnet' }, stages: [], permission: 'read', autonomous: false, instructions: 'careful', system: false });
     own.agents.team.find((a) => a.id === 'turn')!.instructions = 'short';
     const next = applyTemplate(own, flow);
     expect(next.agents.team.find((a) => a.id === 'developer')).toEqual(own.agents.team.find((a) => a.id === 'developer'));
@@ -374,7 +381,7 @@ describe('the agent cycle template', () => {
   });
 
   it('merges into a team by id for the wizard too: the person\'s agents stay, the stages the cycle lacks are dropped', () => {
-    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', instructions: '', system: false }]);
+    const own = neutralConfig().agents.team.concat([{ id: 'developer', name: 'Dev', job: '', model: { role: 'deep', provider: '', model: '' }, stages: ['gone', 'implement'], permission: 'read', autonomous: false, instructions: '', system: false }]);
     const merged = mergeTemplateTeam(own, flow.team!, cycleOf(flow));
     expect(merged.find((a) => a.id === 'developer')).toMatchObject({ name: 'Dev', permission: 'read', stages: ['implement'] });
     expect(merged.map((a) => a.id).filter((id) => id === 'developer')).toHaveLength(1);

@@ -758,5 +758,9 @@
   "main.forum.error.empty": "A mensagem está vazia.",
   "main.forum.error.too-long": "A mensagem passa de {max} caracteres.",
   "main.forum.error.bad-title": "Dê um título à conversa, de até 120 caracteres.",
-  "main.forum.error.bad-author": "A mensagem não diz quem a escreveu."
+  "main.forum.error.bad-author": "A mensagem não diz quem a escreveu.",
+  "main.forum.code.run.stage.waitStart": "Etapa {stage}: {agent} espera você iniciar.",
+  "main.forum.code.run.stage.waitAccept": "Etapa {stage}: o resultado espera você aceitar ou devolver.",
+  "main.forum.code.stage.accepted": "{stage}: aceito.",
+  "main.forum.code.stage.returned": "{stage}: devolvido para refazer. O motivo:"
 }

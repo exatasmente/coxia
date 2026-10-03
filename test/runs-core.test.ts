@@ -4,6 +4,9 @@ import { messageText } from '../src/shared/forum';
 import { setLanguage } from '../src/shared/i18n';
 import {
   MAX_REVIEW_ROUNDS,
+  acceptStage,
+  returnStage,
+  startStage,
   RunError,
   answer,
   ask,
@@ -30,7 +33,7 @@ import {
   stageFailed,
   startRun,
 } from '../src/shared/runs';
-import { AT, agentFlowConfig, agentFlowStages, at, drive, startInput } from './helpers/runs';
+import { AT, agentFlowConfig, agentFlowStages, at, drive, flowWithAutonomy, startInput } from './helpers/runs';
 
 const done = (name: string) => ({ summary: `${name} done`, handoff: `over to the next after ${name}`, artifacts: [`${name}.md`] });
 const stage = (d: ReturnType<typeof drive>, id: string) => d.run.stages.find((s) => s.stage === id)!;
@@ -436,5 +439,246 @@ describe('what the thread says', () => {
       d.do(m);
       expect(parseRun(d.run), JSON.stringify(parseRun(d.run))).toMatchObject({ ok: true });
     }
+  });
+});
+
+describe('agents that wait for the person', () => {
+  // The planner and the reviewer are not autonomous; the rest run by themselves.
+  const hybrid = () => flowWithAutonomy({ planner: false, reviewer: false });
+  const upToPlan = (flow = hybrid()) => {
+    const d = drive(flow);
+    d.do((r, t) => stageDone(r, flow, done('1_SPEC'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    return d;
+  };
+
+  it('carry the flag of each agent into the flow: gates and the last stage have none', () => {
+    expect(agentFlowStages().map((s) => s.autonomous)).toEqual([true, false, true, false, true, true, true, false]);
+    expect(hybrid().filter((s) => s.agent).map((s) => [s.id, s.autonomous])).toEqual([['refine', true], ['plan', false], ['implement', true], ['review', false], ['qa', true]]);
+  });
+
+  it('the person starting the run starts its first stage, whoever works it', () => {
+    const flow = flowWithAutonomy({ refiner: false });
+    const d = drive(flow);
+    expect(d.run).toMatchObject({ status: 'working', stage: 'refine' });
+    expect(stage(d, 'refine')).toMatchObject({ status: 'running', autonomous: false });
+  });
+
+  it('a stage whose agent is not autonomous is entered and waits for the person to start it', () => {
+    const d = upToPlan();
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'plan' });
+    expect(stage(d, 'plan')).toMatchObject({ agent: 'planner', status: 'waiting', attempts: 1, startedAt: null, autonomous: false });
+    expect(d.messages.at(-1)).toMatchObject({ kind: 'system', code: 'run.stage.waitStart', params: { stage: 'Plan', agent: 'planner' } });
+    expect(d.run.history.at(-1)).toMatchObject({ type: 'stage-waiting', stage: 'plan' });
+    expect(() => stageDone(d.run, d.flow, done('2_PLAN'), at(9))).toThrow(expect.objectContaining({ code: 'wrong-state' }));
+    const tr = d.do((r, t) => startStage(r, d.flow, t));
+    expect(d.run).toMatchObject({ status: 'working', stage: 'plan' });
+    expect(stage(d, 'plan')).toMatchObject({ status: 'running', startedAt: at(3), attempts: 1 });
+    expect(tr.messages[0]).toMatchObject({ code: 'run.stage.started' });
+    expect(d.run.history.at(-1)).toMatchObject({ type: 'stage-started', by: 'person' });
+  });
+
+  it('its result waits for the person to accept it: the post goes out, the handoff and the next stage do not', () => {
+    const d = upToPlan();
+    d.do((r, t) => startStage(r, d.flow, t));
+    const before = d.messages.length;
+    d.do((r, t) => stageDone(r, d.flow, done('2_PLAN'), t));
+    expect(d.run).toMatchObject({ status: 'to-accept', stage: 'plan', pending: { kind: 'done', by: 'planner', handoff: 'over to the next after 2_PLAN', toStage: null } });
+    expect(stage(d, 'plan')).toMatchObject({ status: 'waiting', artifacts: ['2_PLAN.md'], endedAt: at(4) });
+    expect(d.messages.slice(before).map((m) => [m.kind, m.code ?? null])).toEqual([['post', null], ['system', 'run.stage.waitAccept']]);
+    expect(parseRun(d.run)).toMatchObject({ ok: true });
+    const tr = d.do((r, t) => acceptStage(r, d.flow, t, 'good plan'));
+    expect(d.run).toMatchObject({ status: 'gate', stage: 'gate2', pending: null });
+    expect(stage(d, 'plan').status).toBe('done');
+    expect(tr.messages.map((m) => [m.kind, m.code ?? m.to ?? null])).toEqual([['decision', 'stage.accepted'], ['handoff', 'person'], ['system', 'run.stage.gate']]);
+    expect(tr.messages[0]).toMatchObject({ text: 'good plan', public: true });
+    expect(d.run.history.map((h) => h.type)).toEqual(expect.arrayContaining(['stage-waiting', 'stage-ready', 'stage-accepted']));
+  });
+
+  it('the person may send the result back with a note: the same stage does it again at once', () => {
+    const d = upToPlan();
+    d.do((r, t) => startStage(r, d.flow, t));
+    d.do((r, t) => stageDone(r, d.flow, done('2_PLAN'), t));
+    expect(() => returnStage(d.run, d.flow, '  ', at(9))).toThrow(expect.objectContaining({ code: 'empty-reason' }));
+    const tr = d.do((r, t) => returnStage(r, d.flow, 'add a rollback section', t));
+    expect(d.run).toMatchObject({ status: 'working', stage: 'plan', pending: null });
+    expect(stage(d, 'plan')).toMatchObject({ attempts: 2, status: 'running', artifacts: ['2_PLAN.md'] });
+    expect(tr.messages.map((m) => [m.kind, m.code ?? m.to ?? null, m.text ?? null])).toEqual([
+      ['decision', 'stage.returned', 'add a rollback section'],
+      ['handoff', 'planner', 'add a rollback section'],
+      ['system', 'run.stage.started', null],
+    ]);
+  });
+
+  it('accept and return only apply to a result that waits, and start only to a stage that waits', () => {
+    const d = upToPlan();
+    expect(() => acceptStage(d.run, d.flow, AT)).toThrow(expect.objectContaining({ code: 'wrong-state' }));
+    expect(() => returnStage(d.run, d.flow, 'x', AT)).toThrow(expect.objectContaining({ code: 'wrong-state' }));
+    const e = drive();
+    expect(() => startStage(e.run, e.flow, AT)).toThrow(expect.objectContaining({ code: 'wrong-state' }));
+  });
+
+  it('refuses to start a stage that lost its agent', () => {
+    const d = upToPlan();
+    const c = agentFlowConfig();
+    c.agents.team = c.agents.team.filter((a) => a.id !== 'planner');
+    c.devCycle.stages.find((x) => x.id === 'plan')!.agentId = undefined;
+    expect(() => startStage(d.run, flowOf(c), at(9))).toThrow(expect.objectContaining({ code: 'no-agent' }));
+  });
+
+  it('a change of the flag applies at the next stage start, never in the middle of a stage', () => {
+    // Autonomous when the stage was entered, switched off before it finished: it still goes on by itself.
+    const auto = drive();
+    auto.do((r, t) => stageDone(r, flowWithAutonomy({ refiner: false }), done('1_SPEC'), t));
+    expect(auto.run).toMatchObject({ status: 'gate', stage: 'gate1' });
+    // Not autonomous when entered, switched on before the person started it: the start picks the new value up, so the result goes on by itself.
+    const d = upToPlan();
+    const flowOn = flowWithAutonomy({ planner: true, reviewer: false });
+    d.do((r, t) => startStage(r, flowOn, t));
+    expect(stage(d, 'plan').autonomous).toBe(true);
+    d.do((r, t) => stageDone(r, flowWithAutonomy({ planner: false }), done('2_PLAN'), t));
+    expect(d.run).toMatchObject({ status: 'gate', stage: 'gate2' });
+    // And the other way: started as not autonomous, switched on in the middle: the result still waits.
+    const e = upToPlan();
+    e.do((r, t) => startStage(r, e.flow, t));
+    e.do((r, t) => stageDone(r, flowWithAutonomy({ planner: true }), done('2_PLAN'), t));
+    expect(e.run.status).toBe('to-accept');
+  });
+
+  it('applies the flag of the next agent when a stage hands over: an autonomous result into a waiting agent waits to be started', () => {
+    const flow = flowWithAutonomy({ developer: false });
+    const d = drive(flow);
+    d.do((r, t) => stageDone(r, flow, done('1'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('2'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'implement' });
+    d.do((r, t) => startStage(r, flow, t));
+    expect(d.run.status).toBe('working');
+  });
+
+  const toReview = (flow: ReturnType<typeof hybrid>) => {
+    const d = drive(flow);
+    d.do((r, t) => stageDone(r, flow, done('1'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    d.do((r, t) => startStage(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('2'), t));
+    d.do((r, t) => acceptStage(r, flow, t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('3'), t));
+    return d;
+  };
+
+  it('review findings of a reviewer that is not autonomous wait for the person; accepting them counts the round and sends the work back', () => {
+    const d = toReview(hybrid());
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'review' });
+    d.do((r, t) => startStage(r, d.flow, t));
+    const tr = d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F1: no test', handoff: 'add the test' }, t));
+    expect(d.run).toMatchObject({ status: 'to-accept', stage: 'review', review: { rounds: 0 }, pending: { kind: 'return', toStage: 'implement', countRound: true, text: 'F1: no test', handoff: 'add the test' } });
+    expect(tr.messages.map((m) => [m.kind, m.code ?? null])).toEqual([['post', null], ['system', 'run.stage.waitAccept']]);
+    const acc = d.do((r, t) => acceptStage(r, d.flow, t));
+    expect(d.run).toMatchObject({ status: 'working', stage: 'implement', review: { rounds: 1 }, pending: null });
+    expect(acc.messages.map((m) => [m.kind, m.code ?? m.to ?? null])).toEqual([['decision', 'stage.accepted'], ['handoff', 'developer'], ['system', 'run.stage.started']]);
+    expect(stage(d, 'review').status).toBe('rejected');
+    // The second pass with findings, accepted, reaches the limit and asks the person.
+    d.do((r, t) => stageDone(r, d.flow, done('3'), t));
+    d.do((r, t) => startStage(r, d.flow, t));
+    d.do((r, t) => reviewReturn(r, d.flow, { by: 'reviewer', findings: 'F2' }, t));
+    d.do((r, t) => acceptStage(r, d.flow, t));
+    expect(d.run).toMatchObject({ status: 'question', question: { kind: 'review-limit', text: 'F2' }, review: { rounds: 2 } });
+  });
+
+  it('what goes back into an agent that is not autonomous waits to be started, unless the person is the one sending it', () => {
+    const flow = flowWithAutonomy({ reviewer: false, developer: false });
+    const d = drive(flow);
+    d.do((r, t) => stageDone(r, flow, done('1'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('2'), t));
+    d.do((r, t) => gateApprove(r, flow, t));
+    d.do((r, t) => startStage(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('3'), t));
+    d.do((r, t) => acceptStage(r, flow, t));
+    d.do((r, t) => startStage(r, flow, t));
+    d.do((r, t) => reviewReturn(r, flow, { by: 'reviewer', findings: 'F1' }, t));
+    d.do((r, t) => acceptStage(r, flow, t));
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'implement' });
+    expect(stage(d, 'implement')).toMatchObject({ attempts: 2, status: 'waiting', startedAt: null });
+    // A gate rejected by the person goes straight back to a producer that is not autonomous.
+    const g = drive(flowWithAutonomy({ refiner: false }));
+    g.do((r, t) => stageDone(r, g.flow, done('1'), t));
+    g.do((r, t) => acceptStage(r, g.flow, t));
+    g.do((r, t) => gateReject(r, g.flow, 'vague', t));
+    expect(g.run).toMatchObject({ status: 'working', stage: 'refine' });
+    // So does the answer to the review limit.
+    const h = drive(flowWithAutonomy({ developer: false }));
+    h.do((r, t) => stageDone(r, h.flow, done('1'), t));
+    h.do((r, t) => gateApprove(r, h.flow, t));
+    h.do((r, t) => stageDone(r, h.flow, done('2'), t));
+    h.do((r, t) => gateApprove(r, h.flow, t));
+    h.do((r, t) => startStage(r, h.flow, t));
+    h.do((r, t) => stageDone(r, h.flow, done('3'), t));
+    h.do((r, t) => acceptStage(r, h.flow, t));
+    h.do((r, t) => reviewReturn(r, h.flow, { by: 'reviewer', findings: 'F1' }, t));
+    h.do((r, t) => startStage(r, h.flow, t));
+    h.do((r, t) => stageDone(r, h.flow, done('3'), t));
+    h.do((r, t) => acceptStage(r, h.flow, t));
+    h.do((r, t) => reviewReturn(r, h.flow, { by: 'reviewer', findings: 'F2' }, t));
+    expect(h.run.status).toBe('question');
+    h.do((r, t) => answer(r, h.flow, 'rename it and go on', t));
+    expect(h.run).toMatchObject({ status: 'working', stage: 'implement' });
+  });
+
+  it('a hand back by an agent that is not autonomous waits for the person too', () => {
+    const d = toReview(hybrid());
+    d.do((r, t) => startStage(r, d.flow, t));
+    d.do((r, t) => handBack(r, d.flow, { by: 'reviewer', toStage: 'plan', text: 'the plan misses a migration' }, t));
+    expect(d.run).toMatchObject({ status: 'to-accept', pending: { kind: 'return', toStage: 'plan', countRound: false } });
+    d.do((r, t) => acceptStage(r, d.flow, t));
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'plan', review: { rounds: 0 } });
+  });
+
+  it('the last agent of the cycle waits for acceptance too, and accepting ends the run', () => {
+    const flow = flowWithAutonomy({ qa: false });
+    const d = drive(flow);
+    for (const f of ['1', '2']) {
+      d.do((r, t) => stageDone(r, flow, done(f), t));
+      d.do((r, t) => gateApprove(r, flow, t));
+    }
+    d.do((r, t) => stageDone(r, flow, done('3'), t));
+    d.do((r, t) => stageDone(r, flow, done('4'), t));
+    expect(d.run).toMatchObject({ status: 'to-start', stage: 'qa' });
+    d.do((r, t) => startStage(r, flow, t));
+    d.do((r, t) => stageDone(r, flow, done('5'), t));
+    expect(d.run.status).toBe('to-accept');
+    d.do((r, t) => acceptStage(r, flow, t));
+    expect(d.run).toMatchObject({ status: 'done', stage: 'ready' });
+  });
+
+  it('cancelling drops what waited, and a restart leaves both waiting states as they are', () => {
+    const d = upToPlan();
+    expect(resumeAfterRestart(d.run, d.flow, at(9))).toEqual({ run: d.run, messages: [] });
+    d.do((r, t) => startStage(r, d.flow, t));
+    d.do((r, t) => stageDone(r, d.flow, done('2'), t));
+    expect(resumeAfterRestart(d.run, d.flow, at(9))).toEqual({ run: d.run, messages: [] });
+    d.do((r, t) => cancel(r, 'person', t));
+    expect(d.run).toMatchObject({ status: 'cancelled', pending: null });
+    expect(stage(d, 'plan').status).toBe('cancelled');
+    const e = upToPlan();
+    e.do((r, t) => cancel(r, 'person', t));
+    expect(stage(e, 'plan').status).toBe('cancelled');
+  });
+
+  it('is worded in both languages', () => {
+    const d = toReview(hybrid());
+    d.do((r, t) => startStage(r, d.flow, t));
+    d.do((r, t) => stageDone(r, d.flow, done('4'), t));
+    d.do((r, t) => returnStage(r, d.flow, 'redo', t));
+    const codes = new Set(d.messages.flatMap((m) => (m.code ? [m.code] : [])));
+    expect([...codes]).toEqual(expect.arrayContaining(['run.stage.waitStart', 'run.stage.waitAccept', 'stage.accepted', 'stage.returned']));
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      for (const m of d.messages) expect(messageText(m), `${language} ${m.code}`).not.toMatch(/main\.forum|\{\w+\}/);
+    }
+    setLanguage('pt-BR');
   });
 });
