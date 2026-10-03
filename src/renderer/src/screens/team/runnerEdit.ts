@@ -57,6 +57,14 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
   };
 }
 
+/**
+ * The runner the draft makes when the screen is open in a paired browser: the commands an agent may run, the folder of the worktrees and the identity of
+ * the commits are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
+ */
+export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity } };
+}
+
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage';
 
 export interface RunnerProblem {

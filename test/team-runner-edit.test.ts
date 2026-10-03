@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import type { RunnerConfig } from '../src/shared/config/types';
-import { draftOfRunner, runnerOf, runnerProblems, withCommand, type RunnerDraft } from '../src/renderer/src/screens/team/runnerEdit';
+import { draftOfRunner, runnerOf, runnerOfWeb, runnerProblems, withCommand, type RunnerDraft } from '../src/renderer/src/screens/team/runnerEdit';
 
 const base = (): RunnerDraft => draftOfRunner(neutralConfig().runner);
 const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) => `${p.severity}:${p.key.split('.').pop()}`);
@@ -114,5 +114,20 @@ describe('the problems of the runner draft', () => {
       const theirs = !validateConfig(c).ok;
       expect(mine, JSON.stringify(over)).toBe(theirs);
     }
+  });
+});
+
+describe('the runner saved from a paired browser', () => {
+  const stored: RunnerConfig = { ...neutralConfig().runner, worktreesDir: '~/work', commands: ['npm test'], identity: { name: 'Bot', email: 'bot@example.com' } };
+
+  it('takes the plain settings from the draft and the folder, the commands and the identity from the stored runner, whatever the draft says', () => {
+    const draft: RunnerDraft = { ...draftOfRunner(stored), enabled: true, maxConcurrentRuns: 4, worktreesDir: '/etc', commandsMode: 'custom', commands: ['curl example.com'], identityName: 'Mallory', identityEmail: 'm@example.com' };
+    const made = runnerOfWeb(draft, stored);
+    expect(made).toMatchObject({ enabled: true, maxConcurrentRuns: 4, worktreesDir: '~/work', commands: ['npm test'], identity: { name: 'Bot', email: 'bot@example.com' } });
+  });
+
+  it('keeps a runner that uses the repository\'s scripts and the default folder as it is', () => {
+    const plain = neutralConfig().runner;
+    expect(runnerOfWeb({ ...draftOfRunner(plain), commandsMode: 'custom', commands: ['x'], worktreesDir: 'y' }, plain)).toEqual(plain);
   });
 });

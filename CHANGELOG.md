@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Runs and the team and cycle settings can be managed from the paired browser (the phone companion), not only from the app window: starting a run or a stage, accepting or sending back a result, deciding a gate, retrying, cancelling, taking a comment back, choosing a squad, the autonomy switches and moving a run to the current flow (every `runs:*` channel is now open), and, in Settings › Team and cycle, the team, the squads, the flow, the comment templates and the runner's plain settings (on or off, label, runs at a time, turns, timeouts, commit message). The browser saves through a new channel, `config:cycle-save`, which accepts a change only when every path that differs from the stored configuration is one of those (the difference is computed in the app, so a full config with another change in it is refused); `config:save` stays desktop-only.
+- What stays on the computer, because it would let a browser make this machine run a program or read a folder or a secret: the runner's allowed commands, the folder for the runs and the identity of the commits (shown read-only in the browser, with a note), the external tools, the documentation, projects and model settings, the integrations and secrets, voice, browser access, the setup wizard and applying or importing a cycle template. Approving what the app writes to the code host (`actions:approve`) is still governed by the existing setting for approving external effects from the phone. See `docs/runner.md` and `docs/configuration.md`.
+
+### Fixed
+
+- The status chip of a run at a gate read "Gate 1: no gate". Chips now read "<stage> · <status>", and the statuses read after a stage name: "Gate 1 · waiting for you" (pt-BR: "esperando você"), "waiting for you to start", "waiting for you to accept", "has a question", "waiting for an event".
+
 ## [0.4.0] - 2026-10-03
 
 ### Added

@@ -173,6 +173,7 @@
   "ui.runner.commandsCustom": "Only the ones I list",
   "ui.runner.commandsCustomHint": "Each command exactly as typed, one plain command: no pipe, \";\", \"&&\" or redirect. An empty list: none.",
   "ui.runner.commandsList": "Allowed commands",
+  "ui.runner.commandsNone": "None: an agent that writes runs no command.",
   "ui.runner.commandsRepo": "The repository's scripts",
   "ui.runner.commandsRepoHint": "The test and typecheck scripts the repository declares (npm test, npm run typecheck).",
   "ui.runner.commit": "Commit message",
@@ -200,6 +201,7 @@
   "ui.runner.identityEmail": "Email",
   "ui.runner.identityHint": "The app makes the commits of the agent's work in the worktree. Both empty: the identity the repository already has.",
   "ui.runner.identityName": "Name",
+  "ui.runner.identityNone": "The identity the repository already has",
   "ui.runner.idle": "Longest the agent may be silent (minutes)",
   "ui.runner.idleHint": "From {min} to {max}. If the agent shows no sign of life (text, a tool, model usage) for that long, the stage fails and can be retried. One that keeps working never reaches it.",
   "ui.runner.saved": "Runner settings saved.",
@@ -212,6 +214,8 @@
   "ui.runner.warn.idleLonger": "The silence limit is longer than the stage limit: the stage limit ends the stage first.",
   "ui.runner.warn.noCommands": "With no commands, an agent that writes cannot run the tests.",
   "ui.runner.warn.notFlow": "The current cycle is not an agent flow (no stage has a type): the scheduler will not start runs.",
+  "ui.runner.webNote": "From the browser you change what runs and when. The folder for the runs, the commands and who the commits are made as are changed on the computer.",
+  "ui.runner.webOnComputer": "Changed on the computer",
   "ui.runner.worktrees": "Folder for the runs",
   "ui.runner.worktreesDefault": "The workspace's data folder",
   "ui.runner.worktreesHint": "Where the worktrees are made (\"~/\" works). Empty: the worktrees folder of the workspace's data.",
@@ -356,6 +360,5 @@
   "ui.team.tab.team": "Team",
   "ui.team.thePerson": "You",
   "ui.team.title": "Team and cycle",
-  "ui.team.turnsTo": "Turns to",
-  "ui.team.webNote": "The team and the cycle are edited in the app window, on the computer. Here you can only read them."
+  "ui.team.turnsTo": "Turns to"
 }

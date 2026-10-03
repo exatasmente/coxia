@@ -3,12 +3,13 @@ import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { Run } from '../../../../shared/runs';
 import { api, errorText, moduleEvents } from '../../api';
+import { isWeb } from '../../platform';
 
-// What the team and cycle screens call. Reading the configuration is open to a paired browser; everything that writes is desktop-only (webPolicy.ts),
-// and the screens check isWeb() before they offer it.
+// What the team and cycle screens call. A paired browser reads the configuration and saves it through config:cycle-save, which refuses anything but the team, the
+// squads, the flow, the comment templates and the runner's plain settings (configScope.ts); the window keeps the whole config:save.
 export const teamApi = {
   config: () => api.invoke<ConfigView>('config:get'),
-  save: (config: WorkspaceConfig) => api.invoke<ConfigView>('config:save', config),
+  save: (config: WorkspaceConfig) => api.invoke<ConfigView>(isWeb() ? 'config:cycle-save' : 'config:save', config),
   setAutonomous: (agent: string, on: boolean) => api.invoke<boolean>('runs:setAutonomous', agent, on),
   setSquadAutonomous: (squad: string, on: boolean) => api.invoke<boolean>('runs:setSquadAutonomous', squad, on),
   removeSquad: (squad: string, confirm: boolean) => api.invoke<{ removed: boolean; runs: string[] }>('runs:removeSquad', squad, confirm),

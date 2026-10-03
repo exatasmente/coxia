@@ -138,7 +138,7 @@ Agentes trabalham em **squads**: um squad tem escopo, membros, fluxo e um agente
 
 ### Editar o time e o ciclo no app
 
-Em **Configurações › Time e ciclo** (só na janela do app: um navegador pareado só lê) ficam cinco abas. Tudo vale para as **próximas** execuções; uma execução em andamento segue o fluxo com que começou.
+Em **Configurações › Time e ciclo** (na janela do app e no navegador pareado) ficam cinco abas. O navegador salva por `config:cycle-save`, que só aceita o que muda nas abas Time, Squads, Fluxo e Comentários e nos ajustes simples do Runner; os comandos permitidos, a pasta das execuções e a identidade dos commits aparecem lá só para leitura e mudam no computador. Tudo vale para as **próximas** execuções; uma execução em andamento segue o fluxo com que começou.
 
 - **Time.** A lista dos agentes (nome, função, squad, etapas, permissão, modelo, a quem recorre) com a chave "Roda sozinho" na própria linha. Criar e editar abre um painel ao lado da lista (uma folha embaixo, no celular): nome, id, função, instruções, modelo (o de um papel do app ou um provedor e um modelo), permissão, autonomia, squad e a quem recorre. Os erros aparecem ali mesmo, com os textos das verificações do fluxo e dos squads (uma cadeia que volta a si mesma, um agente que recorre a ele próprio). Excluir (menos os agentes do app) pede confirmação e lista as etapas que ficam sem agente.
 - **Squads.** Nome, missão, escopo (repositórios do workspace, rótulos, pastas de um repositório, "o que ninguém reivindica"), membros, contato, a chave do squad e o rótulo que a issue ganha. Marcar um agente que é de outro squad o traz para este. Excluir um squad lista as execuções ativas dele (`runs:removeSquad` sem confirmar) e só as move para "sem squad" depois do "sim".
@@ -364,7 +364,7 @@ Agents work in **squads**: a squad has a scope, members, a flow and one agent, t
 
 ### Editing the team and the cycle in the app
 
-**Settings › Team and cycle** (the app window only: a paired browser can only read) has five tabs. Everything applies to **new** runs; a run in progress keeps the flow it started with.
+**Settings › Team and cycle** (the app window and a paired browser) has five tabs. The browser saves through `config:cycle-save`, which only accepts what changes in the Team, Squads, Flow and Comments tabs and the Runner's plain settings; the allowed commands, the runs' folder and the commits' identity are shown there read-only and are changed on the computer. Everything applies to **new** runs; a run in progress keeps the flow it started with.
 
 - **Team.** The list of agents (name, job, squad, stages, permission, model, who it turns to) with the "Runs by itself" switch on the row. Creating and editing open a panel beside the list (a bottom sheet on a phone): name, id, job, instructions, model (an app role's, or a provider and a model), permission, autonomy, squad and who it turns to. Errors show there, with the texts of the flow and squad checks (a chain that comes back to itself, an agent that turns to itself). Deleting (except the built-in agents) asks to confirm and lists the stages that are left with no agent.
 - **Squads.** Name, mission, scope (the workspace's repositories, labels, folders of a repository, "whatever nobody claims"), members, liaison, the squad's switch and the label the issue gets. Ticking an agent that belongs to another squad brings it here. Deleting a squad lists its active runs (`runs:removeSquad` unconfirmed) and moves them to "no squad" only after the "yes".

@@ -101,3 +101,8 @@
 
 .tm-section { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); }
 .tm-preview { margin: 0; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60dvh; overflow: auto; }
+
+/* What only the computer changes, shown to a paired browser without a field to edit. */
+.tm-readonly { display: grid; gap: 4px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.tm-readonly dd { margin: 0 0 8px; overflow-wrap: anywhere; }
+.tm-readonly-list { margin: 0; padding-left: 18px; }

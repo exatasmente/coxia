@@ -6,7 +6,6 @@ import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useCycle } from '../../cycleApi';
 import { useT } from '../../i18n';
-import { isWeb } from '../../platform';
 import { RunBadge, useStatusText } from './RunBadge';
 import { squadName } from './names';
 import { patchRun, runsApi, useRunConfig, useRuns } from './runsApi';
@@ -53,7 +52,7 @@ export function CardRunFacts({ cardRef }: { cardRef: string }) {
   );
 }
 
-/** "Open cycle" for a card that has a run, "Start cycle" for one that has none (in the app only: a browser cannot start work on the computer). */
+/** "Open cycle" for a card that has a run, "Start cycle" for one that has none. */
 export function CardRunActions({ card, go }: { card: Card; go: (s: Screen) => void }) {
   const t = useT();
   const run = useCardRun(card.ref);
@@ -69,7 +68,7 @@ export function CardRunActions({ card, go }: { card: Card; go: (s: Screen) => vo
     </button>
   );
   // One run per issue at a time: a new one can start only when the last one ended.
-  if (isWeb() || (run && isActive(run))) return <>{open}</>;
+  if (run && isActive(run)) return <>{open}</>;
   const choices = config ? reposToChoose(config.projects.repos, config.projects.issues.project) : null;
   const start = async () => {
     setBusy(true);

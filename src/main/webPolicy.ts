@@ -8,7 +8,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
 // screen: a token never travels through the browser channel).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -21,10 +21,11 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve']);
 // phone is where a person answers a question. A mention only calls on an agent that reads (never one that writes), and a post is never mirrored to
 // the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
-// runs:*: reading the runs (list, get) and answering a run's question (answer, and a forum post that answers it) are open to a paired browser: the phone is
-// where a person answers, and an answer only lets the stage that asked go on, under the same confinement. Everything else starts work or changes a run
-// (start, startStage, accept, return, gate, retry, cancel), decides which squad, flow and agents a run goes on with (setSquad, removeSquad) or changes what an agent may do by itself (setAutonomous, setSquadAutonomous), and creates branches and worktrees on this
-// machine: desktop only. test/runs-policy.test.ts pins the list.
+// runs:* are all open to a paired browser, the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, migrateFlow,
+// undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
+// browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed
+// only on the computer, see configScope.ts), and its writes to the code host still wait in the proposals of actions:approve. The autonomy switches change how
+// far an agent goes by itself inside that same confinement. test/runs-policy.test.ts pins the list.
 
 // push:* channels are device-bound (rpc.handleDevice): only the HTTP RPC reaches them, with the session's device id.
 // They take the same path as every other call: session cookie, X-Cerimonias header, this policy.
@@ -34,7 +35,8 @@ const WEB_ADMIN = /^web:/;
 
 // The configuration can name programs to run and folders to read, and the secrets store holds keys: reading the config and its schema is
 // open to a paired browser; saving it, the secrets and export/import files are not. The same goes for applying or importing a cycle template
-// and for scanning the machine's projects (it reads folders).
+// and for scanning the machine's projects (it reads folders). The one write a browser has is config:cycle-save (team, squads, flow, comment
+// templates, the runner's plain settings), which is allowed here and checks its own scope in configModule.ts (configScope.ts).
 const CONFIG_ADMIN = /^(config:(save|secret|secrets|export|import)|cycle:(apply|template-save|template-remove|template-pick)|agents:(scan|apply|summarize))/;
 
 // The setup wizard opens file dialogs, runs npm, tests keys and writes the configuration: it exists only in the desktop window. A browser

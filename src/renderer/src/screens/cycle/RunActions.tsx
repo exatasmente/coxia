@@ -58,7 +58,6 @@ interface Props {
   run: Run;
   flow: readonly FlowStage[];
   config: WorkspaceConfig | null;
-  web: boolean;
   card?: Card;
   actions: readonly ReleaseAction[];
   go: (s: Screen) => void;
@@ -98,7 +97,7 @@ function Waiting({ run, flow, config }: { run: Run; flow: readonly FlowStage[]; 
   );
 }
 
-function SquadChoice({ run, squads, web, busy, call }: { run: Run; squads: readonly SquadDef[]; web: boolean; busy: boolean; call: (fn: () => Promise<Run>) => void }) {
+function SquadChoice({ run, squads, busy, call }: { run: Run; squads: readonly SquadDef[]; busy: boolean; call: (fn: () => Promise<Run>) => void }) {
   const t = useT();
   const routing = run.routing;
   const candidates = (routing?.candidates ?? []).map((id) => squads.find((s) => s.id === id)).filter((s): s is SquadDef => !!s);
@@ -108,11 +107,11 @@ function SquadChoice({ run, squads, web, busy, call }: { run: Run; squads: reado
       {proposal && <p className="small">{t('ui.cycle.squad.proposal', { squad: squadName(squads, proposal.squad), reason: proposal.reason })}</p>}
       <div className="row">
         {candidates.map((s) => (
-          <button key={s.id} type="button" className={`btn ${proposal?.squad === s.id ? 'btn-dark' : ''}`} disabled={web || busy} onClick={() => call(() => runsApi.setSquad(run.id, s.id))}>
+          <button key={s.id} type="button" className={`btn ${proposal?.squad === s.id ? 'btn-dark' : ''}`} disabled={busy} onClick={() => call(() => runsApi.setSquad(run.id, s.id))}>
             {t('ui.cycle.squad.pick', { squad: s.name })}
           </button>
         ))}
-        <button type="button" className="btn" disabled={web || busy} onClick={() => call(() => runsApi.setSquad(run.id, null))}>{t('ui.cycle.squad.none')}</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => call(() => runsApi.setSquad(run.id, null))}>{t('ui.cycle.squad.none')}</button>
       </div>
     </div>
   );
@@ -133,7 +132,7 @@ function Switch({ on, disabled, label, hint, onChange }: { on: boolean; disabled
 }
 
 /** The autonomy of the agent that works the current stage and of its squad: each takes effect at the next stage start or publication. */
-function Autonomy({ run, agent, config, web, busy, call }: { run: Run; agent: AgentDef; config: WorkspaceConfig; web: boolean; busy: boolean; call: (fn: () => Promise<unknown>) => void }) {
+function Autonomy({ run, agent, config, busy, call }: { run: Run; agent: AgentDef; config: WorkspaceConfig; busy: boolean; call: (fn: () => Promise<unknown>) => void }) {
   const t = useT();
   const squad = squadOf(config, run.squad ?? agent.squad);
   const effective = autonomousOf(config, agent);
@@ -142,7 +141,7 @@ function Autonomy({ run, agent, config, web, busy, call }: { run: Run; agent: Ag
       <h3 className="section-title">{t('ui.cycle.autonomy.title')}</h3>
       <Switch
         on={agent.autonomous}
-        disabled={web || busy}
+        disabled={busy}
         label={t('ui.cycle.autonomy.agent', { agent: agentName(config.agents.team, agent.id) })}
         hint={t(agent.autonomous ? (effective ? 'ui.cycle.autonomy.agentOn' : 'ui.cycle.autonomy.agentHeld') : 'ui.cycle.autonomy.agentOff')}
         onChange={(on) => call(() => runsApi.setAutonomous(agent.id, on).then(reloadConfig))}
@@ -150,7 +149,7 @@ function Autonomy({ run, agent, config, web, busy, call }: { run: Run; agent: Ag
       {squad && (
         <Switch
           on={squad.autonomy}
-          disabled={web || busy}
+          disabled={busy}
           label={t('ui.cycle.autonomy.squad', { squad: squad.name })}
           hint={t(squad.autonomy ? 'ui.cycle.autonomy.squadOn' : 'ui.cycle.autonomy.squadOff')}
           onChange={(on) => call(() => runsApi.setSquadAutonomous(squad.id, on).then(reloadConfig))}
@@ -161,7 +160,7 @@ function Autonomy({ run, agent, config, web, busy, call }: { run: Run; agent: Ag
   );
 }
 
-export function RunActions({ run, flow, config, web, card, actions, go }: Props) {
+export function RunActions({ run, flow, config, card, actions, go }: Props) {
   const t = useT();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -207,7 +206,6 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
   };
 
   const needsText = available.some((a) => a.input !== 'none');
-  const blockedByWeb = web && available.some((a) => a.desktopOnly);
   const gateQuiz = run.status === 'gate' && card;
 
   return (
@@ -224,7 +222,7 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
         </p>
       )}
       {run.status === 'question' && run.question?.kind === 'squad' && config && (
-        <SquadChoice run={run} squads={config.squads ?? []} web={web} busy={busy} call={(fn) => call(fn)} />
+        <SquadChoice run={run} squads={config.squads ?? []} busy={busy} call={(fn) => call(fn)} />
       )}
       {needsText && (
         <label className="cy-field">
@@ -242,7 +240,7 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
                 key={a.id}
                 type="button"
                 className={`btn ${a.id === 'cancel' ? (confirming ? 'btn-red' : '') : a.id === 'approve' || a.id === 'accept' || a.id === 'startStage' || a.id === 'answer' || a.id === 'retry' ? 'btn-dark' : ''}`}
-                disabled={busy || missing || (web && a.desktopOnly)}
+                disabled={busy || missing}
                 onClick={() => doIt(a)}
               >
                 {busy && !confirming ? <span className="spinner" aria-hidden="true" /> : null} {confirming ? t('ui.cycle.action.cancelConfirm') : t(ACTION_LABEL[a.id])}
@@ -252,15 +250,14 @@ export function RunActions({ run, flow, config, web, card, actions, go }: Props)
           {confirmCancel && (
             <button type="button" className="btn" disabled={busy} onClick={() => setConfirmCancel(false)}>{t('ui.cycle.action.keep')}</button>
           )}
-          {gateQuiz && !web && (
+          {gateQuiz && (
             <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: run.issue.ref, card })}>{t('ui.cycle.action.quiz')}</button>
           )}
         </div>
       )}
       {confirmCancel && <p className="small muted">{t('ui.cycle.action.cancelHint')}</p>}
-      {blockedByWeb && <p className="small muted" role="note">{t('ui.cycle.desktopOnly')}</p>}
       {error && <div className="error" role="alert">{error}</div>}
-      {agent && config && <Autonomy run={run} agent={agent} config={config} web={web} busy={busy} call={(fn) => call(fn)} />}
+      {agent && config && <Autonomy run={run} agent={agent} config={config} busy={busy} call={(fn) => call(fn)} />}
     </section>
   );
 }

@@ -1,7 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useT } from '../../i18n';
-import { isWeb } from '../../platform';
-import { Notice } from '../../wizard/ui';
 import { CommentsEditor } from './CommentsEditor';
 import { FlowEditor } from './FlowEditor';
 import { RunnerSection } from './RunnerSection';
@@ -13,8 +11,8 @@ import { onTeamRequest, takeTeamRequest, TEAM_TABS, type TeamTab } from './teamN
 import type { SectionProps } from './ui';
 import './team.css';
 
-// Settings › Team and cycle: the team, the squads, the flow, the comment templates and the runner, as tabs of one section. Everything here writes the
-// configuration (desktop only), so a paired browser sees a note instead.
+// Settings › Team and cycle: the team, the squads, the flow, the comment templates and the runner, as tabs of one section. The window and a paired browser see
+// the same section; the browser saves through a narrower channel (teamApi.ts) and sees the runner's commands, folder and identity without editing them.
 
 // The tabs that exist, in order; the labels are `ui.team.tab.<name>`.
 const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow: (squad?: string) => void }) => ReactNode) | null> = {
@@ -26,19 +24,6 @@ const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow:
 };
 
 export function TeamSettings() {
-  const t = useT();
-  if (isWeb()) {
-    return (
-      <section className="wz-stack" aria-labelledby="team-cycle-title">
-        <h2 id="team-cycle-title" className="wz-section-title">{t('ui.team.title')}</h2>
-        <Notice tone="info">{t('ui.team.webNote')}</Notice>
-      </section>
-    );
-  }
-  return <TeamSettingsDesktop />;
-}
-
-function TeamSettingsDesktop() {
   const t = useT();
   const { view, error, reload } = useConfigView();
   const [tab, setTab] = useState<TeamTab>('team');

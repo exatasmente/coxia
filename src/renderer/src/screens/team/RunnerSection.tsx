@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RunnerConfig } from '../../../../shared/config/types';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
-import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
+import { isWeb } from '../../platform';
+import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerOfWeb, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 
-/** Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as. */
+/**
+ * Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as.
+ * In a paired browser the commands, the folder and the identity are shown and not edited: they decide what runs on the computer and where it reads.
+ */
 export function RunnerSection({ config, save }: SectionProps) {
   const t = useT();
+  const web = isWeb();
   const [draft, setDraft] = useState<RunnerDraft>(() => draftOfRunner(config.runner));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +43,7 @@ export function RunnerSection({ config, save }: SectionProps) {
     setSaving(true);
     setError(null);
     try {
-      const done = await save({ ...config, runner: runnerOf(draft) });
+      const done = await save({ ...config, runner: web ? runnerOfWeb(draft, config.runner) : runnerOf(draft) });
       setDraft(draftOfRunner(done.runner));
       setSaved(true);
     } catch (e) {
@@ -50,6 +56,7 @@ export function RunnerSection({ config, save }: SectionProps) {
   return (
     <form className="wz-stack" onSubmit={(e) => { e.preventDefault(); if (!errors && dirty) void submit(); }}>
       <p className="small muted">{t('ui.runner.hint')}</p>
+      {web && <p className="small muted" role="note">{t('ui.runner.webNote')}</p>}
       <Toggle checked={draft.enabled} onChange={(enabled) => set({ enabled })} label={t('ui.runner.enabled')} />
       <p className="small muted">{t('ui.runner.enabledHint')}</p>
       <div className="wz-two">
@@ -60,21 +67,27 @@ export function RunnerSection({ config, save }: SectionProps) {
           {(id) => <input id={id} type="number" min={1} max={10} className="text-input" value={Number.isNaN(draft.maxConcurrentRuns) ? '' : draft.maxConcurrentRuns} onChange={(e) => set({ maxConcurrentRuns: num(e.target.value) })} />}
         </Labeled>
       </div>
-      <Labeled label={t('ui.runner.worktrees')} hint={t('ui.runner.worktreesHint')}>
-        {(id) => <input id={id} className="text-input mono" spellCheck={false} placeholder={t('ui.runner.worktreesDefault')} value={draft.worktreesDir} onChange={(e) => set({ worktreesDir: e.target.value })} />}
-      </Labeled>
+      {web ? (
+        <WebOnComputer runner={config.runner} />
+      ) : (
+          <>
+          <Labeled label={t('ui.runner.worktrees')} hint={t('ui.runner.worktreesHint')}>
+            {(id) => <input id={id} className="text-input mono" spellCheck={false} placeholder={t('ui.runner.worktreesDefault')} value={draft.worktreesDir} onChange={(e) => set({ worktreesDir: e.target.value })} />}
+          </Labeled>
 
-      <fieldset className="wz-fieldset">
-        <legend className="wz-label">{t('ui.runner.commands')}</legend>
-        <div role="group" aria-label={t('ui.runner.commands')} className="wz-pills">
-          <button type="button" aria-pressed={draft.commandsMode === 'repo'} className={`filter ${draft.commandsMode === 'repo' ? 'on' : ''}`} onClick={() => set({ commandsMode: 'repo' })}>{t('ui.runner.commandsRepo')}</button>
-          <button type="button" aria-pressed={draft.commandsMode === 'custom'} className={`filter ${draft.commandsMode === 'custom' ? 'on' : ''}`} onClick={() => set({ commandsMode: 'custom' })}>{t('ui.runner.commandsCustom')}</button>
-        </div>
-        <p className="small muted">{draft.commandsMode === 'repo' ? t('ui.runner.commandsRepoHint') : t('ui.runner.commandsCustomHint')}</p>
-        {draft.commandsMode === 'custom' && (
-          <ChipsInput label={t('ui.runner.commandsList')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(command) => t('ui.runner.commandRemove', { command })} values={draft.commands} onChange={(commands) => set({ commands })} add={withCommand} error={at('commands')} />
-        )}
-      </fieldset>
+          <fieldset className="wz-fieldset">
+            <legend className="wz-label">{t('ui.runner.commands')}</legend>
+            <div role="group" aria-label={t('ui.runner.commands')} className="wz-pills">
+              <button type="button" aria-pressed={draft.commandsMode === 'repo'} className={`filter ${draft.commandsMode === 'repo' ? 'on' : ''}`} onClick={() => set({ commandsMode: 'repo' })}>{t('ui.runner.commandsRepo')}</button>
+              <button type="button" aria-pressed={draft.commandsMode === 'custom'} className={`filter ${draft.commandsMode === 'custom' ? 'on' : ''}`} onClick={() => set({ commandsMode: 'custom' })}>{t('ui.runner.commandsCustom')}</button>
+            </div>
+            <p className="small muted">{draft.commandsMode === 'repo' ? t('ui.runner.commandsRepoHint') : t('ui.runner.commandsCustomHint')}</p>
+            {draft.commandsMode === 'custom' && (
+              <ChipsInput label={t('ui.runner.commandsList')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(command) => t('ui.runner.commandRemove', { command })} values={draft.commands} onChange={(commands) => set({ commands })} add={withCommand} error={at('commands')} />
+            )}
+          </fieldset>
+          </>
+      )}
 
       <div className="wz-two">
         <Labeled label={t('ui.runner.idle')} hint={t('ui.runner.idleHint', { min: MIN_IDLE_MINUTES, max: MAX_IDLE_MINUTES })} error={at('idle')}>
@@ -94,19 +107,21 @@ export function RunnerSection({ config, save }: SectionProps) {
         </Labeled>
       </div>
 
-      <fieldset className="wz-fieldset">
-        <legend className="wz-label">{t('ui.runner.identity')}</legend>
-        <p className="small muted">{t('ui.runner.identityHint')}</p>
-        <div className="wz-two">
-          <Labeled label={t('ui.runner.identityName')}>
-            {(id) => <input id={id} className="text-input" maxLength={200} autoComplete="off" value={draft.identityName} onChange={(e) => set({ identityName: e.target.value })} />}
-          </Labeled>
-          <Labeled label={t('ui.runner.identityEmail')}>
-            {(id) => <input id={id} type="email" className="text-input" maxLength={200} autoComplete="off" value={draft.identityEmail} onChange={(e) => set({ identityEmail: e.target.value })} />}
-          </Labeled>
-        </div>
-        {at('identity') && <div className="tm-field-error small" role="alert">{at('identity')}</div>}
-      </fieldset>
+      {!web && (
+        <fieldset className="wz-fieldset">
+          <legend className="wz-label">{t('ui.runner.identity')}</legend>
+          <p className="small muted">{t('ui.runner.identityHint')}</p>
+          <div className="wz-two">
+            <Labeled label={t('ui.runner.identityName')}>
+              {(id) => <input id={id} className="text-input" maxLength={200} autoComplete="off" value={draft.identityName} onChange={(e) => set({ identityName: e.target.value })} />}
+            </Labeled>
+            <Labeled label={t('ui.runner.identityEmail')}>
+              {(id) => <input id={id} type="email" className="text-input" maxLength={200} autoComplete="off" value={draft.identityEmail} onChange={(e) => set({ identityEmail: e.target.value })} />}
+            </Labeled>
+          </div>
+          {at('identity') && <div className="tm-field-error small" role="alert">{at('identity')}</div>}
+        </fieldset>
+      )}
 
       <Labeled label={t('ui.runner.commit')} hint={t('ui.runner.commitHint')} error={at('commitMessage')}>
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
@@ -122,5 +137,23 @@ export function RunnerSection({ config, save }: SectionProps) {
         </div>
       </div>
     </form>
+  );
+}
+
+/** What only the computer changes, as a paired browser sees it: the folder for the runs, the commands an agent that writes may run and who the commits are made as. */
+function WebOnComputer({ runner }: { runner: RunnerConfig }) {
+  const t = useT();
+  const identity = runner.identity.name || runner.identity.email ? `${runner.identity.name} <${runner.identity.email}>` : t('ui.runner.identityNone');
+  return (
+    <dl className="tm-readonly" aria-label={t('ui.runner.webOnComputer')}>
+      <dt className="wz-label">{t('ui.runner.worktrees')}</dt>
+      <dd className="mono small">{runner.worktreesDir ?? t('ui.runner.worktreesDefault')}</dd>
+      <dt className="wz-label">{t('ui.runner.commands')}</dt>
+      <dd className="small">
+        {runner.commands === null ? t('ui.runner.commandsRepo') : runner.commands.length ? <ul className="tm-readonly-list">{runner.commands.map((c) => <li key={c} className="mono">{c}</li>)}</ul> : t('ui.runner.commandsNone')}
+      </dd>
+      <dt className="wz-label">{t('ui.runner.identity')}</dt>
+      <dd className="small">{identity}</dd>
+    </dl>
   );
 }

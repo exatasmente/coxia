@@ -173,6 +173,7 @@
   "ui.runner.commandsCustom": "Só os que eu listar",
   "ui.runner.commandsCustomHint": "Cada comando exatamente como digitado, um comando simples: sem pipe, \";\", \"&&\" nem redirecionamento. Lista vazia: nenhum.",
   "ui.runner.commandsList": "Comandos permitidos",
+  "ui.runner.commandsNone": "Nenhum: o agente que escreve não roda comando.",
   "ui.runner.commandsRepo": "Os scripts do repositório",
   "ui.runner.commandsRepoHint": "Os scripts de teste e de checagem de tipos que o repositório declara (npm test, npm run typecheck).",
   "ui.runner.commit": "Mensagem do commit",
@@ -200,6 +201,7 @@
   "ui.runner.identityEmail": "E-mail",
   "ui.runner.identityHint": "O app faz os commits do trabalho do agente na pasta de trabalho. Os dois vazios: a identidade que o repositório já tem.",
   "ui.runner.identityName": "Nome",
+  "ui.runner.identityNone": "A identidade que o repositório já tem",
   "ui.runner.idle": "Silêncio máximo do agente (minutos)",
   "ui.runner.idleHint": "De {min} a {max}. Se o agente não der sinal nenhum (texto, uma ferramenta, uso do modelo) por esse tempo, a etapa falha e pode ser tentada de novo. Quem trabalha sem parar nunca chega a ele.",
   "ui.runner.saved": "Configuração das execuções salva.",
@@ -212,6 +214,8 @@
   "ui.runner.warn.idleLonger": "O silêncio máximo é maior que o limite da etapa: o limite encerra a etapa antes.",
   "ui.runner.warn.noCommands": "Sem comandos, um agente que escreve não consegue rodar os testes.",
   "ui.runner.warn.notFlow": "O ciclo atual não é um fluxo de agentes (nenhuma etapa tem tipo): o escalonador não vai começar execuções.",
+  "ui.runner.webNote": "Pelo navegador você muda o que roda e quando. A pasta das execuções, os comandos e a identidade dos commits mudam no computador.",
+  "ui.runner.webOnComputer": "Alterado no computador",
   "ui.runner.worktrees": "Pasta das execuções",
   "ui.runner.worktreesDefault": "A pasta dos dados do workspace",
   "ui.runner.worktreesHint": "Onde ficam as pastas de trabalho (um \"~/\" vale). Vazio: a pasta worktrees dos dados do workspace.",
@@ -356,6 +360,5 @@
   "ui.team.tab.team": "Time",
   "ui.team.thePerson": "Você",
   "ui.team.title": "Time e ciclo",
-  "ui.team.turnsTo": "Recorre a",
-  "ui.team.webNote": "O time e o ciclo se editam na janela do app, no computador. Aqui você só os lê."
+  "ui.team.turnsTo": "Recorre a"
 }

@@ -93,7 +93,7 @@ describe('the lint script', () => {
 });
 
 describe('web policy for the configuration channels', () => {
-  it('lets a paired browser read the config and its schema, and nothing that writes, stores a secret or touches files', () => {
+  it('lets a paired browser read the config and its schema, and nothing that writes it whole, stores a secret or touches files', () => {
     expect(webAccess('config:get')).toBe('allow');
     expect(webAccess('config:schema')).toBe('allow');
     expect(webAccess('config:validate')).toBe('allow');

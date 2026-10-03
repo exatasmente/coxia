@@ -12,7 +12,8 @@ import { locateSdk } from './claudeSdk';
 import type { Module } from './module';
 import { secrets } from './secrets';
 import { readRegistry } from './workspaces-core';
-import { getConfig, reloadConfig, saveConfig } from './workspaceConfig';
+import { refusedPaths } from './configScope';
+import { checkConfig, getConfig, reloadConfig, saveConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
 // The channels of the configuration: read it, save it, the secrets store, and export/import. Everything that writes, touches files or
@@ -56,6 +57,16 @@ export const configModule: Module = (ctx) => {
   });
   ctx.handle('config:save', (next: WorkspaceConfig) => {
     saveConfig(next);
+    return announce();
+  });
+
+  // The save a paired browser may use (webPolicy.ts leaves config:save desktop-only): validated like any save, and refused when it changes anything outside
+  // the team, the squads, the flow, the comment templates and the runner's plain settings (configScope.ts). The diff is against the stored config, not the client's word.
+  ctx.handle('config:cycle-save', (next: WorkspaceConfig) => {
+    const config = checkConfig(next);
+    const refused = refusedPaths(getConfig(), config);
+    if (refused.length) throw new Error(t('main.config.webScope', { paths: refused.slice(0, 4).join(', ') }));
+    saveConfig(config);
     return announce();
   });
 
