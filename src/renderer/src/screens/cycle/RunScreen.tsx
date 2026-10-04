@@ -7,9 +7,11 @@ import { currentStage, followsOlderFlow } from '../../../../shared/runs/view';
 import type { ReleaseAction } from '../../../../shared/types';
 import type { Screen } from '../../App';
 import { AgentActivity } from '../../AgentActivity';
+import { callGroups } from '../../activity';
 import { errorText } from '../../api';
 import type { Ceremony } from '../../ceremony';
 import { useT } from '../../i18n';
+import { useActivity } from '../../useActivity';
 import { BackIcon } from '../icons';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
@@ -18,7 +20,7 @@ import { RunActions } from './RunActions';
 import { RunBadge } from './RunBadge';
 import { StageTimeline } from './StageTimeline';
 import { Thread } from './Thread';
-import { squadName } from './names';
+import { agentName, squadName } from './names';
 import { patchRun, runsApi, useRun, useRunConfig } from './runsApi';
 import './cycle.css';
 
@@ -103,6 +105,10 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
     return snapshotOf(release ? flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages: release } }, release) : flowOf(squadView(config, run.squad))).hash;
   }, [run, config]);
 
+  const activity = useActivity(run ? `run:${run.id}` : undefined);
+  // A call a message made to an agent of this run's thread: the panel appears for it whatever the run's own status, under the called agent's name.
+  const call = useMemo(() => (run ? callGroups(activity).find((g) => g.thread === runThreadId(run.id)) ?? null : null), [activity, run]);
+
   const header = (title: string) => (
     <header className="row spread cy-top">
       <div className="row cy-top-main">
@@ -167,7 +173,9 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
             <div className="cy-main" id="cy-panel-cycle" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-cycle' : undefined}>
               <CommandApproval run={run} team={config?.agents.team} />
               <RunActions run={run} flow={flow} config={config} card={card} actions={actions} go={go} sendBackAsk={sendBackAsk} />
-              {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
+              {call || (run.status === 'working' && stage) ? (
+                <AgentActivity jobId={`run:${run.id}`} since={call ? call.since : startedAt} agent={call ? agentName(config?.agents.team, call.agent) : undefined} />
+              ) : null}
               <StageTimeline run={run} flow={flow} config={config} go={go} />
               <ReviewRounds run={run} config={config} />
             </div>

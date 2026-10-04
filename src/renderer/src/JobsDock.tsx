@@ -3,10 +3,12 @@ import type { Screen } from './App';
 import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
 import { ActivityTimeline } from './AgentActivity';
-import { latestStep } from './activity';
+import { callGroups, latestStep } from './activity';
 import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
+import { agentName } from './screens/cycle/names';
+import { useRunConfig, useRuns } from './screens/cycle/runsApi';
 import { useActivity, useStrayActivity } from './useActivity';
 import { jobs, useJobsSnapshot } from './useJobs';
 import './jobs.css';
@@ -112,6 +114,9 @@ function JobSteps({ job }: { job: Job<Screen> }) {
 export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => void }) {
   const t = useT();
   const snap = useJobsSnapshot();
+  const runs = useRuns();
+  const config = useRunConfig();
+  const team = config?.agents.team;
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now);
 
@@ -127,10 +132,12 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   // Finished jobs on the screen that is open are picked up by that screen at once; they are not news.
   const clock = Date.now();
   const shown = snap.filter((j) => (j.status === 'running' ? clock - j.startedAt >= SHOW_AFTER_MS : !sameScreen(j.screen as Screen, screen)));
-  // Agent runs that no job on the list owns (the scheduler's, a call that is not a job) show as one "agent" entry while they last.
+  // Agent runs that no job on the list owns: a `@` call shows under the agent and run it names, any other run as one "agent" entry while it lasts.
   const stray = useStrayActivity(snap.filter((j) => j.status === 'running').map((j) => j.key));
-  const total = shown.length + (stray.length ? 1 : 0);
-  const running = shown.filter((j) => j.status === 'running').length + (stray.length ? 1 : 0);
+  const calls = callGroups(stray);
+  const other = stray.filter((e) => !e.call);
+  const total = shown.length + calls.length + (other.length ? 1 : 0);
+  const running = shown.filter((j) => j.status === 'running').length + calls.length + (other.length ? 1 : 0);
   const failed = shown.filter((j) => j.status === 'failed').length;
   const lift = useFabLift(total > 0);
 
@@ -251,12 +258,30 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
           </header>
           {!total && <p className="jobs-empty">{t('ui.jobs.empty')}</p>}
           <ul>
-            {stray.length > 0 && (
+            {calls.map((g) => {
+              const id = g.thread.startsWith('run-') ? g.thread.slice(4) : null;
+              const run = id ? runs?.find((r) => r.id === id) : undefined;
+              const label = t('activity.call.entry', { agent: agentName(team, g.agent), run: run?.issue.ref ?? (id ?? g.thread) });
+              const main = (
+                <span className="jobs-item-label"><span className="spinner" aria-hidden="true" />{label}</span>
+              );
+              return (
+                <li key={g.runId} className="jobs-item jobs-running">
+                  {id ? (
+                    <button type="button" className="jobs-item-main" onClick={() => openJob({ name: 'run', id, tab: 'forum' })}>{main}</button>
+                  ) : (
+                    <div className="jobs-item-main jobs-item-static">{main}</div>
+                  )}
+                  <Steps entries={g.entries} name={label} />
+                </li>
+              );
+            })}
+            {other.length > 0 && (
               <li className="jobs-item jobs-running">
                 <div className="jobs-item-main jobs-item-static">
                   <span className="jobs-item-label"><span className="spinner" aria-hidden="true" />{t('activity.generic')}</span>
                 </div>
-                <Steps entries={stray} name={t('activity.generic')} />
+                <Steps entries={other} name={t('activity.generic')} />
               </li>
             )}
             {shown.map((j) => (

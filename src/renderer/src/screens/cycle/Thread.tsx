@@ -3,8 +3,10 @@ import type { AgentDef } from '../../../../shared/config/types';
 import { type ForumMessage, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
 import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
+import { type CallGroup, callGroups } from '../../activity';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
+import { useActivity } from '../../useActivity';
 import { RichText } from '../Diagram';
 import { ArtifactView } from './ArtifactView';
 import { agentName, agentRole, authorName } from './names';
@@ -30,12 +32,28 @@ function stamp(iso: string): string {
 interface Ctx {
   team: readonly AgentDef[] | undefined;
   runId: string | null;
+  /** The calls still going, by the message that named the agents: what each message shows under itself. */
+  calls: ReadonlyMap<number, readonly CallGroup[]>;
   view: (name: string) => void;
 }
 
 function useTarget(team: readonly AgentDef[] | undefined): (to: string | null) => string {
   const t = useT();
   return (to) => (!to || to === 'person' ? t('ui.forum.to.person') : to === 'reporter' ? t('ui.forum.to.reporter') : agentName(team, to));
+}
+
+/** One call still going under the message that named the agent: it says the call works (or waits its turn), then shows its live step. It is not a message. */
+function CallLine({ group, team }: { group: CallGroup; team: readonly AgentDef[] | undefined }) {
+  const t = useT();
+  const state = group.entry.state;
+  const label = state === 'queued' ? t('activity.queued') : state === 'started' ? t('activity.call.working') : group.entry.label;
+  return (
+    <p className="cy-call" role="status">
+      <span className="spinner" aria-hidden="true" />
+      <strong className="cy-call-agent">{agentName(team, group.agent)}</strong>
+      <span className="cy-call-step">{label}</span>
+    </p>
+  );
 }
 
 /** One message: who said it, of what kind, whether it is a public record and where it was posted, then its text and the documents it points to. */
@@ -75,6 +93,7 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
       <div className="cy-msg-text">
         <RichText text={messageText(m)} />
       </div>
+      {(ctx.calls.get(m.seq) ?? []).map((g) => <CallLine key={g.runId} group={g} team={ctx.team} />)}
       {m.mentions.length > 0 && <p className="faint small">{t('ui.forum.mentions', { agents: m.mentions.map((id) => agentName(ctx.team, id)).join(', ') })}</p>}
       {m.refs.length > 0 && ctx.runId && (
         <ul className="cy-artifacts" aria-label={t('ui.forum.refs')}>
@@ -261,12 +280,25 @@ interface Props {
 export function Thread({ thread, run = null, team, title, channel = false, onSendBack }: Props) {
   const t = useT();
   const live = useThread(thread);
+  const runId = run?.id ?? null;
+  const activity = useActivity(runId ? `run:${runId}` : undefined);
   const [viewing, setViewing] = useState<string | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
   const rows = useMemo(() => groupThread(live.messages, messageText), [live.messages]);
   const last = live.messages.at(-1)?.seq ?? 0;
-  const ctx: Ctx = { team, runId: run?.id ?? null, view: setViewing };
+  // The calls of this thread, by the message that named them: only the lines carrying a call are grouped, so the run's own stage work never shows here.
+  const calls = useMemo(() => {
+    const byMessage = new Map<number, CallGroup[]>();
+    for (const group of callGroups(activity)) {
+      if (group.thread !== thread) continue;
+      const here = byMessage.get(group.message);
+      if (here) here.push(group);
+      else byMessage.set(group.message, [group]);
+    }
+    return byMessage;
+  }, [activity, thread]);
+  const ctx: Ctx = { team, runId, calls, view: setViewing };
 
   // What is on screen is read: the thread counts as seen up to its last message.
   useEffect(() => {
