@@ -260,6 +260,34 @@ describe('errors', () => {
     expect(fake.chats()).toHaveLength(1);
   });
 
+  it('a 402 and a 403 whose body is about the key budget are a budget refusal, not retried and naming the provider', async () => {
+    fake = await fakeOpenAI([errorStep(402, 'Payment Required')]);
+    const paid = await failure(client(fake.url).complete({ messages: user }));
+    expect(paid.kind).toBe('budget');
+    expect(paid.retryable).toBe(false);
+    expect(paid.message).toContain('orçamento');
+
+    fake = await fakeOpenAI([errorStep(403, 'Failed to authenticate. API Error: 403 Key limit exceeded (monthly limit)')]);
+    const limited = await failure(client(fake.url).complete({ messages: user }));
+    expect(limited.kind).toBe('budget');
+    expect(limited.retryable).toBe(false);
+    expect(limited.message).toContain('orçamento');
+    // The provider is named: what the client talks to, not the word the SDK put in front of the message.
+    expect(limited.message).toContain(fake.url.replace(/^https?:\/\//, '').split('/')[0]);
+    expect(fake.chats()).toHaveLength(1);
+  });
+
+  it('a plain 403 and a plain 429 keep their own kinds', async () => {
+    fake = await fakeOpenAI([errorStep(403, 'You do not have permission to use this model')]);
+    const forbidden = await failure(client(fake.url).complete({ messages: user }));
+    expect(forbidden.kind).toBe('forbidden');
+
+    fake = await fakeOpenAI([errorStep(429, 'Rate limit reached')]);
+    const limited = await failure(client(fake.url, { maxRetries: 0 }).complete({ messages: user }));
+    expect(limited.kind).toBe('rate_limit');
+    expect(limited.retryable).toBe(true);
+  });
+
   it('connection refused says the local server is not running', async () => {
     const e = await failure(client(await closedPort()).complete({ messages: user }));
     expect(e.kind).toBe('network');

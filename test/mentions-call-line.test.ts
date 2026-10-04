@@ -77,4 +77,24 @@ describe('the call line of a mention', () => {
     expect(released).toEqual(['turn']);
     expect(forum.read('squads', 0, 50)?.messages.some((x) => x.code === 'runner.mentionFailed')).toBe(true);
   });
+
+  it('spends no call on a held provider: the thread says why and the line ends', async () => {
+    const engine = fakeEngine();
+    const made = line('line-3');
+    const released: string[] = [];
+    const [m] = forum.append('squads', { kind: 'post', author: { type: 'person' }, text: '@turn look', mentions: ['turn'] });
+    await answerMentions(place, m, {
+      forum,
+      config,
+      engine,
+      env: () => ({ fallbackCwd: root }),
+      callOf: () => ({ activity: made, queued: false }),
+      release: (id) => released.push(id),
+      held: () => ({ provider: 'anthropic', reason: 'no credit' }),
+    });
+    expect(engine.calls).toHaveLength(0);
+    expect(made.states).toEqual(['failed']);
+    expect(released).toEqual(['turn']);
+    expect(forum.read('squads', 0, 50)?.messages.find((x) => x.code === 'runner.mention.budget')?.params).toMatchObject({ agent: 'turn', provider: 'anthropic', reason: 'no credit' });
+  });
 });

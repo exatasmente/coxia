@@ -11,9 +11,11 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
+import { budgetText, clipProviderText } from './engine/budget';
+import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
@@ -466,7 +468,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const tool = wantsVcsTool(req);
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
-  return runOpenOnce<T>({
+  try {
+    return await runOpenOnce<T>({
     selection,
     prompt: req.prompt,
     options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
@@ -497,7 +500,12 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
-  });
+    });
+  } catch (e) {
+    // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
+    throw e;
+  }
 }
 
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
@@ -529,6 +537,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     },
   });
   const counted = new Set<string>();
+  // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
+  const assistantText: string[] = [];
   for await (const m of q) {
     req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
@@ -543,7 +553,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
       }
       for (const block of m.message.content) {
-        if (block.type === 'text') req.activity?.text(block.text);
+        if (block.type === 'text') {
+          assistantText.push(block.text);
+          req.activity?.text(block.text);
+        }
         if (block.type !== 'tool_use') continue;
         sources.push(source(block.name, block.input as Record<string, unknown>));
         if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
@@ -560,8 +573,14 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
       if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
-      // i18n-ignore: developer error from the SDK result
-      if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
+      if (m.subtype !== 'success' || m.structured_output == null) {
+        // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
+        const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
+        // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
+        if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
+        // i18n-ignore: developer error from the SDK result
+        throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
+      }
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
@@ -571,6 +590,34 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
 
 registerEngine('claude-sdk', runClaudeSdk);
 registerEngine('open', runOpenEngine);
+
+/**
+ * One small call to a provider, for the sweep to find out whether its key has budget again: the cheapest call the engine has, a one-word answer with no
+ * tools. It goes through the same classification as a stage, so a refusal by budget is a refusal here too, and a 5xx or a network error is only "could not tell".
+ */
+export async function probeProviderBudget(providerId: string): Promise<{ ok: boolean; refusal: ProviderBudgetError | null; detail: string }> {
+  const provider = rc().provider(providerId);
+  if (!provider) return { ok: false, refusal: null, detail: '' };
+  const own = rc().agentModel({ role: null, provider: provider.id, model: provider.models[0] ?? '' });
+  try {
+    await runnerFor(own)({
+      role: own.role,
+      prompt: cp('system.budgetProbe'),
+      schema: { type: 'object', properties: { ok: { type: 'string' } }, required: ['ok'], additionalProperties: false },
+      target: own,
+      system: '',
+      cwd: rc().projectsRoot,
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: [] },
+      extra: { maxTurns: 1, tools: [] },
+    });
+    return { ok: true, refusal: null, detail: '' };
+  } catch (e) {
+    if (e instanceof ProviderBudgetError) return { ok: false, refusal: e, detail: e.detail };
+    return { ok: false, refusal: null, detail: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) };
+  }
+}
 
 // One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
 async function runOnce<T>(
@@ -1016,6 +1063,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     return r;
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
+    // One seam for stages, mentions and the chain: the reason carries the provider the role is mapped to, whichever engine raised it.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(target.providerId, e.engine, e.detail);
     throw e;
   }
 }

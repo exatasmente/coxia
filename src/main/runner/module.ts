@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
-import { runAgent } from '../agents';
+import { runAgent, probeProviderBudget } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
 import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
 import { createdIssueOf } from '../../shared/runs/links';
@@ -73,6 +73,11 @@ export const runsModule: Module = (ctx) => {
   sandbox.purge();
   const r = createRunner({
     sandbox,
+    // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
+    probeBudget: async (providerId) => {
+      const result = await probeProviderBudget(providerId);
+      return result.ok ? { state: 'ok' as const, detail: '' } : result.refusal ? { state: 'out' as const, detail: result.refusal.detail } : { state: 'unknown' as const, detail: result.detail };
+    },
     runs: runStore(),
     forum: forumStore(),
     config: getConfig,

@@ -185,8 +185,9 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * The four of a release run: `release-approved`: every pull request of the version that the run read is merged into the release branch, and none is open against it.
  * `beta-age`: the latest beta of the version has been published for `minutes`, and no open issue carries the blocking label (`label`, `beta-blocker` when left out).
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
+ * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {

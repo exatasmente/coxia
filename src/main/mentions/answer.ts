@@ -42,6 +42,8 @@ export interface MentionDeps {
   callOf?: (agent: string) => { activity: RunActivity; queued: boolean } | null;
   /** Called once per agent named, when its call is over (answered, failed or not of the team), so the caller lets the next call begin. */
   release?: (agent: string) => void;
+  /** Whether the agent's provider is held (its key ran out of budget, a run's thread): the answer spends no call, and the thread says why. */
+  held?: (def: AgentDef) => { provider: string; reason: string } | null;
   /** Only a run has one: where the issue the agent proposed waits. Without it, an issue the agent raises is not offered. */
   proposeIssue?: (runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string | null }) => Promise<unknown>;
 }
@@ -93,6 +95,14 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       continue;
     }
     const made = deps.callOf?.(id) ?? null;
+    const hold = deps.held?.(def) ?? null;
+    if (hold) {
+      deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.budget', params: { agent: id, provider: hold.provider, reason: hold.reason }, stage: place.kind === 'run' ? (place.run?.stage ?? null) : null });
+      // The line the caller opened would wait forever: nothing runs, so it ends here, with the reason.
+      made?.activity.status('failed', hold.reason);
+      deps.release?.(id);
+      continue;
+    }
     const reader: AgentDef = { ...def, permission: 'read' };
     const wantsCommands = def.shell === 'sandbox' || def.shell === 'host';
     const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;

@@ -400,6 +400,10 @@ export interface WaitState {
   since: string;
   /** The agent that asked the reporter, when an agent's question (not a wait stage) is what the run waits on; the stage goes on with that agent when the reply comes. */
   by?: string;
+  /** For `budget`: the provider whose key ran out of budget, as the workspace names it in `llm.providers`. */
+  provider?: string;
+  /** For `budget`: the reason in words, with the provider's own (already masked) text. */
+  detail?: string;
 }
 
 /** A stage of the flow a run follows, resolved from the config: every default filled in. */

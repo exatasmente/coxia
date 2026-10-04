@@ -64,6 +64,7 @@ import {
   reviewReturn,
   stageDone,
   stageFailed,
+  stageWaitingOnBudget,
   squadErrors,
   squadIssueText,
   startRun,
@@ -101,6 +102,7 @@ import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
+import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
@@ -170,6 +172,8 @@ export interface RunnerDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
   sandbox?: SandboxService;
+  /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
+  probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -324,6 +328,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   let scanning: Promise<Run[]> | null = null;
   let ticking: Promise<Run[]> | null = null;
   let sweeping: Promise<void> | null = null;
+  // The providers whose key ran out of budget: while one is here, nothing new starts on it, and the sweep probes it (one call, not one per run).
+  const budget = new Map<string, WaitingProvider>();
 
   const need = (id: string): Run => {
     const run = deps.runs.get(id);
@@ -375,6 +381,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- running the stages -----------------------------------------------------------------------------------------------------------
 
   function pump(id: string): void {
+    // A provider whose key ran out of budget holds every run that would keep working on it: nothing new starts until a call goes through again.
+    const paused = deps.runs.get(id)?.status === 'waiting' && deps.runs.get(id)?.wait?.kind === 'budget';
+    if (paused || budget.size) return;
     if (inflight.has(id)) {
       again.add(id);
       return;
@@ -432,6 +441,14 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function fail(run: Run, e: unknown): void {
     if (deps.runs.get(run.id)?.status !== 'working') return;
+    // A refusal by budget is a wait, not a failure: the run keeps its place, no retry is offered, and the sweep probes the provider instead of the runs.
+    if (e instanceof StageError && e.code === 'budget') {
+      const provider = String(e.params.provider ?? '');
+      const reason = e.message;
+      budget.set(provider, { engine: String(e.params.engine ?? ''), reason, since: now() });
+      tell(run, moveRun(d, run.id, (r) => stageWaitingOnBudget(r, { provider, engine: String(e.params.engine ?? ''), detail: reason }, now())));
+      return;
+    }
     const detail = redact(e instanceof Error ? e.message : String(e)).slice(0, 500);
     if (!(e instanceof StageError)) console.error('[runner]', run.id, run.stage, detail);
     tell(run, moveRun(d, run.id, (r) => stageFailed(r, detail, now())));
@@ -943,6 +960,12 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (first !== null) throw first;
       })().finally(() => (sweeping = null))),
     resume() {
+      // The app that just opened remembers no provider from before: the runs that were waiting on one are read back from their `wait`, and the sweep probes them.
+      for (const run of deps.runs.list()) {
+        if (run.status === 'waiting' && run.wait?.kind === 'budget' && run.wait.provider) {
+          budget.set(run.wait.provider, { engine: '', reason: run.wait.detail ?? '', since: run.wait.since });
+        }
+      }
       for (const run of deps.runs.list().reverse()) {
         if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
         if (isTerminal(run)) continue;
@@ -1021,6 +1044,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
       release: (id) => releaseCall(runId, message.seq, id),
+      // A mention on a provider whose key has no budget does not spend a call: the thread says why, and the mention is left for when the provider answers again.
+      held: (def) => {
+        const provider = deps.config().llm.roles[def.model.role ?? 'deep']?.provider ?? '';
+        return provider && budget.has(provider) ? { provider, reason: budget.get(provider)?.reason ?? '—' } : null;
+      },
       proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
     });
   }
@@ -1259,12 +1287,48 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- what a waiting run waits for -------------------------------------------------------------------------------------------------
 
+  /**
+   * Asks each provider whose key ran out of budget, with one small call, whether it answers again. A provider that answers sends every run waiting on
+   * it on (`waitDone`), whatever their stage; a provider that refuses again, or that cannot be told (a 5xx, the network), leaves them waiting.
+   */
+  async function probeWaitingProviders(): Promise<Run[]> {
+    const probe = deps.probeBudget;
+    if (!probe || !budget.size) return [];
+    const sent: Run[] = [];
+    for (const [provider, state] of [...budget]) {
+      let result: Awaited<ReturnType<BudgetProbeFn>>;
+      try {
+        result = await probe(provider);
+      } catch (e) {
+        result = probeStateOf(e);
+      }
+      if (result.state === 'out') {
+        budget.set(provider, { ...state, reason: result.detail || state.reason });
+        continue;
+      }
+      if (result.state === 'unknown') {
+        console.error('[runner] could not tell whether the provider has budget', provider, result.detail);
+        continue;
+      }
+      budget.delete(provider);
+      for (const run of deps.runs.list()) {
+        if (run.status !== 'waiting' || run.wait?.kind !== 'budget' || run.wait.provider !== provider) continue;
+        try {
+          sent.push(move(run.id, (r, f, at) => waitDone(r, f, { reply: '', from: 'app' }, at)));
+        } catch (e) {
+          console.error('[runner] could not send on a run waiting for a provider', run.id, e instanceof Error ? e.message : e);
+        }
+      }
+    }
+    return sent;
+  }
+
   // Every waiting run is looked at once per tick: the code host says whether its event happened, and the run goes on from where it waits.
   async function lookForEvents(): Promise<Run[]> {
-    const sent: Run[] = [];
+    const sent: Run[] = await probeWaitingProviders();
     for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
       const w = run.wait;
-      if (!w) continue;
+      if (!w || w.kind === 'budget') continue;
       let over: { over: boolean; reply?: string } = { over: false };
       if (w.kind === 'linked-done') {
         // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).
@@ -1302,6 +1366,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function scanIssues(): Promise<Run[]> {
     const config = deps.config();
     if (!config.runner.enabled || !isFlowCycle(config.devCycle.stages) || !deps.issues.ready()) return [];
+    // A provider without budget holds the starts: without resolving each run's roles there is no way to tell whether it would use that provider, so nothing starts.
+    if (budget.size) return [];
     const room = config.runner.maxConcurrentRuns - deps.runs.list().filter((r) => r.status === 'working').length;
     if (room <= 0) return [];
     const found = (await deps.issues.triggered(config.runner.triggerLabel)).sort((a, b) => a.iid - b.iid);

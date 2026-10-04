@@ -39,6 +39,7 @@ export const WAIT_KEY: Record<WaitKind, string> = {
   'beta-age': 'ui.cycle.wait.betaAge',
   'beta-out': 'ui.cycle.wait.betaOut',
   'stable-out': 'ui.cycle.wait.stableOut',
+  budget: 'ui.cycle.wait.budget',
 };
 
 /** The button that leaves a wait, worded by what it stops waiting for: it moves forward, and says so. */
@@ -52,4 +53,5 @@ export const SKIP_WAIT_KEY: Record<WaitKind, string> = {
   'beta-age': 'ui.cycle.action.skipWait.betaAge',
   'beta-out': 'ui.cycle.action.skipWait.betaOut',
   'stable-out': 'ui.cycle.action.skipWait.stableOut',
+  budget: 'ui.cycle.action.skipWait.budget',
 };
