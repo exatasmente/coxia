@@ -98,7 +98,7 @@ export const runsModule: Module = (ctx) => {
   onRunnerActionDone((action, responses) => r.actionDone(action, responses));
   // The issue a retro improvement asked for was created: the task on it starts by itself, without another "sim".
   onRunnerActionDone((action, responses) => retroIssueDone(action, responses, (ref) => r.start(ref)));
-  // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, read only.
+  // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, which never writes to the run.
   interceptPosts((thread, body) => r.answerPost(thread, body));
   forumStore().subscribe((m) => r.onMessage(m));
 

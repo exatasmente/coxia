@@ -97,12 +97,12 @@ import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './releas
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
-import { type ExecutorDeps, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, pickAgent, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
-import { mentionCall } from './mention';
+import { mentionCall, readProposedIssue } from './mention';
 import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
@@ -272,7 +272,19 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run && c ? { ...run, command: c.pending } : run;
   };
 
+  // A stage and an agent named in the thread may both want a command at once: the person answers one at a time, in the order they asked.
+  const asking = new Map<string, Promise<unknown>>();
   function askCommand(ask: { run: string; stage: string; agent: string; command: string }, signal: AbortSignal): Promise<{ decision: CommandDecision; note?: string }> {
+    const next = (asking.get(ask.run) ?? Promise.resolve()).then(() => (signal.aborted ? { decision: 'deny' as const } : askNow(ask, signal)));
+    const held = next.catch(() => undefined);
+    asking.set(ask.run, held);
+    void held.then(() => {
+      if (asking.get(ask.run) === held) asking.delete(ask.run);
+    });
+    return next;
+  }
+
+  function askNow(ask: { run: string; stage: string; agent: string; command: string }, signal: AbortSignal): Promise<{ decision: CommandDecision; note?: string }> {
     return new Promise((resolve) => {
       const pending: PendingCommand = { id: deps.newId?.() ?? randomUUID(), stage: ask.stage, agent: ask.agent, command: ask.command, since: now() };
       const finish = (a: { decision: CommandDecision; note?: string }): void => {
@@ -282,7 +294,6 @@ export function createRunner(deps: RunnerDeps): Runner {
         resolve(a);
       };
       const stopped = (): void => finish({ decision: 'deny' });
-      commands.get(ask.run)?.answer({ decision: 'deny' });
       commands.set(ask.run, { pending, answer: finish });
       signal.addEventListener('abort', stopped, { once: true });
       // The thread is what the screens follow: this message brings the question to the run's screen and to the list of what waits for the person.
@@ -857,6 +868,13 @@ export function createRunner(deps: RunnerDeps): Runner {
         trackLink((made ? linkedIssueCreated(id, String(action.unit.key), made.iid) : linkRefused(id, String(action.unit.key), t('main.runner.comment.noId'))).then(() => undefined));
         return;
       }
+      // The issue an agent named in the thread proposed was created: the thread says where.
+      if (action.unit?.purpose === 'mention-issue') {
+        const made = createdIssueOf(responses[0]);
+        const run = deps.runs.get(id);
+        deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: made ? 'runner.mention.issueCreated' : 'runner.mention.issueNoId', params: { ref: made ? `#${made.iid}` : '—', url: made?.url ?? '—', summary: action.summary ?? '—' }, stage: run?.stage ?? null });
+        return;
+      }
       publish(id, (p) => p.actionDone(action, responses));
     },
     async flush() {
@@ -908,7 +926,9 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- the agents named in a message ------------------------------------------------------------------------------------------------
 
-  // The agent answers in the thread, reading only: whatever its own permission is, a mention never gets it Edit, Write or a command.
+  // The agent answers in the thread without ever writing to the run: whatever its own permission is, a mention never gets it Edit or Write. An agent set to run
+  // commands runs them over a throwaway copy of the code (with the person's yes per command on `host`), and one that reads the code host may propose an issue,
+  // which waits in Actions.
   async function answerMention(runId: string, message: ForumMessage): Promise<void> {
     const run = deps.runs.get(runId);
     if (!run) return;
@@ -922,18 +942,34 @@ export function createRunner(deps: RunnerDeps): Runner {
       const env = deps.env();
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
       const thread = deps.forum.read(threadId, 0, 2000)?.messages ?? [];
+      const abort = new AbortController();
+      const watch = watchdog(abort, limitsOf(config, deps));
+      const clock: StageClock = { pause: () => watch.pause(), allowed: new Set() };
+      let session: Awaited<ReturnType<typeof openStageSandbox>> | null = null;
       try {
-        const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd });
-        const abort = new AbortController();
-          const watch = watchdog(abort, limitsOf(config, deps));
+        const flowStage = flowFor(run).find((s) => s.id === stage);
+        if ((def.shell === 'sandbox' || def.shell === 'host') && flowStage && existsSync(run.worktree)) {
+          // A machine that cannot make the sandbox still gets the answer, read only, and the thread says why it ran nothing.
+          session = await openStageSandbox(exec, run, flowStage, reader, false, abort.signal, clock).catch((e: unknown) => {
+            deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }, stage });
+            return null;
+          });
+        }
+        const proposes = !!deps.publisher && (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
+        const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined, issue: proposes });
+        if (session) call.exec = session;
         call.beat = watch.beat;
         const r = await watch.guard(withActivityContext(`run:${runId}`, () => deps.engine(call, [])));
         const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
         if (!text) throw new StageError('empty-answer');
         deps.forum.append(threadId, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+        const issue = proposes ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
+        if (issue && deps.publisher) await deps.publisher.proposeIssue(runId, { key: `${message.seq}-${id}`, title: issue.title, body: issue.body, labels: issue.labels, by: id, stage });
       } catch (e) {
         const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
         deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
+      } finally {
+        await session?.close().catch(() => undefined);
       }
     }
   }

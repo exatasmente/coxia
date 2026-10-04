@@ -225,7 +225,7 @@ const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refu
  * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
  * agent set to run commands in one never runs them without.
  */
-async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock): Promise<SandboxSession> {
+export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock): Promise<SandboxSession> {
   const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
@@ -275,7 +275,7 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
 }
 
 /** What a host session needs from its stage: the watchdog, once it exists (a command waiting for the person stops its clocks), and the commands already allowed. */
-interface StageClock {
+export interface StageClock {
   pause(): () => void;
   /** The workspace's own commands the app runs before QA: the person listed them, so they run without asking, as on `allowlist`. */
   allowed: Set<string>;
