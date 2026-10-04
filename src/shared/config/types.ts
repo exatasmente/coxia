@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 11;
+export const CONFIG_SCHEMA_VERSION = 12;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -524,6 +524,12 @@ export interface AgentDef {
   tracker: AgentTracker;
   /** Commands this agent's stages may run. Absent in a file written before the field existed: `allowlist` for an agent that writes, else `none`. */
   shell: AgentShell;
+  /**
+   * Commands the person allowed this agent always, in a ceremony ("Allow always" on a command it asked for): `prefix:*` allows the prefix and anything after a
+   * space (`gh api:*`), anything else only that exact command. A command that writes to the code host is never allowed by a rule: it is asked every time.
+   * Absent: none.
+   */
+  allowedCommands?: string[];
   /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,

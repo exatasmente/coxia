@@ -2,6 +2,7 @@ import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
+import { register as ceremonyCommands } from './ceremonyCommands';
 import { configModule } from './configModule';
 import { register as conflictVerify } from './conflictVerify';
 import { cycleModule } from './cycle';
@@ -31,6 +32,7 @@ export const MODULES: Module[] = [
   agentPrep,
   auditoria,
   autostart,
+  ceremonyCommands,
   configModule,
   conflictVerify,
   cycleModule,

@@ -105,7 +105,7 @@ describe('activity from the Claude SDK message loop', () => {
     expect(pushed.some((e) => e.kind === 'text' && e.label.includes('[key]'))).toBe(true);
   });
 
-  it('shows "blocked" when a hook refuses a call, with the call and not the reason given to the agent', async () => {
+  it('shows "blocked" when a call is refused (here by the person, asked about it), with the call and not the reason given to the agent', async () => {
     scripts = [
       [
         init('s1'),
@@ -113,7 +113,12 @@ describe('activity from the Claude SDK message loop', () => {
         async (options) => {
           const hooks = options.hooks as { PreToolUse: { matcher: string; hooks: ((i: unknown, id: undefined, o: { signal: AbortSignal }) => Promise<unknown>)[] }[] };
           const bash = hooks.PreToolUse.find((g) => g.matcher === 'Bash') as (typeof hooks.PreToolUse)[number];
-          await bash.hooks[0]({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /tmp/x' }, cwd: '/tmp' }, undefined, { signal: new AbortController().signal });
+          // A ceremony asks the person about a command the code does not allow; the person says no.
+          const refused = bash.hooks[0]({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf /tmp/x' }, cwd: '/tmp' }, undefined, { signal: new AbortController().signal });
+          const { ceremonyCommands } = await import('../src/main/ceremonyCommands');
+          for (let i = 0; i < 200 && !ceremonyCommands.list().length; i++) await new Promise((r) => setTimeout(r, 5));
+          ceremonyCommands.answer(ceremonyCommands.list()[0].id, 'deny');
+          await refused;
           await bash.hooks[0]({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'glab api projects/a%2Fb/issues/1/notes' }, cwd: '/tmp' }, undefined, { signal: new AbortController().signal });
         },
         result('success', 's1', { fala: 'ok' }),

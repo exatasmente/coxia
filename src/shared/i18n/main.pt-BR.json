@@ -925,6 +925,8 @@
   "main.runner.qa.reason.output": "ele disse: {line}",
   "main.runner.qa.reason.unknown": "uma ferramenta de que ele precisa não foi encontrada ou não pode ser executada",
   "main.forum.code.runner.mentionFailed": "{agent} não conseguiu responder: {reason}",
+  "main.ceremonyCommand.notice.title": "{agent} quer rodar um comando",
+  "main.ceremonyCommand.write": "um comando que escreve no host de código",
   "main.forum.code.runner.mention.noShell": "{agent} responde sem rodar comandos: {reason}",
   "main.forum.code.runner.mention.issueProposed": "{agent} propôs a issue \"{title}\": ela espera o seu sim em Ações.",
   "main.forum.code.runner.mention.issueRefused": "{agent} propôs a issue \"{title}\", e ela foi recusada: {reason}",

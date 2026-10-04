@@ -260,6 +260,20 @@ function PermissionFields({ config, initial, draft, isNew, set, error }: { confi
       {draft.shell === 'sandbox' && (
         <p className="small muted">{t('ui.team.shell.sandboxSummary', { network: t(SANDBOX_NETWORK_LABEL[sb.network]), folders: sb.readOnlyPaths.length ? sb.readOnlyPaths.join(', ') : t('ui.runner.sandbox.pathsNone') })}{draft.permission === 'read' ? ` ${t('ui.team.shell.readerCopy')}` : ''}</p>
       )}
+      {draft.allowedCommands.length > 0 && (
+        <fieldset className="wz-fieldset">
+          <legend className="wz-label">{t('ui.team.allowed.title')}</legend>
+          <p className="small muted">{t('ui.team.allowed.hint')}</p>
+          <ul className="team-allowed">
+            {draft.allowedCommands.map((rule) => (
+              <li key={rule} className="row spread">
+                <code>{rule}</code>
+                <button type="button" className="btn" aria-label={t('ui.team.allowed.removeAria', { rule })} onClick={() => set({ allowedCommands: draft.allowedCommands.filter((r) => r !== rule) })}>{t('ui.team.allowed.remove')}</button>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
       {status && !status.available && !web && <p className="small muted">{t('ui.team.shell.noSandbox', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}</p>}
       {status && !status.available && web && <p className="small muted">{t('ui.team.shell.noSandboxWeb')}</p>}
     </>

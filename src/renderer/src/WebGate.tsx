@@ -2,6 +2,7 @@ import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { errorText } from './api';
 import { normalizeLanguage, setLanguage } from '../../shared/i18n';
 import { useT, t } from './i18n';
+import { CeremonyCommands } from './CeremonyCommands';
 import { OutboxBanner } from './OutboxBanner';
 import { consumePairFragment } from './pairFragment';
 import { isWeb } from './platform';
@@ -140,6 +141,7 @@ export function WebGate({ children }: { children: ReactNode }) {
     return (
       <>
         {children}
+        <CeremonyCommands />
         {isWeb() && <OutboxBanner />}
       </>
     );

@@ -151,6 +151,8 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
     if (a.shell === 'host') add(`agents.team[${a.id}].shell`, 'host: any command the agent chooses, on this computer, once the person allows it');
     else if (a.shell === 'sandbox') add(`agents.team[${a.id}].shell`, 'sandbox: any command the agent chooses, inside a sandbox');
     else if (a.shell === 'allowlist') add(`agents.team[${a.id}].shell`, 'allowlist: the commands of runner.commands');
+    // Rules the ceremonies run without asking: a file is a way to hand them over, so each one is said.
+    (a.allowedCommands ?? []).forEach((rule, i) => add(`agents.team[${a.id}].allowedCommands[${i}]`, rule));
   }
   // Run with bash -lc in the worktree of a conflict resolution: a shell line, not an executable, and the importer should read it as well.
   for (const [project, command] of Object.entries(c.projects.verifyCommands)) add(`projects.verifyCommands[${project}]`, command);

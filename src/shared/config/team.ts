@@ -21,7 +21,8 @@ export function systemAgent(role: LlmRole, seed: RoleSeed = {}): AgentDef {
     model: { role: modelRole, provider: '', model: '' },
     stages: [],
     permission: 'read',
-    tracker: 'none',
+    // The ceremonies read the code host (when the workspace's tools allow it); the agent of a ceremony says so, and turning it off takes that read away.
+    tracker: 'read',
     shell: 'none',
     autonomous: false,
     turnsTo: null,
@@ -47,6 +48,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     // What an agent could do before the two fields existed: an agent that writes ran the commands of the workspace, one that reads ran none and had no say about the host.
     tracker: partial.tracker ?? 'none',
     shell: partial.shell ?? ((partial.permission ?? 'read') === 'worktree' ? 'allowlist' : 'none'),
+    ...(partial.allowedCommands?.length ? { allowedCommands: [...partial.allowedCommands] } : {}),
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),

@@ -19,6 +19,8 @@ export interface AgentDraft {
   permission: AgentPermission;
   tracker: AgentTracker;
   shell: AgentShell;
+  /** The commands the person allowed the agent always in a ceremony; the editor only takes rules away. */
+  allowedCommands: string[];
   autonomous: boolean;
   squad: string | null;
   turnsTo: string | null;
@@ -45,6 +47,7 @@ export function draftOf(a: AgentDef): AgentDraft {
     permission: a.permission,
     tracker: a.tracker,
     shell: a.shell,
+    allowedCommands: [...(a.allowedCommands ?? [])],
     autonomous: a.autonomous,
     squad: a.squad ?? null,
     turnsTo: a.turnsTo,
@@ -53,7 +56,7 @@ export function draftOf(a: AgentDef): AgentDraft {
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', autonomous: false, squad: null, turnsTo: null, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], autonomous: false, squad: null, turnsTo: null, stages: [] };
 }
 
 /** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
@@ -105,6 +108,7 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
     permission: draft.permission,
     tracker: draft.tracker,
     shell: draft.shell,
+    allowedCommands: draft.allowedCommands.length ? draft.allowedCommands : undefined,
     autonomous: draft.autonomous,
     turnsTo: draft.turnsTo,
     stages: draft.stages,
