@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.5] - 2026-10-03
+
 ### Added
 
 - **Commands on this computer, with your approval** (`shell: host`, "This computer, with your approval" in Settings › Team): an agent runs any command as you, outside any sandbox, so it can bring up containers, emulators, windows or services that need the network. Every command waits on the run for "Allow once", "Allow until the stage ends" or "Do not allow" (with a note for the agent), and the stage's clocks stand still meanwhile. The thread and the audit log say where each command ran. Only the computer sets it; a template never brings it, and allowing a command from a paired phone needs the external-effects switch.
@@ -203,7 +205,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.5...HEAD
+[0.5.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.4...v0.5.0-beta.5
 [0.5.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.3...v0.5.0-beta.4
 [0.5.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.2...v0.5.0-beta.3
 [0.5.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.5.0-beta.1...v0.5.0-beta.2
