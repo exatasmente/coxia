@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The ceremony agents ask before a command instead of refusing it.** In the Deep dive, the call and the other ceremonies, a command the agent may not run yet (listing releases, reading a list of pull requests, running the tests) now shows a notice at the top of the app, and on a paired phone, with the whole command: Allow once, Always allow (in the manner of Claude Code, `gh api:*` lets every later `gh api` through) or Do not allow, with a note the agent reads. The rules live on the agent in Settings › Team, where you can remove them. A command that writes to the code host is asked every time, can only be allowed once, and goes to the audit log; a test workspace refuses it without asking. The ceremonies also follow their system agent of the team: turning off its code host read takes that read away.
+
 ### Fixed
 
 - **A release run no longer moves on, or ends, with a release the host does not have.** In the release flow, saying yes to a push before the cut of the same stage sent nothing, and the cut then stayed in the app's own worktree; the run still went on and ended at *Published* with neither the beta nor the stable on the host. Now a push asked in the same stage as a cut can only be approved once that cut is done (Actions says what it waits for, and a yes given out of order is refused with nothing run, with the reason in the run's thread too). A push that finds the remote already holding what it would send ends as **nothing sent**, not as done. Two new waits keep the run from going past the cut: *Beta on the host* (the beta's tag on the remote and its pre-release published) and *Stable on the host* (the stable tag on the remote's `main`). A workspace that applied the release flow before this keeps the old one: apply the template again to get the waits.

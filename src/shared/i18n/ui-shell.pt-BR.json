@@ -1,4 +1,12 @@
 {
+  "ui.ceremonyCommand.always": "Sempre permitir {rule}",
+  "ui.ceremonyCommand.alwaysHint": "Adiciona \"{rule}\" ao agente em Configurações › Time: os comandos que casam rodam sem perguntar.",
+  "ui.ceremonyCommand.deny": "Não permitir",
+  "ui.ceremonyCommand.note": "Recado para o agente (opcional)",
+  "ui.ceremonyCommand.once": "Permitir uma vez",
+  "ui.ceremonyCommand.region": "Comandos esperando você",
+  "ui.ceremonyCommand.title": "{agent} quer rodar um comando neste computador",
+  "ui.ceremonyCommand.writeNote": "Ele escreve no host de código, fora de Ações: só pode ser permitido desta vez, e vai para o registro de auditoria.",
   "ui.error.body": "O erro foi registrado em Saúde, em Erros recentes. Tente de novo ou recarregue o app.",
   "ui.error.http": "Erro {status}",
   "ui.error.noMessage": "objeto sem mensagem",

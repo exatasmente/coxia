@@ -1,4 +1,5 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a JSON document
+import { validRule } from '../ceremonyCommands';
 import { createTranslator } from '../i18n';
 import { isFlowCycle } from '../runs/flow';
 import { checkFlow, flowIssueText } from '../runs/flowCheck';
@@ -64,6 +65,9 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
       if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
     });
     // Commands run in the real worktree could leave files that the app then commits for an agent that promised only to read; a reader runs them in a sandbox.
+    (a.allowedCommands ?? []).forEach((r, j) => {
+      if (!validRule(r)) errors.push({ path: at(`allowedCommands[${j}]`), message: 'a rule is one line of at most 200 characters ("prefix:*" or an exact command)' });
+    });
     if (a.shell === 'allowlist' && a.permission !== 'worktree') errors.push({ path: at('shell'), message: '"allowlist" needs the "worktree" permission: an agent that only reads runs commands only in a sandbox' });
     if (a.model.role === null) {
       if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
