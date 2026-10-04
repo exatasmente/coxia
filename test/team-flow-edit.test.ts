@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
-import { addSquad, newSquad, setAgentSquad } from '../src/shared/config/squads';
+import { RELEASE_FLOW_KEY, addSquad, newSquad, setAgentSquad } from '../src/shared/config/squads';
 import { addAgent } from '../src/shared/config/team';
 import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
-import { agentFlow, agentFlowEngineering, applyTemplate } from '../src/shared/cycles';
+import { RELEASE_MANAGER, agentFlow, agentFlowEngineering, applyTemplate, releaseFlow } from '../src/shared/cycles';
 import { createTranslator } from '../src/shared/i18n';
 import { flowIssueText } from '../src/shared/runs';
 import {
@@ -171,6 +171,18 @@ describe('one flow per squad', () => {
     expect(ids(applyFlows(c, d).devCycle.flows!.core)).not.toContain('gate2');
     expect(ids(applyFlows(c, d).devCycle.stages)).toContain('gate2');
     expect(applyFlows(c, dropOwnFlow(d, 'core')).devCycle.flows).toBeUndefined();
+  });
+
+  it('the flow of a release run is kept, and its agent keeps its stages, when the flows are saved', () => {
+    const c = applyTemplate(withSquad(), releaseFlow);
+    c.squads = c.squads!.map((q) => ({ ...q, liaison: 'developer' }));
+    const d = withStages(giveOwnFlow(draftOfFlows(c), 'core'), 'core', removeStage(stagesOfTarget(draftOfFlows(c), 'core'), 'gate2'));
+    const next = applyFlows(c, d);
+    expect(next.devCycle.flows?.[RELEASE_FLOW_KEY]).toEqual(c.devCycle.flows?.[RELEASE_FLOW_KEY]);
+    expect(next.agents.team.find((a) => a.id === RELEASE_MANAGER)?.stages).toEqual(c.agents.team.find((a) => a.id === RELEASE_MANAGER)?.stages);
+    expect(checkFlows(c, d, 'core').general.filter((g) => g.issue.code === 'agent-idle')).toEqual([]);
+    expect(validateConfig(next).errors).toEqual([]);
+    expect(applyFlows(c, dropOwnFlow(d, 'core')).devCycle.flows).toEqual({ [RELEASE_FLOW_KEY]: c.devCycle.flows?.[RELEASE_FLOW_KEY] });
   });
 
   it('a flow of a squad the config no longer has is not written', () => {
