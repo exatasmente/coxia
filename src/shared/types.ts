@@ -419,6 +419,10 @@ export interface ReleaseAction {
   commands?: VcsCommand[];
   /** How many of `commands` already ran: a retry after a failure goes on from there instead of posting the first ones again. */
   done?: number;
+  /** Release steps only: the stage (and its attempt) of the run that asked for it. The steps of one group run in the order they need each other (`releaseBlockers`). */
+  group?: string;
+  /** A push of a release that sent nothing: the remote already had exactly what it would send. Done, but nothing moved on the host. */
+  nothingSent?: boolean;
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }

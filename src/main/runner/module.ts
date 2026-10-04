@@ -14,7 +14,8 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { readArtifact } from './cycleFolder';
-import { realDoor, onRunnerActionDone } from './door';
+import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
+import { remoteReleaseOf } from './release';
 import { createPublisher } from './publish';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
@@ -89,6 +90,11 @@ export const runsModule: Module = (ctx) => {
         const at = existsSync(run.worktree) ? run.worktree : rc().repos.find((x) => x.id === run.repo)?.path;
         return at ? (await git(at, ['tag', '--list', 'v*'], { fail: false })).stdout.split('\n').filter(Boolean) : [];
       },
+      // What the remote has of the version right now: what the waits for the beta and the stable to be on the host read, from the same repository.
+      remoteRelease: async (run) => {
+        const at = existsSync(run.worktree) ? run.worktree : rc().repos.find((x) => x.id === run.repo)?.path;
+        return at && run.subject ? remoteReleaseOf(at, run.subject.version) : null;
+      },
     }),
     updateConfig,
     notify: (n) => ctx.notify(n),
@@ -96,6 +102,8 @@ export const runsModule: Module = (ctx) => {
   current = r;
   // A comment, a review, the push or the pull request that waited in Actions was approved: the run learns what the host made.
   onRunnerActionDone((action, responses) => r.actionDone(action, responses));
+  // A "sim" on a step of a release was refused before it ran (a step it needs is not done): the run's thread says why.
+  onRunnerActionRefused((action, reason) => r.actionRefused(action, reason));
   // The issue a retro improvement asked for was created: the task on it starts by itself, without another "sim".
   onRunnerActionDone((action, responses) => retroIssueDone(action, responses, (ref) => r.start(ref)));
   // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, which never writes to the run.

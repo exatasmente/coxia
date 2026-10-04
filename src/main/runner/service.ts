@@ -223,6 +223,8 @@ export interface Runner {
   tick(): Promise<Run[]>;
   /** A proposal of the runner was carried out in Actions (a comment, a review, the push, the pull request): the run goes on from there. */
   actionDone(action: ReleaseAction, responses: unknown[]): void;
+  /** The person's "sim" on a proposal of the runner was refused before anything ran (a release step whose earlier step is not done): the thread says why. */
+  actionRefused(action: ReleaseAction, reason: string): void;
   /** Posts the reviews that waited for their pull request, for the runs whose pull request exists by now. Resolves when those are posted, not when the stages that are working end. */
   flush(): Promise<void>;
   /** What the scheduler's job does every few minutes: scan, tick and flush, one sweep at a time (a call while one is going gets that sweep's promise). It never waits for a stage to end. */
@@ -876,6 +878,10 @@ export function createRunner(deps: RunnerDeps): Runner {
         return;
       }
       publish(id, (p) => p.actionDone(action, responses));
+    },
+    actionRefused(action, reason) {
+      const id = String(action.unit?.runId ?? '');
+      if (id && deps.runs.get(id)) publish(id, (p) => p.actionRefused(action, reason));
     },
     async flush() {
       // Only what this call queued is awaited: the stages that are working, the questions and the mentions go on by themselves and are not its business, so a run

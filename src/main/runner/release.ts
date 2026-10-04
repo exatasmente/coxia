@@ -5,6 +5,7 @@ import type { ReleaseActivity, Run } from '../../shared/runs';
 import { git } from '../conflictGit';
 import { redact } from '../errorlog-core';
 import { prompt as cp } from '../cyclePrompts';
+import { SAFE } from './git';
 import { fence } from './prompt';
 
 // What a release run says about its subject: the synthesized issue the run carries, the activities of the version as lines of text, the brief the first stage reads,
@@ -104,4 +105,37 @@ export async function releaseStateOf(wt: string, version: string): Promise<Relea
   const tags = (await git(wt, ['tag', '--list', `v${version}-beta.*`], { fail: false })).stdout.split('\n').filter((n) => new RegExp(`^v${version.replace(/\./g, '\\.')}-beta\\.[1-9][0-9]*$`).test(n));
   const beta = tags.sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop())).at(-1) ?? null;
   return { branch, beta };
+}
+
+/** What the remote of a release run's repository has of the version: its tags (by name, to the commit each names) and whether the stable's commit is on main there. */
+export interface RemoteRelease {
+  tags: Record<string, string>;
+  stableOnMain: boolean;
+}
+
+/**
+ * The remote as it is now (`git ls-remote`, not the refs of the last fetch): what a wait for the host reads, so a tag that only exists here never counts. Null when the remote
+ * could not be read, which a wait takes as "not yet".
+ */
+export async function remoteReleaseOf(wt: string, version: string): Promise<RemoteRelease | null> {
+  const listed = await git(wt, [...SAFE, 'ls-remote', 'origin', 'refs/heads/main', `refs/tags/v${version}*`], { fail: false });
+  if (listed.code !== 0) return null;
+  const mine = new RegExp(`^refs/tags/(v${version.replace(/\./g, '\\.')}(?:-beta\\.[1-9][0-9]*)?)(\\^\\{\\})?$`);
+  const tags: Record<string, string> = {};
+  let main: string | null = null;
+  for (const [sha, name] of listed.stdout.split('\n').map((l) => l.trim().split('\t'))) {
+    if (!sha || !name) continue;
+    if (name === 'refs/heads/main') main = sha;
+    const m = mine.exec(name);
+    // an annotated tag is listed twice: the tag itself, then the commit it names (`^{}`), which is the one kept
+    if (m && (m[2] || !tags[m[1]])) tags[m[1]] = sha;
+  }
+  const stable = tags[`v${version}`];
+  let stableOnMain = !!stable && stable === main;
+  if (stable && main && !stableOnMain) {
+    // main moved on after the stable: its commit has to be read before it can be asked whether the stable is in its history
+    await git(wt, [...SAFE, 'fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { fail: false });
+    stableOnMain = (await git(wt, ['merge-base', '--is-ancestor', stable, main], { fail: false })).code === 0;
+  }
+  return { tags, stableOnMain };
 }

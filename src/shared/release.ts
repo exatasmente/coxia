@@ -1,4 +1,5 @@
 import { RUN_ID } from './runs/types';
+import type { ReleaseAction } from './types';
 
 // The release actions: what the Release manager may ask for and what the app is willing to run for it. The unit that is stored in Actions names an
 // operation and a version and nothing else: never a folder, a command line or a flag. `parseReleaseUnit` is the one judge of it, and it runs again when
@@ -121,6 +122,53 @@ export function parseReleaseUnit(raw: unknown): ReleaseUnit {
   return unit;
 }
 
+/**
+ * Whether `step` must wait for `other` when both were asked in the same stage: a push sends what a cut or a merge made, so it goes after them, and the tag goes after the
+ * branch it must be on. Approving a push before the cut it belongs to would send what the remote already has, and the person's "sim" was given on a preview of that.
+ */
+export function releaseStepNeeds(step: ReleaseUnit, other: ReleaseUnit): boolean {
+  const local = other.op === 'open' || other.op === 'merge-pr';
+  switch (step.op) {
+    case 'open':
+      return false;
+    case 'merge-pr':
+      return other.op === 'open';
+    case 'beta':
+    case 'stable':
+      return local;
+    case 'push-branch':
+      return step.branch === 'main' ? other.op === 'stable' : local || other.op === 'beta';
+    case 'push-tag':
+      return step.channel === 'stable'
+        ? other.op === 'stable' || (other.op === 'push-branch' && other.branch === 'main')
+        : local || other.op === 'beta' || (other.op === 'push-branch' && other.branch !== 'main');
+  }
+}
+
+const unitOrNull = (raw: unknown): ReleaseUnit | null => {
+  try {
+    return parseReleaseUnit(raw);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The steps of the same stage that a release action still waits for: asked in its group, needed before it (`releaseStepNeeds`), and not carried out yet (waiting, running,
+ * or failed). A step the person skipped is the person's decision and holds nothing back. An action with no group (made before groups existed) waits for nothing.
+ */
+export function releaseBlockers(action: ReleaseAction, all: readonly ReleaseAction[]): ReleaseAction[] {
+  if (action.kind !== 'release-git' || !action.group) return [];
+  const step = unitOrNull(action.unit);
+  if (!step) return [];
+  return all.filter((o) => {
+    if (o.id === action.id || o.kind !== 'release-git' || o.group !== action.group) return false;
+    if (o.state !== 'pending' && o.state !== 'running' && o.state !== 'failed') return false;
+    const other = unitOrNull(o.unit);
+    return !!other && releaseStepNeeds(step, other);
+  });
+}
+
 /** The JSON Schema of the `ReleaseAction` tool the Release manager calls: the operations above with a version, and nothing that names a path or a flag. */
 export const RELEASE_TOOL_NAME = 'ReleaseAction';
 export const RELEASE_MCP_SERVER = 'coxia_release';
@@ -131,7 +179,8 @@ export const RELEASE_TOOL_DESCRIPTION =
   'Asks the app to do one step of the release of this run\'s version, by the release script of the repository. `open` makes release/<version> (`from` is the stable tag a patch is cut from), ' +
   '`merge-pr` merges an approved pull request into it locally (`pr` is its number, `head` is required: the commit you read it at, which must be the one the plan approved), `beta` and `stable` cut the next beta or the stable version locally, ' +
   '`push-branch` and `push-tag` send the branch (`release`, or `main` after a stable) or the tag (`beta`, the latest one, or `stable`). The version is X.Y.Z. A push, a beta and a stable ALWAYS wait for the person; ' +
-  '`open` and `merge-pr` run by themselves only when you are set to run by themselves, and otherwise wait for the person too. The answer says which happened.';
+  '`open` and `merge-pr` run by themselves only when you are set to run by themselves, and otherwise wait for the person too. Steps asked in the same stage are carried out in the order they ' +
+  'need each other: a push can only be approved once the cut or merge it sends is done, and the tag once its branch is sent. The answer says which happened.';
 
 export const RELEASE_TOOL_SCHEMA = {
   type: 'object',
