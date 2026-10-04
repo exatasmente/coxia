@@ -62,7 +62,8 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
   const added = brought
     .filter((a) => !have.has(a.id))
     .map((a) => {
-      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined });
+      // Nor does it bring commands allowed always: those are the person's answers on this computer.
+      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined, allowedCommands: undefined });
       const agent = made.shell === 'host' ? { ...made, shell: 'sandbox' as const } : made;
       return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
     });

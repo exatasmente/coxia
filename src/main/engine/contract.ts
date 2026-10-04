@@ -45,6 +45,12 @@ export interface Confinement {
   hooks: NonNullable<Options['hooks']>;
 }
 
+export interface CommandAsk {
+  /** The agent's own rules (`allowedCommands`). */
+  rules: string[];
+  request(command: string): Promise<{ ok: boolean; note?: string }>;
+}
+
 export interface EngineRequest {
   role: LlmRole;
   prompt: string;
@@ -75,6 +81,11 @@ export interface EngineRequest {
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
+  /**
+   * A ceremony agent: a command the code does not allow is asked of the person instead of refused (the call waits for the answer), and the rules the person
+   * gave the agent ("allow always") let a command through without asking. Never for a write to the code host, which is asked every time.
+   */
+  ask?: CommandAsk;
   /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
   abort?: AbortController;
   /** Called once per model call with what it used (and what it cost, when the provider or the SDK said). */

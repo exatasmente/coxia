@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A call to an agent in a run's thread shows that it is working.** Right under the message that named an agent with `@`, a transient line says the call was taken: first that the agent is working (or, when the run already has a call going, that this one waits its turn), then the live step (a file being read, a tool being run). The line goes when that agent's answer arrives, or when the call fails; a message that names two or three agents gets one line each. On the run screen the live activity panel now appears while a call runs, whatever the run's own status — including while it waits at a gate or a question, which is when a call usually happens — under the called agent's name. In the jobs dock the call is no longer the generic *Agent* entry: it names the agent and the run, and opening it goes to that run's thread. The paired browser shows the same, since the thread, the run screen and the dock are the same. The call stays read-only and keeps its silence and wall-clock limits.
 
+## [0.6.0-beta.1] - 2026-10-04
+
+### Added
+
+- **The ceremony agents ask before a command instead of refusing it.** In the Deep dive, the call and the other ceremonies, a command the agent may not run yet (listing releases, reading a list of pull requests, running the tests) now shows a notice at the top of the app, and on a paired phone, with the whole command: Allow once, Always allow (in the manner of Claude Code, `gh api:*` lets every later `gh api` through) or Do not allow, with a note the agent reads. The rules live on the agent in Settings › Team, where you can remove them. A command that writes to the code host is asked every time, can only be allowed once, and goes to the audit log; a test workspace refuses it without asking. The ceremonies also follow their system agent of the team: turning off its code host read takes that read away.
+
 ### Fixed
 
 - **A release run no longer moves on, or ends, with a release the host does not have.** In the release flow, saying yes to a push before the cut of the same stage sent nothing, and the cut then stayed in the app's own worktree; the run still went on and ended at *Published* with neither the beta nor the stable on the host. Now a push asked in the same stage as a cut can only be approved once that cut is done (Actions says what it waits for, and a yes given out of order is refused with nothing run, with the reason in the run's thread too). A push that finds the remote already holding what it would send ends as **nothing sent**, not as done. Two new waits keep the run from going past the cut: *Beta on the host* (the beta's tag on the remote and its pre-release published) and *Stable on the host* (the stable tag on the remote's `main`). A workspace that applied the release flow before this keeps the old one: apply the template again to get the waits.
@@ -184,7 +190,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.0-beta.1...HEAD
+[0.6.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0-beta.1
 [0.5.0]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/exatasmente/coxia/compare/v0.4.0...v0.4.1

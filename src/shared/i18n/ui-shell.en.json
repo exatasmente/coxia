@@ -1,4 +1,12 @@
 {
+  "ui.ceremonyCommand.always": "Always allow {rule}",
+  "ui.ceremonyCommand.alwaysHint": "Adds \"{rule}\" to the agent in Settings › Team: matching commands run without asking.",
+  "ui.ceremonyCommand.deny": "Do not allow",
+  "ui.ceremonyCommand.note": "Note for the agent (optional)",
+  "ui.ceremonyCommand.once": "Allow once",
+  "ui.ceremonyCommand.region": "Commands waiting for you",
+  "ui.ceremonyCommand.title": "{agent} wants to run a command on this computer",
+  "ui.ceremonyCommand.writeNote": "It writes to the code host, outside Actions: it can only be allowed this once, and it goes to the audit log.",
   "ui.error.body": "The error was logged in Health, under Recent errors. Try again or reload the app.",
   "ui.error.http": "Error {status}",
   "ui.error.noMessage": "object without a message",

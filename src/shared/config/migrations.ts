@@ -248,7 +248,19 @@ function v10ToV11(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
 }
 
 // Index N migrates a version N document to N+1.
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11 };
+// The ceremonies now follow the code host read of their system agent. Every system agent had `tracker: none` and the ceremonies read anyway (a workspace
+// switch): one gets `read` where the workspace reads, so no ceremony loses what it did. Nothing else moves; the list of always-allowed commands starts absent.
+function v11ToV12(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const agents = pick(old.agents);
+  const tools = pick(agents.tools);
+  const reads = tools.vcsCli === true || tools.trackerMcp === true;
+  if (!Array.isArray(agents.team)) return { ...old, schemaVersion: 12 };
+  const team = (agents.team as unknown[]).map((a) => (isObject(a) && a.system === true && reads && a.tracker !== 'read' ? { ...a, tracker: 'read' } : a));
+  notes.push('the system agents keep the code host read the ceremonies had (tracker "read" where the workspace reads); the ceremonies now follow it');
+  return { ...old, schemaVersion: 12, agents: { ...agents, team } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

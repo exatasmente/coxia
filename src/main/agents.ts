@@ -11,7 +11,9 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { ceremonyCommands } from './ceremonyCommands';
+import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
@@ -86,13 +88,26 @@ function shellDenial(usage: string, plumbing: string): string {
   return hints ? cp('system.shellDenied', { hints }) : cp('system.shellDeniedNone');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage: string): HookCallback {
+const decided = (decision: 'allow' | 'deny', reason: string) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision: decision, permissionDecisionReason: reason } });
+
+/**
+ * The shell of an agent that reads: the commands the code allows (the code host reads, plumbing git in a conflict call) run; a git command that names a secret
+ * path never does. With `ask` (a ceremony agent), anything else is not refused but asked of the person, and the call waits: the rules the person gave the agent
+ * let a command through without asking, except a write to the code host, which is asked every time.
+ */
+export function shellAllowlist(patterns: RegExp[], usage: string, ask?: CommandAsk): HookCallback {
   const plumbing = (): string => (patterns.some((re) => re.source.startsWith('^git -C')) ? cp('system.hintGitplumbing') : '');
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
-    const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
-    if (patterns.some((re) => re.test(command)) && !(command.startsWith('git ') && command.split(/[\s:"']+/).some((t) => SECRET_PATH.test(t)))) {
-      return {};
+    const raw = String((input.tool_input as { command?: unknown }).command ?? '').trim();
+    const command = stripOutputSuffix(raw);
+    const secret = command.startsWith('git ') && command.split(/[\s:"']+/).some((t) => SECRET_PATH.test(t));
+    if (patterns.some((re) => re.test(command)) && !secret) return {};
+    if (ask && !secret) {
+      if (!isHostWrite(raw) && rulesAllow(ask.rules, raw)) return decided('allow', cp('system.shellAllowedByRule'));
+      const answer = await ask.request(raw);
+      if (answer.ok) return decided('allow', cp('system.shellAllowedByPerson'));
+      return decided('deny', answer.note ? cp('system.shellRefusedByPersonNote', { note: answer.note }) : cp('system.shellRefusedByPerson'));
     }
     return {
       hookSpecificOutput: {
@@ -278,14 +293,14 @@ export const redactSecretResults: HookCallback = async (input) => {
   return { hookSpecificOutput: { hookEventName: 'PostToolUse', updatedToolOutput: clean } };
 };
 
-export function agentHooks(patterns: RegExp[] = [], host = true): NonNullable<Options['hooks']> {
+export function agentHooks(patterns: RegExp[] = [], host = true, ask?: CommandAsk): NonNullable<Options['hooks']> {
   // The shell allow-list follows the configured provider (glab for GitLab, gh for GitHub); a host with no CLI (Bitbucket, an API-only integration)
   // reads through the app's tool and has no shell command to allow, and it is not told about a CLI it does not have.
   const policy = vcsReadPolicy();
   const cli = host && policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage)] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage, ask)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
       { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],
@@ -371,14 +386,16 @@ function sdkOptions(req: EngineRequest): Options {
   const confine = req.confine;
   // A call with no code host read has no CLI to allow either: its shell is whatever commands it was given.
   const host = (req.tracker ?? 'workspace') === 'workspace';
-  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host);
-  const shellOff = confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
+  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host, req.ask);
+  // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
+  const asks = !confine && !!req.ask;
+  const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
     permissionMode: 'dontAsk',
     systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
-    allowedTools: req.allowedTools,
+    allowedTools: asks ? [...req.allowedTools.filter((t) => !t.startsWith('Bash(')), 'Bash'] : req.allowedTools,
     disallowedTools: [
       ...(shellOff ? ['Bash'] : []),
       ...(confine ? [] : ['Edit', 'Write']),
@@ -566,7 +583,12 @@ async function runOnce<T>(
   // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
   const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
   const cwd = rc().projectsRoot;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity });
+  // The ceremony follows its system agent of the team: whether it reads the code host, and the commands the person allowed it always.
+  const agent = getConfig().agents.team.find((a) => a.id === role && a.system);
+  const reads = (agent?.tracker ?? 'read') === 'read';
+  const id = agent?.id ?? role;
+  const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', ask });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
