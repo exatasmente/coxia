@@ -467,7 +467,7 @@ describe('the release-flow template', () => {
     expect(validateConfig(own).warnings).toEqual([]);
   });
 
-  it('goes plan, gate, assemble, merges in, beta, feedback, gate, stable, published, and every stage is reachable', () => {
+  it('goes plan, gate, assemble, merges in, beta, beta on the host, feedback, gate, stable, stable on the host, published, and every stage is reachable', () => {
     const stages = flowOf({ agents: { team: applied().agents.team }, devCycle: { stages: applied().devCycle.flows!.release } });
     expect(stages.map((s) => [s.id, s.type, s.agent])).toEqual([
       ['release-plan', 'work', 'release-manager'],
@@ -475,14 +475,19 @@ describe('the release-flow template', () => {
       ['release-assemble', 'work', 'release-manager'],
       ['release-merged', 'wait', null],
       ['release-beta', 'work', 'release-manager'],
+      ['release-beta-out', 'wait', null],
       ['release-feedback', 'wait', null],
       ['release-stable-gate', 'gate', null],
       ['release-stable', 'work', 'release-manager'],
+      ['release-stable-out', 'wait', null],
       ['release-published', 'work', null],
     ]);
     expect(stages.find((s) => s.id === 'release-plan')?.artifacts).toEqual(['RELEASE_PLAN.md']);
     expect(stages.find((s) => s.id === 'release-merged')?.waitsFor).toEqual({ kind: 'release-approved' });
     expect(stages.find((s) => s.id === 'release-feedback')?.waitsFor).toEqual({ kind: 'beta-age', minutes: 1440, label: 'beta-blocker' });
+    // the run goes on from a cut only when the host has it, and is published only when the host has the stable
+    expect(stages.find((s) => s.id === 'release-beta-out')?.waitsFor).toEqual({ kind: 'beta-out' });
+    expect(stages.find((s) => s.id === 'release-stable-out')?.waitsFor).toEqual({ kind: 'stable-out' });
     // a rejected gate goes back to the work stage it judged
     expect(stages.find((s) => s.id === 'release-plan-gate')?.returnsTo).toBe('release-plan');
     expect(stages.find((s) => s.id === 'release-stable-gate')?.returnsTo).toBe('release-beta');

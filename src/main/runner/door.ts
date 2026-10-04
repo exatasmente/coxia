@@ -1,4 +1,4 @@
-import { onActionDone, proposeRelease, proposeRunPush, proposeVcsGroup, runReleaseAuto, runVcsAuto } from '../actions';
+import { onActionDone, onActionRefused, proposeRelease, proposeRunPush, proposeVcsGroup, runReleaseAuto, runVcsAuto } from '../actions';
 import { vcsProvider } from '../vcs';
 import { externalRefusal } from '../workspace';
 import { t } from '../../shared/i18n';
@@ -23,9 +23,12 @@ export const realDoor: Door = {
   },
   propose: (meta, commands) => proposeVcsGroup({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, detail: meta.detail, unit: meta.unit, notify: meta.notify }, commands) !== null,
   proposePush: (meta) => proposeRunPush({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, runId: meta.runId, branch: meta.branch, notify: meta.notify }) !== null,
-  proposeRelease: (meta) => proposeRelease({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, unit: meta.unit, notify: meta.notify }) !== null,
+  proposeRelease: (meta) => proposeRelease({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, unit: meta.unit, group: meta.group, notify: meta.notify }) !== null,
   release: (meta, unit) => runReleaseAuto(meta, unit),
 };
 
 /** Tells `fn` when a proposal of the runner (a comment, a review, the push, the pull request) was carried out. */
 export const onRunnerActionDone = onActionDone;
+
+/** Tells `fn` when a "sim" on a proposal of the runner was refused before anything ran (a release step whose earlier step is not done). */
+export const onRunnerActionRefused = onActionRefused;

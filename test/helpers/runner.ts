@@ -11,6 +11,7 @@ import { writeTool } from '../../src/main/engine/open/tools/write';
 import { createForumStore } from '../../src/main/forum-core';
 import type { StageEngine } from '../../src/main/runner/executor';
 import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '../../src/main/runner/service';
+import type { RemoteRelease } from '../../src/main/runner/release';
 import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
 import { SandboxError, type ExecResult, type HostOpenOptions, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
 import type { SandboxStatus } from '../../src/shared/sandbox';
@@ -275,6 +276,8 @@ export interface BootOptions {
   now?: () => Date;
   /** The tags a release run's wait for its beta reads. */
   localTags?: (run: Run) => Promise<string[]>;
+  /** What the remote has of a release run's version: what its waits for the host read. */
+  remoteRelease?: (run: Run) => Promise<RemoteRelease | null>;
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -317,7 +320,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');
     const { realDoor } = await import('../../src/main/runner/door');
-    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: options.now, localTags: options.localTags });
+    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: options.now, localTags: options.localTags, remoteRelease: options.remoteRelease });
   }
   const runner = createRunner(deps);
   return {

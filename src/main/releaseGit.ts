@@ -63,6 +63,8 @@ export interface ReleaseResult {
   after: string | null;
   /** The tag a beta or a stable cut made, or the one a push sent. */
   tag: string | null;
+  /** A push only: false when the remote already had exactly what it would send, so nothing went out. */
+  sent?: boolean;
 }
 
 const SCRIPT = 'scripts/release.sh';
@@ -328,13 +330,27 @@ async function recoverWorktree(wt: string, since: number, version: string, befor
 // mirror of the remote. The refspec of a push is explicit, so `remote.origin.push` and `push.default` do not apply, but these do unless they are switched off.
 const PUSH_SAFE = ['-c', 'push.followTags=false', '-c', 'push.recurseSubmodules=no', '-c', 'push.gpgSign=false', '-c', 'remote.origin.mirror=false'];
 
-/** A plain push of one ref: nothing is forced, and no other ref goes with it. `src` is a commit name or a tag ref, never a symbolic name such as HEAD (what it names could move). */
-async function pushRef(clone: string, src: string, dst: string): Promise<string> {
+/** The object the remote names at `ref`, null when it has no such ref, undefined when it could not be read (the push then speaks for itself). */
+async function remoteObject(clone: string, ref: string): Promise<string | null | undefined> {
+  const r = await git(clone, ['ls-remote', 'origin', ref], { fail: false });
+  if (r.code !== 0) return undefined;
+  const line = r.stdout.split('\n').map((l) => l.split('\t')).find(([, name]) => name?.trim() === ref);
+  return line ? line[0].trim().toLowerCase() : null;
+}
+
+/**
+ * A plain push of one ref: nothing is forced, and no other ref goes with it. `src` is a commit name or a tag ref, never a symbolic name such as HEAD (what it names could move).
+ * When the remote already has exactly that object at `dst`, nothing is pushed and `sent` is false: git would call it a success ("Everything up-to-date"), and a release that
+ * moved nothing on the host must not read as one that did.
+ */
+async function pushRef(clone: string, src: string, dst: string): Promise<{ output: string; sent: boolean }> {
+  const local = (await out(clone, ['rev-parse', '--verify', '--quiet', src])).toLowerCase();
+  if (local && (await remoteObject(clone, dst)) === local) return { output: '', sent: false };
   const spec = `${src}:${dst}`;
   const args = ['push', '--no-verify', 'origin', spec];
   assertPlainPush(args);
   const r = await git(clone, [...PUSH_SAFE, ...args]);
-  return `${r.stdout}${r.stderr}`.trim();
+  return { output: `${r.stdout}${r.stderr}`.trim(), sent: true };
 }
 
 async function merge(clone: string, id: ReleaseIdentity, args: string[]): Promise<void> {
@@ -460,15 +476,17 @@ async function pushBranchOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<Release
     if ((await exists(env.clone, 'refs/remotes/origin/main')) && !(await isAncestor(env.clone, 'refs/remotes/origin/main', `refs/tags/${tag}^{commit}`))) throw new Error(t('main.release.tagNotOnMain', { tag }));
     await detachAt(env.clone, `refs/tags/${tag}`);
     const head = (await sha(env.clone, 'HEAD')) as string;
-    const output = await pushRef(env.clone, head, 'refs/heads/main');
-    return { output: output || t('main.release.pushed', { ref: 'main' }), before: head, after: head, tag: null };
+    return { ...pushed(await pushRef(env.clone, head, 'refs/heads/main'), 'main', head), before: head, after: head, tag: null };
   }
   const branch = releaseBranchOf(unit.version);
   await switchTo(env.clone, branch);
   const head = (await sha(env.clone, 'HEAD')) as string;
-  const output = await pushRef(env.clone, head, `refs/heads/${branch}`);
-  return { output: output || t('main.release.pushed', { ref: branch }), before: head, after: head, tag: null };
+  return { ...pushed(await pushRef(env.clone, head, `refs/heads/${branch}`), branch, head), before: head, after: head, tag: null };
 }
+
+/** What a push says: git's own words when it sent something, "nothing sent" with the commit the remote already has when it did not. */
+const pushed = (r: { output: string; sent: boolean }, ref: string, commit: string): { output: string; sent: boolean } =>
+  r.sent ? { output: r.output || t('main.release.pushed', { ref }), sent: true } : { output: t('main.release.nothingSent', { ref, sha: commit.slice(0, 9) }), sent: false };
 
 async function pushTagOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> {
   const stableTag = releaseTagOf(unit.version);
@@ -481,9 +499,8 @@ async function pushTagOp(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseRes
   const branch = unit.channel === 'stable' ? 'main' : releaseBranchOf(unit.version);
   const tracking = `refs/remotes/origin/${branch}`;
   if (!(await exists(env.clone, tracking)) || !(await isAncestor(env.clone, `refs/tags/${tag}`, tracking))) throw new Error(t('main.release.tagBranchFirst', { tag, branch }));
-  const commit = await sha(env.clone, `refs/tags/${tag}`);
-  const output = await pushRef(env.clone, `refs/tags/${tag}`, `refs/tags/${tag}`);
-  return { output: output || t('main.release.pushed', { ref: tag }), before: commit, after: commit, tag };
+  const commit = (await sha(env.clone, `refs/tags/${tag}`)) as string;
+  return { ...pushed(await pushRef(env.clone, `refs/tags/${tag}`, `refs/tags/${tag}`), tag, commit), before: commit, after: commit, tag };
 }
 
 /** Runs one release operation in the worktree of the run. Throws the reason (translated) when it is refused or fails; what ran is in the returned output. */

@@ -20,7 +20,8 @@ const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { listAudit } = await import('../src/main/auditoria');
-const { onRunnerActionDone } = await import('../src/main/runner/door');
+const { onRunnerActionDone, onRunnerActionRefused } = await import('../src/main/runner/door');
+const { remoteReleaseOf } = await import('../src/main/runner/release');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
@@ -76,11 +77,14 @@ async function start(options: { autonomous?: boolean; script?: (b: Boot) => void
     repo: repoOf(),
     now: () => clock,
     localTags: async () => w.git('tag', '--list').split('\n').filter(Boolean),
+    // what the bare origin on disk has: the remote the waits for the host read
+    remoteRelease: async (r) => remoteReleaseOf(w.dir, r.subject?.version ?? ''),
     configure: configureRelease((c) => {
       if (options.autonomous === false) c.agents.team.find((a) => a.id === 'release-manager')!.autonomous = false;
     }),
   });
-  stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+  const stops = [onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses)), onRunnerActionRefused((a, reason) => b.runner.actionRefused(a, reason))];
+  stop = () => stops.forEach((f) => f());
   // The agents answer from the first moment: the first stage starts as the run does.
   if (options.script) options.script(b);
   else b.engine.script('release-manager', () => work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN }));
@@ -311,29 +315,52 @@ describe('the release from the plan to the stable', () => {
     await b.runner.tick();
     await b.settle();
 
-    // the beta and both pushes wait in Actions even though the agent runs by itself (D6, D18): nothing was cut and nothing was sent
+    // the beta and both pushes wait in Actions even though the agent runs by itself (D6, D18): nothing was cut and nothing was sent, and the run waits for the host to
+    // show the beta, not for the agent to have asked for it
     now = current(b, run);
-    expect(now.stage).toBe('release-feedback');
+    expect(now.stage).toBe('release-beta-out');
+    expect(now.status).toBe('waiting');
+    expect(now.wait?.kind).toBe('beta-out');
     expect(w.git('tag', '--list')).not.toContain('beta');
     expect(w.remote('tag', '--list')).not.toContain('beta');
     const proposals = pending().filter((a) => a.kind === 'release-git');
     expect(proposals.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['beta', 'push-branch', 'push-tag']);
     const say = (op: string, list = proposals) => list.find((a) => (a.unit as { op: string }).op === op)!.id;
-    // the person says yes in order: the cut (the script and the checks run), then the branch, then the tag
+    const codes = (code: string) => b.thread(run).filter((m) => m.kind === 'system' && m.code === code);
+    // the person says yes to the pushes before the cut: each is refused before it runs, nothing is sent, and the thread says why
+    await expect(actions.approveAction(say('push-tag'))).rejects.toThrow(/waits for a step asked in the same stage: .*Cut the next beta/);
+    await expect(actions.approveAction(say('push-branch'))).rejects.toThrow(/waits for a step asked in the same stage: .*Cut the next beta/);
+    await b.settle();
+    expect(codes('runner.release.stepWaits')).toHaveLength(2);
+    expect(codes('runner.release.stepDone')).toHaveLength(0);
+    expect(listAudit().filter((l) => l.kind === 'push')).toEqual([]);
+    // in order: the cut (the script and the checks run), then the branch, then the tag
     await actions.approveAction(say('beta'));
     expect(w.git('tag', '--list')).toContain('v0.5.0-beta.1');
     expect(w.remote('tag', '--list')).not.toContain('beta');
-    for (const op of ['push-branch', 'push-tag']) await actions.approveAction(say(op));
-    expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
-    expect(listAudit().filter((l) => l.kind === 'push').map((l) => l.target)).toEqual(['git push origin refs/tags/v0.5.0-beta.<latest>', 'git push origin <sha>:refs/heads/release/0.5.0']);
-
-    // the run waits for the beta to be out for a day: nothing happens before the host shows it published, nor before the day, nor with a blocking issue open
+    // a cut that stayed in the app's worktree is not a beta on the host
     expect(await b.runner.tick()).toEqual([]);
+    // the branch went out by hand meanwhile: the app's push of it sends nothing, and says so instead of "done"
+    w.steps.git('push', '-q', 'origin', 'release/0.5.0');
+    expect(await actions.approveAction(say('push-branch'))).toMatchObject({ state: 'done', nothingSent: true });
+    await b.settle();
+    expect(codes('runner.release.nothingSent')).toEqual([expect.objectContaining({ params: expect.objectContaining({ detail: expect.stringMatching(/^Nothing sent: the remote already has release\/0\.5\.0 at/) }) })]);
+    await actions.approveAction(say('push-tag'));
+    expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
+    expect(listAudit().filter((l) => l.kind === 'push').map((l) => [l.target, l.fields.sent])).toEqual([['git push origin refs/tags/v0.5.0-beta.<latest>', 'true'], ['git push origin <sha>:refs/heads/release/0.5.0', 'false']]);
+
+    // the tag is on the remote, and the run still waits for the host to show its pre-release published
+    expect(await b.runner.tick()).toEqual([]);
+    expect(current(b, run).stage).toBe('release-beta-out');
     forge.releases.set('v0.5.0-beta.1', { draft: false, prerelease: true, publishedAt: clock.toISOString() });
     await b.runner.tick();
     await b.settle();
+    now = current(b, run);
+    expect(now.stage).toBe('release-feedback');
+    expect(now.status).toBe('waiting');
     expect(comments().some((c) => c.includes('**Beta published**') && c.includes('v0.5.0-beta.1 is out'))).toBe(true);
-    expect(current(b, run).status).toBe('waiting');
+    // then for the beta to be out for a day: nothing happens before the day, nor with a blocking issue open
+    expect(await b.runner.tick()).toEqual([]);
     clock = new Date(clock.getTime() + 25 * 3_600_000);
     forge.issues.set(300, { number: 300, title: 'The beta crashes', body: '', labels: ['beta-blocker'], state: 'open' });
     expect(await b.runner.tick()).toEqual([]);
@@ -344,27 +371,38 @@ describe('the release from the plan to the stable', () => {
     expect(now.stage).toBe('release-stable-gate');
     expect(now.status).toBe('gate');
 
-    // the stable: the cut and the pushes of main and of its tag all wait for a yes; the run ends with them pending
+    // the stable: the cut and the pushes of main and of its tag all wait for a yes, and the run waits for the host to have the stable instead of ending with them pending
     b.runner.gate(run.id, 'approve');
     await b.settle();
     now = current(b, run);
-    expect(now.status).toBe('done');
+    expect(now.stage).toBe('release-stable-out');
+    expect(now.status).toBe('waiting');
     expect(w.git('tag', '--list')).not.toContain('v0.5.0\n');
     const stable = pending().filter((a) => a.kind === 'release-git');
     expect(stable.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['push-branch', 'push-tag', 'stable']);
+    expect(await b.runner.tick()).toEqual([]);
     await actions.approveAction(say('stable', stable));
     expect(w.steps.version).toBe('0.5.0');
     expect(w.git('tag', '--list').split('\n')).toContain('v0.5.0');
     expect(w.argv().flat()).not.toContain('--emergency');
     expect(w.argv().flat()).not.toContain('--allow-branch');
     expect(w.remote('tag', '--list').split('\n')).not.toContain('v0.5.0');
+    // the stable tag is cut but only here: the run is not published
+    expect(await b.runner.tick()).toEqual([]);
+    expect(current(b, run).status).toBe('waiting');
+    // the tag goes after main
+    await expect(actions.approveAction(say('push-tag', stable))).rejects.toThrow(/waits for a step asked in the same stage/);
     for (const op of ['push-branch', 'push-tag']) await actions.approveAction(say(op, stable));
     expect(w.remote('tag', '--list').split('\n')).toContain('v0.5.0');
     expect(w.remote('rev-parse', 'main')).toBe(w.git('rev-parse', 'v0.5.0^{commit}'));
-
-    // the tracking issue stays open until the host shows the stable published; then it says so and is closed, by the agent, through the door
+    // the host has the stable tag on main: the run is published, and ends there
     await b.runner.tick();
     await b.settle();
+    now = current(b, run);
+    expect(now.stage).toBe('release-published');
+    expect(now.status).toBe('done');
+
+    // the tracking issue stays open until the host shows the stable published; then it says so and is closed, by the agent, through the door
     expect(forge.issues.get(200)?.state).toBe('open');
     forge.releases.set('v0.5.0', { draft: false, prerelease: false, publishedAt: clock.toISOString() });
     await b.runner.tick();
@@ -455,17 +493,58 @@ describe('the tool the Release manager asks for the steps with', () => {
 });
 
 describe('what the sweep and the waits read from the host', () => {
-  async function waiting(kind: 'release-approved' | 'beta-age', wait: { minutes?: number; label?: string } = {}): Promise<{ b: Boot; run: Run; over: () => Promise<boolean> }> {
+  async function waiting(kind: 'release-approved' | 'beta-age' | 'beta-out' | 'stable-out', wait: { minutes?: number; label?: string } = {}): Promise<{ b: Boot; run: Run; over: () => Promise<boolean> }> {
     const { b, run } = await start();
     const { createPublisher } = await import('../src/main/runner/publish');
     const { realDoor } = await import('../src/main/runner/door');
     const { getConfig } = await import('../src/main/workspaceConfig');
-    const publisher = createPublisher({ runs: b.runs, forum: b.forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: () => clock, localTags: async () => w.git('tag', '--list').split('\n').filter(Boolean) });
+    const publisher = createPublisher({ runs: b.runs, forum: b.forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: () => clock, localTags: async () => w.git('tag', '--list').split('\n').filter(Boolean), remoteRelease: async () => remoteReleaseOf(w.dir, '0.5.0') });
     b.runs.update(run.id, (r) => ({ run: { ...r, status: 'waiting', wait: { kind, since: clock.toISOString(), ...wait } }, messages: [] }));
     return { b, run, over: async () => (await publisher.waitOver(run.id)).over };
   }
 
   const pr = (number: number, over: Partial<NonNullable<Forge['pr']>> = {}) => forge.others.push({ number, branch: `feat/${number}`, head: `${number}`.repeat(40), base: 'release/0.5.0', files: [], ...over });
+
+  const tag = (name: string) => w.git('-c', 'user.name=t', '-c', 'user.email=t@example.test', 'tag', '-a', name, '-m', name);
+  const published = (name: string) => forge.releases.set(name, { draft: false, prerelease: name.includes('beta'), publishedAt: clock.toISOString() });
+
+  it('beta-out needs the latest beta on the remote, not only in this clone, and its pre-release published', async () => {
+    const { over } = await waiting('beta-out');
+    expect(await over()).toBe(false);
+    w.change('Added', 'a thing for the version');
+    tag('v0.5.0-beta.1');
+    // the host shows a release for it, but the tag was never sent: a cut that stayed here
+    published('v0.5.0-beta.1');
+    expect(await over()).toBe(false);
+    w.git('push', '-q', 'origin', 'v0.5.0-beta.1');
+    expect(await over()).toBe(true);
+    // a newer cut that stayed here: the remote only has the previous beta's tag
+    w.change('Fixed', 'a fix after the beta');
+    tag('v0.5.0-beta.2');
+    expect(await over()).toBe(false);
+    // sent, but its pre-release is not published yet
+    w.git('push', '-q', 'origin', 'v0.5.0-beta.2');
+    expect(await over()).toBe(false);
+    published('v0.5.0-beta.2');
+    expect(await over()).toBe(true);
+  });
+
+  it('stable-out needs the stable tag on the remote with its commit on the remote main, still true after main moved on, and is "not yet" when the remote cannot be read', async () => {
+    const { over } = await waiting('stable-out');
+    w.change('Added', 'the stable');
+    tag('v0.5.0');
+    expect(await over()).toBe(false);
+    // the tag is on the remote, but main there does not have its commit
+    w.git('push', '-q', 'origin', 'v0.5.0');
+    expect(await over()).toBe(false);
+    w.git('push', '-q', 'origin', 'main');
+    expect(await over()).toBe(true);
+    w.change('Fixed', 'something after the stable');
+    w.git('push', '-q', 'origin', 'main');
+    expect(await over()).toBe(true);
+    w.git('remote', 'set-url', 'origin', join(w.root, 'nowhere.git'));
+    expect(await over()).toBe(false);
+  });
 
   it('release-approved goes on when no pull request is open against the branch, and not before', async () => {
     const { over } = await waiting('release-approved');
