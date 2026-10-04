@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
-import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord } from '../src/main/runner/cycleFolder';
+import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, ensureMemory, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord, writeMemory } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
 import { WorktreeError, branchDiff, branchStat, commitAll, commitIdentity, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
@@ -46,14 +46,26 @@ describe('the issue as a document', () => {
 describe('the cycle folder', () => {
   const wt = () => mkdtempSync(join(tmpdir(), 'cycle-folder-'));
 
-  it('writes documents with a final newline, reads the issue first and the documents in name order', () => {
+  it('writes documents with a final newline, reads the memory first, then the issue, then the documents in name order', () => {
     const dir = wt();
     writeIssueRecord(dir, 'docs/cycles/1-x', '# issue');
+    ensureMemory(dir, 'docs/cycles/1-x');
     writeArtifact(dir, 'docs/cycles/1-x', '2_PLAN.md', 'plan');
     writeArtifact(dir, 'docs/cycles/1-x', '1_SPEC.md', 'spec\n');
     expect(readFileSync(join(dir, 'docs/cycles/1-x/2_PLAN.md'), 'utf8')).toBe('plan\n');
-    expect(readFolder(dir, 'docs/cycles/1-x').map((f) => f.name)).toEqual(['0_ISSUE.md', '1_SPEC.md', '2_PLAN.md']);
+    expect(readFolder(dir, 'docs/cycles/1-x').map((f) => f.name)).toEqual([MEMORY_FILE, '0_ISSUE.md', '1_SPEC.md', '2_PLAN.md']);
     expect(readFolder(dir, 'docs/cycles/missing')).toEqual([]);
+  });
+
+  it('reads the memory whole even above its cap, without the cut mark, and gives a run without one the skeleton', () => {
+    const dir = wt();
+    const over = `# ${'x'.repeat(40_000)}`;
+    expect(ensureMemory(dir, 'docs/cycles/1-x')).toBe(true);
+    expect(ensureMemory(dir, 'docs/cycles/1-x')).toBe(false);
+    writeMemory(dir, 'docs/cycles/1-x', over);
+    const memory = readFolder(dir, 'docs/cycles/1-x')[0];
+    expect(memory).toMatchObject({ name: MEMORY_FILE, clipped: false });
+    expect(memory.text).toBe(`${over}\n`);
   });
 
   it('refuses a name that is a path, and writing through a link that leaves the worktree', () => {
@@ -66,14 +78,19 @@ describe('the cycle folder', () => {
     expect(existsSync(join(out, '1_SPEC.md'))).toBe(false);
   });
 
-  it('cuts a long file and says it was cut, and stops reading when the folder is large', () => {
+  it('cuts the oldest documents first, each marked, and keeps whole the ones the stage declared it reads', () => {
     const dir = wt();
     mkdirSync(join(dir, 'f'));
     for (const n of ['1_A.md', '2_B.md', '3_C.md', '4_D.md', '5_E.md']) writeFileSync(join(dir, 'f', n), 'x'.repeat(50_000));
     const files = readFolder(dir, 'f');
-    expect(files[0]).toMatchObject({ name: '1_A.md', clipped: true });
+    // The budget of the folder runs out on the newest: the oldest are the ones left out.
+    expect(files.map((f) => f.name)).toEqual(['2_B.md', '3_C.md', '4_D.md', '5_E.md']);
+    expect(files[0]).toMatchObject({ name: '2_B.md', clipped: true });
     expect(files[0].text).toHaveLength(30_000);
-    expect(files.length).toBe(4);
+    // What the stage declared it reads is whole, whatever its place in the name order.
+    const kept = readFolder(dir, 'f', ['3_C.md', '4_D.md']);
+    expect(kept.map((f) => f.name)).toEqual(['1_A.md', '2_B.md', '3_C.md', '4_D.md', '5_E.md']);
+    expect(kept.filter((f) => f.name === '3_C.md' || f.name === '4_D.md').every((f) => !f.clipped && f.text.length === 50_000)).toBe(true);
   });
 });
 

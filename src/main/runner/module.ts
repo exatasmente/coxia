@@ -120,6 +120,7 @@ export const runsModule: Module = (ctx) => {
     const found = typeof run === 'string' ? r.get(run) : null;
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
+  ctx.handle('runs:memory', (run: unknown, body: unknown) => r.editMemory(id(run), text(body)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
   // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
   ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));

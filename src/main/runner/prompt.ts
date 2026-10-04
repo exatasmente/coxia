@@ -5,7 +5,8 @@ import { type FlowStage, type ReviewRecord, type Run, findingText } from '../../
 import { t } from '../../shared/i18n';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { CommandResult } from './commands';
-import { type FolderFile, ISSUE_FILE } from './cycleFolder';
+import { type FolderFile, ISSUE_FILE, MEMORY_FILE } from './cycleFolder';
+import { MEMORY_MAX } from './memory';
 
 // The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
 // language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
@@ -61,6 +62,8 @@ export interface StageInput {
   priorityHint?: string[];
   /** A release run: the section that says which version, the state of its branch and the activities as last read (already fenced). */
   release?: string;
+  /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
+  memory?: { over: boolean; max: number } | null;
 }
 
 const MESSAGE_MAX = 1500;
@@ -96,6 +99,7 @@ export function systemText(i: StageInput): string {
     i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     cp('runner.rules.data'),
+    cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
     agents.persona.trim(),
     agents.extraInstructions.trim(),
@@ -148,6 +152,7 @@ export function stagePrompt(i: StageInput): string {
   const sections: string[] = [];
   for (const f of i.files) {
     sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
+    if (f.name === MEMORY_FILE && i.memory?.over) sections.push(cp('runner.section.memoryOver', { max: i.memory.max }));
   }
   if (i.diff) {
     const body = i.diff.text.trim() ? i.diff.text.slice(0, DIFF_MAX) : cp('runner.section.diffNone');
@@ -167,6 +172,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }
