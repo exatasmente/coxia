@@ -21,7 +21,8 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command']);
 
 // forum:* (list, read, post, create) read and write the workspace's own thread files and nothing else, so a paired browser may use them: the
 // phone is where a person answers a question. A mention calls on an agent that never writes to the run (its commands run over a copy, an issue it proposes waits in actions:approve), and a post is never mirrored to
-// the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
+// the code host by itself. An `@agent` calls that agent wherever a person may post, not only in a run's thread: that is the mention rule, and it changes no channel of this policy.
+// test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
 // runs:* are all open to a paired browser, except runs:startRelease and runs:command (above), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
 // undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a

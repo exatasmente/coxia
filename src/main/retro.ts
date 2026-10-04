@@ -5,6 +5,7 @@ import { refsOfSquad } from '../shared/squadCards';
 import type { Retro } from '../shared/types';
 import { listActions } from './actions';
 import { askAgent, obj, str } from './agents';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatDate, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
@@ -177,6 +178,7 @@ export async function prepareRetro(squad: string | null = null): Promise<Retro> 
 export async function askRetro(id: string, question: string): Promise<Retro> {
   const retro = read(id);
   if (!retro) throw new Error(t('main.retro.notFound'));
+  const mentioned = await answerCeremonyMentions(question, { thread: retro.id, ref: retro.id, title: retro.id, msgs: retro.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
   const r = await askAgent<{ fala: string; texto: string; melhorias?: RetroImprovement[] }>(
     'deep',
     cp('retro.ask', { question }),
@@ -184,7 +186,11 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
     { maxTurns: 10, ...(retro.sessionId ? { resume: retro.sessionId } : {}) },
   );
   retro.sessionId = r.sessionId || retro.sessionId;
-  retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
+  retro.talk.push(
+    { me: true, text: question, at: now() },
+    ...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })),
+    { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) },
+  );
   await proposeRetroIssues(retro, r.data.melhorias ?? []);
   return write(retro);
 }

@@ -207,6 +207,12 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
     setPhase('thinking');
     try {
       const r = await api.reply(card, turn, text);
+      // The agents the person named answer in the ceremony, each in its own name and voice, before the system agent takes over.
+      for (const m of r.mentions ?? []) {
+        cc.addLog(m.name, m.text, cc.colorOf(card.ref));
+        const voice = cc.voiceOfAgent(m.agent);
+        if (voice) await player.say(m.speech, voice, m.agent).catch(() => undefined);
+      }
       cc.addLog(`#${card.iid}`, r.ack, cc.colorOf(card.ref));
       if (r.decision) cc.addDecision(r.decision);
       if (r.priority) cc.addDecision(r.priority);

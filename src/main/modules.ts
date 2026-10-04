@@ -14,6 +14,7 @@ import { forumModule } from './forum';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
+import { mentionsModule } from './mentions/module';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
-import { type ForumDraft, type ForumMessage, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
+import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import {
   type FlowStage,
@@ -103,7 +103,8 @@ import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage,
 import { type CommandRunner, outcomeOf } from './commands';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
-import { mentionCall, readProposedIssue } from './mention';
+import { answerMentions } from '../mentions/answer';
+import type { MentionPlace } from '../mentions/place';
 import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
@@ -971,7 +972,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   function openCalls(runId: string, run: { worktree: string }, message: ForumMessage): void {
     const team = deps.config().agents.team;
     const cwd = existsSync(run.worktree) ? run.worktree : deps.env().fallbackCwd;
-    for (const id of message.mentions.slice(0, 3)) {
+    for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
       if (!team.some((a) => a.id === id) || calls.has(callKey(runId, message.seq, id))) continue;
       const queued = (liveCalls.get(runId) ?? 0) > 0;
       const activity = beginCallActivity(id, { jobId: `run:${runId}`, call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, cwd) });
@@ -991,70 +992,37 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // The agent answers in the thread without ever writing to the run: whatever its own permission is, a mention never gets it Edit or Write. An agent set to run
   // commands runs them over a throwaway copy of the code (with the person's yes per command on `host`), and one that reads the code host may propose an issue,
-  // which waits in Actions.
+  // which waits in Actions. The loop is the mentions core; the run is one of its places, with the worktree, the flow stage and the publisher of a run.
   async function answerMention(runId: string, message: ForumMessage): Promise<void> {
     const run = deps.runs.get(runId);
     if (!run) {
       // The run went away while the call waited: its line would wait forever.
-      for (const id of message.mentions.slice(0, 3)) {
+      for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
         calls.get(callKey(runId, message.seq, id))?.activity.status('failed');
         releaseCall(runId, message.seq, id);
       }
       return;
     }
-    const config = deps.config();
-    const threadId = runThreadId(runId);
-    const stage = run.stage;
-    for (const id of message.mentions.slice(0, 3)) {
-      const def = config.agents.team.find((a) => a.id === id);
-      if (!def) {
-        releaseCall(runId, message.seq, id);
-        continue;
-      }
-      const made = calls.get(callKey(runId, message.seq, id)) ?? null;
-      const reader = { ...def, permission: 'read' as const };
-      const env = deps.env();
-      const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
-      const thread = deps.forum.read(threadId, 0, 2000)?.messages ?? [];
-      const abort = new AbortController();
-      const watch = watchdog(abort, limitsOf(config, deps));
-      const clock: StageClock = { pause: () => watch.pause(), allowed: new Set() };
-      let session: Awaited<ReturnType<typeof openStageSandbox>> | null = null;
-      // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
-      let ran = false;
-      try {
-        const flowStage = flowFor(run).find((s) => s.id === stage);
-        if ((def.shell === 'sandbox' || def.shell === 'host') && flowStage && existsSync(run.worktree)) {
-          // A machine that cannot make the sandbox still gets the answer, read only, and the thread says why it ran nothing.
-          session = await openStageSandbox(exec, run, flowStage, reader, false, abort.signal, clock).catch((e: unknown) => {
-            deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }, stage });
-            return null;
-          });
-        }
-        const proposes = !!deps.publisher && (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
-        const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined, issue: proposes });
-        if (made) call.activity = made.activity;
-        if (session) call.exec = session;
-        call.beat = watch.beat;
-        // The call waited its turn: it says it is working now, when it really begins.
-        if (made?.queued) made.activity.status('started');
-        ran = true;
-        const r = await watch.guard(withActivityContext(`run:${runId}`, () => deps.engine(call, [])));
-        const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
-        if (!text) throw new StageError('empty-answer');
-        deps.forum.append(threadId, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
-        const issue = proposes ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
-        if (issue && deps.publisher) await deps.publisher.proposeIssue(runId, { key: `${message.seq}-${id}`, title: issue.title, body: issue.body, labels: issue.labels, by: id, stage });
-      } catch (e) {
-        const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
-        // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
-        if (!ran) made?.activity.status('failed', reason);
-        deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
-      } finally {
-        await session?.close().catch(() => undefined);
-        releaseCall(runId, message.seq, id);
-      }
-    }
+    const place: MentionPlace = { thread: runThreadId(runId), kind: 'run', run, repos: [] };
+    await answerMentions(place, message, {
+      forum: deps.forum,
+      config: deps.config,
+      engine: deps.engine,
+      sandbox: exec.sandbox,
+      env: deps.env,
+      openSession: async (p, def, cwd, stage, signal, watch) => {
+        const r = p.run;
+        if (!r || !stage) return null;
+        const flowStage = flowFor(r).find((s) => s.id === stage);
+        if (!flowStage || !existsSync(r.worktree)) return null;
+        const clock: StageClock = { pause: watch.pause, allowed: new Set() };
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+      },
+      // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
+      callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
+      release: (id) => releaseCall(runId, message.seq, id),
+      proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
+    });
   }
 
   // ---- agents talk before they ask the person ----------------------------------------------------------------------------------------

@@ -27,6 +27,7 @@ import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
@@ -685,6 +686,8 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
 }
 
 export async function reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult> {
+  // A named agent answers first, in the ceremony: the system agent still leads and takes over after.
+  const mentions = await answerCeremonyMentions(text, { thread: card.ref, ref: card.ref, title: card.title, msgs: [] });
   const targets = [
     cycle().specLayout.decisionLog.heading && cycle().enrichment.specFolder ? cp('reply.targetSpec') : '',
     rc().cardSource?.noteArgs.length ? cp('reply.targetNote') : '',
@@ -724,10 +727,12 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     effect: r.data.efeito ? { ref: card.ref, text: r.data.efeito.texto, repo: r.data.efeito.repo } : null,
     needsDeepDive: r.data.desbloqueio,
     options: options(r.data.opcoes),
+    ...(mentions.length ? { mentions } : {}),
   };
 }
 
 export async function deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer> {
+  const mentions = await answerCeremonyMentions(question, { thread: card.ref, ref: card.ref, title: card.title, msgs: [] });
   const prompt = cp(
     'deep.main',
     {
@@ -741,7 +746,7 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
   });
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}), ...(mentions.length ? { mentions } : {}) };
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {

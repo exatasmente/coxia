@@ -166,7 +166,7 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">{t('ui.qa.questions')}</h2>
                 {qa.talk.map((m, i) => (
-                  <Bubble key={i} m={m} who={m.me ? t('ui.qa.who.question') : t('ui.qa.who.agent')} voice={voice} player={player} speaker="qa" />
+                  <Bubble key={i} m={m} who={m.me ? t('ui.qa.who.question') : m.agent ? c.agentNameOf(m.agent) : t('ui.qa.who.agent')} voice={m.agent ? c.voiceOfAgent(m.agent) : voice} player={player} speaker={m.agent ?? 'qa'} />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}
