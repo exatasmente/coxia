@@ -1,5 +1,5 @@
 // What each job's agent runs are doing, as the main process reports it. DOM-free: the React side is in useActivity.ts.
-import { ACTIVITY_RING, type ActivityEntry, runActive } from '../../shared/activity';
+import { ACTIVITY_RING, type ActivityCall, type ActivityEntry, runActive } from '../../shared/activity';
 
 const entryKey = (e: ActivityEntry): string => `${e.runId}:${e.seq}`;
 const order = (a: ActivityEntry, b: ActivityEntry): number => a.at - b.at || a.seq - b.seq;
@@ -23,6 +23,46 @@ export function activeRunIds(entries: readonly ActivityEntry[]): string[] {
 /** The step to show on one line: the newest entry. */
 export function latestStep(entries: readonly ActivityEntry[]): ActivityEntry | null {
   return entries[entries.length - 1] ?? null;
+}
+
+/** One `@` call still going: the agent it asks, the message that named it, and the lines it has produced so far. */
+export interface CallGroup {
+  agent: string;
+  /** The thread the call belongs to (`run-<id>`). */
+  thread: string;
+  /** The sequence of the message that named the agent. */
+  message: number;
+  /** The activity run that answers the call: what tells two calls of one agent apart. */
+  runId: string;
+  /** The newest line of the call: what a one-line notice shows. */
+  entry: ActivityEntry;
+  /** Every line of the call, oldest first. */
+  entries: ActivityEntry[];
+  /** When the call was accepted: where a call's own clock starts. */
+  since: number;
+}
+
+/**
+ * The `@` calls still going, one group per call, oldest first. A call is the activity run that answers it, and only the lines carrying a call
+ * belong here: the work of a run's own stage has no call and is never part of a group.
+ */
+export function callGroups(entries: readonly ActivityEntry[]): CallGroup[] {
+  const list = entries as ActivityEntry[];
+  const buckets = new Map<string, ActivityEntry[]>();
+  for (const e of list) {
+    if (!e.call) continue;
+    const bucket = buckets.get(e.runId);
+    if (bucket) bucket.push(e);
+    else buckets.set(e.runId, [e]);
+  }
+  const groups: CallGroup[] = [];
+  for (const [runId, bucket] of buckets) {
+    const lines = bucket.sort(order);
+    if (!runActive(lines, runId)) continue;
+    const { agent, thread, message } = lines[0].call as ActivityCall;
+    groups.push({ agent, thread, message, runId, entry: lines[lines.length - 1], entries: lines, since: lines[0].at });
+  }
+  return groups.sort((a, b) => a.since - b.since || a.entry.seq - b.entry.seq);
 }
 
 /** Whether a scrolled list is at its end (within `slack` px), so new lines should keep it there. */

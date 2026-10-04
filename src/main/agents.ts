@@ -906,6 +906,8 @@ export interface AgentCall {
   exec?: SandboxSession;
   /** What the live activity calls it (the agent's id). */
   label: string;
+  /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
+  activity?: RunActivity;
   maxTurns: number;
   abort?: AbortController;
   /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
@@ -956,8 +958,9 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
 export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
   const resolved = rc().agentModel(call.agent.model);
   const target = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
-  const activity = beginActivity(call.label, (p) => secretPath(p, call.cwd));
-  activity.status('started');
+  const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
+  // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
+  if (!call.activity) activity.status('started');
   try {
     const { allowedTools, shell, tracker } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;

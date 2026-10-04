@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A call to an agent in a run's thread shows that it is working.** Right under the message that named an agent with `@`, a transient line says the call was taken: first that the agent is working (or, when the run already has a call going, that this one waits its turn), then the live step (a file being read, a tool being run). The line goes when that agent's answer arrives, or when the call fails; a message that names two or three agents gets one line each. On the run screen the live activity panel now appears while a call runs, whatever the run's own status — including while it waits at a gate or a question, which is when a call usually happens — under the called agent's name. In the jobs dock the call is no longer the generic *Agent* entry: it names the agent and the run, and opening it goes to that run's thread. The paired browser shows the same, since the thread, the run screen and the dock are the same. The call stays read-only and keeps its silence and wall-clock limits.
+
 ### Fixed
 
 - **A release run no longer moves on, or ends, with a release the host does not have.** In the release flow, saying yes to a push before the cut of the same stage sent nothing, and the cut then stayed in the app's own worktree; the run still went on and ended at *Published* with neither the beta nor the stable on the host. Now a push asked in the same stage as a cut can only be approved once that cut is done (Actions says what it waits for, and a yes given out of order is refused with nothing run, with the reason in the run's thread too). A push that finds the remote already holding what it would send ends as **nothing sent**, not as done. Two new waits keep the run from going past the cut: *Beta on the host* (the beta's tag on the remote and its pre-release published) and *Stable on the host* (the stable tag on the remote's `main`). A workspace that applied the release flow before this keeps the old one: apply the template again to get the waits.

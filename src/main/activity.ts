@@ -8,6 +8,7 @@ import {
   ACTIVITY_LABEL_MAX,
   ACTIVITY_RING,
   ACTIVITY_TEXT_MAX,
+  type ActivityCall,
   type ActivityEntry,
   type ActivityState,
 } from '../shared/activity';
@@ -33,6 +34,8 @@ interface Run {
   jobId: string | null;
   callId: string | null;
   role: string;
+  /** The `@` call this run answers, when a message asked for it. */
+  call: ActivityCall | null;
   entries: ActivityEntry[];
 }
 
@@ -91,15 +94,15 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
     return !last || last.state === 'finished' || last.state === 'failed';
   };
 
-  function begin(role: string, o: { jobId?: string | null; callId?: string | null; isSecretPath?: (token: string) => boolean } = {}): RunActivity {
-    const run: Run = { id: randomUUID(), jobId: o.jobId ?? null, callId: o.callId ?? null, role, entries: [] };
+  function begin(role: string, o: { jobId?: string | null; callId?: string | null; call?: ActivityCall | null; isSecretPath?: (token: string) => boolean } = {}): RunActivity {
+    const run: Run = { id: randomUUID(), jobId: o.jobId ?? null, callId: o.callId ?? null, role, call: o.call ?? null, entries: [] };
     runs.set(run.id, run);
     evict();
     let pending = '';
 
     const emit = (kind: ActivityEntry['kind'], label: string, state?: ActivityState): void => {
       if (!label) return;
-      const entry: ActivityEntry = { seq: ++seq, runId: run.id, jobId: run.jobId, role, at: now(), kind, label, ...(state ? { state } : {}) };
+      const entry: ActivityEntry = { seq: ++seq, runId: run.id, jobId: run.jobId, role, at: now(), kind, label, ...(state ? { state } : {}), ...(run.call ? { call: run.call } : {}) };
       run.entries.push(entry);
       if (run.entries.length > ring) run.entries.splice(0, run.entries.length - ring);
       try {
@@ -143,11 +146,14 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
     };
   }
 
-  /** Entries of a run (by run id), of the latest invocation of a job (by job id), or of the runs no job asked for (null or ''). */
+  /**
+   * Entries of a run (by run id), of the latest invocation of a job (by job id), or of the runs no job asked for (null or '').
+   * A job that also has a call still going keeps it in the answer: a call waiting its turn is not the job's latest invocation.
+   */
   function get(id: string | null): ActivityEntry[] {
     if (id && runs.has(id)) return [...(runs.get(id) as Run).entries];
     const call = id ? latestCall.get(id) : undefined;
-    const picked = [...runs.values()].filter((r) => (id ? r.jobId === id && (!call || r.callId === call) : r.jobId === null));
+    const picked = [...runs.values()].filter((r) => (id ? r.jobId === id && (!call || r.callId === call || !isDone(r)) : r.jobId === null));
     return picked.flatMap((r) => r.entries).sort((a, b) => a.seq - b.seq).slice(-ring);
   }
 
@@ -188,4 +194,12 @@ export function currentJobId(): string | null {
 export function beginActivity(role: string, isSecretPath?: (token: string) => boolean): RunActivity {
   const ctx = als.getStore();
   return activityLog.begin(role, { jobId: ctx?.jobId ?? null, callId: ctx?.callId ?? null, isSecretPath });
+}
+
+/**
+ * The run of an `@` call, made as soon as the message is accepted: it belongs to the run's own activity context and carries the call's identity, so
+ * the line exists while the call still waits its turn, before the engine starts it.
+ */
+export function beginCallActivity(role: string, o: { jobId: string; call: ActivityCall; isSecretPath?: (token: string) => boolean }): RunActivity {
+  return activityLog.begin(role, { jobId: o.jobId, call: o.call, isSecretPath: o.isSecretPath });
 }

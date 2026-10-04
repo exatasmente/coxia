@@ -165,6 +165,22 @@ describe('the job of a call', () => {
     expect(activityLog.get('qa:#2:prepare').map((e) => e.runId)).toEqual([inside.id]);
   });
 
+  it('keeps a call that still waits its turn when a later invocation of the job is read back', () => {
+    const log = createActivityLog();
+    // A call accepted while another of the run still goes: it is alive and it is not the job's latest invocation.
+    const queued = log.begin('dev', { jobId: 'run:r1', callId: 'call-1' });
+    log.startCall('run:r1', 'call-1');
+    queued.status('queued');
+    // A later invocation of the same job that already finished: the recovery read must still bring the waiting call.
+    const later = log.begin('qa', { jobId: 'run:r1', callId: 'call-2' });
+    log.startCall('run:r1', 'call-2');
+    later.status('started');
+    later.status('finished');
+    // The reading of the context brings both: the call still waiting and the later one that already ended.
+    expect(new Set(log.get('run:r1').map((e) => e.runId))).toEqual(new Set([queued.id, later.id]));
+    expect(log.get('run:r1').filter((e) => e.runId === queued.id).every((e) => e.state === 'queued')).toBe(true);
+  });
+
   it('reaches the handler through the rpc layer without changing its arguments', async () => {
     const calls: { args: unknown[]; job: string | null }[] = [];
     handle('test:activity-job', ((...args: unknown[]) => {

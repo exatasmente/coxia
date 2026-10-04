@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ActivityEntry } from '../src/shared/activity';
+import type { ActivityCall, ActivityEntry } from '../src/shared/activity';
 import { tagArgs, takeContext } from '../src/shared/activity';
-import { activeRunIds, atBottom, createActivityStore, latestStep, mergeEntries, strayActivity } from '../src/renderer/src/activity';
+import { activeRunIds, atBottom, callGroups, createActivityStore, latestStep, mergeEntries, strayActivity } from '../src/renderer/src/activity';
 import { createJobStore, currentJob, withJob } from '../src/renderer/src/jobs';
 
 let seq = 0;
@@ -120,6 +120,39 @@ describe('running runs and the latest step', () => {
       store.add(e);
     const stray = strayActivity(store.snapshot(), new Set(['deep:#1:ask']));
     expect(stray.map((e) => e.runId)).toEqual(['free', 'free', 'prep']);
+  });
+});
+
+describe('the calls still going', () => {
+  const call = (over: Partial<ActivityCall> = {}): ActivityCall => ({ agent: 'dev', thread: 'run-1', message: 3, ...over });
+
+  it('groups the lines per call, oldest first, and offers the newest line of each', () => {
+    const started = status('started', { runId: 'c1', at: 100, call: call() });
+    const read = entry({ runId: 'c1', at: 110, call: call() });
+    const second = status('started', { runId: 'c2', at: 120, call: call({ agent: 'qa', message: 4 }) });
+    const groups = callGroups([started, read, second]);
+    expect(groups.map((g) => [g.runId, g.agent, g.message, g.entry])).toEqual([
+      ['c1', 'dev', 3, read],
+      ['c2', 'qa', 4, second],
+    ]);
+    expect(groups[0].entries).toEqual([started, read]);
+    expect(groups[0].since).toBe(100);
+  });
+
+  it('keeps a queued call, drops a finished one, and ignores the work of a run', () => {
+    const queued = [status('queued', { runId: 'c1', call: call() }), status('started', { runId: 'c1', call: call() })];
+    const done = [status('started', { runId: 'c2', call: call({ agent: 'qa' }) }), status('finished', { runId: 'c2', call: call({ agent: 'qa' }) })];
+    const stage = [status('started', { runId: 's' }), entry({ runId: 's' })];
+    expect(callGroups([...queued, ...done, ...stage]).map((g) => g.runId)).toEqual(['c1']);
+  });
+
+  it('tells two calls of the same agent in different messages apart', () => {
+    const a = status('started', { runId: 'c1', call: call({ message: 3 }) });
+    const b = status('started', { runId: 'c2', call: call({ message: 5 }) });
+    expect(callGroups([a, b]).map((g) => [g.runId, g.message])).toEqual([
+      ['c1', 3],
+      ['c2', 5],
+    ]);
   });
 });
 

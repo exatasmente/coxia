@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { applyTemplate, kanban } from '../src/shared/cycles';
 import { messageText } from '../src/shared/forum';
 import { RunError, type Run } from '../src/shared/runs';
+import { activityLog } from '../src/main/activity';
 import { RunnerError } from '../src/main/runner/service';
 import { git, withMachineIdentity } from './helpers/conflictRepos';
 import { type Boot, boot, doc, fakeCommands, fakeEngine, fakeIssues, issue, makeRepo, work } from './helpers/runner';
@@ -783,6 +784,34 @@ describe('the thread', () => {
     b.runner.onMessage(m);
     await b.settle();
     expect(b.thread(run).find((x) => x.code === 'runner.mentionFailed')?.params).toMatchObject({ agent: 'qa', reason: 'model unavailable' });
+  });
+
+  it('opens a line for every agent named, and says the one that waits its turn', async () => {
+    const b = await boot();
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('refiner', () => ({ text: 'The scope is the X case.' }));
+    b.engine.script('qa', () => ({ text: 'Looks fine.' }));
+    const before = b.engine.calls.length;
+    const thread = `run-${run.id}`;
+    const [first] = b.forum.append(thread, { kind: 'post', author: { type: 'person' }, text: '@refiner what is the scope?', mentions: ['refiner'] });
+    b.runner.onMessage(first);
+    const [second] = b.forum.append(thread, { kind: 'post', author: { type: 'person' }, text: '@qa and you?', mentions: ['qa'] });
+    b.runner.onMessage(second);
+    // Both lines exist before the engine got to run: the second names the agent and says it waits.
+    const lines = activityLog.get(`run:${run.id}`).filter((e) => e.call);
+    expect(lines.map((e) => [e.call?.agent, e.call?.message, e.call?.thread, e.state])).toEqual([
+      ['refiner', first.seq, thread, 'started'],
+      ['qa', second.seq, thread, 'queued'],
+    ]);
+    await b.settle();
+    // The engine ran each call under the very activity the line belongs to, one after the other.
+    expect(b.engine.calls.slice(before).map((c) => [c.agent.id, c.activity?.id])).toEqual([
+      ['refiner', lines[0].runId],
+      ['qa', lines[1].runId],
+    ]);
+    expect(b.thread(run).some((m) => m.author.type === 'agent' && m.text === 'Looks fine.')).toBe(true);
   });
 
   it('takes a post that answers the question of the run as the answer, but not one that names an agent, nor one when nothing is asked', async () => {

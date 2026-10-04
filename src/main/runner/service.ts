@@ -80,8 +80,8 @@ import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
 import { updateAgent } from '../../shared/config/team';
-import { withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
+import { beginCallActivity, type RunActivity, withActivityContext } from '../activity';
+import { type AgentCall, secretPath } from '../agents';
 import { findClone, git } from '../conflictGit';
 import { ensureDependencies } from './dependencies';
 import { redact } from '../errorlog-core';
@@ -264,6 +264,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   const again = new Set<string>();
   const aborts = new Map<string, AbortController>();
   const mentions = new Map<string, Promise<void>>();
+  // The `@` calls that were accepted and not yet finished, and how many of them each run has going: a second call of a run is opened as waiting.
+  const calls = new Map<string, { activity: RunActivity; queued: boolean }>();
+  const liveCalls = new Map<string, number>();
   const chains = new Map<string, Promise<void>>();
   const chainAborts = new Map<string, AbortController>();
   // The command each run's working stage waits for the person to allow (`shell: host`): one at a time, since a stage runs one command at a time. Never saved: it
@@ -851,6 +854,14 @@ export function createRunner(deps: RunnerDeps): Runner {
     onMessage(message) {
       if (message.author.type !== 'person' || message.kind !== 'post' || !message.mentions.length || !message.thread.startsWith('run-')) return;
       const runId = message.thread.slice(4);
+      const run = deps.runs.get(runId);
+      if (!run) return;
+      // Each agent named gets its call line at once, before the queue: the person sees who was called and who waits its turn.
+      try {
+        openCalls(runId, run, message);
+      } catch (e) {
+        console.error('[runner] could not open the mention calls', runId, e instanceof Error ? e.message : e);
+      }
       const prior = mentions.get(runId) ?? Promise.resolve();
       // One answer at a time per run: the thread reads in order.
       const next = prior.then(() => answerMention(runId, message)).catch(() => undefined);
@@ -932,18 +943,53 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- the agents named in a message ------------------------------------------------------------------------------------------------
 
+  const callKey = (runId: string, message: number, agent: string): string => `${runId}:${message}:${agent}`;
+
+  // Every agent named in the message gets its call as soon as the message is accepted, before the queue: the line exists while it waits its turn.
+  function openCalls(runId: string, run: { worktree: string }, message: ForumMessage): void {
+    const team = deps.config().agents.team;
+    const cwd = existsSync(run.worktree) ? run.worktree : deps.env().fallbackCwd;
+    for (const id of message.mentions.slice(0, 3)) {
+      if (!team.some((a) => a.id === id) || calls.has(callKey(runId, message.seq, id))) continue;
+      const queued = (liveCalls.get(runId) ?? 0) > 0;
+      const activity = beginCallActivity(id, { jobId: `run:${runId}`, call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, cwd) });
+      activity.status(queued ? 'queued' : 'started');
+      calls.set(callKey(runId, message.seq, id), { activity, queued });
+      liveCalls.set(runId, (liveCalls.get(runId) ?? 0) + 1);
+    }
+  }
+
+  /** The call is over (it answered or it failed): the line goes with it, and the next one of the run may begin. */
+  function releaseCall(runId: string, message: number, agent: string): void {
+    if (!calls.delete(callKey(runId, message, agent))) return;
+    const left = (liveCalls.get(runId) ?? 1) - 1;
+    if (left > 0) liveCalls.set(runId, left);
+    else liveCalls.delete(runId);
+  }
+
   // The agent answers in the thread without ever writing to the run: whatever its own permission is, a mention never gets it Edit or Write. An agent set to run
   // commands runs them over a throwaway copy of the code (with the person's yes per command on `host`), and one that reads the code host may propose an issue,
   // which waits in Actions.
   async function answerMention(runId: string, message: ForumMessage): Promise<void> {
     const run = deps.runs.get(runId);
-    if (!run) return;
+    if (!run) {
+      // The run went away while the call waited: its line would wait forever.
+      for (const id of message.mentions.slice(0, 3)) {
+        calls.get(callKey(runId, message.seq, id))?.activity.status('failed');
+        releaseCall(runId, message.seq, id);
+      }
+      return;
+    }
     const config = deps.config();
     const threadId = runThreadId(runId);
     const stage = run.stage;
     for (const id of message.mentions.slice(0, 3)) {
       const def = config.agents.team.find((a) => a.id === id);
-      if (!def) continue;
+      if (!def) {
+        releaseCall(runId, message.seq, id);
+        continue;
+      }
+      const made = calls.get(callKey(runId, message.seq, id)) ?? null;
       const reader = { ...def, permission: 'read' as const };
       const env = deps.env();
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
@@ -952,6 +998,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       const watch = watchdog(abort, limitsOf(config, deps));
       const clock: StageClock = { pause: () => watch.pause(), allowed: new Set() };
       let session: Awaited<ReturnType<typeof openStageSandbox>> | null = null;
+      // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
+      let ran = false;
       try {
         const flowStage = flowFor(run).find((s) => s.id === stage);
         if ((def.shell === 'sandbox' || def.shell === 'host') && flowStage && existsSync(run.worktree)) {
@@ -963,8 +1011,12 @@ export function createRunner(deps: RunnerDeps): Runner {
         }
         const proposes = !!deps.publisher && (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
         const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined, issue: proposes });
+        if (made) call.activity = made.activity;
         if (session) call.exec = session;
         call.beat = watch.beat;
+        // The call waited its turn: it says it is working now, when it really begins.
+        if (made?.queued) made.activity.status('started');
+        ran = true;
         const r = await watch.guard(withActivityContext(`run:${runId}`, () => deps.engine(call, [])));
         const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
         if (!text) throw new StageError('empty-answer');
@@ -973,9 +1025,12 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (issue && deps.publisher) await deps.publisher.proposeIssue(runId, { key: `${message.seq}-${id}`, title: issue.title, body: issue.body, labels: issue.labels, by: id, stage });
       } catch (e) {
         const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+        // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
+        if (!ran) made?.activity.status('failed', reason);
         deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
       } finally {
         await session?.close().catch(() => undefined);
+        releaseCall(runId, message.seq, id);
       }
     }
   }
