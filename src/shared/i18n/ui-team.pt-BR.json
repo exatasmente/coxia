@@ -166,6 +166,7 @@
   "ui.flow.up": "Subir {name}",
   "ui.flow.wait.beta-age": "a última beta ficar um tempo no ar sem nada que a bloqueie",
   "ui.flow.wait.beta-out": "a última beta estar no host (a tag no remoto, a pré-release publicada)",
+  "ui.flow.wait.budget": "o provedor voltar a ter orçamento na chave",
   "ui.flow.wait.label": "a issue ganhar um rótulo",
   "ui.flow.wait.linked-done": "as execuções pedidas a outro squad terminarem",
   "ui.flow.wait.pr-merged": "o {crLong} ser integrado",

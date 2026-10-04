@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { ChatClient, type ProviderConfig } from './client';
 import { type DocSources, discoverClaudeMd } from './context';
+import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
+import { ProviderBudgetError } from '../contract';
 import type { Json } from './types';
 import { existsSync } from 'node:fs';
 
@@ -108,6 +110,8 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
     return { data: r.data, sessionId: r.sessionId, sources: r.sources };
   } catch (e) {
     if (e instanceof OpenMaxTurnsError) throw a.makeMaxTurnsError(e.sessionId, e.sources);
+    // A refusal by budget is a wait, not a failure of the stage: it goes up as a reason of its own, with the provider that answered.
+    if (e instanceof EngineError && e.kind === 'budget') throw new ProviderBudgetError(a.selection.provider.model, 'open', e.message);
     throw e;
   }
 }

@@ -272,6 +272,8 @@ export interface BootOptions {
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
+  /** The one small call the sweep makes to a provider whose key ran out of budget; without it the runs keep waiting. */
+  probeBudget?: RunnerDeps['probeBudget'];
   /** The clock the runner and its publisher read (a release run's waits are about how long ago something was published). */
   now?: () => Date;
   /** The tags a release run's wait for its beta reads. */
@@ -315,6 +317,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     sandbox: options.sandbox,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
+    probeBudget: options.probeBudget,
     now: options.now,
   };
   if (options.publish) {

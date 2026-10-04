@@ -149,6 +149,7 @@ describe('hints', () => {
     ['Sem conexão com git.example.test: ENOTFOUND', 'job:feedback', 'Sem rede ou VPN'],
     ['Request failed with status code 401: user not found (OpenRouter)', 'rpc:agent:reply', 'chave ou saldo da OpenRouter'],
     ['API Error: 402 Payment Required', 'rpc:deep:ask', 'chave ou saldo da OpenRouter'],
+    ['agent failed: Failed to authenticate. API Error: 403 Key limit exceeded (monthly limit)', 'rpc:agent:reply', 'orçamento da chave'],
     ['glab: You are not logged in to git.example.test', 'job:status', 'acesso ao host de código foi recusado'],
     ['git.example.test recusou a credencial (HTTP 401). Confira o token ou refaça o login do CLI.', 'job:feedback', 'acesso ao host de código foi recusado'],
     ['spawn gh ENOENT', 'rpc:cards:load', 'CLI do host de código'],

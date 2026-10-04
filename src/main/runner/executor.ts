@@ -7,7 +7,7 @@ import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
-import { MaxTurnsError } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
@@ -27,7 +27,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -37,7 +37,11 @@ export class StageError extends Error {
   ) {
     super(t(`main.runner.error.${code}`, params));
     this.name = 'StageError';
+    this.params = params;
   }
+
+  /** What built the message: the runner reads the provider of a budget refusal out of here. */
+  readonly params: Record<string, string | number>;
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
@@ -431,6 +435,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     data = (await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)))).data;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
+    if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
     throw e;
   } finally {
     // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.

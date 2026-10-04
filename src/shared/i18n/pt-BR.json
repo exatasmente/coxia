@@ -358,6 +358,7 @@
   "prompt.sdd.system.stopped": "O agente parou antes de terminar (limite de passos) e não deu uma resposta final{noSession}.",
   "prompt.sdd.system.noSession": " nem deixou sessão para retomar",
   "prompt.sdd.system.partialFailed": "{stopped} A tentativa de resposta parcial também falhou ({reason}).",
+  "prompt.sdd.system.budgetProbe": "Responda com uma palavra: ok",
   "prompt.sdd.card.context": "Cartão da atividade{origin}: {card}\n{where}",
   "prompt.sdd.card.whereSpec": "Spec em {folder} ({phase}).",
   "prompt.sdd.card.whereNone": "Sem pasta de spec.",

@@ -31,6 +31,22 @@ export class MaxTurnsError extends Error {
   }
 }
 
+/**
+ * Thrown by an engine when the provider refused the call because the key ran out of budget. It is not a failure of the stage: the runner turns it into a
+ * wait, names the provider in words the person reads, and does not spend an attempt on it. `detail` is the provider's own text, already redacted.
+ */
+export class ProviderBudgetError extends Error {
+  constructor(
+    readonly provider: string,
+    readonly engine: 'claude-sdk' | 'open',
+    readonly detail: string,
+  ) {
+    // i18n-ignore-next-line: error text the caller reads and the engines compare
+    super(`provider budget exhausted: ${provider}`);
+    this.name = 'ProviderBudgetError';
+  }
+}
+
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */
 export interface ShellPolicy {
   rules: string[];

@@ -358,6 +358,7 @@
   "prompt.sdd.system.stopped": "The agent stopped before finishing (step limit) and gave no final answer{noSession}.",
   "prompt.sdd.system.noSession": " and left no session to resume",
   "prompt.sdd.system.partialFailed": "{stopped} The attempt at a partial answer also failed ({reason}).",
+  "prompt.sdd.system.budgetProbe": "Answer with one word: ok",
   "prompt.sdd.card.context": "Activity card{origin}: {card}\n{where}",
   "prompt.sdd.card.whereSpec": "Spec in {folder} ({phase}).",
   "prompt.sdd.card.whereNone": "No spec folder.",
