@@ -1,4 +1,5 @@
 import type { RunnerConfig, RunnerSandbox } from '../../../../shared/config/types';
+import { soleMaintainerOf } from '../../../../shared/release';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
 // The runner settings, as pure functions: the draft a person types into, the checks shown while typing (the ones the config validator holds, in words of this
@@ -26,6 +27,8 @@ export interface RunnerDraft {
   /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
   sandbox: RunnerSandbox;
   linkDependencies: boolean;
+  /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
+  soleMaintainer: boolean;
 }
 
 export function draftOfRunner(r: RunnerConfig): RunnerDraft {
@@ -45,6 +48,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     commitMessage: r.commitMessage,
     sandbox: structuredClone(r.sandbox),
     linkDependencies: r.linkDependencies !== false,
+    soleMaintainer: soleMaintainerOf(r),
   };
 }
 
@@ -62,15 +66,16 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()) },
     commitMessage: d.commitMessage,
     linkDependencies: d.linkDependencies,
+    release: { soleMaintainer: d.soleMaintainer },
   };
 }
 
 /**
- * The runner the draft makes when the screen is open in a paired browser: the commands an agent may run, the folder of the worktrees and the identity of
- * the commits are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
+ * The runner the draft makes when the screen is open in a paired browser: the commands an agent may run, the folder of the worktrees, the identity of the commits and
+ * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox) };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), release: stored.release && { ...stored.release } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxLimits';

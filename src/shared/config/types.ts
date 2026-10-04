@@ -714,6 +714,17 @@ export interface RunnerSandbox {
   limits: SandboxLimits;
 }
 
+/** How a release run integrates its pull requests. */
+export interface RunnerRelease {
+  /**
+   * The person is the repository's only maintainer: nobody else can approve a pull request they opened (GitHub does not let the author approve their own). Then their
+   * explicit "yes" in Actions on a `merge-pr` stands for the host's approval, for a pull request opened by the account the app uses on the host and on which nobody asked
+   * for changes; every `merge-pr` waits for that "yes" whatever the agent's autonomy, and a pull request someone else opened still needs the host's approval. Only the
+   * computer changes it. A config stored without it reads as false.
+   */
+  soleMaintainer: boolean;
+}
+
 /** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
 export interface RunnerConfig {
   /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
@@ -744,6 +755,8 @@ export interface RunnerConfig {
    * commands the app runs there find their tools. A config stored without it reads as true.
    */
   linkDependencies: boolean;
+  /** Absent in a config stored before it: read it through `soleMaintainerOf`. */
+  release?: RunnerRelease;
 }
 
 export interface ScheduleConfig {

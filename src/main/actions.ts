@@ -34,7 +34,7 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
-import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers } from '../shared/release';
+import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseWaits, soleMaintainerOf } from '../shared/release';
 import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
@@ -1049,6 +1049,9 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<{ output: 
     if (!planned || !sameSha(planned, unit.head as string)) throw new Error(t('main.release.notPlanned', { pr: unit.pr as number }));
     plannedHead = planned;
   }
+  // The only maintainer's "sim" stands for the review of their own pull request: only a person's "sim" (an agent's autonomy never gives one), and only when the workspace
+  // says so. The account is the one the app uses on the host, read now.
+  const soleMaintainer = unit.op === 'merge-pr' && origin.kind !== 'auto' && soleMaintainerOf(getConfig().runner) ? (await vcsProvider().currentUser()).username : undefined;
   const push = isReleasePush(unit.op);
   const fields: Record<string, string> = { op: unit.op, version: unit.version, run: run.id, repo: run.repo, ...(unit.pr !== undefined ? { pr: String(unit.pr) } : {}) };
   let sent: boolean | undefined;
@@ -1059,10 +1062,11 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<{ output: 
       worktree: join(dirname(run.worktree), `release-${unit.version}-steps`),
       identity,
       ...(plannedHead ? { planned: plannedHead } : {}),
+      ...(soleMaintainer ? { soleMaintainer } : {}),
       pr: async (n) => {
         const mr = await vcsProvider().getMr(project ?? issueProjectKey(), n, { approvals: true });
         // What a merge may rely on: an approval bound to the head by a member of the project where the host can say (GitHub), the host's plain approval where it cannot.
-        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.onHead ?? mr.approvals?.approved === true, checks: checksOf(mr.ci, mr.updatedAt), fork: mr.fromFork !== false };
+        return { state: mr.state, draft: mr.draft, sourceBranch: mr.sourceBranch, targetBranch: mr.targetBranch, sha: mr.sha, approved: mr.approvals?.onHead ?? mr.approvals?.approved === true, author: mr.author, changesRequested: (mr.approvals?.changesRequestedBy.length ?? 0) > 0, checks: checksOf(mr.ci, mr.updatedAt), fork: mr.fromFork !== false };
       },
     });
     fields.before = r.before ?? '';
@@ -1076,10 +1080,14 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<{ output: 
   return { output, ...(sent !== undefined ? { sent } : {}) };
 }
 
-/** One release step an agent's autonomy lets go out without a "sim". A push, a beta and a stable are refused here whatever the caller says: they only ever wait for a person. */
+/**
+ * One release step an agent's autonomy lets go out without a "sim". A push, a beta and a stable are refused here whatever the caller says: they only ever wait for a person;
+ * so does a merge when the person is the only maintainer.
+ */
 export async function runReleaseAuto(w: { issue: number; key: string; summary: string; by: string }, raw: unknown): Promise<string> {
   const unit = parseReleaseUnit(raw);
   if (alwaysWaits(unit.op)) throw new Error(t('main.release.autoPush'));
+  if (releaseWaits(unit.op, soleMaintainerOf(getConfig().runner))) throw new Error(t('main.release.autoSoleMerge'));
   return (await runRelease({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by }, unit)).output;
 }
 

@@ -70,7 +70,7 @@ const configureRelease = (extra: (c: Parameters<NonNullable<Parameters<typeof bo
   extra(c);
 };
 
-async function start(options: { autonomous?: boolean; script?: (b: Boot) => void; version?: string; from?: string } = {}): Promise<{ b: Boot; run: Run }> {
+async function start(options: { autonomous?: boolean; soleMaintainer?: boolean; script?: (b: Boot) => void; version?: string; from?: string } = {}): Promise<{ b: Boot; run: Run }> {
   const b = await boot({
     dir: ATAS,
     publish: true,
@@ -81,6 +81,7 @@ async function start(options: { autonomous?: boolean; script?: (b: Boot) => void
     remoteRelease: async (r) => remoteReleaseOf(w.dir, r.subject?.version ?? ''),
     configure: configureRelease((c) => {
       if (options.autonomous === false) c.agents.team.find((a) => a.id === 'release-manager')!.autonomous = false;
+      if (options.soleMaintainer) c.runner.release = { soleMaintainer: true };
     }),
   });
   const stops = [onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses)), onRunnerActionRefused((a, reason) => b.runner.actionRefused(a, reason))];
@@ -489,6 +490,51 @@ describe('the tool the Release manager asks for the steps with', () => {
     expect(pending().filter((a) => a.kind === 'release-git').map((a) => (a.unit as { op: string }).op).sort()).toEqual(['beta', 'open', 'push-branch']);
     expect(w.git('tag', '--list')).toBe('v0.4.0');
     expect(w.remote('branch', '--list')).not.toContain('release/0.5.0');
+  });
+});
+
+describe('a release in a repository with one maintainer', () => {
+  it('lists the person\'s own pull request as merged on their yes, and the merge an autonomous agent asks for waits for it in Actions', async () => {
+    const asked: string[] = [];
+    let head = '';
+    const { b, run } = await start({
+      soleMaintainer: true,
+      script: (x) =>
+        x.engine.script(
+          'release-manager',
+          async () => {
+            for (let i = 0; i < 200 && !(existsSync(join(w.stepsDir, '.git')) && w.steps.branch === 'release/0.5.0'); i++) await new Promise((r) => setTimeout(r, 20));
+            w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+            head = w.pushedBranch('feat/x', 'release/0.5.0');
+            // opened by the account the app uses on the host (the fake's current user), and nobody else could approve it
+            forge.others.push({ number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: false, author: 'runner-bot', title: 'Add the x', body: '' }, { number: 8, branch: 'feat/y', head: 'c'.repeat(40), base: 'release/0.5.0', files: [], approved: false, author: 'ana', title: 'Add the y', body: '' });
+            return work('Plan written.', { artifacts: [doc('RELEASE_PLAN.md')], comment: PLAN });
+          },
+          async (call) => {
+            asked.push(await call.release!({ op: 'merge-pr', version: '0.5.0', pr: 7, head }));
+            return work('Assembled.', { comment: STEP('What was merged') });
+          },
+        ),
+    });
+    await b.runner.sweep();
+    await b.settle();
+    expect(current(b, run).status).toBe('gate');
+    expect(current(b, run).subject?.activities).toEqual([expect.objectContaining({ pr: 7, approved: false, selfReview: true }), expect.not.objectContaining({ selfReview: true })]);
+    const listed = comments().find((c) => c.includes('**Activities of the release**'));
+    expect(listed).toContain(`[#7 Add the x](https://example.test/group/project/pull/7): yours and its checks pass; with no other reviewer, it is merged on your yes in Actions (at \`${head.slice(0, 9)}\`)`);
+    expect(listed).toContain('[#8 Add the y](https://example.test/group/project/pull/8): not approved yet');
+
+    b.runner.gate(run.id, 'approve');
+    await b.settle();
+    // the agent runs by itself, and still the merge waits: the person's yes is the review
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^Waiting for the person/);
+    expect(b.thread(run).some((m) => m.kind === 'system' && m.code === 'runner.release.soleMaintainerWaits')).toBe(true);
+    expect(w.git('log', '-1', '--format=%s', 'release/0.5.0')).not.toMatch(/Merge pull request/);
+    const merge = pending().find((a) => a.kind === 'release-git' && (a.unit as { op: string }).op === 'merge-pr');
+    expect(merge).toBeDefined();
+    expect((await actions.approveAction(merge!.id)).state).toBe('done');
+    expect(w.git('log', '-1', '--format=%s', 'release/0.5.0')).toBe('Merge pull request #7 from feat/x');
   });
 });
 

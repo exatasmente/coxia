@@ -53,6 +53,10 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.runner.identity = { name: 'Dev', email: 'dev@example.com' }; })).toEqual(['runner.identity.name', 'runner.identity.email']);
   });
 
+  it('refuses the only maintainer switch: whose yes stands for a review is the computer\'s to say', () => {
+    expect(refused((c) => { c.runner.release = { soleMaintainer: true }; })).toEqual(['runner.release.soleMaintainer']);
+  });
+
   it('refuses the external tools, the documents, the projects, the models, the hosts, the voice and everything else', () => {
     expect(refused((c) => { c.externalTools.terminal.command = 'sh'; })).toEqual(['externalTools.terminal.command']);
     expect(refused((c) => { c.docs.specsDir = '/etc'; })).toEqual(['docs.specsDir']);

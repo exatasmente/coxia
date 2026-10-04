@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RunnerConfig, SandboxNetwork } from '../../../../shared/config/types';
 import { SANDBOX_LIMIT_RANGES } from '../../../../shared/sandboxPaths';
+import { soleMaintainerOf } from '../../../../shared/release';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
@@ -12,7 +13,8 @@ import { useSandboxStatus } from './sandboxStatus';
 
 /**
  * Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as.
- * In a paired browser the commands, the folder and the identity are shown and not edited: they decide what runs on the computer and where it reads.
+ * In a paired browser the commands, the folder, the identity and the only maintainer switch are shown and not edited: they decide what runs on the computer and where it
+ * reads, and whose yes stands for a review.
  */
 export function RunnerSection({ config, save }: SectionProps) {
   const t = useT();
@@ -135,6 +137,13 @@ export function RunnerSection({ config, save }: SectionProps) {
       <Toggle checked={draft.linkDependencies} onChange={(linkDependencies) => set({ linkDependencies })} label={t('ui.runner.linkDeps')} />
       <p className="small muted">{t('ui.runner.linkDepsHint')}</p>
 
+      {!web && (
+        <>
+          <Toggle checked={draft.soleMaintainer} onChange={(soleMaintainer) => set({ soleMaintainer })} label={t('ui.runner.soleMaintainer')} />
+          <p className="small muted">{t('ui.runner.soleMaintainerHint')}</p>
+        </>
+      )}
+
       <Problems items={warnings} />
       {error && <div className="error" role="alert">{error}</div>}
       <div className="tm-savebar">
@@ -148,7 +157,10 @@ export function RunnerSection({ config, save }: SectionProps) {
   );
 }
 
-/** What only the computer changes, as a paired browser sees it: the folder for the runs, the commands an agent that writes may run and who the commits are made as. */
+/**
+ * What only the computer changes, as a paired browser sees it: the folder for the runs, the commands an agent that writes may run, who the commits are made as and whether
+ * the person's yes stands for the review of a release merge.
+ */
 function WebOnComputer({ runner }: { runner: RunnerConfig }) {
   const t = useT();
   const identity = runner.identity.name || runner.identity.email ? `${runner.identity.name} <${runner.identity.email}>` : t('ui.runner.identityNone');
@@ -162,6 +174,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       </dd>
       <dt className="wz-label">{t('ui.runner.identity')}</dt>
       <dd className="small">{identity}</dd>
+      <dt className="wz-label">{t('ui.runner.soleMaintainer')}</dt>
+      <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
     </dl>
   );
 }

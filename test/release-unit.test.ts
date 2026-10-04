@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseBranchOf, releaseStepNeeds, releaseTagOf } from '../src/shared/release';
+import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseBranchOf, releaseStepNeeds, releaseTagOf, releaseWaits, soleMaintainerOf } from '../src/shared/release';
 import type { ReleaseAction } from '../src/shared/types';
 
 // What a release action may hold: an operation and a version, and only the other fields that operation has. Nothing that names a path, a command or a flag.
@@ -86,6 +86,16 @@ describe('the unit of a release action', () => {
     expect(RELEASE_OPS.filter(isReleasePush)).toEqual(['push-branch', 'push-tag']);
     // what always waits for the person: the pushes (D6) and the cuts, which run the repository's scripts and merged code as the person (D18)
     expect(RELEASE_OPS.filter(alwaysWaits)).toEqual(['beta', 'stable', 'push-branch', 'push-tag']);
+    // and the merge too when the person is the only maintainer: their "sim" is the review
+    expect(RELEASE_OPS.filter((op) => releaseWaits(op, false))).toEqual(['beta', 'stable', 'push-branch', 'push-tag']);
+    expect(RELEASE_OPS.filter((op) => releaseWaits(op, true))).toEqual(['merge-pr', 'beta', 'stable', 'push-branch', 'push-tag']);
+  });
+
+  it('reads the only maintainer switch, and a config stored without it as off', () => {
+    expect(soleMaintainerOf({ release: { soleMaintainer: true } })).toBe(true);
+    expect(soleMaintainerOf({ release: { soleMaintainer: false } })).toBe(false);
+    expect(soleMaintainerOf({})).toBe(false);
+    expect(soleMaintainerOf(null)).toBe(false);
   });
 
   it('is the schema the tool gives the agent: the six operations and the fields above, no path and no flag', () => {

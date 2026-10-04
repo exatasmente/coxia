@@ -27,8 +27,8 @@ afterAll(() => {
 });
 
 const unit = (over: Partial<ReleaseUnit> & Pick<ReleaseUnit, 'op'>): ReleaseUnit => ({ version: '0.5.0', ...over });
-const open = (w: ReleaseWorld, pr?: (n: number) => Promise<ReleasePr>) => (u: ReleaseUnit) => runReleaseOp(u, { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), pr });
-const green = (over: Partial<ReleasePr> = {}): ReleasePr => ({ state: 'open', draft: false, sourceBranch: 'feat/x', targetBranch: 'release/0.5.0', sha: '', approved: true, checks: 'success', fork: false, ...over });
+const open = (w: ReleaseWorld, pr?: (n: number) => Promise<ReleasePr>, soleMaintainer?: string) => (u: ReleaseUnit) => runReleaseOp(u, { clone: w.dir, worktree: w.stepsDir, identity: AUTHOR, env: w.scriptEnv(), pr, ...(soleMaintainer ? { soleMaintainer } : {}) });
+const green = (over: Partial<ReleasePr> = {}): ReleasePr => ({ state: 'open', draft: false, sourceBranch: 'feat/x', targetBranch: 'release/0.5.0', sha: '', approved: true, author: 'someone-else', changesRequested: false, checks: 'success', fork: false, ...over });
 const AS = `${AUTHOR.name} <${AUTHOR.email}>`;
 
 /** A world with release/0.5.0 open (in the worktree of the steps) and pushed. */
@@ -171,6 +171,43 @@ describe('merge-pr', () => {
     await expect(open(w, async () => green({ sha: head, ...over }))(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(message);
     expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
     expect(w.steps.git('status', '--porcelain')).toBe('');
+  });
+
+  it('takes the only maintainer\'s "sim" for the review of a pull request they opened, and for nothing else', async () => {
+    const { w } = await opened();
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    const before = w.steps.git('rev-parse', 'HEAD');
+    const mine = green({ sha: head, approved: false, author: 'Maintainer' });
+    // with no "sim" standing for a review (an agent's autonomy, or a workspace with reviewers), an approval on the host is still needed
+    await expect(open(w, async () => mine)(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(/#7 is not approved: nothing was merged/);
+    // one somebody else opened: their pull request still needs a review on the host, and the refusal says why
+    await expect(open(w, async () => ({ ...mine, author: 'someone-else' }), 'maintainer')(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(/opened by someone-else, not by the account the app uses/);
+    // somebody asked for changes: there is a reviewer, and their review is not over
+    await expect(open(w, async () => ({ ...mine, changesRequested: true }), 'maintainer')(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(/#7 is not approved: nothing was merged/);
+    // an author the host did not name is nobody's
+    await expect(open(w, async () => ({ ...mine, author: '' }), 'maintainer')(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(/not approved/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    // theirs (the host's names do not mind case), with nothing else in the way: merged as any approved one
+    const r = await open(w, async () => mine, 'maintainer')(unit({ op: 'merge-pr', pr: 7, head }));
+    expect(r.after).toBe(w.steps.git('rev-parse', 'HEAD'));
+    expect(w.steps.git('log', '-1', '--format=%s')).toBe('Merge pull request #7 from feat/x');
+  });
+
+  it.each([
+    ['a draft', { draft: true }, /still a draft/],
+    ['one whose checks fail', { checks: 'failing' as const }, /checks .* are failing/],
+    ['one whose checks are still running', { checks: 'running' as const }, /are running/],
+    ['one aimed at another branch', { targetBranch: 'main' }, /aimed at main/],
+    ['one from a fork', { fork: true }, /comes from a fork/],
+    ['one that is not open', { state: 'closed' as const }, /is closed, not open/],
+  ])('keeps every other check for the only maintainer\'s own pull request: refuses %s', async (_name, over, message) => {
+    const { w } = await opened();
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    const before = w.steps.git('rev-parse', 'HEAD');
+    await expect(open(w, async () => green({ sha: head, approved: false, author: 'maintainer', ...over }), 'maintainer')(unit({ op: 'merge-pr', pr: 7, head }))).rejects.toThrow(message);
+    // and the head the plan froze
+    await expect(open(w, async () => green({ sha: head, approved: false, author: 'maintainer' }), 'maintainer')(unit({ op: 'merge-pr', pr: 7, head: 'a'.repeat(40) }))).rejects.toThrow(/plan read it/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
   });
 
   it('refuses a pull request whose head moved since the plan read it, whether the host says so or the fetch does', async () => {

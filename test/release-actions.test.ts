@@ -28,10 +28,11 @@ const input = (key: string, u: Record<string, unknown>) => ({ key, issue: 0, iss
 let w: ReleaseWorld;
 let forge: Forge;
 
-function configure(identity: { name: string; email: string } | null = AUTHOR): void {
+function configure(identity: { name: string; email: string } | null = AUTHOR, soleMaintainer = false): void {
   updateConfig(() => {
     const c = runnerConfig(neutralConfig(), { root: w.root, origin: w.origin, clone: w.dir, worktrees: join(w.root, 'worktrees') } as Repo);
     c.language = 'en';
+    c.runner.release = { soleMaintainer };
     if (identity) c.runner.identity = identity;
     else c.runner.identity = { name: '', email: '' };
     return c;
@@ -224,6 +225,31 @@ describe('approving a step', () => {
     expect((await attempt('a5', { approval: { association: 'COLLABORATOR' } })).state).toBe('done');
   });
 
+  it('takes the only maintainer\'s "sim" for the review of a pull request the app\'s account opened, and only when the workspace says so', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    planned(head);
+    const before = w.steps.git('rev-parse', 'HEAD');
+    // the fake host's current user is `runner-bot`: the account the app uses there
+    const attempt = async (key: string, over: Partial<NonNullable<Forge['pr']>>) => {
+      forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved: false, author: 'runner-bot', ...over };
+      return approve(propose(key, unit({ op: 'merge-pr', pr: 7, head })).id);
+    };
+    // a workspace with reviewers (the default): nobody's "sim" stands for one
+    expect((await attempt('s1', {})).output).toMatch(/#7 is not approved: nothing was merged/);
+    configure(AUTHOR, true);
+    expect((await attempt('s2', { author: 'ana' })).output).toMatch(/opened by ana, not by the account the app uses on the host/);
+    expect((await attempt('s3', { changesRequestedBy: 'ana' })).output).toMatch(/#7 is not approved: nothing was merged/);
+    expect((await attempt('s4', { checks: 'failing' })).output).toMatch(/checks .* are failing/);
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    const done = await attempt('s5', {});
+    expect(done.state).toBe('done');
+    expect(w.steps.git('log', '-1', '--format=%s')).toBe('Merge pull request #7 from feat/x');
+    expect(forge.writes).toEqual([]);
+    expect(listAudit()[0]).toMatchObject({ kind: 'release', ok: true, origin: { kind: 'release-git' }, fields: { op: 'merge-pr', pr: '7' } });
+  });
+
   it('judges the stored unit again: an action edited on disk to name a path or a flag fails and runs nothing', async () => {
     const a = propose('release:r:beta', unit({ op: 'beta' }));
     const file = join(ATAS, 'acoes.json');
@@ -368,6 +394,21 @@ describe('a step an agent\'s autonomy lets go out', () => {
     planned(head);
     await expect(actions.runReleaseAuto({ ...meta, key: 'merge' }, unit({ op: 'merge-pr', pr: 7, head }))).resolves.toContain('Merged');
     expect(listAudit()[0]).toMatchObject({ kind: 'release', by: 'release-manager', fields: { op: 'merge-pr' } });
+  });
+
+  it('never merges for an only maintainer: their "sim" is the review, and an agent cannot give it, even on a pull request the host approved', async () => {
+    await actions.runReleaseAuto(meta, unit({ op: 'open' }));
+    w.steps.git('push', '-q', '-u', 'origin', 'release/0.5.0');
+    const head = w.pushedBranch('feat/x', 'release/0.5.0');
+    const before = w.steps.git('rev-parse', 'HEAD');
+    planned(head);
+    configure(AUTHOR, true);
+    for (const [key, approved] of [['m1', false], ['m2', true]] as const) {
+      forge.pr = { number: 7, branch: 'feat/x', head, base: 'release/0.5.0', files: [], approved, author: 'runner-bot' };
+      await expect(actions.runReleaseAuto({ ...meta, key }, unit({ op: 'merge-pr', pr: 7, head })), key).rejects.toThrow(/waits for it in Actions/);
+    }
+    expect(w.steps.git('rev-parse', 'HEAD')).toBe(before);
+    expect(listAudit()).toHaveLength(1);
   });
 
   it('is refused in a test workspace, with nothing run and nothing logged', async () => {
