@@ -862,8 +862,18 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
 }
 
-// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
+/**
+ * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; the run's history and the
+ * thread record it as the person's, so the next stage reads it and the authorship of the edit is not the commit's.
+ */
+export function memoryEdited(run: Run, at: string): Transition {
+  if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
+  const out = clone(run, at);
+  log(out, at, 'memory-edited', out.stage, 'person');
+  return { run: out, messages: [{ kind: 'system', author: person, code: 'runner.memory.edited', stage: out.stage }] };
+}
 
+// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
 /** What a release run learns about its subject: where its tracking issue is, and the activities of the version as last read. A run with no subject is refused. */
 export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities' | 'seen'>>, at: string): Transition {
   if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });

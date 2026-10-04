@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A cycle memory every stage reads and rewrites.** Each run's folder gets a fixed file, `MEMORY.md`, kept in the branch like the documents and read whole by every stage before them. It holds what a long run must not forget, in fixed sections (decisions, constraints, tried and discarded, open questions, where the work stands), so a decision survives both the folder's read budget and the window of recent messages a stage is given: every answer you give in the run's thread and every handoff between stages enters it by itself, marked with the message number so a rewrite never duplicates a line. The stage that concludes a pass rewrites it from its answer; a stage that pauses on a question leaves it alone. Its cap (10,000 characters) is a constant of the code and asks the stage to shorten the memory, not a setting to change. On the run screen you can edit it yourself, and the next stage reads your version; the edit is committed as yours and recorded in the run's history and thread as yours, and it is refused while an agent is working in the folder.
+
 ### Fixed
 
 - **A release run no longer moves on, or ends, with a release the host does not have.** In the release flow, saying yes to a push before the cut of the same stage sent nothing, and the cut then stayed in the app's own worktree; the run still went on and ended at *Published* with neither the beta nor the stable on the host. Now a push asked in the same stage as a cut can only be approved once that cut is done (Actions says what it waits for, and a yes given out of order is refused with nothing run, with the reason in the run's thread too). A push that finds the remote already holding what it would send ends as **nothing sent**, not as done. Two new waits keep the run from going past the cut: *Beta on the host* (the beta's tag on the remote and its pre-release published) and *Stable on the host* (the stable tag on the remote's `main`). A workspace that applied the release flow before this keeps the old one: apply the template again to get the waits.

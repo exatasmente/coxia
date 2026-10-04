@@ -84,7 +84,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'memory-edited', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {

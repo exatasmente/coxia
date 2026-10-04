@@ -39,6 +39,7 @@ import {
   leaveSquad,
   linkUpdate,
   MAX_QUESTION_HOPS,
+  memoryEdited,
   newRunId,
   passQuestion,
   producerOf,
@@ -92,7 +93,7 @@ import { beginRun, moveRun } from '../runs-forum';
 import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
-import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
+import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, readFolder, slugOf, writeIssueRecord, writeMemory } from './cycleFolder';
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
@@ -110,7 +111,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -206,6 +207,11 @@ export interface Runner {
   sendBack(id: string, stageId: string, note: string): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
   migrateFlow(id: string): Run;
+  /**
+   * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; refused while a stage is
+   * working in the worktree, so the person never races an agent for the file. Returns the text as it was written (masked), or null when the run has no worktree.
+   */
+  editMemory(id: string, text: string): Promise<{ text: string; clipped: boolean } | null>;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
   setSquad(id: string, squad: string | null): Run;
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
@@ -236,6 +242,8 @@ export interface Runner {
 }
 
 const MAX_STEPS = 200;
+/** The most the person may paste as the memory from the run screen: the same ceiling the screen reads back, so nothing is written that could not be shown. */
+const MEMORY_EDIT_MAX = 200_000;
 /** A release run that ended is watched this long for the stable version to be published (and its tracking issue closed). */
 const RELEASE_WATCH_DAYS = 30;
 const iso = (d: Date): string => d.toISOString();
@@ -782,6 +790,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       const rec = run.comments[key];
       if (!deps.publisher || !rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') throw new RunnerError('nothing-to-undo', { key: key.slice(0, 48) });
       return deps.publisher.undo(id, key);
+    },
+    async editMemory(id, text) {
+      const run = need(id);
+      // The agent has the worktree: a write now would race it for the file, and the stage's own commit is what carries the memory.
+      if (inflight.has(id) || run.status === 'working') throw new RunnerError('memory-busy');
+      if (!existsSync(run.worktree)) throw new RunnerError('worktree-gone');
+      const config = deps.config();
+      const identity = await commitIdentity(config.runner.identity, run.worktree, deps.identity);
+      if (!identity) throw new RunnerError('no-identity');
+      // The person's own words, masked like every other document; the path guard is `writeMemory`'s.
+      writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
+      await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
+      move(id, (r, _f, at) => memoryEdited(r, at));
+      return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
     sendBack(id, stageId, note) {
