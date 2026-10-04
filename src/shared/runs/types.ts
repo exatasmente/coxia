@@ -303,6 +303,11 @@ export interface ReleaseActivity {
   state: 'open' | 'merged' | 'closed';
   /** The host's approval (and, when it has checks, their result) when it was read. */
   approved: boolean;
+  /**
+   * Not approved, but the workspace says the person is the repository's only maintainer and this open pull request is theirs (opened by the account the app uses on the
+   * host, no changes asked, not a draft, checks passing): ready to merge on their "sim" in Actions, which stands for the review. Absent: no.
+   */
+  selfReview?: boolean;
   /** The issue it closes, when the host says so. */
   issue: number | null;
 }

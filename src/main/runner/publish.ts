@@ -5,7 +5,7 @@ import { cycleText } from '../../shared/cycles/text';
 import { type ForumMessage, type PublishedRef, runThreadId } from '../../shared/forum';
 import { createTranslator } from '../../shared/i18n';
 import { crMarkOf } from '../../shared/i18n/terms';
-import { type ReleaseUnit, alwaysWaits, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../../shared/release';
+import { type ReleaseUnit, alwaysWaits, parseReleaseUnit, releaseBranchOf, releaseTagOf, releaseWaits, soleMaintainerOf } from '../../shared/release';
 import {
   type CommentProblem,
   type CommentTarget,
@@ -1051,8 +1051,15 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   async function readActivities(provider: VcsProvider, where: { repo: string; issue: string }, version: string): Promise<{ activities: ReleaseActivity[]; milestone: MilestoneIssue[] }> {
     const listed = await provider.listMrsByTarget(where.repo, releaseBranchOf(version), { limit: 100 });
     const mrs = await inChunks(listed, 5, async (m) => (m.state === 'open' ? provider.getMr(where.repo, m.iid, { approvals: true }).catch(() => m) : m));
+    // The only maintainer's own pull requests are ready on their "sim": the account is read only when the workspace says so, and one that cannot be read makes none ready.
+    const me = soleMaintainerOf(deps.config().runner) && mrs.some((m) => m.state === 'open') ? await provider.currentUser().then((u) => u.username.trim().toLowerCase(), () => '') : '';
     const activities = mrs
-      .map((m): ReleaseActivity => ({ pr: m.iid, title: m.title, url: m.webUrl, head: m.sha, state: m.state === 'merged' ? 'merged' : 'open', approved: m.state === 'merged' || (m.approvals?.approved === true && !m.draft && checksPass(m.ci)), issue: m.issueRefs[0] ?? null }))
+      .map((m): ReleaseActivity => {
+        const approved = m.state === 'merged' || (m.approvals?.approved === true && !m.draft && checksPass(m.ci));
+        // approvals null: the detail read failed, and nothing is known of the reviews
+        const selfReview = !approved && !!me && m.state === 'open' && m.author.trim().toLowerCase() === me && !!m.approvals && !m.approvals.changesRequestedBy.length && !m.draft && checksPass(m.ci);
+        return { pr: m.iid, title: m.title, url: m.webUrl, head: m.sha, state: m.state === 'merged' ? 'merged' : 'open', approved, ...(selfReview ? { selfReview } : {}), issue: m.issueRefs[0] ?? null };
+      })
       .sort((a, b) => a.pr - b.pr);
     let milestone: MilestoneIssue[] = [];
     try {
@@ -1230,10 +1237,12 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const summary = stepSummary(unit);
     // Each time a stage runs (the person may send it back for another beta) is its own step: the proposal of an earlier attempt that was carried out is not this one.
     const key = `release:${runId}:${who.stage}:${who.attempt}:${stepKey(unit)}`;
-    // A push, a beta and a stable wait for the person whatever the agent's autonomy (D6, D18); `open` and `merge-pr` follow it.
-    if (alwaysWaits(unit.op) || !who.autonomous) {
+    // A push, a beta and a stable wait for the person whatever the agent's autonomy (D6, D18); `open` and `merge-pr` follow it, except a merge for an only maintainer,
+    // whose "sim" is the review.
+    const waits = releaseWaits(unit.op, soleMaintainerOf(deps.config().runner));
+    if (waits || !who.autonomous) {
       const created = door.proposeRelease({ key, issue: trackIid(run), issueTitle: run.issue.title, summary, unit, group: `${runId}:${who.stage}:${who.attempt}`, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } });
-      if (created) say(run, alwaysWaits(unit.op) ? 'runner.release.alwaysWaits' : 'runner.release.proposed', { summary }, who.stage);
+      if (created) say(run, waits ? (alwaysWaits(unit.op) ? 'runner.release.alwaysWaits' : 'runner.release.soleMaintainerWaits') : 'runner.release.proposed', { summary }, who.stage);
       return created ? `Waiting for the person: "${summary}" is in Actions and happens when they say yes. Nothing was done yet.` : `Already waiting in Actions (or already done): "${summary}".`;
     }
     try {

@@ -41,7 +41,7 @@ export function activitiesText(version: string, activities: readonly ReleaseActi
     ? activities.map((a) => {
         const link = a.issue ? issueUrl(a.issue) : null;
         const closes = a.issue && link ? tr('main.runner.release.activity.closes', { issue: a.issue, url: link }) : '';
-        const kind = a.state === 'merged' ? 'merged' : a.approved ? 'ready' : 'waiting';
+        const kind = a.state === 'merged' ? 'merged' : a.approved ? 'ready' : a.selfReview ? 'yours' : 'waiting';
         const at = a.head && a.state !== 'merged' ? tr('main.runner.release.activity.at', { sha: a.head.slice(0, 9) }) : '';
         return tr(`main.runner.release.activity.${kind}`, { crMark, pr: a.pr, title: oneLine(a.title), url: a.url, at, closes });
       })

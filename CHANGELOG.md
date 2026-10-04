@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A release can merge the pull requests of a repository one person maintains.** The release's merge step required an approval on the host, and GitHub does not let the author approve their own pull request, so the Release manager could never merge anything and kept asking for an approval nobody could give. A new runner setting, *I am the only maintainer of the repository* (`runner.release.soleMaintainer`, off by default, changed only on the computer), makes your yes in Actions on the merge stand for the review of a pull request opened by the account the app uses on the host, with no changes asked on it. With it on, every merge of a release waits for that yes, even with an agent that runs by itself; a pull request someone else opened still needs an approval on the host, and every other check of the merge (the head the plan froze, open, not a fork, not a draft, the checks) is as before.
+
 ## [0.6.0-beta.1] - 2026-10-04
 
 ### Added

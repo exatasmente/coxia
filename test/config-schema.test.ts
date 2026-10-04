@@ -31,6 +31,14 @@ describe('config schema', () => {
     expect(r.ok).toBe(true);
   });
 
+  it('reads a config stored without the release settings of the runner as one whose merges need an approval on the host, with no migration step', () => {
+    const { release: _gone, ...runner } = neutralConfig().runner;
+    const r = validateConfig({ ...neutralConfig(), runner });
+    expect(r.errors).toEqual([]);
+    expect(r.config?.runner.release).toEqual({ soleMaintainer: false });
+    expect(validateConfig({ ...neutralConfig(), runner: { ...runner, release: { soleMaintainer: 'yes' } } }).ok).toBe(false);
+  });
+
   it('accepts the example legacy profile merged over the defaults', () => {
     const merged = mergeDeep(neutralConfig(), exampleProfile().config);
     expect(validateConfig(merged).errors).toEqual([]);

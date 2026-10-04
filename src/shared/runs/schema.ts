@@ -208,6 +208,7 @@ const activity = object(
     head: string('The commit it was at.', { maxLength: 80 }),
     state: enumOf('open, merged or closed.', ['open', 'merged', 'closed']),
     approved: { type: 'boolean', description: 'Approved on the host.' },
+    selfReview: { type: 'boolean', description: 'Not approved, but the only maintainer\'s own and ready: merged on their "sim", which stands for the review. Optional.' },
     issue: { type: ['integer', 'null'], description: 'The issue it closes.', minimum: 0 },
   },
   ['pr', 'title', 'url', 'head', 'state', 'approved', 'issue'],

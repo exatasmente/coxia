@@ -33,6 +33,10 @@ export interface ReleasePr {
   /** The commit the pull request is at on the host. */
   sha: string;
   approved: boolean;
+  /** Who opened it, by their name on the host (a login). */
+  author: string;
+  /** Somebody asked for changes on it (a review that is not over): then it has a reviewer, and nobody's "sim" stands for one. */
+  changesRequested: boolean;
   /** The host's checks: `failing` and `running` stop the merge (a CI nobody could read is `running`), `none` (no checks configured) does not. */
   checks: 'success' | 'failing' | 'running' | 'none';
   /** The branch comes from another repository than the one the pull request is aimed at, or the host did not say it does not: not merged by the app. */
@@ -49,6 +53,11 @@ export interface ReleaseEnv {
   pr?: (n: number) => Promise<ReleasePr>;
   /** Replaces the environment the script runs in (tests). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * The account the app uses on the host, set only when the workspace says the person is the repository's only maintainer AND the step runs on the person's own "sim" (never on
+   * an agent's autonomy): that "sim" then stands for the approval of a pull request this account opened and nobody asked changes on. Everything else is checked as ever.
+   */
+  soleMaintainer?: string;
   /** The head of the pull request the plan the person accepted froze (merge-pr only): the host must still have exactly this commit. */
   planned?: string;
   /** How long the script may take: it runs the checks of CI. */
@@ -389,6 +398,12 @@ async function open(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> 
   return { output, before, after: await sha(env.clone, 'HEAD'), tag: null };
 }
 
+/** Host names compare without case (GitHub, GitLab and Bitbucket treat them so); an empty one is nobody's. */
+const sameLogin = (a: string, b: string): boolean => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** The only maintainer's "sim" stands for the review: the pull request is theirs and nobody asked for changes on it. */
+const selfReviewed = (mr: ReleasePr, me: string | undefined): boolean => !!me && !mr.changesRequested && sameLogin(mr.author, me);
+
 async function mergePr(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResult> {
   const pr = unit.pr as number;
   const branch = releaseBranchOf(unit.version);
@@ -396,13 +411,16 @@ async function mergePr(unit: ReleaseUnit, env: ReleaseEnv): Promise<ReleaseResul
   await assertClean(env.clone);
   await fetchBranch(env.clone, branch);
   if (!(await ensureLocal(env.clone, branch))) throw new Error(t('main.release.noBranch', { branch }));
-  // What the host says now: the pull request must be open, approved, green, aimed at this release branch and still where the plan read it.
+  // What the host says now: the pull request must be open, approved (or the only maintainer's own, on their "sim"), green, aimed at this release branch and still where the
+  // plan read it.
   const mr = await env.pr(pr);
   if (mr.state !== 'open') throw new Error(t('main.release.prNotOpen', { pr, state: mr.state }));
   if (mr.targetBranch !== branch) throw new Error(t('main.release.prBase', { pr, base: mr.targetBranch, branch }));
   if (mr.fork) throw new Error(t('main.release.prFork', { pr }));
   if (mr.draft) throw new Error(t('main.release.prDraft', { pr }));
-  if (!mr.approved) throw new Error(t('main.release.prNotApproved', { pr }));
+  if (!mr.approved && !selfReviewed(mr, env.soleMaintainer)) {
+    throw new Error(env.soleMaintainer && !mr.changesRequested ? t('main.release.prNotApprovedSole', { pr, author: mr.author }) : t('main.release.prNotApproved', { pr }));
+  }
   if (mr.checks === 'failing' || mr.checks === 'running') throw new Error(t('main.release.prChecks', { pr, status: mr.checks }));
   // The head the plan the person accepted froze, when the caller knows it (the app always does), and the head the unit names: both are the host's head now, as full names.
   for (const wanted of [env.planned, unit.head]) {
