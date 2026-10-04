@@ -1,6 +1,7 @@
 {
   "ui.actions.backToday": "Voltar para Hoje",
   "ui.actions.badge.handledElsewhere": "tratado fora",
+  "ui.actions.badge.nothingSent": "nada enviado",
   "ui.actions.badge.published": "publicado",
   "ui.actions.badge.release": "release {release}",
   "ui.actions.busy.preview": "Simulando…",
@@ -46,6 +47,7 @@
   "ui.actions.view.preview": "Ver simulação",
   "ui.actions.view.push": "Ver o envio",
   "ui.actions.waiting": "Aguardando você · {count}",
+  "ui.actions.waitsFor": "Espera: {steps}. Pode ser aprovado quando isso estiver feito.",
   "ui.actions.what.conflictPush": "Push da branch com o merge da main já resolvido e verificado na worktree local: fast-forward, sem force, visível ao time. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou.",
   "ui.actions.what.qaComment.edit": "Edita no lugar o comentário de pipelines do QA (nota {noteId}), visível ao time na issue.",
   "ui.actions.what.qaComment.post": "Publica o comentário de sincronização da ferramenta na issue, visível ao time.",

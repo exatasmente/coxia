@@ -41,7 +41,7 @@ import type { ForumStore } from '../forum-core';
 import type { RunStore } from '../runs-core';
 import { moveRun } from '../runs-forum';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
-import { type BranchState, type MilestoneIssue, type ReleaseBrief, activitiesText, releaseRecord, releaseTitle } from './release';
+import { type BranchState, type MilestoneIssue, type ReleaseBrief, type RemoteRelease, activitiesText, releaseRecord, releaseTitle } from './release';
 import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
 
 // What the runner leaves on the code host: the comment of each stage on the issue, the decision of each gate, the questions of the agents, the review of
@@ -77,6 +77,8 @@ export interface ReleaseMeta {
   issueTitle: string;
   summary: string;
   unit: ReleaseUnit;
+  /** The stage and the attempt that asked for it: the steps of one group are carried out in the order they need each other. */
+  group: string;
   notify?: { title: string; body: string };
 }
 
@@ -123,6 +125,8 @@ export interface PublisherDeps {
   now?(): Date;
   /** The tags of the repository of a release run, as the local clone has them (a release run reads the beta it waits for from there). Without it the beta waits never end by themselves. */
   localTags?(run: Run): Promise<string[]>;
+  /** What the remote of a release run's repository has of its version right now (null when it could not be read). Without it the waits for the host never end by themselves. */
+  remoteRelease?(run: Run): Promise<RemoteRelease | null>;
 }
 
 export interface StageEnd {
@@ -150,6 +154,8 @@ export interface Publisher {
   gateDecided(runId: string, e: { stage: FlowStage; action: GateAction; reason: string; autonomous: boolean }): Promise<void>;
   /** A proposal this publisher made was carried out (or the push of a run was). */
   actionDone(action: ReleaseAction, responses: unknown[]): Promise<void>;
+  /** The person's "sim" on a proposal of a run was refused before anything ran: the thread says why. */
+  actionRefused(action: ReleaseAction, reason: string): Promise<void>;
   /** The review of a round that waited for the pull request goes out now, if the pull request exists. */
   flushReviews(runId: string): Promise<void>;
   /** Whether the event a waiting run waits for has happened, as the code host says (a reply is what the person wrote). Never throws: an unreadable host is "not yet". */
@@ -884,6 +890,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (w.kind === 'pr-merged') return { over: (await prState(run, provider)) === 'merged' };
       if (w.kind === 'release-approved') return { over: await releaseMerged(run, provider) };
       if (w.kind === 'beta-age') return { over: await betaAged(run, provider, w) };
+      if (w.kind === 'beta-out') return { over: await betaOut(run, provider) };
+      if (w.kind === 'stable-out') return { over: await stableOut(run) };
       if (w.kind === 'label') {
         const want = (w.label ?? '').trim().toLowerCase();
         return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
@@ -1224,7 +1232,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const key = `release:${runId}:${who.stage}:${who.attempt}:${stepKey(unit)}`;
     // A push, a beta and a stable wait for the person whatever the agent's autonomy (D6, D18); `open` and `merge-pr` follow it.
     if (alwaysWaits(unit.op) || !who.autonomous) {
-      const created = door.proposeRelease({ key, issue: trackIid(run), issueTitle: run.issue.title, summary, unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } });
+      const created = door.proposeRelease({ key, issue: trackIid(run), issueTitle: run.issue.title, summary, unit, group: `${runId}:${who.stage}:${who.attempt}`, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } });
       if (created) say(run, alwaysWaits(unit.op) ? 'runner.release.alwaysWaits' : 'runner.release.proposed', { summary }, who.stage);
       return created ? `Waiting for the person: "${summary}" is in Actions and happens when they say yes. Nothing was done yet.` : `Already waiting in Actions (or already done): "${summary}".`;
     }
@@ -1253,8 +1261,17 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const runId = String(a.unit?.runId ?? '');
     const run = deps.runs.get(runId);
     if (!run?.subject) return;
-    say(run, 'runner.release.stepDone', { summary: a.summary ?? '' });
+    // A push that found the remote already holding what it would send moved nothing on the host: the thread says so, and the waits for the host go on waiting.
+    if (a.nothingSent) say(run, 'runner.release.nothingSent', { summary: a.summary ?? '', detail: a.output ?? '' });
+    else say(run, 'runner.release.stepDone', { summary: a.summary ?? '' });
     await refreshActivities(runId);
+  }
+
+  /** A step of the release that the person said yes to was refused before it ran: one it needs, asked in the same stage, is not done yet. */
+  async function releaseStepRefused(a: ReleaseAction, reason: string): Promise<void> {
+    const run = deps.runs.get(String(a.unit?.runId ?? ''));
+    if (!run?.subject || a.kind !== 'release-git') return;
+    say(run, 'runner.release.stepWaits', { reason });
   }
 
   /** The tracking issue a proposal made: the run learns where it is. */
@@ -1366,6 +1383,25 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return !blocking.some((i) => i.state === 'open');
   }
 
+  /**
+   * Whether the latest beta of the version is on the host: its tag on the remote (not only in this clone) and its pre-release published. What a wait for `beta-out` ends on;
+   * a cut whose push sent nothing, or a tag that is still the previous beta's, keeps it waiting.
+   */
+  async function betaOut(run: Run, provider: VcsProvider): Promise<boolean> {
+    if (!run.subject) return false;
+    const { latest, published } = await betasOf(run, provider);
+    if (!latest || !published.has(latest)) return false;
+    const remote = await deps.remoteRelease?.(run);
+    return !!remote?.tags[`v${run.subject.version}-beta.${latest}`];
+  }
+
+  /** Whether the stable is on the host: the `vX.Y.Z` tag on the remote, and its commit on the remote's main. What a wait for `stable-out` ends on. */
+  async function stableOut(run: Run): Promise<boolean> {
+    if (!run.subject) return false;
+    const remote = await deps.remoteRelease?.(run);
+    return !!remote?.tags[releaseTagOf(run.subject.version)] && remote.stableOnMain;
+  }
+
   // Anything that goes wrong while publishing is said in the thread and never fails the stage or the run.
   const guarded = (runId: string, work: () => Promise<void>): Promise<void> =>
     work().catch((e) => {
@@ -1386,6 +1422,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     asked: (runId, e) => guarded(runId, () => question(runId, e)),
     gateDecided: (runId, e) => guarded(runId, () => gate(runId, e)),
     actionDone: (a, responses) => guarded(String(a.unit?.runId ?? ''), () => done(a, responses)),
+    actionRefused: (a, reason) => guarded(String(a.unit?.runId ?? ''), () => releaseStepRefused(a, reason)),
     flushReviews: (runId) => guarded(runId, () => flush(runId)),
     waitOver,
     undo: (runId, key) => undo(runId, key),
