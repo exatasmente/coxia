@@ -150,6 +150,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      if (r.partial) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: id }, stage });
       if (place.kind === 'run' && place.run) {
         const issue = proposesIssue(def, deps, place) ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
         if (issue) await proposeIssue(deps, place.run, message.seq, id, issue);

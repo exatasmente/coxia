@@ -1108,6 +1108,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
+      let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
         const abort = new AbortController();
@@ -1116,6 +1117,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         call.beat = watch.beat;
         const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
         answer = readChain(r.data);
+        partial = !!r.partial;
         if (!answer) failure = 'empty-answer';
       } catch (e) {
         failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -1124,6 +1126,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const now = deps.runs.get(id)?.question;
       if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
       if (!answer) return handUp(id, holder.id, 'failed', failure);
+      if (partial) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: holder.id }, stage: run.stage });
       if (answer.verdict === 'request') return handleRequest(id, holder, q, answer.request, !!liaison);
 
       if (answer.verdict === 'answer' && answer.text) {
@@ -1172,6 +1175,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
     let answer: RequestAnswer | null = null;
     let failure = '';
+    let partial = false;
     try {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
       const abort = new AbortController();
@@ -1180,6 +1184,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         call.beat = watch.beat;
         const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
       answer = readRequestAnswer(r.data);
+      partial = !!r.partial;
       if (!answer) failure = 'empty-answer';
     } catch (e) {
       failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -1192,6 +1197,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       return handUp(id, holder.id, 'failed', t('main.runner.request.failedDetail', { squad: toName, reason: failure }));
     }
 
+    if (partial) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: target.id }, stage: run.stage });
     if (answer.verdict === 'answer') {
       reply({ text: answer.text });
       move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: t('main.runner.request.answerText', { squad: toName, agent: target.id, text: answer.text }) }, at));

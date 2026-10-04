@@ -2,14 +2,15 @@
 // system agent keeps leading and takes over after; a failure does not bring the ceremony down.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const ran = vi.hoisted(() => ({ calls: [] as { agent: string; prompt: string }[], fail: false as boolean }));
+const ran = vi.hoisted(() => ({ calls: [] as { agent: string; prompt: string }[], fail: false as boolean, partial: false as boolean, maxTurns: [] as number[] }));
 
 vi.mock('../src/main/agents', async (orig) => ({
   ...(await orig<typeof import('../src/main/agents')>()),
-  runAgent: async (call: { agent: { id: string }; prompt: string }) => {
+  runAgent: async (call: { agent: { id: string }; prompt: string; maxTurns: number }) => {
     if (ran.fail) throw new Error('the model went away');
     ran.calls.push({ agent: call.agent.id, prompt: call.prompt });
-    return { data: { text: `answer from ${call.agent.id}` } };
+    ran.maxTurns.push(call.maxTurns);
+    return { data: { text: `answer from ${call.agent.id}` }, ...(ran.partial ? { partial: true } : {}) };
   },
 }));
 
@@ -20,6 +21,8 @@ const { answerCeremonyMentions } = await import('../src/main/mentions/ceremony')
 beforeEach(() => {
   ran.calls.length = 0;
   ran.fail = false;
+  ran.partial = false;
+  ran.maxTurns.length = 0;
   const c = neutralConfig();
   c.language = 'en';
   updateConfig(() => c);
@@ -44,6 +47,19 @@ describe('the agents named inside a ceremony', () => {
   it('answer at most three, whatever a fourth name says', async () => {
     const out = await answerCeremonyMentions('@turn @reply @deep @teams', ctx);
     expect(out.map((m) => m.agent)).toEqual(['turn', 'reply', 'deep']);
+  });
+
+  it('use the read-turn limit of the runner settings, and say a wrap-up answer may be incomplete', async () => {
+    const c = neutralConfig();
+    c.language = 'en';
+    c.runner.turns.read = 6;
+    updateConfig(() => c);
+    ran.partial = true;
+    const out = await answerCeremonyMentions('@turn help', ctx);
+    expect(ran.maxTurns).toEqual([6]);
+    expect(out[0].text).toContain('answer from turn');
+    expect(out[0].text).toContain('partial answer');
+    expect(out[0].speech).toBe('answer from turn');
   });
 
   it('do not bring the ceremony down when one of them fails', async () => {

@@ -63,7 +63,8 @@ export function requestCall(i: RequestInput): AgentCall {
     system,
     cwd: i.cwd,
     label: i.holder.id,
-    maxTurns: 20,
+    maxTurns: i.config.runner.turns.read,
+    wrapUp: true,
   };
 }
 

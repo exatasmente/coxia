@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **An agent called with `@`, asked in the chain or asked by another squad no longer fails when it runs out of steps.** These calls used a fixed limit of 20 steps and, when an agent spent them all reading (a shell exploring the code, say), the thread only said it could not answer. They now use the same limit as the runner's read-only stages (*steps of an agent that only reads*, Settings › Runner), and when it runs out the agent is resumed once, with no tool, to answer with what it has read; the thread says the answer may be incomplete. If that also fails, the failure message stays, with the reason. A stage that runs out of steps still fails.
+
 ## [0.6.0] - 2026-10-04
 
 ### Added
