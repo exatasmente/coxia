@@ -4,12 +4,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 type Msg = Record<string, unknown> | ((options: Record<string, any>) => Promise<void>);
 const calls: { prompt: string; options: Record<string, any> }[] = [];
 let script: Msg[] = [];
+// When set, each call of the SDK takes the next script (a call and the resume that follows it).
+let queue: Msg[][] | null = null;
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: ({ prompt, options }: { prompt: string; options: Record<string, any> }) => {
     calls.push({ prompt, options });
+    const mine = queue ? (queue.shift() ?? []) : script;
     return (async function* () {
-      for (const m of script) {
+      for (const m of mine) {
         if (typeof m === 'function') await m(options);
         else yield m;
       }
@@ -37,6 +40,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls.length = 0;
+  queue = null;
   script = done({ fala: 'ok' });
 });
 
@@ -153,5 +157,43 @@ describe('runAgent on the Claude SDK', () => {
     script = [{ type: 'system', subtype: 'init', session_id: 's1' }, { type: 'result', subtype: 'error_max_turns', session_id: 's1' }];
     await expect(runAgent({ agent: reader, prompt: 'p', schema, system: 's', cwd: tmpdir(), label: 'refiner', maxTurns: 2 })).rejects.toThrow(/error_max_turns/);
     expect(calls).toHaveLength(1);
+  });
+
+  describe('a call that answers a message and may run out of turns (wrapUp)', () => {
+    const turnsOut = (id = 's1'): Msg[] => [{ type: 'system', subtype: 'init', session_id: id }, { type: 'result', subtype: 'error_max_turns', session_id: id }];
+    const call = (extra: Record<string, unknown> = {}) => ({ agent: reader, prompt: 'p', schema, system: 's', cwd: tmpdir(), label: 'refiner', maxTurns: 20, wrapUp: true, ...extra });
+
+    it('resumes the same session once, with no tool and 2 turns, and marks what comes back as partial', async () => {
+      queue = [turnsOut(), done({ fala: 'what I have' })];
+      const r = await runAgent<{ fala: string }>(call());
+      expect(r).toMatchObject({ data: { fala: 'what I have' }, partial: true });
+      expect(calls).toHaveLength(2);
+      const [first, again] = calls;
+      expect(first.options.maxTurns).toBe(20);
+      expect(first.options.resume).toBeUndefined();
+      expect(again.options).toMatchObject({ resume: 's1', maxTurns: 2, tools: [], allowedTools: [] });
+      expect(again.options.outputFormat).toEqual(first.options.outputFormat);
+      expect(again.options.mcpServers).toBeUndefined();
+      expect(again.options.disallowedTools).toEqual(expect.arrayContaining(['Edit', 'Write', 'Bash']));
+      expect(again.prompt).not.toBe('p');
+    });
+
+    it('keeps the failure, with the reason, when the wrap-up fails too', async () => {
+      queue = [turnsOut(), [{ type: 'system', subtype: 'init', session_id: 's1' }, { type: 'result', subtype: 'error_during_execution', session_id: 's1' }]];
+      await expect(runAgent(call())).rejects.toThrow(/step limit[\s\S]*partial answer[\s\S]*error_during_execution|limite de passos[\s\S]*error_during_execution/);
+      expect(calls).toHaveLength(2);
+    });
+
+    it('fails with no second call when the session is unknown', async () => {
+      queue = [[{ type: 'result', subtype: 'error_max_turns', session_id: '' }]];
+      await expect(runAgent(call())).rejects.toThrow(/step limit|limite de passos/);
+      expect(calls).toHaveLength(1);
+    });
+
+    it('is never done for a call that did not ask for it (a stage)', async () => {
+      queue = [turnsOut()];
+      await expect(runAgent(call({ wrapUp: undefined }))).rejects.toThrow(/error_max_turns/);
+      expect(calls).toHaveLength(1);
+    });
   });
 });

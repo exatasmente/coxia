@@ -983,6 +983,11 @@ export interface AgentCall {
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
   activity?: RunActivity;
   maxTurns: number;
+  /**
+   * A call that answers a message (a mention, a question of the chain, a request between squads) and may run out of turns: the same session is resumed once, with no
+   * tool at all, to answer with what it has read, and the answer comes back marked `partial`. A stage leaves it off: it must not be reported done from a half answer.
+   */
+  wrapUp?: boolean;
   abort?: AbortController;
   /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
   beat?: () => void;
@@ -1039,7 +1044,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const { allowedTools, shell, tracker } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
-    const r = await runnerFor(target)<T>({
+    const request: EngineRequest = {
       role: target.role,
       prompt: call.prompt,
       schema: call.schema,
@@ -1058,7 +1063,14 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
-    });
+    };
+    let r: Run<T>;
+    try {
+      r = await runnerFor(target)<T>(request);
+    } catch (e) {
+      if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
+      r = await wrapUpAnswer<T>(request, e, activity);
+    }
     activity.status('finished');
     return r;
   } catch (e) {
@@ -1066,6 +1078,33 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     // One seam for stages, mentions and the chain: the reason carries the provider the role is mapped to, whichever engine raised it.
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(target.providerId, e.engine, e.detail);
     throw e;
+  }
+}
+
+// The resume of a call that ran out of turns: same session, same schema, 2 turns and no tool of any kind (no shell session, no code host read, no release step), so
+// it can only answer. Its transcript is the same session, so the cost panel counts it.
+async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activity: RunActivity): Promise<Run<T>> {
+  const stopped = cp('system.stopped', { noSession: e.sessionId ? '' : cp('system.noSession') });
+  if (!e.sessionId) throw new Error(stopped);
+  console.error('[agent] error_max_turns, resuming once for an answer', e.sessionId);
+  activity.status('resumed');
+  try {
+    const r = await runnerFor(request.target)<T>({
+      ...request,
+      prompt: cp('system.wrapUp'),
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: request.shell.patterns },
+      extra: { maxTurns: 2, resume: e.sessionId, tools: [], allowedTools: [] },
+      exec: undefined,
+      release: undefined,
+    });
+    return { ...r, sources: [...e.sources, ...r.sources], partial: true };
+  } catch (again) {
+    // A refusal by budget is a wait for the runner, not a failure to word here.
+    if (again instanceof ProviderBudgetError) throw again;
+    console.error('[agent] wrap-up answer failed', again instanceof Error ? again.message : again);
+    throw new Error(cp('system.partialFailed', { stopped, reason: again instanceof Error ? again.message : String(again) }));
   }
 }
 

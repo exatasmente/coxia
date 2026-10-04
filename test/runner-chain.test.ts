@@ -6,7 +6,7 @@ import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { ForumMessage } from '../src/shared/forum';
 import { setLanguage } from '../src/shared/i18n';
 import type { Run } from '../src/shared/runs';
-import { type Boot, boot, doc, work } from './helpers/runner';
+import { type Boot, PartialAnswer, boot, doc, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -148,6 +148,34 @@ describe('a question between agents', () => {
     expect(stopped).toMatchObject({ status: 'question', question: { holder: null, hops: 5 } });
     expect(b.engine.calls.map((c) => c.agent.id).filter((a) => chain.includes(a))).toEqual(['a1', 'a2', 'a3', 'a4']);
     expect(b.thread(run).find((m) => m.code === 'runner.chain.hops')).toMatchObject({ kind: 'system', params: { agent: 'a5', hops: 4 } });
+  });
+
+  it('gives the agent that answers the read-turn limit of the runner settings, with the wrap-up on', async () => {
+    const b = await build((c) => void (c.runner.turns.read = 9));
+    script(b, { developer: [asked('Where?'), () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] })], techLead: [() => ({ verdict: 'answer', text: 'Here.', reason: '' }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] })] });
+    await through(b, await b.runner.start('app#101'));
+    const answering = b.engine.calls.find((c) => c.prompt.includes('asks:'));
+    expect(answering?.agent.id).toBe('tech-lead');
+    expect(answering).toMatchObject({ maxTurns: 9, wrapUp: true });
+  });
+
+  it('uses the answer of an agent that ran out of turns and answered from the wrap-up, and says so in the thread', async () => {
+    const b = await build();
+    script(b, { developer: [asked('Where?'), () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] })], techLead: [() => new PartialAnswer({ verdict: 'answer', text: 'Here, as far as I read.', reason: '' }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] })] });
+    const run = await b.runner.start('app#101');
+    await through(b, run);
+    expect(b.thread(run).find((m) => m.code === 'runner.partial')).toMatchObject({ kind: 'system', params: { agent: 'tech-lead' } });
+    expect(b.thread(run).find((m) => m.kind === 'answer')?.text).toContain('Here, as far as I read.');
+    expect(b.thread(run).some((m) => m.code === 'runner.chain.failed')).toBe(false);
+  });
+
+  it('goes to the person with the reason when the wrap-up of the agent fails too', async () => {
+    const b = await build();
+    script(b, { developer: [asked('Where?')], techLead: [() => { throw new Error('stopped at the step limit and the partial answer failed (provider error)'); }] });
+    const run = await b.runner.start('app#101');
+    expect(await through(b, run)).toMatchObject({ status: 'question', question: { holder: null } });
+    expect(b.thread(run).find((m) => m.code === 'runner.chain.failed')?.params.detail).toContain('provider error');
+    expect(b.thread(run).some((m) => m.code === 'runner.partial')).toBe(false);
   });
 
   it('goes to the person when the agent it was given to cannot answer at all', async () => {

@@ -11,7 +11,7 @@ import { personPost } from '../src/main/forum';
 import { answerMentions } from '../src/main/mentions/answer';
 import { callsOf } from '../src/main/mentions/module';
 import type { MentionPlace } from '../src/main/mentions/place';
-import { fakeEngine } from './helpers/runner';
+import { PartialAnswer, fakeEngine } from './helpers/runner';
 
 let dir: string;
 let forum: ForumStore;
@@ -82,6 +82,39 @@ describe('the answer in another thread', () => {
     expect(posts[0].author).toEqual({ type: 'agent', id: 'turn' });
     expect(engine.calls[0].confine).toBeUndefined();
     expect(engine.calls[0].prompt).toContain('@turn check this');
+  });
+
+  it('gives the call the read-turn limit of the runner settings, and the wrap-up when the model runs out', async () => {
+    const engine = fakeEngine();
+    engine.script('turn', () => ({ text: 'Fine.' }));
+    const c = config();
+    c.runner.turns.read = 7;
+    await answerMentions(place, personMessage('squads', '@turn hi', ['turn']), { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }) });
+    expect(engine.calls[0].maxTurns).toBe(7);
+    expect(engine.calls[0].wrapUp).toBe(true);
+  });
+
+  it('posts the wrap-up answer like any other and says in the thread that it may be incomplete', async () => {
+    const engine = fakeEngine();
+    engine.script('turn', () => new PartialAnswer({ text: 'What I read so far.' }));
+    await answerMentions(place, personMessage('squads', '@turn hi', ['turn']), { forum, config, engine, env: () => ({ fallbackCwd: dir }) });
+    const lines = forum.read('squads', 0, 200)?.messages ?? [];
+    expect(answered('squads')).toHaveLength(1);
+    expect(answered('squads')[0].text).toBe('What I read so far.');
+    expect(lines.find((m) => m.code === 'runner.partial')).toMatchObject({ kind: 'system', params: { agent: 'turn' } });
+    expect(lines.some((m) => m.code === 'runner.mentionFailed')).toBe(false);
+  });
+
+  it('says the failure with its reason when the wrap-up fails too, and posts no answer', async () => {
+    const engine = fakeEngine();
+    engine.script('turn', () => {
+      throw new Error('stopped at the step limit; the attempt at a partial answer also failed (the model is down)');
+    });
+    await answerMentions(place, personMessage('squads', '@turn hi', ['turn']), { forum, config, engine, env: () => ({ fallbackCwd: dir }) });
+    const lines = forum.read('squads', 0, 200)?.messages ?? [];
+    expect(lines.find((m) => m.code === 'runner.mentionFailed')?.params.reason).toContain('the model is down');
+    expect(answered('squads')).toEqual([]);
+    expect(lines.some((m) => m.code === 'runner.partial')).toBe(false);
   });
 
   it('answers nobody when the mention names no agent of the team', async () => {
