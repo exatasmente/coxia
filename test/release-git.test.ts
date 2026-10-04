@@ -1,11 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type ReleasePr, latestBetaTag, previewRelease, releaseCommandLine, runReleaseOp } from '../src/main/releaseGit';
 import { setLanguage } from '../src/shared/i18n';
 import { type ReleaseUnit } from '../src/shared/release';
 import { AUTHOR, ReleaseWorld, cleanWorlds } from './helpers/releaseWorld';
+
+// Each case builds real repositories and runs the release script in them: alone they take a second or two, but under the whole suite (and inside the app's release
+// step, which runs the suite as a check) the default 5 s is passed, and a cut that is merely slow fails the gate.
+vi.setConfig({ testTimeout: 30_000 });
 
 // The release operations against real temporary repositories: the repository's own scripts/release.sh runs (behind a wrapper that records its arguments), the host is a
 // function a test gives, and nothing leaves the machine except into a bare repository on disk. The steps run in a worktree of their own (`w.steps`); the person's
