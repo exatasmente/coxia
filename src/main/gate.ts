@@ -206,6 +206,9 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
   if (choice !== null && choice >= 0 && choice <= 3) {
     answer = { choice, other: null, correct: choice === q.correct, comment: '' };
   } else {
+    // A free answer may name an agent of the team: it answers inside the ceremony, before the reply agent reads the answer.
+    const mentioned = await answerCeremonyMentions(input.text ?? '', { thread: g.id, ref: g.ref, title: g.title, msgs: g.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
+    if (mentioned.length) g.talk.push(...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })));
     const r = await askAgent<{ certa: boolean; comentario: string }>(
       'reply',
       cp('gate.answer', {
@@ -227,7 +230,6 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
 export async function explainGate(id: string, question: string): Promise<GateView> {
   const g = read(id);
   const mentioned = await answerCeremonyMentions(question, { thread: g.id, ref: g.ref, title: g.title, msgs: g.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
-  if (mentioned.length) g.talk.push(...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })));
   const round = g.rounds[g.rounds.length - 1];
   const missed = round.questions.filter((_, i) => round.answers[i] && !round.answers[i]?.correct);
   const r = await askAgent<{ fala: string; texto: string }>(
@@ -241,7 +243,12 @@ export async function explainGate(id: string, question: string): Promise<GateVie
     { maxTurns: 8, ...(g.sessionId ? { resume: g.sessionId } : {}) },
   );
   g.sessionId = r.sessionId || g.sessionId;
-  g.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
+  // The person's question, then each agent it named, then the system agent, which keeps leading the ceremony.
+  g.talk.push(
+    { me: true, text: question, at: now() },
+    ...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })),
+    { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) },
+  );
   return view(write(g));
 }
 

@@ -32,6 +32,7 @@ export const mentionsModule: Module = () => {
     const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig());
     if (!place || place.kind === 'run') return;
     const prior = inFlight().get(message.thread) ?? Promise.resolve();
+    // Only readers reach here (an agent set to commands got a throwaway copy): the folder the person works in is the fallback.
     const next = prior
       .then(() =>
         answerMentions(place, message, {

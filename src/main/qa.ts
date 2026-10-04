@@ -120,7 +120,11 @@ export async function askQa(iid: string, question: string): Promise<QaHandoff> {
     { maxTurns: 12, ...(q.sessionId ? { resume: q.sessionId } : {}) },
   );
   q.sessionId = r.sessionId || q.sessionId;
-  q.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
+  q.talk.push(
+    { me: true, text: question, at: now() },
+    ...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })),
+    { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) },
+  );
   return write(q);
 }
 

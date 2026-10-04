@@ -160,7 +160,10 @@ async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, si
   return { cwd: dir, made: true, reader: false };
 }
 
-/** Opens the session an agent's commands run in, over the throwaway folder `cwd` (already a copy), read only: a sandbox of this computer, or a host session. */
+/**
+ * Opens the session an agent's commands run in, over the throwaway folder `cwd` (already a copy), read only: a sandbox of this computer, or a host session. A host
+ * session keeps the same limit as a run's thread: every command waits for the person, and without the app to ask it is refused, never run unattended.
+ */
 function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean }, thread: string, signal: AbortSignal): Promise<SandboxSession> {
   const sandbox = deps.sandbox;
   if (!sandbox) return Promise.reject(new Error(t('main.mentions.noRepo')));
@@ -177,7 +180,10 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       // A note that cannot be recorded does not stop the answer.
     }
   };
-  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal });
+  // A host command runs on the person's computer: like a run's thread, each one waits for their yes; a mention place has no screen to ask on today, so it is refused
+  // rather than run unattended.
+  const approve = (_command: string): Promise<{ ok: boolean }> => Promise.resolve({ ok: false });
+  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
   return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal });
 }
 

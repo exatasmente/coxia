@@ -88,4 +88,18 @@ describe('the commands of a mention outside a run', () => {
     await answerMentions(place([repo('api')]), message(), { forum, config: () => config('none'), engine, sandbox, env: () => ({ fallbackCwd: root }) });
     expect(sandbox.opened).toHaveLength(0);
   });
+
+  it('never runs a host command without asking: a place with no screen refuses it', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const results: { refused?: string; exitCode: number | null }[] = [];
+    engine.script('turn', async (call) => {
+      if (call.exec) results.push(await call.exec.exec('npm test'));
+      return { text: 'Read only.' };
+    });
+    await answerMentions(place([repo('api')]), message(), { forum, config: () => config('host'), engine, sandbox, env: () => ({ fallbackCwd: root }) });
+    expect(sandbox.opened).toHaveLength(1);
+    expect(sandbox.opened[0].host).toBe(true);
+    expect(results).toMatchObject([{ refused: 'denied' }]);
+  });
 });

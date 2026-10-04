@@ -69,7 +69,11 @@ export function Deep({
           ...d,
           sessionId: r.sessionId,
           sources: [...new Set([...d.sources, ...r.sources])],
-          msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) }],
+          msgs: [
+            ...d.msgs,
+            ...(r.mentions ?? []).map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })),
+            { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) },
+          ],
         }));
         return r;
       });
