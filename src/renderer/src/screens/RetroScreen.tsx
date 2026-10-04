@@ -154,7 +154,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
             <section className="panel" style={{ padding: 20, gap: 10 }}>
               <h2 className="section-title">{t('ui.retro.talk.title')}</h2>
               {retro.talk.map((m, i) => (
-                <Bubble key={i} m={m} who={m.me ? t('ui.retro.talk.me') : t('ui.retro.talk.moderator')} voice={voice} player={player} speaker="retro" />
+                <Bubble key={i} m={m} who={m.me ? t('ui.retro.talk.me') : m.agent ? c.agentNameOf(m.agent) : t('ui.retro.talk.moderator')} voice={m.agent ? c.voiceOfAgent(m.agent) : voice} player={player} speaker={m.agent ?? 'retro'} />
               ))}
               <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) ask(draft.trim()); setDraft(''); }}>
                 <input className="text-input" placeholder={t('ui.retro.talk.placeholder')} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={t('ui.retro.talk.aria')} />

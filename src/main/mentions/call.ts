@@ -1,25 +1,31 @@
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import type { Run } from '../../shared/runs';
 import type { AgentCall } from '../agents';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
-import type { FolderFile } from './cycleFolder';
-import { fence, threadText } from './prompt';
+import type { FolderFile } from '../runner/cycleFolder';
+import { fence, threadText } from '../runner/prompt';
 
-// What an agent is given when a person names it in a run's thread: the question, the cycle folder and the recent thread. It never writes to the run: the
-// call has no confinement to write in, so whatever the agent's own permission is, a mention never changes a file of the branch. An agent set to run commands
-// (`shell: sandbox` or `host`) gets its session over a throwaway copy of the code, so it can reproduce what it is asked about; one that reads the code host may
-// propose an issue, which only waits in Actions for the person's yes.
+// What an agent is given when a person names it: the question, where it was named, the conversation and (when it runs commands) a throwaway copy of the code.
+// It never writes to the repository: the call has no confinement to write in, so whatever the agent's own permission is, a mention changes no file of the branch.
+// The place decides what the agent is told about where it answers (the run, a squad channel, a general thread or a ceremony) and which repositories it may name.
 
 export interface MentionInput {
-  run: Run;
   agent: AgentDef;
   config: WorkspaceConfig;
   message: ForumMessage;
   thread: ForumMessage[];
   files: FolderFile[];
   cwd: string;
+  /** The issue/run or the card under discussion, when there is one. */
+  ref?: string;
+  title?: string;
+  /** The squad's mission, when the place has one (a squad channel). */
+  mission?: string | null;
+  /** The repositories the agent may name, already resolved to their titles. Empty: none (the system text says so). */
+  repos?: readonly string[];
+  /** Where the person wrote: the place text changes with it. */
+  place: 'run' | 'channel' | 'general' | 'ceremony';
   /** The agent's commands run in a session over a copy of the code: what it is told about it. Absent: no commands. */
   shell?: { host: boolean; network: 'off' | 'registry' };
   /** The agent may propose an issue (it reads the code host): the answer gets an `issue` field. */
@@ -49,10 +55,27 @@ const ISSUE_SCHEMA = {
   additionalProperties: false,
 };
 
+/** The line that says where the person wrote and what the agent may read there. */
+function placeLine(i: MentionInput): string {
+  const repos = (i.repos ?? []).map((r) => r.trim()).filter(Boolean);
+  const repoList = repos.length ? repos.join(', ') : cp('runner.mention.place.noRepos');
+  switch (i.place) {
+    case 'channel':
+      return cp('runner.mention.place.channel', { mission: (i.mission ?? '').trim() || cp('runner.mention.place.noMission'), repos: repoList });
+    case 'general':
+      return cp('runner.mention.place.general', { repos: repoList });
+    case 'ceremony':
+      return cp('runner.mention.place.ceremony', { ref: i.ref ?? '—', title: i.title ?? '—' });
+    default:
+      return cp('runner.mention.place.run', { ref: i.ref ?? '—', title: i.title ?? '—' });
+  }
+}
+
 export function mentionCall(i: MentionInput): AgentCall {
   const agents = i.config.agents;
   const system = [
-    cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title }),
+    cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
+    placeLine(i),
     i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     i.issue ? cp('runner.mention.issue') : '',

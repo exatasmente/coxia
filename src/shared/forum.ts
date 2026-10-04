@@ -153,3 +153,21 @@ export function parseMentions(text: string, agentIds: readonly string[]): string
   }
   return found;
 }
+
+/** The most agents a single message calls on: the rest are named but not answered. */
+export const MAX_MENTIONS = 3;
+
+/**
+ * The `@name` a person wrote that are no agent of the team, in the order written and each once. The same boundary as `parseMentions` (an address, a path and an
+ * email stay plain text), and only for a message a person wrote: what a text of an agent says is not a call.
+ */
+export function unknownMentions(text: string, agentIds: readonly string[]): string[] {
+  const known = new Set(agentIds);
+  const found: string[] = [];
+  for (const m of text.matchAll(/(^|[^\w@/.-])@([A-Za-z0-9][A-Za-z0-9_-]*)/g)) {
+    const id = m[2];
+    const key = id.toLowerCase();
+    if (!known.has(key) && !found.includes(id)) found.push(id);
+  }
+  return found;
+}

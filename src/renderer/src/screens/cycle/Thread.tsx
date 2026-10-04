@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
-import { type ForumMessage, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
+import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
 import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
 import { errorText } from '../../api';
@@ -75,7 +75,12 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
       <div className="cy-msg-text">
         <RichText text={messageText(m)} />
       </div>
-      {m.mentions.length > 0 && <p className="faint small">{t('ui.forum.mentions', { agents: m.mentions.map((id) => agentName(ctx.team, id)).join(', ') })}</p>}
+      {m.author.type === 'person' && m.mentions.length > 0 && (
+        <>
+          <p className="faint small">{t('ui.forum.mentions', { agents: m.mentions.slice(0, MAX_MENTIONS).map((id) => agentName(ctx.team, id)).join(', ') })}</p>
+          {m.mentions.length > MAX_MENTIONS && <p className="faint small">{t('ui.forum.mentionsOverLimit', { agents: m.mentions.slice(MAX_MENTIONS).map((id) => agentName(ctx.team, id)).join(', ') })}</p>}
+        </>
+      )}
       {m.refs.length > 0 && ctx.runId && (
         <ul className="cy-artifacts" aria-label={t('ui.forum.refs')}>
           {m.refs.map((r) => (
@@ -251,14 +256,12 @@ interface Props {
   run?: Run | null;
   team: readonly AgentDef[] | undefined;
   title?: string;
-  /** A channel does not call an agent: the box says so. */
-  channel?: boolean;
   /** Opens the form that sends the run back to a stage (the run screen's): offered next to the box while a mention is typed and the run can be sent back. */
   onSendBack?: () => void;
 }
 
 /** A thread read and written: messages by kind with their author and where they stand, the chain of each question, live, and the box to write in. */
-export function Thread({ thread, run = null, team, title, channel = false, onSendBack }: Props) {
+export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
   const t = useT();
   const live = useThread(thread);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -279,7 +282,7 @@ export function Thread({ thread, run = null, team, title, channel = false, onSen
   }, [rows.length, last]);
 
   const asking = run?.status === 'question' && run.question?.kind !== 'squad';
-  const note = asking ? t('ui.forum.noteAnswers') : channel ? t('ui.forum.noteChannel') : run ? t('ui.forum.noteMention') : null;
+  const note = asking ? t('ui.forum.noteAnswers') : t('ui.forum.noteMention');
 
   return (
     <section className="panel cy-thread" aria-label={title ?? t('ui.forum.thread')}>
@@ -304,7 +307,7 @@ export function Thread({ thread, run = null, team, title, channel = false, onSen
         thread={thread}
         team={team}
         note={note}
-        onSendBack={onSendBack && run && !channel && run.status !== 'question' && canSendBack(run) ? onSendBack : undefined}
+        onSendBack={onSendBack && run && run.status !== 'question' && canSendBack(run) ? onSendBack : undefined}
         onSent={() => {
           stick.current = true;
         }}

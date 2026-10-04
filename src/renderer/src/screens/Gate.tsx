@@ -274,7 +274,7 @@ export function Gate({
                       {t('ui.gate.consolidation.intro', { ask: tv('gate.assisted.ask') })}
                     </p>
                     {gate.talk.map((m, i) => (
-                      <Bubble key={i} m={m} who={m.me ? t('ui.gate.who.you') : t('ui.gate.who.agent')} voice={voice} player={player} speaker="gate" />
+                      <Bubble key={i} m={m} who={m.me ? t('ui.gate.who.you') : m.agent ? c.agentNameOf(m.agent) : t('ui.gate.who.agent')} voice={m.agent ? c.voiceOfAgent(m.agent) : voice} player={player} speaker={m.agent ?? 'gate'} />
                     ))}
                     <form className="row composer" style={{ flexWrap: 'nowrap' }} onSubmit={(e) => { e.preventDefault(); if (draft.trim()) act('explain', t('ui.gate.job.explain', { iid: card.iid }), t('ui.gate.busy.read'), () => api.explainGate(gate.id, draft.trim())); setDraft(''); }}>
                       <input className="text-input" placeholder={t('ui.gate.explain.draftPlaceholder')} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={t('ui.gate.explain.aria')} />

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { Card, QaHandoff } from '../shared/types';
 import { askAgent, obj, str } from './agents';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
 import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
@@ -111,6 +112,7 @@ export async function prepareQa(card: Card): Promise<QaHandoff> {
 export async function askQa(iid: string, question: string): Promise<QaHandoff> {
   const q = read(iid);
   if (!q) throw new Error(t('main.qa.notPrepared'));
+  const mentioned = await answerCeremonyMentions(question, { thread: q.id, ref: q.ref, title: q.title, msgs: q.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     cp('qa.ask', { ref: q.ref, question }),

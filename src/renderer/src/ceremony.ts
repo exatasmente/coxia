@@ -18,6 +18,8 @@ import { FLUSH_EVENT } from '../../shared/update';
 import { AGENT_COLORS, api, clock, errorText, moduleEvents } from './api';
 import { minutesApi } from './minutesApi';
 import { withJob } from './jobs';
+import { useRunConfig } from './screens/cycle/runsApi';
+import { agentName as nameOfAgent } from './screens/cycle/names';
 
 export type { LogLine };
 
@@ -34,6 +36,8 @@ function newId(): string {
 export const EMPTY_DEEP: DeepState = { sessionId: null, msgs: [], sources: [], options: null, pick: null, saved: false };
 
 export function useCeremony() {
+  const config = useRunConfig();
+  const team = config?.agents.team;
   const [restored, setRestored] = useState(false);
   const [id, setId] = useState(newId);
   // The squad the ceremony is held for (its runs and cards only); null: the whole workspace.
@@ -249,6 +253,19 @@ export function useCeremony() {
     [voices, indexOf],
   );
 
+  /** The voice of an agent of the team, by its id: the slot of the team it sits in, so the same agent always sounds the same. */
+  const voiceOfAgent = useCallback(
+    (agentId: string): Voice | null => {
+      if (!voices || !team?.length) return null;
+      const at = team.findIndex((a) => a.id === agentId);
+      return voices.agents[(at < 0 ? 0 : at) % voices.agents.length] ?? null;
+    },
+    [voices, team],
+  );
+
+  /** The name an agent of the team is shown by. */
+  const agentNameOf = useCallback((agentId: string): string => nameOfAgent(team, agentId), [team]);
+
   const addLog = useCallback(
     (who: string, text: string, color: string) => {
       const start = startedAt ?? Date.now();
@@ -324,6 +341,9 @@ export function useCeremony() {
     voices,
     colorOf,
     voiceOf,
+    team,
+    agentNameOf,
+    voiceOfAgent,
     minutes,
   };
 }

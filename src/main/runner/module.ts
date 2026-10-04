@@ -13,6 +13,7 @@ import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
+import { sandbox } from '../sandbox/workspace';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
@@ -66,9 +67,8 @@ export function retroIssueDone(action: ReleaseAction, responses: unknown[], star
   void start(`${rc().issues.refPrefix}${made.iid}`).catch((err) => noteRetroIssue(retro, 'main.retro.issue.noRun', { reason: failureText(err) }));
 }
 
-/** The sandbox of the running workspace's agents. Its folders live under the workspace's data and are the app's own: nothing from an earlier process is kept. */
-export const sandbox = createSandboxService({ dir: join(ATAS, 'sandbox'), home: HOME, protect: [DATA_ROOT] });
-
+/** The sandbox of the running workspace's agents, shared with the mentions answered outside a run's thread. */
+export { sandbox } from '../sandbox/workspace';
 export const runsModule: Module = (ctx) => {
   sandbox.purge();
   const r = createRunner({

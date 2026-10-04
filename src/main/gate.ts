@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
 import { askAgent, obj, str } from './agents';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { ATAS } from './env';
 import { rc } from './workspaceConfig';
@@ -225,6 +226,8 @@ export async function answerGate(id: string, index: number, input: { choice?: nu
 
 export async function explainGate(id: string, question: string): Promise<GateView> {
   const g = read(id);
+  const mentioned = await answerCeremonyMentions(question, { thread: g.id, ref: g.ref, title: g.title, msgs: g.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
+  if (mentioned.length) g.talk.push(...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })));
   const round = g.rounds[g.rounds.length - 1];
   const missed = round.questions.filter((_, i) => round.answers[i] && !round.answers[i]?.correct);
   const r = await askAgent<{ fala: string; texto: string }>(
