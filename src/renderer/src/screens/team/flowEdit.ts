@@ -1,4 +1,5 @@
 import { ID } from '../../../../shared/config/schema';
+import { RELEASE_FLOW_KEY } from '../../../../shared/config/squads';
 import { newAgent } from '../../../../shared/config/team';
 import { DEFAULT_ROUND_LIMIT, type AgentDef, type CommentTemplate, type StageDef, type StageKind, type StageType, type WorkspaceConfig } from '../../../../shared/config/types';
 import { isWork } from '../../../../shared/runs/flow';
@@ -193,6 +194,9 @@ export interface FlowChecks {
 export function applyFlows(config: WorkspaceConfig, d: FlowDraft): WorkspaceConfig {
   const next = structuredClone(config);
   const flows = Object.fromEntries(Object.entries(d.flows).filter(([squad]) => (next.squads ?? []).some((q) => q.id === squad)).map(([squad, stages]) => [squad, renumber(structuredClone(stages))]));
+  // The flow of a release run is no squad's and this editor does not show it: it stays as the config has it, and so do the stages its agent lists.
+  const release = config.devCycle.flows?.[RELEASE_FLOW_KEY];
+  if (release) flows[RELEASE_FLOW_KEY] = structuredClone(release);
   next.devCycle.stages = renumber(structuredClone(d.workspace));
   if (Object.keys(flows).length) next.devCycle.flows = flows;
   else delete next.devCycle.flows;

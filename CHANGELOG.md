@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving in the flow editor (Settings › Team and cycle › Flow) deleted the flow of a release run and the stages of the Release manager, so *Start a release* then failed with "no release flow"; the editor also warned that the Release manager "runs by itself but works no stage". The release flow, which the editor does not show, is now kept as it is.
+
 ## [0.5.0-beta.5] - 2026-10-03
 
 ### Added
