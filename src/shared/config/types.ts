@@ -492,9 +492,10 @@ export type AgentTracker = (typeof AGENT_TRACKERS)[number];
 
 /**
  * What an agent of a run may execute. `none`: no shell. `allowlist`: the commands of `runner.commands`, exactly as written (only with the `worktree`
- * permission). `sandbox`: any command, inside a sandbox the app builds for the stage (see `runner.sandbox`); offered only where one works.
+ * permission). `sandbox`: any command, inside a sandbox the app builds for the stage (see `runner.sandbox`); offered only where one works. `host`: any command, on this
+ * computer, as the person who runs the app, with no sandbox (an agent that only reads still works in a copy); set only on the computer, never brought by a template.
  */
-export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox'] as const;
+export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox', 'host'] as const;
 export type AgentShell = (typeof AGENT_SHELLS)[number];
 
 export interface AgentModel {

@@ -403,6 +403,8 @@
   "ui.team.shell": "Commands",
   "ui.team.shell.allowlist": "Listed commands",
   "ui.team.shell.allowlist.hint": "Runs only the commands listed in the runner settings, exactly as written, in the worktree. They are not sandboxed.",
+  "ui.team.shell.host": "This computer, with your approval",
+  "ui.team.shell.host.hint": "Runs any command on this computer, as you, outside any sandbox: it reaches the network, your tools, containers and emulators. Each command waits for you to allow it (once, or for the rest of the stage) on this computer, or on a paired phone only when external effects are allowed there. An agent that only reads runs them in a throwaway copy of the code. Set only here, never by a template.",
   "ui.team.shell.noSandbox": "A sandbox is not offered: {reason}.",
   "ui.team.shell.noSandboxWeb": "A sandbox is not offered on the computer running the app.",
   "ui.team.shell.none": "None",

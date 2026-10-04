@@ -4,7 +4,7 @@ import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
+import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError } from '../engine/contract';
@@ -53,6 +53,11 @@ export interface ExecutorDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandbox of an agent set to `shell: sandbox`. Without one, a stage of such an agent fails: it never runs its commands unsandboxed. */
   sandbox?: SandboxService;
+  /**
+   * Asks the person whether an agent set to `shell: host` may run a command, and resolves with the answer; the signal ends the question with the stage. Without it no
+   * host command runs: each one is refused.
+   */
+  askCommand?: (ask: { run: string; stage: string; agent: string; command: string }, signal: AbortSignal) => Promise<{ decision: CommandDecision; note?: string }>;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -132,6 +137,8 @@ export interface Watchdog {
   beat(): void;
   /** Resolves with `work`, or rejects when the agent was silent for the idle limit, the call ran past its cap, or the call was cancelled. */
   guard<T>(work: Promise<T>): Promise<T>;
+  /** Stops both clocks while the agent waits for the person (a command to allow); the function it returns starts them again, the cap with what was left of it. */
+  pause(): () => void;
 }
 
 /**
@@ -142,6 +149,9 @@ export function watchdog(abort: AbortController, limits: Limits): Watchdog {
   let idle: NodeJS.Timeout | undefined;
   let cap: NodeJS.Timeout | undefined;
   let fail: ((e: StageError) => void) | null = null;
+  let capLeft = limits.maxMs;
+  let capFrom = 0;
+  let paused = 0;
   const stop = (e: StageError): void => {
     fail?.(e);
     abort.abort();
@@ -150,16 +160,39 @@ export function watchdog(abort: AbortController, limits: Limits): Watchdog {
     clearTimeout(idle);
     idle = setTimeout(() => stop(new StageError('timeout', { minutes: minutes(limits.idleMs) })), limits.idleMs);
   };
+  const armCap = (): void => {
+    clearTimeout(cap);
+    capFrom = Date.now();
+    cap = setTimeout(() => stop(new StageError('too-long', { minutes: minutes(limits.maxMs) })), capLeft);
+  };
   return {
     beat: () => {
-      if (fail) arm();
+      if (fail && !paused) arm();
+    },
+    pause: () => {
+      if (!fail) return () => undefined;
+      if (paused++ === 0) {
+        clearTimeout(idle);
+        clearTimeout(cap);
+        capLeft = Math.max(0, capLeft - (Date.now() - capFrom));
+      }
+      let done = false;
+      return () => {
+        if (done) return;
+        done = true;
+        if (--paused === 0 && fail) {
+          arm();
+          armCap();
+        }
+      };
     },
     async guard<T>(work: Promise<T>): Promise<T> {
       work.catch(() => undefined);
       const late = new Promise<never>((_, reject) => {
         fail = reject;
+        capLeft = limits.maxMs;
         arm();
-        cap = setTimeout(() => stop(new StageError('too-long', { minutes: minutes(limits.maxMs) })), limits.maxMs);
+        armCap();
         abort.signal.addEventListener('abort', () => reject(new StageError('cancelled')));
       });
       try {
@@ -188,22 +221,24 @@ const clipText = (text: string, max: number): string => (text.length > max ? `${
 const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }));
 
 /**
- * Makes the sandbox of the stage, and tells the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot
- * make one fails the stage: the agent is set to run commands in a sandbox, and nothing here falls back to running them without.
+ * Makes the sandbox of the stage (or, for an agent set to `shell: host`, the session that runs its commands on this computer once the person allows each one), and tells
+ * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
+ * agent set to run commands in one never runs them without.
  */
-async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal): Promise<SandboxSession> {
+async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock): Promise<SandboxSession> {
+  const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
   const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
     try {
-      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(redact(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: host ? 'runner.exec.host' : 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(redact(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
       if (mode === 'run') {
         recordWrite({
           kind: 'exec',
           issue: run.issue.iid,
           target: redact(clipText(r.command, 300)),
-          via: 'sandbox',
+          via: host ? 'host' : 'sandbox',
           fields: { agent: agent.id, run: run.id, stage: stage.id, n: String(r.n), ms: String(r.ms), timedOut: String(r.timedOut) },
           ok: r.exitCode === 0,
           code: r.exitCode,
@@ -231,11 +266,39 @@ async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, age
     }
   };
   try {
+    if (host) return await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal });
     return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal });
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
   }
+}
+
+/** What a host session needs from its stage: the watchdog, once it exists (a command waiting for the person stops its clocks), and the commands already allowed. */
+interface StageClock {
+  pause(): () => void;
+  /** The workspace's own commands the app runs before QA: the person listed them, so they run without asking, as on `allowlist`. */
+  allowed: Set<string>;
+}
+
+/**
+ * Every command of an agent set to `shell: host` waits for the person: "once" lets that one run, "stage" every one until the stage ends, "deny" refuses it (with
+ * the person's note for the agent). The stage's clocks stand still meanwhile, so a person who answers later does not fail the stage.
+ */
+function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, signal: AbortSignal, clock: StageClock): (command: string) => Promise<{ ok: boolean; note?: string }> {
+  let trusted = false;
+  return async (command) => {
+    if (trusted || clock.allowed.has(command)) return { ok: true };
+    if (!d.askCommand || signal.aborted) return { ok: false };
+    const resume = clock.pause();
+    try {
+      const answer = await d.askCommand({ run: run.id, stage: stage.id, agent: agent.id, command }, signal);
+      if (answer.decision === 'stage') trusted = true;
+      return { ok: answer.decision !== 'deny', note: answer.note };
+    } finally {
+      resume();
+    }
+  };
 }
 
 /**
@@ -249,16 +312,18 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too. It comes
   // before the sandbox is made, because the sandbox shares the folders those links point to.
   if (writes || kind === 'qa') await ensureDependencies(d, run, stage.id);
-  const session = agent.shell === 'sandbox' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal) : null;
+  // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
+  const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), allowed: new Set() };
+  const session = agent.shell === 'sandbox' || agent.shell === 'host' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
-    return await runStage(d, run, flow, abort, usage, session);
+    return await runStage(d, run, flow, abort, usage, session, clock);
   } finally {
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
 }
 
-async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null): Promise<StageRun> {
+async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: { watch?: Watchdog; allowed: Set<string> }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
@@ -291,7 +356,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;
 
   // QA is a reader: it cannot run anything, so the app runs what the workspace allows before it and gives it the results.
-  const ran: CommandResult[] | undefined = kind === 'qa' && !writes ? await runCommands(config.runner.commands ?? (await declaredCommands(wt, run.base)), wt, session ? sessionRunner(session) : (d.commandRunner ?? runCommand), abort.signal) : undefined;
+  const qaCommands = kind === 'qa' && !writes ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : null;
+  for (const c of qaCommands ?? []) clock?.allowed.add(c);
+  const ran: CommandResult[] | undefined = qaCommands ? await runCommands(qaCommands, wt, session ? sessionRunner(session) : (d.commandRunner ?? runCommand), abort.signal) : undefined;
   // Inside a sandbox every command already told the thread as it ran; the app's own run before QA is announced as one line.
   if (ran?.length && !session) {
     const list = ran.map((r) => `${r.command} (${r.timedOut ? 'timeout' : (r.exitCode ?? '—')})`).join(', ');
@@ -325,7 +392,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
-    sandbox: session ? { network: config.runner.sandbox.network, reader: !writes } : undefined,
+    sandbox: session ? { network: config.runner.sandbox.network, reader: !writes, host: agent.shell === 'host' } : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
     // A release run says which version it is about, the state of its branch and what is aimed at it, as of the stage's start.
     release: run.subject ? releaseSection(run, await releaseStateOf(wt, run.subject.version), config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) : undefined,
@@ -355,6 +422,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     release: run.subject && d.release ? (input) => (d.release as NonNullable<ExecutorDeps['release']>)(run.id, input, { by: agent.id, autonomous: run.stages.find((s) => s.stage === stage.id)?.autonomous ?? false, stage: stage.id, attempt }) : undefined,
   };
   const watch = watchdog(abort, limitsOf(config, d));
+  if (clock) clock.watch = watch;
   call.beat = watch.beat;
   call.onUsage = usage;
 

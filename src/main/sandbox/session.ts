@@ -27,10 +27,12 @@ export interface ExecResult {
   outputUnavailable?: true;
   ms: number;
   /** Why the command was not run at all. */
-  refused?: 'empty' | 'size' | 'budget' | 'closed';
+  refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied';
 }
 
 export interface SandboxSession {
+  /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
+  readonly description?: string;
   /** Runs one command; one at a time per stage (calls queue). Never throws for a command that fails. */
   exec(command: string): Promise<ExecResult>;
   /** Every command of the stage, in order, with what it did. */

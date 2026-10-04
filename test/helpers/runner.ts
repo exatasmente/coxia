@@ -12,7 +12,7 @@ import { createForumStore } from '../../src/main/forum-core';
 import type { StageEngine } from '../../src/main/runner/executor';
 import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '../../src/main/runner/service';
 import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
-import { SandboxError, type ExecResult, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
+import { SandboxError, type ExecResult, type HostOpenOptions, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
 import type { SandboxStatus } from '../../src/shared/sandbox';
 import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
@@ -170,7 +170,7 @@ export function fakeCommands(table: Record<string, Partial<CommandResult>> = {})
 
 export interface FakeSandbox extends SandboxService {
   /** What each stage asked for, and the sessions made. */
-  opened: { options: OpenOptions; session: FakeSession }[];
+  opened: { options: OpenOptions; session: FakeSession; host: boolean }[];
 }
 
 export interface FakeSession extends SandboxSession {
@@ -195,31 +195,48 @@ export function fakeSandbox(o: { onOpen?: (options: OpenOptions) => void; repoFo
       o.onOpen?.(options);
       for (const f of o.repoFolders ?? []) options.onNote?.({ code: 'runner.sandbox.repoFolder', params: { path: f } });
       for (const name of o.depsOutside ?? []) options.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
-      const log: ExecResult[] = [];
-      const asked: string[] = [];
-      const session: FakeSession = {
-        closed: false,
-        asked,
-        log,
-        async exec(command) {
-          asked.push(command);
-          // What the real session refuses without running it.
-          const refused = !command.trim() ? ('empty' as const) : undefined;
-          const r: ExecResult = refused ? { n: log.length + 1, command, exitCode: null, timedOut: false, output: '', ms: 0, refused } : { n: log.length + 1, command, exitCode: 0, timedOut: false, output: 'ok', ms: 5, ...o.table?.[command] };
-          log.push(r);
-          options.onExec?.(r, refused ? 'refused' : 'run');
-          return r;
-        },
-        async close() {
-          if (session.closed) return;
-          session.closed = true;
-          await o.onClose?.();
-        },
-      };
-      opened.push({ options, session });
-      return session;
+      return session(options, false);
+    },
+    // A host session needs no sandbox: it opens on a machine without one too.
+    async openHost(options) {
+      o.onOpen?.(options);
+      return session(options, true);
     },
   };
+
+  function session(options: OpenOptions & Pick<HostOpenOptions, 'approve'>, host: boolean): FakeSession {
+    const log: ExecResult[] = [];
+    const asked: string[] = [];
+    const made: FakeSession = {
+      ...(host ? { description: 'host' } : {}),
+      closed: false,
+      asked,
+      log,
+      async exec(command) {
+        asked.push(command);
+        // What the real session refuses without running it; a host session asks the person first.
+        const answer = command.trim() && options.approve ? await options.approve(command) : { ok: true };
+        if (!answer.ok) {
+          const r: ExecResult = { n: log.length + 1, command, exitCode: null, timedOut: false, output: answer.note ?? '', ms: 0, refused: 'denied' };
+          log.push(r);
+          options.onExec?.(r, 'refused');
+          return r;
+        }
+        const refused = !command.trim() ? ('empty' as const) : undefined;
+        const r: ExecResult = refused ? { n: log.length + 1, command, exitCode: null, timedOut: false, output: '', ms: 0, refused } : { n: log.length + 1, command, exitCode: 0, timedOut: false, output: 'ok', ms: 5, ...o.table?.[command] };
+        log.push(r);
+        options.onExec?.(r, refused ? 'refused' : 'run');
+        return r;
+      },
+      async close() {
+        if (made.closed) return;
+        made.closed = true;
+        await o.onClose?.();
+      },
+    };
+    opened.push({ options, session: made, host });
+    return made;
+  }
 }
 
 export interface Boot {

@@ -57,11 +57,13 @@ export function applyTemplate(config: WorkspaceConfig, template: CycleTemplate, 
 // is dropped from every agent, so the swap leaves no dangling reference.
 export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], brought: NonNullable<CycleTemplate['team']>, cycle: Pick<DevCycleConfig, 'stages' | 'flows'>, options: { sandbox?: boolean } = {}): WorkspaceConfig['agents']['team'] {
   const have = new Set(current.map((a) => a.id));
-  // A template has no squads: an agent it brings is shared until the person puts it in one. A sandbox it asks for is only given where one works.
+  // A template has no squads: an agent it brings is shared until the person puts it in one. A sandbox it asks for is only given where one works, and `host` never:
+  // running commands on the computer is set by the person, on the computer, so a template that asks for it gets a sandbox at most.
   const added = brought
     .filter((a) => !have.has(a.id))
     .map((a) => {
-      const agent = newAgent({ ...structuredClone(a), system: false, squad: undefined });
+      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined });
+      const agent = made.shell === 'host' ? { ...made, shell: 'sandbox' as const } : made;
       return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
     });
   return pruneAgentStages([...current, ...added], cycle);
@@ -178,7 +180,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
   const brought = (template.team ?? []).map((a) => newAgent({ ...structuredClone(a), system: false }));
   const powers = brought.filter((a) => a.shell !== 'none' || a.tracker !== 'none').map((a) => ({ agent: a.id, shell: a.shell, tracker: a.tracker }));
   const notes: ConfigIssue[] = powers.flatMap((p) => [
-    ...(p.shell === 'sandbox' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run any command, inside a sandbox (only where this computer can make one)' }] : p.shell === 'allowlist' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run the commands of runner.commands in its worktree, outside any sandbox' }] : []),
+    ...(p.shell === 'host' ? [{ path: `template.team[${p.agent}].shell`, message: 'host is never given by a template: the agent gets a sandbox instead (only where this computer can make one)' }] : p.shell === 'sandbox' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run any command, inside a sandbox (only where this computer can make one)' }] : p.shell === 'allowlist' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run the commands of runner.commands in its worktree, outside any sandbox' }] : []),
     ...(p.tracker === 'read' ? [{ path: `template.team[${p.agent}].tracker`, message: 'the agent may read the code host (never write)' }] : []),
   ]);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes], powers };

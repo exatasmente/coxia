@@ -15,6 +15,8 @@ import { bwrapArgs } from './policy';
 import { invalidateSandboxStatus, sandboxStatus } from './probe';
 import { type ProxyDecision, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
+import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
+import { loginEnv } from '../loginPath';
 import { systemLayout } from './system';
 
 export type { ExecResult, SandboxSession } from './session';
@@ -48,11 +50,16 @@ export interface OpenOptions {
   signal?: AbortSignal;
 }
 
+/** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders. */
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal'> & Pick<HostSessionOptions, 'approve'>;
+
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
   status(force?: boolean): Promise<SandboxStatus>;
   /** Makes the sandbox of one stage. Throws `SandboxError` when it cannot. */
   open(o: OpenOptions): Promise<SandboxSession>;
+  /** Makes the session of an agent set to `shell: host`: its commands run on this computer, in the worktree (a copy of it for a reader). */
+  openHost(o: HostOpenOptions): Promise<SandboxSession>;
   /** Removes what a sandbox of an earlier process left (the app was killed). */
   purge(): void;
 }
@@ -66,6 +73,9 @@ export interface SandboxServiceOptions {
   protect?: string[];
   status?: (force: boolean) => Promise<SandboxStatus>;
   deps?: SessionDeps;
+  hostDeps?: HostSessionDeps;
+  /** The environment a host command starts from (default: the app's, with the login PATH). */
+  hostEnv?: () => Promise<NodeJS.ProcessEnv>;
 }
 
 /** Why a machine cannot make a sandbox, in words (the detail is what the backend itself said). */
@@ -199,6 +209,21 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         removeTree(stageDir);
         throw e;
       }
+    },
+    async openHost(opts) {
+      const worktree = realpathSync(opts.worktree);
+      if (!opts.reader) return openHostSession({ cwd: worktree, limits: opts.config.limits, env: o.hostEnv ?? (() => loginEnv()), onExec: opts.onExec, approve: opts.approve }, o.hostDeps);
+      // An agent that only reads works in a copy, as in a sandbox: what it builds or installs there is thrown away. Its commands still reach the whole computer.
+      mkdirSync(o.dir, { recursive: true, mode: 0o700 });
+      const stageDir = join(realpathSync(o.dir), randomUUID().slice(0, 12));
+      const tree = join(stageDir, 'tree');
+      try {
+        await copyTree(worktree, tree, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
+      } catch (e) {
+        removeTree(stageDir);
+        throw e;
+      }
+      return openHostSession({ cwd: tree, limits: opts.config.limits, env: o.hostEnv ?? (() => loginEnv()), onExec: opts.onExec, approve: opts.approve, cleanup: [() => void removeTree(stageDir)] }, o.hostDeps);
     },
     purge() {
       try {

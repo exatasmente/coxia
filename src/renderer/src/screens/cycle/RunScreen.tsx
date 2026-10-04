@@ -13,6 +13,7 @@ import { useT } from '../../i18n';
 import { BackIcon } from '../icons';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
+import { CommandApproval } from './CommandApproval';
 import { RunActions } from './RunActions';
 import { RunBadge } from './RunBadge';
 import { StageTimeline } from './StageTimeline';
@@ -164,6 +165,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
         <div className="cy-cols">
           {(!narrow || tab === 'cycle') && (
             <div className="cy-main" id="cy-panel-cycle" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-cycle' : undefined}>
+              <CommandApproval run={run} team={config?.agents.team} />
               <RunActions run={run} flow={flow} config={config} card={card} actions={actions} go={go} sendBackAsk={sendBackAsk} />
               {run.status === 'working' && stage && <AgentActivity jobId={`run:${run.id}`} since={startedAt} />}
               <StageTimeline run={run} flow={flow} config={config} go={go} />

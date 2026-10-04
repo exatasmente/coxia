@@ -52,6 +52,19 @@ export type QuestionKind = (typeof QUESTION_KINDS)[number];
 /** How many agents a question may pass through before it goes to the person, whatever the agents say. */
 export const MAX_QUESTION_HOPS = 4;
 
+/** How the person answers a command an agent set to `shell: host` wants to run: this one, every one of the rest of the stage, or none. */
+export const COMMAND_DECISIONS = ['once', 'stage', 'deny'] as const;
+export type CommandDecision = (typeof COMMAND_DECISIONS)[number];
+
+/** A command an agent set to `shell: host` waits to run until the person says yes. Lives only while the stage does: it is never saved with the run. */
+export interface PendingCommand {
+  id: string;
+  stage: string;
+  agent: string;
+  command: string;
+  since: string;
+}
+
 export interface PendingQuestion {
   /** The agent id that asked, or "app". */
   by: string;
@@ -342,6 +355,8 @@ export interface Run {
   /** One record per stage the run has entered, in the order first entered. */
   stages: StageRecord[];
   question: PendingQuestion | null;
+  /** The command the working stage waits for the person to allow (`shell: host`). Filled in by the runner when it hands a run out, never written to the file. */
+  command?: PendingCommand | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
   /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */

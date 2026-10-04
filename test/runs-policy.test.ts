@@ -38,6 +38,12 @@ describe('web policy for the runs', () => {
     for (const channel of OPEN) expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
   });
 
+  it('puts allowing a host command behind the same switch as approving a proposal', () => {
+    expect(webAccess('runs:command')).toBe('external');
+    expect(webRefusal('runs:command', false)).not.toBeNull();
+    expect(webRefusal('runs:command', true)).toBeNull();
+  });
+
   it('keeps the approval of a proposal under the existing web setting', () => {
     expect(webAccess('actions:approve')).toBe('external');
     expect(webRefusal('actions:approve', false)).not.toBeNull();
@@ -46,7 +52,7 @@ describe('web policy for the runs', () => {
 
   it('are exactly the channels the module serves, each one classified here', () => {
     const served = [...source('module.ts').matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1]);
-    expect(served.sort()).toEqual([...OPEN, ...DESKTOP].sort());
+    expect(served.sort()).toEqual([...OPEN, ...DESKTOP, 'runs:command'].sort());
   });
 });
 

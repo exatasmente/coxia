@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import { FORUM_EVENT, type ForumEventPayload } from '../../../../shared/forum';
-import type { Run } from '../../../../shared/runs';
+import type { CommandDecision, Run } from '../../../../shared/runs';
 import { api, moduleEvents } from '../../api';
 
 // The runs of the running workspace as the screens see them: the channels of the runner (`runs:*`), and one shared copy of the list that every screen
@@ -33,6 +33,7 @@ export const runsApi = {
   answer: (id: string, text: string) => api.invoke<Run>('runs:answer', id, text),
   retry: (id: string) => api.invoke<Run>('runs:retry', id),
   cancel: (id: string) => api.invoke<Run>('runs:cancel', id),
+  command: (id: string, command: string, decision: CommandDecision, note: string) => api.invoke<Run>('runs:command', id, command, decision, note),
   skipWait: (id: string, reason: string) => api.invoke<Run>('runs:skipWait', id, reason),
   sendBack: (id: string, stage: string, note: string) => api.invoke<Run>('runs:sendBack', id, stage, note),
   migrateFlow: (id: string) => api.invoke<Run>('runs:migrateFlow', id),

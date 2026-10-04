@@ -31,6 +31,9 @@
 .cy-now-panel { padding: 18px; gap: 12px; }
 .cy-now { font-size: 16px; font-weight: 600; line-height: 1.4; }
 .cy-question { margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--blue-line); background: var(--blue-soft); color: var(--blue-ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.cy-command { display: grid; gap: 8px; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.cy-command-text { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.cy-command-actions { gap: 8px; flex-wrap: wrap; }
 .cy-question-by { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .cy-proposals { padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
 .cy-proposals .cy-link { color: inherit; font-weight: 600; }

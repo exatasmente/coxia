@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Commands on this computer, with your approval** (`shell: host`, "This computer, with your approval" in Settings › Team): an agent runs any command as you, outside any sandbox, so it can bring up containers, emulators, windows or services that need the network. Every command waits on the run for "Allow once", "Allow until the stage ends" or "Do not allow" (with a note for the agent), and the stage's clocks stand still meanwhile. The thread and the audit log say where each command ran. Only the computer sets it; a template never brings it, and allowing a command from a paired phone needs the external-effects switch.
+
 ## [0.5.0-beta.4] - 2026-10-03
 
 ### Added

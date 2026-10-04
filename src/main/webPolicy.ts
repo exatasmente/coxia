@@ -15,14 +15,15 @@ export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autos
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
-// the release sync) waits there, so refusing it refuses all of them.
-export const EXTERNAL_EFFECT = new Set(['actions:approve']);
+// the release sync) waits there, so refusing it refuses all of them. runs:command lets an agent set to `shell: host` run a command on this
+// computer, outside any sandbox: allowing one from a phone is as far-reaching as approving a proposal, so it sits behind the same switch.
+export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command']);
 
 // forum:* (list, read, post, create) read and write the workspace's own thread files and nothing else, so a paired browser may use them: the
 // phone is where a person answers a question. A mention only calls on an agent that reads (never one that writes), and a post is never mirrored to
 // the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
-// runs:* are all open to a paired browser, except runs:startRelease (above), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
+// runs:* are all open to a paired browser, except runs:startRelease and runs:command (above), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
 // undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
 // browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed
 // only on the computer, see configScope.ts), and its writes to the code host still wait in the proposals of actions:approve. The autonomy switches change how
