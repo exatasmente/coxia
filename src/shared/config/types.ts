@@ -182,10 +182,11 @@ export type StageType = (typeof STAGE_TYPES)[number];
 /**
  * What a wait stage waits for. `pr-merged`: the run's pull request is merged. `reporter-reply`: a new comment of a person on the issue. `label`: the issue
  * carries `label`. `linked-done`: every run this one asked another squad for has ended, or its issue was closed (a run that asked for nothing has nothing to wait for). `time`: `minutes` have passed.
- * The two of a release run: `release-approved`: every pull request of the version that the run read is merged into the release branch, and none is open against it.
+ * The four of a release run: `release-approved`: every pull request of the version that the run read is merged into the release branch, and none is open against it.
  * `beta-age`: the latest beta of the version has been published for `minutes`, and no open issue carries the blocking label (`label`, `beta-blocker` when left out).
+ * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {

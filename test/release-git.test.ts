@@ -365,6 +365,25 @@ describe('push-branch and push-tag', () => {
     expect(w.remote('tag', '--list')).not.toContain('beta.1');
   });
 
+  it('sends nothing, and says so, when the remote already has exactly what a push would send: the same commit of the branch, or the previous beta\'s tag', async () => {
+    const { w, run } = await opened();
+    w.steps.change('Added', 'one');
+    await run(unit({ op: 'beta' }));
+    expect((await run(unit({ op: 'push-branch' }))).sent).toBe(true);
+    const branch = await run(unit({ op: 'push-branch' }));
+    expect(branch.sent).toBe(false);
+    expect(branch.output).toMatch(/^Nothing sent: the remote already has release\/0\.5\.0 at [0-9a-f]{9}\./);
+    expect((await run(unit({ op: 'push-tag', channel: 'beta' }))).sent).toBe(true);
+    expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
+    // no new cut: the latest beta is still the one the remote has
+    const tag = await run(unit({ op: 'push-tag', channel: 'beta' }));
+    expect(tag).toMatchObject({ sent: false, tag: 'v0.5.0-beta.1' });
+    expect(tag.output).toMatch(/^Nothing sent: the remote already has v0\.5\.0-beta\.1/);
+    // a new commit is sent again
+    w.steps.change('Fixed', 'two');
+    expect((await run(unit({ op: 'push-branch' }))).sent).toBe(true);
+  });
+
   it('refuses a tag that is not annotated', async () => {
     const { w, run } = await opened();
     w.git('tag', 'v0.5.0-beta.1');

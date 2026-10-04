@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { conflictProgress } from '../../../shared/conflict';
+import { releaseBlockers } from '../../../shared/release';
 import { stageText } from '../../../shared/cycles/stages';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
@@ -36,7 +37,8 @@ function what(a: ReleaseAction): string {
   return tv('call.explainsConflict');
 }
 
-function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
+/** `waitsFor`: the steps of the same stage this release step needs first (a push before its cut): until they are done it cannot be approved. */
+function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen) => void; waitsFor?: ReleaseAction[] }) {
   const t = useT();
   const [preview, setPreview] = useState<string | null>(null);
   const [localBusy, setBusy] = useState<string | null>(null);
@@ -80,8 +82,8 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
           <div className="row" style={{ gap: 8 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{title(a)}</h2>
             {a.release && <span className="badge badge-quiet">{t('ui.actions.badge.release', { release: a.release })}</span>}
-            <span className={`badge ${a.state === 'done' ? 'badge-now' : a.state === 'failed' ? 'badge-block' : a.state === 'pending' ? 'badge-ask' : 'badge-quiet'}`}>
-              {a.kind === 'conflict' && a.state === 'skipped' ? t('ui.actions.badge.handledElsewhere') : t(STATE_LABEL[a.state])}
+            <span className={`badge ${a.state === 'done' && a.nothingSent ? 'badge-ask' : a.state === 'done' ? 'badge-now' : a.state === 'failed' ? 'badge-block' : a.state === 'pending' ? 'badge-ask' : 'badge-quiet'}`}>
+              {a.kind === 'conflict' && a.state === 'skipped' ? t('ui.actions.badge.handledElsewhere') : a.state === 'done' && a.nothingSent ? t('ui.actions.badge.nothingSent') : t(STATE_LABEL[a.state])}
             </span>
             {a.kind === 'conflict' && open && a.resolve && <span className="badge badge-ask">{conflictProgress(a)}</span>}
             {a.kind === 'conflict' && a.state === 'done' && a.resolve?.publishedAt && <span className="badge badge-quiet">{t('ui.actions.badge.published')}</span>}
@@ -127,6 +129,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
       {a.output && !isRunProposal(a) && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
+      {open && waitsFor.length > 0 && <p className="small muted">{t('ui.actions.waitsFor', { steps: waitsFor.map((b) => title(b)).join('; ') })}</p>}
 
       {open && (
         <div className="row">
@@ -155,7 +158,7 @@ function ActionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) => void }) {
                             : t('ui.actions.confirm.post')}
                 </button>
               ) : (
-                <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => setConfirming(true)}>{t('ui.actions.go')}</button>
+                <button type="button" className="btn btn-dark" disabled={!!busy || waitsFor.length > 0} onClick={() => setConfirming(true)}>{t('ui.actions.go')}</button>
               )}
             </>
           )}
@@ -207,7 +210,7 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
         </p>
         <h2 className="section-title">{t('ui.actions.waiting', { count: pending.length })}</h2>
         {!pending.length && <p className="small faint">{t('ui.actions.none')}</p>}
-        {pending.map((a) => <ActionCard key={a.id} a={a} go={go} />)}
+        {pending.map((a) => <ActionCard key={a.id} a={a} go={go} waitsFor={releaseBlockers(a, actions)} />)}
         {past.length > 0 && <h2 className="section-title" style={{ marginTop: 12 }}>{t('ui.actions.history', { count: past.length })}</h2>}
         {past.map((a) => <ActionCard key={a.id} a={a} go={go} />)}
       </div>

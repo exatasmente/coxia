@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBranchOf, releaseTagOf } from '../src/shared/release';
+import { RELEASE_OPS, RELEASE_TOOL_SCHEMA, ReleaseUnitError, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseBranchOf, releaseStepNeeds, releaseTagOf } from '../src/shared/release';
+import type { ReleaseAction } from '../src/shared/types';
 
 // What a release action may hold: an operation and a version, and only the other fields that operation has. Nothing that names a path, a command or a flag.
 
@@ -91,5 +92,45 @@ describe('the unit of a release action', () => {
     expect(RELEASE_TOOL_SCHEMA.properties.op.enum).toEqual([...RELEASE_OPS]);
     expect(Object.keys(RELEASE_TOOL_SCHEMA.properties).sort()).toEqual(['branch', 'channel', 'from', 'head', 'op', 'pr', 'version']);
     expect(RELEASE_TOOL_SCHEMA.required).toEqual(['op', 'version']);
+  });
+});
+
+describe('the order of the steps asked in one stage', () => {
+  const u = (op: string, extra: Record<string, unknown> = {}) => parseReleaseUnit({ op, version: '0.6.0', ...extra });
+  const action = (id: string, op: string, extra: Record<string, unknown> = {}): ReleaseAction =>
+    ({ id, key: id, kind: 'release-git', state: 'pending', group: 'r:release-beta:1', summary: id, unit: { op, version: '0.6.0', runId: RUN, ...extra } }) as unknown as ReleaseAction;
+
+  it('puts a push after the cut and the merges it sends, and the tag after its branch', () => {
+    expect(releaseStepNeeds(u('push-branch'), u('beta'))).toBe(true);
+    expect(releaseStepNeeds(u('push-branch'), u('merge-pr', { pr: 1, head: 'a'.repeat(40) }))).toBe(true);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'beta' }), u('beta'))).toBe(true);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'beta' }), u('push-branch'))).toBe(true);
+    expect(releaseStepNeeds(u('push-branch', { branch: 'main' }), u('stable'))).toBe(true);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'stable' }), u('stable'))).toBe(true);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'stable' }), u('push-branch', { branch: 'main' }))).toBe(true);
+    expect(releaseStepNeeds(u('beta'), u('merge-pr', { pr: 1, head: 'a'.repeat(40) }))).toBe(true);
+    // and never the other way round, nor across the channels
+    expect(releaseStepNeeds(u('beta'), u('push-branch'))).toBe(false);
+    expect(releaseStepNeeds(u('push-branch'), u('push-tag', { channel: 'beta' }))).toBe(false);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'stable' }), u('push-branch'))).toBe(false);
+    expect(releaseStepNeeds(u('push-tag', { channel: 'beta' }), u('push-branch', { branch: 'main' }))).toBe(false);
+    expect(releaseStepNeeds(u('push-branch', { branch: 'main' }), u('beta'))).toBe(false);
+    expect(releaseStepNeeds(u('open'), u('beta'))).toBe(false);
+  });
+
+  it('holds a push back while its cut waits, runs or failed; not when the cut was skipped, is in another stage, or the push has no group', () => {
+    const tag = action('tag', 'push-tag', { channel: 'beta' });
+    const branch = action('branch', 'push-branch');
+    const cut = action('cut', 'beta');
+    expect(releaseBlockers(tag, [tag, branch, cut]).map((a) => a.id).sort()).toEqual(['branch', 'cut']);
+    expect(releaseBlockers(branch, [tag, branch, cut]).map((a) => a.id)).toEqual(['cut']);
+    expect(releaseBlockers(cut, [tag, branch, cut])).toEqual([]);
+    for (const state of ['running', 'failed'] as const) expect(releaseBlockers(branch, [branch, { ...cut, state }]), state).toHaveLength(1);
+    expect(releaseBlockers(branch, [branch, { ...cut, state: 'done' }])).toEqual([]);
+    expect(releaseBlockers(branch, [branch, { ...cut, state: 'skipped' }])).toEqual([]);
+    expect(releaseBlockers(branch, [branch, { ...cut, group: 'r:release-beta:2' }])).toEqual([]);
+    expect(releaseBlockers({ ...branch, group: undefined }, [branch, { ...cut, group: undefined }])).toEqual([]);
+    // a stored unit that is not one is no reason to hold anything back, nor held back itself
+    expect(releaseBlockers(branch, [branch, { ...cut, unit: { op: 'beta', version: '0.6.0', cwd: '/etc' } }])).toEqual([]);
   });
 });

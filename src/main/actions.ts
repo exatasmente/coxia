@@ -34,7 +34,7 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
-import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit } from '../shared/release';
+import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers } from '../shared/release';
 import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
@@ -244,6 +244,27 @@ function told(action: ReleaseAction, responses: unknown[]): void {
       console.error('[actions] listener', e);
     }
   }
+}
+
+/** A "sim" that was refused before anything ran (a release step whose earlier step in the same stage is not done): the action and the reason the person was given. */
+export type RefusalListener = (action: ReleaseAction, reason: string) => void;
+const refusalListeners = new Set<RefusalListener>();
+
+/** Tells `fn` when an approval is refused before anything ran. Returns the way to stop. */
+export function onActionRefused(fn: RefusalListener): () => void {
+  refusalListeners.add(fn);
+  return () => void refusalListeners.delete(fn);
+}
+
+function refused(action: ReleaseAction, reason: string): Error {
+  for (const fn of refusalListeners) {
+    try {
+      fn(action, reason);
+    } catch (e) {
+      console.error('[actions] listener', e);
+    }
+  }
+  return new Error(reason);
 }
 
 /** The name the function had when GitLab was the only host. */
@@ -465,8 +486,14 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
+  if (a.kind === 'release-git') {
+    // A step asked in the same stage as one it needs (the push of a beta before its cut) waits for it: run first, it would send what the remote already has.
+    const first = releaseBlockers(a, read().actions);
+    if (first.length) throw refused(a, t('main.release.waitsForStep', { step: a.summary ?? '', first: first.map((b) => b.summary ?? b.key).join('; ') }));
+  }
   update(id, (x) => ({ ...x, state: 'running' }));
   const responses: unknown[] = [];
+  let nothingSent = false;
   try {
     let output: string;
     if (a.kind === 'conflict-push') {
@@ -474,7 +501,9 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     } else if (a.kind === 'run-push') {
       output = await publishRunBranch(a);
     } else if (a.kind === 'release-git') {
-      output = await runRelease(originOf(a), a.unit);
+      const r = await runRelease(originOf(a), a.unit);
+      output = r.output;
+      nothingSent = r.sent === false;
     } else if (isVcsAction(a)) {
       // A group runs in order from where it stopped; each write is audited on its own, under the proposal that holds them.
       const all = a.commands ?? [a.command as VcsCommand];
@@ -507,7 +536,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
       output = await audited(originOf(a), { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
-    const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
+    const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output, ...(nothingSent ? { nothingSent: true } : {}) }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
     told(done, responses);
     if (done.kind === 'sync') setTimeout(() => void proposeQaComment(done).catch((e) => console.error('[actions]', e)), PIPELINE_WAIT_MS);
@@ -952,7 +981,7 @@ async function publishRunBranch(a: ReleaseAction): Promise<string> {
 // is autonomous (`runReleaseAuto`). All of them are audited and refused in a test workspace.
 
 /** Proposes one step of a release. A proposal with the same key that waits, runs or ran is not made twice. */
-export function proposeRelease(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; unit: ReleaseUnit; notify?: { title: string; body: string } }): ReleaseAction | null {
+export function proposeRelease(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; unit: ReleaseUnit; group?: string; notify?: { title: string; body: string } }): ReleaseAction | null {
   const unit = parseReleaseUnit(input.unit);
   if (!unit.runId) throw new Error(t('main.release.noRun', { version: unit.version }));
   const store = read();
@@ -964,6 +993,7 @@ export function proposeRelease(input: { key: string; issue: number; issueTitle?:
     issueTitle: input.issueTitle ?? '',
     summary: input.summary,
     unit: { ...unit },
+    ...(input.group ? { group: input.group } : {}),
     output: [input.detail, releaseCommandLine(unit)].filter(Boolean).join('\n\n'),
   });
   write({ ...store, actions: [action, ...store.actions] });
@@ -1006,7 +1036,7 @@ const justPushed = (updatedAt: string | null): boolean => {
 const checksOf = (ci: { status: string } | null, updatedAt: string | null = null): ReleasePr['checks'] => (!ci ? (justPushed(updatedAt) ? 'running' : 'none') : ci.status === 'success' || ci.status === 'skipped' ? 'success' : ci.status === 'failed' || ci.status === 'canceled' ? 'failing' : 'running');
 
 /** One release step, run and audited. The unit is read again from what was stored: nothing in it is believed until it passes `parseReleaseUnit` here. */
-async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
+async function runRelease(origin: AuditOrigin, raw: unknown): Promise<{ output: string; sent?: boolean }> {
   const unit = parseReleaseUnit(raw);
   const { run, clone, project } = await releaseContextOf(unit);
   const id = getConfig().runner.identity;
@@ -1021,7 +1051,8 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
   }
   const push = isReleasePush(unit.op);
   const fields: Record<string, string> = { op: unit.op, version: unit.version, run: run.id, repo: run.repo, ...(unit.pr !== undefined ? { pr: String(unit.pr) } : {}) };
-  return audited(origin, { kind: push ? 'push' : 'release', target: releaseCommandLine(unit), via: push ? 'git' : 'release.sh', fields }, async () => {
+  let sent: boolean | undefined;
+  const output = await audited(origin, { kind: push ? 'push' : 'release', target: releaseCommandLine(unit), via: push ? 'git' : 'release.sh', fields }, async () => {
     const r = await runReleaseOp(unit, {
       clone,
       // The steps run in a worktree of their own next to the run's: the person's checkout is never touched. Derived from the run, never from the unit.
@@ -1037,15 +1068,19 @@ async function runRelease(origin: AuditOrigin, raw: unknown): Promise<string> {
     fields.before = r.before ?? '';
     fields.after = r.after ?? '';
     if (r.tag) fields.tag = r.tag;
+    // the audit log says a push that sent nothing for what it was, not as a write that changed the host
+    if (r.sent !== undefined) fields.sent = String(r.sent);
+    sent = r.sent;
     return r.output;
   });
+  return { output, ...(sent !== undefined ? { sent } : {}) };
 }
 
 /** One release step an agent's autonomy lets go out without a "sim". A push, a beta and a stable are refused here whatever the caller says: they only ever wait for a person. */
 export async function runReleaseAuto(w: { issue: number; key: string; summary: string; by: string }, raw: unknown): Promise<string> {
   const unit = parseReleaseUnit(raw);
   if (alwaysWaits(unit.op)) throw new Error(t('main.release.autoPush'));
-  return runRelease({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by }, unit);
+  return (await runRelease({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by }, unit)).output;
 }
 
 async function previewReleaseAction(a: ReleaseAction): Promise<string> {
