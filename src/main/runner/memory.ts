@@ -1,6 +1,7 @@
 import type { ForumMessage } from '../../shared/forum';
 import { createTranslator, t } from '../../shared/i18n';
 import { MEMORY_FILE } from '../../shared/runs';
+import { redact } from '../errorlog-core';
 
 // The cycle memory: the short record of a run, kept in MEMORY_FILE inside the cycle folder. Every stage reads it first and rewrites it, so a long run
 // does not lose a decision to the folder budget or to the 40-message window of the thread. Pure text work: the executor and the service read and write
@@ -86,12 +87,13 @@ const who = (m: ForumMessage): string => (m.author.type === 'agent' ? m.author.i
  */
 export function factsOfThread(messages: ForumMessage[]): MemoryFact[] {
   const facts: MemoryFact[] = [];
+  // The memory ships in the cycle folder the agent commits, so message text is masked the way logs are before it lands.
   for (const m of messages) {
     if (m.kind === 'answer' && m.author.type === 'person' && m.text.trim()) {
-      facts.push({ marker: `answer:${m.seq}`, section: 'decisions', line: `${t('main.runner.memory.answer')}: ${oneLine(m.text)}` });
+      facts.push({ marker: `answer:${m.seq}`, section: 'decisions', line: `${t('main.runner.memory.answer')}: ${oneLine(redact(m.text))}` });
     } else if (m.kind === 'handoff' && m.text.trim()) {
       const to = m.to === 'person' ? t('main.runner.author.person') : (m.to ?? t('main.runner.author.app'));
-      facts.push({ marker: `handoff:${m.seq}`, section: 'where', line: `${t('main.runner.memory.handoff')} ${who(m)} → ${to}: ${oneLine(m.text)}` });
+      facts.push({ marker: `handoff:${m.seq}`, section: 'where', line: `${t('main.runner.memory.handoff')} ${who(m)} → ${to}: ${oneLine(redact(m.text))}` });
     }
   }
   return facts;
