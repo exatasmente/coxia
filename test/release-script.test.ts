@@ -2,10 +2,14 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 // scripts/release.sh against real temporary repositories: the rules are about git state (branches, tags, ancestry), so the script itself runs.
 // No network: git and `npm version --no-git-tag-version` are local, the public audit is a stub, and --skip-checks leaves out the toolchain.
+
+// Each case runs the script in real repositories, a second or two alone; under the whole suite, and inside the release step, which runs the suite as a check, the
+// default 5 s is passed, and a cut is refused for a test that is merely slow.
+vi.setConfig({ testTimeout: 30_000 });
 
 const SCRIPTS = join(__dirname, '..', 'scripts');
 const AUTHOR = 'Release Person <release@example.test>';
