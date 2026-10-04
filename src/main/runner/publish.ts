@@ -161,6 +161,11 @@ export interface Publisher {
    * the request runs by itself (`autonomous`), as a proposal waiting for a "yes" otherwise (the runner learns of it through `actionDone`), refused in a test workspace.
    */
   requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade>;
+  /**
+   * An issue an agent named in the thread proposes: always a proposal waiting for the person's "yes" in Actions (the runner learns of it through `actionDone`, purpose
+   * `mention-issue`), never created by itself, refused in a test workspace.
+   */
+  proposeIssue(runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string }): Promise<IssueMade>;
   /** The run started in a squad that carries a label on the tracker: the issue gets it, by itself when the squad's liaison runs by itself and as a proposal otherwise. */
   squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
@@ -961,6 +966,26 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
+  // ---- the issue an agent named in the thread proposes ----------------------------------------------------------------------------
+
+  async function proposeIssue(runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string }): Promise<IssueMade> {
+    const run = need(runId);
+    const refusal = door.refusal();
+    if (refusal) {
+      say(run, 'runner.mention.issueRefused', { agent: e.by, title: e.title, reason: refusal }, e.stage);
+      return { status: 'refused', reason: refusal };
+    }
+    const provider = door.provider();
+    if (!provider) return { status: 'no-host', reason: '' };
+    const { issue } = projects(run);
+    const labels = [...new Set(e.labels.map((l) => l.trim()).filter(Boolean))].slice(0, 10);
+    const commands = await provider.planWrite({ op: 'createIssue', project: issue, title: e.title, body: e.body, labels });
+    const summary = tr('main.runner.mention.issueSummary', { title: e.title, agent: e.by });
+    const created = door.propose({ key: `mention-issue:${runId}:${e.key}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail: e.body, unit: { runId, purpose: 'mention-issue', key: e.key }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
+    if (created) say(run, 'runner.mention.issueProposed', { agent: e.by, title: e.title }, e.stage);
+    return { status: 'proposed' };
+  }
+
   // ---- the label of the squad ---------------------------------------------------------------------------------------------------
 
   async function squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void> {
@@ -1367,6 +1392,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
     squadRouted: (runId, e) => guarded(runId, () => squadRouted(runId, e)),
     requestIssue: (runId, e) => requestIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
+    proposeIssue: (runId, e) => proposeIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
     releaseBrief,
     releaseStarted: (runId, e) => guarded(runId, () => releaseStarted(runId, e)),
     releaseStep: (runId, input, who) => releaseStep(runId, input, who).catch((e) => `Did not happen: ${message(e)}`),

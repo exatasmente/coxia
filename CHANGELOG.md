@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent named in a run's thread can now act on what it is asked.** One set to run commands (`shell: sandbox` or `host`) gets its session over a throwaway copy of the code, so a tech lead can reproduce a failing test instead of only reading the code (on `host`, each command waits for your yes). One that reads the code host can propose an issue with its answer, so a product owner asked to "create the issue" puts it in Actions, where it waits for your yes; the thread links it once it exists. A mention still never writes to the run.
+
 ### Fixed
 
 - Saving in the flow editor (Settings › Team and cycle › Flow) deleted the flow of a release run and the stages of the Release manager, so *Start a release* then failed with "no release flow"; the editor also warned that the Release manager "runs by itself but works no stage". The release flow, which the editor does not show, is now kept as it is.
