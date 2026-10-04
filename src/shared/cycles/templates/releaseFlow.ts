@@ -19,12 +19,17 @@ export const RELEASE_FLOW_STAGES: StageDef[] = [
   // The merges the agent asked for may wait in Actions for a "sim": the beta is cut once every activity of the version is in the branch.
   { id: 'release-merged', label: 'cycle.releaseFlow.stage.merged', match: ['^Merges'], kind: 'development', rank: 4, type: 'wait', waitsFor: { kind: 'release-approved' } },
   { id: 'release-beta', label: 'cycle.releaseFlow.stage.beta', match: ['^Cut the beta$'], kind: 'development', rank: 5, type: 'work', agentId: RELEASE_MANAGER },
+  // The steps the agent asked for wait in Actions, and the stage ends when it has asked: the run goes on only once the host shows the beta (its tag on the remote and its
+  // pre-release published), never on a cut that stayed in the app's worktree or a push that sent nothing.
+  { id: 'release-beta-out', label: 'cycle.releaseFlow.stage.betaOut', match: ['^Beta on the host$'], kind: 'development', rank: 6, type: 'wait', waitsFor: { kind: 'beta-out' } },
   // The beta is out when the person published its draft; the run waits for it to be out for a day with nothing labelled `beta-blocker` open.
-  { id: 'release-feedback', label: 'cycle.releaseFlow.stage.feedback', match: ['^Beta feedback$'], kind: 'reviewApproved', rank: 6, type: 'wait', waitsFor: { kind: 'beta-age', minutes: 1440, label: 'beta-blocker' } },
-  { id: 'release-stable-gate', label: 'cycle.releaseFlow.stage.stableGate', match: ['^Approve the stable$'], kind: 'reviewApproved', rank: 7, type: 'gate' },
-  { id: 'release-stable', label: 'cycle.releaseFlow.stage.stable', match: ['^Cut the stable$'], kind: 'development', rank: 8, type: 'work', agentId: RELEASE_MANAGER },
+  { id: 'release-feedback', label: 'cycle.releaseFlow.stage.feedback', match: ['^Beta feedback$'], kind: 'reviewApproved', rank: 7, type: 'wait', waitsFor: { kind: 'beta-age', minutes: 1440, label: 'beta-blocker' } },
+  { id: 'release-stable-gate', label: 'cycle.releaseFlow.stage.stableGate', match: ['^Approve the stable$'], kind: 'reviewApproved', rank: 8, type: 'gate' },
+  { id: 'release-stable', label: 'cycle.releaseFlow.stage.stable', match: ['^Cut the stable$'], kind: 'development', rank: 9, type: 'work', agentId: RELEASE_MANAGER },
+  // Likewise the run is not published until the host has the stable: its tag on the remote, on main.
+  { id: 'release-stable-out', label: 'cycle.releaseFlow.stage.stableOut', match: ['^Stable on the host$'], kind: 'development', rank: 10, type: 'wait', waitsFor: { kind: 'stable-out' } },
   // Where the run ends: nobody works it. The tracking issue is closed by the app when the host shows the stable version published.
-  { id: 'release-published', label: 'cycle.releaseFlow.stage.published', match: ['^Published$'], kind: 'done', rank: 9, type: 'work' },
+  { id: 'release-published', label: 'cycle.releaseFlow.stage.published', match: ['^Published$'], kind: 'done', rank: 11, type: 'work' },
 ];
 
 /** The agent of the release flow: it reads the code host and asks for release steps; it runs no command and changes no file. Autonomous: a push waits for the person anyway. */

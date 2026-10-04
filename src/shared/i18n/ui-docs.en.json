@@ -1,6 +1,7 @@
 {
   "ui.actions.backToday": "Back to Today",
   "ui.actions.badge.handledElsewhere": "handled elsewhere",
+  "ui.actions.badge.nothingSent": "nothing sent",
   "ui.actions.badge.published": "published",
   "ui.actions.badge.release": "release {release}",
   "ui.actions.busy.preview": "Simulating…",
@@ -46,6 +47,7 @@
   "ui.actions.view.preview": "See preview",
   "ui.actions.view.push": "See the push",
   "ui.actions.waiting": "Waiting for you · {count}",
+  "ui.actions.waitsFor": "Waits for: {steps}. It can be approved once that is done.",
   "ui.actions.what.conflictPush": "Pushes the branch with the main merge already resolved and verified in the local worktree: fast-forward, no force, visible to the team. Before sending, the branch is fetched again and the push is refused if it changed.",
   "ui.actions.what.qaComment.edit": "Edits the QA pipelines comment in place (note {noteId}), visible to the team on the issue.",
   "ui.actions.what.qaComment.post": "Posts the tool's sync comment on the issue, visible to the team.",

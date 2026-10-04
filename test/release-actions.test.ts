@@ -280,6 +280,63 @@ describe('approving a step', () => {
   });
 });
 
+describe('the steps one stage asked for', () => {
+  const GROUP = `${RUN}:release-beta:1`;
+  const step = (key: string, u: Record<string, unknown>) => actions.proposeRelease({ ...input(key, u), group: GROUP }) as NonNullable<ReturnType<typeof actions.proposeRelease>>;
+  const state = (id: string) => actions.listActions().find((a) => a.id === id)?.state;
+
+  it('carries out a push only after the cut it sends: a yes given out of order is refused before anything runs, with the reason, and the step keeps waiting', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    w.steps.change('Added', 'a thing');
+    const cut = step('cut', unit({ op: 'beta' }));
+    const branch = step('branch', unit({ op: 'push-branch' }));
+    const tag = step('tag', unit({ op: 'push-tag', channel: 'beta' }));
+    const refusals: [string, string][] = [];
+    const stop = actions.onActionRefused((a, reason) => refusals.push([a.id, reason]));
+    const audits = listAudit().length;
+    // the order the person clicked in a real run: the tag, then the branch, then the cut
+    await expect(approve(tag.id)).rejects.toThrow('"Release step tag" waits for a step asked in the same stage: Release step branch; Release step cut. Say yes to that first; nothing was done.');
+    await expect(approve(branch.id)).rejects.toThrow(/"Release step branch" waits for a step asked in the same stage: Release step cut\./);
+    expect([state(tag.id), state(branch.id), state(cut.id)]).toEqual(['pending', 'pending', 'pending']);
+    expect(refusals.map(([id]) => id)).toEqual([tag.id, branch.id]);
+    expect(listAudit()).toHaveLength(audits);
+    expect(w.remote('branch', '--list')).not.toContain('release/0.5.0');
+    expect(w.git('tag', '--list')).not.toContain('beta');
+    // in order, each goes, and the tag the cut made is the one that reaches the remote
+    expect((await approve(cut.id)).state).toBe('done');
+    await expect(approve(tag.id)).rejects.toThrow(/waits for a step asked in the same stage: Release step branch\./);
+    expect((await approve(branch.id)).state).toBe('done');
+    expect((await approve(tag.id)).state).toBe('done');
+    expect(w.remote('tag', '--list')).toContain('v0.5.0-beta.1');
+    stop();
+  });
+
+  it('does not hold a push back for a cut the person skipped, or for one another stage asked for', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    const cut = step('cut', unit({ op: 'beta' }));
+    const other = actions.proposeRelease({ ...input('cut-2', unit({ op: 'beta' })), group: `${RUN}:release-beta:2` });
+    expect(other).not.toBeNull();
+    await actions.skipAction(cut.id);
+    expect((await approve(step('branch', unit({ op: 'push-branch' })).id)).state).toBe('done');
+  });
+
+  it('marks a push that found the remote already holding what it would send as "nothing sent", not as a plain success, in the action and in the audit log', async () => {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    const first = await approve(propose('p1', unit({ op: 'push-branch' })).id);
+    expect(first.state).toBe('done');
+    expect(first.nothingSent).toBeUndefined();
+    expect(listAudit()[0].fields.sent).toBe('true');
+    const told: boolean[] = [];
+    const stop = actions.onActionDone((a) => told.push(a.nothingSent === true));
+    const again = await approve(propose('p2', unit({ op: 'push-branch' })).id);
+    stop();
+    expect(again).toMatchObject({ state: 'done', nothingSent: true });
+    expect(again.output).toMatch(/^Nothing sent: the remote already has release\/0\.5\.0 at [0-9a-f]{9}\. Nothing moved on the host\.$/);
+    expect(told).toEqual([true]);
+    expect(listAudit()[0]).toMatchObject({ kind: 'push', ok: true, fields: { op: 'push-branch', sent: 'false' } });
+  });
+});
+
 describe('a step an agent\'s autonomy lets go out', () => {
   const meta = { issue: 0, key: 'release:auto:open', summary: 'Open 0.5.0', by: 'release-manager' };
 
