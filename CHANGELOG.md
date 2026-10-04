@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Saving in the flow editor (Settings › Team and cycle › Flow) deleted the flow of a release run and the stages of the Release manager, so *Start a release* then failed with "no release flow"; the editor also warned that the Release manager "runs by itself but works no stage". The release flow, which the editor does not show, is now kept as it is.
+- For maintainers: cutting a beta from the app's release step stopped at its own checks. The test suite inherited the step's git settings (an excludes file that ignores `node_modules` and `.venv`), so a test of dependency links failed only there, and the release tests, which build real repositories, passed the default 5 s under the whole suite. The suite now drops inherited git settings and gives those tests a limit of their own.
 
 ## [0.5.0-beta.5] - 2026-10-03
 
