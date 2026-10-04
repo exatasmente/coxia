@@ -101,6 +101,8 @@ export function updateAgent(config: WorkspaceConfig, id: string, patch: AgentPat
   const next = structuredClone(config);
   const i = next.agents.team.findIndex((a) => a.id === id);
   const merged: AgentDef = { ...current, ...structuredClone(patch), id: current.id, system: current.system };
+  // A field the patch sets to undefined is dropped: the editor clears the last allowed command that way, and a key left holding undefined fails the schema.
+  for (const key of Object.keys(merged) as (keyof AgentDef)[]) if (merged[key] === undefined) delete merged[key];
   next.agents.team[i] = merged;
   if (current.system && isSystemId(id)) {
     const role = next.agents.roles[id as LlmRole];

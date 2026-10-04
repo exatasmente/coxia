@@ -71,6 +71,18 @@ describe('applying a draft', () => {
     expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
   });
 
+  it('saving an agent with no allowed command leaves no empty field, and clearing the last one removes it', () => {
+    const c = flow();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('allowedCommands' in agent(plain, 'developer')).toBe(false);
+    expect(validateConfig(agentOnly(plain)).errors).toEqual([]);
+    const ruled = applyAgent(c, { ...draftOf(agent(c, 'developer')), allowedCommands: ['npm test:*'] }, false);
+    expect(agent(ruled, 'developer').allowedCommands).toEqual(['npm test:*']);
+    const cleared = applyAgent(ruled, { ...draftOf(agent(ruled, 'developer')), allowedCommands: [] }, false);
+    expect('allowedCommands' in agent(cleared, 'developer')).toBe(false);
+    expect(validateConfig(agentOnly(cleared)).errors).toEqual([]);
+  });
+
   it('refuses a taken id', () => {
     expect(() => applyAgent(flow(), { ...blankAgent(), id: 'developer', name: 'x' }, true)).toThrow();
   });
