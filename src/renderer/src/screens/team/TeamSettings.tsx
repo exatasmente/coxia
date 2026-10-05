@@ -7,7 +7,7 @@ import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
 import { teamApi, useConfigView } from './teamApi';
 import { TAB_LABEL } from './labels';
-import { onTeamRequest, takeTeamRequest, TEAM_TABS, type TeamTab } from './teamNav';
+import { onTeamRequest, takeTeamRequest, viewOfRequest, TEAM_TABS, type TeamTab } from './teamNav';
 import type { SectionProps } from './ui';
 import './team.css';
 
@@ -36,11 +36,11 @@ export function TeamSettings() {
     const take = () => {
       const r = takeTeamRequest();
       if (!r || !AVAILABLE[r.tab]) return;
-      setTab(r.tab);
-      setSquad(r.squad);
-      setSuggestion(r.draft);
-      // The request is spent here: a later visit to the section must not reopen the editor with a draft nobody asked for again.
-      if (r.draft) setSuggestion(undefined);
+      // The request is spent here (takeTeamRequest reads it once); a later visit to the section must not reopen the editor with a draft nobody asked for again.
+      const v = viewOfRequest(r);
+      setTab(v.tab);
+      setSquad(v.squad);
+      setSuggestion(v.suggestion);
       root.current?.scrollIntoView({ block: 'start' });
     };
     take();
@@ -55,6 +55,8 @@ export function TeamSettings() {
     if (!to) return;
     e.preventDefault();
     setTab(to);
+    if (to !== 'flow') setSquad(undefined);
+    if (to !== 'team') setSuggestion(undefined);
     document.getElementById(`team-tab-${to}`)?.focus();
   };
 
@@ -65,7 +67,7 @@ export function TeamSettings() {
       <p className="small muted">{t('ui.team.intro')}</p>
       <div role="tablist" aria-label={t('ui.team.title')} className="tm-tabs" onKeyDown={onKey}>
         {tabs.map((id) => (
-          <button key={id} id={`team-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="team-tabpanel" tabIndex={tab === id ? 0 : -1} className={`filter ${tab === id ? 'on' : ''}`} onClick={() => { setTab(id); if (id !== 'flow') setSquad(undefined); }}>
+          <button key={id} id={`team-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="team-tabpanel" tabIndex={tab === id ? 0 : -1} className={`filter ${tab === id ? 'on' : ''}`} onClick={() => { setTab(id); if (id !== 'flow') setSquad(undefined); if (id !== 'team') setSuggestion(undefined); }}>
             {t(TAB_LABEL[id])}
           </button>
         ))}

@@ -35,6 +35,11 @@ export function takeTeamRequest(): TeamRequest | null {
   return r;
 }
 
+/** The tab, squad and draft the section holds after a request: the whole state of one request, so the two pieces of a draft cannot cancel each other. */
+export function viewOfRequest(r: TeamRequest): { tab: TeamTab; squad: string | undefined; suggestion: { draft: AgentDraft; suggestionId: string } | undefined } {
+  return { tab: r.tab, squad: r.squad, suggestion: r.draft };
+}
+
 export function onTeamRequest(fn: () => void): () => void {
   events.addEventListener('request', fn);
   return () => events.removeEventListener('request', fn);
