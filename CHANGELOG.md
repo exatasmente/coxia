@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`@agent` gets an answer outside a run's thread.** 0.6.0 promised that naming an agent with `@` in the general conversation, a squad's channel, the channel the squads share or a conversation you opened would get its answer there, but the part of the app that answers those mentions was never switched on: the message showed who it called and nothing came back, not even a failure. It now answers there, read only, as in a run's thread.
+
 ## [0.6.1-beta.1] - 2026-10-04
 
 ### Fixed
