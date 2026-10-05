@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **A release can be started from the paired phone.** *Start a release* was left out of the phone's runs screen, and the phone was refused even when it asked. It now shows there whenever the workspace has the release flow, and the phone may start a release when *Allow actions with external effects from the browser* is on (Settings › Browser access), the same switch that lets it approve a proposal; with the switch off, the field says why it was refused. Each push of the release still waits for a "yes" in Actions.
+
 ## [0.6.1-beta.2] - 2026-10-05
 
 ### Fixed
