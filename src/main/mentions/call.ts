@@ -95,6 +95,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     system,
     cwd: i.cwd,
     label: i.agent.id,
-    maxTurns: 20,
+    maxTurns: i.config.runner.turns.read,
+    wrapUp: true,
   };
 }

@@ -30,10 +30,7 @@ export interface MentionDeps {
   sandbox?: SandboxService;
   /** Where an agent with no place to run commands gets a working folder. */
   env: () => { fallbackCwd: string };
-  /**
-   * Opens the session an agent's commands run in, for a caller that has its own (the runner, over the run's worktree and its flow stage, with the person's yes
-   * per host command). Absent: the mention opens the sandbox itself over the throwaway copy.
-   */
+  /** The session an agent's commands run in, for a caller that has its own (the runner, over the run's worktree and its flow stage, with the person's yes per host command). Absent: the mention opens the sandbox itself over the throwaway copy. */
   openSession?: (place: MentionPlace, def: AgentDef, cwd: string, stage: string | null, signal: AbortSignal, clock: { beat: () => void; pause: () => () => void }) => Promise<SandboxSession | null>;
   /**
    * The line a caller opened for an agent's call when the message was accepted (a run's thread), and whether it waited its turn there: the answer goes on in it,
@@ -150,6 +147,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      if (r.partial) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: id }, stage });
       if (place.kind === 'run' && place.run) {
         const issue = proposesIssue(def, deps, place) ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
         if (issue) await proposeIssue(deps, place.run, message.seq, id, issue);

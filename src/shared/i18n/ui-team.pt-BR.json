@@ -252,7 +252,7 @@
   "ui.runner.trigger": "Rótulo que pede uma execução",
   "ui.runner.triggerHint": "Maiúsculas e minúsculas não importam.",
   "ui.runner.turnsRead": "Passos de um agente que só lê",
-  "ui.runner.turnsReadHint": "De {min} a {max}. Quantos passos (voltas do modelo) ele tem numa passada, para ler e escrever os documentos da etapa. Esgotados, a etapa falha.",
+  "ui.runner.turnsReadHint": "De {min} a {max}. Quantos passos (voltas do modelo) ele tem numa passada, para ler e escrever os documentos da etapa. Esgotados, a etapa falha. É também o limite de um agente chamado com @ numa conversa, de uma pergunta na cadeia e de um pedido entre agentes: esses respondem com o que já leram quando acaba.",
   "ui.runner.turnsWrite": "Passos de um agente que altera arquivos",
   "ui.runner.turnsWriteHint": "De {min} a {max}. O mesmo, para quem altera código e roda os comandos permitidos.",
   "ui.runner.warn.idleLonger": "O silêncio máximo é maior que o limite da etapa: o limite encerra a etapa antes.",

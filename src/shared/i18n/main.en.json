@@ -947,6 +947,7 @@
   "main.runner.qa.reason.output": "it said: {line}",
   "main.runner.qa.reason.unknown": "a tool it needs was not found or cannot be executed",
   "main.forum.code.runner.mentionFailed": "{agent} could not answer: {reason}",
+  "main.forum.code.runner.partial": "{agent} ran out of steps and answered with what it had read: the answer may be incomplete.",
   "main.ceremonyCommand.notice.title": "{agent} wants to run a command",
   "main.ceremonyCommand.write": "a command that writes to the code host",
   "main.forum.code.main.forum.mentions.unknown": "No agent of the team goes by {names}.",
