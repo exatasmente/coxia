@@ -39,6 +39,8 @@ export function TeamSettings() {
       setTab(r.tab);
       setSquad(r.squad);
       setSuggestion(r.draft);
+      // The request is spent here: a later visit to the section must not reopen the editor with a draft nobody asked for again.
+      if (r.draft) setSuggestion(undefined);
       root.current?.scrollIntoView({ block: 'start' });
     };
     take();

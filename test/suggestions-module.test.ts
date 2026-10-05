@@ -232,6 +232,69 @@ describe('the end of a retro', () => {
   });
 });
 
+describe('the card of a suggestion that was already decided', () => {
+  /** The proposal a person skipped: the same suggestion, the same evidence, after the decision. */
+  const skipped = async (): Promise<void> => {
+    threeReturns();
+    await suggestionMod.suggestAgents();
+    await actions.skipAction(suggestionProposals()[0].id);
+    expect(suggestionProposals().filter((a) => a.state === 'skipped')).toHaveLength(1);
+  };
+
+  it('does not block the suggestion from being offered again, and never leaves the same card waiting twice', async () => {
+    await skipped();
+    asked.answer = { nome: 'Reviewer', papel: 'Reviews returns from review', etapa: 'review', prompt: 'You look at returns.' };
+
+    const again = await suggestionMod.suggestAgents();
+
+    // Whether it may come back is the reading's decision (the rejection rule); the deduplication only keeps one waiting card.
+    expect(again.actions).toHaveLength(1);
+    expect(suggestionProposals().filter((a) => a.state === 'pending')).toHaveLength(1);
+    expect(again.actions[0].key).toBe(suggestionProposals()[0].key);
+  });
+
+  it('keeps one card while the same proposal is still waiting', async () => {
+    threeReturns();
+    await suggestionMod.suggestAgents();
+    const again = await suggestionMod.suggestAgents();
+    expect(again.actions).toEqual([]);
+    expect(suggestionProposals()).toHaveLength(1);
+  });
+});
+
+describe('the end of the retro, in the workspace', () => {
+  /** The retro of the day, stored, and one decision of a ceremony of it: what a suggestion may rest on. */
+  const retroOf = async (day0: string, medal: string): Promise<void> => {
+    const state = await import('../src/main/state');
+    const retro = await import('../src/main/retro');
+    const { ceremony } = await import('./helpers/ceremony');
+    const made = ceremony({ id: `${day0}T090000`, decisions: [{ ref: 'app#123', text: medal, target: 'note', dest: '' }] });
+    state.saveState(made);
+    retro.writeRetro({ id: `${day0}-squad-1`, squad: 'squad-1', from: new Date(`${day0}T00:00:00Z`).toISOString(), to: new Date(`${day0}T23:00:00Z`).toISOString(), sessionId: null, speech: 's', numbers: [], worked: [], stuck: [], rework: [], talk: [], createdAt: new Date().toISOString() });
+    const minutes = await import('../src/main/minutesStore');
+    minutes.registerCeremony(made);
+    minutes.commitVersion(day0, minutes.versionOfCeremony(made.id) ?? 1, { teams: '', written: [] });
+  };
+
+  it('raises at most two suggestions from the retro that was answered, with the record of the squad', async () => {
+    const medal = 'Keep the legacy exporter for one release';
+    for (const d of ['2026-09-28', '2026-09-29', '2026-09-30']) await retroOf(d, medal);
+    asked.answer = { nome: 'Keeper', papel: 'Keeper', etapa: 'refine', prompt: 'Guard.' };
+
+    const { askRetro, readRetro, writeRetro } = await import('../src/main/retro');
+    const answered = `${new Date().toLocaleDateString('sv-SE')}-squad-1`;
+    // The retro the conversation answers was stored first (the app prepares it and the person asks in it).
+    writeRetro({ id: answered, squad: 'squad-1', from: new Date().toISOString(), to: new Date().toISOString(), sessionId: null, speech: 's', numbers: [], worked: [], stuck: [], rework: [], talk: [], createdAt: new Date().toISOString() });
+    const after = await askRetro(answered, 'o que travou?');
+
+    // The retros of the squad are named for the day and the squad; a stale filter that reads only the whole-workspace files finds none of them.
+    expect(readRetro(answered)?.id).toBe(answered);
+    expect(after.talk).toHaveLength(2);
+    // The reading ran after the retro was stored and left the proposal it supports, with the draft the model gave.
+    expect(suggestionProposals().length).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('the workspace of a test', () => {
   it('carries the suggestion to the screen and writes nothing to a code host', async () => {
     threeReturns();

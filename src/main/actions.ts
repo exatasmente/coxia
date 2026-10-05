@@ -971,8 +971,9 @@ export function proposeRunPush(input: { key: string; issue: number; issueTitle?:
 /** Proposes a new agent the cycle suggested. Accepting creates the agent, so it writes nothing external: the person decides in Actions. */
 export function proposeAgentSuggestion(input: { key: string; summary: string; name: string; role: string; stage: string; draft: string; evidence: string; rejectedBefore?: { at: string; changed: string[] } | null; suggestionId: string; notify?: { title: string; body: string } }): ReleaseAction | null {
   const store = read();
-  // The same proposal, stage and evidence is not made twice; a decided one (done/skipped) may come back with new evidence.
-  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  // Whether the suggestion may be raised at all was decided in `buildSuggestions` (a rejection only lets it back with evidence it never saw). Here
+  // only the card is deduplicated: the same proposal is not left in Actions twice while it still waits for its decision.
+  if (store.actions.some((a) => a.kind === 'suggest-agent' && a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
   const lines = [
     t('main.suggestions.card.name', { value: input.name }),
     t('main.suggestions.card.role', { value: input.role }),

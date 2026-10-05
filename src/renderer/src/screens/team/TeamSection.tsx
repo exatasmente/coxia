@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { squadsOf } from '../../../../shared/config/squads';
 import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
 import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
@@ -33,9 +33,13 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
   const [said, setSaid] = useState<string | null>(null);
   const squads = squadsOf(config);
 
-  // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from.
+  // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from. The request is kept in a ref (not only
+  // in the prop) so the same draft does not reopen the panel every time the section re-renders for another reason.
+  const handled = useRef<string | null>(null);
   useEffect(() => {
-    if (suggestion) setEditing({ draft: suggestion.draft, isNew: true, suggestionId: suggestion.suggestionId });
+    if (!suggestion || handled.current === suggestion.suggestionId) return;
+    handled.current = suggestion.suggestionId;
+    setEditing({ draft: suggestion.draft, isNew: true, suggestionId: suggestion.suggestionId });
   }, [suggestion]);
 
   const suggest = async () => {

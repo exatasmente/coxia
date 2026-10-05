@@ -48,9 +48,10 @@ export const writeRetro = write;
 /** The latest retro of the whole workspace, or, with a squad, the latest one held for it. */
 export function latestRetro(squad: string | null = null): Retro | null {
   if (!existsSync(DIR)) return null;
-  const mine = (f: string): boolean => (squad ? f.endsWith(`-${squad}.json`) && ID.test(f.slice(0, -5)) : WHOLE.test(f));
+  // A retro for a squad is named "<day>-<squad>"; the whole workspace's is named for its day alone. `ID` bounds the name, not the day.
+  const mine = (f: string): boolean => (squad ? f.endsWith(`-${squad}.json`) : WHOLE.test(f));
   const last = readdirSync(DIR).filter(mine).sort().pop();
-  return last ? read(last.replace(/\.json$/, '')) : null;
+  return last ? read(last.slice(0, -'.json'.length)) : null;
 }
 
 // The names of the digest's fields, in the language the agent answers in (the digest is JSON the prompt carries).
@@ -187,7 +188,10 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
   retro.sessionId = r.sessionId || retro.sessionId;
   retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   await proposeRetroIssues(retro, r.data.melhorias ?? []);
+  // The retro is stored before the suggestions are raised: the reading looks at the retro that was just answered (its minute among the ceremonies),
+  // so a suggestion whose evidence changed with this retro is compared against the state as it is now, not the one from before it.
+  const stored = write(retro);
   // The end of the retro may raise at most two suggestions from what the history shows (no improvement of the conversation becomes one: that is #16's).
   await suggestFromRetro().catch((e) => console.error('[retro] suggestions', e instanceof Error ? e.message : e));
-  return write(retro);
+  return stored;
 }
