@@ -55,12 +55,12 @@ describe('an issue proposed in a mention', () => {
     easy(b);
     const run = await b.runner.start('app#101');
     await b.settle();
-    b.engine.script('planner', () => ({ text: 'I proposed the issue for the two failing tests.', issue: { title: 'The release cut stops at the checks', body: '## What happens\n\nTwo tests fail.', labels: ['bug', ' '] } }));
+    b.engine.script('planner', () => ({ text: 'I proposed the issue for the two failing tests.', proposals: [{ op: 'createIssue', title: 'The release cut stops at the checks', body: '## What happens\n\nTwo tests fail.', labels: ['bug', ' '] }] }));
     await mention(b, run, 'planner', 'create the issue');
     await b.settle();
     const call = mentionCalls(b, 'planner').at(-1)!;
-    expect((call.schema as { properties: Record<string, unknown> }).properties).toHaveProperty('issue');
-    expect(call.system).toContain('You may propose an issue');
+    expect((call.schema as { properties: Record<string, unknown> }).properties).toHaveProperty('proposals');
+    expect(call.system).toContain('You may propose writes on the code host');
     const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-issue');
     expect(proposal).toMatchObject({ state: 'pending', summary: 'Create the issue "The release cut stops at the checks" proposed by planner' });
     // Nothing exists on the host before the person's yes.
@@ -80,11 +80,11 @@ describe('an issue proposed in a mention', () => {
     easy(b);
     const run = await b.runner.start('app#101');
     await b.settle();
-    b.engine.script('planner', () => ({ text: 'Here it is.', issue: { title: 'Sneaky', body: 'Body.', labels: [] } }));
+    b.engine.script('planner', () => ({ text: 'Here it is.', proposals: [{ op: 'createIssue', title: 'Sneaky', body: 'Body.', labels: [] }] }));
     await mention(b, run, 'planner', 'create the issue');
     await b.settle();
     const call = mentionCalls(b, 'planner').at(-1)!;
-    expect((call.schema as { properties: Record<string, unknown> }).properties).not.toHaveProperty('issue');
+    expect((call.schema as { properties: Record<string, unknown> }).properties).not.toHaveProperty('proposals');
     expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-issue')).toEqual([]);
   });
 });

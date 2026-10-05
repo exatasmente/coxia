@@ -260,7 +260,14 @@ function v11ToV12(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 12, agents: { ...agents, team } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12 };
+// An agent may now name the tools it uses (the field `tools`, overriding the workspace's `agents.tools`). A v12 file has no such field, and an agent without it
+// keeps using the workspace's tools: nothing is raised.
+function v12ToV13(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('an agent may name the tools it uses; one without the field keeps the workspace\'s tools');
+  return { ...old, schemaVersion: 13 };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

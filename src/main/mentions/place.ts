@@ -5,8 +5,8 @@ import { GENERAL_THREAD, SQUADS_CHANNEL, type ThreadSummary, runThreadId } from 
 import type { Run } from '../../shared/runs';
 
 // Where a person wrote: the place a mention is answered in. A run's thread is answered by the runner and carries its worktree and cycle folder; the rest are a squad
-// channel (with or without a squad), the general conversation, or a ceremony. The place says what the agent may read (the squad's mission, the repositories) and,
-// when it runs commands, where the throwaway copy of the code comes from. Pure: the caller passes what it reads (the run store, the config).
+// channel (with or without a squad), the general conversation, the direct conversation of an agent, or a ceremony. The place says what the agent may read (the squad's
+// mission, the repositories) and, when it runs commands, where the throwaway copy of the code comes from. Pure: the caller passes what it reads (the run store, the config).
 
 export interface MentionPlace {
   /** The id of the thread the answer is posted in. */
@@ -17,14 +17,17 @@ export interface MentionPlace {
   run?: Run;
   /** The squad of a squad channel; null for a channel with no squad. */
   squad?: SquadDef | null;
+  /** The agent a direct conversation belongs to: every message of the person in it is a call on that agent, without an `@`. */
+  owner?: string | null;
   /** The issue/run or card under discussion, when there is one. */
   ref?: string;
   title?: string;
 }
 
 /**
- * The place a thread is: `run-<id>` through the run store; a squad's channel (its mission and its scope's repositories); the channel the squads talk in, or a general
- * conversation (no squad, the workspace's repositories). A run thread of a run that is gone, or any thread that is not one of these, is no place (null).
+ * The place a thread is: `run-<id>` through the run store; a squad's channel (its mission and its scope's repositories); the channel the squads talk in, a general
+ * conversation, or the direct conversation of an agent (no squad, the workspace's repositories, the owner named). A run thread of a run that is gone, or any thread
+ * that is not one of these, is no place (null).
  */
 export function placeOfThread(summary: ThreadSummary | null, runs: (id: string) => Run | null, config: WorkspaceConfig): MentionPlace | null {
   if (!summary) return null;
@@ -37,6 +40,7 @@ export function placeOfThread(summary: ThreadSummary | null, runs: (id: string) 
   }
   if (summary.id === GENERAL_THREAD) return { thread: summary.id, kind: 'general', repos };
   if (summary.id === SQUADS_CHANNEL) return { thread: summary.id, kind: 'channel', squad: null, repos };
+  if (summary.kind === 'agent') return { thread: summary.id, kind: 'channel', squad: null, owner: summary.agent ?? summary.squad ?? null, repos };
   if (summary.id.startsWith('squad-')) {
     const squad = squadOf(config, squadIdOfThread(summary.id));
     return { thread: summary.id, kind: 'channel', squad, repos: squad ? repos.filter((r) => squad.scope.repos.includes(r.id)) : repos };

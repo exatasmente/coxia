@@ -188,6 +188,16 @@ const agentModel = object('Which model an agent uses.', {
   model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
 });
 
+/** The tools pre-approved for agents, at the workspace and (overriding it field by field) per agent. */
+const agentTools = object('Tools pre-approved for agents. Writes, web and secret files are always blocked.', {
+  files: boolean('Read, Grep and Glob.'),
+  skills: boolean('Claude Code skills.'),
+  trackerMcp: boolean('Issue tracker MCP tools.'),
+  trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
+  vcsCli: boolean('Read-only use of the VCS CLI.'),
+  subagents: boolean('Subagents in the unblock ceremony.'),
+});
+
 const agentDef = object(
   'A member of the agent team.',
   {
@@ -200,6 +210,7 @@ const agentDef = object(
     tracker: enumOf('none: no code host reads in a run; read: reads issues, comments and pull requests (never a write). Absent: none.', AGENT_TRACKERS),
     shell: enumOf('none: no commands; allowlist: the commands of runner.commands exactly as written (agents that write only); sandbox: any command inside a sandbox built for the stage; host: any command on this computer, unsandboxed. Absent: allowlist for an agent that writes, else none.', AGENT_SHELLS),
     allowedCommands: list('Commands the person allowed this agent always in a ceremony: "prefix:*" allows the prefix and anything after a space, anything else only that exact command. Never a command that writes to the code host.', string('A rule.', { minLength: 1, maxLength: 200 }), { maxItems: 200, uniqueItems: true }),
+    tools: { ...agentTools, description: 'The tools this agent may use, overriding the workspace\'s agents.tools field by field (an agent may use one the workspace turned off). Absent: the workspace\'s tools.' },
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
@@ -380,14 +391,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
       }),
       agents: object('How the agents behave.', {
-        tools: object('Tools pre-approved for agents. Writes, web and secret files are always blocked.', {
-          files: boolean('Read, Grep and Glob.'),
-          skills: boolean('Claude Code skills.'),
-          trackerMcp: boolean('Issue tracker MCP tools.'),
-          trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
-          vcsCli: boolean('Read-only use of the VCS CLI.'),
-          subagents: boolean('Subagents in the unblock ceremony.'),
-        }),
+        tools: { ...agentTools, description: 'Tools pre-approved for every agent, unless the agent overrides them. Writes, web and secret files are always blocked.' },
         extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
         persona: string('Persona or tone shared by every agent.', { maxLength: 2000 }),
         roles: byRole('Per agent role.', agentRole),
