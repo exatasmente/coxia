@@ -8,6 +8,7 @@ import { api, errorText } from '../api';
 import { t, tv, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { RunProposal, isRunProposal } from './cycle/RunProposal';
+import { SuggestionCard, isSuggestion } from './SuggestionCard';
 import { BackIcon } from './icons';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
@@ -24,6 +25,7 @@ function title(a: ReleaseAction): string {
   if (a.kind === 'qa-comment') return t('ui.actions.title.qaComment', { issue: a.issue });
   if (a.kind === 'conflict-push') return a.summary ?? t('ui.actions.title.conflictPush', { issue: a.issue });
   if (a.kind === 'run-push') return a.summary ?? t('vcs.action.title');
+  if (a.kind === 'suggest-agent') return a.summary ?? t('ui.actions.title.suggestAgent');
   return t('ui.actions.title.conflict', { issue: a.issue });
 }
 
@@ -34,6 +36,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'conflict-push') return t('ui.actions.what.conflictPush');
   if (a.kind === 'run-push') return t('ui.actions.what.runPush');
   if (a.kind === 'release-git') return t('ui.actions.what.releaseGit');
+  if (a.kind === 'suggest-agent') return t('ui.actions.what.suggestAgent');
   return tv('call.explainsConflict');
 }
 
@@ -127,11 +130,12 @@ function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen
         </div>
       )}
       {a.output && !isRunProposal(a) && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {isSuggestion(a) && <SuggestionCard a={a} go={go} />}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
       {open && waitsFor.length > 0 && <p className="small muted">{t('ui.actions.waitsFor', { steps: waitsFor.map((b) => title(b)).join('; ') })}</p>}
 
-      {open && (
+      {open && !isSuggestion(a) && (
         <div className="row">
           {a.kind === 'conflict' ? (
             <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? t('ui.actions.resolution.continue') : tv('call.openAndResolve')}</button>

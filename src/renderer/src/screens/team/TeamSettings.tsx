@@ -15,7 +15,7 @@ import './team.css';
 // the same section; the browser saves through a narrower channel (teamApi.ts) and sees the runner's commands, folder and identity without editing them.
 
 // The tabs that exist, in order; the labels are `ui.team.tab.<name>`.
-const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow: (squad?: string) => void }) => ReactNode) | null> = {
+const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; suggestion?: { draft: import('./agentEdit').AgentDraft; suggestionId: string }; openFlow: (squad?: string) => void }) => ReactNode) | null> = {
   team: (p) => <TeamSection {...p} />,
   squads: (p) => <SquadsSection {...p} />,
   flow: (p) => <FlowEditor {...p} />,
@@ -28,6 +28,7 @@ export function TeamSettings() {
   const { view, error, reload } = useConfigView();
   const [tab, setTab] = useState<TeamTab>('team');
   const [squad, setSquad] = useState<string | undefined>(undefined);
+  const [suggestion, setSuggestion] = useState<{ draft: import('./agentEdit').AgentDraft; suggestionId: string } | undefined>(undefined);
   const root = useRef<HTMLElement>(null);
   const tabs = TEAM_TABS.filter((id) => AVAILABLE[id]);
 
@@ -37,6 +38,7 @@ export function TeamSettings() {
       if (!r || !AVAILABLE[r.tab]) return;
       setTab(r.tab);
       setSquad(r.squad);
+      setSuggestion(r.draft);
       root.current?.scrollIntoView({ block: 'start' });
     };
     take();
@@ -69,7 +71,7 @@ export function TeamSettings() {
       <div id="team-tabpanel" role="tabpanel" aria-labelledby={`team-tab-${tab}`} className="wz-stack">
         {error && <div className="error" role="alert">{error}</div>}
         {!view && !error && <span className="spinner" aria-hidden="true" />}
-        {view && render?.({ config: view.config, save, reload, squad, openFlow: (s) => { setSquad(s); setTab('flow'); } })}
+        {view && render?.({ config: view.config, save, reload, squad, suggestion, openFlow: (s) => { setSquad(s); setTab('flow'); } })}
       </div>
     </section>
   );

@@ -4,14 +4,9 @@
 
 - Tipo: pedido de funcionalidade (`enhancement`). Nada é aplicado em silêncio: aceitar cria um agente comum e editável depois.
 - A resposta de quem abriu fechou as quatro decisões de produto e o refino fechou o resto na spec `1_SPEC.md`: a fonte é o histórico já gravado (execuções, comandos permitidos, decisões/atas), sem gravar nada novo na v1 (transcrição das cerimônias fica para depois); o registro fica nos dados do workspace, por sugestão, sem prazo, com proposta + evidência + decisão + quem + quando, e a recusa guarda a impressão (papel + etapa + tipo de evidência); a proposta aparece em Ações com nome, papel, etapa, rascunho de prompt, permissões no mínimo e evidência com links, com os três caminhos (aceitar cria agente comum; editar abre o editor em Configurações › Time preenchido; recusar pede motivo opcional); e é oferecida a pedido (botão "Sugerir agentes" em Configurações › Time) e no fim da retro (no máximo duas).
-- Prioridade **normal** e marco **próximo ciclo de aprendizado** propostos; a pessoa decide.
-- O plano técnico (`2_PLAN.md`) fechou os dois pontos de desenho abertos e as demais escolhas:
-  - A etapa que o agente cobriria é **sempre existente** (`devCycle.stages`/`flows`), por id; **nenhum caminho novo de fluxo** e `runs:migrateFlow` não é tocado.
-  - A fonte "comando permitido de novo e de novo" lê a linha de auditoria (`auditoria.jsonl`, `kind: 'exec'`); sem linha, nenhum achado; nada de história nova (o `PendingCommand` não é gravado).
-  - O registro da decisão vai num arquivo próprio do workspace, `suggestions.json`, irmão de `acoes.json` — **não** na configuração, então **não** exige passo em `STEPS` nem o trio `types.ts`/`defaults.ts`/`schema.ts`.
-  - A proposta é um tipo de ação novo (`kind: 'suggest-agent'`) com função própria `proposeAgentSuggestion`, **não** `proposeVcsAction` (que exige `VcsCommand` e valida escrita no host); o cartão comum de Ações mostra nome/papel/etapa/rascunho/permissões/evidência no `output`.
-  - Aceitar cria o agente direto (`addAgent`+`newAgent`, permissões no mínimo) e **não** abre o editor; editar é o outro caminho.
-  - O gancho do fim da retro herda só a forma da #16 (proposta em Ações no fim da retro), não o conteúdo.
+- O plano técnico (`2_PLAN.md`) fechou os pontos de desenho: etapa sempre **existente** (`devCycle.stages`/`flows`), sem caminho novo de fluxo e sem tocar `runs:migrateFlow`; a fonte comando lê a linha de auditoria (`kind: 'exec'`); o registro em `suggestions.json` (dado do workspace, irmão de `acoes.json` — sem migração de schema); a proposta como tipo de ação novo (`kind: 'suggest-agent'`, função `proposeAgentSuggestion`, **não** `proposeVcsAction`); aceitar cria o agente direto e não abre o editor; o gancho da retro herda só a forma da #16.
+- Implementação seguiu as três fases do plano. O limiar de partida ficou em `{ count: 3, sources: 2 }` (`DEFAULT_THRESHOLD`). A impressão é `papel + etapa + tipo de evidência`, normalizada. O `blockedByRejection` compara as ocorrências novas (`source:ref:subject`) com as que a recusa já viu.
+- O aceite não passa por `assertExternalWrite` (criar agente é local); o ramo `suggest-agent` de `approveAction` chama um hook registrado no import de `suggestionsModule`, que cria o agente e grava o registro. A falha do aceite (etapa desaparecida) deixa a ação `failed` — `approveAction` engole o erro no seu try/catch, então o teste verifica o estado, não um throw.
 - Resposta: ### Resposta **1. De onde a sugestão nasce.** Do histórico que o app já grava, sem gravar nada novo na primeira versão: - das **execuções**: perguntas que chegam à pessoa (`needs-person`) sobre o mesmo tema em execuções diferentes, devoluções repetidas para a mesma etapa pelo mesmo motivo, rodadas de revisão e cenários de QA que voltam com o mesmo tipo de achado, e etapas que a pessoa assume à mão (pula, refaz ou responde no lugar do agente); - dos **comandos permitidos**: o mesmo comando que a pessoa permite de novo e de novo é um passo manual repetido; - das **cerimônias**: as decisões e ata… <!-- answer:24 -->
 
 ## Restrições
@@ -21,7 +16,8 @@
 - A v1 não grava história nova nem lê a transcrição das cerimônias.
 - Não misturar com a #16 (da #16 só a forma "proposta em Ações" e o gancho do fim da retro) nem com a #8.
 - Toda string de interface por `t()` nos dois catálogos; tema por tokens.
-- Canais de decisão da sugestão são desktop-only (como `config:save`); um navegador pareado não cria agente.
+- Canais de decisão da sugestão são desktop-only (`suggestions:suggest`, `suggestions:reject`, `suggestions:edited` em `DESKTOP_ONLY`); `suggestions:list` fica aberto como leitura.
+- Testes usam a flow de engenharia (`agentFlowEngineering`), cujas etapas (`refine`/`plan`/`implement`/`review`/`qa`) é que podem ser cobertas; a template SDD não tem etapa `review` de trabalho.
 
 ## Tentado e descartado
 
@@ -29,15 +25,18 @@
 - Descartado reusar `proposeVcsAction`: exigiria um `VcsCommand` falso e passaria pela validação de escrita externa, que a sugestão não faz.
 - Descartado gravar o registro na configuração: seria dado do workspace, não config, e arrastaria migração de schema.
 - Descartado criar/alterar etapas do fluxo a partir da sugestão; descartado sugerir permissões acima do mínimo; descartado oferecer sugestão no meio de execução/cerimônia.
+- Descartado mandar o cartão ler nome/papel/prompt do texto do `output`: o `unit` guarda o proposto estruturado e `suggestionOf(a)` o lê.
 
 ## Perguntas abertas
 
-- Nenhuma de produto nem de desenho. Restam detalhes de implementação, não perguntas: o valor final do limiar, se o cartão usa `stage` como subtítulo ou nada, e o id do agente derivado do nome com desambiguação. Nenhuma pausa.
+- Nenhuma de produto. O limiar é um valor de partida, não medido em uso real; o comportamento do modelo real e a renderização do cartão numa tela ficam para revisão e QA. Nenhuma pausa.
 
 ## Onde o trabalho está
 
-- `docs/cycles/[redacted]/` com `0_ISSUE.md`, `0_TRIAGE.md`, `1_SPEC.md` e `2_PLAN.md` (esta etapa). Nada foi implementado, executado ou commitado.
-- Plano concluído: fecha as fontes, o registro, a proposta em Ações, a etapa existente, o botão e o gancho da retro, com testes e gates. A próxima etapa é a implementação, em três commits (seção 5 do plano), depois revisão e teste.
-- Tudo o que o plano afirma foi lido no código desta árvore (nada foi executado); comportamento de modelo, volume real do histórico, o limiar e a renderização do cartão ficam não verificados.
+- `docs/cycles/[redacted]/` com `0_ISSUE.md`, `0_TRIAGE.md`, `1_SPEC.md`, `2_PLAN.md` e `3_IMPLEMENTATION.md` (esta etapa). Nada foi commitado; o app commita.
+- Implementado e verde: `src/main/suggestions.ts` (leitura pura, limiar, impressão, chave de evidência, registro `suggestions.json`), `src/main/suggestionsModule.ts` (fluxo, canais, aceite/edição/recusa, gancho da retro), `proposeAgentSuggestion` + ramo de `approveAction` em `src/main/actions.ts`, `ActionKind` novo, `SuggestionCard.tsx` com os três caminhos, botão em `TeamSettings`/`TeamSection` e editor preenchido via `teamNav`, gancho em `src/main/retro.ts`, catálogos `main.*`/`ui-docs.*`/`ui-team.*` e o prompt `prompt.sdd.suggest.*`.
+- Gates rodados nesta árvore, todos verdes: `npx tsc --noEmit`, `npx vitest run` (214 arquivos, 3558 testes), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`, `npx electron-vite build`.
+- Testes novos: `test/suggestions.test.ts` (17) e `test/suggestions-module.test.ts` (13). Não verificado: comportamento do modelo real, volume do histórico, limiar medido, renderização real do cartão e o gancho da retro em todas as famílias. A próxima etapa é a revisão, depois o teste.
 - Passagem support → product-owner: Refinar a sugestão de agentes novos a partir da resposta de quem abriu: a spec funcional e o plano técnico precisam fechar (1) de que histórico a sugestão é derivada, com as fontes apontadas — perguntas `needs-person` do mesmo tema entre execuções, devoluções repetidas para a mesma etapa pelo mesmo motivo, rodadas de revisão e cenários de QA que repetem o tipo de achado, etapas que a pessoa assume à mão, o mesmo comando aprovado repetidas vezes e as decisões/atas das cerimônias —, lendo só o que o app já grava (run JSON, `historico/`, atas) e sem gravar nada novo na v1; (2) como a sugestão cit… <!-- handoff:27 -->
 - Passagem product-owner → pessoa: Escrever o plano técnico (2_PLAN.md) sobre a spec funcional pronta, fechando os dois pontos de desenho que ficaram abertos e conferindo cada um no código desta árvore: (1) de onde a sugestão é derivada, ligando cada fonte às estruturas que o app já grava — perguntas `needs-person` e a cadeia de agentes no run JSON, `returns`/`roundLimit` (devoluções para a mesma etapa pelo mesmo motivo), `reviews`/`qa` (rodadas e cenários repetidos), as etapas assumidas à mão (pula/refaz/responde no lugar do agente) no histórico tipado, a linha de auditoria de comando permitido (`src/main/runner/service.ts:271… <!-- handoff:34 -->
+- Passagem tl-plataforma → pessoa: Implementar a sugestão de agentes novos em três commits, na ordem do plano (seção 5), fechando cada um com os gates da seção 7 verdes: 1. `feat: read the cycle history into suggestions` — criar `src/main/suggestions.ts` com `gatherEvidence`, `scoreFindings`, `impressionOf`, `evidenceKeyOf` (funções puras, sem I/O) e `test/suggestions.test.ts` com fixtures de runs (`returns`/`reviews`/`qa`/`history`), linhas `kind: 'exec'` do `auditoria.jsonl` e atas de `historico/`. Nada de tela nem de modelo neste commit. 2. `feat: record and block a suggestion decision in the workspace data` — o arquivo `sug… <!-- handoff:45 -->

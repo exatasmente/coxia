@@ -10,6 +10,7 @@ import { joinList } from '../shared/cycles/text';
 import { ATAS } from './env';
 import { runStore } from './runs';
 import { type RetroImprovement, proposeRetroIssues } from './retroIssues';
+import { suggestFromRetro } from './suggestionsModule';
 import { getConfig, rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 import { t } from '../shared/i18n';
@@ -186,5 +187,7 @@ export async function askRetro(id: string, question: string): Promise<Retro> {
   retro.sessionId = r.sessionId || retro.sessionId;
   retro.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   await proposeRetroIssues(retro, r.data.melhorias ?? []);
+  // The end of the retro may raise at most two suggestions from what the history shows (no improvement of the conversation becomes one: that is #16's).
+  await suggestFromRetro().catch((e) => console.error('[retro] suggestions', e instanceof Error ? e.message : e));
   return write(retro);
 }

@@ -500,6 +500,10 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = await publishConflict(a);
     } else if (a.kind === 'run-push') {
       output = await publishRunBranch(a);
+    } else if (a.kind === 'suggest-agent') {
+      // Accepting creates an ordinary agent in the team: local work, nothing leaves the machine, so no `assertExternalWrite` here.
+      if (!suggestionHooks.accept) throw new Error(t('main.suggestions.noHook'));
+      output = suggestionHooks.accept(a).output;
     } else if (a.kind === 'release-git') {
       const r = await runRelease(originOf(a), a.unit);
       output = r.output;
@@ -611,8 +615,12 @@ export const conflictHooks: {
   },
 };
 
-function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {
-  const a = read().actions.find((x) => x.id === id);
+// What accepting a suggestion does: the suggestions module registers it (creating the agent and recording the decision), so Actions stays the door
+// and the module keeps the record. A test that approves one without the module registered gets a clear failure rather than a silent no-op.
+export const suggestionHooks: { accept: ((action: ReleaseAction) => { output: string; agentId: string }) | null } = { accept: null };
+
+
+function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {  const a = read().actions.find((x) => x.id === id);
   if (!a || a.kind !== 'conflict') throw new Error(t('main.actions.conflictMissing', { id }));
   return { a, r: a.resolve ?? null };
 }
@@ -956,6 +964,40 @@ export function proposeRunPush(input: { key: string; issue: number; issueTitle?:
     output: [input.detail, `git -C <worktree> push origin HEAD:refs/heads/${input.branch}`].filter(Boolean).join('\n\n'),
   });
   write({ ...store, actions: [action, ...replaced] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+/** Proposes a new agent the cycle suggested. Accepting creates the agent, so it writes nothing external: the person decides in Actions. */
+export function proposeAgentSuggestion(input: { key: string; summary: string; name: string; role: string; stage: string; draft: string; evidence: string; rejectedBefore?: { at: string; changed: string[] } | null; suggestionId: string; notify?: { title: string; body: string } }): ReleaseAction | null {
+  const store = read();
+  // The same proposal, stage and evidence is not made twice; a decided one (done/skipped) may come back with new evidence.
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const lines = [
+    t('main.suggestions.card.name', { value: input.name }),
+    t('main.suggestions.card.role', { value: input.role }),
+    t('main.suggestions.card.stage', { value: input.stage }),
+    t('main.suggestions.card.permission', { value: t('ui.team.permission.read') }),
+    '',
+    t('main.suggestions.card.draft'),
+    input.draft,
+    '',
+    t('main.suggestions.card.evidence'),
+    input.evidence,
+    ...(input.rejectedBefore ? ['', t('main.suggestions.card.rejectedBefore', { at: input.rejectedBefore.at, changed: input.rejectedBefore.changed.join(', ') || t('main.suggestions.card.rejectedNoChange') })] : []),
+  ];
+  const action = blank({
+    key: input.key,
+    kind: 'suggest-agent',
+    // The suggestion is not about one issue: the card reads neither a number nor a title.
+    issue: 0,
+    issueTitle: '',
+    stage: input.stage,
+    summary: input.summary,
+    unit: { purpose: 'suggest-agent', suggestionId: input.suggestionId, name: input.name, role: input.role, stage: input.stage, prompt: input.draft, evidence: input.evidence, rejectedBefore: input.rejectedBefore ?? null },
+    output: lines.join('\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
   return action;
 }

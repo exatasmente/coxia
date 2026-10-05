@@ -417,6 +417,8 @@
   "ui.team.shell.sandboxSummary": "Rede: {network}. Pastas extras somente leitura: {folders}.",
   "ui.team.squad": "Squad",
   "ui.team.stages": "Etapas",
+  "ui.team.suggest.button": "Sugerir agentes",
+  "ui.team.suggest.done": "{count} sugestão(ões) esperando em Ações.",
   "ui.team.system": "do app",
   "ui.team.systemNote": "Agente do app: dá para editar, não para excluir. As cerimônias usam o modelo e as instruções dele.",
   "ui.team.tab.comments": "Comentários",

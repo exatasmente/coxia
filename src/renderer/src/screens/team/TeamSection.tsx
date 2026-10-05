@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { squadsOf } from '../../../../shared/config/squads';
 import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
 import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
-import { errorText } from '../../api';
+import { errorText, api } from '../../api';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { applyAgent, agentProblems, blankAgent, draftOf, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
@@ -24,12 +24,33 @@ export function modelText(config: WorkspaceConfig, a: AgentDef, t: Translate): s
 }
 
 /** Settings › Team: who is on the team, what each one does, and the switch that lets it run by itself. */
-export function TeamSection(props: SectionProps) {
-  const { config, save, reload } = props;
+export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentDraft; suggestionId: string } }) {
+  const { config, save, reload, suggestion } = props;
   const t = useT();
-  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean } | null>(null);
+  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean; suggestionId?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
   const squads = squadsOf(config);
+
+  // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from.
+  useEffect(() => {
+    if (suggestion) setEditing({ draft: suggestion.draft, isNew: true, suggestionId: suggestion.suggestionId });
+  }, [suggestion]);
+
+  const suggest = async () => {
+    setSuggesting(true);
+    setError(null);
+    setSaid(null);
+    try {
+      const r = await api.invoke<{ actions: unknown[]; reason?: string }>('suggestions:suggest');
+      setSaid(r.reason ?? t('ui.team.suggest.done', { count: r.actions.length }));
+      reload();
+    } catch (e) {
+      setError(errorText(e));
+    }
+    setSuggesting(false);
+  };
 
   const toggle = async (a: AgentDef, on: boolean) => {
     setError(null);
@@ -46,8 +67,12 @@ export function TeamSection(props: SectionProps) {
       <div className="wz-stack">
         <div className="row spread">
           <p className="small muted" style={{ flex: '1 1 240px' }}>{t('ui.team.hint')}</p>
-          <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
+          <div className="row">
+            <button type="button" className="btn" disabled={suggesting || isWeb()} onClick={() => void suggest()}>{suggesting ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.team.suggest.button')}</button>
+            <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
+          </div>
         </div>
+        {said && <p className="small muted">{said}</p>}
         {error && <div className="error" role="alert">{error}</div>}
         {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
@@ -89,6 +114,7 @@ export function TeamSection(props: SectionProps) {
           config={config}
           initial={editing.draft}
           isNew={editing.isNew}
+          suggestionId={editing.suggestionId}
           save={save}
           onClose={() => setEditing(null)}
         />
@@ -97,7 +123,7 @@ export function TeamSection(props: SectionProps) {
   );
 }
 
-function AgentPanel({ config, initial, isNew, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; save: SectionProps['save']; onClose: () => void }) {
+function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; suggestionId?: string; save: SectionProps['save']; onClose: () => void }) {
   const t = useT();
   const [draft, setDraft] = useState<AgentDraft>(initial);
   const [idTouched, setIdTouched] = useState(false);
@@ -127,6 +153,8 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
     setError(null);
     try {
       await save(make());
+      // An agent saved from a suggestion: the decision is recorded as "edited", with the id the editor gave it.
+      if (suggestionId) await api.invoke('suggestions:edited', suggestionId, draft.id).catch(() => undefined);
       onClose();
     } catch (e) {
       setError(errorText(e));

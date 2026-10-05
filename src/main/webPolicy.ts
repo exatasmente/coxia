@@ -9,7 +9,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
 // screen: a token never travels through the browser channel), and the start of a release run (`runs:startRelease`, D19: it ends in scripts and merged code of the repository
 // run as the person, so only the window starts one; a paired browser follows the run and answers its gates).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'runs:startRelease']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'runs:startRelease', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
