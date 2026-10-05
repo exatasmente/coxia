@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1-beta.2] - 2026-10-05
+
 ### Fixed
 
 - **`@agent` gets an answer outside a run's thread.** 0.6.0 promised that naming an agent with `@` in the general conversation, a squad's channel, the channel the squads share or a conversation you opened would get its answer there, but the part of the app that answers those mentions was never switched on: the message showed who it called and nothing came back, not even a failure. It now answers there, read only, as in a run's thread.
@@ -202,7 +204,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.1-beta.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.1-beta.2...HEAD
+[0.6.1-beta.2]: https://github.com/exatasmente/coxia/compare/v0.6.1-beta.1...v0.6.1-beta.2
 [0.6.1-beta.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1-beta.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0
