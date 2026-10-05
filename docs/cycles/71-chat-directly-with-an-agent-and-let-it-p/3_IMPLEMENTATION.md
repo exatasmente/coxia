@@ -1,51 +1,123 @@
-# Implementação: conversa direta com um agente e as propostas que ela levanta
+# Conversa direta com um agente e as propostas que ela levanta
 
-Esta passada implementou parte do plano da 71 no worktree, seguindo a decisão da pessoa do portão 3 (opção B: o módulo de menções ganha um caminho de proposta próprio, que planeja por `planWrite` e propõe direto pela porta de Ações, sem passar pelo publicador da execução). O que ficou implementado é o núcleo de fórum, menção, proposta e configuração; a tela e os testes de comportamento novos ficaram de fora e estão listados abaixo.
+Esta passada fechou o que a revisão apontou como bloqueante: os dois defeitos que
+perdiam escritas em silêncio no caminho de proposta, a volta do caminho de leitura do
+host ao do espaço de trabalho, a tela inteira (o atalho para a conversa de um agente no
+fórum, o "sim a todas" do lote em Ações e os interruptores de ferramentas por agente) e
+os testes de comportamento que o plano pede. Os gates do repositório passam.
 
 ## O que mudou
 
-### Fórum: a conversa direta de um agente
+### O caminho de proposta não perde mais nenhuma escrita
 
-- `THREAD_KINDS` ganhou o quarto tipo `agent` e o enum do cabeçalho o aceita (`src/shared/forum.ts`). O agente dono vai no campo `squad` do cabeçalho, que já existia; nenhum campo novo no formato do arquivo.
-- `agentThreadId(agentId)` = `agent-<id>` e `ensureAgentThread(forum, agent, language)` (`src/main/forum-channels.ts`), criando a conversa de forma idempotente, com o título `main.forum.agentTitle`; `forum:list` garante uma conversa por agente do time, como já garantia a geral e os canais (`src/main/forum.ts`).
-- `summaryOf` (`src/main/forum-core.ts`) passa a expor `agent` para uma conversa `agent`, e `ensureThread` grava `squad` também para `agent`.
-- A conversa cai na lista de conversas (não de canais), porque `forumLists` classifica por `kind === 'channel'` e pelo id da geral (`src/shared/forumView.ts`).
+- **Uma escrita planejada em vários comandos é proposta inteira.** `proposeMention`
+  (`src/main/mentions/propose.ts`) trocou `proposeVcsAction` (que guardava só
+  `commands[0]`) por `proposeVcsCommands` (`src/main/actions.ts:274`), que cria uma
+  proposta por comando com a chave sufixada. Num host que põe os rótulos numa chamada e
+  tira um por chamada, aprovar a proposta agora tira todos os rótulos ditos, em vez de
+  só pôr os novos. `ProposalOutcome` ganhou `count` (quantos comandos a escrita virou),
+  e a linha de sistema `runner.mention.proposed` usa esse número.
+- **A conversa de uma execução deixou de oferecer só a issue.** `raiseWrites`
+  (`src/main/mentions/answer.ts:178`) não tem mais um ramo próprio para a thread de uma
+  execução: toda resposta, onde quer que o agente responda, vai pelo mesmo caminho do
+  módulo de menções (`deps.propose`). Um agente que responde na thread de uma execução
+  propondo comentário, rótulo, estado ou fechamento agora vê cada um esperando em
+  Ações, em vez de os descartar em silêncio. As escritas de uma execução registram o
+  alvo na issue da execução; as demais, na issue do espaço de trabalho.
+- Consequência: `Publisher.proposeIssue` e o ramo `mention-issue` do runner foram
+  removidos (eram o caminho particular da issue na execução); os textos de sistema
+  `runner.mention.issueProposed|issueRefused|issueCreated|issueNoId` e
+  `main.runner.mention.issueSummary` saíram dos dois catálogos, por não terem mais uso.
+- **A chave distingue cada proposta.** A chave passou a ser
+  `mention:<thread>:<dono>:<agente>:<seq da resposta>:<índice>:<hash do corpo>`. Antes a
+  segunda issue da mesma resposta colidia com a primeira e não era proposta; agora duas
+  escritas iguais da mesma resposta são propostas distintas, e a mesma resposta
+  reenviada não repete o que já espera.
 
-### Menção: o dono sem `@` e o lugar
+### O caminho de leitura do host voltou a ser o do espaço de trabalho
 
-- `placeOfThread` reconhece `agent`: um lugar `kind: 'channel'`, `squad: null`, com o dono em `MentionPlace.owner` e os repos do espaço de trabalho (`src/main/mentions/place.ts`).
-- `callsOf(message, owner)` (`src/main/mentions/module.ts`) chama o dono sem `@` e antes dos mencionados, mantendo o teto de 3; mensagem de agente continua não chamando ninguém. O módulo injeta `propose: proposeMention`.
+- `wantsVcsTool` (`src/main/agents.ts:457`) voltou a decidir pelo caminho do espaço de
+  trabalho (`vcsReadPolicy().via === 'tool'`), sem olhar o campo `tools` do agente. Um
+  agente que nomeia as ferramentas pode desligar uma para si, nunca trocar o caminho de
+  leitura do host — que o plano deixa fora desta entrega. As ferramentas **dizíveis por
+  agente** continuam valendo para o que o agente usa (arquivos, skills, rastreador,
+  CLI, subagentes), via `toolsForAgent`.
 
-### A resposta que propõe escritas
+### A tela
 
-- `mentionCall` trocou `issue: boolean` por `proposals: boolean`, com o esquema `proposals` (`comment`, `labels`, `status`, `close`, `createIssue`) e a leitura leniente `readProposedWrites`, que descarta um item inválido sem derrubar a resposta (`src/main/mentions/call.ts`).
-- `mayPropose` (antes `proposesIssue`) vale onde há caminho de proposta: fora da execução, `deps.propose`; na thread de uma execução, o `proposeIssue` do publisher. `raiseWrites` (`src/main/mentions/answer.ts`) roteia: a thread de uma execução mantém o publisher para `createIssue`; os demais lugares usam `deps.propose`, e cada resultado vira uma linha de sistema (`runner.mention.proposed|autoWrote|unsupported|proposalFailed`).
-- Novo `src/main/mentions/propose.ts` (`proposeMention`): planeja cada escrita com `provider.planWrite`, trata `VcsError`/`unsupported` (host sem a operação) como indisponível, propõe por `proposeVcsAction` com a chave `mention:<thread>:<dono>:<agente>:<n>:<hash do corpo>`, e, quando o agente é autônomo e a escrita é de baixo risco (comentário ou rótulo), roda por `runVcsAuto` (auditada). Fechar, mudar estado e abrir issue sempre propõem.
-- A cerimônia segue sem propostas (`proposals: false`).
+- **Fórum:** `ForumScreen` (`src/renderer/src/screens/cycle/ForumScreen.tsx`) ganhou um
+  bloco "Conversar com um agente" que abre `agent-<id>` de cada agente do time — a
+  conversa direta já aparecia na lista (é uma thread `agent`); faltava o atalho.
+- **Ações:** `Actions.tsx` agrupa por `unit.batch` e oferece o "sim a todas": um botão
+  por lote, com confirmação, que aprova cada proposta do grupo por si (uma após a
+  outra, cada escrita com o seu registro de auditoria). O agrupamento saiu para um
+  módulo puro, `src/shared/actions/batch.ts` (`batchesOf`), para a tela e o teste lerem
+  a mesma regra; uma proposta já feita ou pulada não entra no lote, uma que falhou
+  entra (a pessoa a repete).
+- **Time:** `TeamSection.tsx` ganhou os interruptores de ferramentas por agente
+  (`ToolsFields`): seguir o espaço de trabalho ou definir para este agente, campo a
+  campo, inclusive ligando uma ferramenta que o espaço desligou. O rascunho já
+  carregava o campo `tools`; faltava mostrá-lo.
 
-### Permissões de ferramentas por agente
+### O texto do agente
 
-- Campo opcional `tools?: AgentToolsConfig` no `AgentDef` (`src/shared/config/types.ts`); `toolsForAgent(config, agent)` (`src/shared/config/team.ts`) devolve o do agente sobrepondo campo a campo o do espaço de trabalho, inclusive ligando uma ferramenta desligada no espaço.
-- `allowedFor`, `wantsVcsTool` e `toolsOf` (`src/main/agents.ts`) passam a usar as ferramentas efetivas; `EngineRequest` ganhou `tools?`. O caminho da cerimônia usa as do agente system do time.
-- Esquema: o objeto `agents.tools` virou o schema `agentTools`, reusado em `agentDef.tools` (com descrição própria) e em `agents.tools` (`src/shared/config/schema.ts`). `newAgent` carrega o campo quando presente.
-- `CONFIG_SCHEMA_VERSION` 12 → 13 e passo `v12ToV13` em `STEPS` (`src/shared/config/migrations.ts`), que não levanta nada: um agente sem `tools` continua usando o do espaço de trabalho.
-
-### i18n
-
-- `prompt.sdd.runner.mention.proposals` nos dois catálogos, substituindo `prompt.sdd.runner.mention.issue`, que foi removido (não era mais usado). `main.forum.agentTitle` e os quatro códigos de sistema entraram nos dois catálogos.
+- O texto de sistema da menção deixou de dizer "You only read: change nothing", que
+  contradizia a seção de propostas. Agora diz que o agente não altera arquivo nem ramo
+  e que o que precisa de código é uma issue que ele propõe (os dois catálogos).
 
 ## O que foi verificado
 
-Nada foi visto funcionando no aplicativo. Rodado nesta árvore:
+Rodado nesta árvore de trabalho, com a suíte inteira:
 
 - `npx tsc --noEmit` — limpo.
-- `npx vitest run` — 3638 testes passando e 1 falhando na primeira rodada (`test/cycle-prompts.test.ts`, acusando `runner.mention.issue` não usado no catálogo); a chave foi removida e o teste passa.
-- `npm run i18n:lint` — passa (chaves iguais nos dois idiomas).
-- Testes ajustados ao novo contrato: `test/runner-mention-actions.test.ts` (campo `proposals` no lugar de `issue`) e os testes de configuração que fixavam a versão 12 (agora 13) e a lista de campos do agente (ganhou `tools`).
+- `npx vitest run` — 223 arquivos, **3657 testes passando**, exit 0.
+- `npm run i18n:lint` — 4074 chaves nos dois idiomas, 0 não traduzidas.
+- `node scripts/theme-audit.mjs` — exit 0.
+- `node scripts/public-audit.mjs` — 914 arquivos, exit 0.
 
-## O que ficou fora e não foi verificado
+Testes de comportamento novos, exercitados nesta passada (não só escritos):
 
-- A tela: o atalho da equipe para abrir a conversa de um agente, a tela de Ações com o "sim a todas" do lote e os interruptores de ferramentas na tela do agente.
-- Os testes de comportamento novos: fórum (criação idempotente e listagem), lugar/chamada (dono sem `@`), propostas por operação e chave, host sem a operação, autonomia, lote e permissões por agente; e o teste de migração v12→v13.
-- Não rodados os gates `node scripts/theme-audit.mjs` e `node scripts/public-audit.mjs`.
-- Não verificado: a conversa direta no telefone pareado e a ausência de memória entre conversas.
+- `test/mentions-agent-chat.test.ts` (12): a conversa direta (dono, listagem como
+  conversa, idempotência, lugar), a chamada do dono sem `@` e o teto de 3, a resposta
+  em ordem com a conversa como contexto, o agente sem confinamento mesmo com as
+  ferramentas de arquivo ligadas só para ele; e as propostas: cada operação vira uma
+  proposta em Ações, **uma escrita planejada em vários comandos vira uma proposta por
+  comando** (o defeito apontado), as chaves distinguem duas iguais e não repetem entre
+  respostas, o host sem a operação é dito indisponível e não propõe, a autonomia solta
+  só comentário e rótulo (auditados) e faz fechar, estado e abrir issue esperarem, e um
+  espaço de trabalho de teste recusa a escrita sem auditoria.
+- `test/actions-batch.test.ts` (3): o lote agrupa por `unit.batch`, mantém conversas
+  diferentes e o que não tem lote separados, e só segura o que ainda espera.
+- `test/agent-team.test.ts`: `toolsForAgent` segue o espaço quando o agente não nomeia
+  e sobrepõe campo a campo quando nomeia (inclusive ligando o que o espaço desligou), o
+  esquema aceita e descreve o campo, e a migração v12→v13 não levanta `tools` para
+  ninguém.
+- `test/runner-mention-actions.test.ts`: a issue proposta na thread de uma execução
+  agora espera como `mention-write` e a linha de sistema é `runner.mention.proposed`.
+
+## O que não foi verificado
+
+- **Nada foi visto funcionando no aplicativo** em nenhuma das telas novas (o atalho do
+  fórum, o "sim a todas" de Ações, os interruptores de ferramentas). Os testes de tela
+  não existem neste repositório; o que foi exercitado é a regra pura (`batchesOf`) e a
+  compilação dos componentes.
+- **A conversa direta no telefone pareado** e a **ausência de memória entre conversas**
+  continuam não verificadas. O que se sabe por leitura é que a lista e a leitura do
+  fórum já são abertas ao navegador pareado (`src/main/webPolicy.ts:20-25`) e que a
+  conversa direta é uma thread comum de id estável (`agent-<id>`); ninguém a abriu no
+  navegador.
+- O `electron-vite build`, que o CI roda, não foi rodado.
+- Nada foi exercitado contra um host de código real: o host dos testes é um falso.
+
+## Arquivos tocados
+
+- Proposta: `src/main/mentions/propose.ts`, `src/main/mentions/answer.ts`,
+  `src/main/mentions/module.ts`, `src/main/runner/service.ts`,
+  `src/main/runner/publish.ts`.
+- Ferramentas por agente: `src/main/agents.ts`.
+- Tela: `src/renderer/src/screens/Actions.tsx`,
+  `src/renderer/src/screens/cycle/ForumScreen.tsx`,
+  `src/renderer/src/screens/team/TeamSection.tsx`, `src/shared/actions/batch.ts` (novo).
+- i18n: os oito catálogos (`main`, `ui-cycle`, `ui-docs`, `ui-team`, nos dois idiomas).
+- Testes: `test/mentions-agent-chat.test.ts` (novo), `test/actions-batch.test.ts`
+  (novo), `test/agent-team.test.ts`, `test/runner-mention-actions.test.ts`.

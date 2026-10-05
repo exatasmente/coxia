@@ -57,6 +57,8 @@ export const mentionsModule: Module = () => {
           sandbox,
           env: () => ({ fallbackCwd: getConfig().projects.roots[0] ?? '' }),
           propose: proposeMention,
+          // The owner of a direct conversation answers without an `@`: the calls are the ones this module resolved.
+          calls,
         }).then(() => undefined),
       )
       .catch(() => undefined);

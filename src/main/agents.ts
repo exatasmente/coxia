@@ -449,12 +449,13 @@ function wantsVcsTool(req: EngineRequest): boolean {
   if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
-  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the workspace's host-read switches on.
+  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the host-read switches of the agent on. The
+  // workspace's own read path decides every other call: an agent naming its tools may turn a tool off, never move the read of the host to another path.
   if (mode === 'tool') {
     const tools = req.tools ?? getConfig().agents.tools;
     return (tools.vcsCli || tools.trackerMcp) && vcsReady();
   }
-  return !req.confine && (req.tools ? req.tools.vcsCli : vcsReadPolicy().via === 'tool');
+  return !req.confine && vcsReadPolicy().via === 'tool';
 }
 
 /** The PATH the commands of an agent start with: the one of the person's login shell in front of the app's, so `npm` and the tools the repository's scripts use are found. */

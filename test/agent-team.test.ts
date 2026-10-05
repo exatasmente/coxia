@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { addAgent, ensureSystemAgents, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, updateAgent } from '../src/shared/config/team';
+import { addAgent, ensureSystemAgents, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, toolsForAgent, updateAgent } from '../src/shared/config/team';
 import { LLM_ROLES, type WorkspaceConfig } from '../src/shared/config/types';
 import { CATALOGS } from '../src/shared/i18n';
 
@@ -306,5 +306,42 @@ describe('autonomy of each agent', () => {
     const r = migrateConfig(old, { legacyInstall: false });
     expect(r.changed).toBe(false);
     expect(r.config.agents.team.every((a) => a.autonomous === false)).toBe(true);
+  });
+});
+
+describe('the tools an agent uses', () => {
+  it('follow the workspace when the agent names none, and override it field by field when it does', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.tools = { files: true, skills: true, trackerMcp: true, trackerMcpServer: '', vcsCli: true, subagents: true };
+    c.agents.team.push({ id: 'reader', name: 'Reader', tools: { files: true } });
+    const made = validateConfig(c).config!;
+    const up = made.agents.team.find((a) => a.id === 'reader')!;
+    const plain = made.agents.team.find((a) => !a.tools)!;
+    // Absent: the workspace's tools.
+    expect(toolsForAgent(made, plain)).toEqual(made.agents.tools);
+    // Present: what the agent said overrides, and what it left out falls back to the workspace's.
+    expect(toolsForAgent(made, up)).toMatchObject({ files: true, skills: true, vcsCli: true });
+    const off = { ...made.agents.tools, files: false };
+    const only = { ...made, agents: { ...made.agents, tools: off } };
+    // An agent may turn on a tool the workspace turned off, for itself alone.
+    expect(toolsForAgent(only, up).files).toBe(true);
+    expect(toolsForAgent(only, plain).files).toBe(false);
+  });
+
+  it('is accepted by the schema and the field is described', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.team.push({ id: 'reader', name: 'Reader', tools: { files: 'yes' } });
+    expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['agents.team[5].tools.files']);
+    expect(CONFIG_SCHEMA.properties?.agents.properties?.team.items?.properties?.tools.description).toMatch(/overrid/);
+  });
+
+  it('comes from the migration as absent for every agent, so nothing changes', () => {
+    const v12 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    v12.schemaVersion = 12;
+    for (const a of v12.agents.team) delete a.tools;
+    const r = migrateConfig(v12, { legacyInstall: false });
+    expect(r.config.schemaVersion).toBe(13);
+    expect(r.config.agents.team.some((a: { tools?: unknown }) => a.tools !== undefined)).toBe(false);
+    expect(r.notes.join(' ')).toContain('an agent may name the tools it uses');
   });
 });

@@ -61,16 +61,15 @@ describe('an issue proposed in a mention', () => {
     const call = mentionCalls(b, 'planner').at(-1)!;
     expect((call.schema as { properties: Record<string, unknown> }).properties).toHaveProperty('proposals');
     expect(call.system).toContain('You may propose writes on the code host');
-    const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-issue');
-    expect(proposal).toMatchObject({ state: 'pending', summary: 'Create the issue "The release cut stops at the checks" proposed by planner' });
+    const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
+    expect(proposal).toMatchObject({ state: 'pending', summary: 'a new issue: The release cut stops at the checks' });
     // Nothing exists on the host before the person's yes.
     expect([...forge.issues.values()].some((i) => i.title === 'The release cut stops at the checks')).toBe(false);
-    expect(b.thread(run).find((m) => m.code === 'runner.mention.issueProposed')?.params).toMatchObject({ agent: 'planner', title: 'The release cut stops at the checks' });
+    expect(b.thread(run).find((m) => m.code === 'runner.mention.proposed')?.params).toMatchObject({ agent: 'planner', count: 1 });
     await actions.approveAction(proposal!.id);
     await b.settle();
     const made = [...forge.issues.values()].find((i) => i.title === 'The release cut stops at the checks');
     expect(made).toMatchObject({ body: '## What happens\n\nTwo tests fail.', labels: ['bug'] });
-    expect(b.thread(run).find((m) => m.code === 'runner.mention.issueCreated')?.params).toMatchObject({ ref: `#${made!.number}` });
   });
 
   it('is not offered to an agent that does not read the code host, and what it sends anyway is dropped', async () => {
@@ -85,7 +84,7 @@ describe('an issue proposed in a mention', () => {
     await b.settle();
     const call = mentionCalls(b, 'planner').at(-1)!;
     expect((call.schema as { properties: Record<string, unknown> }).properties).not.toHaveProperty('proposals');
-    expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-issue')).toEqual([]);
+    expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write')).toEqual([]);
   });
 });
 
