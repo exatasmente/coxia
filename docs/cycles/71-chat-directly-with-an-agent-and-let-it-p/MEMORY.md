@@ -2,13 +2,11 @@
 
 ## Decisões
 
-- Tipo: pedido de funcionalidade (enhancement). Sem defeito a reproduzir.
-- Spec `1_SPEC.md`, plano `2_PLAN.md`, implementação `3_IMPLEMENTATION.md`, revisão `4_REVIEW.md`, teste `5_TEST_PLAN.md`.
+- Tipo: pedido de funcionalidade (enhancement). Spec `1_SPEC.md`, plano `2_PLAN.md`, implementação `3_IMPLEMENTATION.md`, revisão `4_REVIEW.md`, teste `5_TEST_PLAN.md`.
 - Regras fechadas no refino: cada mensagem é respondida, uma após a outra; a conversa é interna; contexto é a janela das últimas 40 mensagens; fechar e mudar o estado sempre esperam a pessoa; a autonomia por agente cobre só comentário e rótulo; nenhuma conversa dá escrita em arquivos; host sem a operação diz que não tem; ajustar a permissão de um agente não muda a dos outros; todas as ferramentas são dizíveis por agente e um agente pode usar uma que o espaço desligou.
-- Portão 3: **opção B** — o módulo de menções ganha caminho de proposta próprio (`proposeMention`), sem o publicador da execução.
-- Plano: quarto tipo de thread `agent` (dono no campo `squad`, id `agent-<id>`, idempotente, listado como conversa); `proposals` no esquema da resposta; chave distinta por proposta; autonomia liga só comentário/rótulos; tela de Ações em lote; `tools` opcional por agente sobrepondo o do espaço, migração v12→v13.
-- **Revisão da rodada 2: aprovado.** Os cinco bloqueantes da rodada 1 foram atendidos. **QA: entregue para o pull request.**
-- **Rodada 3 (esta): as duas sugestões da revisão foram tratadas.** (a) A unidade de uma proposta de resposta passou a levar `runId` quando o lugar é a conversa de uma execução, e `done` (`src/main/runner/publish.ts`) diz na thread a linha `runner.mention.writeDone` quando a escrita sai. (b) O alvo do registro ganhou `iidForRegistration` (`src/main/mentions/propose.ts`): a issue que o lugar nomeia ou, sem referência, o projeto de issues do espaço de trabalho — nunca o 0 de antes.
+- Portão 3: **opção B** — o módulo de menções tem caminho próprio de proposta (`proposeMention`), sem o publicador da execução.
+- Quarto tipo de thread `agent` (dono no campo `squad`, id `agent-<id>`, idempotente, listado como conversa); `proposals` no esquema da resposta; chave distinta por proposta; tela de Ações em lote; `tools` opcional por agente sobrepondo o do espaço; migração v12→v13.
+- **Revisões: rodada 1 bloqueou; rodada 2 aprovou; rodada 3 aprovou.** Na rodada 3 as duas sugestões da rodada 2 foram atendidas: a unidade de uma proposta de resposta leva `runId` quando o lugar é a conversa de uma execução, e `done` (`src/main/runner/publish.ts:802`) diz na thread `runner.mention.writeDone` quando a escrita sai; o alvo do registro passa por `iidForRegistration` (`src/main/mentions/propose.ts:76-84`, usado em `:115`) e aponta para o projeto de issues do espaço de trabalho, nunca o 0.
 - Resposta: todas na mesma entrega e todas as ferramentas pode usar uma ferramenta desligada <!-- answer:37 -->
 - Resposta: B <!-- answer:62 -->
 
@@ -17,9 +15,9 @@
 - As escritas da porta passam por validação e auditoria (`src/main/vcs/types.ts`, `src/main/actions.ts`); o Bitbucket não tem rótulos de issue (`issueLabels: false` em `src/shared/vcsCaps.ts`); fechar e mudar estado divergem por host; teto de 3 menções; contexto de 40 mensagens; `CONFIG_SCHEMA_VERSION` foi de 12 para 13.
 - Uma menção não recebe `confine` (`src/main/agents.ts`), então nenhuma conversa dá escrita em arquivos, mesmo com `tools.files` ligado só para o agente.
 - **O caminho de leitura do host é o do espaço de trabalho**, não o do agente: `wantsVcsTool` decide por `vcsReadPolicy().via === 'tool'`.
-- **A conversa de uma execução não tem mais caminho próprio de proposta**: `Publisher.proposeIssue` e o ramo `mention-issue` foram removidos; toda resposta propõe pelo módulo (`src/main/mentions/propose.ts`).
+- Toda resposta propõe pelo módulo (`src/main/mentions/propose.ts`); `Publisher.proposeIssue` e o ramo `mention-issue` foram removidos.
 - Linhas de sistema da menção: `runner.mention.proposed|autoWrote|unsupported|proposalFailed`, mais `writeDone` quando uma proposta de uma conversa de execução é aprovada.
-- **O aviso de falha ou de recusa de uma escrita não existe**: `approveAction` não avisa ouvinte nenhum ao falhar, e uma recusa antes de rodar só é anunciada para um passo de release. Vale para toda escrita do app; a pessoa vê na tela de Ações.
+- **O aviso de falha ou de recusa de uma escrita não existe**: `approveAction` não avisa ouvinte nenhum ao falhar. Vale para toda escrita do app; a pessoa vê na tela de Ações.
 
 ## Tentado e descartado
 
@@ -27,21 +25,20 @@
 - Um tipo novo de lugar de menção: reusa `kind: 'channel'` com o dono do cabeçalho.
 - Reusar o publicador da execução (opção A): a pessoa escolheu a B.
 - Testar `wantsVcsTool` num teste de motor: a garantia fica no código e no teste de `toolsForAgent`.
-- Chamar o marco de um número: o marco não foi lido; a proposta é "a próxima versão menor", a confirmar.
-- Anunciar a recusa/falha de uma proposta de resposta na conversa de uma execução: exigiria mexer no caminho de falha de toda escrita, fora do escopo de uma sugestão.
+- Chamar o marco de um número: a proposta é "a próxima versão menor", a confirmar.
 
 ## Perguntas abertas
 
-- Nenhuma que trave a entrega. Em aberto para a pessoa: quais escritas contam como de baixo risco (hoje comentário e rótulo); aceitar que fechar não é igual em todo host; e a conversa no telefone pareado, que a verificação precisa fechar.
+- Nenhuma que trave a entrega. Em aberto para a pessoa: quais escritas contam como de baixo risco (hoje comentário e rótulo); aceitar que fechar difere por host; e a conversa no telefone pareado.
 
 ## Onde o trabalho está
 
-- `docs/cycles/[redacted]/` com `0_ISSUE.md`, `0_TRIAGE.md`, `1_SPEC.md`, `2_PLAN.md`, `3_IMPLEMENTATION.md`, `4_REVIEW.md`, `5_TEST_PLAN.md`.
-- Gates rodados na rodada 3, todos exit 0: `npx tsc --noEmit`, `npx vitest run` (223 arquivos, **3659** testes), `node scripts/theme-audit.mjs`, `npm run i18n:lint` (4075 chaves), `node scripts/public-audit.mjs` (915 arquivos), `npx electron-vite build`.
-- Testes de comportamento da entrega, **59** passando: `test/mentions-agent-chat.test.ts` (13), `test/runner-mention-actions.test.ts` (7), mais `test/actions-batch.test.ts` (3) e `test/agent-team.test.ts` (36).
-- **Não verificado**: a conversa direta no telefone pareado; a ausência de memória entre conversas; a tela exercitada de fato (não há teste de renderer); qualquer host de código real; o aviso de falha/recusa de uma escrita.
-- Sugestões não bloqueantes que restam: o aviso de falha/recusa (acima). Tudo registrado no `5_TEST_PLAN.md`.
-- Passagem developer → revisor-plataforma: Levar a entrega da rodada 3 para revisão. As duas sugestões da rodada 2 foram tratadas: (a) a proposta de uma resposta numa conversa de execução leva `runId` e, quando aprovada, a thread recebe `runner.mention.writeDone`; (b) o alvo do registro passa por `iidForRegistration` e aponta para a issue do espaço de trabalho em vez do 0. Gates: tsc, vitest 3659, theme-audit, i18n:lint 4075, public-audit 915, electron-vite build, todos exit 0. **Não verificado**: nada foi visto no aplicativo, telefone pareado, memória entre conversas, host real; o aviso de falha/recusa de uma escrita não existe (comportamento de toda escrita, não só desta entrega).
+- `docs/cycles/[redacted]/` com os documentos do ciclo.
+- Gates da rodada 3, todos exit 0: `npx tsc --noEmit`, `npx vitest run` (223 arquivos, 3659 testes), `node scripts/theme-audit.mjs`, `npm run i18n:lint` (4075 chaves), `node scripts/public-audit.mjs` (915 arquivos), `npx electron-vite build`.
+- 59 testes de comportamento passando: `test/mentions-agent-chat.test.ts` (13), `test/runner-mention-actions.test.ts` (7), `test/actions-batch.test.ts` (3), `test/agent-team.test.ts` (36).
+- Sugestão não bloqueante que resta: a linha `src/main/runner/publish.ts:805` ficou com duas instruções juntas (forma, sem efeito). E o aviso de falha/recusa, acima.
+- **Não verificado**: telefone pareado, ausência de memória entre conversas, tela exercitada (não há teste de renderer), host real, aviso de falha/recusa.
+- Passagem revisor-plataforma → qa-plataforma: Levar a entrega da rodada 3 para o pull request. As duas sugestões da rodada 2 estão atendidas; gates passam (tsc, vitest 3659, theme-audit, i18n:lint 4075, public-audit 915, electron-vite build). Fica uma sugestão de forma em `src/main/runner/publish.ts:805`, não bloqueante. **Não verificado**: nada visto no aplicativo, telefone pareado, memória entre conversas, host real; o aviso de falha/recusa de uma escrita continua ausente por desenho. <!-- handoff:265 -->
 - Passagem support → product-owner: Levar ao refino o pedido com a seguinte base verificada: (1) a proposta de uma resposta hoje depende de um publicador que só a execução tem — um lugar sem execução precisa de um publicador próprio; (2) a única operação proposta hoje é `createIssue`, e as operações `commentIssue`, `setIssueLabels`, `setIssueStatus` e `closeIssue` já existem e passam pela mesma porta (plano, proposta, validação, aprovação, auditoria), faltando o canal que permite ao agente propô-las e o rascunho por hash de corpo para não repetir; (3) a única conversa que existe hoje é uma thread (execução, squad, canal dos squa… <!-- handoff:6 -->
 - Passagem product-owner → pessoa: Levar a spec para o plano técnico, com as decisões da pessoa resolvidas antes do desenvolvimento (o escopo, item 1 das perguntas em aberto: se a autonomia entra nesta entrega ou na seguinte). O plano decide então, e só isso: (1) onde mora uma conversa que pertence a um agente — hoje a conversa é uma thread com tipo `run`/`general`/`channel` e cabeçalho `kind`/`runId`/`squad`/`title`, e nada numa thread pertence a um agente (`src/shared/forum.ts:80-94`, `src/main/forum-core.ts:271`, `src/main/mentions/place.ts:29-46`) —, como ela é listada junto das conversas do fórum (`src/main/forum.ts:52-59`… <!-- handoff:25 -->
 - Passagem pessoa → product-owner: O Agente também poderar criar issues que lhe for permitido [, deve ter nas configurações do agente a opão de ajustar as permissões de uso de comandos e tools por agente ale do que já é permitido nas configurações <!-- handoff:30 -->
