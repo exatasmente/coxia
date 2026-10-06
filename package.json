@@ -1,6 +1,6 @@
 {
   "name": "cerimonias",
-  "version": "0.7.0-beta.4",
+  "version": "0.7.0-beta.5",
   "description": "Coxia: cerimônias por voz com agentes por atividade",
   "main": "./out/main/index.js",
   "scripts": {

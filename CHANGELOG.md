@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0-beta.5] - 2026-10-06
+
 ### Added
 
 - **An agent can test an interface from inside the sandbox.** Two settings in Settings › Runner › Sandbox, on the computer only and off by default. *Browsers folder* (usually `~/.cache/ms-playwright`) is shared read-only with every sandbox, with `PLAYWRIGHT_BROWSERS_PATH` set, so an agent drives a browser without setting anything. *Virtual display for QA* starts a virtual display (Xvfb) inside the QA stage's sandbox, so a window app such as this one can be opened; the computer's own screen is never used. With either on, the stage is told how to test an interface (dev server on the sandbox's loopback, Playwright, screenshots in `/coxia/out`) and gets a `ViewImage` tool that shows it a screenshot from that folder and nowhere else. What is missing (the folder is gone, no Xvfb, a display that did not start) is said in the run's thread and in the prompt, and the stage goes on; Settings shows browsers and display on lines of their own.
@@ -247,7 +249,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...HEAD
+[0.7.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...v0.7.0-beta.5
 [0.7.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...v0.7.0-beta.4
 [0.7.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.2...v0.7.0-beta.3
 [0.7.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.1...v0.7.0-beta.2
