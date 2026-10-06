@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -46,7 +46,7 @@ const stageRecord = object(
 
 const history = object(
   'One transition of the run.',
-  { at: time('When.'), type: enumOf('What happened.', HISTORY_TYPES), stage: { type: ['string', 'null'], description: 'The stage it concerns.', maxLength: 48 }, by: string('An agent id, "person" or "app".', { maxLength: 48 }), detail: nullableString('A reason or a name.') },
+  { at: time('When.'), type: enumOf('What happened.', HISTORY_TYPES), stage: { type: ['string', 'null'], description: 'The stage it concerns.', maxLength: 48 }, by: string('An agent id, "person" or "app".', { maxLength: 48 }), detail: { type: ['string', 'null'], description: 'A reason or a name.', maxLength: HISTORY_DETAIL_MAX } },
   ['at', 'type', 'stage', 'by', 'detail'],
 );
 

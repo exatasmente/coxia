@@ -263,6 +263,16 @@ describe('questions', () => {
     expect(d.messages.filter((m) => m.kind === 'question')).toHaveLength(1);
   });
 
+  it('keep a run file valid when the answer is longer than a history entry holds', () => {
+    const d = drive();
+    d.do((r, t) => ask(r, { by: 'refiner', text: 'Which users?' }, t));
+    const long = 'x'.repeat(9000);
+    const tr = d.do((r, t) => answer(r, d.flow, long, t));
+    expect(d.run.history.at(-1)).toMatchObject({ type: 'answer', detail: 'x'.repeat(4000) });
+    expect(parseRun(d.run).ok).toBe(true);
+    expect(tr.messages[0].text).toBe(long);
+  });
+
   it('are not accepted empty, and an answer needs a question', () => {
     const d = drive();
     expect(() => ask(d.run, { by: 'refiner', text: '  ' }, AT)).toThrow(expect.objectContaining({ code: 'empty-text' }));
