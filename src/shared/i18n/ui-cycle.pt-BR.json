@@ -205,6 +205,7 @@
   "ui.cycle.stage.upcoming": "ainda não chegou",
   "ui.cycle.stage.usage": "{calls} chamadas ao modelo · {prompt} tokens enviados ({cached} do cache) · {completion} recebidos",
   "ui.cycle.stage.usageCost": "{calls} chamadas ao modelo · {prompt} tokens enviados ({cached} do cache) · {completion} recebidos · {cost} informados pelo provedor",
+  "ui.cycle.stage.usageCostEstimated": "{calls} chamadas ao modelo · {prompt} tokens enviados ({cached} do cache) · {completion} recebidos · {cost} estimados: o provedor não informou o custo desta chamada",
   "ui.cycle.stage.waiting": "aguardando um evento",
   "ui.cycle.stage.waitsForYou": "espera você",
   "ui.cycle.stages.other": "Outros comentários",

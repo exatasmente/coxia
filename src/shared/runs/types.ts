@@ -44,6 +44,8 @@ export interface StageUsage {
   /** Model calls. */
   calls: number;
   costUsd: number | null;
+  /** The cost is an estimate: no provider reported what the calls were charged (outside Anthropic's own API the SDK's figure is only a list price). Absent: charged. */
+  costEstimated?: boolean;
 }
 
 export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;

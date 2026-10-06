@@ -109,7 +109,7 @@ Importante: **um** modelo real foi testado, em quatro execuções, e só no runn
 - MCP: só stdio, sem OAuth e sem servidores remotos.
 - Um raciocínio que vem como `<think>` só é reconhecido no início da resposta; o texto de raciocínio nunca entra na resposta final.
 - Os dois motores usam sessões diferentes: uma sessão do Claude não retoma no motor aberto (vira sessão nova).
-- O custo em dólar não é calculado pelo app: os tokens são gravados (por etapa, no runner) e o custo só aparece quando o provedor o informa (o OpenRouter informa) ou o SDK do Claude o informa.
+- O custo em dólar do app é o que o provedor informou: os tokens são gravados (por etapa, no runner) e o custo aparece quando o provedor o informa (o OpenRouter informa). No caminho do SDK do Claude, o número do SDK só vale como o cobrado na API própria da Anthropic (`https://api.anthropic.com`); em qualquer outro provedor (Bedrock, Vertex, Foundry, um endereço próprio) ele é mostrado marcado como estimativa, porque é um preço de lista e não o que foi cobrado.
 
 ---
 
@@ -218,4 +218,4 @@ Important: **one** real model has been tested, in four runs, and only in the run
 - MCP: stdio only, no OAuth and no remote servers.
 - Reasoning that arrives as `<think>` is recognised only at the start of the answer; reasoning text never reaches the final answer.
 - The two engines keep separate sessions: a Claude session does not resume on the open engine (it starts a new one).
-- Dollar cost is not computed by the app: tokens are recorded (per stage, in the runner) and a cost only shows when the provider reports one (OpenRouter does) or the Claude SDK does.
+- The app's dollar cost is what the provider reported: tokens are recorded (per stage, in the runner) and a cost shows when the provider reports one (OpenRouter does). On the Claude SDK path, the SDK's figure counts as the charged cost only on Anthropic's own API (`https://api.anthropic.com`); on any other provider (Bedrock, Vertex, Foundry, a custom endpoint) it is shown marked as an estimate, because it is a list price and not what was charged.

@@ -205,6 +205,7 @@
   "ui.cycle.stage.upcoming": "not reached yet",
   "ui.cycle.stage.usage": "{calls} model calls · {prompt} tokens in ({cached} from cache) · {completion} out",
   "ui.cycle.stage.usageCost": "{calls} model calls · {prompt} tokens in ({cached} from cache) · {completion} out · {cost} reported by the provider",
+  "ui.cycle.stage.usageCostEstimated": "{calls} model calls · {prompt} tokens in ({cached} from cache) · {completion} out · {cost} estimated: the provider did not report a cost for this call",
   "ui.cycle.stage.waiting": "waiting for an event",
   "ui.cycle.stage.waitsForYou": "waits for you",
   "ui.cycle.stages.other": "Other comments",
