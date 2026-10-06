@@ -97,7 +97,7 @@ describe('the plugin declaration', () => {
   it('reads a declaration that offers nothing else', () => {
     const r = readPluginDeclaration(JSON.stringify({ id: 'plain', name: 'Plain' }), '/p');
     expect(r.refused).toBeNull();
-    expect(r.declaration?.offers).toEqual({ events: [], documents: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], requests: [] });
+    expect(r.declaration?.offers).toEqual({ events: [], documents: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], requests: [], agents: null });
   });
 });
 

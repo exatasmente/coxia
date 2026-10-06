@@ -21,6 +21,8 @@ export interface PluginView {
   settings: (PluginSetting & { value: string | null; filled: boolean })[];
   /** Requests it may ask the app to make. */
   requests: Pick<PluginRequestDecl, 'id' | 'method' | 'url' | 'write' | 'reversible'>[];
+  /** What it tells the agents while it is on, or null. */
+  agents: string | null;
   /** Requests of this plugin waiting for the person in Actions. */
   waiting: number;
   refused: string | null;

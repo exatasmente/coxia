@@ -43,6 +43,13 @@ describe('what a declaration may say about settings and requests', () => {
     expect(readPluginDeclaration(declaration({ settings, requests: [{ id: 'a', url: 'https://example.com' }, { id: 'a', url: 'https://example.com' }] }), '/p').refused).toBeTruthy();
   });
 
+  it('reads the note to the agents, and refuses one that is not text or too long', () => {
+    expect(readPluginDeclaration(declaration({ agents: 'ask me' }), '/p').declaration?.offers.agents).toBe('ask me');
+    expect(readPluginDeclaration(declaration({}), '/p').declaration?.offers.agents).toBeNull();
+    expect(readPluginDeclaration(declaration({ agents: 42 }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ agents: 'x'.repeat(1001) }), '/p').refused).toBeTruthy();
+  });
+
   it('refuses a setting key that is not plain, repeated, of an unknown kind, or a secret whose reference would be too long', () => {
     for (const s of [[{ key: 'Url', kind: 'url' }], [{ key: 'u', kind: 'url' }, { key: 'u', kind: 'text' }], [{ key: 'u', kind: 'number' }]]) {
       expect(readPluginDeclaration(declaration({ settings: s }), '/p').refused, JSON.stringify(s)).toBeTruthy();

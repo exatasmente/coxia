@@ -51,6 +51,8 @@ export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ dat
 
 export interface ExecutorDeps {
   engine: StageEngine;
+  /** What the plugins that are on tell the agents; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
   config(): WorkspaceConfig;
   forum: ForumStore;
   /** The identity of a repository, when the workspace names none: its own `.git/config` by default (`repoIdentity`), never the global one. */
@@ -405,6 +407,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commands,
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
+    plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),

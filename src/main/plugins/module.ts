@@ -593,6 +593,11 @@ function auditProxy(record: PluginRecord, context: PluginContext, decision: { ho
   }
 }
 
+/** What the plugins that are on tell the agents: one note per plugin, with its name, added to every stage's context as the plugin's own words. */
+export function pluginNotes(d: PluginsDeps = pluginsDeps): { name: string; note: string }[] {
+  return d.read(d.dir(), d.config()).filter((r) => r.enabled && !r.refused && r.agents).map((r) => ({ name: r.name, note: r.agents as string }));
+}
+
 /** The run a live event of the runner carries: the app reads its state here and never trusts a stored one. */
 export function liveContext(run: Run, context: { stage?: string } = {}): PluginContext {
   return { issue: run.issue.iid, issueTitle: run.issue.title, stage: context.stage ?? run.stage, runId: run.id };

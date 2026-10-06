@@ -32,6 +32,8 @@ export interface PluginRecord {
   values: Record<string, string>;
   /** Requests it may ask the app to make. */
   requests: PluginRequestDecl[];
+  /** What it tells the agents while it is on, or null. */
+  agents: string | null;
   /** Why the declaration was refused, in words; null when the plugin is usable. */
   refused: string | null;
 }

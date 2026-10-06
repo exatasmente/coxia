@@ -81,6 +81,8 @@ export interface PluginOffers {
   settings: PluginSetting[];
   /** Requests the plugin may ask the app to make (JavaScript plugins only). */
   requests: PluginRequestDecl[];
+  /** A short note the app adds to the context of every stage while the plugin is on, marked as the plugin's: what it offers the agents. */
+  agents: string | null;
 }
 
 export interface PluginDeclaration {
@@ -114,6 +116,7 @@ const REASONS = {
   request: 'a request has no plain id, a repeated id, a method other than GET, POST, PUT, PATCH or DELETE, or an address that is not https:// or a url setting',
   requestSecret: 'a request puts a secret that is not a secret setting, or in a place other than a header or a query parameter',
   needsJs: 'settings and requests need a JavaScript entry (.mjs)',
+  agents: 'the note to the agents is not text, or is longer than 1000 characters',
 } as const;
 
 const asObject = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
@@ -245,5 +248,9 @@ export function readPluginDeclaration(text: string, folder: string): PluginReadi
   }
   if ((settings.length || requests.length) && runtime !== 'js') return refuse(REASONS.needsJs);
 
-  return { declaration: { id, name, contract, offers: { events, documents, network, write, entry: entry || null, runtime, settings, requests } }, refused: null };
+  if (offers.agents !== undefined && typeof offers.agents !== 'string') return refuse(REASONS.agents);
+  const agents = str(offers.agents);
+  if (agents.length > 1000) return refuse(REASONS.agents);
+
+  return { declaration: { id, name, contract, offers: { events, documents, network, write, entry: entry || null, runtime, settings, requests, agents: agents || null } }, refused: null };
 }

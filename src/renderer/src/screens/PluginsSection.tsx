@@ -113,6 +113,7 @@ function PluginItem({ p, web, onChange, onError }: { p: PluginView; web: boolean
             {p.write ? t(p.write.reversible ? 'ui.plugins.asks.write' : 'ui.plugins.asks.writeIrreversible', { to: p.write.to }) : t('ui.plugins.asks.noWrite')}
           </div>
           {p.write && <Permission p={p} need="write" web={web} revoke={(need) => run(() => pluginsApi.revoke(p.id, need))} />}
+          {p.agents && <p className="small muted">{t('ui.plugins.agents', { note: p.agents })}</p>}
           {p.requests.length > 0 && (
             <div className="small">
               {t('ui.plugins.requests')}

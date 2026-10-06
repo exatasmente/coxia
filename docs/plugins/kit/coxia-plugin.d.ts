@@ -1,4 +1,4 @@
-// The contract of a Coxia plugin written in JavaScript. A plugin is a module (`index.mjs`) whose default export receives a `PluginContext` and returns a
+// The contract of a Coxia plugin written in JavaScript (see plugins/web-search/ for a real one). A plugin is a module (`index.mjs`) whose default export receives a `PluginContext` and returns a
 // `PluginResult`. Reference these types from the plugin with a JSDoc import, for example:
 //
 //   /** @param {import('./coxia-plugin').PluginContext} ctx */

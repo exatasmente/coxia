@@ -13,7 +13,7 @@ import type { JsAnswer, JsCall } from '../src/main/plugins/runtime';
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
 
-const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
+const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, pluginNotes, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
 
 // The script of a plugin is read from its folder: each record points at a throwaway folder that holds one.
 const root = mkdtempSync(join(tmpdir(), 'coxia-plugins-service-'));
@@ -41,6 +41,7 @@ const plugin = (over: Partial<PluginRecord> = {}): PluginRecord => ({
   settings: [],
   values: {},
   requests: [],
+  agents: null,
   refused: null,
   ...over,
 });
@@ -532,3 +533,13 @@ describe('a JavaScript plugin and the requests the app makes for it', () => {
     expect(listPlugins(h.deps).plugins[0].settings.find((x) => x.key === 'token')?.filled).toBe(false);
   });
 });
+
+describe('the note a plugin gives the agents', () => {
+  it('comes from the plugins that are on and not refused, with their names', () => {
+    const h = harness([plugin({ agents: 'search for you' }), plugin({ id: 'off', name: 'Off', enabled: false, agents: 'x' }), plugin({ id: 'quiet', name: 'Quiet' })]);
+    expect(pluginNotes(h.deps)).toEqual([{ name: 'Web search', note: 'search for you' }]);
+    setPluginEnabled('web-search', false, h.deps);
+    expect(pluginNotes(h.deps)).toEqual([]);
+  });
+});
+
