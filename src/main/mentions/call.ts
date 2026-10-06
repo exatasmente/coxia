@@ -30,6 +30,8 @@ export interface MentionInput {
   shell?: { host: boolean; network: 'off' | 'registry' };
   /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
   proposals?: boolean;
+  /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
+  autonomous?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -136,7 +138,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     placeLine(i),
     i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.proposals ? cp('runner.mention.proposals') : '',
+    i.proposals ? cp(i.autonomous ? 'runner.mention.proposalsAuto' : 'runner.mention.proposals') : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
     agents.persona.trim(),

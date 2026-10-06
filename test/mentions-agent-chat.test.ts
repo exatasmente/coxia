@@ -16,6 +16,7 @@ import { answerMentions } from '../src/main/mentions/answer';
 import { callsOf } from '../src/main/mentions/module';
 import { placeOfThread } from '../src/main/mentions/place';
 import { proposeMention } from '../src/main/mentions/propose';
+import { prompt } from '../src/main/cyclePrompts';
 import { fakeEngine } from './helpers/runner';
 import { fakeGitlabRuntime } from './helpers/vcs';
 
@@ -260,12 +261,43 @@ describe('the writes an answer proposes', () => {
       { autonomous: true, seq: 4 },
     );
     expect(outcomes.map((o) => o.status)).toEqual(['auto', 'auto', 'proposed', 'proposed', 'proposed']);
+    // Each says what it wrote and on which issue: outside a run, the place names none.
+    expect(outcomes.map((o) => ('summary' in o ? o.summary : null))).toEqual(['#101 — a comment', '#101 — labels +P1', '#101 — close', '#101 — status 1', 'a new issue: Waits too']);
     // The two low-risk writes ran audited, with the agent as who; the rest only waits.
     const audit = listAudit();
     expect(audit).toHaveLength(2);
     expect(audit.every((l) => l.ok === true && l.by === config().agents.team[0].id)).toBe(true);
     const waiting = actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
     expect(waiting.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['close', 'createIssue', 'status']);
+  });
+
+  it('tells an autonomous agent that its comments and labels go out as it answers, and the thread says what was written', async () => {
+    const c = config();
+    const id = owner(c).id;
+    c.agents.team = c.agents.team.map((a) => (a.id === id ? { ...a, autonomous: true } : a));
+    const thread = agentThread(c, id);
+    const engine = fakeEngine();
+    engine.script(id, () => ({ text: 'Labelled it.', proposals: [{ op: 'labels', issue: 101, add: ['coxia'], remove: [] }] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'label 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, id), propose: proposeMention });
+    expect(engine.calls[0].system).toContain(prompt('runner.mention.proposalsAuto'));
+    expect(engine.calls[0].system).not.toContain(prompt('runner.mention.proposals'));
+    expect(systemLine(thread, 'runner.mention.autoWrote')?.params).toMatchObject({ agent: id, what: '#101 — labels +coxia' });
+  });
+
+  it('tells an agent that is not autonomous that every write waits, and the thread says what waits', async () => {
+    const c = config();
+    const id = owner(c).id;
+    c.agents.team = c.agents.team.map((a) => (a.id === id ? { ...a, autonomous: false } : a));
+    const thread = agentThread(c, id);
+    const engine = fakeEngine();
+    engine.script(id, () => ({ text: 'Proposed it.', proposals: [{ op: 'labels', issue: 101, add: ['coxia'], remove: [] }] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'label 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, id), propose: proposeMention });
+    expect(engine.calls[0].system).toContain(prompt('runner.mention.proposals'));
+    expect(systemLine(thread, 'runner.mention.proposed')?.params).toMatchObject({ agent: id, what: '#101 — labels +coxia' });
   });
 
   it('registers a proposal of a place that names no issue on the workspace issue project, never on 0', async () => {
