@@ -24,11 +24,9 @@
   pasta de trabalho deixa de ser alcançável (efeito conhecido, sem passo de migração).
 - A chave `main.engine.text.read.outside` mudou de texto e entrou no `INTENDED` de
   `test/gitlab-catalogs-unchanged.test.ts`.
-- **Correções pós-revisão (esta passada):** (1) `confinedHooks` voltou a repassar `onDenied` ao
-  guarda de leitura, senão a recusa de leitura de quem **escreve** sumia da conversa da execução;
-  (2) a menção numa conversa de execução cujo agente não roda comandos passa a usar a pasta de
-  trabalho como `cwd` **e** como raiz do guarda, senão um caminho relativo era aprovado contra uma
-  pasta e lido de outra; (3) teste novo no caminho do SDK com agente leitor.
+- **Correções pós-revisão (rodada 1):** (1) `confinedHooks` voltou a repassar `onDenied` ao guarda de
+  leitura; (2) a menção numa conversa de execução cujo agente não roda comandos passou a usar a pasta
+  de trabalho como `cwd` **e** raiz do guarda; (3) teste novo no caminho do SDK com agente leitor.
 - Resposta: deixa como está <!-- answer:86 -->
 
 ## Restrições
@@ -38,8 +36,7 @@
 - Nada podia mudar para o agente que escreve; as cerimônias leem a pasta de projetos de propósito.
   Em particular, a recusa de leitura de quem escreve continua indo para a conversa (`runner.denied`).
 - Toda recusa vai para a conversa da execução (`runner.denied`) e para a atividade como bloqueada.
-- O `cwd` de uma chamada de leitor de uma execução tem de ser a mesma pasta da raiz do guarda: um
-  caminho relativo é julgado contra a raiz e resolvido contra o `cwd`.
+- O `cwd` de uma chamada de leitor de uma execução tem de ser a mesma pasta da raiz do guarda.
 - Nenhum teste pode tocar modelo, host ou rede: só os motores falsos de `test/helpers/`.
 
 ## Tentado e descartado
@@ -51,18 +48,26 @@
 
 ## Onde o trabalho está
 
-Os dois bloqueios da revisão foram corrigidos e a lacuna de teste do motor do SDK foi fechada; a
-próxima etapa é a revisão/verificação de novo, sobre `3_IMPLEMENTATION.md`, que lista cada correção.
+**Revisão da rodada 2: veredito aprovado.** Os dois bloqueios da rodada 1 foram conferidos e estão
+corrigidos. A revisão não achou bloqueio novo.
 
-Verificado nesta passada: `npx tsc --noEmit` limpo; guarda/menções/agente/catálogos verdes;
-`test/runner-agent.test.ts`, `test/worktree-guard.test.ts` e `test/runner-lifecycle.test.ts` verdes
-com os casos novos; `theme-audit`, `i18n:lint` (4054 chaves) e `public-audit` (911 arquivos) verdes;
-`electron-vite build` construiu. A suíte completa (3675 passam, 3 falham) falhou só em arquivos fora
-da mudança (`conflict-resolve`, `update-script`), testes de espera por relógio que passam sozinhos.
-Modelo real, rede e host não exercitados (só motores falsos e a consulta falsa do SDK); o `nvm use`
-não é executável nesta máquina (Node 26.5.1).
-- Passagem revisor-plataforma → developer: The change gives a run's reading agents a path guard of their own (`read`/`readRoot`) over `Read`/`Grep`/`Glob`, composing it with the secret, broad-search and redaction hooks, wiring it in the stage, the question chain and the run-thread mention, and keeping `Edit`/`Write`/shell decided by `confine` alone. Reviewed against the spec, the plan and the boundary: two blocking defects were found. (1) `confinedHooks` now builds its read guard with `readGuardOf({ root: o.root })`, dropping `onDenied`, so a refused read by an agent that writes no longer posts the `runner.denied` line to the run's thr… <!-- handoff:188 -->
+Verificado nesta passada: `npx tsc --noEmit` limpo; os 10 arquivos de teste tocados, 148 testes
+verdes; **a suíte completa 3678/3678 em 222 arquivos** (as três falhas de tempo limite da passada
+anterior não reapareceram); `public-audit` 911 arquivos limpo depois de remover a pasta `out/` de
+build (a primeira execução acusou dois falsos positivos ali); `i18n:lint` (4054 chaves) e
+`theme-audit` verdes. Não verificado: `electron-vite build` nesta passada; modelo real, rede e host
+não exercitados (só motores falsos e a consulta falsa do SDK); `nvm use` não é executável nesta
+máquina (Node 26.5.1).
+
+Observação não bloqueante registrada: o caso novo do SDK troca `read.roots` **depois** de
+`readConfinement` montar os hooks, então a guarda exercitada não recebeu `docs` como raiz; o caminho
+de permissão está coberto em `test/worktree-guard.test.ts` e `test/runner-agent-open.test.ts`.
+
+O trabalho está pronto para seguir (publicação / pull request).
+- Passagem revisor-plataforma → developer: Round 2. Both round-1 blockers are fixed and verified by execution: `confinedHooks` again hands `onDenied` to its read guard (`hooks.ts:78`), so a refused read by a writing agent posts the `runner.denied` line; the run-thread mention now uses the run's worktree as `cwd` when it exists (`answer.ts:137`), so the guard's root and the working folder are one folder. The SDK test gap is closed. Gates: `npx tsc --noEmit` clean; 148/148 in the touched files; full suite 3678/3678 in 222 files; `public-audit` 911 files clean (its first run hit a false positive in the git-ignored `out/` build folder); `i18n:lint` 4054 keys; `theme-audit` clean. Not verified: no real model/network/host; `electron-vite build` not run; `nvm use` not runnable. One non-blocking observation: the new SDK test mutates `read.roots` after the hooks were built, so it does not exercise the guard's allow-path for a documentation folder. Verdict: approved.
 - Passagem support → product-owner: Refinamento do produto: confirmar as duas escolhas abertas antes de projetar a solução — (1) se as pastas de documentação listadas fora da pasta de trabalho ficam de fora ou entram por lista explícita, e (2) o alcance das menções e da cadeia de perguntas quando não há conversa de execução (canal, conversa geral) e o caso do contato de outro squad que lê o repositório do próprio squad. A triagem sugere lista explícita curta e derivada da configuração, e raiz igual à pasta de trabalho quando ela existir. Tipo: bug; não é duplicata; nenhuma pergunta a quem abriu. O trabalho começa em src/main/run… <!-- handoff:6 -->
 - Passagem product-owner → pessoa: Planejamento: projetar a solução a partir de `1_SPEC.md` (as 8 regras e os 11 critérios). A leitura confirma que a guarda de leitura já existe em `src/main/runner/hooks.ts` (`readGuard` sobre `Read`/`Grep`/`Glob`, com `checkPath(root, p, { read: true })` e cada recusa relatada via `onDenied`), que `checkPath` já julga leitura e libera a própria raiz, e que hoje o executor só monta `confine` para quem escreve (`executor.ts:430`). O plano deve introduzir um campo de raiz de leitura próprio (por exemplo `readRoot`), sem abrir `Edit`/`Write`/shell, e ligá-lo às chamadas de leitor (etapa de leitura… <!-- handoff:11 -->
 - Passagem tl-plataforma → pessoa: O desenho está fechado: a resposta de escopo ("deixa como está") confirma que a raiz de leitura é a pasta de trabalho da execução nas três chamadas de leitor (etapa, menção numa conversa de execução, pergunta da cadeia com pasta de trabalho existente) e que menção em canal/conversa geral/cerimônia e contato de squad que lê o repositório do próprio squad ficam como estão, sem campo de configuração novo nem migração. A próxima etapa (testes) escreve o plano de teste a partir da seção 6 do `2_PLAN.md` (11 casos, com os critérios 2 a 7, 9, 10 e 11 cobertos por testes e o 1 e o 8 apoiados na suíte … <!-- handoff:96 -->
 - Passagem developer → revisor-plataforma: A implementação está no worktree, na ordem de quatro commits do plano, com os gates do `CLAUDE.md` verdes (typecheck, suíte completa, theme-audit, i18n:lint, public-audit, electron-vite build). A etapa de testes deve escrever o `4_VERIFICATION.md` a partir daqui, sem reimplementar: o que já está coberto por teste é o guarda de leitura (absoluto fora, `..`, `~`, link, `.git`, segredo), a composição dos hooks, as raízes extras de documentação, a ausência de `Write`/`Edit`/`Bash` num leitor confinado, o relato da recusa na conversa e na atividade, e a ligação da raiz nas três chamadas de leitor. … <!-- handoff:149 -->
+- Passagem revisor-plataforma → developer: The change gives a run's reading agents a path guard of their own (`read`/`readRoot`) over `Read`/`Grep`/`Glob`, composing it with the secret, broad-search and redaction hooks, wiring it in the stage, the question chain and the run-thread mention, and keeping `Edit`/`Write`/shell decided by `confine` alone. Reviewed against the spec, the plan and the boundary: two blocking defects were found. (1) `confinedHooks` now builds its read guard with `readGuardOf({ root: o.root })`, dropping `onDenied`, so a refused read by an agent that writes no longer posts the `runner.denied` line to the run's thr… <!-- handoff:188 -->
+- Passagem developer → revisor-plataforma: A revisão deve conferir, sobre `3_IMPLEMENTATION.md`: (1) `src/main/runner/hooks.ts:78` repassa `onDenied` ao guarda de leitura de `confinedHooks`, e o caso novo em `test/worktree-guard.test.ts` prova que a recusa de leitura de um agente que escreve chega ao relato; (2) `src/main/mentions/answer.ts:137` alinha o `cwd` de uma menção de execução à pasta de trabalho, e o caso novo em `test/runner-lifecycle.test.ts` prova que `cwd` e `readRoot.root` são a mesma pasta; (3) `test/runner-agent.test.ts` exercita o caminho do SDK com um agente leitor confinado. Os gates rodados e o que não foi verifica… <!-- handoff:244 -->
