@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_CHANNELS } from '../src/shared/apiChannels';
 import { parseMrRef, resolveMr } from '../src/main/conflictFromMr';
+import { mergeMessage } from '../src/main/conflictGit';
 import { webAccess, webRefusal } from '../src/main/webPolicy';
 import { type Fixture, IDENTITY, cloneSnapshot, git, makeFixture, originSha } from './helpers/conflictRepos';
 
@@ -32,13 +33,12 @@ let f: Fixture;
 let reads: string[];
 let mr: Record<string, unknown>;
 let me: string;
-let defaultBranch: string;
 
 function card(project: string) {
   return { iid: '15526', title: 'Fixture issue', stage: 'STAGE:: Code Review', mrPaths: [{ ref: 'proj!1234', project, iid: 1234 }] };
 }
 
-// The GitLab provider on a transport that answers from the fixtures: the same four reads, whatever the provider does around them.
+// The GitLab provider on a transport that answers from the fixtures: the same three reads, whatever the provider does around them.
 function stubGitlab(): void {
   setVcsRuntimeForTests(
     fakeGitlabRuntime(async (endpoint) => {
@@ -46,7 +46,6 @@ function stubGitlab(): void {
       if (endpoint === 'user') return { username: me };
       if (endpoint.endsWith('/merge_requests/1234')) return mr;
       if (endpoint.includes('/repository/branches/')) return { commit: { id: originSha(f, 'main') } };
-      if (/^projects\/[^/]+$/.test(endpoint)) return { default_branch: defaultBranch };
       throw new Error(`unexpected GET ${endpoint}`);
     }),
   );
@@ -62,7 +61,6 @@ beforeEach(() => {
   conflictHooks.cloneRoots = f.cloneRoots;
   reads = [];
   me = 'bruno';
-  defaultBranch = 'main';
   mr = { state: 'opened', has_conflicts: true, source_branch: f.branch, target_branch: 'main', web_url: 'https://example.test/grp/proj/-/merge_requests/1234', sha: originSha(f, f.branch), author: { username: 'bruno' } };
   stubGitlab();
 });
@@ -117,7 +115,7 @@ describe('conflict:fromMr', () => {
     });
     expect(a.unit).toMatchObject({ project_path: f.project, mr_iid: 1234, mr_ref: `${f.project}!1234`, source_branch: f.branch, target_branch: 'main', tgt_sha: originSha(f, 'main'), src_sha: originSha(f, f.branch), status: 'CONFLITO' });
     expect(listActions()).toHaveLength(1);
-    expect(reads.sort()).toEqual([`projects/${encodeURIComponent(f.project)}`, `projects/${encodeURIComponent(f.project)}/merge_requests/1234`, `projects/${encodeURIComponent(f.project)}/repository/branches/main`, 'user']);
+    expect(reads.sort()).toEqual([`projects/${encodeURIComponent(f.project)}/merge_requests/1234`, `projects/${encodeURIComponent(f.project)}/repository/branches/main`, 'user']);
   });
 
   it('reuses the open action for the same MR and target sha', async () => {
@@ -154,9 +152,7 @@ describe('conflict:fromMr', () => {
   });
 
   it('refuses MRs the app does not resolve, with a clear message and nothing stored', async () => {
-    mr = { ...mr, target_branch: 'develop' };
-    await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/aponta para develop, não para a main/);
-    mr = { ...mr, target_branch: 'main', state: 'merged' };
+    mr = { ...mr, state: 'merged' };
     await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/não está aberto/);
     mr = { ...mr, state: 'opened', author: { username: 'colleague' } };
     await expect(conflictFromMr(card(f.project), 'proj!1234')).rejects.toThrow(/é de @colleague/);
@@ -166,11 +162,22 @@ describe('conflict:fromMr', () => {
     expect(listActions()).toHaveLength(0);
   });
 
-  it('accepts a default branch other than main when the MR targets it', async () => {
-    defaultBranch = 'develop';
-    mr = { ...mr, target_branch: 'develop' };
+  it('accepts an MR that targets a branch other than the default one, and merges that branch in', async () => {
+    git(f.seed, 'push', '-q', 'origin', 'main:refs/heads/release/9.9.0');
+    mr = { ...mr, target_branch: 'release/9.9.0' };
     const a = await conflictFromMr(card(f.project), 'proj!1234');
-    expect((a.unit as { target_branch: string }).target_branch).toBe('develop');
+    expect((a.unit as { target_branch: string }).target_branch).toBe('release/9.9.0');
+    expect(a.release).toBe('MR em conflito com a release/9.9.0');
+    const r = (await conflictPrepare(a.id)).resolve;
+    expect(r?.target).toBe('release/9.9.0');
+    expect(r?.mainSha).toBe(originSha(f, 'release/9.9.0'));
+    expect(git(r?.worktree as string, 'rev-parse', 'MERGE_HEAD')).toBe(originSha(f, 'release/9.9.0'));
+    await conflictDiscard(a.id);
+  });
+
+  it('names the merged branch in the merge commit message', () => {
+    expect(mergeMessage('feat-x', 'main')).toBe("Merge branch 'main' into 'feat-x'");
+    expect(mergeMessage('feat-x', 'release/9.9.0')).toBe("Merge branch 'release/9.9.0' into 'feat-x'");
   });
 });
 

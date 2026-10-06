@@ -328,16 +328,17 @@ export function runVerify(p: { wt: string; clone: string; command: string; logFi
   });
 }
 
-export function mergeMessage(branch: string): string {
+// Names the branch that was merged in: the MR's target, `main` or a release branch.
+export function mergeMessage(branch: string, target: string): string {
   // i18n-ignore: the message of the git merge commit, as git writes it
-  return `Merge branch 'main' into '${branch}'`;
+  return `Merge branch '${target}' into '${branch}'`;
 }
 
-// Commits the merge as `identity`. Nothing is written to any git config.
-export async function commitMerge(wt: string, branch: string, mainSha: string, identity: Identity): Promise<string> {
+// Commits the merge of `target` as `identity`. Nothing is written to any git config.
+export async function commitMerge(wt: string, branch: string, target: string, mainSha: string, identity: Identity): Promise<string> {
   const as = identityArgs(identity);
   if ((await unmergedPaths(wt)).length) throw new Error(t('main.conflictGit.unresolved'));
-  await git(wt, [...as, 'commit', '--no-verify', '-m', mergeMessage(branch)]);
+  await git(wt, [...as, 'commit', '--no-verify', '-m', mergeMessage(branch, target)]);
   const sha = (await git(wt, ['rev-parse', 'HEAD'])).stdout.trim();
   const parents = (await git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD'])).stdout.trim().split(' ').slice(1);
   if (parents.length !== 2 || parents[1] !== mainSha) throw new Error(t('main.conflictGit.notMerge'));

@@ -55,7 +55,7 @@ Com o login do CLI (`cliPreference: cli`) valem as permissões da sessão do CLI
 | Efeitos da pré-daily (`efeitos.ts`) | MR, commits, pipelines, jobs, comentários, labels, estado da issue | n/d |
 | Vigias (`watchers.ts`) | issue, MRs ligados, labels de versão | n/d |
 | Radar (`radar.ts`) | arquivos e diffs de cada MR aberto | n/d |
-| Conflito a partir de um MR (`actions.ts`) | MR, branch padrão, sha da branch alvo | o push é outra ação, com seu "sim" |
+| Conflito a partir de um MR (`actions.ts`) | MR, sha da branch alvo | o push é outra ação, com seu "sim" |
 | Comentário do QA (`actions.ts`) | comentários da issue | editar a nota |
 | Agentes das cerimônias | ver "Leitura dos agentes" | nada |
 
@@ -199,7 +199,7 @@ With the CLI login (`cliPreference: cli`) the CLI session's permissions apply. T
 | Pre-daily effects (`efeitos.ts`) | MR, commits, pipelines, jobs, comments, labels, issue state | n/a |
 | Watchers (`watchers.ts`) | issue, linked MRs, version labels | n/a |
 | Radar (`radar.ts`) | files and diffs of every open MR | n/a |
-| Conflict from an MR (`actions.ts`) | MR, default branch, target branch sha | the push is another action, with your "yes" |
+| Conflict from an MR (`actions.ts`) | MR, target branch sha | the push is another action, with your "yes" |
 | QA comment (`actions.ts`) | issue comments | edit the note |
 | Ceremony agents | see "What agents may read" | nothing |
 
