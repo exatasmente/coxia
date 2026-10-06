@@ -1,7 +1,8 @@
 // OpenAI Chat Completions client: streaming with a JSON fallback, retries on transient failures, parameter fallbacks per server.
-import { EngineError, type Learned, adaptBodyForError, mapHttpError, mapNetworkError, newLearned } from './errors';
+import { EngineError, type Learned, adaptBodyForError, mapHttpError, mapNetworkError, newLearned, withoutImages } from './errors';
 import { type Lang, msg } from './messages';
 import { SseParser, ThinkSplitter, newId } from './text';
+import { t } from '../../../shared/i18n';
 import type { ChatChunk, ChatMessage, ChatRequest, ChatResponse, Completion, Json, ToolCall, ToolChoice, ToolDef, Usage } from './types';
 
 export interface ProviderConfig {
@@ -216,7 +217,9 @@ export class ChatClient {
 
   private build(o: CallOptions): ChatRequest {
     const stream = this.cfg.stream !== false;
-    const messages = this.learned.echoReasoning ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
+    const echoed = this.learned.echoReasoning ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
+    // A server that refused an image once gets a line in place of each one from then on.
+    const messages = this.learned.noImages ? withoutImages(echoed, t('main.engine.text.noImage')) : echoed;
     const body: ChatRequest = { model: this.cfg.model, messages };
     if (stream) {
       body.stream = true;
@@ -257,7 +260,7 @@ export class ChatClient {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         const err = mapHttpError(res.status, text, res.headers, ctx);
-        const retryBody = adapted < 4 ? adaptBodyForError(body, res.status, text, this.learned) : null;
+        const retryBody = adapted < 4 ? adaptBodyForError(body, res.status, text, this.learned, t('main.engine.text.noImage')) : null;
         if (retryBody) {
           adapted++;
           body = retryBody;

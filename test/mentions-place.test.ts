@@ -63,6 +63,24 @@ describe('the place of a thread', () => {
     expect(place?.repos.map((r) => r.id)).toEqual(['api', 'web']);
   });
 
+  it('is a squad channel with the repositories its paths are in, when its scope names no repository', () => {
+    const c = config();
+    c.squads = [newSquad({ id: 'ui', name: 'UI', scope: { repos: [], paths: [{ repo: 'web', prefix: 'src/renderer' }] } })];
+    expect(placeOfThread(summary({ id: 'squad-ui', kind: 'channel', squad: 'ui' }), () => null, c)?.repos.map((r) => r.id)).toEqual(['web']);
+  });
+
+  it('is a squad channel with every repository, when the squad goes by labels only', () => {
+    const c = config();
+    c.squads = [newSquad({ id: 'ops', name: 'Ops', scope: { repos: [], labels: ['area:ops'], paths: [] } })];
+    expect(placeOfThread(summary({ id: 'squad-ops', kind: 'channel', squad: 'ops' }), () => null, c)?.repos.map((r) => r.id)).toEqual(['api', 'web']);
+  });
+
+  it('expands a repository path kept as ~/ with the home it is given, so it can be found on disk', () => {
+    const c = config();
+    c.projects.repos[0].path = '~/code/api';
+    expect(placeOfThread(summary({ id: 'general' }), () => null, c, '/home/someone')?.repos[0].path).toBe('/home/someone/code/api');
+  });
+
   it('is null for a thread that does not exist', () => {
     expect(placeOfThread(null, () => null, config())).toBeNull();
   });

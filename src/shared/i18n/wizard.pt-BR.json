@@ -146,6 +146,7 @@
   "wizard.cap.streaming": "Streaming",
   "wizard.cap.context": "Contexto: {tokens} tokens",
   "wizard.cap.contextUnknown": "Contexto não informado",
+  "wizard.cap.images": "Imagens",
   "wizard.warn.no-chat": "O modelo não respondeu a uma pergunta simples.",
   "wizard.warn.no-tools": "Este modelo não chama ferramentas, e as cerimônias precisam delas para ler arquivos e devolver respostas estruturadas. Prefira outro modelo.",
   "wizard.warn.small-context": "Janela de contexto pequena (menos de 12 mil tokens): o prompt dos agentes sozinho passa de 10 mil. Aumente o contexto no servidor ou use um modelo maior.",

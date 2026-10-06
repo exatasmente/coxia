@@ -63,7 +63,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     stageMaxMs: Math.round(d.maxMinutes * 60_000),
     turns: { read: d.turnsRead, write: d.turnsWrite },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
-    sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()) },
+    sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()), browsersPath: d.sandbox.browsersPath?.trim() || null, display: d.sandbox.display === true },
     commitMessage: d.commitMessage,
     linkDependencies: d.linkDependencies,
     release: { soleMaintainer: d.soleMaintainer },
@@ -78,7 +78,7 @@ export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig 
   return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), release: stored.release && { ...stored.release } };
 }
 
-export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxLimits';
+export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';
 
 export interface RunnerProblem {
   severity: 'error' | 'warning';
@@ -135,6 +135,12 @@ export function runnerProblems(d: RunnerDraft, cycleIsFlow: boolean): RunnerProb
     if (why) error('sandboxPaths', why === 'secret' ? 'ui.runner.err.sandboxPathSecret' : 'ui.runner.err.sandboxPath', { path: p });
   }
   if (d.sandbox.readOnlyPaths.length > MAX_READ_ONLY_PATHS) error('sandboxPaths', 'ui.runner.err.sandboxPathCount', { max: String(MAX_READ_ONLY_PATHS) });
+  // The browsers folder is bound like a read-only folder: the same guards, the same messages.
+  const browsers = d.sandbox.browsersPath?.trim();
+  if (browsers) {
+    const why = readOnlyPathProblem(browsers);
+    if (why) error('sandboxBrowsers', why === 'secret' ? 'ui.runner.err.sandboxPathSecret' : 'ui.runner.err.sandboxPath', { path: browsers });
+  }
   for (const [key, [min, max]] of Object.entries(SANDBOX_LIMIT_RANGES)) {
     const v = d.sandbox.limits[key as keyof typeof d.sandbox.limits];
     if (!Number.isInteger(v) || v < min || v > max) error('sandboxLimits', 'ui.runner.err.sandboxLimit', { min: String(min), max: String(max) });

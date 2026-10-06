@@ -1,5 +1,5 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import type { LlmRole } from '../../shared/config/types';
+import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -85,6 +85,8 @@ export interface EngineRequest {
   shell: ShellPolicy;
   /** Per-call options of the Claude Agent SDK: resume, maxTurns, tools. Other engines read maxTurns and resume and may ignore the rest. */
   extra: Partial<Options>;
+  /** The tools the agent of this call uses: its own when it names them, else the workspace's. Absent: the workspace's. */
+  tools?: AgentToolsConfig;
   /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
   confine?: Confinement;
   /**

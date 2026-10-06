@@ -299,3 +299,13 @@ Ficam para issues próprias, registradas aqui:
   velho.
 - **S13:** a sandbox do plugin herda os `readOnlyPaths` do espaço de trabalho, e a lista
   de plugins não diz isso.
+
+### Entrada na 0.7.0
+
+A pessoa decidiu que a plataforma entra na 0.7.0. A `release/0.7.0`, já em beta, usa o
+esquema 13 para as ferramentas por agente (`agents.team[].tools`), então a seção
+`plugins` passou ao **esquema 14** (degrau `v13ToV14`), e a `release/0.7.0` foi
+mesclada nesta branch. Conflitos resolvidos: o tipo de ação (`suggest-agent` ao lado
+de `plugin-ask` e `plugin-write`), a lista `DESKTOP_ONLY` (canais de sugestão e de
+plugin), as Ações (cartões de lote da release; os cartões de plugin entram no lugar
+do cartão comum), o degrau de migração e a tabela de `configuration.md`.

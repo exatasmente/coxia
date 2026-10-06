@@ -110,6 +110,7 @@ import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
 import type { MentionPlace } from '../mentions/place';
+import { proposeMention } from '../mentions/propose';
 import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
@@ -980,13 +981,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         trackLink((made ? linkedIssueCreated(id, String(action.unit.key), made.iid) : linkRefused(id, String(action.unit.key), t('main.runner.comment.noId'))).then(() => undefined));
         return;
       }
-      // The issue an agent named in the thread proposed was created: the thread says where.
-      if (action.unit?.purpose === 'mention-issue') {
-        const made = createdIssueOf(responses[0]);
-        const run = deps.runs.get(id);
-        deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: made ? 'runner.mention.issueCreated' : 'runner.mention.issueNoId', params: { ref: made ? `#${made.iid}` : '—', url: made?.url ?? '—', summary: action.summary ?? '—' }, stage: run?.stage ?? null });
-        return;
-      }
+      // Every write an answer proposed goes through the mentions module's own path: the runner keeps nothing of it.
       publish(id, (p) => p.actionDone(action, responses));
     },
     actionRefused(action, reason) {
@@ -1108,7 +1103,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         const provider = deps.config().llm.roles[def.model.role ?? 'deep']?.provider ?? '';
         return provider && budget.has(provider) ? { provider, reason: budget.get(provider)?.reason ?? '—' } : null;
       },
-      proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
+      // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
+      propose: proposeMention,
     });
   }
 

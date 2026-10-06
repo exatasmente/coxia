@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { type Batch, batchesOf } from '../../../shared/actions/batch';
 import { conflictProgress } from '../../../shared/conflict';
 import { releaseBlockers } from '../../../shared/release';
 import { stageText } from '../../../shared/cycles/stages';
@@ -7,7 +8,8 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { t, tv, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
-import { RunProposal, isRunProposal } from './cycle/RunProposal';
+import { isRunProposal, RunProposal } from './cycle/RunProposal';
+import { SuggestionCard, isSuggestion } from './SuggestionCard';
 import { PluginActionCard, isPluginAction } from './PluginActionCard';
 import { BackIcon } from './icons';
 
@@ -25,6 +27,7 @@ function title(a: ReleaseAction): string {
   if (a.kind === 'qa-comment') return t('ui.actions.title.qaComment', { issue: a.issue });
   if (a.kind === 'conflict-push') return a.summary ?? t('ui.actions.title.conflictPush', { issue: a.issue });
   if (a.kind === 'run-push') return a.summary ?? t('vcs.action.title');
+  if (a.kind === 'suggest-agent') return a.summary ?? t('ui.actions.title.suggestAgent');
   return t('ui.actions.title.conflict', { issue: a.issue });
 }
 
@@ -35,6 +38,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'conflict-push') return t('ui.actions.what.conflictPush');
   if (a.kind === 'run-push') return t('ui.actions.what.runPush');
   if (a.kind === 'release-git') return t('ui.actions.what.releaseGit');
+  if (a.kind === 'suggest-agent') return t('ui.actions.what.suggestAgent');
   return tv('call.explainsConflict');
 }
 
@@ -128,11 +132,12 @@ function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen
         </div>
       )}
       {a.output && !isRunProposal(a) && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{a.output}</pre>}
+      {isSuggestion(a) && <SuggestionCard a={a} go={go} />}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
       {open && waitsFor.length > 0 && <p className="small muted">{t('ui.actions.waitsFor', { steps: waitsFor.map((b) => title(b)).join('; ') })}</p>}
 
-      {open && (
+      {open && !isSuggestion(a) && (
         <div className="row">
           {a.kind === 'conflict' ? (
             <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? t('ui.actions.resolution.continue') : tv('call.openAndResolve')}</button>
@@ -179,12 +184,60 @@ function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen
   );
 }
 
+/** The single "yes" of a batch: it approves every proposal of the group, one after another, each with its own audit line. */
+function BatchCard({ batch, go }: { batch: Batch; go: (s: Screen) => void }) {
+  const t = useT();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const running = useJobs<string>(`batch:${batch.id}:`, { failed: (message) => setError(message) });
+  const busy = running.length > 0;
+  const total = batch.actions.reduce((n, a) => n + (a.commands?.length ?? 1), 0);
+  const approveAll = () => {
+    setConfirming(false);
+    setError(null);
+    jobs.launch(`batch:${batch.id}:approve`, { label: t('ui.actions.batch.title', { count: batch.actions.length }), busy: t('ui.actions.busy.run'), screen: { name: 'actions' } }, async () => {
+      // One by one: nothing is approved before the previous one is done, and a failure is said without stopping the rest.
+      for (const a of batch.actions) {
+        try {
+          await api.approveAction(a.id);
+        } catch (e) {
+          setError(errorText(e));
+        }
+      }
+      return '';
+    });
+  };
+  return (
+    <section className="panel" style={{ padding: 20, gap: 12 }}>
+      <div className="row spread" style={{ alignItems: 'flex-start' }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('ui.actions.batch.title', { count: batch.actions.length })}</h2>
+        <span className="badge badge-ask">{t('ui.actions.waiting', { count: batch.actions.length })}</span>
+      </div>
+      <p className="small muted">{batch.actions.map((a) => title(a)).join(' · ')}</p>
+      {error && <div className="error" role="alert">{error}</div>}
+      <div className="row">
+        {confirming ? (
+          <button type="button" className="btn btn-red" disabled={busy} onClick={approveAll}>
+            {busy ? <span className="spinner" /> : null} {t('ui.actions.batch.confirm', { count: total })}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-dark" disabled={busy} onClick={() => setConfirming(true)}>{t('ui.actions.batch.go', { count: batch.actions.length })}</button>
+        )}
+        {confirming && <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>{t('ui.actions.cancel')}</button>}
+      </div>
+      {busy && <div className="row faint"><span className="spinner" /> {t('ui.actions.busy.run')}</div>}
+    </section>
+  );
+}
+
 export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Screen) => void }) {
   const t = useT();
   const [checking, setChecking] = useState<string | null>(null);
   const pending = actions.filter((a) => a.state === 'pending' || a.state === 'running' || a.state === 'failed');
   const past = actions.filter((a) => !pending.includes(a));
-
+  const { batches, rest } = batchesOf(pending);
+  const grouped = new Set(batches.flatMap((b) => b.actions.map((a) => a.id)));
+  const lone = rest.filter((a) => !grouped.has(a.id));
   const running = useJobs<string>('release:', {
     done: (text) => setChecking(text),
     failed: (message) => setChecking(t('ui.actions.failed', { message })),
@@ -211,7 +264,8 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
         </p>
         <h2 className="section-title">{t('ui.actions.waiting', { count: pending.length })}</h2>
         {!pending.length && <p className="small faint">{t('ui.actions.none')}</p>}
-        {pending.map((a) => (isPluginAction(a) ? <PluginActionCard key={a.id} a={a} /> : <ActionCard key={a.id} a={a} go={go} waitsFor={releaseBlockers(a, actions)} />))}
+        {batches.map((b) => <BatchCard key={b.id} batch={b} go={go} />)}
+        {lone.map((a) => (isPluginAction(a) ? <PluginActionCard key={a.id} a={a} /> : <ActionCard key={a.id} a={a} go={go} waitsFor={releaseBlockers(a, actions)} />))}
         {past.length > 0 && <h2 className="section-title" style={{ marginTop: 12 }}>{t('ui.actions.history', { count: past.length })}</h2>}
         {past.map((a) => (isPluginAction(a) ? <PluginActionCard key={a.id} a={a} /> : <ActionCard key={a.id} a={a} go={go} />))}
       </div>

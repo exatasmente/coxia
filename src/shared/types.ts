@@ -405,7 +405,8 @@ export type GitlabCommand = VcsCommand;
 // `ReleaseUnit` (shared/release.ts) and nothing else.
 // 'plugin-ask' is a plugin asking the person for what it was not allowed (its network, its write): answered once, for the session, always or refused, never
 // "approved" like a write. 'plugin-write' is a plugin's allowed irreversible write, announced until `unit.due`: it goes out then unless the person blocks it.
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push' | 'release-git' | 'plugin-ask' | 'plugin-write';
+// 'suggest-agent' is a new agent the cycle proposed: accepting it creates an ordinary agent, editing opens the editor, rejecting keeps the reason. It writes nothing external.
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push' | 'release-git' | 'suggest-agent' | 'plugin-ask' | 'plugin-write';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {

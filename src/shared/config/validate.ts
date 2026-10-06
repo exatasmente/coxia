@@ -158,10 +158,13 @@ function sandboxRules(s: WorkspaceConfig['runner']['sandbox'], errors: ConfigIss
   if (s.registryHosts.length > MAX_REGISTRY_HOSTS) errors.push({ path: 'runner.sandbox.registryHosts', message: `at most ${MAX_REGISTRY_HOSTS} hosts` });
   for (const h of duplicates(s.registryHosts)) warnings.push({ path: 'runner.sandbox.registryHosts', message: `"${h}" is listed twice` });
   if (s.network === 'registry' && !s.registryHosts.length) warnings.push({ path: 'runner.sandbox.network', message: 'the registry switch is on and no host is listed: nothing can be reached' });
-  s.readOnlyPaths.forEach((p, i) => {
+  const folderProblem = (path: string, p: string): void => {
     const why = readOnlyPathProblem(p);
-    if (why) errors.push({ path: `runner.sandbox.readOnlyPaths[${i}]`, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings) or belongs to the system (/proc, /sys, /dev, /run, /var, /tmp): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
-  });
+    if (why) errors.push({ path, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings) or belongs to the system (/proc, /sys, /dev, /run, /var, /tmp): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
+  };
+  s.readOnlyPaths.forEach((p, i) => folderProblem(`runner.sandbox.readOnlyPaths[${i}]`, p));
+  // The browsers folder is bound like a read-only folder, so it answers to the same guards.
+  if (s.browsersPath !== null && s.browsersPath !== undefined) folderProblem('runner.sandbox.browsersPath', s.browsersPath);
   if (s.readOnlyPaths.length > MAX_READ_ONLY_PATHS) errors.push({ path: 'runner.sandbox.readOnlyPaths', message: `at most ${MAX_READ_ONLY_PATHS} folders` });
   for (const p of duplicates(s.readOnlyPaths)) warnings.push({ path: 'runner.sandbox.readOnlyPaths', message: `"${p}" is listed twice` });
   for (const [key, [min, max]] of Object.entries(SANDBOX_LIMIT_RANGES)) {

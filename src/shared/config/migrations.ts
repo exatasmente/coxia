@@ -26,7 +26,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v11 projects.verifyCommands: the conflict verification command of each project, which used to live in one file shared by every workspace.
 //       The step only adds the empty map; the commands of the old file are moved by a startup step in the main process (verify-move.ts), because
 //       a migration never reads the disk. The bump makes an older app refuse the file instead of resetting the whole `projects` block.
-//   v12 plugins: the folder that holds the workspace's plugins, which ones are on and what each was allowed "always", empty by default. Nothing stored changes.
+//   v12 agents.team[].tools: the tools an agent names for itself, overriding the workspace's; absent keeps the workspace's.
+//   v13 plugins: the folder that holds the workspace's plugins, which ones are on and what each was allowed "always", empty by default. Nothing stored changes.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -261,12 +262,19 @@ function v11ToV12(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 12, agents: { ...agents, team } };
 }
 
-// A v12 file has no plugins section: it gets the empty one, and nothing else in the file moves. A workspace with no plugins behaves exactly as before.
-function v12ToV13(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
-  return { ...old, schemaVersion: 13, plugins: isObject(old.plugins) ? { ...neutralPlugins(), ...old.plugins } : neutralPlugins() };
+// An agent may now name the tools it uses (the field `tools`, overriding the workspace's `agents.tools`). A v12 file has no such field, and an agent without it
+// keeps using the workspace's tools: nothing is raised.
+function v12ToV13(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('an agent may name the tools it uses; one without the field keeps the workspace\'s tools');
+  return { ...old, schemaVersion: 13 };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13 };
+// A v13 file has no plugins section: it gets the empty one, and nothing else in the file moves. A workspace with no plugins behaves exactly as before.
+function v13ToV14(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  return { ...old, schemaVersion: 14, plugins: isObject(old.plugins) ? { ...neutralPlugins(), ...old.plugins } : neutralPlugins() };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

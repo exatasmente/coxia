@@ -29,6 +29,10 @@ const { listAudit } = await import('../src/main/auditoria');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const { onRunnerActionDone } = await import('../src/main/runner/door');
 const { retroIssueDone } = await import('../src/main/runner/module');
+const state = await import('../src/main/state');
+const minutes = await import('../src/main/minutesStore');
+const suggestionMod = await import('../src/main/suggestionsModule');
+const { ceremony } = await import('./helpers/ceremony');
 
 const DIR = join(ATAS, 'retros');
 const day = (): string => new Date().toLocaleDateString('sv-SE');
@@ -196,6 +200,88 @@ describe('what the conversation of the retro raises', () => {
     expect(new Set(made.map((a) => (a.unit ?? {}).key)).size).toBe(2);
     expect(after.talk.filter((m) => !m.me && m.text.includes('está em Ações como proposta'))).toHaveLength(2);
     expect(forge.writes).toEqual([]);
+  });
+});
+
+describe('the end of a retro, before it is stored', () => {
+  /**
+   * One ceremony whose decision is the evidence a suggestion rests on, in a retro of the same squad, earlier in the week: a retro of a squad looks
+   * at the ceremonies held for it (the fixture's window is thirty days).
+   */
+  const decision = (day0: string, text: string): void => {
+    const id = `${day0}T090000`;
+    const made = ceremony({ id, decisions: [{ ref: 'app#123', text, target: 'note', dest: '' }] });
+    state.saveState(made);
+    retro.writeRetro({ ...stored({ squad: 'squad-1' }), id: day0, from: new Date(`${day0}T00:00:00Z`).toISOString(), to: new Date(`${day0}T23:00:00Z`).toISOString() });
+    minutes.registerCeremony(made);
+    minutes.commitVersion(day0, minutes.versionOfCeremony(id) ?? 1, { teams: '', written: [] });
+  };
+
+  it('stores the retro before the suggestions read the history, so the retro just answered is the evidence', async () => {
+    const medal = 'Keep the legacy exporter for one release';
+    // The minutes of the retro that was just answered: a ceremony of the day, held for the same squad, whose decision is the theme the other days repeat.
+    const answered = `${day()}-squad-1`;
+    const id = `${day()}T090000`;
+    const made = ceremony({ id, decisions: [{ ref: 'app#123', text: medal, target: 'note', dest: '' }] });
+    state.saveState(made);
+    minutes.registerCeremony(made);
+    minutes.commitVersion(day(), minutes.versionOfCeremony(id) ?? 1, { teams: '', written: [] });
+    retro.writeRetro(stored({ id: answered, squad: 'squad-1' }));
+    asked.answer = { fala: 'Falado.', texto: 'Dito.', melhorias: [] };
+
+    const after = await retro.askRetro(answered, 'o que travou?');
+
+    // The retro was stored before the reading: the one held for the squad that was just answered is on disk when the reading happens.
+    expect(retro.readRetro(answered)?.id).toBe(answered);
+    expect(retro.latestRetro('squad-1')?.id).toBe(answered);
+    // The minutes of the retro are part of the history the reading looks at, so the suggestion the draft would rest on has its evidence.
+    expect(after.talk).toHaveLength(2);
+    expect(state.listHistory().some((e) => e.id === id)).toBe(true);
+  });
+
+  it('reads the retro of a squad, and not only the retros of the whole workspace', () => {
+    retro.writeRetro({ ...stored(), id: '2026-10-05' });
+    retro.writeRetro({ ...stored({ squad: 'squad-1' }), id: '2026-10-05-squad-1' });
+    expect(retro.latestRetro('squad-1')?.id).toBe('2026-10-05-squad-1');
+    expect(retro.latestRetro()?.id).toBe('2026-10-05');
+  });
+
+  it('lets a suggestion whose impression was rejected come back when the retro that was just answered is the new evidence', async () => {
+    const medal = 'Keep the legacy exporter for one release';
+    // The retro of the day, held for the squad, answers the reason it was asked; what it records is the minute of the ceremony.
+    const answered = `${day()}-squad-1`;
+    retro.writeRetro(stored({ id: answered, squad: 'squad-1' }));
+    // The three ceremonies of the week; the suggestion the model would draft from them is the impression the rejection holds.
+    for (const day0 of ['2026-09-28', '2026-09-29', '2026-09-30']) decision(day0, medal);
+    const pattern = suggestionMod.readPatterns().find((p) => p.kind === 'ceremony-decision');
+    if (!pattern) throw new Error('no ceremony pattern');
+    const impression = `keeper:${pattern.stage}:${pattern.kind}`;
+    const { writeSuggestions } = await import('../src/main/suggestions');
+    writeSuggestions({
+      records: [
+        {
+          id: 's-rejected',
+          impression,
+          proposed: { name: 'Keeper', role: 'Keeper', stage: pattern.stage, prompt: 'p', permission: 'read' },
+          evidence: pattern.evidence,
+          decision: 'rejected',
+          reason: null,
+          by: 'person',
+          at: '2026-10-01T00:00:00Z',
+          agentId: null,
+          evidenceKey: 'x',
+        },
+      ],
+    });
+    asked.answer = { fala: 'Falado.', texto: 'Dito.', melhorias: [] };
+
+    const after = await retro.askRetro(answered, 'o que travou?');
+
+    // The impression was rejected from the three ceremonies the rejection saw; the one the retro added is evidence it never saw, so the suggestion
+    // comes back and the card says it was refused before. A reading that still used the history from before the retro would offer nothing at all.
+    expect(after.talk).toHaveLength(2);
+    expect(retro.readRetro(answered)?.id).toBe(answered);
+    expect(suggestionMod.readPatterns().find((p) => p.kind === 'ceremony-decision')?.evidence.length).toBe(pattern.evidence.length);
   });
 });
 

@@ -8,9 +8,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 13 adds the `plugins` section; a workspace without plugins behaves as before.
+- **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 14 adds the `plugins` section; a workspace without plugins behaves as before.
+
+## [0.7.0-beta.6] - 2026-10-06
+
+### Fixed
+
+- **An agent called with `@` outside a run can run commands in a repository with large build output.** Its throwaway copy took the whole folder, built packages and installed dependencies included, and a repository over 1 GiB (a `dist` of packages, say) made every such call fail with *the worktree is too large to copy*. The copy now holds what git knows of the repository (the tracked files and the new ones that are not ignored, as they are in the folder), within the sandbox's copy limit of Settings, and the clone's dependencies are lent read-only as in a run's worktree, so the repository's own tests run.
+
+## [0.7.0-beta.5] - 2026-10-06
+
+### Added
+
+- **An agent can test an interface from inside the sandbox.** Two settings in Settings › Runner › Sandbox, on the computer only and off by default. *Browsers folder* (usually `~/.cache/ms-playwright`) is shared read-only with every sandbox, with `PLAYWRIGHT_BROWSERS_PATH` set, so an agent drives a browser without setting anything. *Virtual display for QA* starts a virtual display (Xvfb) inside the QA stage's sandbox, so a window app such as this one can be opened; the computer's own screen is never used. With either on, the stage is told how to test an interface (dev server on the sandbox's loopback, Playwright, screenshots in `/coxia/out`) and gets a `ViewImage` tool that shows it a screenshot from that folder and nowhere else. What is missing (the folder is gone, no Xvfb, a display that did not start) is said in the run's thread and in the prompt, and the stage goes on; Settings shows browsers and display on lines of their own.
+- **An agent on the open engine sees the images it reads.** `Read` now returns a PNG, JPEG, GIF or WebP (up to 4 MB) that the agent may read, with the same path and secret checks as a text file, and the model sees it, as on the Claude Agent SDK: a screenshot from an interface test, a diagram, a picture in the repository. The connection test of an open-engine provider now also shows the model a small picture and records whether it takes images (*Images* in the list of what the provider can do); a model known not to is told the file is an image instead, and when it is not known the engine tries and, if the server refuses, goes on without images.
+
+### Fixed
+
+- **The command notices fit their box.** The notice that asks to run a command (in a ceremony, or in a run on this computer) carried the whole rule in its *Always allow* button, and a button never wrapped: a long command pushed the button, the command and the note field past the notice's edge. The buttons and the agent's name now wrap inside the notice, the command scrolls on its own, and on a narrow screen each button takes the whole width.
+- **Every conversation shows what a called agent is doing, and folds its commands.** The general conversation, the channels and an agent's direct conversation now show, under the message that called an agent, the same live line as a run's thread: working (or waiting its turn), then the step it is on, until its answer arrives. In every thread, the commands an agent ran one after the other, with the asks and your answers, fold into one line (*developer ran 4 commands*) that opens to show each command and its output; it opens by itself while a command waits for you.
+- **An agent set to run commands on this computer asks you outside a run too.** Called with `@` in a channel, a general conversation or its direct conversation, an agent with `shell: host` had every command refused, since there was no screen to ask on. It now asks through the same command notice the ceremonies use, on every screen and on the paired phone: allow once, always allow the suggested rule (it goes into the agent's list in Settings › Team) or do not allow, with a note; a command its list already allows runs without asking. The thread keeps the ask and your answer next to the command, and the notice names the agent of the team.
+
+## [0.7.0-beta.4] - 2026-10-06
+
+### Fixed
+
+- **The pull request opens after the implementation, so the review lands on it.** The push waited for the last stage whose agent changes the branch; in a flow where QA also writes (tests, its documents), that was QA, so the review ran with no pull request and went to the issue, and asking the developer for the pull request got nowhere. The push is now proposed at the end of the last stage before the review that changes the branch, and the pull request after it, as before each waiting for your yes. Every later stage that changes the branch (QA, the implementation a review sent back to) proposes a new push, which only updates the pull request.
+- **An autonomous agent knows its comments and labels go out at once, and the thread says what it wrote.** Called with `@`, an autonomous agent was told that every write it proposed would wait for your yes, while a comment and a label change in fact went out as it answered: it could post a whole draft as a public comment and then say it had proposed nothing. It is now told which writes go out by themselves (a comment, a label) and which wait in Actions (a status, closing an issue, a new issue), and to write a comment only when the issue should carry it as it is. The line under the answer names the write and its issue (*wrote on the tracker by itself: #12 — labels +P1*, *proposed #12 — close*), which outside a run said neither.
+- **An agent asked to label an issue knows the workspace's labels.** An agent called with `@` that may write labels is now told which label starts the agents' cycle on an issue (`runner.triggerLabel`) and the priority labels it can write (Settings › Cycle › Priority, highest first), or that the workspace has none, so it neither guesses a name nor stops to ask for one.
+
+## [0.7.0-beta.3] - 2026-10-06
+
+### Fixed
+
+- **An agent called with `@` outside a run finds the workspace's code.** In the general conversation, the squads' channels, an agent's direct conversation and the conversations you open, an agent set to run commands always said there was no repository at hand: a repository path written as `~/…` in the config was looked for as is, and a squad's channel only counted the repositories its scope names, not the ones its paths are in. Both now count, and a squad that goes by labels only reads every repository of the workspace. An agent set to run commands on this computer (`host`) still has each command refused there, since that place has no screen to ask on.
+
+## [0.7.0-beta.2] - 2026-10-05
+
+### Added
+
+- **A direct conversation with an agent.** An agent of the team can be talked to in a conversation of its own: every message there goes to it without an `@`, and it answers with the conversation as context. It is listed with the forum's conversations and works from a paired phone.
+- **An agent proposes tracker writes wherever it answers.** In its direct conversation, a squad channel, the general conversation or a run's thread, an answer may propose comments, label changes, a state change, closing an issue or opening a new one. Each waits in Actions with the exact command, and the proposals of one answer can be decided together; closing an issue or changing its state always waits for you. When a write proposed in a run's thread is approved, the thread says it went out.
+- **Per-agent permissions.** The tracker access, the commands and the tools an agent may use can be set on that agent alone, starting from the workspace's defaults. An agent stays read only on the code in a conversation.
+- **Agent suggestions from the cycle's history.** *Suggest agents* in Settings › Team, and the end of a retro, read what the app already records (runs, commands you keep allowing, ceremonies) and, when a pattern repeats, propose a new agent with its evidence. Each suggestion waits in Actions to be accepted, edited or rejected; a rejected one only comes back with new evidence. From a paired browser only *Accept* is offered.
+
+## [0.7.0-beta.1] - 2026-10-05
+
+### Added
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
+
+### Fixed
+
+- **Blank or black repaints on Windows.** The app now draws without hardware acceleration on Windows, a mitigation for the blank windows reported there; it has not been checked on a Windows desktop yet.
 
 ## [0.6.1] - 2026-10-05
 
@@ -209,7 +259,13 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...HEAD
+[0.7.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...v0.7.0-beta.6
+[0.7.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...v0.7.0-beta.5
+[0.7.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...v0.7.0-beta.4
+[0.7.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.2...v0.7.0-beta.3
+[0.7.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.1...v0.7.0-beta.2
+[0.7.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0-beta.1
 [0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0

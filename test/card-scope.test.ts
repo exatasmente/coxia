@@ -92,7 +92,7 @@ describe('the stored fields', () => {
     const r = migrateConfig(v3, { legacyInstall: false });
     expect(r.fromVersion).toBe(3);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(13);
+    expect(r.config.schemaVersion).toBe(14);
     expect(r.config.projects.issues).toMatchObject({ project: 'acme/app', refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] });
     expect(validateConfig(r.config).ok).toBe(true);
     const v4 = migrateConfig(stored, { legacyInstall: false });
@@ -116,7 +116,7 @@ describe('the stored fields', () => {
     delete v2.projects.issues.cardScope;
     delete v2.projects.issues.cardLabels;
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(13);
+    expect(r.config.schemaVersion).toBe(14);
     expect(r.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
   });

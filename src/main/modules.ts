@@ -20,6 +20,7 @@ import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { runsModule } from './runner/module';
+import { suggestionsModule } from './suggestionsModule';
 import { saude } from './saude';
 import { update } from './update';
 import { updates } from './updates';
@@ -53,6 +54,7 @@ const ALL: Module[] = [
   retention,
   runsModule,
   saude,
+  suggestionsModule,
   update,
   updates,
   vcsModule,
