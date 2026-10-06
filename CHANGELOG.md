@@ -100,6 +100,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **DeepInfra is one of the servers the open engine offers.** Adding a provider on the open engine now lists DeepInfra next to OpenAI, OpenRouter, Groq and DeepSeek: picking it fills in `https://api.deepinfra.com/v1/openai`, marks the key as required and links to the page where the key is created, and the connection test replaces the suggested model with the ones the server lists. The provider has not been exercised against the real service yet.
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
 ### Fixed

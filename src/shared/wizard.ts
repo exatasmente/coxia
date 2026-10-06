@@ -83,7 +83,7 @@ export const PROVIDER_CHOICES: KindInfo[] = [
   { kind: 'openai-compatible', claude: false },
 ];
 
-export type PresetId = 'openai' | 'openrouter' | 'groq' | 'deepseek' | 'ollama' | 'lmstudio' | 'custom';
+export type PresetId = 'openai' | 'openrouter' | 'groq' | 'deepseek' | 'deepinfra' | 'ollama' | 'lmstudio' | 'custom';
 
 export interface OpenPreset {
   id: PresetId;
@@ -103,6 +103,7 @@ export const OPEN_PRESETS: OpenPreset[] = [
   { id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', local: false, keyRequired: true, suggestedModels: ['deepseek/deepseek-chat'], keyUrl: 'https://openrouter.ai/settings/keys', headers: { 'X-Title': 'Coxia' } },
   { id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', local: false, keyRequired: true, suggestedModels: ['llama-3.3-70b-versatile'], keyUrl: 'https://console.groq.com/keys', headers: {} },
   { id: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', local: false, keyRequired: true, suggestedModels: ['deepseek-chat'], keyUrl: 'https://platform.deepseek.com/api_keys', headers: {} },
+  { id: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true, suggestedModels: ['meta-llama/Meta-Llama-3.1-8B-Instruct'], keyUrl: 'https://deepinfra.com/dash/api_keys', headers: {} },
   { id: 'ollama', baseUrl: 'http://localhost:11434/v1', local: true, keyRequired: false, suggestedModels: ['qwen3:8b'], keyUrl: null, headers: {} },
   { id: 'lmstudio', baseUrl: 'http://localhost:1234/v1', local: true, keyRequired: false, suggestedModels: [], keyUrl: null, headers: {} },
   { id: 'custom', baseUrl: '', local: false, keyRequired: false, suggestedModels: [], keyUrl: null, headers: {} },
