@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { HARNESS_DIR, type InvalidReason, classifyHarnessPath, parseHarnessFile } from '../../shared/harness/format';
 import { rewriteLocal } from '../../shared/runs/comment';
@@ -27,6 +27,8 @@ export interface Finalized {
   secrets: number;
   /** Files of the layout the pass changed whose header is not valid: they are not stamped, and the person is told. */
   invalid: { file: string; reason: InvalidReason }[];
+  /** Files of the layout that are not regular files (a symbolic link, say): the app neither reads nor writes through them, and the person is told. */
+  skipped: string[];
   /** Files of the layout the pass changed whose header is valid: what the stamp is written into once the commit exists. */
   stamp: string[];
 }
@@ -63,9 +65,16 @@ async function changedLayoutFiles(wt: string): Promise<string[]> {
  * masked) and never the header, whose commit would be taken for an opaque string; a header that does not parse is reported. Writes only the files it rewrites.
  */
 export async function finalizeHarness(wt: string, o: { redact: (text: string) => string }): Promise<Finalized> {
-  const out: Finalized = { rewritten: [], paths: 0, secrets: 0, invalid: [], stamp: [] };
+  const out: Finalized = { rewritten: [], paths: 0, secrets: 0, invalid: [], skipped: [], stamp: [] };
   for (const rel of await changedLayoutFiles(wt)) {
     const file = `${HARNESS_DIR}/${rel}`;
+    // lstat, so a link is not a file: reading or rewriting it would act on whatever it points to, from the host's side.
+    const info = await lstat(join(wt, file)).catch(() => null);
+    if (!info) continue;
+    if (!info.isFile()) {
+      out.skipped.push(file);
+      continue;
+    }
     const text = await readFile(join(wt, file), 'utf8').catch(() => null);
     if (text === null) continue;
     const { head, body } = splitFile(text);
@@ -109,6 +118,7 @@ export async function stampHarness(wt: string, files: string[], commit: string, 
   const date = now().toISOString().slice(0, 10);
   const changed: string[] = [];
   for (const file of files) {
+    if (!(await lstat(join(wt, file)).catch(() => null))?.isFile()) continue;
     const text = await readFile(join(wt, file), 'utf8').catch(() => null);
     const next = text === null ? null : stampText(text, commit, date);
     if (next === null || next === text) continue;

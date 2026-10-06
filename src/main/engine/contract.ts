@@ -59,6 +59,8 @@ export interface Confinement {
   root: string;
   /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
   writeRoot?: string;
+  /** Names directly under `writeRoot` the app owns and the agent may not write (the ignore file and the run folder of a documentation run). */
+  writeReserved?: readonly string[];
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }

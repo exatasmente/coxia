@@ -488,6 +488,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
     shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
     writeRoot: req.confine?.writeRoot ?? req.confine?.root,
+    writeReserved: req.confine?.writeReserved,
     signal: req.abort?.signal,
     describeTool: source,
     events: {

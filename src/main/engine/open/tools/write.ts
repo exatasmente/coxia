@@ -14,7 +14,7 @@ function confined(input: unknown, ctx: ToolContext): string {
   if (!ctx.writeRoot) throw new ToolError(t('main.engine.text.write.readOnly'));
   // A write folder below the working directory (a documentation run's `.coxia/`): the path is the working directory's, as the SDK's tool reads it too.
   const narrow = ctx.writeRoot !== ctx.cwd;
-  const check = checkPath(ctx.writeRoot, narrow ? anchored(ctx.cwd, input) : input, { isSecret: ctx.isSecret, ...(narrow ? { fence: ctx.cwd } : {}) });
+  const check = checkPath(ctx.writeRoot, narrow ? anchored(ctx.cwd, input) : input, { isSecret: ctx.isSecret, ...(narrow ? { fence: ctx.cwd } : {}), reserved: ctx.writeReserved });
   if (!check.ok) throw new ToolError(t(`main.engine.text.write.denied.${check.code}`));
   return check.path;
 }

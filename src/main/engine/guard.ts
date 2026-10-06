@@ -8,7 +8,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
-export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'secret'] as const;
+export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'reserved', 'secret'] as const;
 export type DenialCode = (typeof DENIAL_CODES)[number];
 
 export type PathCheck = { ok: true; /** The path to use: parent resolved through real directories, inside the root. */ path: string; /** Relative to the real root. */ rel: string } | { ok: false; code: DenialCode };
@@ -23,6 +23,8 @@ export interface CheckOptions {
    * place is inside the real `fence`. A narrow root that is a link would carry every write to wherever the link leads.
    */
   fence?: string;
+  /** Names directly under `root` the app keeps for itself: a write to one (or under it) is refused, whatever the case it is spelled in. */
+  reserved?: readonly string[];
   home?: string;
 }
 
@@ -111,6 +113,10 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   const written = relative(base, abs).split(sep);
   const code = segmentsCode(rel.split(sep), !!options.read) ?? segmentsCode(written, !!options.read);
   if (code) return { ok: false, code };
+  if (options.reserved?.length && !options.read) {
+    const own = new Set(options.reserved.map((n) => n.toLowerCase()));
+    if (own.has((rel.split(sep)[0] ?? '').toLowerCase()) || own.has((written[0] ?? '').toLowerCase())) return { ok: false, code: 'reserved' };
+  }
   if (options.isSecret && (options.isSecret(place) || options.isSecret(abs))) return { ok: false, code: 'secret' };
   return { ok: true, path: place, rel };
 }

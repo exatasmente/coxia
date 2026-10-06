@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -114,10 +114,26 @@ describe('the text check of the documentation', () => {
     expect(readFileSync(join(dir, '.coxia/notes.txt'), 'utf8')).toContain('/var/lib/x/y.log');
   });
 
+  it('skips a file that is a symbolic link, reports it, and neither reads nor rewrites what it points to', async () => {
+    const dir = repo();
+    const elsewhere = mkdtempSync(join(tmpdir(), 'cerimonias-finalize-out-'));
+    roots.push(elsewhere);
+    const target = join(elsewhere, 'private.md');
+    writeFileSync(target, file(['evidence: [src/a.ts]'], 'Private /var/lib/x/y.log and sk-abcdefgh12345678.'));
+    mkdirSync(join(dir, '.coxia/rules'), { recursive: true });
+    symlinkSync(target, join(dir, '.coxia/rules/linked.md'));
+    put(dir, '.coxia/rules/real.md', file(['evidence: [src/a.ts]'], 'Real.'));
+    const done = await finalizeHarness(dir, o(dir));
+    expect(done.skipped).toEqual(['.coxia/rules/linked.md']);
+    expect(done.stamp).toEqual(['.coxia/rules/real.md']);
+    expect(done.rewritten).toEqual([]);
+    expect(readFileSync(target, 'utf8')).toContain('/var/lib/x/y.log and sk-abcdefgh12345678');
+  });
+
   it('finds nothing in a repository with no documentation folder', async () => {
     const dir = repo();
     put(dir, 'src/a.ts', 'x\n');
-    expect(await finalizeHarness(dir, o(dir))).toEqual({ rewritten: [], paths: 0, secrets: 0, invalid: [], stamp: [] });
+    expect(await finalizeHarness(dir, o(dir))).toEqual({ rewritten: [], paths: 0, secrets: 0, invalid: [], skipped: [], stamp: [] });
   });
 });
 
@@ -140,6 +156,19 @@ describe('the stamp', () => {
     expect(changed).toEqual(['.coxia/rules/r.md']);
     expect(readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8')).toContain(`checked-commit: ${A}\nchecked-date: 2026-10-06\n`);
     expect(readFileSync(join(dir, '.coxia/rules/plain.md'), 'utf8')).toBe('no header');
+  });
+
+  it('does not stamp through a symbolic link', async () => {
+    const dir = repo();
+    const elsewhere = mkdtempSync(join(tmpdir(), 'cerimonias-finalize-out-'));
+    roots.push(elsewhere);
+    const target = join(elsewhere, 'other.md');
+    const original = file(['evidence: [src/a.ts]'], 'Not ours.');
+    writeFileSync(target, original);
+    mkdirSync(join(dir, '.coxia/rules'), { recursive: true });
+    symlinkSync(target, join(dir, '.coxia/rules/linked.md'));
+    expect(await stampHarness(dir, ['.coxia/rules/linked.md'], A, () => new Date('2026-10-06T00:00:00Z'))).toEqual([]);
+    expect(readFileSync(target, 'utf8')).toBe(original);
   });
 });
 

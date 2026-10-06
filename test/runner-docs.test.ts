@@ -31,6 +31,7 @@ const { confinedHooks } = await import('../src/main/runner/hooks');
 const { policyFromHooks } = await import('../src/main/engine/open/policy');
 const { editTool, writeTool } = await import('../src/main/engine/open/tools/write');
 const { newAgent } = await import('../src/shared/config/team');
+const { HARNESS_OWN } = await import('../src/shared/harness/format');
 const { newProvider } = await import('../src/shared/config/defaults');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
@@ -416,6 +417,21 @@ describe('the draft', () => {
     expect(sandbox.opened).toEqual([]);
   });
 
+  it('refuses the agent that writes the ignore file or the run folder: the line that keeps the run out of the pull request stays', async () => {
+    const b = await bootDocs();
+    const seen: (string | null)[] = [];
+    b.engine.script('docs-writer', async (_c, tools) => {
+      seen.push(await tools.write('.coxia/.gitignore', 'nothing\n'), await tools.write('.coxia/.run/memory.md', 'mine\n'));
+      await tools.write('.coxia/README.md', README);
+      return work('Drafted.', { commit: 'add the project documentation', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
+    });
+    const run = await toGate(b);
+    expect(seen.map((s) => /keeps this file|kept by the app/.test(s ?? ''))).toEqual([true, true]);
+    expect(readFileSync(join(run.worktree, '.coxia/.gitignore'), 'utf8')).toBe('.run/\n');
+    expect(git(run.worktree, 'ls-files', '.coxia/.run')).toBe('');
+    expect(b.thread(run).filter((m) => m.code === 'runner.denied')).toHaveLength(2);
+  });
+
   it('goes back to the draft when the gate is rejected, with the reason for the agent, and stops at the gate again', async () => {
     const b = await bootDocs();
     b.engine.script(
@@ -653,6 +669,36 @@ describe('what a documentation agent may write, on both engines', () => {
     expect(await sdk(hooks, 'Read', { file_path: join(outside, 'x.md') })).toBe('deny');
     expect(await sdk(hooks, 'Bash', { command: 'npm test' })).toBe('deny');
     expect(await sdk(hooks, 'WebFetch', { url: 'https://example.com' })).toBe('deny');
+  });
+
+  describe('what the app keeps in .coxia (its ignore file and the folder of the run)', () => {
+    const reserved = HARNESS_OWN;
+    const ctx = () => ({ cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: writeRoot(), writeReserved: reserved });
+
+    it('the hooks of the SDK refuse them, in any spelling of the case, and still allow the documentation', async () => {
+      const hooks = confinedHooks({ root, writeRoot: writeRoot(), writeReserved: reserved, commands: [] });
+      for (const tool of ['Write', 'Edit', 'MultiEdit']) {
+        const w = (file_path: string) => sdk(hooks, tool, { file_path, content: 'x', old_string: 'a', new_string: 'b' });
+        expect(await w('.coxia/.gitignore'), `${tool} the ignore file`).toBe('deny');
+        expect(await w(join(root, '.coxia/.gitignore')), `${tool} the ignore file, absolute`).toBe('deny');
+        expect(await w('.coxia/.GITIGNORE'), `${tool} the ignore file, in capitals`).toBe('deny');
+        expect(await w('.coxia/.run/memory.md'), `${tool} in the run folder`).toBe('deny');
+        expect(await w('.coxia/.run'), `${tool} the run folder`).toBe('deny');
+        expect(await w('.coxia/rules/.gitignore'), `${tool} a file of that name deeper is the agent's`).toBe('allow');
+        expect(await w('.coxia/README.md'), `${tool} the documentation`).toBe('allow');
+      }
+    });
+
+    it('the Write and Edit tools of the open engine refuse them too, whatever the hooks said', async () => {
+      await expect(writeTool.run({ file_path: '.coxia/.gitignore', content: 'x' }, ctx())).rejects.toThrow(/keeps this file/);
+      await expect(writeTool.run({ file_path: '.coxia/.run/memory.md', content: 'x' }, ctx())).rejects.toThrow(/keeps this file/);
+      await expect(editTool.run({ file_path: '.coxia/.gitignore', old_string: 'a', new_string: 'b' }, ctx())).rejects.toThrow(/keeps this file/);
+      expect(existsSync(join(root, '.coxia/.gitignore'))).toBe(false);
+      expect(existsSync(join(root, '.coxia/.run'))).toBe(false);
+      await writeTool.run({ file_path: '.coxia/rules/ok.md', content: 'ok\n' }, ctx());
+      const policy = policyFromHooks(confinedHooks({ root, writeRoot: writeRoot(), writeReserved: reserved, commands: [] }), 'fake');
+      expect(await policy.pre('Write', { file_path: '.coxia/.gitignore', content: 'x' }, root)).toBeTruthy();
+    });
   });
 
   describe('when .coxia is not a real folder of the worktree', () => {
