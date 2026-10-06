@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
+import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
 import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
@@ -9,6 +10,7 @@ import { intlLocale, useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
 import { RichText } from '../Diagram';
 import { ArtifactView } from './ArtifactView';
+import { MessageAttachments } from './Attachments';
 import { agentName, agentRole, authorName } from './names';
 import { forumApi, markThreadSeen, useThread } from './forumApi';
 import './cycle.css';
@@ -109,6 +111,8 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
           ))}
         </ul>
       )}
+      {/* A person's files live in every conversation, run thread or not: they are not documents of a run. */}
+      <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
       {m.published && (
         <p className="small cy-published">
           {m.published.url ? <a href={m.published.url} target="_blank" rel="noreferrer">{t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}</a> : t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}
@@ -146,7 +150,46 @@ function Chain({ chain, messages, ctx }: { chain: QuestionChain; messages: Forum
   );
 }
 
-/** The box a person writes in, with `@agent` completed from the team as they type. */
+/** A file waiting to be sent: the bytes and what the person sees of it (name and size) before the message leaves. */
+interface Pending {
+  key: string;
+  name: string;
+  bytes: number;
+  dataBase64: string;
+}
+
+/** The files a person chose, in the box, before sending: name and size, each removable. The kind is decided by the app when the message is sent. */
+function PendingFiles({ files, onRemove }: { files: readonly Pending[]; onRemove: (key: string) => void }) {
+  const t = useT();
+  if (!files.length) return null;
+  return (
+    <ul className="cy-pending" aria-label={t('ui.forum.file.pending')}>
+      {files.map((f) => (
+        <li key={f.key} className="cy-pending-item">
+          <span className="cy-pending-name mono">{f.name}</span>
+          <span className="faint small">{formatBytes(f.bytes)}</span>
+          <button type="button" className="cy-link" aria-label={t('ui.forum.file.remove', { name: f.name })} onClick={() => onRemove(f.key)}>{t('ui.forum.file.removeLabel')}</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The one-time warning that what an agent reads here leaves the computer; the box shows it while a file is waiting to be sent. */
+function AttachmentNotice() {
+  const t = useT();
+  return <p className="cy-attach-notice small" role="note">{t('main.attachment.notice')}</p>;
+}
+
+async function readFileAsBase64(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** The box a person writes in, with `@agent` completed from the team as they type and files attached by button, drag and drop or paste. */
 function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; team: readonly AgentDef[] | undefined; note: string | null; onSent: (m: ForumMessage) => void; /** Present when the run can be sent back: a mention in the text is then said not to do it, with the way to. */ onSendBack?: () => void }) {
   const t = useT();
   const [text, setText] = useState('');
@@ -155,28 +198,76 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const [files, setFiles] = useState<readonly Pending[]>([]);
+  const [drag, setDrag] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const listId = useId();
   const named = useMemo(() => (team ?? []).map((a) => ({ id: a.id, name: agentName(team, a.id) })), [team]);
   const at = dismissed ? null : mentionAt(text, caret);
   const options = at ? mentionOptions(named, at.query) : [];
 
+  const addFiles = (list: FileList | File[] | null | undefined) => {
+    if (!list) return;
+    void (async () => {
+      const next: Pending[] = [];
+      let base = files;
+      let total = base.reduce((n, f) => n + f.bytes, 0);
+      for (const file of Array.from(list).slice(0, ATTACHMENT_LIMITS.perMessage)) {
+        if (base.length >= ATTACHMENT_LIMITS.perMessage) {
+          setError(t('main.attachment.tooMany', { max: ATTACHMENT_LIMITS.perMessage }));
+          break;
+        }
+        const data = await readFileAsBase64(file);
+        const bytes = file.size;
+        total += bytes;
+        if (total > ATTACHMENT_LIMITS.messageBytes) {
+          setError(t('main.attachment.messageLimit', { max: Math.round(ATTACHMENT_LIMITS.messageBytes / 1024 / 1024) }));
+          break;
+        }
+        next.push({ key: `${Date.now()}-${next.length}-${file.name}`, name: file.name, bytes, dataBase64: data });
+      }
+      base = [...base, ...next];
+      setFiles(base);
+    })();
+  };
+
+  const removeFile = (key: string) => setFiles((cur) => cur.filter((f) => f.key !== key));
+
   const send = () => {
     const body = text.trim();
-    if (!body || busy) return;
+    if ((!body && !files.length) || busy) return;
     setBusy(true);
     setError(null);
-    void forumApi.post(thread, body).then(
-      (m) => {
+    void (async () => {
+      try {
+        // The bytes go one by one, so the body of each call stays small; a file the app refuses is dropped and the rest are kept.
+        const ids: string[] = [];
+        const kept: Pending[] = [];
+        for (const f of files) {
+          try {
+            const ref = await forumApi.attachmentPut(thread, f.name, f.dataBase64);
+            ids.push(ref.id);
+          } catch (e) {
+            setError(errorText(e));
+            kept.push(f);
+          }
+        }
+        if (!ids.length && files.length) {
+          setFiles(kept);
+          setBusy(false);
+          return;
+        }
+        const m = ids.length ? await forumApi.attachmentPost(thread, body, ids) : await forumApi.post(thread, body);
         setText('');
+        setFiles([]);
         setBusy(false);
         onSent(m);
-      },
-      (e) => {
+      } catch (e) {
         setError(errorText(e));
         setBusy(false);
-      },
-    );
+      }
+    })();
   };
 
   const pick = (id: string) => {
@@ -192,7 +283,7 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
   };
 
   return (
-    <div className="cy-composer">
+    <div className={`cy-composer ${drag ? 'cy-composer-drag' : ''}`}>
       {note && <p className="small muted cy-composer-note">{note}</p>}
       {onSendBack && parseMentions(text, named.map((a) => a.id)).length > 0 && (
         <p className="small cy-composer-note cy-sendback-hint" role="note">
@@ -200,7 +291,21 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
           <button type="button" className="cy-link" onClick={onSendBack}>{t('ui.forum.noteSendBackOpen')}</button>
         </p>
       )}
-      <div className="cy-composer-box">
+      {files.length > 0 && <AttachmentNotice />}
+      <PendingFiles files={files} onRemove={removeFile} />
+      <div
+        className="cy-composer-box"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          addFiles(e.dataTransfer?.files ?? null);
+        }}
+      >
         <textarea
           ref={box}
           className="text-input cy-textarea cy-compose"
@@ -219,6 +324,13 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
             setCaret(e.target.selectionStart);
             setActive(0);
             setDismissed(false);
+          }}
+          onPaste={(e) => {
+            const items = e.clipboardData?.files;
+            if (items && items.length) {
+              e.preventDefault();
+              addFiles(items);
+            }
           }}
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
           onKeyDown={(e) => {
@@ -259,9 +371,25 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
       </div>
       <div className="row spread">
         <span className="faint small">{t('ui.forum.sendHint')}</span>
-        <button type="button" className="btn btn-dark" disabled={busy || !text.trim()} onClick={send}>
-          {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
-        </button>
+        <span className="row">
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            aria-hidden="true"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <button type="button" className="btn cy-attach-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
+            {t('ui.forum.file.attach')}
+          </button>
+          <button type="button" className="btn btn-dark" disabled={busy || (!text.trim() && !files.length)} onClick={send}>
+            {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
+          </button>
+        </span>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
     </div>

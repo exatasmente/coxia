@@ -123,6 +123,14 @@ function bareNames(list: string[] | undefined): Set<string> {
   return new Set((list ?? []).filter((t) => !t.includes('(')));
 }
 
+/** An image an app tool handed back beside its text result: the response carries the name and a data URL, and the loop sends it as a user image part. */
+function imageOf(response: unknown): { url: string; name: string } | null {
+  if (!response || typeof response !== 'object') return null;
+  const r = response as { type?: unknown; url?: unknown; name?: unknown };
+  if (r.type !== 'attachment_image' || typeof r.url !== 'string') return null;
+  return { url: r.url, name: typeof r.name === 'string' ? r.name : '' };
+}
+
 export function bashPrefixesOf(allowed: string[]): string[] {
   const out: string[] = [];
   for (const a of allowed) {
@@ -361,7 +369,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     }
   };
 
-  const execute = async (tc: ToolCall): Promise<string> => {
+  const execute = async (tc: ToolCall): Promise<{ text: string; image?: { url: string; name: string } }> => {
     const impl = byApi.get(tc.function.name);
     const input = parseToolArguments(tc.function.arguments);
     const name = impl?.name ?? tc.function.name;
@@ -371,19 +379,21 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       events.onToolResult?.(name, true);
       return t('main.engine.text.toolError', { text });
     };
-    if (!impl) return fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') }));
+    if (!impl) return { text: fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') })) };
     const argErrors = validate(input, impl.parameters);
-    if (argErrors.length) return fail(t('main.engine.text.badArgs', { errors: describeErrors(argErrors) }));
+    if (argErrors.length) return { text: fail(t('main.engine.text.badArgs', { errors: describeErrors(argErrors) })) };
     const denied = await policy.pre(impl.name, input, p.cwd);
-    if (denied) return fail(denied);
+    if (denied) return { text: fail(denied) };
     try {
       const r = await impl.run(input, ctx);
       const rewritten = await policy.post(impl.name, input, r.response, p.cwd);
       events.onToolResult?.(name, false);
-      return r.render(rewritten ?? r.response);
+      // The image an attachment tool hands back travels beside the tool message, never inside it: the tool result stays text, as the API wants.
+      const image = imageOf(rewritten ?? r.response);
+      return { text: r.render(rewritten ?? r.response), ...(image ? { image } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
-      return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
+      return { text: fail(e instanceof ToolError ? e.message : `${(e as Error).message}`) };
     }
   };
 
@@ -427,7 +437,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       }
       if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
-      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
+      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i].text)));
+      // An image an attachment tool handed back rides as its own user message with an image part, right after the tool messages: the tool result stays
+      // text, and the image still reaches the model as an image (the API reads image parts only on user turns).
+      for (const r of results) {
+        if (!r.image) continue;
+        // i18n-ignore: prompt text the engine sends the model: English by design
+        write({ role: 'user', content: [{ type: 'image_url', image_url: { url: r.image.url } }, { type: 'text', text: `Attachment "${r.image.name}", sent by the person in this conversation.` }] });
+      }
       continue;
     }
     if (!p.schema) return done(c.text, turns);

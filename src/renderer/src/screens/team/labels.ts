@@ -10,6 +10,7 @@ export const TAB_LABEL: Record<TeamTab, string> = {
   squads: 'ui.team.tab.squads',
   flow: 'ui.team.tab.flow',
   comments: 'ui.team.tab.comments',
+  attachments: 'ui.team.tab.attachments',
   runner: 'ui.team.tab.runner',
 };
 

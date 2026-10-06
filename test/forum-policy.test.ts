@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/main/webPolicy';
 
-const CHANNELS = ['forum:list', 'forum:read', 'forum:post', 'forum:create'];
+const CHANNELS = ['forum:list', 'forum:read', 'forum:post', 'forum:create', 'forum:attachment-put', 'forum:attachment-post', 'forum:attachment-drop', 'forum:attachment-get'];
 
 describe('web policy for the forum', () => {
-  it('lets a paired browser list, read, post and open a general thread: they only touch the workspace\'s own thread files', () => {
+  it('lets a paired browser list, read, post, open a general thread and send the files of a message: they only touch the workspace\'s own files', () => {
     for (const channel of CHANNELS) {
       expect(webAccess(channel), channel).toBe('allow');
       expect(webRefusal(channel, false), channel).toBeNull();

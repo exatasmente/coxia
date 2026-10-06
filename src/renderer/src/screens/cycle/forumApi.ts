@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { AttachmentRef } from '../../../../shared/attachments';
 import { EVENTS_RECONNECTED } from '../../../../shared/activity';
 import { FORUM_EVENT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary } from '../../../../shared/forum';
 import { baselineSeen, markSeen, mergeMessages } from '../../../../shared/forumView';
@@ -12,6 +13,11 @@ export const forumApi = {
   read: (thread: string, afterSeq?: number, limit?: number) => api.invoke<ThreadRead | null>('forum:read', thread, afterSeq, limit),
   post: (thread: string, text: string) => api.invoke<ForumMessage>('forum:post', thread, text),
   create: (title: string) => api.invoke<ThreadSummary>('forum:create', title),
+  // The files of a message: one call each, so the body of the RPC stays small; the message is written after the bytes are in.
+  attachmentPut: (thread: string, name: string, dataBase64: string) => api.invoke<AttachmentRef>('forum:attachment-put', thread, name, dataBase64),
+  attachmentPost: (thread: string, text: string, ids: string[]) => api.invoke<ForumMessage>('forum:attachment-post', thread, text, ids),
+  attachmentDrop: (thread: string, ids: string[]) => api.invoke<void>('forum:attachment-drop', thread, ids),
+  attachmentGet: (thread: string, message: number, id: string) => api.invoke<{ data: string; ref: AttachmentRef } | null>('forum:attachment-get', thread, message, id),
 };
 
 // ---- the list of threads ---------------------------------------------------------------------------------------------------------------

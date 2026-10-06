@@ -100,7 +100,7 @@ Importante: **um** modelo real foi testado, em quatro execuções, e só no runn
 - **Janela de contexto:** o prompt do agente (CLAUDE.md, skills, definições de ferramentas) passa de 10 mil tokens. Com 4 mil ou 8 mil tokens a cerimônia não cabe. Ollama usa 4096 por padrão: aumente `num_ctx` (ex.: 16384 ou mais). O servidor muitas vezes trunca em silêncio em vez de dar erro, e nesse caso o adaptador não percebe.
 - Ferramentas só de leitura; sem `Edit`/`Write`, sem `WebFetch`/`WebSearch`.
 - Chamadas de ferramenta escritas como texto (alguns modelos sem template adequado) não são interpretadas; o servidor precisa devolver `tool_calls`.
-- Entrada de imagem não é usada pelo motor aberto.
+- Entrada de imagem é usada desde que as conversas passaram a aceitar anexos: uma imagem que a pessoa anexa a uma mensagem chega ao modelo como pedaço de imagem (`image_url`), numa mensagem de usuário logo depois do resultado de ferramenta (que continua texto). Um provedor que não aceite pedaços de imagem no histórico vai recusar a rodada; isso não foi verificado contra um provedor real.
 - MCP: só stdio, sem OAuth e sem servidores remotos.
 - Um raciocínio que vem como `<think>` só é reconhecido no início da resposta; o texto de raciocínio nunca entra na resposta final.
 - Os dois motores usam sessões diferentes: uma sessão do Claude não retoma no motor aberto (vira sessão nova).
@@ -204,7 +204,7 @@ Important: **one** real model has been tested, in four runs, and only in the run
 - **Context window:** the agent prompt (CLAUDE.md, skills, tool definitions) is over 10k tokens. With 4k or 8k tokens the ceremony does not fit. Ollama defaults to 4096: raise `num_ctx` (for example 16384 or more). Servers often truncate silently instead of erroring, and the adapter cannot notice that.
 - Read-only tools; no `Edit`/`Write`, no `WebFetch`/`WebSearch`.
 - Tool calls written as plain text (some models without a proper template) are not interpreted; the server must return `tool_calls`.
-- Image input is not used by the open engine.
+- Image input is used since the conversations started taking attachments: an image a person attaches to a message reaches the model as an image part (`image_url`), in a user message right after the tool result (which stays text). A provider that does not accept image parts in the history will refuse the round; this was not verified against a real provider.
 - MCP: stdio only, no OAuth and no remote servers.
 - Reasoning that arrives as `<think>` is recognised only at the start of the answer; reasoning text never reaches the final answer.
 - The two engines keep separate sessions: a Claude session does not resume on the open engine (it starts a new one).

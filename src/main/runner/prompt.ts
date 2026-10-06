@@ -1,4 +1,5 @@
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
+import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
 import { type ForumMessage, messageText } from '../../shared/forum';
 import type { OutputKind, RoutingWhy } from '../../shared/runs';
 import { type FlowStage, type ReviewRecord, type Run, findingText } from '../../shared/runs';
@@ -33,7 +34,7 @@ export interface StageInput {
   /** A note the previous stage left for this agent. */
   handoff: { from: string; text: string } | null;
   /** The person's answer to what this agent asked before. */
-  answer: { question: string; text: string; by: string } | null;
+  answer: { question: string; text: string; by: string; attachments: AttachmentRef[] } | null;
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
@@ -72,6 +73,12 @@ const MESSAGE_MAX = 1500;
 export const fence = (text: string): string => text.replace(/<(\/?)data\b/gi, '&lt;$1data');
 const DIFF_MAX = 60_000;
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max)}…` : s);
+
+/** The files of a message, as a stage's agent reads them: id, name, kind and size, never a path on the computer. */
+export function attachmentsList(refs: readonly AttachmentRef[]): string {
+  const lines = refs.map((r) => `- ${r.id}: "${r.name}", ${t(kindLabelKey(r.kind))}, ${formatBytes(r.bytes)}`);
+  return t('main.attachment.tool.list', { count: refs.length }) + '\n' + lines.join('\n');
+}
 
 /** The recent messages of the thread, oldest first, as lines a model can read; the app's own bookkeeping is left out. */
 export function threadText(messages: ForumMessage[]): string {
@@ -165,6 +172,8 @@ export function stagePrompt(i: StageInput): string {
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
   if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
   if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text), from: i.answer.by }));
+  // When the answer the stage waits for carries files, the agent is told which ones and opens them with the read-only tool.
+  if (i.answer?.attachments?.length) sections.push(cp('runner.section.attachments', { text: fence(attachmentsList(i.answer.attachments)) }));
   return cp('runner.stage', {
     stage: cycleWord(i.stage.label),
     ref: i.run.issue.ref,

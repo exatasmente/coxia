@@ -3,6 +3,7 @@ import { useT } from '../../i18n';
 import { CommentsEditor } from './CommentsEditor';
 import { FlowEditor } from './FlowEditor';
 import { RunnerSection } from './RunnerSection';
+import { AttachmentsSection } from './AttachmentsSection';
 import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
 import { teamApi, useConfigView } from './teamApi';
@@ -20,6 +21,7 @@ const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; openFlow:
   squads: (p) => <SquadsSection {...p} />,
   flow: (p) => <FlowEditor {...p} />,
   comments: (p) => <CommentsEditor {...p} />,
+  attachments: (p) => <AttachmentsSection {...p} />,
   runner: (p) => <RunnerSection {...p} />,
 };
 

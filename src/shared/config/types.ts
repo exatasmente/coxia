@@ -626,6 +626,16 @@ export interface CommandConfig {
   command: string;
 }
 
+/** Files a person may attach to a message of the forum. The kind is decided by the content; these are the limits and the switch, per workspace. */
+export interface AttachmentsConfig {
+  /** The person may attach files. Off: the box does not take them. */
+  enabled: boolean;
+  /** Size per file, size per message and how many files a message takes. */
+  limits: { imageBytes: number; otherBytes: number; messageBytes: number; perMessage: number };
+  /** A called agent receives the files of the message it was called in. Off: the person still attaches and opens them; the agents are told why. */
+  agents: boolean;
+}
+
 export interface CardSourceConfig extends CommandConfig {
   /** Arguments that print the cards as the JSON the app reads. */
   reportArgs: string[];
@@ -794,6 +804,8 @@ export interface WorkspaceConfig {
   notifications: boolean;
   closeToTray: boolean;
   retention: { enabled: boolean; days: number };
+  /** Files a person may attach to a message of the forum: the size and count limits, and whether the agents receive them. */
+  attachments?: AttachmentsConfig;
   schedule: ScheduleConfig;
   llm: LlmConfig;
   projects: ProjectsConfig;

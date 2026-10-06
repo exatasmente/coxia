@@ -39,6 +39,52 @@ const DATA_FILE = /^[\w.-]+\.json$/;
 const HEAD_BYTES = 256 * 1024;
 const LOG = join(ATAS, 'retencao.log');
 
+// Every attachment id a live forum message still references, by conversation: what the sweep must never delete. Read from the append-only thread
+// files, so a message that was deleted takes its files out of the keep set (and the folder of that message was emptied when it was deleted).
+export function referencedAttachments(base = ATAS): Set<string> {
+  const keep = new Set<string>();
+  const dir = join(base, 'forum');
+  if (!existsSync(dir)) return keep;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.jsonl')) continue;
+    const thread = name.slice(0, -6);
+    for (const line of readFileSync(join(dir, name), 'utf8').split('\n')) {
+      if (!line.includes('"attachments"')) continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const list = (raw as { attachments?: { id?: unknown }[] }).attachments;
+      if (!Array.isArray(list)) continue;
+      for (const a of list) if (typeof a?.id === 'string') keep.add(`${thread}/${a.id}`);
+    }
+  }
+  return keep;
+}
+
+// The attachment files: one folder per conversation under <workspace>/anexos, one file per attachment. A file a live message references is kept; the
+// rest is selected by age like the other data.
+export function attachmentFiles(base = ATAS): RetentionFile[] {
+  const dir = join(base, 'anexos');
+  if (!existsSync(dir)) return [];
+  const keep = referencedAttachments(base);
+  const files: RetentionFile[] = [];
+  for (const conversation of readdirSync(dir, { withFileTypes: true })) {
+    if (!conversation.isDirectory()) continue;
+    const folder = join(dir, conversation.name);
+    for (const name of readdirSync(folder)) {
+      const path = join(folder, name);
+      const st = statSync(path);
+      if (!st.isFile()) continue;
+      const id = name.split('.')[0];
+      files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
+    }
+  }
+  return files;
+}
+
 function head(path: string): string {
   const fd = openSync(path, 'r');
   try {
@@ -136,7 +182,7 @@ function otherWorkspaceRefs(): RetentionRef[] {
 export function scan(days: number, now = Date.now()): Selection {
   const actions = actionRefs();
   const refs = [...(actions ?? []), ...otherWorkspaceRefs()];
-  const files = [...dataFiles(refs), ...sessionFiles()];
+  const files = [...dataFiles(refs), ...attachmentFiles(), ...sessionFiles()];
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {
     const sessions = selection.remove.filter((v) => v.file.kind === 'sessoes');
@@ -199,6 +245,15 @@ function removeOne(file: RetentionFile): void {
   const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
   if (!inside(file.path, root)) throw new Error(t('main.retention.outside'));
   unlinkSync(file.path);
+  if (file.kind === 'anexos') {
+    // The conversation folder holds nothing once its last file is gone: it is left out of the data folder, not behind an empty folder.
+    const folder = join(file.path, '..');
+    try {
+      if (!readdirSync(folder).length) rmSync(folder, { recursive: true, force: true });
+    } catch {
+      // a folder that cannot be removed yet is harmless; the next sweep finds it empty and tries again
+    }
+  }
   if (file.kind === 'sessoes' && file.sessionId) {
     const companion = join(sessionsDir(), file.sessionId);
     if (existsSync(companion) && lstatSync(companion).isDirectory() && inside(companion, sessionsDir())) rmSync(companion, { recursive: true, force: true });

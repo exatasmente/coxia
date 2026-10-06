@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
@@ -114,13 +115,13 @@ export function pendingHandoff(thread: ForumMessage[], agent: string): { from: s
 }
 
 /** The person's answer to the last question this agent asked in this stage, until the agent reports again. */
-export function pendingAnswer(thread: ForumMessage[], agent: string, stage: string): { question: string; text: string; by: string } | null {
+export function pendingAnswer(thread: ForumMessage[], agent: string, stage: string): { question: string; text: string; by: string; attachments: AttachmentRef[] } | null {
   const asked = [...thread].reverse().find((m) => m.kind === 'question' && m.author.type === 'agent' && m.author.id === agent && m.stage === stage);
   if (!asked) return null;
   const answered = thread.find((m) => m.kind === 'answer' && m.seq > asked.seq);
   if (!answered) return null;
   const reported = thread.some((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === agent && m.seq > answered.seq);
-  return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t(answered.author.type === 'app' ? 'main.runner.author.app' : 'main.runner.author.person') };
+  return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t(answered.author.type === 'app' ? 'main.runner.author.app' : 'main.runner.author.person'), attachments: answered.attachments ?? [] };
 }
 
 /** How long an agent may be silent, and how long a call may take in all. */
@@ -432,6 +433,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
+    // The files of the answer the stage waits for: the agent opens them with the read-only tool, scoped to the run's conversation.
+    attachments: input.answer && input.answer.attachments.length && config.attachments?.agents !== false ? { thread: threadId, refs: input.answer.attachments } : undefined,
     // The agent of a release run asks for the steps of the release through the app: the stage and the attempt say whose step it is, and its autonomy at the start decides what waits.
     release: run.subject && d.release ? (input) => (d.release as NonNullable<ExecutorDeps['release']>)(run.id, input, { by: agent.id, autonomous: run.stages.find((s) => s.stage === stage.id)?.autonomous ?? false, stage: stage.id, attempt }) : undefined,
   };

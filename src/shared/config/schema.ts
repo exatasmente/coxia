@@ -311,6 +311,16 @@ export const CONFIG_SCHEMA: JsonSchema = {
       notifications: boolean('Desktop and push notifications.'),
       closeToTray: boolean('Closing the window keeps the app in the tray.'),
       retention: object('Local history retention.', { enabled: boolean('Delete history older than days.'), days: integer('Days to keep.', 7, 365) }),
+      attachments: object('Files a person may attach to a message of the forum. The kind is decided by the content, never by the file name.', {
+        enabled: boolean('The message box takes files.'),
+        limits: object('Size per file, per message and how many files a message takes.', {
+          imageBytes: integer('Largest image (bytes).', 1024, 50 * 1024 * 1024),
+          otherBytes: integer('Largest file of any other kind (bytes).', 1024, 50 * 1024 * 1024),
+          messageBytes: integer('Largest total of one message (bytes).', 1024, 100 * 1024 * 1024),
+          perMessage: integer('At most how many files one message takes.', 1, 50),
+        }),
+        agents: boolean('A called agent receives the files of the message it was called in. Off: the person still attaches and opens them, and the agent is told why it does not.'),
+      }),
       schedule: object('When the app reminds and checks.', {
         preDaily: string('HH:MM of the pre-daily reminder.', { pattern: TIME }),
         days: list('Weekdays (0 = Sunday) the schedule runs.', integer('Weekday.', 0, 6), { maxItems: 7, uniqueItems: true }),

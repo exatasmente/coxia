@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateSchema, type JsonSchema } from '../shared/config/jsonSchema';
+import { ATTACHMENT_KINDS, type AttachmentRef } from '../shared/attachments';
 import {
   MAX_TEXT,
   MAX_TITLE,
@@ -107,13 +108,18 @@ const MESSAGE: JsonSchema = {
     params: { type: 'object', additionalProperties: { type: ['string', 'number'] } },
     mentions: { type: 'array', items: { type: 'string', maxLength: 48 } },
     refs: { type: 'array', items: { type: 'object', properties: { path: { type: 'string', maxLength: 200 }, label: { type: 'string', maxLength: 200 } }, required: ['path'], additionalProperties: false } },
+    attachments: {
+      type: 'array',
+      items: { type: 'object', properties: { id: { type: 'string', maxLength: 32 }, name: { type: 'string', maxLength: 200 }, kind: { type: 'string', enum: ['image', 'text', 'pdf', 'json', 'csv'] }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'kind', 'bytes'], additionalProperties: false },
+    },
+    anchor: { type: ['string', 'null'], maxLength: 80 },
     stage: { type: ['string', 'null'], maxLength: 48 },
     to: { type: ['string', 'null'], maxLength: 48 },
     replyTo: { type: ['integer', 'null'] },
     public: { type: 'boolean' },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
-  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
+  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'attachments', 'stage', 'to', 'replyTo', 'public', 'published'],
   additionalProperties: false,
 };
 const ANNOTATION: JsonSchema = {
@@ -231,6 +237,14 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
   const cleanRefs = (refs: ArtifactRef[] | undefined): ArtifactRef[] =>
     (refs ?? []).filter((r) => typeof r?.path === 'string' && REF_PATH.test(r.path) && !r.path.split('/').some((seg) => seg === '..' || seg === '.')).map((r) => ({ path: r.path, ...(typeof r.label === 'string' && r.label ? { label: r.label.slice(0, 200) } : {}) }));
 
+  // The attachments of a message are already clean when they arrive (main/attachments.ts made the id and read the kind from the content):
+  // the store only drops what does not hold its own shape, so a hand-written line cannot smuggle a path into the message.
+  const cleanAttachments = (list: AttachmentRef[] | undefined): AttachmentRef[] =>
+    (list ?? [])
+      .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && ATTACHMENT_KINDS.includes(a.kind) && typeof a.name === 'string' && Number.isFinite(a.bytes) && a.bytes >= 0)
+      .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Math.floor(a.bytes) }))
+      .slice(0, 50);
+
   function build(state: State, d: ForumDraft, seq: number): ForumMessage {
     const a = d.author;
     if (!a || (a.type !== 'agent' && a.type !== 'person' && a.type !== 'app') || (a.type === 'agent' && !AGENT_ID.test(a.id))) throw new ForumError('bad-author');
@@ -254,6 +268,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       params,
       mentions: [...new Set((d.mentions ?? []).filter((m) => typeof m === 'string' && AGENT_ID.test(m)))],
       refs: cleanRefs(d.refs),
+      attachments: cleanAttachments(d.attachments),
+      anchor: typeof d.anchor === 'string' && d.anchor ? d.anchor.slice(0, 80) : null,
       stage: d.stage ?? null,
       to: d.to ?? null,
       // An answer says which question or request it answers: the one it names when that one is open, else the latest nobody has answered.

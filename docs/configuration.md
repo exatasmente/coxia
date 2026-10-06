@@ -28,6 +28,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 |---|---|
 | `schemaVersion`, `setupComplete`, `language` | versão, se o assistente já terminou (`false` em instalação nova), idioma (`pt-BR` ou `en`) |
 | `appearance`, `notifications`, `closeToTray`, `retention`, `schedule` | as configurações que já existiam |
+| `attachments` | os arquivos que uma pessoa anexa às conversas: `enabled` (a caixa aceita arquivos), `limits` (`imageBytes`, `otherBytes`, `messageBytes`, `perMessage`) e `agents` (um agente chamado recebe os arquivos da mensagem; desligado, a pessoa continua anexando e abrindo, e o agente é avisado). Opcional: um arquivo sem ele lê os padrões (5 MB por imagem, 1 MB por outro arquivo, 10 MB e 10 arquivos por mensagem, agentes ligados), sem passo de migração. O tipo é decidido pelo conteúdo, nunca pelo nome. O texto do bloco está na tela Settings › Team e ciclo › Arquivos |
 | `llm.providers[]` | `{ id, kind, engine, baseUrl, models, secretRef, envFile, options, capabilities, structured, headers, ..., legacyCustomEndpoint }`. `kind`: `anthropic`, `bedrock`, `vertex`, `foundry`, `openai-compatible`. `engine`: `claude-sdk` (modelos Claude) ou `open` (loop próprio, OpenAI-compatível e local) |
 | `llm.roles` | por papel (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }` |
 | `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (projeto de issues, prefixo dos cartões, `cardScope` e `cardLabels`: quais issues viram cartões) |

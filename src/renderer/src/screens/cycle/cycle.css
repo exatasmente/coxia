@@ -83,6 +83,20 @@
 .cy-auto-off { background: var(--amber-soft); color: var(--amber-ink); }
 .cy-artifacts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .cy-file { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--field-line); background: var(--surface-2); color: var(--link); font-size: 13px; cursor: pointer; }
+.cy-files { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.cy-file-img { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; }
+.cy-file-img-name { font-size: 13px; font-weight: 600; }
+.cy-file-img-meta { overflow-wrap: anywhere; }
+.cy-file-card { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); min-width: 0; }
+.cy-file-kind { text-transform: none; }
+.cy-file-name { font-size: 13px; overflow-wrap: anywhere; }
+.cy-file-size { white-space: nowrap; }
+.cy-pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cy-pending-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line-3); }
+.cy-pending-name { flex: 1 1 140px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.cy-attach-notice { padding: 8px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); line-height: 1.4; }
+.cy-attach-btn { flex: 0 0 auto; }
+.cy-composer-drag .cy-composer-box { outline: 2px dashed var(--link); outline-offset: 4px; border-radius: 10px; }
 .cy-comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .cy-comment { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line-3); min-width: 0; }
 .cy-comment-row { gap: 8px; }
