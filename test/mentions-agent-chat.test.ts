@@ -286,6 +286,36 @@ describe('the writes an answer proposes', () => {
     expect(systemLine(thread, 'runner.mention.autoWrote')?.params).toMatchObject({ agent: id, what: '#101 — labels +coxia' });
   });
 
+  it('tells an agent that may write labels which label starts the cycle and which are the priority levels', async () => {
+    const c = config();
+    c.runner.triggerLabel = 'coxia';
+    c.devCycle.priority.labels = ['^priority:high$', '^priority:low$', 'p[0-9]'];
+    const id = owner(c).id;
+    const thread = agentThread(c, id);
+    const engine = fakeEngine();
+    engine.script(id, () => ({ text: 'ok', proposals: [] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'prioritize 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, id), propose: proposeMention });
+    const system = engine.calls[0].system;
+    expect(system).toContain(prompt('runner.mention.labels.trigger', { label: 'coxia' }));
+    // Only the levels a priority can be written to: a pattern is a level the app reads, not a label it can put.
+    expect(system).toContain(prompt('runner.mention.labels.priority', { labels: '`priority:high`, `priority:low`' }));
+  });
+
+  it('tells an agent that the workspace has no priority labels, so it does not invent one', async () => {
+    const c = config();
+    c.devCycle.priority.labels = [];
+    const id = owner(c).id;
+    const thread = agentThread(c, id);
+    const engine = fakeEngine();
+    engine.script(id, () => ({ text: 'ok', proposals: [] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'prioritize 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, id), propose: proposeMention });
+    expect(engine.calls[0].system).toContain(prompt('runner.mention.labels.noPriority'));
+  });
+
   it('tells an agent that is not autonomous that every write waits, and the thread says what waits', async () => {
     const c = config();
     const id = owner(c).id;

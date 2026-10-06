@@ -60,7 +60,8 @@ describe('an issue proposed in a mention', () => {
     await b.settle();
     const call = mentionCalls(b, 'planner').at(-1)!;
     expect((call.schema as { properties: Record<string, unknown> }).properties).toHaveProperty('proposals');
-    expect(call.system).toContain('You may propose writes on the code host');
+    // The text that says the agent may write on the code host, whichever its autonomy (an autonomous agent is told which writes go out by themselves).
+    expect(call.system).toMatch(/You may (propose writes|write) on the code host/);
     const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
     expect(proposal).toMatchObject({ state: 'pending', summary: 'a new issue: The release cut stops at the checks' });
     // The proposal names the run it was raised in: the runner keeps telling the thread what became of it.

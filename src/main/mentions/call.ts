@@ -1,4 +1,5 @@
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import { writableLabels } from '../../shared/priority';
 import type { ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { AgentCall } from '../agents';
@@ -116,6 +117,21 @@ const PROPOSAL_SCHEMA = {
 const PROPOSALS_SCHEMA = { type: ['array', 'null'], items: PROPOSAL_SCHEMA };
 
 /** The line that says where the person wrote and what the agent may read there. */
+/**
+ * The labels the workspace gives a meaning to, for an agent that may write labels: the one that starts the agents' cycle on an issue and the priority levels it can
+ * write. Without them the agent can only guess a name, and a guessed label is a write the host takes as it is.
+ */
+function labelsLine(config: WorkspaceConfig): string {
+  const trigger = config.runner.triggerLabel.trim();
+  const levels = writableLabels(config.devCycle.priority.labels);
+  return [
+    trigger ? cp('runner.mention.labels.trigger', { label: trigger }) : '',
+    levels.length ? cp('runner.mention.labels.priority', { labels: levels.map((l) => `\`${l}\``).join(', ') }) : cp('runner.mention.labels.noPriority'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 function placeLine(i: MentionInput): string {
   const repos = (i.repos ?? []).map((r) => r.trim()).filter(Boolean);
   const repoList = repos.length ? repos.join(', ') : cp('runner.mention.place.noRepos');
@@ -138,7 +154,8 @@ export function mentionCall(i: MentionInput): AgentCall {
     placeLine(i),
     i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.proposals ? cp(i.autonomous ? 'runner.mention.proposalsAuto' : 'runner.mention.proposals') : '',
+    i.proposals ? (i.autonomous ? cp('runner.mention.proposalsAuto') : cp('runner.mention.proposals')) : '',
+    i.proposals ? labelsLine(i.config) : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
     agents.persona.trim(),
