@@ -1,12 +1,13 @@
 import type { ForumMessage, ThreadSummary } from '../../shared/forum';
 import { MAX_MENTIONS } from '../../shared/forum';
 import { runAgent } from '../agents';
+import { ATAS } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
-import { getConfig } from '../workspaceConfig';
-import { answerMentions } from './answer';
+import { getConfig, rc } from '../workspaceConfig';
+import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
 
@@ -38,6 +39,14 @@ export function ownerOfThread(summary: ThreadSummary | null): string | null {
 
 export const mentionsModule: Module = () => {
   const forum = forumStore();
+  const deps: MentionDeps = {
+    forum,
+    config: getConfig,
+    engine: (call, commands) => runAgent(call, commands),
+    sandbox,
+    env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
+    propose: proposeMention,
+  };
   forum.subscribe((message) => {
     // A run's thread is the runner's: it is not this module's to answer.
     if (message.thread.startsWith('run-')) return;
@@ -47,20 +56,10 @@ export const mentionsModule: Module = () => {
     const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig());
     if (!place || place.kind === 'run') return;
     const prior = inFlight().get(message.thread) ?? Promise.resolve();
-    // Only readers reach here (an agent set to commands got a throwaway copy): the folder the person works in is the fallback.
+    // An agent set to run commands gets a throwaway copy here; the person's own folder is only the fallback.
     const next = prior
-      .then(() =>
-        answerMentions(place, message, {
-          forum,
-          config: getConfig,
-          engine: (call, commands) => runAgent(call, commands),
-          sandbox,
-          env: () => ({ fallbackCwd: getConfig().projects.roots[0] ?? '' }),
-          propose: proposeMention,
-          // The owner of a direct conversation answers without an `@`: the calls are the ones this module resolved.
-          calls,
-        }).then(() => undefined),
-      )
+      // The owner of a direct conversation answers without an `@`: the calls are the ones this module resolved.
+      .then(() => answerMentions(place, message, { ...deps, calls }).then(() => undefined))
       .catch(() => undefined);
     inFlight().set(message.thread, next);
     void next.finally(() => {

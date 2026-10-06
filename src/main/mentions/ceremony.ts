@@ -1,6 +1,7 @@
 import type { AgentDef } from '../../shared/config/types';
 import { MAX_MENTIONS, parseMentions, type Author, type ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
+import { partialHint } from '../../shared/partial';
 import { runAgent } from '../agents';
 import { text as cycleWord } from '../cyclePrompts';
 import { getConfig } from '../workspaceConfig';
@@ -69,7 +70,7 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
       const r = await runAgent<{ text?: unknown }>(call, []);
       const said = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!said) throw new Error(t('main.runner.error.empty-answer'));
-      out.push({ agent: id, name, text: said, speech: said });
+      out.push({ agent: id, name, text: r.partial ? `${said}\n\n${partialHint()}` : said, speech: said });
     } catch (e) {
       const reason = (e instanceof Error ? e.message : String(e)).slice(0, 300);
       out.push({ agent: id, name, text: t('main.mentions.ceremony.failed', { agent: name, reason }), speech: t('main.mentions.ceremony.failed', { agent: name, reason }) });

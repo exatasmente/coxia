@@ -35,6 +35,9 @@ import { warmLoginPath } from './loginPath';
 
 installProcessHandlers();
 
+// Mitigate blank/black repaints reported on Windows by using Electron's software-rendering path.
+if (process.platform === 'win32') app.disableHardwareAcceleration();
+
 // Autostart launches with --hidden: the app starts in the tray only.
 const HIDDEN = process.argv.includes('--hidden');
 

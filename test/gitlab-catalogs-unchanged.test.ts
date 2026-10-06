@@ -106,6 +106,16 @@ const INTENDED: Record<string, Intended> = {
       ['paired devices, the glossary and the conflict verification commands.', 'paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification).'],
     ],
   },
+  'ui.webAccess.effects.hint': {
+    reason: 'a paired browser may start a release when this switch is on, so the switch says it',
+    language: 'both',
+    replace: [
+      ['Approve release and GitLab actions', 'Start a release, and approve release and GitLab actions'],
+      ['When off, only the app window approves.', 'When off, only the app window does.'],
+      ['Aprovar ações de release e de GitLab', 'Iniciar uma release e aprovar ações de release e de GitLab'],
+      ['Desligado, só a janela do app aprova.', 'Desligado, só a janela do app faz isso.'],
+    ],
+  },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 

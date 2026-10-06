@@ -29,7 +29,7 @@ import { workspaces } from './workspaces';
 import type { Module } from './module';
 
 // Feature modules register here, one per line. Keep this list sorted.
-export const MODULES: Module[] = [
+const ALL: Module[] = [
   agentPrep,
   auditoria,
   autostart,
@@ -45,6 +45,7 @@ export const MODULES: Module[] = [
   forumModule,
   gitlabQuick,
   glossary,
+  mentionsModule,
   minutes,
   radar,
   retention,
@@ -58,3 +59,12 @@ export const MODULES: Module[] = [
   wizard,
   workspaces,
 ];
+
+/**
+ * Everything the app registers, and the one list a check can read. A module that is written but missing here is never registered: its channels and its
+ * subscriptions do not exist when the app runs, whatever its own file says (the mentions of a forum thread that is not a run's live or die here).
+ */
+export const moduleList = (): Module[] => ALL;
+
+/** The same list, as the app uses it. */
+export const MODULES: Module[] = moduleList();

@@ -51,10 +51,10 @@ Só o AppImage se atualiza assim, e, como no resto desta página, só há atuali
 |---|---|
 | Linux AppImage | suportado e testado de ponta a ponta (abaixo) |
 | Linux `.deb` | sem atualização automática; use `apt`/`dpkg` |
-| Windows (NSIS) | **ligado, não testado, exige assinatura de código**: sem ela o Windows avisa e a atualização pode ser bloqueada. Não há assinatura configurada |
+| Windows (NSIS) | **publicado em toda release, execução não validada, sem assinatura**: `coxia-setup-<versão>.exe` e o feed do canal (`latest.yml`, ou `beta.yml` numa beta) vão no mesmo release do Linux; sem assinatura o Windows exibe avisos e a atualização pode ser bloqueada. Não há assinatura configurada |
 | macOS (dmg + zip) | **ligado, não testado, exige assinatura e notarização**: o atualizador do macOS recusa builds sem assinatura. Não há assinatura configurada |
 
-Windows e macOS não fazem parte de `npm run dist`; os blocos `win` e `mac` de `electron-builder.yml` só existem para o dia em que houver certificados.
+O job `Windows NSIS package` da CI empacota um instalador sem assinatura em pushes e pull requests direcionados a `main` ou `release/**` e o publica como artefato temporário por sete dias; isso verifica o build, não a execução visual no Windows. O workflow de release constrói o instalador do Windows em toda tag e o anexa ao mesmo rascunho do Linux. Windows e macOS continuam fora de `npm run dist`; o macOS ainda é experimental e só é anexado quando a opção `experimental_platforms` é ativada no workflow de release.
 
 ### Código-fonte
 
@@ -153,10 +153,10 @@ Only the AppImage updates this way and, as on the rest of this page, others only
 |---|---|
 | Linux AppImage | supported and tested end to end (below) |
 | Linux `.deb` | no automatic update; use `apt`/`dpkg` |
-| Windows (NSIS) | **wired, untested, requires code signing**: without it Windows warns and the update may be blocked. No signing is set up |
+| Windows (NSIS) | **published with every release, runtime not verified, unsigned**: `coxia-setup-<version>.exe` and the channel's feed (`latest.yml`, or `beta.yml` for a beta) go into the same release as Linux; without signing Windows warns and updates may be blocked. No signing is set up |
 | macOS (dmg + zip) | **wired, untested, requires code signing and notarization**: the macOS updater refuses unsigned builds. No signing is set up |
 
-Windows and macOS are not part of `npm run dist`; the `win` and `mac` blocks in `electron-builder.yml` are there for the day there are certificates.
+The `Windows NSIS package` CI job builds an unsigned installer on pushes and pull requests targeting `main` or `release/**` and keeps it as a workflow artifact for seven days; this verifies packaging, not visual runtime behavior on Windows. The release workflow builds the Windows installer for every tag and attaches it to the same draft as Linux. Windows and macOS remain outside `npm run dist`; macOS is still experimental and is attached only when `experimental_platforms` is enabled in the release workflow.
 
 ### Source tree
 

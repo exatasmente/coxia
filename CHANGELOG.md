@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
+
+## [0.6.1] - 2026-10-05
+
+### Changed
+
+- **A release can be started from the paired phone.** *Start a release* was left out of the phone's runs screen, and the phone was refused even when it asked. It now shows there whenever the workspace has the release flow, and the phone may start a release when *Allow actions with external effects from the browser* is on (Settings › Browser access), the same switch that lets it approve a proposal; with the switch off, the field says why it was refused. Each push of the release still waits for a "yes" in Actions.
+
+### Fixed
+
+- **An agent called with `@`, asked in the chain or asked by another squad no longer fails when it runs out of steps.** These calls used a fixed limit of 20 steps and, when an agent spent them all reading (a shell exploring the code, say), the thread only said it could not answer. They now use the same limit as the runner's read-only stages (*steps of an agent that only reads*, Settings › Runner), and when it runs out the agent is resumed once, with no tool, to answer with what it has read; the thread says the answer may be incomplete. If that also fails, the failure message stays, with the reason. A stage that runs out of steps still fails.
+- **`@agent` gets an answer outside a run's thread.** 0.6.0 promised that naming an agent with `@` in the general conversation, a squad's channel, the channel the squads share or a conversation you opened would get its answer there, but the part of the app that answers those mentions was never switched on: the message showed who it called and nothing came back, not even a failure. It now answers there, read only, as in a run's thread.
+
 ## [0.6.0] - 2026-10-04
 
 ### Added
@@ -192,7 +207,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2

@@ -947,6 +947,7 @@
   "main.runner.qa.reason.output": "ele disse: {line}",
   "main.runner.qa.reason.unknown": "uma ferramenta de que ele precisa não foi encontrada ou não pode ser executada",
   "main.forum.code.runner.mentionFailed": "{agent} não conseguiu responder: {reason}",
+  "main.forum.code.runner.partial": "{agent} ficou sem passos e respondeu com o que já tinha lido: a resposta pode estar incompleta.",
   "main.ceremonyCommand.notice.title": "{agent} quer rodar um comando",
   "main.ceremonyCommand.write": "um comando que escreve no host de código",
   "main.forum.code.main.forum.mentions.unknown": "Nenhum agente do time se chama {names}.",
