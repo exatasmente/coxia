@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
@@ -10,7 +10,8 @@ import type { AgentCall } from '../agents';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
-import { copyTree } from '../sandbox/copy';
+import { copyTracked } from '../sandbox/copy';
+import { dependencyFolders } from '../runner/dependencies';
 import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
@@ -122,12 +123,12 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     const abort = new AbortController();
     const watch = watchdog(abort, limitsOf(config));
     let session: SandboxSession | null = null;
-    let source: { cwd: string; made: boolean; reader: boolean } | null = null;
+    let source: { cwd: string; made: boolean; reader: boolean; clone?: string } | null = null;
     // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
     let ran = false;
     try {
       if (wantsCommands) {
-        source = await shellSourceOf(place, def, message.seq, abort.signal);
+        source = await shellSourceOf(place, def, message.seq, abort.signal, config.runner.sandbox.limits.copyMb * 1024 * 1024);
         if (!source) {
           deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: t('main.mentions.noRepo') }, stage });
         } else {
@@ -214,22 +215,30 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
  * under the workspace's data (the one repository itself in a folder, or one subfolder per repository), which the caller removes when the answer ends. `null`
  * when the place has no repository on disk (a ceremony, or a place with none): the agent answers without commands and the thread says why.
  */
-async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, signal: AbortSignal): Promise<{ cwd: string; made: boolean; reader: boolean } | null> {
+async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, signal: AbortSignal, maxBytes: number): Promise<{ cwd: string; made: boolean; reader: boolean; clone?: string } | null> {
   if (place.kind === 'run' && place.run && existsSync(place.run.worktree)) return { cwd: place.run.worktree, made: false, reader: true };
   const repos = reposOnDisk(place);
   if (!repos.length) return null;
   const dir = draftDir(place.thread, seq, def.id);
   mkdirSync(dir, { recursive: true });
-  // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all.
-  for (const repo of repos) await copyTree(repo.path, repos.length === 1 ? dir : join(dir, repo.id), 1024 * 1024 * 1024, signal);
-  return { cwd: dir, made: true, reader: false };
+  // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all. Only what git knows is copied, as a
+  // run's worktree holds it: what a person built or installed (dist, node_modules) is not code, and can weigh gigabytes.
+  for (const repo of repos) await copyTracked(repo.path, repos.length === 1 ? dir : join(dir, repo.id), maxBytes, signal);
+  if (repos.length !== 1) return { cwd: dir, made: true, reader: false };
+  // As in a run's worktree, the clone's dependencies come by link (the sandbox binds them read-only), so the agent can run the repository's own tests.
+  for (const rel of dependencyFolders(repos[0].path)) {
+    if (existsSync(join(dir, rel))) continue;
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    symlinkSync(join(repos[0].path, rel), join(dir, rel));
+  }
+  return { cwd: dir, made: true, reader: false, clone: repos[0].path };
 }
 
 /**
  * Opens the session an agent's commands run in, over the throwaway folder `cwd` (already a copy), read only: a sandbox of this computer, or a host session. A host
  * session keeps the same limit as a run's thread: every command waits for the person, and without the app to ask it is refused, never run unattended.
  */
-function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean }, thread: string, signal: AbortSignal, pause: () => () => void): Promise<SandboxSession> {
+function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean; clone?: string }, thread: string, signal: AbortSignal, pause: () => () => void): Promise<SandboxSession> {
   const sandbox = deps.sandbox;
   if (!sandbox) return Promise.reject(new Error(t('main.mentions.noRepo')));
   const config = deps.config();
@@ -258,6 +267,6 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
     }
   };
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal, ...(source.clone ? { clone: source.clone } : {}) });
 }
 

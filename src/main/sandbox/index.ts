@@ -50,6 +50,11 @@ export interface OpenOptions {
   signal?: AbortSignal;
   /** The stage asks for a virtual display (a QA stage); it is started only when the workspace's `display` switch is on too. */
   display?: boolean;
+  /**
+   * The repository a tree that is not a git worktree was copied from (a mention's throwaway copy): its dependency links lead there, and are bound read-only like a
+   * worktree's. Ignored when the tree is a worktree, whose clone git names.
+   */
+  clone?: string;
 }
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders. */
@@ -205,7 +210,8 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           await copyTree(worktree, tree, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
         }
         const git = gitMounts(worktree, tree ?? worktree, stageDir);
-        const deps = git.clone ? dependencyBinds(tree ?? worktree, worktree, git.clone) : { binds: [], outside: [] };
+        const clone = git.clone ?? opts.clone ?? null;
+        const deps = clone ? dependencyBinds(tree ?? worktree, worktree, clone) : { binds: [], outside: [] };
         for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
         const registry = opts.config.network === 'registry';
         if (registry) {

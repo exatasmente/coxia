@@ -1,6 +1,7 @@
 // Where an agent named in a channel runs its commands: over a throwaway copy of the place's repositories (one repository itself, or one folder holding a copy of
 // each), and no session at all where the place has no repository.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -54,6 +55,26 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened[0].options.reader).toBe(false);
     expect(existsSync(dirs[0])).toBe(false);
     expect(sandbox.opened[0].session.closed).toBe(true);
+  });
+
+  it('copies only what git knows of a repository, and lends it the clone\'s dependencies read-only through the sandbox', async () => {
+    const r = repo('web');
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: r.path });
+    writeFileSync(join(r.path, '.gitignore'), 'node_modules/\ndist/\n');
+    mkdirSync(join(r.path, 'node_modules/dep'), { recursive: true });
+    writeFileSync(join(r.path, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
+    mkdirSync(join(r.path, 'dist'));
+    writeFileSync(join(r.path, 'dist/huge.bin'), 'x');
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const seen: { readme: boolean; dist: boolean; deps: string | null }[] = [];
+    engine.script('turn', (call) => {
+      seen.push({ readme: existsSync(join(call.cwd, 'README.md')), dist: existsSync(join(call.cwd, 'dist')), deps: lstatSync(join(call.cwd, 'node_modules')).isSymbolicLink() ? readlinkSync(join(call.cwd, 'node_modules')) : null });
+      return { text: 'Read.' };
+    });
+    await answerMentions(place([r]), message(), { forum, config: () => config('sandbox'), engine, sandbox, env: () => ({ fallbackCwd: root }) });
+    expect(seen).toEqual([{ readme: true, dist: false, deps: join(r.path, 'node_modules') }]);
+    expect(sandbox.opened[0].options.clone).toBe(r.path);
   });
 
   it('gives several repositories one folder holding a copy of each', async () => {
