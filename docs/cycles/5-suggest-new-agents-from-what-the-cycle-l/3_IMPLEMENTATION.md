@@ -1,68 +1,74 @@
-# O caminho "Editar" volta a abrir o editor preenchido
+# O cartão da sugestão mostra só os caminhos que funcionam em cada tela, e a forma do arquivo de ações volta ao padrão
 
 ## O que mudou para quem usa
 
-No cartão da sugestão em **Ações**, o botão **Editar** volta a funcionar: ele abre o editor de agente
-em **Configurações › Time** já preenchido com o nome, o papel, a etapa e o rascunho de prompt que a
-sugestão propunha, e salvar cria o agente. Antes desta passada o pedido de edição era entregue e
-apagado na mesma passada, de modo que o painel nunca recebia o rascunho e o editor não abria.
+Duas correções pequenas, nenhuma de comportamento essencial:
 
-Sair da aba Team e voltar também deixou de reabrir o editor com um rascunho que ninguém pediu de novo:
-o pedido vale uma vez. O comportamento dos outros dois caminhos — aceitar cria um agente comum somente
-leitura, recusar guarda o motivo e a impressão — não mudou.
+- **O cartão da sugestão num navegador pareado deixa de oferecer caminhos que ali não funcionam.**
+  Antes, quem abria o cartão em Ações pelo navegador via os botões **Editar** e **Recusar**, e os
+  dois davam em nada: o editor de agente só existe na janela do aplicativo e os canais de recusa e
+  de registro da edição são restritos à janela. Agora o navegador pareado mostra somente o botão
+  **Aceitar**; na janela do aplicativo os três caminhos continuam iguais. É o mesmo cuidado que já
+  existia com o botão do time.
+
+- **A forma do arquivo de ações voltou ao padrão do resto do arquivo.** Não muda comportamento
+  nenhum; é só arrumação (uma linha em branco a mais e uma linha colada à declaração de função).
 
 ## O que mudou nesta passada
 
-- O pedido de edição que o cartão envia para Configurações › Time passou a ser lido como **um único
-  estado** (a aba, o squad e o rascunho), em vez de o rascunho ser gravado e apagado em seguida. É o que
-  faz o rascunho chegar ao painel de agente.
-- Ao trocar de aba dentro de Configurações › Time, o rascunho pendente é limpo; voltar para a aba Team
-  não reabre o editor com um pedido já consumido.
-- O painel de agente já guardava, por referência, qual pedido tratou; isso continua sendo o que evita
-  que uma re-renderização por outro motivo reabra o editor.
+- O cartão da sugestão passou a consultar se a sessão é a de um navegador pareado antes de desenhar
+  os botões; quando é, só o caminho de aceitar aparece.
+- A formatação do entorno do ramo de aceite em `src/main/actions.ts` foi arrumada.
+- A restrição do navegador ganhou um teste próprio que a fixa.
 
 ## O que foi verificado nesta etapa
 
 Nesta árvore, com os comandos do repositório:
 
 - `npx tsc --noEmit` — sem erro.
-- `npx vitest run` — a suíte inteira: 215 arquivos, 3569 testes, todos verdes. O arquivo novo é
-  `test/team-suggestion-edit.test.ts`, com cinco testes que cobrem o caminho "Editar".
+- `npx vitest run test/suggestion-card-web.test.ts` — dois testes, verdes: no navegador pareado só o
+  botão **Aceitar** aparece (e nem o campo de motivo da recusa); na janela do aplicativo os três
+  caminhos aparecem. O teste foi rodado com a restrição desfeita de propósito e falha, e com a
+  correção passa — é a prova de que ele guarda o comportamento.
+- `npx vitest run` — a suíte inteira: 216 arquivos, 3571 testes. Em algumas execuções a suíte
+  apresenta falhas intermitentes de tempo em `test/conflict-resolve.test.ts` (testes que disputam
+  relógio e processos); as mesmas falhas ocorrem na árvore **sem** estas mudanças, então não são
+  desta passada. Numa execução limpa, tudo passa.
 - `node scripts/theme-audit.mjs` — sem cor literal nova (as oito ocorrências apontadas são as já
   existentes em `api.ts`).
-- `npm run i18n:lint` — 4031 chaves nos dois idiomas, nenhum texto solto e paridade entre os catálogos.
-  Esta passada não introduziu string de interface nova, então nenhuma chave mudou.
-- `node scripts/public-audit.mjs` — 865 arquivos, nada que pertença a empresa ou pessoa.
+- `npm run i18n:lint` — 4031 chaves nos dois idiomas, nenhum texto solto e paridade entre os
+  catálogos. Esta passada não introduziu string de interface nova, então nenhuma chave mudou.
+- `node scripts/public-audit.mjs` — 867 arquivos, nada que pertença a empresa ou pessoa.
 - `npx electron-vite build` — o build do CI conclui.
-
-Como o defeito foi conferido: o teste novo foi rodado com o defeito reintroduzido de propósito (a
-gravação do rascunho seguida da limpeza, na mesma passada) e falha; com a correção, passa. O restante
-já era coberto pelos testes das passadas anteriores (a leitura das fontes, o limiar, o registro, o
-bloqueio da recusa, o gancho do fim da retro).
 
 ## O que não foi verificado
 
-- O caminho "Editar" **aberto no aplicativo**, de ponta a ponta, com um clique real: foi conferido por
-  tipos, pelo teste do estado que o pedido produz e por leitura do código; a suíte roda sem navegador,
-  então a tela não foi renderizada.
+- O cartão **aberto no navegador pareado** por um clique real: foi conferido por render estático do
+  componente, que não exercita a tela nem o navegador de verdade.
+- Os caminhos **Editar** e **Aceitar** no aplicativo, de ponta a ponta, com clique real: seguem como
+  nas passadas anteriores, conferidos por teste e leitura do código.
 - O comportamento do **modelo real** ao montar a sugestão; os testes usam um modelo simulado.
 - O **volume real** do histórico e o acerto do **limiar** medido em uso.
-- A **renderização do cartão** numa tela de verdade.
 
 ## Onde cada peça ficou
 
-- `src/renderer/src/screens/team/teamNav.ts` — `viewOfRequest`, a função pura que dá o estado inteiro
-  que um pedido de navegação produz (aba, squad e rascunho), para o rascunho não poder ser anulado por
-  uma segunda escrita na mesma passada.
-- `src/renderer/src/screens/team/TeamSettings.tsx` — o efeito do pedido grava esse estado uma vez; a
-  troca de aba limpa o rascunho pendente.
-- `test/team-suggestion-edit.test.ts` — o caminho "Editar": o pedido leva o rascunho ao estado, o
-  rascunho não é cancelado, o pedido é consumido uma vez, um pedido de fluxo não traz rascunho, e o
-  efeito da seção escreve o estado uma só vez.
+- `src/renderer/src/screens/SuggestionCard.tsx` — o cartão consulta `isWeb()` e desenha o caminho de
+  aceitar sozinho quando a sessão é de navegador pareado.
+- `src/main/actions.ts` — formatação do entorno de `suggestionHooks`/`conflictOf` arrumada; sem
+  mudança de comportamento.
+- `test/suggestion-card-web.test.ts` — o teste novo, que renderiza o cartão nos dois modos e fixa o
+  que cada tela oferece.
 
 ## Fronteiras respeitadas
 
-Nada além do caminho "Editar" foi tocado: a etapa proposta segue sendo uma etapa existente, o aceite
+Nada além das duas correções foi tocado: a etapa proposta segue sendo uma etapa existente, o aceite
 continua criando o agente comum somente leitura sem abrir o editor, a recusa segue guardando a
 impressão, os canais de decisão seguem restritos à janela e o registro segue nos dados do espaço de
 trabalho, fora do repositório.
+
+## Pontos da revisão não tratados nesta passada
+
+- **O aceite continua acessível pelo canal de aprovação que o navegador pareado pode usar** (com os
+  efeitos externos liberados). Não foi tratado aqui: mudar isso mexeria no canal de aprovação, que
+  serve todas as propostas, e a decisão de restringir o aceite da sugestão — que cria um agente
+  local, não uma escrita no host — é de quem fecha o ciclo. Segue como sugestão, não bloqueante.

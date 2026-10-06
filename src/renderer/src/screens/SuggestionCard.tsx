@@ -4,11 +4,13 @@ import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { useT } from '../i18n';
+import { isWeb } from '../platform';
 import { blankAgent, slugOf, type AgentDraft } from './team/agentEdit';
 import { openAgentDraft } from './team/teamNav';
 
 // The three paths of a suggestion the cycle raised: accept creates an ordinary agent in the team; edit opens the agent editor in Settings › Team
 // already filled in with it (saving it is what creates the agent); reject keeps the (optional) reason in the record. Nothing is applied silently.
+// Edit and reject act on the desktop machine (the editor that saves the agent, the record's channel), so a paired browser is offered only accept.
 
 export const isSuggestion = (a: ReleaseAction): boolean => a.kind === 'suggest-agent';
 
@@ -20,6 +22,7 @@ export function SuggestionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) =>
   const [reason, setReason] = useState('');
   const open = a.state === 'pending' || a.state === 'failed';
   const suggestion = suggestionOf(a);
+  const web = isWeb();
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -56,17 +59,21 @@ export function SuggestionCard({ a, go }: { a: ReleaseAction; go: (s: Screen) =>
           <button type="button" className="btn btn-dark" disabled={!!busy} onClick={() => run('accept', () => api.approveAction(a.id))}>
             {busy === 'accept' ? <span className="spinner" /> : null} {t('ui.actions.suggest.accept')}
           </button>
-          <button type="button" className="btn" disabled={!!busy} onClick={edit}>{t('ui.actions.suggest.edit')}</button>
-          {rejecting ? (
+          {!web && (
             <>
-              <input className="text-input" style={{ maxWidth: 320 }} placeholder={t('ui.actions.suggest.reasonPlaceholder')} value={reason} onChange={(e) => setReason(e.target.value)} />
-              <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => void run('reject', () => api.invoke('suggestions:reject', suggestion.suggestionId, reason.trim() || null))}>
-                {busy === 'reject' ? <span className="spinner" /> : null} {t('ui.actions.suggest.rejectConfirm')}
-              </button>
-              <button type="button" className="btn" disabled={!!busy} onClick={() => setRejecting(false)}>{t('ui.actions.cancel')}</button>
+              <button type="button" className="btn" disabled={!!busy} onClick={edit}>{t('ui.actions.suggest.edit')}</button>
+              {rejecting ? (
+                <>
+                  <input className="text-input" style={{ maxWidth: 320 }} placeholder={t('ui.actions.suggest.reasonPlaceholder')} value={reason} onChange={(e) => setReason(e.target.value)} />
+                  <button type="button" className="btn btn-red" disabled={!!busy} onClick={() => void run('reject', () => api.invoke('suggestions:reject', suggestion.suggestionId, reason.trim() || null))}>
+                    {busy === 'reject' ? <span className="spinner" /> : null} {t('ui.actions.suggest.rejectConfirm')}
+                  </button>
+                  <button type="button" className="btn" disabled={!!busy} onClick={() => setRejecting(false)}>{t('ui.actions.cancel')}</button>
+                </>
+              ) : (
+                <button type="button" className="btn" disabled={!!busy} onClick={() => setRejecting(true)}>{t('ui.actions.suggest.reject')}</button>
+              )}
             </>
-          ) : (
-            <button type="button" className="btn" disabled={!!busy} onClick={() => setRejecting(true)}>{t('ui.actions.suggest.reject')}</button>
           )}
         </div>
       )}

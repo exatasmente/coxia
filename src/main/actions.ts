@@ -619,8 +619,8 @@ export const conflictHooks: {
 // and the module keeps the record. A test that approves one without the module registered gets a clear failure rather than a silent no-op.
 export const suggestionHooks: { accept: ((action: ReleaseAction) => { output: string; agentId: string }) | null } = { accept: null };
 
-
-function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {  const a = read().actions.find((x) => x.id === id);
+function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {
+  const a = read().actions.find((x) => x.id === id);
   if (!a || a.kind !== 'conflict') throw new Error(t('main.actions.conflictMissing', { id }));
   return { a, r: a.resolve ?? null };
 }
