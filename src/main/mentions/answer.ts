@@ -4,6 +4,7 @@ import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
+import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { ATAS } from '../env';
@@ -153,7 +154,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');
       ran = true;
-      const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : `mention:${place.thread}`, () => deps.engine(call, [])));
+      const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : mentionJob(place.thread), () => deps.engine(call, [])));
       const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });

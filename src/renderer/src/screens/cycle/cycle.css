@@ -140,6 +140,10 @@
 .cy-msg-person .faint, .cy-msg-person .cy-msg-time { color: var(--blue-ink); opacity: 0.8; }
 .cy-msg-system { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 8px; border: 0; background: transparent; }
 .cy-msg-system-text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.cy-cmds { display: block; }
+.cy-cmds-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; cursor: pointer; }
+.cy-cmds-head::marker { color: var(--muted); }
+.cy-cmds .cy-msgs-inner { margin: 4px 0 0 14px; }
 /* A call a message made to an agent, still going: a quiet line under the message, not a message of its own. */
 .cy-call { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
 .cy-call-agent { color: var(--ink); font-weight: 600; }

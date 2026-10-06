@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **The command notices fit their box.** The notice that asks to run a command (in a ceremony, or in a run on this computer) carried the whole rule in its *Always allow* button, and a button never wrapped: a long command pushed the button, the command and the note field past the notice's edge. The buttons and the agent's name now wrap inside the notice, the command scrolls on its own, and on a narrow screen each button takes the whole width.
+- **Every conversation shows what a called agent is doing, and folds its commands.** The general conversation, the channels and an agent's direct conversation now show, under the message that called an agent, the same live line as a run's thread: working (or waiting its turn), then the step it is on, until its answer arrives. In every thread, the commands an agent ran one after the other, with the asks and your answers, fold into one line (*developer ran 4 commands*) that opens to show each command and its output; it opens by itself while a command waits for you.
 
 ## [0.7.0-beta.3] - 2026-10-06
 
