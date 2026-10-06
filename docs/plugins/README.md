@@ -112,7 +112,14 @@ Só um plugin em JavaScript declara **configurações** e **requisições**:
   método, destino e caminho, faz a chamada fora da sandbox (por isso alcança a instância
   local que a pessoa configurou), tira a chave da resposta e a mascara. Funciona por
   **repetição**: até 3 rodadas, 5 pedidos por rodada; peça as mesmas coisas na mesma
-  ordem a cada rodada.
+  ordem a cada rodada. Pedidos com `await` um depois do outro gastam uma rodada cada
+  (no máximo dois antes da última); peça juntos (`Promise.all`) o que não depende um do
+  outro.
+- Uma requisição declarada com endereço fixo só vai a um nome público (nunca
+  `localhost`, um endereço IP ou um nome local), conferido no endereço da conexão; só uma
+  configuração de URL preenchida pela pessoa leva a um endereço local. Só `GET` é
+  leitura; outro método tem de ser declarado `"write": true`.
+- Exemplo em JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` pede uma escrita declarada, que segue o contrato de permissão depois
   que o plugin termina.
 - Leituras precisam da permissão de rede do plugin; escritas, da de escrita. Tudo o que o
@@ -216,7 +223,13 @@ Only a JavaScript plugin declares **settings** and **requests** (see the example
   destination and path, makes the call outside the sandbox (so it reaches the local
   instance the person set), takes the key out of the response and masks it. It works by
   **replay**: up to 3 rounds, 5 requests per round; ask the same things in the same order
-  every round.
+  every round. Requests awaited one after the other spend a round each (two at most
+  before the last); ask together (`Promise.all`) what does not depend on each other.
+- A request declared with a fixed address only goes to a public host name (never
+  `localhost`, an IP address or a local name), checked on the address connected to; only a
+  URL setting the person filled in leads to a local address. Only `GET` is a read; any
+  other method has to be declared `"write": true`.
+- Example in JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` asks for a declared write, which follows the permission contract once
   the plugin ends.
 - Reads need the plugin's network permission; writes, its write permission. Everything the

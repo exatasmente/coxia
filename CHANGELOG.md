@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins in JavaScript, with settings and requests the app makes for them.** A plugin whose entry is an `.mjs` module runs in the stage sandbox through the app's own runtime (nothing to install) and gets a typed context (`docs/plugins/kit/coxia-plugin.d.ts`). It may declare settings the person fills in the plugin list — a URL, a text or a key; a key goes to the secrets store and never reaches the plugin — and requests the app makes for it, outside the sandbox, to a declared address or to one the person set (a local instance included), with the key put in by the app. Reads need the plugin's network permission; writes follow the same permission contract as a plugin's write. Every call is in the audit log, without the key and without the body. A declared address only reaches a public host name, checked on the address connected to; only an address you set reaches a local one; only a GET is a read. An "always" now holds for what the plugin declared when it was given: if the declaration changes, the plugin asks again (one given in an earlier beta asks once more). Configuration schema 15.
+
 ## [0.7.0-beta.7] - 2026-10-06
 
 ### Added
-
-- **Plugins in JavaScript, with settings and requests the app makes for them.** A plugin whose entry is an `.mjs` module runs in the stage sandbox through the app's own runtime (nothing to install) and gets a typed context (`docs/plugins/kit/coxia-plugin.d.ts`). It may declare settings the person fills in the plugin list — a URL, a text or a key; a key goes to the secrets store and never reaches the plugin — and requests the app makes for it, outside the sandbox, to a declared address or to one the person set (a local instance included), with the key put in by the app. Reads need the plugin's network permission; writes follow the same permission contract as a plugin's write. Every call is in the audit log, without the key and without the body.
 
 - **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 14 adds the `plugins` section; a workspace without plugins behaves as before.
 
