@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0-beta.9] - 2026-10-06
+
 ### Fixed
 
 - **The push a run proposes after the implementation goes out while the review works.** Since the push moved to the end of the implementation, saying yes to it while the next stage (the review) was still working failed with *the worktree has changes that are not committed*: that stage writes the conversation's handovers into the cycle memory as it starts and commits them when it ends. The push now sends what is committed and leaves the memory for that stage's commit; any other change that is not committed still stops it.
@@ -289,7 +291,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.8...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.9...HEAD
+[0.7.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.8...v0.7.0-beta.9
 [0.7.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.7...v0.7.0-beta.8
 [0.7.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...v0.7.0-beta.7
 [0.7.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...v0.7.0-beta.6
