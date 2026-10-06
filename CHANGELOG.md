@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pull request opens after the implementation, so the review lands on it.** The push waited for the last stage whose agent changes the branch; in a flow where QA also writes (tests, its documents), that was QA, so the review ran with no pull request and went to the issue, and asking the developer for the pull request got nowhere. The push is now proposed at the end of the last stage before the review that changes the branch, and the pull request after it, as before each waiting for your yes. Every later stage that changes the branch (QA, the implementation a review sent back to) proposes a new push, which only updates the pull request.
+- **An autonomous agent knows its comments and labels go out at once, and the thread says what it wrote.** Called with `@`, an autonomous agent was told that every write it proposed would wait for your yes, while a comment and a label change in fact went out as it answered: it could post a whole draft as a public comment and then say it had proposed nothing. It is now told which writes go out by themselves (a comment, a label) and which wait in Actions (a status, closing an issue, a new issue), and to write a comment only when the issue should carry it as it is. The line under the answer names the write and its issue (*wrote on the tracker by itself: #12 — labels +P1*, *proposed #12 — close*), which outside a run said neither.
+- **An agent asked to label an issue knows the workspace's labels.** An agent called with `@` that may write labels is now told which label starts the agents' cycle on an issue (`runner.triggerLabel`) and the priority labels it can write (Settings › Cycle › Priority, highest first), or that the workspace has none, so it neither guesses a name nor stops to ask for one.
+
 ## [0.7.0-beta.3] - 2026-10-06
 
 ### Fixed

@@ -146,6 +146,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         place: place.kind === 'run' ? 'run' : place.kind,
         shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined,
         proposals: mayPropose(def, deps, place),
+        autonomous: autonomyOf(config, def),
       });
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
@@ -174,6 +175,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
   return out;
 }
 
+/** Whether the agent is autonomous now: the team's current entry, which a change in Settings updates, before the definition the call started with. */
+const autonomyOf = (config: WorkspaceConfig, def: AgentDef): boolean => config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+
 /**
  * The writes an answer raised, offered wherever the place proposes them: every place plans each write with the provider and puts it in Actions (or lets a low-risk one
  * out when the agent is autonomous), a run's thread included, whose target is its issue. A host with no such operation and a write that could not be planned are said in
@@ -183,7 +187,7 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
   if (!writes.length || !deps.propose) return;
   const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
   const config = deps.config();
-  const autonomous = config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+  const autonomous = autonomyOf(config, def);
   // A run's thread registers its proposals on the run's issue and names the run, so the runner keeps reporting what became of them; any other place registers on
   // the workspace's issue project, which every write of the app registers under.
   const run = place.kind === 'run' ? place.run : null;
@@ -194,8 +198,8 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
   for (const o of outcomes) {
     if (o.status === 'unsupported') line('runner.mention.unsupported', { agent, op: o.op, reason: o.reason });
     else if (o.status === 'failed') line('runner.mention.proposalFailed', { agent, reason: o.reason });
-    else if (o.status === 'auto') line('runner.mention.autoWrote', { agent });
-    else line('runner.mention.proposed', { agent, count: o.count });
+    else if (o.status === 'auto') line('runner.mention.autoWrote', { agent, what: o.summary });
+    else line('runner.mention.proposed', { agent, count: o.count, what: o.summary });
   }
 }
 
