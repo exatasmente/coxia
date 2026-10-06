@@ -257,9 +257,10 @@ describe('the stage that changes code', () => {
   it('is not given that instruction in a repository without .coxia, which is asked nothing at all', async () => {
     const { run, seen } = await runIn(makeRepo(), null);
     expect(run.status).toBe('done');
-    expect(seen.developer[0].system).not.toContain('.coxia');
+    // The base sentence now names the folder; what a repository without it must not get is the instruction to keep it true.
+    expect(seen.developer[0].system).not.toContain('keeps its documentation');
     expect(seen.developer[0].section).toBe('');
-    expect(seen.reviewer[0].system).not.toContain('.coxia');
+    expect(seen.reviewer[0].system).not.toContain('keeps its documentation');
     expect(seen.reviewer[0].prompt).not.toContain('project documentation');
     expect(seen.reviewer[0].prompt).not.toContain('left behind');
   });
