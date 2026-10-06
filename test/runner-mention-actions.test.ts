@@ -63,6 +63,8 @@ describe('an issue proposed in a mention', () => {
     expect(call.system).toContain('You may propose writes on the code host');
     const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
     expect(proposal).toMatchObject({ state: 'pending', summary: 'a new issue: The release cut stops at the checks' });
+    // The proposal names the run it was raised in: the runner keeps telling the thread what became of it.
+    expect(proposal?.unit).toMatchObject({ runId: run.id, agent: 'planner' });
     // Nothing exists on the host before the person's yes.
     expect([...forge.issues.values()].some((i) => i.title === 'The release cut stops at the checks')).toBe(false);
     expect(b.thread(run).find((m) => m.code === 'runner.mention.proposed')?.params).toMatchObject({ agent: 'planner', count: 1 });
@@ -70,6 +72,24 @@ describe('an issue proposed in a mention', () => {
     await b.settle();
     const made = [...forge.issues.values()].find((i) => i.title === 'The release cut stops at the checks');
     expect(made).toMatchObject({ body: '## What happens\n\nTwo tests fail.', labels: ['bug'] });
+    // The write went out: the run's thread says so, instead of the proposal being answered in silence.
+    expect(b.thread(run).find((m) => m.code === 'runner.mention.writeDone')?.params).toMatchObject({ agent: 'planner' });
+  });
+
+  it('registers a proposal made in a run on the run\'s issue, naming the run', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'read'; agent(c, 'planner').autonomous = false; } });
+    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('planner', () => ({ text: 'A comment for the tracker.', proposals: [{ op: 'comment', issue: 101, body: 'A note.' }] }));
+    await mention(b, run, 'planner', 'comment on it');
+    await b.settle();
+    // A proposal made in a run's thread registers on the run's issue and names the run.
+    const proposal = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
+    expect(proposal).toMatchObject({ issue: 101, unit: { runId: run.id } });
   });
 
   it('is not offered to an agent that does not read the code host, and what it sends anyway is dropped', async () => {

@@ -268,6 +268,20 @@ describe('the writes an answer proposes', () => {
     expect(waiting.map((a) => (a.unit as { op: string }).op).sort()).toEqual(['close', 'createIssue', 'status']);
   });
 
+  it('registers a proposal of a place that names no issue on the workspace issue project, never on 0', async () => {
+    const c = config();
+    const outcomes = await proposeMention({ writes: [{ op: 'comment', issue: 101, body: 'A note.' }], place: { thread: 'agent-planner', kind: 'channel', repos: [], title: 'Chat with planner' }, agent: c.agents.team[0], autonomous: false, config: c, issue: 0, seq: 2 });
+    expect(outcomes[0]).toMatchObject({ status: 'proposed' });
+    const waiting = actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
+    expect(waiting).toHaveLength(1);
+    // The workspace's own issue project, not the 0 of a place that names no issue: the registration and the audit line point at an issue.
+    const { getConfig } = await import('../src/main/workspaceConfig');
+    expect(waiting[0].issue).toBe(getConfig().projects.issues.projectId);
+    expect(waiting[0].issue).not.toBe(0);
+    // A place that is not a run carries no `runId`: the runner is not told about a proposal it did not raise.
+    expect(waiting[0].unit).not.toHaveProperty('runId');
+  });
+
   it('is refused whole in a test workspace: nothing is written', async () => {
     writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
     const outcomes = await propose([{ op: 'comment', issue: 101, body: 'Nope.' }], { autonomous: true });

@@ -1152,6 +1152,7 @@
   "main.forum.code.runner.mention.autoWrote": "{agent} propôs e escreveu no rastreador por conta própria; a escrita está auditada.",
   "main.forum.code.runner.mention.unsupported": "{agent} propôs \"{op}\", que este host de código não tem: nada foi escrito. {reason}",
   "main.forum.code.runner.mention.proposalFailed": "{agent} propôs uma escrita que não pôde ser preparada: nada foi escrito. {reason}",
+  "main.forum.code.runner.mention.writeDone": "{agent} propôs \"{summary}\": ela saiu no rastreador.",
   "main.runner.kind.request": "pedido",
   "main.runs.error.unknown-link": "A execução não tem o vínculo \"{key}\".",
   "main.forum.code.run.link.origin": "Esta execução existe porque outro squad pediu: a issue {issue} (execução {run}) espera por ela.",

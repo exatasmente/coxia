@@ -14,7 +14,7 @@ import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
-import { type ProposalOutcome, iidOfRef } from './propose';
+import { type ProposalOutcome } from './propose';
 import { reposOnDisk, type MentionPlace } from './place';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
@@ -49,7 +49,7 @@ export interface MentionDeps {
    * Where the writes a response raises are proposed, wherever the agent answers (a run's thread, a channel, a general conversation, the direct conversation of an
    * agent): the mentions module's own path outside a run's thread (`proposeMention`), which plans each write by the host. Absent: the answer may not propose anything.
    */
-  propose?: (e: { writes: ProposedWrite[]; place: MentionPlace; agent: AgentDef; autonomous: boolean; config: WorkspaceConfig; issue: number; seq: number }) => Promise<ProposalOutcome[]>;
+  propose?: (e: { writes: ProposedWrite[]; place: MentionPlace; agent: AgentDef; autonomous: boolean; config: WorkspaceConfig; issue: number; seq: number; runId?: string | null }) => Promise<ProposalOutcome[]>;
   /**
    * The agents to answer, in order, already resolved by the caller: the names the message wrote, and, in the direct conversation of an agent, its owner first, even
    * without an `@`. Absent: the mentions the message carries.
@@ -186,9 +186,10 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
   const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
   const config = deps.config();
   const autonomous = config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
-  // A run's thread registers its proposals on the run's issue; any other place on the workspace's issue, which the door defaults to 0 when the place names none.
-  const issue = place.kind === 'run' && place.run ? place.run.issue.iid : iidOfRef(place.ref);
-  const outcomes = await deps.propose({ writes, place, agent: def, autonomous, config, issue, seq });
+  // A run's thread registers its proposals on the run's issue and names the run, so the runner keeps reporting what became of them; any other place registers on
+  // the workspace's issue project, which every write of the app registers under.
+  const run = place.kind === 'run' ? place.run : null;
+  const outcomes = await deps.propose({ writes, place, agent: def, autonomous, config, issue: run ? run.issue.iid : 0, runId: run?.id ?? null, seq });
   const line = (code: string, params: Record<string, string | number>): void => {
     deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
   };

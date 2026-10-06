@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { proposeVcsCommands, runVcsAuto } from '../actions';
-import { issueProjectKey } from '../workspaceConfig';
+import { issueProjectKey, rc } from '../workspaceConfig';
 import { vcsProvider } from '../vcs';
 import { VcsError } from '../vcs/errors';
 import type { VcsCommand, VcsWriteOp } from '../vcs/types';
@@ -62,10 +62,25 @@ function summaryOf(w: ProposedWrite, place: MentionPlace): string {
   }
 }
 
-/** The issue number out of a place reference (`app#101`), 0 when it names none: the registration target of a proposal. */
+/** The issue number out of a place reference (`app#101`), 0 when it names none: what a place names, not the registration target of a proposal. */
 export function iidOfRef(ref: string | undefined): number {
   const m = ref ? /#(\d+)$/.exec(ref) : null;
   return m ? Number(m[1]) : 0;
+}
+
+/**
+ * The issue a write of an answer is registered under: the issue the place names (a run's thread, a conversation about one issue), else the workspace's issue
+ * project, which every write of the app registers under. A place that names no issue and a workspace whose project has no number yet still get a number, so the
+ * registration and the audit line never carry the 0 that reads as "no issue".
+ */
+export function iidForRegistration(ref: string | undefined): number {
+  const named = iidOfRef(ref);
+  if (named) return named;
+  try {
+    return Number(rc().issues.projectId) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -74,7 +89,7 @@ export function iidOfRef(ref: string | undefined): number {
  * label change go out (audited), everything else waits in Actions. A host that does not have the operation, and a workspace that refuses external writes (a test
  * workspace), are said as such, and nothing is written.
  */
-export async function proposeMention(e: { writes: ProposedWrite[]; place: MentionPlace; agent: AgentDef; autonomous: boolean; config: WorkspaceConfig; issue: number; seq: number }): Promise<ProposalOutcome[]> {
+export async function proposeMention(e: { writes: ProposedWrite[]; place: MentionPlace; agent: AgentDef; autonomous: boolean; config: WorkspaceConfig; issue: number; seq: number; runId?: string | null }): Promise<ProposalOutcome[]> {
   const out: ProposalOutcome[] = [];
   if (!e.writes.length) return out;
   let project = '';
@@ -95,6 +110,9 @@ export async function proposeMention(e: { writes: ProposedWrite[]; place: Mentio
     // The response, the owner and the agent make one answer's proposals distinct; the write's index and the hash keep two equal writes of the same answer apart, and
     // proposes from another answer never collide with these.
     const key = `mention:${e.place.thread}:${e.place.owner ?? e.agent.id}:${e.agent.id}:${e.seq}:${i}:${hashOf(body)}`;
+    // The issue the write is registered under: the run's issue when the answer was given in a run's thread, else the workspace's own issue project. Never the 0 of
+    // a place that names no issue, which would leave the Actions registration and the audit line without an issue to point at.
+    const target = e.issue || iidForRegistration(e.place.ref);
     let commands: VcsCommand[];
     try {
       commands = await provider.planWrite(opOf(w, project));
@@ -108,7 +126,7 @@ export async function proposeMention(e: { writes: ProposedWrite[]; place: Mentio
     // The autonomy of the agent lets only a low-risk write out by itself; the door refuses it in a test workspace, and it is said as a failure.
     if (e.autonomous && LOW_RISK.has(w.op)) {
       try {
-        for (const [n, command] of commands.entries()) await runVcsAuto({ issue: e.issue, key: commands.length > 1 ? `${key}#${n + 1}` : key, summary, by: e.agent.id, bodyHash: hashOf(body) }, command);
+        for (const [n, command] of commands.entries()) await runVcsAuto({ issue: target, key: commands.length > 1 ? `${key}#${n + 1}` : key, summary, by: e.agent.id, bodyHash: hashOf(body) }, command);
         out.push({ status: 'auto', key, count: commands.length });
       } catch (err) {
         out.push({ status: 'failed', op: w.op, reason: err instanceof Error ? err.message : String(err) });
@@ -119,11 +137,12 @@ export async function proposeMention(e: { writes: ProposedWrite[]; place: Mentio
     proposeVcsCommands(
       {
         key,
-        issue: e.issue,
+        issue: target,
         issueTitle: e.place.title ?? '',
         summary,
         detail: w.op === 'createIssue' || w.op === 'comment' || w.op === 'close' ? body : undefined,
-        unit: { purpose: 'mention-write', thread: e.place.thread, agent: e.agent.id, op: w.op, n: i, seq: e.seq, batch: `${e.place.thread}:${e.seq}` },
+        // `runId` names the run of a run's thread, so the runner keeps telling the thread what became of the proposal it made; a place that is not a run leaves it out.
+        unit: { purpose: 'mention-write', thread: e.place.thread, agent: e.agent.id, op: w.op, n: i, seq: e.seq, batch: `${e.place.thread}:${e.seq}`, ...(e.runId ? { runId: e.runId } : {}) },
         notify: { title: summary, body: e.place.title ?? '' },
       },
       commands,

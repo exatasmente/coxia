@@ -798,10 +798,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       say(after, 'runner.undo.removed', { title: after.comments[key].title || key });
       return;
     }
+    // A write an answer proposed in the run's thread was approved: the thread hears that it went out, so a proposal raised there is not answered in silence.
+    if (unit.purpose === 'mention-write') return say(run, 'runner.mention.writeDone', { agent: String(unit.agent ?? ''), summary: a.summary ?? '' });
     if (unit.purpose === 'review' && provider) {
       const round = Number(unit.round);
-      const draft = run.comments[`review-${round}`];
-      const commands = a.commands ?? (a.command ? [a.command] : []);
+      const draft = run.comments[`review-${round}`];      const commands = a.commands ?? (a.command ? [a.command] : []);
       return recordReviewPosted(runId, `review-${round}`, { round, commands, responses, provider, pr: { project: String(unit.project), iid: Number(unit.iid) }, bodyHash: String(unit.bodyHash ?? draft?.bodyHash ?? ''), body: draft?.body ?? '' });
     }
     if (unit.purpose === 'comment' && provider) {

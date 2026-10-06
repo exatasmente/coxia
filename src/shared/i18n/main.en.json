@@ -1152,6 +1152,7 @@
   "main.forum.code.runner.mention.autoWrote": "{agent} proposed and wrote on the tracker by itself; the write is audited.",
   "main.forum.code.runner.mention.unsupported": "{agent} proposed \"{op}\", which this code host does not have: nothing was written. {reason}",
   "main.forum.code.runner.mention.proposalFailed": "{agent} proposed a write that could not be prepared: nothing was written. {reason}",
+  "main.forum.code.runner.mention.writeDone": "{agent} proposed \"{summary}\": it went out on the tracker.",
   "main.runner.kind.request": "request",
   "main.runs.error.unknown-link": "The run has no link \"{key}\".",
   "main.forum.code.run.link.origin": "This run exists because another squad asked for it: the issue {issue} (run {run}) is waiting for it.",
