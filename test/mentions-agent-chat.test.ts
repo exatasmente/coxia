@@ -12,7 +12,7 @@ import { newAgent } from '../src/shared/config/team';
 import { type ForumMessage, MAX_MENTIONS, agentThreadId } from '../src/shared/forum';
 import { createForumStore, type ForumStore } from '../src/main/forum-core';
 import { ensureAgentThread } from '../src/main/forum-channels';
-import { answerMentions } from '../src/main/mentions/answer';
+import { answerMentions, answerText } from '../src/main/mentions/answer';
 import { callsOf } from '../src/main/mentions/module';
 import { placeOfThread } from '../src/main/mentions/place';
 import { proposeMention } from '../src/main/mentions/propose';
@@ -352,5 +352,15 @@ describe('the writes an answer proposes', () => {
     if (waiting) await expect(actions.approveAction(waiting.id)).rejects.toThrow();
     expect(listAudit()).toEqual([]);
     expect(outcomes.some((o) => o.status === 'proposed' || o.status === 'failed')).toBe(true);
+  });
+});
+
+describe('the text of an answer', () => {
+  it('is the text inside an answer the model wrote whole as its text, and anything else as it came', () => {
+    expect(answerText('{"text": "Tested it.\\n\\nThe app is up."}')).toBe('Tested it.\n\nThe app is up.');
+    expect(answerText('  Plain answer.  ')).toBe('Plain answer.');
+    expect(answerText('{"other": 1}')).toBe('{"other": 1}');
+    expect(answerText('{not json}')).toBe('{not json}');
+    expect(answerText(undefined)).toBe('');
   });
 });
