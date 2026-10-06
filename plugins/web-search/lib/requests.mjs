@@ -9,7 +9,7 @@ export function questionsOf(text) {
   for (const line of String(text ?? '').split('\n')) {
     const m = /^\s*[-*]\s+(.+?)\s*$/.exec(line);
     if (!m) continue;
-    const q = m[1].slice(0, QUESTION_MAX);
+    const q = m[1].replace(/\s+/g, ' ').slice(0, QUESTION_MAX);
     if (q && !out.includes(q)) out.push(q);
   }
   return out;

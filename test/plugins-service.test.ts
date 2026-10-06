@@ -625,3 +625,20 @@ describe('a declaration that changed', () => {
   });
 });
 
+describe('the notes the agents get', () => {
+  it('leave out a plugin missing a required setting, and keep each note on one line within a budget', () => {
+    const settings = [{ key: 'url', label: 'URL', kind: 'url' as const, required: true }];
+    const h = harness([
+      plugin({ id: 'a', name: 'A', agents: 'first\nline' }),
+      plugin({ id: 'b', name: 'B', agents: 'needs a url', entry: 'index.mjs', runtime: 'js', settings, values: {} }),
+      plugin({ id: 'c', name: 'C'.repeat(200), agents: 'x'.repeat(1000) }),
+      ...Array.from({ length: 6 }, (_, i) => plugin({ id: `z${i}`, name: `Z${i}`, agents: 'y'.repeat(1000) })),
+    ]);
+    const notes = pluginNotes(h.deps);
+    expect(notes[0]).toEqual({ name: 'A', note: 'first line' });
+    expect(notes.some((n) => n.name === 'B')).toBe(false);
+    expect(notes[1].name).toHaveLength(60);
+    expect(notes.reduce((n, x) => n + x.name.length + x.note.length + 3, 0)).toBeLessThanOrEqual(4000);
+  });
+});
+

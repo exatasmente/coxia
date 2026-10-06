@@ -624,8 +624,23 @@ function auditProxy(record: PluginRecord, context: PluginContext, decision: { ho
 
 /** What the plugins that are on tell the agents: one note per plugin, with its name, added to every stage's context as the plugin's own words. */
 export function pluginNotes(d: PluginsDeps = pluginsDeps): { name: string; note: string }[] {
-  return d.read(d.dir(), d.config()).filter((r) => r.enabled && !r.refused && r.agents).map((r) => ({ name: r.name, note: r.agents as string }));
+  // Only a plugin that can run: one missing a required setting would have the agents ask for something nothing answers.
+  const runnable = (r: PluginRecord): boolean => !r.settings.some((s) => s.required && (s.kind === 'secret' ? !d.secretFilled(r.id, s.key) : !(r.values[s.key] ?? '').trim()));
+  const oneLine = (s: string, max: number): string => s.replace(/\s+/g, ' ').trim().slice(0, max);
+  const out: { name: string; note: string }[] = [];
+  let size = 0;
+  // Every stage carries these lines: each on one line (no note can pass for another plugin's), and all of them within a budget.
+  for (const r of d.read(d.dir(), d.config()).filter((x) => x.enabled && !x.refused && x.agents && runnable(x))) {
+    const note = { name: oneLine(r.name, 60), note: oneLine(r.agents as string, 1000) };
+    size += note.name.length + note.note.length + 3;
+    if (size > NOTES_MAX) break;
+    out.push(note);
+  }
+  return out;
 }
+
+/** The most the plugins' notes may add to a stage's context, all of them together. */
+const NOTES_MAX = 4000;
 
 /** The run a live event of the runner carries: the app reads its state here and never trusts a stored one. */
 export function liveContext(run: Run, context: { stage?: string } = {}): PluginContext {
