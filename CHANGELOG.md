@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **An agent called with `@` outside a run can run commands in a repository with large build output.** Its throwaway copy took the whole folder, built packages and installed dependencies included, and a repository over 1 GiB (a `dist` of packages, say) made every such call fail with *the worktree is too large to copy*. The copy now holds what git knows of the repository (the tracked files and the new ones that are not ignored, as they are in the folder), within the sandbox's copy limit of Settings, and the clone's dependencies are lent read-only as in a run's worktree, so the repository's own tests run.
+
 ## [0.7.0-beta.5] - 2026-10-06
 
 ### Added
