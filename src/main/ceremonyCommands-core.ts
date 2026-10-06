@@ -28,8 +28,8 @@ export interface CommandStoreDeps {
 }
 
 export interface CommandStore {
-  /** Asks the person about one command of an agent; resolves with the answer. Aborting the signal refuses it. */
-  ask(agent: string, command: string, signal?: AbortSignal): Promise<Answer>;
+  /** Asks the person about one command of an agent; resolves with the answer. Aborting the signal refuses it. `name` is how the notice names an agent that is not a system one. */
+  ask(agent: string, command: string, signal?: AbortSignal, name?: string): Promise<Answer>;
   list(): CeremonyCommand[];
   /** The person's answer. A write is never allowed always; a request that no longer waits is refused with an error. */
   answer(id: string, decision: CeremonyDecision, note?: string): CeremonyCommand;
@@ -49,13 +49,13 @@ export function createCommandStore(d: CommandStoreDeps): CommandStore {
   const publish = (): void => d.changed([...waiting.values()].map((w) => w.item));
 
   return {
-    ask(agent, command, signal) {
+    ask(agent, command, signal, name) {
       const write = isHostWrite(command);
       const refusal = write ? (d.writeRefusal?.() ?? null) : null;
       if (refusal) return Promise.resolve({ ok: false, note: refusal });
       if (signal?.aborted) return Promise.resolve({ ok: false });
       return new Promise((resolve) => {
-        const item: CeremonyCommand = { id: d.newId?.() ?? randomUUID(), agent, command, write, rule: write ? null : suggestRule(command), since: (d.now?.() ?? new Date()).toISOString() };
+        const item: CeremonyCommand = { id: d.newId?.() ?? randomUUID(), agent, ...(name ? { name } : {}), command, write, rule: write ? null : suggestRule(command), since: (d.now?.() ?? new Date()).toISOString() };
         let timer: NodeJS.Timeout | undefined;
         const finish = (a: Answer): void => {
           if (!waiting.delete(item.id)) return;

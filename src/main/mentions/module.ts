@@ -1,8 +1,11 @@
 import { mentionJob } from '../../shared/activity';
+import { rulesAllow } from '../../shared/ceremonyCommands';
+import { cycleText } from '../../shared/cycles/text';
 import type { ForumMessage, ThreadSummary } from '../../shared/forum';
 import { MAX_MENTIONS } from '../../shared/forum';
 import { type RunActivity, beginCallActivity } from '../activity';
 import { runAgent, secretPath } from '../agents';
+import { ceremonyCommands } from '../ceremonyCommands';
 import { ATAS, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
@@ -52,6 +55,11 @@ export const mentionsModule: Module = () => {
     sandbox,
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    // A host command asks the person through the notice every screen shows, as the ceremonies do; a command the agent's rules always allow runs without asking.
+    askCommand: (def, command, signal) => {
+      const rules = getConfig().agents.team.find((a) => a.id === def.id)?.allowedCommands ?? def.allowedCommands;
+      return rulesAllow(rules, command) ? Promise.resolve({ ok: true }) : ceremonyCommands.ask(def.id, command, signal, cycleText(def.name || def.id, getConfig().language));
+    },
   };
   forum.subscribe((message) => {
     // A run's thread is the runner's: it is not this module's to answer.
