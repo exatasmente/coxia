@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0-beta.8] - 2026-10-06
+
 ### Added
 
 - **Web search for the agents.** The first real plugin, in `plugins/web-search/`: an agent writes its questions in `SEARCH_REQUESTS.md`, and when the stage ends they are searched on a SearXNG instance of your own (set its address in the plugin list); the next stage reads `WEB_SEARCH.md` with up to five results per question and their sources. A plugin can now tell the agents what it offers: its note enters every stage's context, marked as the plugin's words, while it is on.
@@ -271,7 +273,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.7...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.8...HEAD
+[0.7.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.7...v0.7.0-beta.8
 [0.7.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...v0.7.0-beta.7
 [0.7.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...v0.7.0-beta.6
 [0.7.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...v0.7.0-beta.5
