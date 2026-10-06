@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 12, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: 13, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });

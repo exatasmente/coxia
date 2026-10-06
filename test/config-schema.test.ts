@@ -106,7 +106,7 @@ describe('config schema', () => {
   });
 
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 12, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: 13, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);

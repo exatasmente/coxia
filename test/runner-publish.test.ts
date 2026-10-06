@@ -635,7 +635,3 @@ describe('an agent whose autonomy is switched in the middle of its stage', () =>
     expect(issueNotes().some(([, body]) => body.startsWith('**Gate 2: sent back**'))).toBe(true);
   });
 });
-ent went out by itself
-    expect(issueNotes().some(([, body]) => body.startsWith('**Gate 2: sent back**'))).toBe(true);
-  });
-});
