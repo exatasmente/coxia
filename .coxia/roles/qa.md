@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/runner.md:32-45, docs/cycles.md:53-64, docs/cycles/30-agent-permissions/feat/1_SPEC.md, test/runner-sandbox.test.ts, test/runs-results.test.ts]
 summary: Notes for the QA agent: how it reads, what it runs, and how it returns work
 stages: [qa]

@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [src/main/engine/contract.ts, src/main/engine/registry.ts, src/main/engine/guard.ts, src/shared/wizard.ts, src/main/llm-core.ts, test/engine-open-tools.test.ts, test/helpers/fakeOpenAI.ts, docs/llm-providers.md:1-80]
 summary: The two agent engines, the providers each supports, the connection test and what was verified
 stages: [development]

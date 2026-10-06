@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [package.json:1-58, CONTRIBUTING.md:24-75, .github/workflows/ci.yml:1-90, test/setup.ts, test/helpers/fakeOpenAI.ts, test/helpers/fakeHost.ts, scripts/theme-audit.mjs, scripts/i18n-lint.mjs]
 summary: Setup, the scripts, the CI gates and the rules for a test
 stages: [development, review, qa]

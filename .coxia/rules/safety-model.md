@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [src/main/engine/guard.ts:1-80, src/main/webPolicy.ts:1-65, src/main/workspace.ts:1-22, src/main/actions.ts:1-70, src/main/engine/scrubShell.ts, test/runs-policy.test.ts, test/forum-policy.test.ts]
 summary: Read-only agents, the single write door, the audit log, test workspaces, the sandbox and the paired-phone policy
 stages: [development, review, qa]

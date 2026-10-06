@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/updates.md:1-80, src/shared/updates.ts, src/main/updates-core.ts, src/main/update-core.ts, test/updates-policy.test.ts, test/updates-core.test.ts]
 summary: How an installed app updates itself, the channels, the feed and who may run an update
 stages: [development]

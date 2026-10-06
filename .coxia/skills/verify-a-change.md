@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [CLAUDE.md:27-41, CONTRIBUTING.md:45-75, .github/workflows/ci.yml:1-90, package.json:6-15]
 summary: What to run before calling a change done, and what each gate means
 stages: [development, review, qa]

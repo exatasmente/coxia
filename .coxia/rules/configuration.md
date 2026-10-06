@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [src/shared/config/types.ts:1-60, src/shared/config/schema.ts, src/shared/config/migrations.ts, src/main/secrets-core.ts:1-60, docs/configuration.md:1-130]
 summary: The workspace configuration, its schema versions and migrations, the secrets store, export and import
 stages: [development]

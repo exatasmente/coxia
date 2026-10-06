@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [scripts/public-audit.mjs:1-70, scripts/public-audit.allow.json, CLAUDE.md:43-62, CONTRIBUTING.md:135-138, .github/workflows/ci.yml:32-34]
 summary: The public audit, the placeholder rule, and the file for an unavoidable false positive
 stages: [development, review, qa]

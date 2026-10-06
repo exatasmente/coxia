@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/cycles.md:53-64, docs/runner.md:73-79, src/main/runner/publish.ts, test/runner-publish.test.ts]
 summary: Notes for the Customer Success agent: the release note and the answer to the reporter
 stages: [development]

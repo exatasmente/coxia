@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/i18n.md:46-52, src/shared/config/types.ts:7-11, src/shared/i18n/index.ts, test/i18n.test.ts]
 summary: The steps to add a third interface language
 stages: [development]

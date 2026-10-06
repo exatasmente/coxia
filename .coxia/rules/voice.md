@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/voice.md:1-45, src/main/voice.ts, src/main/voiceModule.ts, src/shared/voiceSetup.ts, src/shared/i18n/terms.ts, test/voice-terminology.test.ts, test/voice-gating.test.ts]
 summary: Voice is optional: what "off" means, the engines, the setup and the wording variants
 stages: [development, review]

@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [docs/README.md:1-33, CONTRIBUTING.md:133-138, docs/configuration.md:1-3, docs/runner.md:1-5]
 summary: How the docs in docs/ are written, indexed and kept honest
 stages: [development, review]

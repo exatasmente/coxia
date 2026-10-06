@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [CLAUDE.md, CONTRIBUTING.md, docs/README.md, package.json, src/main/index.ts]
 summary: What this project is, how it is built and tested, and how to find a rule, a procedure or a role note in this folder
 ---

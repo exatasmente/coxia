@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [src/shared/secrets.ts, src/main/secrets-core.ts:1-60, src/main/secrets.ts, test/secrets.test.ts, docs/configuration.md:95-105]
 summary: The credential store, its three sources, and the rule that a value never leaves it
 stages: [development]

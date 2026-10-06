@@ -1,6 +1,6 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
 evidence: [CONTRIBUTING.md:127-131, src/shared/wizard.ts, src/main/llm-core.ts, src/main/engine/contract.ts, src/main/engine/registry.ts, test/engine-open-tools.test.ts, test/helpers/fakeOpenAI.ts, docs/llm-providers.md:1-80]
 summary: The steps to add a model provider, from an OpenAI-compatible preset to a new engine
 stages: [development]
