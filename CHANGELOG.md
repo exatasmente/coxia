@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **The trigger label now says what it needs.** Where the trigger label is configured and documented — the runner block of the configuration document, the settings screen and the code host reference, in both languages — it now says that a run only starts by itself for an open issue that carries the label **and is assigned to the person**, the way the app has always worked. A labeled issue nobody is assigned to does not start a run, and the hint of the field no longer leaves that out.
+
 ### Fixed
 
 - **Resolving the conflict of a pull request that targets a release branch.** *Resolve conflict* refused any pull request whose base was not the repository's default branch, so a feature pull request aimed at an open `release/X.Y.Z` could not be resolved in the app. The app now merges the pull request's own target into its branch, whatever that target is, and the merge commit, the action and the publish step name that branch instead of `main`. It no longer reads the repository's default branch for this.
