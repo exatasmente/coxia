@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A direct conversation with an agent.** An agent of the team can be talked to in a conversation of its own: every message there goes to it without an `@`, and it answers with the conversation as context. It is listed with the forum's conversations and works from a paired phone.
+- **An agent proposes tracker writes wherever it answers.** In its direct conversation, a squad channel, the general conversation or a run's thread, an answer may propose comments, label changes, a state change, closing an issue or opening a new one. Each waits in Actions with the exact command, and the proposals of one answer can be decided together; closing an issue or changing its state always waits for you. When a write proposed in a run's thread is approved, the thread says it went out.
+- **Per-agent permissions.** The tracker access, the commands and the tools an agent may use can be set on that agent alone, starting from the workspace's defaults. An agent stays read only on the code in a conversation.
+- **Agent suggestions from the cycle's history.** *Suggest agents* in Settings › Team, and the end of a retro, read what the app already records (runs, commands you keep allowing, ceremonies) and, when a pattern repeats, propose a new agent with its evidence. Each suggestion waits in Actions to be accepted, edited or rejected; a rejected one only comes back with new evidence. From a paired browser only *Accept* is offered.
+
 ## [0.7.0-beta.1] - 2026-10-05
 
 ### Added
