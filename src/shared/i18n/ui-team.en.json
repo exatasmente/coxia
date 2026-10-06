@@ -426,6 +426,8 @@
   "ui.team.shell.sandboxSummary": "Network: {network}. Extra read-only folders: {folders}.",
   "ui.team.squad": "Squad",
   "ui.team.stages": "Stages",
+  "ui.team.suggest.button": "Suggest agents",
+  "ui.team.suggest.done": "{count} suggestion(s) are waiting in Actions.",
   "ui.team.system": "built in",
   "ui.team.systemNote": "A built-in agent: it can be edited but not deleted. The ceremonies use its model and instructions.",
   "ui.team.tab.comments": "Comments",
