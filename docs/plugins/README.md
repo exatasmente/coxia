@@ -83,6 +83,41 @@ quando uma execução termina. Um plugin que falha não derruba a execução nem
 - Ampliar o que um plugin alcança é decisão da pessoa, no computador; um navegador pareado não liga, desliga nem
   amplia. Onde este kit mostra uma permissão, mostra também o que é recusado sem ela.
 
+### Plugins em JavaScript
+
+Um plugin cuja entrada termina em `.mjs` é um módulo JavaScript: a função padrão recebe o
+contexto e devolve o resultado. Os tipos estão em [`kit/coxia-plugin.d.ts`](kit/coxia-plugin.d.ts).
+Ele roda na mesma sandbox, pelo próprio executável do aplicativo em modo Node; não precisa
+de Node na máquina. O aplicativo entrega os arquivos `.mjs`, `.js` e `.json` da pasta do
+plugin (até 256 KiB), sem montá-la.
+
+Só um plugin em JavaScript declara **configurações** e **requisições**:
+
+```json
+"settings": [
+  { "key": "url", "label": "Instance URL", "kind": "url", "required": true },
+  { "key": "token", "label": "API key", "kind": "secret" }
+],
+"requests": [
+  { "id": "search", "method": "GET", "url": "{settings.url}/search",
+    "secret": { "setting": "token", "in": "header", "name": "Authorization", "format": "Bearer {secret}" } },
+  { "id": "notify", "method": "POST", "url": "https://hooks.example.com/notify", "write": true, "reversible": false }
+]
+```
+
+- A pessoa preenche as configurações na lista de plugins, no computador. Uma `secret` vai
+  para o cofre (`plugin.<id>.<key>`) e **nunca** chega ao plugin: o aplicativo a põe na
+  chamada.
+- `ctx.request(id, { path, query, body })` pede uma leitura declarada; o aplicativo confere
+  método, destino e caminho, faz a chamada fora da sandbox (por isso alcança a instância
+  local que a pessoa configurou), tira a chave da resposta e a mascara. Funciona por
+  **repetição**: até 3 rodadas, 5 pedidos por rodada; peça as mesmas coisas na mesma
+  ordem a cada rodada.
+- `ctx.write(id, …)` pede uma escrita declarada, que segue o contrato de permissão depois
+  que o plugin termina.
+- Leituras precisam da permissão de rede do plugin; escritas, da de escrita. Tudo o que o
+  aplicativo faz por um plugin fica na auditoria, sem chave e sem corpo.
+
 ---
 
 ## English
@@ -163,3 +198,26 @@ plugin that fails brings down neither the run nor the app.
   treated as instruction.
 - Widening what a plugin may reach is the person's decision, on the computer; a paired browser neither turns a
   plugin on or off nor widens it. Where this kit shows a permission, it also shows what is refused without it.
+
+### Plugins in JavaScript
+
+A plugin whose entry ends in `.mjs` is a JavaScript module: its default export gets the
+context and returns the result. The types are in [`kit/coxia-plugin.d.ts`](kit/coxia-plugin.d.ts).
+It runs in the same sandbox, through the app's own executable in Node mode; no Node is
+needed on the machine. The app hands over the `.mjs`, `.js` and `.json` files of the
+plugin folder (up to 256 KiB) without mounting it.
+
+Only a JavaScript plugin declares **settings** and **requests** (see the example above).
+
+- The person fills the settings in the plugin list, on the computer. A `secret` goes to
+  the secrets store (`plugin.<id>.<key>`) and **never** reaches the plugin: the app puts it
+  in the call.
+- `ctx.request(id, { path, query, body })` asks for a declared read; the app checks method,
+  destination and path, makes the call outside the sandbox (so it reaches the local
+  instance the person set), takes the key out of the response and masks it. It works by
+  **replay**: up to 3 rounds, 5 requests per round; ask the same things in the same order
+  every round.
+- `ctx.write(id, …)` asks for a declared write, which follows the permission contract once
+  the plugin ends.
+- Reads need the plugin's network permission; writes, its write permission. Everything the
+  app does for a plugin lands in the audit log, without the key and without the body.

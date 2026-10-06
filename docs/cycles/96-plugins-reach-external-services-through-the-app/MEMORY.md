@@ -9,4 +9,4 @@
 
 ## Onde o trabalho está
 
-- `1_SPEC.md` e `2_PLAN.md` aprovados; implementação na branch `feat-plugin-requests`.
+- `1_SPEC.md` e `2_PLAN.md` aprovados; implementação na branch `feat-plugin-requests` (`3_IMPLEMENTATION.md`). Próxima etapa: revisão separada.
