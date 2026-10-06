@@ -115,7 +115,7 @@
   "wizard.models.foundryResourceHint": "The name of the Azure resource, which appears in the address https://<resource>.services.ai.azure.com.",
   "wizard.models.foundryCreds": "Use a resource key, or leave the key out and sign in with az login on this machine.",
   "wizard.models.useKey": "This provider uses a key",
-  "wizard.models.openEngineNote": "This provider runs on the open engine: read-only tools, and quality depends on the model you pick.",
+  "wizard.models.openEngineNote": "This provider runs on the open engine (Coxia's own agent loop): it reads, writes inside the run's worktree and runs commands under the same safety policy as the Claude Agent SDK. Quality depends on the model you pick.",
   "wizard.models.problem.baseUrl": "The base URL must start with http:// or https://.",
   "wizard.models.problem.region": "Enter the AWS region.",
   "wizard.models.problem.vertex": "Enter the Google Cloud project and region.",

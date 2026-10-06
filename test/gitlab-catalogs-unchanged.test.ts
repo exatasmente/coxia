@@ -152,6 +152,8 @@ const INTENDED: Record<string, Intended> = {
     language: 'both',
     replace: [["Merge branch 'main'", "Merge branch '{target}'"]],
   },
+  // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
+  'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 

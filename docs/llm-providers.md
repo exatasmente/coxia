@@ -24,7 +24,9 @@ Por que dois: a Anthropic não suporta apontar o Claude Code para modelos que n�
 - **Uso (tokens):** cada resposta do modelo grava `usage` no transcript; `events.onUsage` entrega o mesmo dado em tempo real. Sem `usage` no servidor, a contagem é estimada e marcada `estimated`.
 - **Sessões:** `<dados do workspace>/open-sessions/<id>.jsonl` (uma linha `meta`, depois uma por mensagem, `resume` a cada retomada). Uma sessão desconhecida vira sessão nova.
 
-Por enquanto a seleção é um gancho de teste (variáveis de ambiente). A camada de configuração vai trocar `openEngineFromEnv()` pela escolha provedor → motor:
+A escolha do motor é configuração. Cada provedor cadastrado em `llm.providers` tem o seu `engine` (Claude ou aberto) e cada papel de `llm.roles` aponta o provedor e o modelo; o app monta a seleção que o motor aberto recebe a partir disso (a chave do provedor, o que o teste de conexão aprendeu sobre ele, o formato da saída estruturada e as fontes de contexto). Não há nada a fazer no ambiente para escolher o motor.
+
+As variáveis de ambiente continuam existindo **só como recurso de teste**: elas forçam o motor aberto contra o servidor que nomeiam, qualquer que seja a configuração, e não valem para quem usa o app.
 
 ```bash
 COXIA_ENGINE=open \
@@ -34,9 +36,9 @@ COXIA_LLM_OPENAI_KEY=            # vazio para servidores locais
 npm run dev
 ```
 
-Opcionais do gancho: `COXIA_LLM_STRUCTURED=auto|response_format|tool|prompt`, `COXIA_LLM_JSON_SCHEMA=1` (o servidor aceita `response_format`). Com `COXIA_ENGINE=open` a chave do OpenRouter não é lida.
+Opcionais do gancho de teste: `COXIA_LLM_STRUCTURED=auto|response_format|tool|prompt`, `COXIA_LLM_JSON_SCHEMA=1` (o servidor aceita `response_format`). Com `COXIA_ENGINE=open` a chave do OpenRouter não é lida.
 
-O que a camada de configuração precisa entregar a `runOpenOnce`: `OpenEngineSelection` = `{ provider: { baseUrl, apiKey, model, headers?, maxOutputTokens?, temperature?, timeoutMs? }, capabilities?, structured?, docs? }`. `clientFor(provider)` guarda um cliente por provedor e modelo, e o cliente aprende o que o servidor recusa (parâmetros, `max_tokens`, eco do raciocínio).
+O que a seleção entrega a `runOpenOnce`: `OpenEngineSelection` = `{ provider: { baseUrl, apiKey, model, headers?, maxOutputTokens?, temperature?, timeoutMs? }, capabilities?, structured?, docs? }`. `clientFor(provider)` guarda um cliente por provedor e modelo, e o cliente aprende o que o servidor recusa (parâmetros, `max_tokens`, eco do raciocínio).
 
 ### Testar conexão
 
@@ -76,7 +78,7 @@ Ferramentas: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (sub-a
 
 Fontes configuráveis (`DocSources`): `claudeMd` (arquivos ou pastas; `@imports` até 5 níveis, fora de blocos de código), `skillDirs` (`<nome>/SKILL.md`: só a descrição vai no prompt, o corpo vem pela ferramenta `Skill`), `agentDirs` (definições para a ferramenta `Agent`), `docDirs` (rules e knowledge base: índice no prompt, leitura com `Read`) e `mcpConfigs` (`.mcp.json`; só servidores stdio; só sobem os servidores que têm ferramenta liberada).
 
-Padrão (`defaultDocSources`): CLAUDE.md do cwd para cima, `.claude/{skills,agents,rules,knowledge-base}` do cwd e da home, `.mcp.json` do cwd e `~/.claude.json`. **Só as cerimônias e o gancho de teste o usam.** Um agente do time (etapa de execução, menção, pergunta da cadeia, pedido entre squads) leva listas explícitas (as fontes extras de `docs` e o `.mcp.json` dos projetos, vazias quando não há nada), o que impede o padrão de entrar; a documentação dele, a `.coxia/` dos repositórios, vai por **um texto só, com orçamento**, anexado ao texto de sistema (`systemAppend`), igual ao do caminho do Claude. Veja [`harness.md`](harness.md).
+Padrão (`defaultDocSources`), quando nenhuma fonte é configurada: CLAUDE.md do cwd para cima, `.claude/{skills,agents,rules,knowledge-base}` do cwd e da home, `.mcp.json` do cwd e `~/.claude.json`. **Só as cerimônias e o gancho de teste o usam.** Um agente do time (etapa de execução, menção, pergunta da cadeia, pedido entre squads) leva listas explícitas (as fontes extras de `docs` e o `.mcp.json` dos projetos, vazias quando não há nada), o que impede o padrão de entrar; a documentação dele, a `.coxia/` dos repositórios, vai por **um texto só, com orçamento**, anexado ao texto de sistema (`systemAppend`), igual ao do caminho do Claude. Veja [`harness.md`](harness.md).
 
 No **caminho do Claude Agent SDK** a chamada de um agente do time leva `settingSources: []` e `settings: { autoMemoryEnabled: false }`: o Claude Code não carrega `CLAUDE.md`, `.claude/`, `settings.json` nem a memória automática. Efeito colateral dito: as skills e os subagentes de `~/.claude` e `<projeto>/.claude` **não são achados** pelas ferramentas `Skill` e `Agent` nesses agentes; as `skills/` de `.coxia/` são lidas como texto, e o interruptor `tools.skills` só deixa de achar skills no caminho do SDK. As cerimônias não definem `settingSources` e seguem como antes.
 
@@ -103,7 +105,7 @@ Importante: **um** modelo real foi testado, em quatro execuções, e só no runn
 
 - **Modelo pequeno e ferramentas:** modelos locais de poucos bilhões de parâmetros erram argumentos, ignoram ferramentas ou inventam. O loop devolve o erro ao modelo e tenta de novo, mas a qualidade depende do modelo. Use o teste de conexão e prefira modelos treinados para ferramentas.
 - **Janela de contexto:** o prompt do agente (CLAUDE.md, skills, definições de ferramentas) passa de 10 mil tokens. Com 4 mil ou 8 mil tokens a cerimônia não cabe. Ollama usa 4096 por padrão: aumente `num_ctx` (ex.: 16384 ou mais). O servidor muitas vezes trunca em silêncio em vez de dar erro, e nesse caso o adaptador não percebe. A documentação de `.coxia/` que um agente do time recebe tem orçamento próprio, reduzido pela janela que o provedor declara (24.000 caracteres no máximo, piso de 3.000).
-- Ferramentas só de leitura; sem `Edit`/`Write`, sem `WebFetch`/`WebSearch`.
+- Ferramentas: leitura (`Read`, `Grep`, `Glob`), escrita confinada ao worktree da execução (`Write`, `Edit`) quando a chamada tem raiz de escrita, os comandos listados em `runner.commands` quando a permissão os dá, mais as ferramentas MCP permitidas. Sem rede e sem busca na web (`WebFetch`, `WebSearch`).
 - Chamadas de ferramenta escritas como texto (alguns modelos sem template adequado) não são interpretadas; o servidor precisa devolver `tool_calls`.
 - Entrada de imagem não é usada pelo motor aberto.
 - MCP: só stdio, sem OAuth e sem servidores remotos.
@@ -133,7 +135,9 @@ Why two: Anthropic does not support pointing Claude Code at non-Claude models th
 - **Usage (tokens):** every model response writes `usage` to the transcript; `events.onUsage` delivers it live. When the server sends no `usage`, the count is estimated and flagged `estimated`.
 - **Sessions:** `<workspace data>/open-sessions/<id>.jsonl` (a `meta` line, then one per message, `resume` on each resume). An unknown session id starts a new session.
 
-For now selection is a test hook (environment variables). The configuration layer will replace `openEngineFromEnv()` with provider → engine selection:
+The engine choice is configuration. Every provider registered in `llm.providers` carries its `engine` (Claude or open) and every role in `llm.roles` points at a provider and a model; the app builds the selection the open engine receives from that (the provider key, what the connection test learned about it, the structured output format and the context sources). Nothing in the environment is needed to choose the engine.
+
+The environment variables still exist **only as a test aid**: they force the open engine against the server they name, whatever the configuration says, and they are of no use to a person running the app.
 
 ```bash
 COXIA_ENGINE=open \
@@ -143,9 +147,9 @@ COXIA_LLM_OPENAI_KEY=            # empty for local servers
 npm run dev
 ```
 
-Optional hook variables: `COXIA_LLM_STRUCTURED=auto|response_format|tool|prompt`, `COXIA_LLM_JSON_SCHEMA=1` (the server accepts `response_format`). With `COXIA_ENGINE=open` the OpenRouter key is not read.
+Optional test-hook variables: `COXIA_LLM_STRUCTURED=auto|response_format|tool|prompt`, `COXIA_LLM_JSON_SCHEMA=1` (the server accepts `response_format`). With `COXIA_ENGINE=open` the OpenRouter key is not read.
 
-What the configuration layer hands to `runOpenOnce`: `OpenEngineSelection` = `{ provider: { baseUrl, apiKey, model, headers?, maxOutputTokens?, temperature?, timeoutMs? }, capabilities?, structured?, docs? }`. `clientFor(provider)` keeps one client per provider and model, and the client learns what the server rejects (parameters, `max_tokens`, reasoning echo).
+What the selection hands to `runOpenOnce`: `OpenEngineSelection` = `{ provider: { baseUrl, apiKey, model, headers?, maxOutputTokens?, temperature?, timeoutMs? }, capabilities?, structured?, docs? }`. `clientFor(provider)` keeps one client per provider and model, and the client learns what the server rejects (parameters, `max_tokens`, reasoning echo).
 
 ### Test connection
 
@@ -185,7 +189,7 @@ Tools: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (read-only s
 
 Configurable sources (`DocSources`): `claudeMd` (files or folders; `@imports` up to 5 levels, outside code blocks), `skillDirs` (`<name>/SKILL.md`: only the description goes in the prompt, the body comes through the `Skill` tool), `agentDirs` (definitions for the `Agent` tool), `docDirs` (rules and knowledge base: index in the prompt, read with `Read`) and `mcpConfigs` (`.mcp.json`; stdio servers only; only servers with an allowed tool are started).
 
-Default (`defaultDocSources`): CLAUDE.md from the cwd upward, `.claude/{skills,agents,rules,knowledge-base}` of the cwd and the home, `.mcp.json` of the cwd and `~/.claude.json`. **Only the ceremonies and the test hook use it.** An agent of the team (a stage of a run, a mention, a question of the chain, a request between squads) carries explicit lists (the extra sources of `docs` and the `.mcp.json` of the projects, empty when there is nothing), which keeps the default out; its documentation, the `.coxia/` of the repositories, goes as **one text with a budget** appended to the system text (`systemAppend`), the same as on the Claude path. See [`harness.md`](harness.md).
+When no source is configured, the default (`defaultDocSources`) is: CLAUDE.md from the cwd upward, `.claude/{skills,agents,rules,knowledge-base}` of the cwd and the home, `.mcp.json` of the cwd and `~/.claude.json`. **Only the ceremonies and the test hook use it.** An agent of the team (a stage of a run, a mention, a question of the chain, a request between squads) carries explicit lists (the extra sources of `docs` and the `.mcp.json` of the projects, empty when there is nothing), which keeps the default out; its documentation, the `.coxia/` of the repositories, goes as **one text with a budget** appended to the system text (`systemAppend`), the same as on the Claude path. See [`harness.md`](harness.md).
 
 On the **Claude Agent SDK path** the call of an agent of the team carries `settingSources: []` and `settings: { autoMemoryEnabled: false }`: Claude Code does not load `CLAUDE.md`, `.claude/`, `settings.json` or the automatic memory. A side effect, stated: the skills and subagents of `~/.claude` and `<project>/.claude` are **not found** by the `Skill` and `Agent` tools in those agents; the `skills/` of `.coxia/` are read as text, and the `tools.skills` switch only stops finding skills on the SDK path. The ceremonies do not set `settingSources` and stay as before.
 
@@ -212,7 +216,7 @@ Important: **one** real model has been tested, in four runs, and only in the run
 
 - **Small models and tools:** local models of a few billion parameters get arguments wrong, ignore tools or make things up. The loop returns the error to the model and tries again, but quality depends on the model. Use the connection test and prefer models trained for tool use.
 - **Context window:** the agent prompt (CLAUDE.md, skills, tool definitions) is over 10k tokens. With 4k or 8k tokens the ceremony does not fit. Ollama defaults to 4096: raise `num_ctx` (for example 16384 or more). Servers often truncate silently instead of erroring, and the adapter cannot notice that. The `.coxia/` documentation an agent of the team receives has a budget of its own, reduced by the window the provider declares (24,000 characters at most, floor of 3,000).
-- Read-only tools; no `Edit`/`Write`, no `WebFetch`/`WebSearch`.
+- Tools: reads (`Read`, `Grep`, `Glob`), writes confined to the run's worktree (`Write`, `Edit`) when the call has a write root, the commands listed in `runner.commands` when the permission grants them, plus the allowed MCP tools. No network and no web search (`WebFetch`, `WebSearch`).
 - Tool calls written as plain text (some models without a proper template) are not interpreted; the server must return `tool_calls`.
 - Image input is not used by the open engine.
 - MCP: stdio only, no OAuth and no remote servers.

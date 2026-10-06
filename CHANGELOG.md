@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **The trigger label now says what it needs.** Where the trigger label is configured and documented — the runner block of the configuration document, the settings screen and the code host reference, in both languages — it now says that a run only starts by itself for an open issue that carries the label **and is assigned to the person**, the way the app has always worked. A labeled issue nobody is assigned to does not start a run, and the hint of the field no longer leaves that out.
+- **The documentation of the open engine says what it does.** The wizard note no longer calls the open engine read-only: it now says the engine reads, writes inside the run's worktree and runs commands under the same safety policy as the Claude Agent SDK, and that quality depends on the model. The model provider page explains that the provider and the role in the configuration choose the engine, keeps the environment variables as a test aid, and stops saying the open engine was only tested against a fake server.
 
 ### Fixed
 

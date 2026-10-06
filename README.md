@@ -107,7 +107,7 @@ Honest notes:
 
 - **A claude.ai subscription login is not offered.** Use an API key or your cloud's credentials.
 - **Local and small models need two things:** real *tool calling*, and a context window of **at least 10k tokens** (16k or more is comfortable). The agent prompt (rules, skills, tool definitions) is already over 10k tokens. Ollama defaults to 4096: raise `num_ctx`. Small models of a few billion parameters often fumble tool arguments; use the connection test in the wizard and prefer models trained for tools.
-- **The open engine has only been tested against a scripted fake server**, not against a real Ollama or hosted model yet. Please report what you find.
+- **The open engine has run against a real model in four runs**, in the runner and against a fake code host; no local provider (Ollama, LM Studio) has been tested yet. Please report what you find.
 - The two engines keep separate sessions, and the open engine does not compute dollar costs, only tokens.
 
 Full table of what was tested and the known limitations: [`docs/llm-providers.md`](docs/llm-providers.md).
