@@ -187,7 +187,7 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
  * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget', 'plugin'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
@@ -781,32 +781,36 @@ export interface ClaudeSdkConfig {
 export const USER_ARTICLES = ['', 'o', 'a'] as const;
 export type UserArticle = (typeof USER_ARTICLES)[number];
 
-/** What a plugin may reach, beyond the workspace's own sandbox: nothing else, or a destination it declares. Nothing here widens what the app already allows. */
-export const PLUGIN_GRANTS = ['none', 'network'] as const;
-export type PluginGrant = (typeof PLUGIN_GRANTS)[number];
+/**
+ * What the person allowed a plugin "always": durable, kept in the workspace until the person takes it back, and kept when the plugin is switched off
+ * and on again. "Once" and "for the session" never reach the configuration: they live with the request and with the running app.
+ */
+export interface PluginAllow {
+  /** The plugin may reach the destinations it declared. */
+  network: boolean;
+  /** The plugin's declared external write may go out (an irreversible one still waits for the warning with a deadline). */
+  write: boolean;
+}
 
-/** A plugin of the workspace, as the app read it: the declaration and the reason when it was refused. */
+/** A plugin of the workspace and what the person decided about it. Everything else is read again from its folder. */
 export interface PluginConfig {
   /** Stable identity the declaration announces. */
   id: string;
-  /** Folder of the plugin, relative to plugins.dir; null when the plugin is declared but not installed. */
+  /** Folder of the plugin as it was last read; null when the plugin is listed but was not read. */
   folder: string | null;
   /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
   enabled: boolean;
-  /** What the plugin declares it needs from the network: the hosts it reads. Empty reads as nothing. */
-  network: string[];
-  /** What the person granted it. Lower than what it declares means the app refuses the part it did not grant, with the reason. */
-  granted: PluginGrant;
-  /** Why the declaration was refused, in words; null when the plugin is usable. */
-  refused: string | null;
+  allow: PluginAllow;
 }
 
-/** The plugins of the workspace: where they live and which ones are on. They are the team's own code; nothing is downloaded. */
+/** The plugins of the workspace: where they live, which ones are on and what each was allowed. They are the team's own code; nothing is downloaded. */
 export interface PluginsConfig {
   /** Folder that holds one folder per plugin ("~/" expands). null: the `plugins` folder of the workspace's data folder. */
   dir: string | null;
-  /** The plugins the app read from `dir` and what the person decided about each. */
+  /** What the person decided about each plugin, by identity. */
   list: PluginConfig[];
+  /** Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile. */
+  confirmSeconds: number;
 }
 
 export interface WorkspaceConfig {

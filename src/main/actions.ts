@@ -485,6 +485,8 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   if (!a) throw new Error(t('main.actions.missing', { id }));
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
   if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
+  // A plugin's request is answered with how far the "yes" reaches, on the computer (plugins:answer); it is not a write to approve.
+  if (a.kind === 'plugin-ask') throw new Error(t('main.plugins.ask.answerHere'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   if (a.kind === 'release-git') {
@@ -524,10 +526,8 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       }
       output = outputs.join('\n');
     } else if (a.kind === 'plugin-write') {
-      // A plugin never writes by itself: the "sim" here approves the request the plugin described, and what was approved goes to the audit log.
-      const destination = String((a.unit ?? {}).destination ?? '');
-      const plugin = String((a.unit ?? {}).plugin ?? '');
-      output = await audited(originOf(a), { kind: 'plugin-write', target: destination, via: 'plugin', fields: { plugin, destination } }, async () => t('main.actions.pluginWriteDone', { destination, plugin }));
+      // The announced write of a plugin, sent before its deadline: the same executor the deadline uses, and the line in the audit log is about what was written.
+      output = await writePluginOutbox(originOf(a), pluginWriteOf(a));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
       output = await audited(originOf(a), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
@@ -553,12 +553,31 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   }
 }
 
+/** Tells `fn` after the person set a proposal aside ("not now", a refusal, a blocked plugin write). Returns the way to stop. */
+export type SkipListener = (action: ReleaseAction) => void;
+const skipListeners = new Set<SkipListener>();
+
+export function onActionSkipped(fn: SkipListener): () => void {
+  skipListeners.add(fn);
+  return () => void skipListeners.delete(fn);
+}
+
 export async function skipAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (a?.kind === 'conflict-push') throw new Error(t('main.actions.pushGoes'));
   // Treated outside: the worktree this app made for it goes away too.
   if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
-  return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString() }));
+  // A plugin's write set aside before its deadline is blocked: it never goes out, and the list says so.
+  const blocked = a?.kind === 'plugin-write' && a.state === 'pending' ? { output: t('main.plugins.write.blocked') } : {};
+  const done = update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), ...blocked }));
+  for (const fn of skipListeners) {
+    try {
+      fn(done);
+    } catch (e) {
+      console.error('[actions] listener', e);
+    }
+  }
+  return done;
 }
 
 function now(): string {
@@ -1133,28 +1152,122 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
   return notes.length ? update(push.id, (x) => ({ ...x, output: [x.output, ...notes].join('\n') })) : read().actions.find((x) => x.id === push.id) ?? push;
 }
 
-// ---- the external write a plugin asks for --------------------------------------------------------------------------------------------------
-// A plugin never writes by itself. It describes a request and the request comes in through the same door as everything else: it waits for the
-// person's "sim" in Actions, is refused in a test workspace by the guard the door already runs, and lands in the audit log. The destination is
-// the neutral one the plugin declares: an example of the kit, never a named third-party service. Nothing here gives a plugin a write of its own.
+// ---- what a plugin asks for, and the write it is allowed --------------------------------------------------------------------------------
+// A plugin never writes by itself and never widens what it reaches by itself. What it was not allowed becomes a request here, answered by the person on
+// the computer with how far the "yes" reaches; what it was allowed goes out through `audited`, like every other write. A test workspace widens nothing:
+// no request is opened there and no write goes out. The destination is the neutral one the plugin declared, an outbox of the workspace, never a
+// named third-party service.
 
-/** Proposes the external write a plugin asked for (its declared neutral destination and a text). Refused in a test workspace by `assertExternalWrite`. */
-export function proposePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; plugin: string; destination: string; detail: string; notify?: { title: string; body: string } }): ReleaseAction | null {
-  assertExternalWrite(t('main.actions.pluginWriteTitle'));
+/** What a plugin's request carries: enough to make the call again once the person answers, even after the app was closed. */
+export interface PluginAskUnit {
+  plugin: string;
+  /** The plugin's name, as the list shows it. */
+  name: string;
+  need: 'network' | 'write';
+  /** For a write: whether it can be undone. An irreversible write may only be allowed always. */
+  reversible: boolean;
+  /** The run whose event called the plugin; null outside a run. */
+  runId: string | null;
+  event: string;
+  stage: string | null;
+  /** For the network: the destinations it declared. For a write: where it goes and what it would write. */
+  hosts: string[];
+  to: string | null;
+  text: string;
+}
+
+/** Opens the request of a plugin. Refused in a test workspace (it widens nothing); null when the same request already waits. */
+export function proposePluginAsk(input: { key: string; issue: number; issueTitle?: string; summary: string; unit: PluginAskUnit; notify?: { title: string; body: string } }): ReleaseAction | null {
+  assertExternalWrite(t('main.plugins.ask.title'));
   const store = read();
-  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
-  const action = blank({
-    key: input.key,
-    kind: 'plugin-write',
-    issue: input.issue,
-    issueTitle: input.issueTitle ?? '',
-    summary: input.summary,
-    unit: { plugin: input.plugin, destination: input.destination },
-    output: [`${t('main.actions.pluginWriteTo', { destination: input.destination })}`, '', input.detail].filter(Boolean).join('\n'),
-  });
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const u = input.unit;
+  const what = u.need === 'network' ? t('main.plugins.ask.network', { plugin: u.name, hosts: u.hosts.join(', ') }) : t(u.reversible ? 'main.plugins.ask.write' : 'main.plugins.ask.writeIrreversible', { plugin: u.name, to: u.to ?? '' });
+  const action = blank({ key: input.key, kind: 'plugin-ask', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...u }, output: [what, u.need === 'write' && u.text ? `\n${u.text}` : ''].filter(Boolean).join('\n') });
   write({ ...store, actions: [action, ...store.actions] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
   return action;
+}
+
+/** The plugin requests still waiting for the person, newest first. */
+export function pendingPluginAsks(): ReleaseAction[] {
+  return read().actions.filter((a) => a.kind === 'plugin-ask' && a.state === 'pending');
+}
+
+/** Closes a request with the person's answer: allowed (done) or refused (set aside), with the words the list keeps. */
+export function settlePluginAsk(id: string, allowed: boolean, words: string): ReleaseAction {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-ask') throw new Error(t('main.actions.missing', { id }));
+  if (a.state !== 'pending') throw new Error(t('main.actions.handled'));
+  return update(id, (x) => ({ ...x, state: allowed ? 'done' : 'skipped', finishedAt: new Date().toISOString(), output: [x.output, '', words].filter((l) => l !== null).join('\n') }));
+}
+
+/** The write of a plugin as an action keeps it. */
+export interface PluginWriteInput {
+  plugin: string;
+  to: string;
+  text: string;
+}
+
+const pluginWriteOf = (a: ReleaseAction): PluginWriteInput => ({ plugin: String((a.unit ?? {}).plugin ?? ''), to: String((a.unit ?? {}).to ?? ''), text: String((a.unit ?? {}).text ?? '') });
+
+/** Where a plugin's neutral destination lands: an outbox of this workspace, one file per destination the plugin declared. */
+export const pluginOutboxFile = (plugin: string, to: string): string => join(ATAS, 'plugins-out', plugin, `${to}.md`);
+
+const PLAIN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * The executor of a plugin's write: appends what the plugin returned to its outbox, through `audited`, so the line in the audit log is about what was
+ * written and a test workspace refuses before anything is. The names come from a validated declaration and are checked again here.
+ */
+async function writePluginOutbox(origin: AuditOrigin, input: PluginWriteInput): Promise<string> {
+  if (!PLAIN.test(input.plugin) || !PLAIN.test(input.to)) throw new Error(t('main.plugins.write.badDestination'));
+  const file = pluginOutboxFile(input.plugin, input.to);
+  return audited(origin, { kind: 'plugin-write', target: `${input.plugin}/${input.to}`, via: 'plugin', fields: { plugin: input.plugin, to: input.to, bytes: String(Buffer.byteLength(input.text)) } }, async () => {
+    mkdirSync(dirname(file), { recursive: true });
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    writeFileSync(file, `${before}${before ? '\n' : ''}## ${new Date().toISOString()} · #${origin.issue}\n\n${input.text.trim()}\n`);
+    return t('main.plugins.write.done', { plugin: input.plugin, to: input.to });
+  });
+}
+
+/** A plugin's write that goes out now (allowed and reversible): no card, the same door and the same audit log, with the plugin as who. */
+export function writePluginNow(w: { issue: number; key: string; summary: string; plugin: string }, input: PluginWriteInput): Promise<string> {
+  return writePluginOutbox({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'plugin-write', key: w.key, summary: w.summary, by: w.plugin }, input);
+}
+
+/** Announces a plugin's allowed irreversible write: it waits in Actions until `due`, and the person may block it meanwhile. */
+export function announcePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; runId: string | null; seconds: number; write: PluginWriteInput }): ReleaseAction | null {
+  assertExternalWrite(t('main.plugins.write.title'));
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const due = new Date(Date.now() + input.seconds * 1000).toISOString();
+  const action = blank({ key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...input.write, runId: input.runId, due }, output: [t('main.plugins.write.to', { to: input.write.to }), '', input.write.text].join('\n') });
+  write({ ...store, actions: [action, ...store.actions] });
+  return action;
+}
+
+/** The announced writes still waiting for their deadline. */
+export function pendingPluginWrites(): ReleaseAction[] {
+  return read().actions.filter((a) => a.kind === 'plugin-write' && a.state === 'pending');
+}
+
+/** Starts the deadline of an announced write again: after the app was closed, the person gets the whole interval before anything goes out. */
+export function rearmPluginWrite(id: string, seconds: number): ReleaseAction {
+  return update(id, (x) => ({ ...x, unit: { ...(x.unit ?? {}), due: new Date(Date.now() + seconds * 1000).toISOString() } }));
+}
+
+/** The deadline passed: the announced write goes out, unless the person blocked it meanwhile (then nothing happens). */
+export async function sendDuePluginWrite(id: string): Promise<ReleaseAction | null> {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-write' || a.state !== 'pending') return null;
+  update(id, (x) => ({ ...x, state: 'running' }));
+  try {
+    const output = await writePluginOutbox(originOf(a), pluginWriteOf(a));
+    return update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
+  } catch (e) {
+    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));
+  }
 }
 
 export function startActions(d: { notify(n: Notice): void; emit(ev: AppEvent): void }): void {

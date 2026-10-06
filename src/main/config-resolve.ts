@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
-import { pluginsDirOf } from './plugins/read';
 import type { AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { configuredCli } from '../shared/cycles/terms';
 import { t } from '../shared/i18n';
@@ -94,8 +93,6 @@ export interface ResolvedConfig {
   claudeCli: ClaudeCliConfig & { cwd: string };
   transcriptsDir: string;
   cloneRoots: string[];
-  /** The folder the workspace's plugins are read from: what plugins.dir lists ("~/" expanded), or the plugins folder of the workspace data folder. */
-  pluginsDir: string;
   isOn(ceremony: CeremonyId): boolean;
   role(role: LlmRole): ResolvedRole;
   /** The provider and model of a team agent: a borrowed role, or an explicit provider and model. `label` is the role the call is reported under. */
@@ -170,7 +167,6 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
     claudeCli: { command: c.externalTools.claudeCli.command, cwd: xn(c.externalTools.claudeCli.cwd) ?? projectsRoot },
     transcriptsDir: ctx.env.CERIMONIAS_TRANSCRIPTS_DIR ?? join(ctx.home, '.claude/projects', claudeProjectFolder(projectsRoot)),
     cloneRoots: ctx.env.CERIMONIAS_CLONES_DIR ? [ctx.env.CERIMONIAS_CLONES_DIR] : roots.length ? roots : [projectsRoot],
-    pluginsDir: pluginsDirOf(c.plugins ?? { dir: null, list: [] }, ctx.home, ctx.fallbackCwd),
     isOn: (ceremony) => c.devCycle.ceremonies[ceremony] !== false,
     provider: (id) => c.llm.providers.find((p) => p.id === id),
     role(role) {

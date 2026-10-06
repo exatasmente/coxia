@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PLUGIN_CONTRACT, readPluginDeclaration } from '../src/shared/plugins/declaration';
 import { PLUGIN_EVENTS } from '../src/shared/plugins/events';
-import { choicesFor, pluginsDirOf, pluginViews, readPlugins } from '../src/main/plugins/read';
+import { pluginsDirOf, pluginViews, readPlugins, withChoice } from '../src/main/plugins/read';
 import { neutralPlugins } from '../src/shared/config/defaults';
 
 // The plugin core is pure: it reads the text of a declaration and the folder a plugin lives in, and judges it. The folder read is
@@ -19,7 +19,7 @@ const declaration = (over: Record<string, unknown> = {}): string =>
       events: ['stage-finished'],
       documents: [{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }],
       network: ['search.example.com'],
-      write: 'plugin://web-search/results',
+      write: { to: 'results', reversible: true },
       entry: 'search.sh',
     },
     ...over,
@@ -33,7 +33,7 @@ describe('the plugin declaration', () => {
       id: 'web-search',
       name: 'Web search',
       contract: PLUGIN_CONTRACT,
-      offers: { events: ['stage-finished'], network: ['search.example.com'], write: 'plugin://web-search/results', entry: 'search.sh' },
+      offers: { events: ['stage-finished'], network: ['search.example.com'], write: { to: 'results', reversible: true }, entry: 'search.sh' },
     });
     expect(r.declaration?.offers.documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }]);
   });
@@ -73,11 +73,19 @@ describe('the plugin declaration', () => {
     }
   });
 
-  it('refuses a write destination and an entry script that escape the plugin folder', () => {
+  it('refuses a write destination that is not a plain name, and an entry script that escapes the plugin folder', () => {
     expect(readPluginDeclaration(declaration({ offers: { write: '../out' } }), '/p').refused).toBeTruthy();
     expect(readPluginDeclaration(declaration({ offers: { write: '/etc/passwd' } }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ offers: { write: { to: 'plugin://x/y', reversible: true } } }), '/p').refused).toBeTruthy();
     expect(readPluginDeclaration(declaration({ offers: { entry: '../../bin/sh' } }), '/p').refused).toBeTruthy();
     expect(readPluginDeclaration(declaration({ offers: { entry: '/bin/sh' } }), '/p').refused).toBeTruthy();
+  });
+
+  it('reads a write as reversible only when it says so: silence is the irreversible write', () => {
+    expect(readPluginDeclaration(declaration({ offers: { write: { to: 'results', reversible: true } } }), '/p').declaration?.offers.write).toEqual({ to: 'results', reversible: true });
+    expect(readPluginDeclaration(declaration({ offers: { write: { to: 'results' } } }), '/p').declaration?.offers.write).toEqual({ to: 'results', reversible: false });
+    expect(readPluginDeclaration(declaration({ offers: { write: { to: 'results', reversible: 'yes' } } }), '/p').declaration?.offers.write).toEqual({ to: 'results', reversible: false });
+    expect(readPluginDeclaration(declaration({ offers: { write: 'results' } }), '/p').declaration?.offers.write).toEqual({ to: 'results', reversible: false });
   });
 
   it('refuses a network destination that is not a host name', () => {
@@ -136,34 +144,47 @@ describe('reading the plugins folder', () => {
     expect(records[1].refused).toContain('duplicate');
   });
 
-  it('applies the person choices by identity: what is on, what is granted', () => {
+  it('applies the person choices by identity: what is on, what was allowed always', () => {
     write('web-search', declaration());
-    const records = readPlugins(dir, { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'network', refused: null }] });
+    const records = readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: false } }] });
     expect(records[0].enabled).toBe(true);
-    expect(records[0].granted).toBe('network');
+    expect(records[0].allow).toEqual({ network: true, write: false });
+  });
+
+  it('reads an allow that is not exactly true as not allowed', () => {
+    write('web-search', declaration());
+    const list = [{ id: 'web-search', folder: null, enabled: true, allow: { network: 'yes', write: 1 } }] as never;
+    expect(readPlugins(dir, { ...neutralPlugins(), list })[0].allow).toEqual({ network: false, write: false });
   });
 
   it('offers nothing for a plugin that is off, and everything for one that is on', () => {
     write('web-search', declaration());
-    const off = pluginViews(readPlugins(dir, neutralPlugins()));
+    const none = () => ({ network: false, write: false });
+    const off = pluginViews(readPlugins(dir, neutralPlugins()), none, () => 0);
     expect(off[0].enabled).toBe(false);
-    const on = pluginViews(readPlugins(dir, { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'none', refused: null }] }));
+    const on = pluginViews(readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: none() }] }), () => ({ network: true, write: false }), () => 2);
+    expect(on[0]).toMatchObject({ session: { network: true, write: false }, waiting: 2 });
     expect(on[0]).toMatchObject({ enabled: true, events: ['stage-finished'] });
     expect(on[0].documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }]);
   });
 
-  it('turns the read records back into the config list, keeping the person choices', () => {
-    write('web-search', declaration());
-    const before = { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'network' as const, refused: null }] };
-    const chosen = choicesFor(readPlugins(dir, before), before);
-    expect(chosen).toEqual([{ id: 'web-search', folder: join(dir, 'web-search'), enabled: true, network: ['search.example.com'], granted: 'network', refused: null }]);
+  it('changes only the entry of the plugin being decided, and keeps the entry of a plugin the read did not find', () => {
+    const gone = { id: 'gone', folder: '/old/gone', enabled: true, allow: { network: true, write: true } };
+    const list = [gone, { id: 'web-search', folder: null, enabled: false, allow: { network: true, write: false } }];
+    const next = withChoice(list, { id: 'web-search', dir: join(dir, 'web-search') }, (c) => ({ ...c, enabled: true }));
+    expect(next).toEqual([gone, { id: 'web-search', folder: join(dir, 'web-search'), enabled: true, allow: { network: true, write: false } }]);
+  });
+
+  it('adds the entry of a plugin decided for the first time, off and allowed nothing until the change says otherwise', () => {
+    const next = withChoice([], { id: 'web-search', dir: '/p/web-search' }, (c) => c);
+    expect(next).toEqual([{ id: 'web-search', folder: '/p/web-search', enabled: false, allow: { network: false, write: false } }]);
   });
 });
 
 describe('the plugins folder of a workspace', () => {
   it('is what the config lists, expanded, or the plugins folder of the data folder', () => {
     expect(pluginsDirOf(neutralPlugins(), '/home/ana', '/data/ws')).toBe('/data/ws/plugins');
-    expect(pluginsDirOf({ dir: '~/my-plugins', list: [] }, '/home/ana', '/data/ws')).toBe('/home/ana/my-plugins');
-    expect(pluginsDirOf({ dir: '/opt/plugins', list: [] }, '/home/ana', '/data/ws')).toBe('/opt/plugins');
+    expect(pluginsDirOf({ ...neutralPlugins(), dir: '~/my-plugins' }, '/home/ana', '/data/ws')).toBe('/home/ana/my-plugins');
+    expect(pluginsDirOf({ ...neutralPlugins(), dir: '/opt/plugins' }, '/home/ana', '/data/ws')).toBe('/opt/plugins');
   });
 });

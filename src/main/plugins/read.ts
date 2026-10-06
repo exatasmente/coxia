@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { PluginConfig, PluginGrant, PluginsConfig } from '../../shared/config/types';
+import type { PluginAllow, PluginConfig, PluginsConfig } from '../../shared/config/types';
 import { readPluginDeclaration } from '../../shared/plugins/declaration';
 import type { PluginRecord, PluginView } from './types';
 
@@ -26,18 +26,26 @@ function realFolder(path: string): boolean {
   }
 }
 
-/** The choices as the config stored them, keyed by identity. */
+const NONE: PluginAllow = { network: false, write: false };
+
+/** What the person allowed, read leniently: anything but `true` is not allowed. */
+export const allowOf = (raw: unknown): PluginAllow => {
+  const o = asObject(raw);
+  return { network: o?.network === true, write: o?.write === true };
+};
+
+/** The choices as the config stored them, keyed by identity. The config keeps only the person's decision: everything else is read again from the folder. */
 function choicesOf(config: PluginsConfig): Map<string, PluginConfig> {
   const out = new Map<string, PluginConfig>();
   for (const p of config.list ?? []) {
-    if (p && typeof p.id === 'string') out.set(p.id, { id: p.id, folder: p.folder ?? null, enabled: p.enabled !== false, network: p.network ?? [], granted: (p.granted ?? 'none') as PluginGrant, refused: p.refused ?? null });
+    if (p && typeof p.id === 'string') out.set(p.id, { id: p.id, folder: p.folder ?? null, enabled: p.enabled === true, allow: allowOf(p.allow) });
   }
   return out;
 }
 
 /** Refuses a folder-wide read with a reason the person reads. */
 function refusedRecord(folder: string, reason: string): PluginRecord {
-  return { id: '', name: folder, dir: folder, enabled: false, granted: 'none', documents: [], events: [], network: [], write: null, entry: null, refused: reason };
+  return { id: '', name: folder, dir: folder, enabled: false, allow: NONE, documents: [], events: [], network: [], write: null, entry: null, refused: reason };
 }
 
 /**
@@ -87,7 +95,7 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
       name: d.name,
       dir: folder,
       enabled: choice?.enabled ?? false,
-      granted: choice?.granted ?? 'none',
+      allow: choice?.allow ?? NONE,
       documents: d.offers.documents,
       events: [...d.offers.events],
       network: d.offers.network,
@@ -107,8 +115,8 @@ export function pluginsDirOf(config: PluginsConfig, home: string, dataDir: strin
   return resolve(expanded);
 }
 
-/** The list the person sees: name, what it offers, what it may reach and whether it is on. */
-export function pluginViews(records: PluginRecord[]): PluginView[] {
+/** The list the person sees: name, what it offers, what it asks for, what it was allowed and whether it is on. */
+export function pluginViews(records: PluginRecord[], session: (id: string) => PluginAllow, waiting: (id: string) => number): PluginView[] {
   return records.map((r) => ({
     id: r.id,
     name: r.name,
@@ -117,28 +125,22 @@ export function pluginViews(records: PluginRecord[]): PluginView[] {
     events: r.events,
     documents: r.documents,
     network: r.network,
-    granted: r.granted,
+    write: r.write,
+    allow: r.allow,
+    session: session(r.id),
+    waiting: waiting(r.id),
     refused: r.refused,
   }));
 }
 
-/** What the config must hold for the plugins read to keep being the same: the read plugin with the person's choice on it, by identity. */
-export function choicesFor(records: PluginRecord[], config: PluginsConfig): PluginConfig[] {
-  const previous = choicesOf(config);
-  return records
-    .filter((r) => r.id && !r.refused)
-    .map((r) => {
-      const before = previous.get(r.id);
-      return {
-        id: r.id,
-        folder: r.dir,
-        enabled: before?.enabled ?? false,
-        network: r.network,
-        granted: before?.granted ?? 'none',
-        refused: r.refused,
-      } satisfies PluginConfig;
-    });
+/**
+ * Changes what the person decided about one plugin and nothing else: the other entries stay as they are, a plugin the read did not find keeps its
+ * entry (and what it was allowed), and the list is never rebuilt from what is on disk at that moment.
+ */
+export function withChoice(list: PluginConfig[], record: Pick<PluginRecord, 'id' | 'dir'>, change: (c: PluginConfig) => PluginConfig): PluginConfig[] {
+  const before = list.find((c) => c.id === record.id) ?? { id: record.id, folder: record.dir, enabled: false, allow: NONE };
+  const next = change({ ...before, folder: record.dir, allow: allowOf(before.allow) });
+  return list.some((c) => c.id === record.id) ? list.map((c) => (c.id === record.id ? next : c)) : [...list, next];
 }
 
 export type { PluginRecord, PluginView };
-export { asObject };

@@ -21,6 +21,15 @@ export interface PluginDocumentType {
   label: string;
 }
 
+/**
+ * The external write a plugin declares: the neutral destination it goes to (a plain name, never a third-party service) and whether it can be undone.
+ * A write that does not say is irreversible: it may only be allowed "always", and it is announced with a deadline before it goes out.
+ */
+export interface PluginWrite {
+  to: string;
+  reversible: boolean;
+}
+
 /** What the plugin says it offers. */
 export interface PluginOffers {
   /** Events of the fixed catalog it observes. */
@@ -29,8 +38,8 @@ export interface PluginOffers {
   documents: PluginDocumentType[];
   /** Host names it declares it needs from the network. */
   network: string[];
-  /** Neutral destination of the external write of its example (never a named third-party service). */
-  write: string | null;
+  /** The external write it asks for, or null when it writes nothing outside the cycle folder. */
+  write: PluginWrite | null;
   /** Script the app runs when an observed event happens, relative to the plugin folder. null: the plugin only offers documents. */
   entry: string | null;
 }
@@ -59,7 +68,7 @@ const REASONS = {
   contract: 'the contract version is not one this app understands',
   event: 'the declaration observes an event outside the fixed catalog',
   document: 'a document name is not one the cycle folder takes',
-  write: 'the write destination is not a plain destination',
+  write: 'the write destination is not a plain name',
   entry: 'the entry script is not a plain file name inside the plugin folder',
   network: 'a network destination is not a host name',
 } as const;
@@ -74,6 +83,9 @@ function escapes(folder: string): boolean {
   if (/^[A-Za-z]:/.test(folder)) return true;
   return folder.split(/[\\/]/).includes('..');
 }
+
+/** A plain file name: what an entry script and a write destination are, so neither can lead out of where the app puts them. */
+const PLAIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** A host name the app would accept for the network, or null. */
 const HOST = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
@@ -128,11 +140,14 @@ export function readPluginDeclaration(text: string, folder: string): PluginReadi
     if (!network.includes(host)) network.push(host);
   }
 
-  const write = str(offers.write);
-  if (write && escapes(write)) return refuse(REASONS.write);
+  // The short form (a name) is the irreversible write: the closed reading of a declaration that says nothing about undoing it.
+  const rawWrite = asObject(offers.write);
+  const to = rawWrite ? str(rawWrite.to) : str(offers.write);
+  if (to && !PLAIN_NAME.test(to)) return refuse(REASONS.write);
+  const write: PluginWrite | null = to ? { to, reversible: rawWrite?.reversible === true } : null;
 
   const entry = str(offers.entry);
-  if (entry && (escapes(entry) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry))) return refuse(REASONS.entry);
+  if (entry && (escapes(entry) || !PLAIN_NAME.test(entry))) return refuse(REASONS.entry);
 
-  return { declaration: { id, name, contract, offers: { events, documents, network, write: write || null, entry: entry || null } }, refused: null };
+  return { declaration: { id, name, contract, offers: { events, documents, network, write, entry: entry || null } }, refused: null };
 }

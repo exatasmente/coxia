@@ -169,6 +169,7 @@
   "ui.flow.wait.budget": "the provider to have budget on its key again",
   "ui.flow.wait.label": "the issue gets a label",
   "ui.flow.wait.linked-done": "the runs asked of another squad to end",
+  "ui.flow.wait.plugin": "the answer to a plugin's request",
   "ui.flow.wait.pr-merged": "the {crLong} is merged",
   "ui.flow.wait.release-approved": "every {crLong} of the release to be merged into its branch",
   "ui.flow.wait.reporter-reply": "the reporter's reply",

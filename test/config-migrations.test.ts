@@ -247,7 +247,7 @@ describe('migrateConfig', () => {
       expect(r.fromVersion).toBe(12);
       expect(r.changed).toBe(true);
       expect(r.config.schemaVersion).toBe(13);
-      expect(r.config.plugins).toEqual({ dir: null, list: [] });
+      expect(r.config.plugins).toEqual({ dir: null, list: [], confirmSeconds: 30 });
       expect(validateConfig(r.config).ok).toBe(true);
     });
 

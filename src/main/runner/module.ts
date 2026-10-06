@@ -14,7 +14,7 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
-import { firePluginEvent } from '../plugins/module';
+import { firePluginEvent, liveContext, pluginHold, pluginRunHooks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
@@ -105,10 +105,21 @@ export const runsModule: Module = (ctx) => {
     updateConfig,
     notify: (n) => ctx.notify(n),
     // An event of the fixed catalog happened in the run (a stage was entered or finished, a gate was decided, the run finished): the plugins that
-    // observe it are called, each inside the stage sandbox. Nothing waits for a plugin here, and a plugin that fails is not the run's to know.
-    pluginEvent: (event, { run }) => void firePluginEvent(event, { issue: run.issue.iid, issueTitle: run.issue.title, stage: run.stage }),
+    // observe it are called, each inside the stage sandbox, with what the person granted it and writing its document into the run's cycle folder. The
+    // app reads the run's own state here, never a stored one; a plugin that fails is not the run's to know, and the stage of a run is not started beside
+    // another sandbox over the same worktree.
+    pluginEvent: async (event, { run }) => void (await firePluginEvent(event, liveContext(run))),
+    // A plugin's request waits for the person: the run does not start another stage until it is answered.
+    pluginHold: (runId) => pluginHold(runId),
   });
   current = r;
+  pluginRunHooks.settled = (id, note) => {
+    try {
+      r.pluginSettled(id, note);
+    } catch (e) {
+      console.error('[runner] a plugin request was answered', id, e instanceof Error ? e.message : e);
+    }
+  };
   // A comment, a review, the push or the pull request that waited in Actions was approved: the run learns what the host made.
   onRunnerActionDone((action, responses) => r.actionDone(action, responses));
   // A "sim" on a step of a release was refused before it ran (a step it needs is not done): the run's thread says why.

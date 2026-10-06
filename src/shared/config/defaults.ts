@@ -30,9 +30,9 @@ export function neutralRunner(): RunnerConfig {
   return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), commitMessage: 'feat: {summary} #{iid}', linkDependencies: true, release: { soleMaintainer: false } };
 }
 
-/** A workspace with no plugins: no folder listed, nothing read and nothing offered. */
+/** A workspace with no plugins: no folder listed, nothing read and nothing offered; an allowed irreversible write is announced for 30 seconds. */
 export function neutralPlugins(): PluginsConfig {
-  return { dir: null, list: [] };
+  return { dir: null, list: [], confirmSeconds: 30 };
 }
 
 export function neutralConfig(): WorkspaceConfig {

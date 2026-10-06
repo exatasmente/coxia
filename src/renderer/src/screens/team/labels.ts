@@ -60,6 +60,7 @@ export const WAIT_LABEL: Record<WaitKind, string> = {
   'beta-out': 'ui.flow.wait.beta-out',
   'stable-out': 'ui.flow.wait.stable-out',
   budget: 'ui.flow.wait.budget',
+  plugin: 'ui.flow.wait.plugin',
 };
 
 export const EVENT_LABEL: Record<CommentEventKey, string> = {

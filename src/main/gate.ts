@@ -100,8 +100,8 @@ function view(g: Gate): GateView {
 }
 
 /**
- * Documents that plugins add to the cycle folder, as `[file, label]` at the spec folder's root: the types the plugins that are on offer.
- * Set once by the plugins module; empty when none is registered, so a workspace with no plugins behaves exactly as before.
+ * Documents that plugins add to the cycle folder, as `[file, label]`: the types the plugins that are on offer. Set once by the plugins module; empty
+ * when none is registered, so a workspace with no plugins behaves exactly as before.
  */
 export const gatePluginDocuments: { files: () => [string, string][] } = {
   files: () => [],
@@ -114,11 +114,13 @@ export function gateOptions(card: Card): GateOption[] {
     const hit = c.files.find(([f]) => existsSync(join(folder, c.sub, f)));
     return hit ? [{ gate: c.gate, label: cycleWord(hit[1]), file: join(folder, c.sub, hit[0]) }] : [];
   });
-  // The document types the plugins that are on add: a second source summed to the cycle's own, never a change to the reader of today's types.
-  const fromPlugins = gatePluginDocuments
-    .files()
-    .filter(([f]) => existsSync(join(folder, f)))
-    .map(([f, label]) => ({ gate: 2 as const, label: cycleWord(label), file: join(folder, f) }));
+  // The document types the plugins that are on add: a second source summed to the cycle's own, never a change to the reader of today's types. A
+  // plugin's document lands where the run writes its documents: the folder's root, or a subfolder the layout names; both are looked at, in that order.
+  const subs = ['', ...new Set(rc().specLayout.gateFiles.map((c) => c.sub).filter(Boolean))];
+  const fromPlugins = gatePluginDocuments.files().flatMap(([f, label]) => {
+    const at = subs.map((sub) => join(folder, sub, f)).find((p) => existsSync(p));
+    return at ? [{ gate: 2 as const, label: cycleWord(label), file: at }] : [];
+  });
   return [...fromCycle, ...fromPlugins];
 }
 

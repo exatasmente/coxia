@@ -8,6 +8,7 @@ import { api, errorText } from '../api';
 import { t, tv, useT } from '../i18n';
 import { busyText, jobs, useJobs } from '../useJobs';
 import { RunProposal, isRunProposal } from './cycle/RunProposal';
+import { PluginActionCard, isPluginAction } from './PluginActionCard';
 import { BackIcon } from './icons';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
@@ -210,9 +211,9 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
         </p>
         <h2 className="section-title">{t('ui.actions.waiting', { count: pending.length })}</h2>
         {!pending.length && <p className="small faint">{t('ui.actions.none')}</p>}
-        {pending.map((a) => <ActionCard key={a.id} a={a} go={go} waitsFor={releaseBlockers(a, actions)} />)}
+        {pending.map((a) => (isPluginAction(a) ? <PluginActionCard key={a.id} a={a} /> : <ActionCard key={a.id} a={a} go={go} waitsFor={releaseBlockers(a, actions)} />))}
         {past.length > 0 && <h2 className="section-title" style={{ marginTop: 12 }}>{t('ui.actions.history', { count: past.length })}</h2>}
-        {past.map((a) => <ActionCard key={a.id} a={a} go={go} />)}
+        {past.map((a) => (isPluginAction(a) ? <PluginActionCard key={a.id} a={a} /> : <ActionCard key={a.id} a={a} go={go} />))}
       </div>
     </div>
   );

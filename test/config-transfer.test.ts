@@ -116,6 +116,19 @@ describe('import into an existing workspace', () => {
     expect((readConfigFile(workspaceDir(root, 'principal')) as WorkspaceConfig).language).toBe('en');
   });
 
+  it('keeps what the plugins of the workspace were allowed, and brings in none from the file', () => {
+    const dir = workspaceDir(root, 'principal');
+    const mine = { ...neutralConfig(), plugins: { dir: null, confirmSeconds: 30, list: [{ id: 'web-search', folder: '/p/web-search', enabled: true, allow: { network: true, write: false } }] } };
+    writeConfigFile(dir, mine);
+    const theirs = sample();
+    theirs.plugins.list = [{ id: 'other', folder: '/x', enabled: true, allow: { network: true, write: true } }];
+    const text = JSON.stringify({ ...JSON.parse(exportText(sample(), { workspaceName: 'Acme', appVersion: '1', now: new Date(0) })), config: theirs });
+    applyImport(deps, { source: { text }, target: { mode: 'existing', id: 'principal' }, secrets: [] }, 'principal');
+    expect((readConfigFile(dir) as WorkspaceConfig).plugins.list).toEqual(mine.plugins.list);
+    const created = applyImport(deps, { source: { text }, target: { mode: 'new', name: 'Fresh' }, secrets: [] }, 'principal');
+    expect((readConfigFile(workspaceDir(root, created.workspaceId)) as WorkspaceConfig).plugins.list).toEqual([]);
+  });
+
   it('applying to another workspace than the running one does not touch the running config', () => {
     createWorkspace(root, { name: 'Other', copySettings: false }, quiet);
     mkdirSync(workspaceDir(root, 'other'), { recursive: true });

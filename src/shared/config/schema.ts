@@ -1,7 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PLUGIN_GRANTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 13). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -295,26 +295,34 @@ const promptOverride = {
 
 const command = { enabled: boolean('The integration is on.'), command: string('Executable ("~/" expands); never run through a shell.') };
 
+const pluginAllow = object(
+  'What the person allowed the plugin "always": kept until taken back, and kept when the plugin is switched off and on.',
+  {
+    network: boolean('The plugin may reach the destinations it declared.'),
+    write: boolean('The plugin\'s declared external write may go out; an irreversible one is still announced with a deadline first.'),
+  },
+  ['network', 'write'],
+);
+
 const plugin = object(
-  'A plugin the workspace read from its plugins folder, with what the person decided about it.',
+  'A plugin of the workspace and what the person decided about it; everything else is read again from its folder.',
   {
     id: string('Stable identity the plugin announces.', { pattern: ID }),
-    folder: nullableString('Folder of the plugin, relative to plugins.dir; null: declared but not installed.'),
+    folder: nullableString('Folder of the plugin as it was last read; null: listed but not read.'),
     enabled: boolean('The person switched it on. Off: nothing of it is offered and no hook of it runs.'),
-    network: strings('Host names the plugin declares it needs from the network.'),
-    granted: enumOf('What the person granted it: none, or the network destinations it declared.', PLUGIN_GRANTS),
-    refused: nullableString('Why the declaration was refused, in words; null: the plugin is usable.'),
+    allow: pluginAllow,
   },
-  ['id'],
+  ['id', 'enabled', 'allow'],
 );
 
 const plugins = object(
   'The plugins of the workspace: the team\'s own code, read from a folder. Nothing is downloaded or installed.',
   {
     dir: nullableString('Folder that holds one folder per plugin ("~/" expands); null: the plugins folder of the workspace data folder.'),
-    list: list('The plugins the app read, with what the person decided about each.', plugin, { maxItems: 100 }),
+    list: list('What the person decided about each plugin, by identity.', plugin, { maxItems: 100 }),
+    confirmSeconds: integer('Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile.', 5, 3600),
   },
-  ['list'],
+  ['list', 'confirmSeconds'],
 );
 
 export const CONFIG_SCHEMA: JsonSchema = {

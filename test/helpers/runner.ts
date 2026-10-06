@@ -288,6 +288,7 @@ export interface BootOptions {
   remoteRelease?: (run: Run) => Promise<RemoteRelease | null>;
   /** Told when an event of the fixed catalog happens in a run (a plugin is called through it). */
   pluginEvent?: RunnerDeps['pluginEvent'];
+  pluginHold?: RunnerDeps['pluginHold'];
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -328,6 +329,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     probeBudget: options.probeBudget,
     now: options.now,
     pluginEvent: options.pluginEvent,
+    pluginHold: options.pluginHold,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type Run } from '../src/shared/runs';
+import { runThreadId } from '../src/shared/forum';
 import { type Boot, boot, doc, work } from './helpers/runner';
 
 // The runner calls a plugin where an event of the fixed catalog already happens: a stage was entered or finished, a gate was decided, the run
@@ -90,5 +91,48 @@ describe('the events a run hands to the plugins', () => {
     const run = await b.runner.start('app#101');
     await reach(b, run, 'ready');
     expect(b.runner.get(run.id)).toMatchObject({ status: 'done' });
+  });
+});
+
+describe('a run held by a plugin request', () => {
+  it('does not start the next stage while a request of the run waits, and goes on once it is answered', async () => {
+    let waiting = false;
+    const b = await boot({
+      pluginEvent: (event) => {
+        // The plugin asks the person for something when the first stage finishes.
+        if (event === 'stage-finished') waiting = true;
+      },
+      pluginHold: () => (waiting ? { plugin: 'Web search', need: 'network' } : null),
+    });
+    easy(b);
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'plan');
+    expect(run.status).toBe('waiting');
+    expect(run.wait).toMatchObject({ kind: 'plugin', plugin: 'Web search', detail: 'network' });
+    // Answered: nothing left holds the run, and the held stage starts.
+    waiting = false;
+    b.runner.pluginSettled(run.id, { code: 'run.plugin.refused.network', params: { plugin: 'Web search' } });
+    await b.settle();
+    const after = b.runner.get(run.id)!;
+    expect(after.wait).toBeNull();
+    expect(after.stage).not.toBe('refine');
+    expect(b.forum.read(runThreadId(run.id))?.messages.some((m) => m.code === 'run.plugin.refused.network')).toBe(true);
+  });
+
+  it('stays waiting while another request of the run is still open', async () => {
+    let open = 2;
+    const b = await boot({ pluginEvent: () => undefined, pluginHold: () => (open > 0 ? { plugin: 'Web search', need: 'write' } : null) });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    expect(run.status).toBe('waiting');
+    open = 1;
+    b.runner.pluginSettled(run.id, null);
+    expect(b.runner.get(run.id)!.status).toBe('waiting');
+    open = 0;
+    b.runner.pluginSettled(run.id, null);
+    expect(b.runner.get(run.id)!.status).not.toBe('waiting');
   });
 });

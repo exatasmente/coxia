@@ -42,4 +42,21 @@ describe('the gate documents of the plugins', () => {
     gatePluginDocuments.files = () => [['7_WEB_SEARCH.md', 'x']];
     expect(gateOptions(card(join(dir, 'gone')))).toEqual([]);
   });
+
+  it('finds a plugin document in a subfolder the cycle layout names, as well as at the root', async () => {
+    const config = await import('../src/main/workspaceConfig');
+    const layout = config.rc().specLayout;
+    const before = layout.gateFiles;
+    layout.gateFiles = [{ sub: 'feature', gate: 1, files: [['1_SPEC.md', 'x']] }];
+    try {
+      gatePluginDocuments.files = () => [['7_WEB_SEARCH.md', 'x']];
+      mkdirSync(join(dir, 'feature'), { recursive: true });
+      writeFileSync(join(dir, 'feature', '7_WEB_SEARCH.md'), '# Web search\n');
+      expect(gateOptions(card(dir)).map((o) => o.file)).toEqual([join(dir, 'feature', '7_WEB_SEARCH.md')]);
+      writeFileSync(join(dir, '7_WEB_SEARCH.md'), '# Web search\n');
+      expect(gateOptions(card(dir)).map((o) => o.file)).toEqual([join(dir, '7_WEB_SEARCH.md')]);
+    } finally {
+      layout.gateFiles = before;
+    }
+  });
 });

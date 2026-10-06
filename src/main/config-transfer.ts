@@ -91,6 +91,17 @@ export function applyImport(deps: TransferDeps, req: ImportApply, running: strin
     const dir = workspaceDir(deps.root, id);
     if (existsSync(join(dir, CONFIG_FILE))) copyFileSync(join(dir, CONFIG_FILE), join(dir, 'config.pre-import.json'));
   }
-  writeConfigFile(workspaceDir(deps.root, id), config);
+  // What a workspace's plugins were allowed is the person's, on that workspace: a file never brings permissions in, and replacing a workspace keeps its own.
+  writeConfigFile(workspaceDir(deps.root, id), { ...config, plugins: { ...config.plugins, list: created ? [] : pluginChoicesOf(workspaceDir(deps.root, id)) } });
   return { workspaceId: id, created, appliedToRunning: id === running, missingSecrets: [...needed].filter((ref) => !deps.secrets.has(ref)) };
+}
+
+/** The plugin list a workspace's configuration file holds now, or none when it cannot be read. */
+function pluginChoicesOf(dir: string): WorkspaceConfig['plugins']['list'] {
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, CONFIG_FILE), 'utf8')) as { plugins?: { list?: unknown } };
+    return Array.isArray(raw.plugins?.list) ? (raw.plugins.list as WorkspaceConfig['plugins']['list']) : [];
+  } catch {
+    return [];
+  }
 }

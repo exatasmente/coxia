@@ -169,6 +169,7 @@
   "ui.flow.wait.budget": "o provedor voltar a ter orçamento na chave",
   "ui.flow.wait.label": "a issue ganhar um rótulo",
   "ui.flow.wait.linked-done": "as execuções pedidas a outro squad terminarem",
+  "ui.flow.wait.plugin": "a resposta a um pedido de plugin",
   "ui.flow.wait.pr-merged": "o {crLong} ser integrado",
   "ui.flow.wait.release-approved": "todos os {crLong} da release entrarem na branch dela",
   "ui.flow.wait.reporter-reply": "a resposta de quem abriu a issue",
