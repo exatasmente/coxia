@@ -847,6 +847,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!to) return;
     const config = deps.config();
     const run = need(runId);
+    // A documentation run has no issue whose labels could be read or proposed: it is told nothing of a priority (the flow of a workspace can be edited, so the guard is here).
+    if (run.docs) return;
     const levels = config.devCycle.priority.labels;
     // Only the stage that owns the priority proposes it: a level any other stage returned is said not to have been taken.
     const flow = flowOfRun(run, config);
@@ -898,6 +900,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (w.kind === 'beta-age') return { over: await betaAged(run, provider, w) };
       if (w.kind === 'beta-out') return { over: await betaOut(run, provider) };
       if (w.kind === 'stable-out') return { over: await stableOut(run) };
+      // What is left is read from the issue (its label, a reply to it): a documentation run has none, so such a wait is never over by itself and the person skips it.
+      if (run.docs) return { over: false };
       if (w.kind === 'label') {
         const want = (w.label ?? '').trim().toLowerCase();
         return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
@@ -922,6 +926,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const remove = e.previous?.trackerStatus && e.previous.trackerStatus !== add ? e.previous.trackerStatus : null;
     if ((!add || add === e.previous?.trackerStatus) && !remove) return;
     const run = need(runId);
+    // A documentation run has no issue to carry a status label.
+    if (run.docs) return;
     const refusal = door.refusal();
     if (refusal) return say(run, 'runner.status.refused', { label: add ?? remove ?? '' }, e.stage.id);
     const provider = door.provider();
@@ -950,6 +956,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade> {
     const run = need(runId);
+    // A documentation run has no tracker project of its own to open an issue in for another squad.
+    if (run.docs) return { status: 'no-host', reason: '' };
     const refusal = door.refusal();
     if (refusal) {
       say(run, 'runner.request.refused', { title: e.title });
@@ -986,6 +994,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const label = e.label.trim();
     if (!label) return;
     const run = need(runId);
+    // A documentation run has no issue to label with a squad.
+    if (run.docs) return;
     if (door.refusal()) return say(run, 'runner.squad.refused', { label });
     const provider = door.provider();
     if (!provider) return;

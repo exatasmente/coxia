@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyTemplate, docsFlow } from '../src/shared/cycles';
+import { flowOfRun } from '../src/shared/runs/flow';
 import { setLanguage } from '../src/shared/i18n';
 import type { Run } from '../src/shared/runs';
 import { git } from './helpers/conflictRepos';
@@ -101,9 +102,10 @@ const withDocs = (c: Config) => {
   c.agents = applied.agents;
 };
 
-async function bootDocs(o: { repo?: Repo; flow?: boolean; shell?: 'sandbox' | 'host'; sandbox?: FakeSandbox } = {}): Promise<Boot> {
+async function bootDocs(o: { repo?: Repo; flow?: boolean; shell?: 'sandbox' | 'host'; sandbox?: FakeSandbox; edit?: (c: Config) => void } = {}): Promise<Boot> {
   const configure = (c: Config) => {
     withDocs(c);
+    o.edit?.(c);
     // The agent of the docs flow is an ordinary one of the team: the person may set its shell.
     if (o.shell) (c.agents.team.find((a) => a.id === 'docs-writer') as { shell: string }).shell = o.shell;
   };
@@ -561,6 +563,59 @@ describe('the push and the pull request', () => {
     expect(b.runner.get(run.id)?.status).toBe('waiting');
     expect(linked).not.toHaveBeenCalled();
     linked.mockRestore();
+  });
+
+  describe('a docs flow edited to carry what an issue flow carries', () => {
+    // The flow is the person's to edit (an import of the configuration can bring one): a status label on its stages and a wait for a label must not reach the host, which has no
+    // issue to put them on.
+    const edited = (c: Config) => {
+      const flow = c.devCycle.flows?.docs as { id: string; trackerStatus?: string; waitsFor?: { kind: string; label?: string } }[];
+      flow.find((s) => s.id === 'docs-draft')!.trackerStatus = 'Drafting';
+      flow.find((s) => s.id === 'docs-publish')!.trackerStatus = 'Publishing';
+      flow.find((s) => s.id === 'docs-ready')!.waitsFor = { kind: 'label', label: 'merged-by-hand' };
+    };
+
+    it('plans nothing for the issue 0 over a whole run, and its wait for a label is never over by itself', async () => {
+      const b = await bootDocs({ edit: edited });
+      script(b);
+      const watch = watchIssueZero();
+      const run = await toGate(b);
+      const waiting = await toWait(b, run);
+      expect(waiting).toMatchObject({ status: 'waiting', stage: 'docs-ready', wait: { kind: 'label' } });
+      expect(await b.runner.tick()).toEqual([]);
+      expect(b.runner.get(run.id)?.status).toBe('waiting');
+      expect(watch.zero()).toEqual([]);
+      expect(watch.ops()).not.toContain('setIssueLabels');
+      expect(pending().filter((a) => a.kind !== 'run-push')).toEqual([]);
+      expect(b.thread(run).filter((m) => /^runner\.status\./.test(m.code ?? ''))).toEqual([]);
+      watch.done();
+    });
+
+    it('the publisher does not act on the issue of a documentation run, whatever it is asked: status, priority, squad label, request for another squad', async () => {
+      // the draft stage is the one that owns the priority of the flow (the last work stage of the backlog kind), so a level it returns would be proposed
+      const b = await bootDocs({ edit: (c) => ((c.devCycle.flows?.docs as { id: string; kind: string }[]).find((s) => s.id === 'docs-draft')!.kind = 'backlog') });
+      script(b);
+      const run = await toGate(b);
+      const publisher = b.deps.publisher as NonNullable<typeof b.deps.publisher>;
+      const stages = flowOfRun(run, getConfig());
+      const draft = { ...stages.find((s) => s.id === 'docs-draft')!, trackerStatus: 'Drafting' };
+      const gate = stages.find((s) => s.id === 'docs-gate')!;
+      const watch = watchIssueZero();
+      const agent = getConfig().agents.team.find((a) => a.id === 'docs-writer')!;
+      await publisher.stageEntered(run.id, { stage: draft, previous: null, autonomous: true });
+      await publisher.stageEntered(run.id, { stage: gate, previous: draft, autonomous: false });
+      await publisher.stageEnded(run.id, { stage: draft, agent, kind: 'work', output: { priority: 'High', milestone: '', summary: 'x', artifacts: [], handoff: null, question: null, commit: '' } as never, autonomous: true });
+      await publisher.squadRouted(run.id, { squad: 'any', label: 'squad-any', by: 'docs-writer', autonomous: true });
+      await publisher.squadRouted(run.id, { squad: 'any', label: 'squad-any', by: 'docs-writer', autonomous: false });
+      const made = await publisher.requestIssue(run.id, { key: 'k', squad: 'any', title: 'Needs a thing', body: 'b', label: 'squad-any', by: 'docs-writer', autonomous: true });
+      expect(made.status).toBe('no-host');
+      expect(watch.ops()).toEqual([]);
+      expect(watch.zero()).toEqual([]);
+      expect(pending()).toEqual([]);
+      expect(forge.writes).toEqual([]);
+      expect(b.thread(run).filter((m) => /^runner\.(status|priority|squad|request)\./.test(m.code ?? ''))).toEqual([]);
+      watch.done();
+    });
   });
 
   it('the detector of a call for the issue 0 does catch one, of each kind', async () => {
