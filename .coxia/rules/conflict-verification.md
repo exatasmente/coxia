@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
 checked-date: 2026-10-06
 evidence: [docs/verify-commands.md:36-54, src/main/verify-move.ts, src/shared/verifyCommands.ts, src/main/conflictVerify.ts, src/renderer/src/conflictVerifyDefaults.ts, src/renderer/src/screens/ConflictVerifySection.tsx, test/verify-commands.test.ts, test/verify-move.test.ts, test/verifyDefaults.test.ts]
 summary: The per-project command run in the conflict worktree before the merge commit

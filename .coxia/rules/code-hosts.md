@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
 checked-date: 2026-10-06
 evidence: [src/main/vcs/types.ts, src/main/vcs/runtime.ts, src/main/vcs/validate.ts, src/main/vcs/readPolicy.ts:13-26, src/main/vcs/readPolicy.ts:66-72, src/main/vcs/github.ts, src/main/vcs/probe.ts, test/vcs-writes.test.ts:1-40, test/vcs-read-policy.test.ts, docs/vcs-providers.md:1-150]
 summary: The neutral code-host interface, the providers, the single write path and the read policy

@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
 checked-date: 2026-10-06
 evidence: [docs/runner.md:32-45, docs/cycles.md:53-64, src/main/runner/commands.ts:14-27, src/main/runner/commands.ts:92-108, src/shared/runs/output.ts:20-60, test/runner-sandbox.test.ts, test/runs-results.test.ts]
 summary: Notes for the QA agent: how it reads, what it runs, and how it returns work

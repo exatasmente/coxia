@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
 checked-date: 2026-10-06
 evidence: [docs/cycles.md:53-66, docs/runner.md:74-99, src/main/vcs/validate.ts, src/main/vcs/readPolicy.ts, test/shell-allowlist.test.ts]
 summary: Notes for the Tech Lead agent: the plan, the review on the lines, and the code-host read
