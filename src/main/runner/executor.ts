@@ -4,7 +4,7 @@ import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
-import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
+import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { MaxTurnsError, ProviderBudgetError } from '../engine/contract';
@@ -363,7 +363,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const owns = priorityStageOf(flow)?.id === stage.id;
   const priority = levels.length && owns ? levels : undefined;
   const priorityHint = levels.length && !owns ? levels : undefined;
-  const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
+  const pr = pushesAt(config, flow, stage.id) ? askOf('pr') : null;
   // The front door of a run whose squad is not decided proposes it: the squads it may name, and why the scope rules left it open.
   const candidates = run.routing && flow[0]?.id === stage.id ? squadsOf(config).filter((q) => run.routing?.candidates.includes(q.id)) : [];
   const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;

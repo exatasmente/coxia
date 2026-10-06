@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pull request opens after the implementation, so the review lands on it.** The push waited for the last stage whose agent changes the branch; in a flow where QA also writes (tests, its documents), that was QA, so the review ran with no pull request and went to the issue, and asking the developer for the pull request got nowhere. The push is now proposed at the end of the last stage before the review that changes the branch, and the pull request after it, as before each waiting for your yes. Every later stage that changes the branch (QA, the implementation a review sent back to) proposes a new push, which only updates the pull request.
+
 ## [0.7.0-beta.3] - 2026-10-06
 
 ### Fixed
