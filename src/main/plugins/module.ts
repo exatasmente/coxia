@@ -106,10 +106,15 @@ export const pluginRunHooks: { settled(runId: string, note: PluginNote | null): 
 // ---- the session ---------------------------------------------------------------------------------------------------------------------------
 
 const NONE: PluginAllow = { network: false, write: false };
-const session = new Map<string, PluginAllow>();
+const session = new Map<string, { reach: string; allow: PluginAllow }>();
 
-/** What the person allowed a plugin for this session of the app. */
-export const sessionOf = (id: string): PluginAllow => session.get(id) ?? NONE;
+/** What the person allowed a plugin for this session of the app — for the declaration it had then: another one asks again, like "always". */
+export const sessionOf = (id: string, reach: string): PluginAllow => {
+  const entry = session.get(id);
+  return entry && entry.reach === reach ? entry.allow : NONE;
+};
+
+const setSession = (id: string, reach: string, change: Partial<PluginAllow>): void => void session.set(id, { reach, allow: { ...sessionOf(id, reach), ...change } });
 
 /** Forgets every session permission (the app closing does it for real; a test does it here). */
 export function clearPluginSession(): void {
@@ -246,8 +251,8 @@ export function setPluginSettings(dir: string, confirmSeconds: number, d: Plugin
 /** Takes back what a plugin was allowed (always and for the session): it asks again the next time it needs it. Only the computer does this. */
 export function revokePluginAllow(id: string, need: PluginNeed, d: PluginsDeps = pluginsDeps): PluginsView {
   const record = recordOf(id, d);
-  d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [need]: false } })));
-  session.set(id, { ...sessionOf(id), [need]: false });
+  d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, [need]: false }, allowedFor: record.reach })));
+  setSession(id, record.reach, { [need]: false });
   // A write already announced went out on this permission: taking it back stops it too.
   if (need === 'write') withdrawWrites(id, t('main.plugins.write.revoked'), d);
   return listPlugins(d);
@@ -278,7 +283,7 @@ export async function firePluginEvent(event: PluginEvent, context: PluginContext
 
 /** One call of one plugin, with what the person allowed it now and, when an answer is being carried out, what that answer allowed for this call. */
 async function callPlugin(record: PluginRecord, event: string, context: PluginContext, d: PluginsDeps, once: Partial<PluginAllow>): Promise<PluginRun> {
-  const permission: PluginPermission = { allow: record.allow, session: sessionOf(record.id), once };
+  const permission: PluginPermission = { allow: record.allow, session: sessionOf(record.id, record.reach), once };
   const target = context.runId ? d.target(context.runId) : null;
   if (!target) return fail(record.id, t('main.plugins.refusal.noRun', { plugin: record.name }));
   // A plugin that cannot run (a required setting is empty) is not asked a permission for.
@@ -346,7 +351,7 @@ async function writeFor(record: PluginRecord, call: JsCall, event: string, conte
   if (!resolved.ok) return resolved.refused;
   if (!resolved.decl.write) return t('main.plugins.request.isRead', { id: call.id });
   const target = requestTarget(resolved);
-  const request = { ...call, target };
+  const request = { ...call, target, reach: record.reach };
   const step = pluginWriteStep({ to: resolved.decl.id, reversible: resolved.decl.reversible }, 'x', permission);
   const summary = t('main.plugins.request.summary', { plugin: record.name, target });
   if (step === 'go') {
@@ -367,12 +372,13 @@ async function writeFor(record: PluginRecord, call: JsCall, event: string, conte
 }
 
 /** Makes a plugin's write request through the audited door; a refusal or an error status is a failure the audit log keeps. */
-async function sendRequestWrite(record: PluginRecord, request: JsCall & { target: string }, origin: Parameters<typeof auditPluginRequest>[0], d: PluginsDeps): Promise<string> {
+async function sendRequestWrite(record: PluginRecord, request: JsCall & { target: string; reach?: string }, origin: Parameters<typeof auditPluginRequest>[0], d: PluginsDeps): Promise<string> {
   const resolved = resolvePluginRequest(record, request);
   if (!resolved.ok) throw new Error(resolved.refused);
   // What goes out is what the person saw: a declaration or a setting that changed since leads the call elsewhere, and it does not go.
   const target = requestTarget(resolved);
-  if (target !== request.target) throw new Error(t('main.plugins.write.changed'));
+  // The whole declaration counts, not only the address: where the key goes or how it is written changed is another request too.
+  if (target !== request.target || (request.reach !== undefined && request.reach !== record.reach)) throw new Error(t('main.plugins.write.changed'));
   return d.door.sendRequest(origin, target, { plugin: record.id, request: resolved.decl.id, method: resolved.method }, async () => {
     const done = await d.fetchRequest(record, resolved);
     if (!done.ok) throw new Error(done.refused);
@@ -479,8 +485,10 @@ export async function answerPluginAsk(id: string, answer: PluginAnswer, d: Plugi
     return listPlugins(d);
   }
   const record = d.read(d.dir(), d.config()).find((r) => r.id === unit.plugin && !r.refused) ?? null;
-  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [unit.need]: true }, allowedFor: record.reach })));
-  if (answer === 'session') session.set(unit.plugin, { ...sessionOf(unit.plugin), [unit.need]: true });
+  // Built on what holds now (`record.allow`, already empty for a declaration that changed), never on what was stored: allowing the network for a new
+  // declaration must not bring an old "always" of its write back to life.
+  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, [unit.need]: true }, allowedFor: record.reach })));
+  if (answer === 'session' && record) setSession(unit.plugin, record.reach, { [unit.need]: true });
   // "Session" and "always" answer every request of the plugin for the same thing; "once" answers this one.
   const answered = answer === 'once' ? [action] : d.door.pending().filter((a) => unitOf(a).plugin === unit.plugin && unitOf(a).need === unit.need);
   for (const a of answered) d.door.settle(a.id, true, t(`main.plugins.ask.allowed.${answer}`));
@@ -585,8 +593,10 @@ export async function revokePluginWrite(actionId: string, d: PluginsDeps = plugi
   d.door.withdraw(actionId, t('main.plugins.write.revoked'));
   const plugin = String((a.unit ?? {}).plugin ?? '');
   const record = d.read(d.dir(), d.config()).find((r) => r.id === plugin);
-  if (record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), write: false } })));
-  session.set(plugin, { ...sessionOf(plugin), write: false });
+  if (record) {
+    d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, write: false }, allowedFor: record.reach })));
+    setSession(plugin, record.reach, { write: false });
+  }
   return listPlugins(d);
 }
 

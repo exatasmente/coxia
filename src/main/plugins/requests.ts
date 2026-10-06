@@ -43,6 +43,8 @@ export interface RawResponse {
   contentType: string;
   /** Reads at most `max` bytes of the body, and says whether it was cut. */
   read(max: number): Promise<{ text: string; truncated: boolean }>;
+  /** Lets the connection go without reading the body (a redirect that is not followed). */
+  dispose(): void;
 }
 
 /**
@@ -152,6 +154,10 @@ export const realTransport: Transport = (url, init) =>
       resolve({
         status: res.statusCode ?? 0,
         contentType: String(res.headers['content-type'] ?? ''),
+        dispose: () => {
+          clearTimeout(timer);
+          res.destroy();
+        },
         read: (max) =>
           new Promise((done, fail) => {
             const chunks: Buffer[] = [];
@@ -209,7 +215,10 @@ export async function performPluginRequest(deps: RequestDeps, plugin: Requesting
   const clean = (text: string): string => redact(forms.reduce((acc, f) => acc.split(f).join('[secret]'), text));
   try {
     const res = await deps.transport(url, { method: resolved.method, headers, body: resolved.body, timeoutMs: deps.timeoutMs ?? REQUEST_TIMEOUT_MS, allowPrivate: resolved.fromSetting });
-    if (res.status >= 300 && res.status < 400) return { ok: false, refused: t('main.plugins.request.redirect', { id: resolved.decl.id }) };
+    if (res.status >= 300 && res.status < 400) {
+      res.dispose();
+      return { ok: false, refused: t('main.plugins.request.redirect', { id: resolved.decl.id }) };
+    }
     const { text, truncated } = await res.read(deps.maxBytes ?? RESPONSE_MAX_BYTES);
     return { ok: true, status: res.status, contentType: res.contentType, body: clean(text), truncated };
   } catch (e) {

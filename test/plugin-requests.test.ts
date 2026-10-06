@@ -112,7 +112,7 @@ describe('making the call', () => {
   type Seen = { url: string; init: Parameters<Transport>[1] };
   const fake = (status: number, body: string, seen: Seen[] = []): Transport => async (url, init) => {
     seen.push({ url: url.href, init });
-    return { status, contentType: 'application/json', read: async (max) => ({ text: body.slice(0, max), truncated: body.length > max }) };
+    return { status, contentType: 'application/json', read: async (max) => ({ text: body.slice(0, max), truncated: body.length > max }), dispose: () => undefined };
   };
   const secret = (ref: string) => (ref === pluginSecretRef('web-search', 'token') ? SECRET : null);
   const resolved = (call: Parameters<typeof resolvePluginRequest>[1]) => {
