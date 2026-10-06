@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DocsConfig, WorkspaceConfig } from '../../../shared/config/types';
+import type { DocsConfig } from '../../../shared/config/types';
 import { type DocsRepoStatus, type DocsStatus, type UncheckedFile, isClaudeSource } from '../../../shared/harness/status';
-import { DOCS_KEYS, type DocsKey } from '../../../shared/wizard';
+import { docsListsOf, withDocsSources } from '../../../shared/harness/sources';
+import type { DocsKey } from '../../../shared/wizard';
 import type { Screen } from '../App';
 import { errorText } from '../api';
 import { docsApi } from '../docsApi';
@@ -36,7 +37,6 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [asking, setAsking] = useState<{ repo: string; mode: Mode } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [config, setConfig] = useState<WorkspaceConfig | null>(null);
   const [lists, setLists] = useState<Pick<DocsConfig, DocsKey> | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -56,10 +56,7 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
   useEffect(() => {
     if (web) return;
     void read();
-    void wizardApi.config().then((view) => {
-      setConfig(view.config);
-      setLists(Object.fromEntries(DOCS_KEYS.map((k) => [k, view.config.docs[k]])) as Pick<DocsConfig, DocsKey>);
-    }, (e) => setError(errorText(e)));
+    void wizardApi.config().then((view) => setLists(docsListsOf(view.config)), (e) => setError(errorText(e)));
   }, [web, read]);
 
   if (web) return null;
@@ -92,11 +89,12 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
   };
   const remove = (k: DocsKey, path: string) => lists && edit({ ...lists, [k]: lists[k].filter((x) => x !== path) });
   const save = async () => {
-    if (!config || !lists) return;
+    if (!lists) return;
     setError(null);
     try {
-      const view = await wizardApi.save({ ...config, docs: { ...config.docs, ...lists } });
-      setConfig(view.config);
+      // The configuration as it is now, not as it was when the screen opened: saving replaces the whole of it, and the team above (or a flow just applied) may have changed.
+      const current = (await wizardApi.config()).config;
+      await wizardApi.save(withDocsSources(current, lists));
       setDirty(false);
       setSaved(true);
     } catch (e) {
