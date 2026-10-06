@@ -302,6 +302,23 @@ describe('starting a documentation run', () => {
       untouched();
     });
 
+    it('says, when the start fails after the template was applied, that the agent and the flow were added and stay', async () => {
+      const b = await bootDocs({ flow: false });
+      script(b);
+      // the day's folder is already there: the one thing the check before the template does not see
+      mkdirSync(join(b.repo.worktrees, 'app', 'docs-20261006'), { recursive: true });
+      const failed = await startDocsRun(depsOf(b), 'app', 'create', true).catch((e: Error) => e);
+      expect(failed).toBeInstanceOf(Error);
+      expect((failed as Error).message).toMatch(/exists/i);
+      expect((failed as Error).message).toContain('The "Documentation writer" agent and the documentation flow were added to the configuration and stay there');
+      expect(getConfig().devCycle.flows?.docs).toBeDefined();
+      expect(getConfig().agents.team.some((a) => a.id === 'docs-writer')).toBe(true);
+      // a failure when nothing was added (the flow was there) gets no such sentence
+      const again = await startDocsRun(depsOf(b), 'app', 'create', false).catch((e: Error) => e.message);
+      expect(again).toMatch(/exists/i);
+      expect(again).not.toContain('were added to the configuration');
+    });
+
     it('and still applies it when the start can go on', async () => {
       const b = await bootDocs({ flow: false });
       script(b);
