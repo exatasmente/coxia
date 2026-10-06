@@ -147,3 +147,7 @@ Cada ponto abaixo é uma proposta; a pessoa aprova ou muda um a um. A coluna "re
 | P8 | O que fica de fora | O catálogo de skills e a estrutura de plugin de #85 e #86; a configuração de MCP; escrever `AGENTS.md` ou o formato de outras ferramentas; mudar as cerimônias dos cinco agentes de sistema. | Escrever `AGENTS.md` junto: ajuda quem usa outras ferramentas, mas cria um segundo formato a manter sem que o app o leia. |
 
 Já decididas pelo mantenedor, e que não voltam ao gate: a documentação mora no repositório de cada projeto; o agente rascunha e a pessoa aprova, e depois ela é mantida por agentes com a pessoa aprovando, e uma regra cuja evidência mudou é marcada como não conferida; a documentação do Claude Code continua do Claude Code, com importação do que é fato do projeto; entra na 0.7.0.
+
+## Registro
+
+- 2026-10-06 — **Gate 1 aprovado** pelo mantenedor, com as recomendações de P1 a P8 como estão: `.coxia/` na raiz de cada repositório; os agentes do app leem só `.coxia/`, nos dois motores; a criação por uma execução de documentação sem issue; a manutenção no mesmo ramo e a marca "não conferida"; o filtro por etapa, papel e caminho com orçamento por chamada; a tela nova em Configurações, só no desktop; a verificação de texto antes do push; e o que fica de fora. A marca "não conferida" só sai com uma mudança aprovada que atualiza o cabeçalho.
