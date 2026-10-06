@@ -14,18 +14,20 @@ export const DOCS_TEMPLATE = 'docs-flow';
 export const applyDocsFlow = (): void => void applyCycleTemplate(DOCS_TEMPLATE);
 
 export interface DocsStartDeps {
-  runner: Pick<Runner, 'startDocs'>;
+  runner: Pick<Runner, 'startDocs' | 'checkDocs'>;
   config(): WorkspaceConfig;
   applyFlow(): void;
 }
 
 /**
  * Starts the documentation run of a repository. A workspace with no docs flow gets it only when `applyFlow` is true (the person confirmed what enters: the agent and
- * the flow); otherwise the start is refused with `no-docs-flow`, which the window answers with that confirmation.
+ * the flow) and the start passes `checkDocs`; otherwise the start is refused with `no-docs-flow`, which the window answers with that confirmation, or with what `checkDocs` found.
  */
 export async function startDocsRun(d: DocsStartDeps, repo: string, mode: string, applyFlow: boolean): Promise<Run> {
   if (!docsFlowOf(d.config())?.length) {
     if (!applyFlow) throw new RunnerError('no-docs-flow');
+    // What would stop the start (the mode, a run already going, the repository, the identity) is found out before the template changes the configuration.
+    await d.runner.checkDocs(repo, mode);
     d.applyFlow();
   }
   return d.runner.startDocs(repo, mode as 'create' | 'update');

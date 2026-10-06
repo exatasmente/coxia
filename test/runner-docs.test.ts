@@ -260,6 +260,55 @@ describe('starting a documentation run', () => {
     expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
   });
 
+  describe('the first click, which applies the docs template, changes nothing when the start itself cannot happen', () => {
+    const untouched = () => {
+      expect(getConfig().devCycle.flows?.docs).toBeUndefined();
+      expect(getConfig().agents.team.some((a) => a.id === 'docs-writer')).toBe(false);
+    };
+    const depsOf = (b: Boot) => ({ runner: b.runner, config: getConfig, applyFlow: applyDocsFlow });
+
+    it('a mode it does not know, a repository the workspace does not have', async () => {
+      const b = await bootDocs({ flow: false });
+      script(b);
+      await expect(startDocsRun(depsOf(b), 'app', 'delete', true)).rejects.toThrow(/is not a mode/);
+      untouched();
+      await expect(startDocsRun(depsOf(b), 'nowhere', 'create', true)).rejects.toThrow(/no local checkout/);
+      untouched();
+    });
+
+    it('a repository with no identity to commit with', async () => {
+      const b = await bootDocs({ flow: false });
+      script(b);
+      updateConfig((c) => ({ ...c, runner: { ...c.runner, identity: { name: '', email: '' } } }));
+      await expect(startDocsRun(depsOf(b), 'app', 'create', true)).rejects.toMatchObject({ code: 'no-identity' });
+      untouched();
+    });
+
+    it('a run already going for the repository', async () => {
+      const b = await bootDocs();
+      script(b);
+      await b.runner.startDocs('app', 'create');
+      // the flow is taken away (an import of the configuration would do it), so the click would apply the template again
+      updateConfig((c) => {
+        delete c.devCycle.flows?.docs;
+        c.agents.team = c.agents.team.filter((a) => a.id !== 'docs-writer');
+        return c;
+      });
+      untouched();
+      await expect(startDocsRun(depsOf(b), 'app', 'update', true)).rejects.toThrow(/already/i);
+      untouched();
+    });
+
+    it('and still applies it when the start can go on', async () => {
+      const b = await bootDocs({ flow: false });
+      script(b);
+      const run = await startDocsRun(depsOf(b), 'app', 'create', true);
+      expect(run.docs).toEqual({ mode: 'create' });
+      expect(getConfig().devCycle.flows?.docs).toBeDefined();
+      await b.settle();
+    });
+  });
+
   it('keeps what the repository already ignores in .coxia and is idempotent', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'docs-ignore-'));
     mkdirSync(join(dir, '.coxia'));

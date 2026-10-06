@@ -199,6 +199,11 @@ export interface Runner {
    * worktree, and ends in a push and a pull request that wait for the person's "sim" like every other.
    */
   startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run>;
+  /**
+   * What `startDocs` asks before it changes anything that does not depend on the docs flow: the mode, a run already going for the repository, the repository itself and the
+   * identity of the commits. Throws what `startDocs` would; the window calls it before the docs template is applied, so a start that cannot happen leaves the configuration as it was.
+   */
+  checkDocs(repoId: string, mode: string): Promise<void>;
   startStage(id: string): Run;
   accept(id: string, note?: string): Run;
   returnStage(id: string, note: string): Run;
@@ -741,6 +746,25 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
+  // The questions of a documentation start that the docs flow does not enter into: the same ones, in the same order, whether the flow is there or not.
+  async function checkDocs(repoId: string, mode: string): Promise<void> {
+    if (starting.has(docsRef(String(repoId)))) throw new RunError('duplicate', { issue: docsRef(String(repoId)) });
+    await docsPrecheck(String(repoId), mode);
+  }
+
+  async function docsPrecheck(repoId: string, mode: string): Promise<{ repo: { id: string; path: string }; identity: Identity }> {
+    if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
+    const ref = docsRef(repoId);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const env = deps.env();
+    // The repository is named, so no issue project is asked for; one the workspace does not have has no checkout to make a worktree from.
+    if (!env.repos.some((r) => r.id === repoId)) throw new RunnerError('no-clone', { repo: repoId.slice(0, 48) });
+    const repo = await repoFor(repoId, repoId);
+    const identity = await commitIdentity(deps.config().runner.identity, repo.path, deps.identity);
+    if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
+    return { repo, identity };
+  }
+
   async function createDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
     const config = deps.config();
     const ref = docsRef(repoId);
@@ -751,12 +775,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     assertStartable(flow);
     const broken = flowErrors({ stages, team: config.agents.team }, { asFlow: true });
     if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+    const { repo, identity } = await docsPrecheck(repoId, mode);
     const env = deps.env();
-    // The repository is named, so no issue project is asked for; one the workspace does not have has no checkout to make a worktree from.
-    if (!env.repos.some((r) => r.id === repoId)) throw new RunnerError('no-clone', { repo: repoId.slice(0, 48) });
-    const repo = await repoFor(repoId, repoId);
-    const identity = await commitIdentity(config.runner.identity, repo.path, deps.identity);
-    if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
 
     const today = deps.now?.() ?? new Date();
     const day = dayStamp(today);
@@ -856,6 +876,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     start,
     startRelease,
     startDocs,
+    checkDocs,
     startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
