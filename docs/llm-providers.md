@@ -211,4 +211,3 @@ Important: **one** real model has been tested, in four runs, and only in the run
 - Reasoning that arrives as `<think>` is recognised only at the start of the answer; reasoning text never reaches the final answer.
 - The two engines keep separate sessions: a Claude session does not resume on the open engine (it starts a new one).
 - Dollar cost is not computed by the app: tokens are recorded (per stage, in the runner) and a cost only shows when the provider reports one (OpenRouter does) or the Claude SDK does.
-s.
