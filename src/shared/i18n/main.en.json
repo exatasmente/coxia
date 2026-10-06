@@ -978,6 +978,8 @@
   "main.forum.code.runner.artifactIgnored": "{agent} returned the document \"{name}\", which this stage does not produce: it was ignored.",
   "main.forum.code.runner.memory.edited": "You rewrote the cycle memory; the next stage reads it first.",
   "main.forum.code.runner.noCodeChange": "{agent} ended this pass without changing any code (only the stage's documents were written): what it said it fixed is not in the diff.",
+  "main.forum.code.runner.docs.checked": "{paths} local path(s) rewritten and {secrets} credential(s) masked in the documentation ({files}); the hash of a commit or a long identifier is masked too, so those go in the header only.",
+  "main.forum.code.runner.docs.invalidHeader": "The header of {file} is not valid ({reason}): the file is not stamped as checked, and the agents get it marked as not checked.",
   "main.forum.code.runner.deps.linked": "A run's worktree has no dependencies of its own, so the tests could not run. The app linked from the clone: {list}. They stay out of the commits; the commands the app runs here use the clone's dependencies.",
   "main.forum.code.runner.deps.none": "The clone has no dependency folder (node_modules, .venv) to link into this worktree, so QA may not be able to run the tests. Install them in your clone and the next stage that runs commands links them.",
   "main.forum.code.runner.qa.commands": "Before QA the app ran in the worktree: {list}.",

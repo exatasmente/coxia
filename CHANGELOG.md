@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The documentation a run writes is checked before it is committed, and stamped.** When a stage that changes the branch writes files of a repository's `.coxia/` folder, the app rewrites a local path (to a path of the repository, or its last name) and masks what looks like a credential in the body of each file, never in its header, and says in the run's thread how many it found. It then records, in a commit of its own right after the stage's (`update the documentation check`), the commit and the day in the `checked-commit` and `checked-date` of each file that stage changed, so a rule is "not checked" only from the code that changed after it. A file whose header is not valid is not stamped, and the thread says so. Nothing is refused: the review of the pull request is the gate. A hash of a commit or a long identifier in a body is masked too, so those belong in the header.
+
 ### Changed
 
 - **The agents of a run, a mention or a conversation no longer read the Claude Code files.** They used to pick up the `CLAUDE.md` and `.claude/` of the repository and of your home (and the Claude Code settings and automatic memory) as if they were the project's own rules, so a rule written for a Claude Code session, such as who pushes, reached an agent whose runner does that differently. They now read the `.coxia/` folder of each repository, given in the system text with a budget: the overview, the rules for the stage, the agent and the files the work touches, and an index of the rest, with a mark on a rule whose cited code changed since it was checked. A repository with no `.coxia/` adds no text. The sources you list in the configuration still count, **Detect automatically** now only reaches the ceremonies and each project's `.mcp.json`, and the ceremonies read what they read before.

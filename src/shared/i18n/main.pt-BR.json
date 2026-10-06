@@ -978,6 +978,8 @@
   "main.forum.code.runner.artifactIgnored": "{agent} devolveu o documento \"{name}\", que esta etapa não produz: foi ignorado.",
   "main.forum.code.runner.memory.edited": "Você reescreveu a memória do ciclo; a próxima etapa a lê primeiro.",
   "main.forum.code.runner.noCodeChange": "{agent} terminou esta passada sem mudar nenhum código (só os documentos da etapa foram escritos): o que ela disse ter corrigido não está no diff.",
+  "main.forum.code.runner.docs.checked": "{paths} caminho(s) local(is) reescrito(s) e {secrets} credencial(is) mascarada(s) na documentação ({files}); o hash de um commit e um identificador longo também são mascarados, então só vão no cabeçalho.",
+  "main.forum.code.runner.docs.invalidHeader": "O cabeçalho de {file} não é válido ({reason}): o arquivo não recebe o carimbo de conferido, e os agentes o recebem marcado como não conferido.",
   "main.forum.code.runner.deps.linked": "O worktree de uma execução não tem dependências próprias, e os testes não rodariam. O app ligou as do clone: {list}. Elas ficam fora dos commits; os comandos que o app roda aqui usam as dependências do clone.",
   "main.forum.code.runner.deps.none": "O clone não tem pasta de dependências (node_modules, .venv) para ligar neste worktree, então o QA pode não conseguir rodar os testes. Instale-as no seu clone e a próxima etapa que roda comandos as liga.",
   "main.forum.code.runner.qa.commands": "Antes da QA o app rodou no worktree: {list}.",

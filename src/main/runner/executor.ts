@@ -22,6 +22,7 @@ import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
 import { runDocsAsk } from '../harness/deliver';
+import { STAMP_SUMMARY, finalizeHarness, stampHarness } from '../harness/finalize';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 
@@ -492,7 +493,13 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // A stage that only writes documents never takes the agent's description for its commit: that describes code, and there is none.
   const code = writes && !noCodeChange;
   const fallback = commitFallback(stage.label, code);
+  // The documentation the pass wrote (`.coxia/`) is checked before it is committed, so a local path or a credential never gets into the history; what was rewritten is told.
+  const docs = writes ? await finalizeHarness(wt, { redact }) : null;
+  if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => f.file).join(', ') }, stage: stage.id });
+  for (const bad of docs?.invalid ?? []) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.invalidHeader', params: { file: bad.file, reason: bad.reason }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
+  // The files of the documentation this commit holds get the commit and the day they were checked, in a commit of their own: the agent cannot write a commit that does not exist yet.
+  if (commit && docs?.stamp.length && (await stampHarness(wt, docs.stamp, commit)).length) await commitAll(wt, commitMessage(config.runner.commitMessage, STAMP_SUMMARY, run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
 

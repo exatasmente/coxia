@@ -163,15 +163,19 @@ export interface TextOptions {
   redact: (text: string) => string;
 }
 
+export interface Rewritten {
+  body: string;
+  /** How many local paths were rewritten. */
+  paths: number;
+  /** Whether the redaction masked anything. */
+  secret: boolean;
+}
+
 /**
- * Rewrites what can be rewritten in a piece of text that goes to the tracker and reports what cannot: the part every comment shares, and the whole of a
- * comment on a line of the code, which has no structure of its own.
+ * The part of the check that only rewrites: local paths become paths of the repository (or the last name), and what looks like a credential is masked. It says
+ * nothing about the wording, so a text that has its own rules about words (the documentation of a project) uses it without the problems `checkText` finds.
  */
-export function checkText(raw: string, o: TextOptions): Checked {
-  const rewrites: Checked['rewrites'] = [];
-  const note = (code: CommentRewrite, n: number): void => {
-    if (n > 0) rewrites.push({ code, count: n });
-  };
+export function rewriteLocal(raw: string, o: Pick<TextOptions, 'worktree' | 'redact'>): Rewritten {
   // Local paths first: the redaction below turns the home folder into "~", and the worktree usually lives under it.
   // A path inside the worktree becomes the path in the repository, any other absolute one keeps only its last name.
   const root = o.worktree.replace(/\/+$/, '');
@@ -181,11 +185,24 @@ export function checkText(raw: string, o: TextOptions): Checked {
     if (root && (p === root || p.startsWith(`${root}/`))) return p.slice(root.length + 1) || '.';
     return p.split(/[\\/]/).filter(Boolean).pop() ?? '';
   };
-  let body = raw.replace(ABSOLUTE, (p) => rel(p)).replace(HOME_RELATIVE, (p) => rel(p));
-  note('localPath', paths);
-  const masked = o.redact(body);
-  note('secret', masked === body ? 0 : 1);
-  body = masked;
+  const local = raw.replace(ABSOLUTE, (p) => rel(p)).replace(HOME_RELATIVE, (p) => rel(p));
+  const body = o.redact(local);
+  return { body, paths, secret: body !== local };
+}
+
+/**
+ * Rewrites what can be rewritten in a piece of text that goes to the tracker and reports what cannot: the part every comment shares, and the whole of a
+ * comment on a line of the code, which has no structure of its own.
+ */
+export function checkText(raw: string, o: TextOptions): Checked {
+  const rewrites: Checked['rewrites'] = [];
+  const note = (code: CommentRewrite, n: number): void => {
+    if (n > 0) rewrites.push({ code, count: n });
+  };
+  const local = rewriteLocal(raw, o);
+  note('localPath', local.paths);
+  note('secret', local.secret ? 1 : 0);
+  let body = local.body;
 
   // The id of a run is the app's, not the reader's; the marker is the one place it stays, and it is put back after.
   const marked = !!o.marker && body.includes(o.marker);
