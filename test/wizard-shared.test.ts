@@ -2,9 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
 import type { LlmProvider } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
-import { type ProviderDraft, OPEN_PRESETS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
+import { type ProviderDraft, OPEN_PRESETS, SKIPPABLE_STEPS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
 
 describe('wizard steps', () => {
+  it('opens on language and name and asks for the model provider right after it', () => {
+    expect([...WIZARD_STEPS]).toEqual(['language', 'models', 'sdk', 'projects', 'integrations', 'docs', 'cycle', 'voice', 'review']);
+  });
+
+  // Derived from the order, so a later shuffle cannot silently make the opening step skippable or the model step unskippable.
+  it('lets every step between the opening one and the review be skipped, the model choice included', () => {
+    expect([...SKIPPABLE_STEPS]).toEqual(WIZARD_STEPS.slice(1, -1));
+    expect(SKIPPABLE_STEPS).toContain('models');
+    expect(SKIPPABLE_STEPS).not.toContain('language');
+    expect(SKIPPABLE_STEPS).not.toContain('review');
+  });
+
   it('shows the SDK step only when a provider runs on the SDK engine', () => {
     const c = neutralConfig();
     expect(needsSdk(c)).toBe(true);
