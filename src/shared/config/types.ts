@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 13): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 12;
+export const CONFIG_SCHEMA_VERSION = 15;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -40,6 +40,8 @@ export interface ProviderCapabilities {
   reasoning: boolean;
   /** Context window in tokens, when the server reports it. */
   contextWindow: number | null;
+  /** The model takes an image in a message (what an agent's Read of a screenshot needs). Absent: not known, and the engine tries. */
+  images?: boolean;
 }
 
 export interface LlmProvider {
@@ -187,7 +189,7 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
  * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget', 'plugin'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
@@ -532,6 +534,11 @@ export interface AgentDef {
    */
   allowedCommands?: string[];
   /**
+   * The tools this agent may use, when the person said so for this agent alone: it overrides the workspace's `agents.tools` field by field, so an agent may use a tool
+   * the workspace turned off. Absent: the agent uses the workspace's tools. This is a permission of tools, never of confinement: a mention never gets Edit or Write.
+   */
+  tools?: AgentToolsConfig;
+  /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
    * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
@@ -711,6 +718,13 @@ export interface RunnerSandbox {
   registryHosts: string[];
   /** Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands): a toolchain installed in the home, say. */
   readOnlyPaths: string[];
+  /**
+   * The folder Playwright keeps its browsers in ("~/" expands): every sandbox gets it read-only at its own path, with `PLAYWRIGHT_BROWSERS_PATH` pointing at it. It goes
+   * through the guards of `readOnlyPaths`. null: none. A config stored without it reads as null.
+   */
+  browsersPath: string | null;
+  /** The sandbox of a QA stage starts a virtual display (Xvfb, from the sandbox's own PATH) and sets `DISPLAY`. A config stored without it reads as false. */
+  display: boolean;
   limits: SandboxLimits;
 }
 
@@ -781,6 +795,45 @@ export interface ClaudeSdkConfig {
 export const USER_ARTICLES = ['', 'o', 'a'] as const;
 export type UserArticle = (typeof USER_ARTICLES)[number];
 
+/**
+ * What the person allowed a plugin "always": durable, kept in the workspace until the person takes it back, and kept when the plugin is switched off
+ * and on again. "Once" and "for the session" never reach the configuration: they live with the request and with the running app.
+ */
+export interface PluginAllow {
+  /** The plugin may reach the destinations it declared. */
+  network: boolean;
+  /** The plugin's declared external write may go out (an irreversible one still waits for the warning with a deadline). */
+  write: boolean;
+}
+
+/** A plugin of the workspace and what the person decided about it. Everything else is read again from its folder. */
+export interface PluginConfig {
+  /** Stable identity the declaration announces. */
+  id: string;
+  /** Folder of the plugin as it was last read; null when the plugin is listed but was not read. */
+  folder: string | null;
+  /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
+  enabled: boolean;
+  allow: PluginAllow;
+  /**
+   * What the plugin declared it reaches when the person allowed it always (a digest of its hosts, requests and write). A declaration that changed since
+   * reaches somewhere else: the permission does not hold for it, and the plugin asks again.
+   */
+  allowedFor?: string;
+  /** The values of the plugin's `text` and `url` settings, by key. A `secret` setting is never here: it lives in the secrets store (`plugin.<id>.<key>`). */
+  settings: Record<string, string>;
+}
+
+/** The plugins of the workspace: where they live, which ones are on and what each was allowed. They are the team's own code; nothing is downloaded. */
+export interface PluginsConfig {
+  /** Folder that holds one folder per plugin ("~/" expands). null: the `plugins` folder of the workspace's data folder. */
+  dir: string | null;
+  /** What the person decided about each plugin, by identity. */
+  list: PluginConfig[];
+  /** Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile. */
+  confirmSeconds: number;
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -807,6 +860,7 @@ export interface WorkspaceConfig {
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
   runner: RunnerConfig;
+  plugins: PluginsConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

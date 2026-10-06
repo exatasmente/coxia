@@ -12,6 +12,17 @@ export interface SandboxStatus {
   reason: SandboxReason | null;
   /** The first line of what the backend said when it refused (for the person to read); empty otherwise. */
   detail: string;
+  /** What a sandbox has to test an interface, from the saved settings; it never makes the sandbox unavailable. Absent: not asked. */
+  gui?: SandboxGuiStatus;
+}
+
+/**
+ * Browsers: none set, ready (the folder exists, passes the guards and holds a browser build), missing, refused by the guards, or holding no browser. Display: switched
+ * off, a display program on the sandbox's path, or none.
+ */
+export interface SandboxGuiStatus {
+  browsers: 'unset' | 'ready' | 'missing' | 'refused' | 'empty';
+  display: 'off' | 'ready' | 'missing';
 }
 
 export const SANDBOX_UNAVAILABLE: SandboxStatus = { available: false, backend: null, version: null, reason: 'platform', detail: '' };

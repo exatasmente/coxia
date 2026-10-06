@@ -13,6 +13,9 @@ import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
 // The side panel of one stage: every field of the stage, the checks of the flow that are about it, and the agent made in place.
 
+// What a run waits on by itself (a provider with no budget, a plugin's request): never an event a wait stage of the flow can be set to.
+const RUN_ONLY_WAITS = new Set<WaitKind>(['budget', 'plugin']);
+
 export interface StagePanelProps {
   stages: StageDef[];
   stage: StageDef;
@@ -215,7 +218,7 @@ export function StagePanel(p: StagePanelProps) {
             <Labeled label={t('ui.flow.f.waitKind')}>
               {(id) => (
                 <select id={id} className="text-input" value={stage.waitsFor?.kind ?? 'pr-merged'} onChange={(e) => setWait({ kind: e.target.value as WaitKind })}>
-                  {WAIT_KINDS.map((k) => <option key={k} value={k}>{t(WAIT_LABEL[k])}</option>)}
+                  {WAIT_KINDS.filter((k) => !RUN_ONLY_WAITS.has(k)).map((k) => <option key={k} value={k}>{t(WAIT_LABEL[k])}</option>)}
                 </select>
               )}
             </Labeled>

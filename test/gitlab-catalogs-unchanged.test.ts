@@ -124,6 +124,20 @@ const INTENDED: Record<string, Intended> = {
       ['Desligado, só a janela do app aprova.', 'Desligado, só a janela do app faz isso.'],
     ],
   },
+  'wizard.docs.autoDetectHint': {
+    reason: 'the agents of runs, mentions and conversations read the .coxia folder of each repository and no longer the Claude Code files, so autoDetect only reaches the ceremonies and the .mcp.json (#91)',
+    language: 'both',
+    replace: [
+      [
+        'Adds to what is listed whatever Claude Code would load by itself: ~/.claude and each project\'s .claude folder.',
+        'Adds to what is listed what the ceremonies\' agents would load from Claude Code by itself (~/.claude and the .claude folder and CLAUDE.md of each project), and the .mcp.json of each project for every agent. The agents of runs, mentions and conversations do not read the Claude Code files: they read the .coxia folder of each repository.',
+      ],
+      [
+        'Soma ao que está listado o que o Claude Code carregaria sozinho: ~/.claude e a pasta .claude de cada projeto.',
+        'Soma ao que está listado o que os agentes das cerimônias carregariam do Claude Code sozinhos (~/.claude e a pasta .claude e o CLAUDE.md de cada projeto), e o .mcp.json de cada projeto para todos os agentes. Os agentes das execuções, das menções e das conversas não leem os arquivos do Claude Code: leem a pasta .coxia de cada repositório.',
+      ],
+    ],
+  },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 

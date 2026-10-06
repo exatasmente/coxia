@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createTranslator, t } from '../../shared/i18n';
 import { ARTIFACT_NAME, MEMORY_FILE } from '../../shared/runs';
 import { checkPath } from '../engine/guard';
@@ -53,8 +53,12 @@ export function issueRecord(issue: Pick<VcsIssue, 'iid' | 'title' | 'state' | 'l
 }
 
 export function writeIssueRecord(wt: string, folder: string, text: string): void {
-  mkdirSync(join(wt, folder), { recursive: true });
-  writeFileSync(join(wt, folder, ISSUE_FILE), text);
+  // The folder can be a link a repository committed: the record is written where the guard says it lands, or not at all, and nothing is made before it says so.
+  const check = checkPath(wt, join(folder, ISSUE_FILE));
+  // i18n-ignore-next-line: developer error
+  if (!check.ok) throw new Error(`record refused (${check.code})`);
+  mkdirSync(dirname(check.path), { recursive: true });
+  writeFileSync(check.path, text);
 }
 
 export interface FolderFile {

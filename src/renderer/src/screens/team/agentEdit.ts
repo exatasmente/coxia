@@ -1,7 +1,7 @@
 import { ID } from '../../../../shared/config/schema';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
 import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../../../../shared/config/team';
-import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
+import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
@@ -21,6 +21,8 @@ export interface AgentDraft {
   shell: AgentShell;
   /** The commands the person allowed the agent always in a ceremony; the editor only takes rules away. */
   allowedCommands: string[];
+  /** The tools this agent uses, when the person said so for this agent alone; null: the workspace's tools. */
+  tools: AgentToolsConfig | null;
   autonomous: boolean;
   squad: string | null;
   turnsTo: string | null;
@@ -48,6 +50,7 @@ export function draftOf(a: AgentDef): AgentDraft {
     tracker: a.tracker,
     shell: a.shell,
     allowedCommands: [...(a.allowedCommands ?? [])],
+    tools: a.tools ? { ...a.tools } : null,
     autonomous: a.autonomous,
     squad: a.squad ?? null,
     turnsTo: a.turnsTo,
@@ -56,7 +59,7 @@ export function draftOf(a: AgentDef): AgentDraft {
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], autonomous: false, squad: null, turnsTo: null, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: [] };
 }
 
 /** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
@@ -109,6 +112,7 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
     tracker: draft.tracker,
     shell: draft.shell,
     allowedCommands: draft.allowedCommands.length ? draft.allowedCommands : undefined,
+    tools: draft.tools ?? undefined,
     autonomous: draft.autonomous,
     turnsTo: draft.turnsTo,
     stages: draft.stages,

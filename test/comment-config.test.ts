@@ -49,10 +49,10 @@ describe('the templates the agent cycle brings', () => {
     }
   });
 
-  it('are only in the two agent cycles and the release flow: the others post nothing', () => {
+  it('are only in the two agent cycles, the release flow and the docs flow: the others post nothing', () => {
     for (const t of BUILT_IN_TEMPLATES) {
       const c = applyTemplate(neutralConfig(), t);
-      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id.startsWith('agent-flow') || t.id === 'release-flow');
+      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id.startsWith('agent-flow') || t.id === 'release-flow' || t.id === 'docs-flow');
     }
   });
 
@@ -127,7 +127,7 @@ describe('the migration to schema 7', () => {
     const r = migrateConfig(v6((c) => (c.devCycle.templateId = 'agent-flow')), { legacyInstall: false });
     expect(r.fromVersion).toBe(6);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(15);
     expect(r.config.devCycle.comments).toEqual(agentFlow().devCycle.comments);
     expect(r.notes.join(' ')).toContain('comment templates');
     expect(validateConfig(r.config).ok).toBe(true);
@@ -149,8 +149,8 @@ describe('the migration to schema 7', () => {
 
   it('carries an old file all the way, and does not open one from a newer app', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en', devCycle: { templateId: 'agent-flow' } }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(15);
     expect(Object.keys(r.config.devCycle.comments)).toContain('review');
-    expect(() => migrateConfig({ schemaVersion: 13 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 16 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

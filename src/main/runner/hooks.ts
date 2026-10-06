@@ -1,6 +1,6 @@
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
-import { type DenialCode, WRITE_TOOLS, checkPath, writeTarget } from '../engine/guard';
+import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
 import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
 
 // The hooks of an agent that changes files in its run's worktree. They are the same callbacks for both engines (the open engine runs them
@@ -18,6 +18,10 @@ export interface Denial {
 
 export interface ConfineOptions {
   root: string;
+  /** The only folder inside `root` the agent may change; reading stays on the whole of `root`. */
+  writeRoot?: string;
+  /** Names directly under `writeRoot` that the app owns: the agent may not write them (a documentation run's ignore file and run folder). */
+  writeReserved?: readonly string[];
   /** The commands the agent may run, each exactly as typed. */
   commands: string[];
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
@@ -55,7 +59,8 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   const writeGuard: HookCallback = async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || !has(WRITE_TOOLS, input.tool_name)) return {};
     const target = writeTarget(input.tool_name, input.tool_input);
-    const check = checkPath(o.root, target, { isSecret: (p) => secretPath(p, o.root) });
+    // A narrow write folder must really be one inside the worktree: a `.coxia` that is a link would carry the writes away.
+    const check = checkPath(o.writeRoot ?? o.root, o.writeRoot ? anchored(o.root, target) : target, { isSecret: (p) => secretPath(p, o.root), ...(o.writeRoot ? { fence: o.root, reserved: o.writeReserved } : {}) });
     return check.ok ? {} : say(input.tool_name, target, check.code);
   };
 

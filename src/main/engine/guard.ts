@@ -8,7 +8,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
-export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'secret'] as const;
+export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'reserved', 'secret'] as const;
 export type DenialCode = (typeof DENIAL_CODES)[number];
 
 export type PathCheck = { ok: true; /** The path to use: parent resolved through real directories, inside the root. */ path: string; /** Relative to the real root. */ rel: string } | { ok: false; code: DenialCode };
@@ -18,6 +18,13 @@ export interface CheckOptions {
   read?: boolean;
   /** The secret-file rule of the app (`secretPath` in agents.ts), asked with the resolved path. */
   isSecret?: (path: string) => boolean;
+  /**
+   * The folder `root` must really sit in, for a root narrower than the worktree (a documentation run's `.coxia/`): `root` has to be a real folder, not a link, whose real
+   * place is inside the real `fence`. A narrow root that is a link would carry every write to wherever the link leads.
+   */
+  fence?: string;
+  /** Names directly under `root` the app keeps for itself: a write to one (or under it) is refused, whatever the case it is spelled in. */
+  reserved?: readonly string[];
   home?: string;
   /** Absolute folders outside `root` a read may still reach (the documentation the config lists); ignored for a write, and for a root that is not a folder. */
   roots?: string[];
@@ -33,6 +40,18 @@ function real(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Whether `folder` is a real folder (not a symbolic link) whose real place is inside the real `fence`. */
+export function realFolderIn(folder: string, fence: string): boolean {
+  try {
+    if (!lstatSync(folder).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  const inner = real(folder);
+  const outer = real(fence);
+  return inner !== null && outer !== null && inner.startsWith(outer + sep);
 }
 
 function exists(path: string): boolean {
@@ -78,6 +97,7 @@ function segmentsCode(segments: string[], read: boolean): DenialCode | null {
 export function checkPath(root: string, input: unknown, options: CheckOptions = {}): PathCheck {
   if (typeof input !== 'string' || !input.trim() || input.includes('\0') || input.length > 4096) return { ok: false, code: 'no-path' };
   const raw = input.trim();
+  if (options.fence && !realFolderIn(root, options.fence)) return { ok: false, code: 'outside' };
   // A `..` is refused wherever it stands: after a link it would climb out of the link's target, not out of the folder it was written in.
   if (raw.split(/[\\/]+/).includes('..')) return { ok: false, code: 'traversal' };
   const home = options.home ?? homedir();
@@ -104,8 +124,24 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   const written = relative(judge, abs).split(sep);
   const code = segmentsCode(rel.split(sep), !!options.read) ?? segmentsCode(written, !!options.read);
   if (code) return { ok: false, code };
+  if (options.reserved?.length && !options.read) {
+    const own = new Set(options.reserved.map((n) => n.toLowerCase()));
+    if (own.has((rel.split(sep)[0] ?? '').toLowerCase()) || own.has((written[0] ?? '').toLowerCase())) return { ok: false, code: 'reserved' };
+  }
   if (options.isSecret && (options.isSecret(place) || options.isSecret(abs))) return { ok: false, code: 'secret' };
   return { ok: true, path: place, rel };
+}
+
+/**
+ * A relative path as the file tools resolve it: against the working directory. The guard of a folder below the working directory (`Confinement.writeRoot`) would
+ * resolve it against that folder instead, and `src/a.ts` would pass for `<folder>/src/a.ts` while the tool wrote it at the working directory. Absolute, `~` and
+ * `..` paths are left to `checkPath` as they are.
+ */
+export function anchored(cwd: string, input: unknown): unknown {
+  if (typeof input !== 'string') return input;
+  const raw = input.trim();
+  if (!raw || raw.startsWith('/') || raw.startsWith('~') || raw.split(/[\\/]+/).includes('..')) return input;
+  return join(cwd, raw);
 }
 
 /** The write tools of the Claude SDK and of the open engine, and the field each one carries its path in. */
