@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { PluginAllow, PluginConfig, PluginsConfig, RunnerSandbox } from '../../shared/config/types';
@@ -11,6 +12,7 @@ import { DATA_ROOT, HOME, WORKSPACE_ID } from '../env';
 import type { Module, ModuleContext } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
+import { externalRefusal } from '../workspace';
 import { recordWrite } from '../auditoria';
 import { getConfig, updateConfig } from '../workspaceConfig';
 import { announcePluginWrite, auditPluginRequest, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
@@ -18,7 +20,7 @@ import { gatePluginDocuments } from '../gate';
 import { workspaceDir } from '../workspaces-core';
 import { allowOf, pluginsDirOf, pluginViews, readPlugins, withChoice } from './read';
 import { JS_FILES_MAX_BYTES, runJsPlugin, runPlugin, type JsAnswer, type JsCall, type JsPlugin, type JsPluginRun, type PluginRun, type PluginTarget, type RunnablePlugin } from './runtime';
-import { performPluginRequest, pluginSecretRef, requestTarget, resolvePluginRequest, type PerformedRequest, type RequestingPlugin, type ResolvedRequest } from './requests';
+import { performPluginRequest, pluginSecretRef, realTransport, requestTarget, resolvePluginRequest, type PerformedRequest, type RequestingPlugin, type ResolvedRequest } from './requests';
 import { secrets } from '../secrets';
 import type { PluginRecord, PluginsView } from './types';
 
@@ -140,7 +142,7 @@ export const pluginsDeps: PluginsDeps = {
   sandbox: () => getConfig().runner.sandbox,
   run: (plugin, event, target, config, onProxy) => runPlugin({ sandbox, config, onProxy }, plugin, event, target),
   runJs: (plugin, event, context, target, config, read, onProxy) => runJsPlugin({ sandbox, config, executable: process.execPath, onProxy, read }, plugin, event, context, target),
-  fetchRequest: (plugin, resolved) => performPluginRequest({ fetch: globalThis.fetch, secret: (ref) => (secrets().has(ref) ? secrets().resolve(ref) : null) }, plugin, resolved),
+  fetchRequest: (plugin, resolved) => performPluginRequest({ transport: realTransport, secret: (ref) => (secrets().has(ref) ? secrets().resolve(ref) : null) }, plugin, resolved),
   secretFilled: (plugin, key) => secrets().has(pluginSecretRef(plugin, key)),
   setSecret: (plugin, key, value) => {
     const ref = pluginSecretRef(plugin, key);
@@ -202,7 +204,7 @@ export function setPluginSetting(id: string, key: string, value: string, d: Plug
   const setting = record.settings.find((s) => s.key === key && s.kind !== 'secret');
   if (!setting) throw new Error(t('main.plugins.settings.unknown', { key }));
   const v = String(value ?? '').trim().slice(0, 2000);
-  if (v && setting.kind === 'url' && !/^https?:\/\/[^\s]+$/i.test(v)) throw new Error(t('main.plugins.settings.badUrl', { setting: setting.label }));
+  if (v && setting.kind === 'url' && !plainUrl(v)) throw new Error(t('main.plugins.settings.badUrl', { setting: setting.label }));
   d.save((list) => withChoice(list, record, (c) => {
     const settings = { ...c.settings };
     if (v) settings[key] = v;
@@ -210,6 +212,16 @@ export function setPluginSetting(id: string, key: string, value: string, d: Plug
     return { ...c, settings };
   }));
   return listPlugins(d);
+}
+
+/** An http(s) address with no user or password in it: a credential belongs in a secret setting, never in plain text. */
+function plainUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
+  } catch {
+    return false;
+  }
 }
 
 /** The value of one of a plugin's secret settings, on the computer: it goes to the secrets store by reference; empty, it is removed. */
@@ -269,6 +281,9 @@ async function callPlugin(record: PluginRecord, event: string, context: PluginCo
   const permission: PluginPermission = { allow: record.allow, session: sessionOf(record.id), once };
   const target = context.runId ? d.target(context.runId) : null;
   if (!target) return fail(record.id, t('main.plugins.refusal.noRun', { plugin: record.name }));
+  // A plugin that cannot run (a required setting is empty) is not asked a permission for.
+  const missing = record.settings.find((s) => s.required && (s.kind === 'secret' ? !d.secretFilled(record.id, s.key) : !(record.values[s.key] ?? '').trim()));
+  if (missing) return fail(record.id, t('main.plugins.refusal.setting', { plugin: record.name, setting: missing.label }));
   // What the plugin reaches: the hosts its sandbox goes to and the reads it asks the app to make. Either needs the network permission.
   const reads = record.requests.filter((r) => !r.write);
   const reached = [...record.network, ...reads.map((r) => `${r.method} ${r.url}`)];
@@ -276,8 +291,6 @@ async function callPlugin(record: PluginRecord, event: string, context: PluginCo
     const refused = ask(record, 'network', event, context, d, { hosts: reached });
     return fail(record.id, refused ?? t('main.plugins.waiting.network', { plugin: record.name }));
   }
-  const missing = record.settings.find((s) => s.required && (s.kind === 'secret' ? !d.secretFilled(record.id, s.key) : !(record.values[s.key] ?? '').trim()));
-  if (missing) return fail(record.id, t('main.plugins.refusal.setting', { plugin: record.name, setting: missing.label }));
   if (record.runtime === 'js') return callJs(record, event, context, target, permission, d);
   const script = scriptOf(record);
   if (script === null) return fail(record.id, t('main.plugins.refusal.entry', { plugin: record.name }));
@@ -315,7 +328,10 @@ async function callJs(record: PluginRecord, event: string, context: PluginContex
 async function readFor(record: PluginRecord, call: JsCall, context: PluginContext, d: PluginsDeps): Promise<JsAnswer> {
   const resolved = resolvePluginRequest(record, call);
   if (!resolved.ok) return { id: call.id, refused: resolved.refused };
-  if (resolved.decl.write) return { id: call.id, refused: t('main.plugins.request.isWrite', { id: call.id }) };
+  if (resolved.decl.write || resolved.method !== 'GET') return { id: call.id, refused: t('main.plugins.request.isWrite', { id: call.id.slice(0, 40) }) };
+  // A test workspace widens nothing: no request of a plugin goes out of it, a read included.
+  const test = externalRefusal(t('main.plugins.request.title'));
+  if (test) return { id: call.id, refused: test };
   const done = await d.fetchRequest(record, resolved);
   auditRequest(record, context, requestTarget(resolved), done.ok ? done.status < 400 : false, done.ok ? `HTTP ${done.status}` : done.refused);
   return done.ok ? { id: call.id, status: done.status, contentType: done.contentType, body: done.body, truncated: done.truncated } : { id: call.id, refused: done.refused };
@@ -354,7 +370,10 @@ async function writeFor(record: PluginRecord, call: JsCall, event: string, conte
 async function sendRequestWrite(record: PluginRecord, request: JsCall & { target: string }, origin: Parameters<typeof auditPluginRequest>[0], d: PluginsDeps): Promise<string> {
   const resolved = resolvePluginRequest(record, request);
   if (!resolved.ok) throw new Error(resolved.refused);
-  return d.door.sendRequest(origin, request.target, { plugin: record.id, request: resolved.decl.id, method: resolved.method }, async () => {
+  // What goes out is what the person saw: a declaration or a setting that changed since leads the call elsewhere, and it does not go.
+  const target = requestTarget(resolved);
+  if (target !== request.target) throw new Error(t('main.plugins.write.changed'));
+  return d.door.sendRequest(origin, target, { plugin: record.id, request: resolved.decl.id, method: resolved.method }, async () => {
     const done = await d.fetchRequest(record, resolved);
     if (!done.ok) throw new Error(done.refused);
     if (done.status >= 400) throw new Error(t('main.plugins.request.status', { id: resolved.decl.id, status: done.status }));
@@ -418,7 +437,7 @@ function ask(record: PluginRecord, need: PluginNeed, event: string, context: Plu
   const unit: PluginAskUnit = { plugin: record.id, name: record.name, need, reversible, runId: context.runId ?? null, event, stage: context.stage ?? null, hosts: extra.hosts ?? [], to: extra.to ?? record.write?.to ?? null, text: extra.text ?? '', ...(extra.request ? { request: extra.request } : {}) };
   try {
     d.door.ask({
-      key: `${askKey(record.id, need, event, context)}${extra.request ? `:${extra.request.id}` : ''}`,
+      key: `${askKey(record.id, need, event, context)}${extra.request ? `:${extra.request.id}:${createHash('sha256').update(JSON.stringify([extra.request.path, extra.request.query, extra.request.body])).digest('hex').slice(0, 12)}` : ''}`,
       issue: context.issue,
       issueTitle: context.issueTitle,
       summary: t(`main.plugins.ask.summary.${need}`, { plugin: record.name }),
@@ -460,7 +479,7 @@ export async function answerPluginAsk(id: string, answer: PluginAnswer, d: Plugi
     return listPlugins(d);
   }
   const record = d.read(d.dir(), d.config()).find((r) => r.id === unit.plugin && !r.refused) ?? null;
-  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [unit.need]: true } })));
+  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [unit.need]: true }, allowedFor: record.reach })));
   if (answer === 'session') session.set(unit.plugin, { ...sessionOf(unit.plugin), [unit.need]: true });
   // "Session" and "always" answer every request of the plugin for the same thing; "once" answers this one.
   const answered = answer === 'once' ? [action] : d.door.pending().filter((a) => unitOf(a).plugin === unit.plugin && unitOf(a).need === unit.need);

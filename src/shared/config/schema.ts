@@ -323,6 +323,7 @@ const plugin = object(
     folder: nullableString('Folder of the plugin as it was last read; null: listed but not read.'),
     enabled: boolean('The person switched it on. Off: nothing of it is offered and no hook of it runs.'),
     allow: pluginAllow,
+    allowedFor: string('A digest of what the plugin declared it reaches when it was allowed always; another declaration asks again.', { maxLength: 64 }),
     settings: { type: 'object', description: 'The values of the plugin\'s text and url settings, by key; a secret setting is never here.', additionalProperties: { type: 'string', maxLength: 2000 }, maxProperties: 40 } as JsonSchema,
   },
   ['id', 'enabled', 'allow'],

@@ -1277,7 +1277,6 @@ async function writePluginOutbox(origin: AuditOrigin, input: PluginWriteInput): 
   });
 }
 
-/** A plugin's write that goes out now (allowed and reversible): no card, the same door and the same audit log, with the plugin as who. */
 /**
  * A plugin's write request to a service, made by the plugins service through `audited`: one line in the audit log about what was sent (never the
  * secret or the body), and a test workspace refuses before anything goes out. `origin` names the announced action or, for a write that goes out at
@@ -1288,6 +1287,7 @@ export function auditPluginRequest(origin: AuditOrigin | { issue: number; key: s
   return audited(from, { kind: 'plugin-write', target, via: 'plugin', fields }, send);
 }
 
+/** A plugin's write that goes out now (allowed and reversible): no card, the same door and the same audit log, with the plugin as who. */
 export function writePluginNow(w: { issue: number; key: string; summary: string; plugin: string }, input: PluginWriteInput): Promise<string> {
   return writePluginOutbox({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'plugin-write', key: w.key, summary: w.summary, by: w.plugin }, input);
 }

@@ -1459,5 +1459,8 @@
   "main.plugins.request.sent": "Sent: {target} answered {status}.",
   "main.plugins.refusal.setting": "The plugin {plugin} needs the setting \"{setting}\" filled in, in the plugin list.",
   "main.plugins.settings.unknown": "The plugin does not declare the setting \"{key}\".",
-  "main.plugins.settings.badUrl": "\"{setting}\" must be an http:// or https:// address."
+  "main.plugins.settings.badUrl": "\"{setting}\" must be an http:// or https:// address.",
+  "main.plugins.request.privateAddress": "The destination \"{id}\" is a local or private address: only a setting you filled in leads to one.",
+  "main.plugins.request.timeout": "The call to {id} took too long.",
+  "main.plugins.request.title": "a plugin's request"
 }

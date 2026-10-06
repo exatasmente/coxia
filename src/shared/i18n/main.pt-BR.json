@@ -1459,5 +1459,8 @@
   "main.plugins.request.sent": "Enviado: {target} respondeu {status}.",
   "main.plugins.refusal.setting": "O plugin {plugin} precisa da configuração \"{setting}\" preenchida, na lista de plugins.",
   "main.plugins.settings.unknown": "O plugin não declara a configuração \"{key}\".",
-  "main.plugins.settings.badUrl": "\"{setting}\" precisa ser um endereço http:// ou https://."
+  "main.plugins.settings.badUrl": "\"{setting}\" precisa ser um endereço http:// ou https://.",
+  "main.plugins.request.privateAddress": "O destino \"{id}\" é um endereço local ou privado: só uma configuração preenchida por você leva a um.",
+  "main.plugins.request.timeout": "A chamada a {id} passou do tempo.",
+  "main.plugins.request.title": "uma requisição de plugin"
 }
