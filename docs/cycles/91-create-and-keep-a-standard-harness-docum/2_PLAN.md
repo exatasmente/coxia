@@ -522,3 +522,7 @@ Cada ponto é uma escolha que o mantenedor confirma ou muda; a coluna "recomenda
 | D10 | O que a verificação de texto faz com o que acha (§8) | Reescreve e diz o que mudou; nunca recusa; só o corpo, nunca o cabeçalho | Recusar o arquivo com credencial até a pessoa corrigir: mais rígido, sem saída para quem só quer revisar |
 | D11 | Aplicar o modelo `docs-flow` (§6) | No primeiro clique em Criar, depois de uma confirmação que diz o que entra | A pessoa aplica o modelo antes, na tela de ciclos: menos mágica, mais um passo antes de um botão que parece pronto |
 | D12 | A regra esquecida na revisão (§7) | Um achado não bloqueante por padrão, que o revisor pode elevar | Sempre bloqueante: força a atualização, mas barra pull requests cuja regra não ficou falsa |
+
+## Registro do gate 2
+
+- 2026-10-06 — **Gate 2 aprovado** pelo mantenedor, com as recomendações de D1 a D12 como estão.
