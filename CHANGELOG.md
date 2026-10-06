@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Every conversation shows what a called agent is doing, and folds its commands.** The general conversation, the channels and an agent's direct conversation now show, under the message that called an agent, the same live line as a run's thread: working (or waiting its turn), then the step it is on, until its answer arrives. In every thread, the commands an agent ran one after the other, with the asks and your answers, fold into one line (*developer ran 4 commands*) that opens to show each command and its output; it opens by itself while a command waits for you.
 - **An agent set to run commands on this computer asks you outside a run too.** Called with `@` in a channel, a general conversation or its direct conversation, an agent with `shell: host` had every command refused, since there was no screen to ask on. It now asks through the same command notice the ceremonies use, on every screen and on the paired phone: allow once, always allow the suggested rule (it goes into the agent's list in Settings › Team) or do not allow, with a note; a command its list already allows runs without asking. The thread keeps the ask and your answer next to the command, and the notice names the agent of the team.
 
+## [0.7.0-beta.4] - 2026-10-06
+
+### Fixed
+
+- **The pull request opens after the implementation, so the review lands on it.** The push waited for the last stage whose agent changes the branch; in a flow where QA also writes (tests, its documents), that was QA, so the review ran with no pull request and went to the issue, and asking the developer for the pull request got nowhere. The push is now proposed at the end of the last stage before the review that changes the branch, and the pull request after it, as before each waiting for your yes. Every later stage that changes the branch (QA, the implementation a review sent back to) proposes a new push, which only updates the pull request.
+- **An autonomous agent knows its comments and labels go out at once, and the thread says what it wrote.** Called with `@`, an autonomous agent was told that every write it proposed would wait for your yes, while a comment and a label change in fact went out as it answered: it could post a whole draft as a public comment and then say it had proposed nothing. It is now told which writes go out by themselves (a comment, a label) and which wait in Actions (a status, closing an issue, a new issue), and to write a comment only when the issue should carry it as it is. The line under the answer names the write and its issue (*wrote on the tracker by itself: #12 — labels +P1*, *proposed #12 — close*), which outside a run said neither.
+- **An agent asked to label an issue knows the workspace's labels.** An agent called with `@` that may write labels is now told which label starts the agents' cycle on an issue (`runner.triggerLabel`) and the priority labels it can write (Settings › Cycle › Priority, highest first), or that the workspace has none, so it neither guesses a name nor stops to ask for one.
+
 ## [0.7.0-beta.3] - 2026-10-06
 
 ### Fixed
@@ -234,7 +242,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...HEAD
+[0.7.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...v0.7.0-beta.4
 [0.7.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.2...v0.7.0-beta.3
 [0.7.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.1...v0.7.0-beta.2
 [0.7.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0-beta.1

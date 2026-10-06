@@ -22,7 +22,7 @@ import {
   flowOfRun,
   markerOf,
   priorityStageOf,
-  pushStageOf,
+  pushesAt,
   readMarker,
   recordSubject,
   recordCommentDraft,
@@ -1402,7 +1402,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
         if (end.output.priority) await proposePriority(runId, end);
-        if (end.kind === 'work' && pushStageOf(deps.config(), flowOfRun(need(runId), deps.config()))?.id === end.stage.id) await pushStage(runId, end);
+        if (end.kind === 'work' && pushesAt(deps.config(), flowOfRun(need(runId), deps.config()), end.stage.id)) await pushStage(runId, end);
       }),
     asked: (runId, e) => guarded(runId, () => question(runId, e)),
     gateDecided: (runId, e) => guarded(runId, () => gate(runId, e)),

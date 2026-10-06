@@ -17,7 +17,7 @@ import type { ProposedWrite } from './call';
 
 /** What one proposed write became: it waits in Actions (one proposal per command when the host planned several), it ran by itself, or the host does not have it. */
 export type ProposalOutcome =
-  | { status: 'proposed' | 'auto'; key: string; count: number }
+  | { status: 'proposed' | 'auto'; key: string; count: number; summary: string }
   | { status: 'unsupported'; op: ProposedWrite['op']; reason: string }
   | { status: 'failed'; op: ProposedWrite['op']; reason: string };
 
@@ -47,7 +47,8 @@ const bodyOf = (w: ProposedWrite): string => (w.op === 'labels' ? `${w.add.join(
 
 /** What the person reads: the write in two words and what it will put on the host. */
 function summaryOf(w: ProposedWrite, place: MentionPlace): string {
-  const where = place.ref ?? '';
+  // The issue the write names, which outside a run is the only thing that says which one it is.
+  const where = w.op !== 'createIssue' && w.issue ? `#${w.issue}` : (place.ref ?? '');
   switch (w.op) {
     case 'comment':
       return `${where} — a comment`;
@@ -127,7 +128,7 @@ export async function proposeMention(e: { writes: ProposedWrite[]; place: Mentio
     if (e.autonomous && LOW_RISK.has(w.op)) {
       try {
         for (const [n, command] of commands.entries()) await runVcsAuto({ issue: target, key: commands.length > 1 ? `${key}#${n + 1}` : key, summary, by: e.agent.id, bodyHash: hashOf(body) }, command);
-        out.push({ status: 'auto', key, count: commands.length });
+        out.push({ status: 'auto', key, count: commands.length, summary });
       } catch (err) {
         out.push({ status: 'failed', op: w.op, reason: err instanceof Error ? err.message : String(err) });
       }
@@ -147,7 +148,7 @@ export async function proposeMention(e: { writes: ProposedWrite[]; place: Mentio
       },
       commands,
     );
-    out.push({ status: 'proposed', key, count: commands.length });
+    out.push({ status: 'proposed', key, count: commands.length, summary });
   }
   return out;
 }
