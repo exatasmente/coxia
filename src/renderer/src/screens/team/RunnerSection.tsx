@@ -8,7 +8,7 @@ import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerOfWeb, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
-import { SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL } from './labels';
+import { SANDBOX_BROWSERS_LABEL, SANDBOX_DISPLAY_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL } from './labels';
 import { useSandboxStatus } from './sandboxStatus';
 
 /**
@@ -208,6 +208,12 @@ function SandboxBlock({ draft, set, stored, web, at }: { draft: RunnerDraft; set
         {status === null ? t('ui.runner.sandbox.checking') : status.available ? t('ui.runner.sandbox.available', { version: status.version ?? '' }) : t('ui.runner.sandbox.unavailable', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}
         {!web && <button type="button" className="btn" style={{ marginLeft: 8 }} disabled={checking} onClick={check}>{t('ui.runner.sandbox.check')}</button>}
       </p>
+      {status?.gui && (
+        <>
+          <p className="small" role="status">{t(SANDBOX_BROWSERS_LABEL[status.gui.browsers])}</p>
+          <p className="small" role="status">{t(SANDBOX_DISPLAY_LABEL[status.gui.display])}</p>
+        </>
+      )}
       {web ? (
         <dl className="tm-readonly" aria-label={t('ui.runner.webOnComputer')}>
           <dt className="wz-label">{t('ui.runner.sandbox.network')}</dt>
@@ -216,6 +222,10 @@ function SandboxBlock({ draft, set, stored, web, at }: { draft: RunnerDraft; set
           <dd className="mono small">{sb.registryHosts.join(', ') || '—'}</dd>
           <dt className="wz-label">{t('ui.runner.sandbox.paths')}</dt>
           <dd className="mono small">{sb.readOnlyPaths.join(', ') || t('ui.runner.sandbox.pathsNone')}</dd>
+          <dt className="wz-label">{t('ui.runner.sandbox.browsers')}</dt>
+          <dd className="mono small">{sb.browsersPath || '—'}</dd>
+          <dt className="wz-label">{t('ui.runner.sandbox.display')}</dt>
+          <dd className="small">{t(sb.display ? 'ui.runner.sandbox.displayOn' : 'ui.runner.sandbox.displayOff')}</dd>
         </dl>
       ) : (
         <>
@@ -230,6 +240,13 @@ function SandboxBlock({ draft, set, stored, web, at }: { draft: RunnerDraft; set
           )}
           <ChipsInput label={t('ui.runner.sandbox.paths')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(path) => t('ui.runner.sandbox.pathRemove', { path })} values={sb.readOnlyPaths} onChange={(readOnlyPaths) => setSb({ readOnlyPaths })} add={(list, text) => (text.trim() && !list.includes(text.trim()) ? [...list, text.trim()] : list)} error={at('sandboxPaths')} />
           <p className="small muted">{t('ui.runner.sandbox.pathsHint')}</p>
+          <Labeled label={t('ui.runner.sandbox.browsers')} hint={t('ui.runner.sandbox.browsersHint')}>
+            {(id) => <input id={id} className="text-input mono" value={sb.browsersPath ?? ''} onChange={(e) => setSb({ browsersPath: e.target.value || null })} />}
+          </Labeled>
+          {at('sandboxBrowsers') && <div className="tm-field-error small" role="alert">{at('sandboxBrowsers')}</div>}
+          <Toggle checked={sb.display === true} onChange={(display) => setSb({ display })} label={t('ui.runner.sandbox.display')} />
+          <p className="small muted">{t('ui.runner.sandbox.displayHint')}</p>
+          {(sb.browsersPath || sb.display) && sb.limits.memoryMb < 1024 && <p className="small" role="note">{t('ui.runner.sandbox.memoryLow')}</p>}
           <div className="wz-two">
             {LIMIT_FIELDS.map(([key, label, unit]) => {
               const [min, max] = SANDBOX_LIMIT_RANGES[key];

@@ -102,8 +102,6 @@
   "ui.deep.back": "Back",
   "ui.deep.busy.ask": "The agent is reading and investigating…",
   "ui.deep.busy.options": "The agent is putting together the ways out…",
-  "ui.deep.conflict": "{cr} with a conflict",
-  "ui.deep.conflictNote": "Prepares the resolution with main in a working copy and opens the conflict screen. Nothing is sent without your \"yes\".",
   "ui.deep.conversation": "Conversation",
   "ui.deep.end": "End",
   "ui.deep.goesToMinutes": "Goes to the minutes",

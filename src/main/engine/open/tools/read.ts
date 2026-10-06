@@ -2,8 +2,9 @@ import { closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
-import { type ToolContext, type ToolImpl, ToolError, clip } from './types';
+import { type ToolContext, type ToolImpl, type ToolResult, ToolError, clip } from './types';
 import { t } from '../../../../shared/i18n';
+import { MAX_IMAGE_BYTES, imageMediaType } from '../../../imageType';
 
 function real(p: string): string {
   try {
@@ -50,11 +51,25 @@ export function isBinary(path: string): boolean {
 const MAX_FILE = 8 * 1024 * 1024;
 const LINE_MAX = 2000;
 
+/** The image type of a file, from its first bytes (never its name): PNG, JPEG, GIF or WebP, the ones the providers take; null for anything else. */
+export function imageType(path: string): string | null {
+  const fd = openSync(path, 'r');
+  try {
+    const b = Buffer.alloc(12);
+    const n = readSync(fd, b, 0, 12, 0);
+    return imageMediaType(b.subarray(0, n));
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export const readTool: ToolImpl = {
   name: 'Read',
   description:
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-    'Reads a text file from the local filesystem. file_path is absolute or relative to the working directory. Returns the lines numbered ("N<TAB>text"). ' +
+    'Reads a file from the local filesystem. file_path is absolute or relative to the working directory. A text file comes back with its lines numbered ("N<TAB>text"); ' +
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+    'an image (PNG, JPEG, GIF, WebP) is shown to you when the model can see images. ' +
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Use offset (first line, 1-based) and limit (number of lines, default 2000) to read part of a large file.',
   parameters: {
@@ -79,6 +94,8 @@ export const readTool: ToolImpl = {
     }
     if (st.isDirectory()) throw new ToolError(t('main.engine.text.read.directory'));
     if (st.size > MAX_FILE) throw new ToolError(t('main.engine.text.read.tooBig', { size: st.size }));
+    const image = imageType(path);
+    if (image) return readImage(path, image, st.size, ctx);
     if (isBinary(path)) throw new ToolError(t('main.engine.text.read.binary'));
     const lines = (await readFile(path, 'utf8')).split('\n');
     const offset = Math.max(1, Number(input.offset) || 1);
@@ -93,4 +110,16 @@ export const readTool: ToolImpl = {
 function renderRead(response: unknown, max: number, more: string): string {
   const content = (response as { file?: { content?: unknown } })?.file?.content;
   return clip(typeof content === 'string' ? content : '', max) + more;
+}
+
+/** A picture: the model gets it to see when it can, and a line that says what it is either way. The same path and secret checks as a text file came first. */
+async function readImage(path: string, mediaType: string, size: number, ctx: ToolContext): Promise<ToolResult> {
+  if (!ctx.seesImages?.()) throw new ToolError(t('main.engine.text.read.noImages', { path }));
+  if (size > MAX_IMAGE_BYTES) throw new ToolError(t('main.engine.text.read.imageTooBig', { size, max: MAX_IMAGE_BYTES }));
+  const data = (await readFile(path)).toString('base64');
+  return {
+    response: { type: 'image', file: { filePath: path, type: mediaType, originalSize: size } },
+    render: () => t('main.engine.text.read.image', { path, type: mediaType, size }),
+    images: [{ path, mediaType, data }],
+  };
 }

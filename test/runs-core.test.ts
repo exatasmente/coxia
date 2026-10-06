@@ -19,6 +19,7 @@ import {
   newRunId,
   parseRun,
   producerOf,
+  pushStagesOf,
   recordCommentDraft,
   recordCommentEdited,
   recordCommentProposal,
@@ -36,6 +37,41 @@ import { AT, agentFlowConfig, agentFlowStages, at, drive, flowWithAutonomy, star
 
 const done = (name: string) => ({ summary: `${name} done`, handoff: `over to the next after ${name}`, artifacts: [`${name}.md`] });
 const stage = (d: ReturnType<typeof drive>, id: string) => d.run.stages.find((s) => s.stage === id)!;
+
+describe('the stages that push', () => {
+  // Who writes is the agent's permission: the test sets it, so the flow's own agents decide nothing by default.
+  const withWriters = (ids: string[]) => {
+    const c = agentFlowConfig();
+    for (const a of c.agents.team) a.permission = ids.includes(a.id) ? 'worktree' : 'read';
+    return c;
+  };
+  const pushes = (ids: string[]) => {
+    const c = withWriters(ids);
+    return pushStagesOf(c, flowOf(c)).map((s) => s.id);
+  };
+
+  it('open the pull request at the last writer before the review, so the review lands on it', () => {
+    expect(pushes(['planner', 'developer'])).toEqual(['implement']);
+  });
+
+  it('push again at every writer after it, a QA that writes tests included, which only updates the pull request', () => {
+    expect(pushes(['refiner', 'planner', 'developer', 'qa'])).toEqual(['implement', 'qa']);
+  });
+
+  it('are the last writer when no writer comes before the review', () => {
+    expect(pushes(['qa'])).toEqual(['qa']);
+  });
+
+  it('are the last writer in a flow with no review', () => {
+    const c = withWriters(['developer', 'qa']);
+    const flow = flowOf(c).filter((s) => s.kind !== 'review');
+    expect(pushStagesOf(c, flow).map((s) => s.id)).toEqual(['qa']);
+  });
+
+  it('are none when no agent writes', () => {
+    expect(pushes([])).toEqual([]);
+  });
+});
 
 describe('the flow of the agent cycle', () => {
   it('is the stages in rank order, each with the agent that works it; gates and the last stage have none', () => {

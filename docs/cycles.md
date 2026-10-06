@@ -20,7 +20,7 @@ O Coxia deixou de assumir um processo só. O que as cerimônias fazem (quais exi
 | `meanings` | o que é "bloqueio" (`stageKinds` + texto), "pergunta para mim" (liga/desliga + texto) e "pronto para o QA" (`stageKinds`, `requiresSpec`, texto) |
 | `enrichment` | o que o agente recebe de cada cartão: `specFolder` (procura a pasta da issue), `cardFields` (quais campos do cartão), `extraFiles` (documentos que o cartão cita quando existem) |
 | `specLayout` | onde ficam os documentos: `folderPrefix`, `phaseFiles` (o arquivo que mais avançou diz a fase), `planFiles`, `gateFiles` (artefato de cada gate), `decisionLog.heading` (a seção do plano onde as decisões vão; vazio: nunca escreve no plano), `documents` |
-| `comments` | os modelos dos comentários que o runner deixa na tracker, por id de etapa e por evento (`gate`, `question`, `pr`): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. Sem modelo para uma etapa, nada é postado (veja abaixo) |
+| `comments` | os modelos dos comentários que o runner deixa na tracker, por id de etapa e por evento (`gate`, `question`, `pr`, e `docs-pr` numa execução de documentação): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. Sem modelo para uma etapa, nada é postado (veja abaixo) |
 | `priority` | as labels que dizem a urgência de uma issue (`labels`, da mais alta para a mais baixa, cada uma uma expressão regular sem diferenciar maiúsculas); vazio: o workspace não tem labels de prioridade |
 | `prompts` | a família de texto de cada papel (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | troca um único texto por id e idioma (ver abaixo) |
@@ -39,6 +39,7 @@ Um texto do ciclo (rótulo, nome, estilo) é uma **chave do catálogo** (`cycle.
 | Mínimo (`minimal`) | pré-daily e desbloqueio | To do, Doing, Blocked, Done | nenhum |
 | Ciclo de agentes (`agent-flow`) | pré-daily, desbloqueio, gate, retro | Refine, Gate 1, Plan, Gate 2, Implement, Review, QA, Ready | `1_SPEC.md` a `5_TEST_PLAN.md` na pasta do ciclo |
 | Release (`release-flow`) | nenhuma: é o fluxo de uma execução de release, **ao lado** do fluxo das issues (`runKind: 'release'`) | Planejar, Aprovar o plano, Montar a branch, Integrações, Cortar a beta, Retorno da beta, Aprovar a estável, Cortar a estável, Publicada | `RELEASE_PLAN.md` na pasta do ciclo |
+| Documentação (`docs-flow`) | nenhuma: é o fluxo de uma execução de documentação, **ao lado** do fluxo das issues (`runKind: 'docs'`), com o agente Redator da documentação; o assistente não o oferece, e ele entra no primeiro **Criar a documentação** de Configurações › Documentação, depois de uma confirmação ([`harness.md`](harness.md)) | Rascunhar a documentação, Aprovar o rascunho, Aplicar e descrever, Pronta, Documentada | `IMPORT_NOTES.md` na pasta do ciclo |
 
 Todos produzem um app útil sem arquivo de spec: os cartões vêm do provedor de VCS (ou da fonte de cartões), e as etapas são lidas por `stageMapping`. O SDD é o comportamento que o app já tinha, sem empresa: a conta de QA, o prefixo das issues, as skills do playbook e a ferramenta de release vêm de campos da configuração, preenchidos pelo perfil migrado (`legacy.ts`).
 
@@ -97,7 +98,7 @@ Uma etapa `wait` segura a execução até o evento. O runner olha, uma vez por p
 
 #### Modelos de comentário (`devCycle.comments`)
 
-O que cada etapa deixa na tracker é decidido pelo ciclo, não pelo código: `comments` tem um modelo por id de etapa de trabalho e por evento (`gate`: uma decisão de gate, `question`: uma pergunta de agente, `pr`: a descrição do pull request); a chave de uma etapa é o campo `comment` dela (o id, sem o campo). Um modelo é `{ title, status, sections, technicalDetail }`:
+O que cada etapa deixa na tracker é decidido pelo ciclo, não pelo código: `comments` tem um modelo por id de etapa de trabalho e por evento (`gate`: uma decisão de gate, `question`: uma pergunta de agente, `pr`: a descrição do pull request; `docs-pr`: a descrição do pull request de uma execução de documentação, sem seção que feche issue, e o modelo `docs-flow` o traz); a chave de uma etapa é o campo `comment` dela (o id, sem o campo). Um modelo é `{ title, status, sections, technicalDetail }`:
 
 - `title`: como o comentário se chama onde o app o lista (Ações, conversa); não aparece no corpo.
 - `status`: a **primeira linha** do comentário, com `{stage}`, `{round}`, `{result}`, `{decision}` e `{ref}` (por exemplo `Revisão: {result} (rodada {round})`).
@@ -259,7 +260,7 @@ Coxia no longer assumes a single process. What the ceremonies do (which ones exi
 | `meanings` | what a "blocker" is (`stageKinds` + text), a "question for me" (on/off + text) and "ready for QA" (`stageKinds`, `requiresSpec`, text) |
 | `enrichment` | what the agent gets about each card: `specFolder` (looks up the issue folder), `cardFields` (which card fields), `extraFiles` (documents the card names when they exist) |
 | `specLayout` | where the documents live: `folderPrefix`, `phaseFiles` (the most advanced file present says the phase), `planFiles`, `gateFiles` (each gate's artifact), `decisionLog.heading` (the plan section decisions go to; empty: never written to the plan), `documents` |
-| `comments` | the templates of the comments the runner leaves on the tracker, by stage id and by event (`gate`, `question`, `pr`): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. A stage with no template posts nothing (see below) |
+| `comments` | the templates of the comments the runner leaves on the tracker, by stage id and by event (`gate`, `question`, `pr`, and `docs-pr` in a documentation run): `{ title, status, sections[{ heading, guidance }], technicalDetail }`. A stage with no template posts nothing (see below) |
 | `priority` | the labels that say how urgent an issue is (`labels`, highest first, each a case-insensitive regular expression); empty: the workspace has no priority labels |
 | `prompts` | the text family of each role (`turn`, `reply`, `deep`, `teams`, `gate`, `qa`, `retro`, `conflict`) |
 | `promptOverrides` | replaces one text by id and language (see below) |
@@ -278,6 +279,7 @@ A text of the cycle (label, name, style) is a **catalog key** (`cycle.sdd.name`)
 | Minimal (`minimal`) | pre-daily and unblock | To do, Doing, Blocked, Done | none |
 | Agent cycle (`agent-flow`) | pre-daily, unblock, gate, retro | Refine, Gate 1, Plan, Gate 2, Implement, Review, QA, Ready | `1_SPEC.md` to `5_TEST_PLAN.md` in the cycle folder |
 | Release (`release-flow`) | none: it is the flow of a release run, **next to** the flow of the issues (`runKind: 'release'`) | Plan, Approve the plan, Assemble the branch, Merges in, Cut the beta, Beta feedback, Approve the stable, Cut the stable, Published | `RELEASE_PLAN.md` in the cycle folder |
+| Documentation (`docs-flow`) | none: it is the flow of a documentation run, **next to** the flow of the issues (`runKind: 'docs'`), with the Documentation writer agent; the wizard does not offer it, and it enters on the first **Create the documentation** in Settings › Documentation, after a confirmation ([`harness.md`](harness.md)) | Draft the documentation, Approve the draft, Apply and describe, Ready, Documented | `IMPORT_NOTES.md` in the cycle folder |
 
 All of them produce a useful app without a spec file: cards come from the VCS provider (or the card source), and stages are read through `stageMapping`. SDD is the behavior the app already had, with the company left out: the QA account, the issue prefix, the playbook skills and the release tool come from configuration fields, filled by the migrated profile (`legacy.ts`).
 
@@ -336,7 +338,7 @@ A `wait` stage holds the run until its event. The runner looks at each waiting r
 
 #### Comment templates (`devCycle.comments`)
 
-What each stage leaves on the tracker is decided by the cycle, not by code: `comments` holds one template per work-stage id and per event (`gate`: a gate decision, `question`: an agent's question, `pr`: the pull request description); a stage's key is its `comment` field (its id when left out). A template is `{ title, status, sections, technicalDetail }`:
+What each stage leaves on the tracker is decided by the cycle, not by code: `comments` holds one template per work-stage id and per event (`gate`: a gate decision, `question`: an agent's question, `pr`: the pull request description; `docs-pr`: the pull request description of a documentation run, with no section that closes an issue, brought by the `docs-flow` template); a stage's key is its `comment` field (its id when left out). A template is `{ title, status, sections, technicalDetail }`:
 
 - `title`: what the comment is called where the app lists it (Actions, the thread); it does not appear in the body.
 - `status`: the **first line** of the comment, which may use `{stage}`, `{round}`, `{result}`, `{decision}` and `{ref}` (for example `Review: {result} (round {round})`).

@@ -117,8 +117,7 @@ describe('the commands of an agent set to a sandbox', () => {
 });
 
 describe('a runner reader on a workspace with a host CLI and a tracker MCP server', () => {
-  it('gets the VcsRead tool and neither the CLI nor the MCP server, and a read of another project is refused', async () => {
-    const before = structuredClone(getConfig());
+  it('gets the VcsRead tool and neither the CLI nor the MCP server, and a read of another project is refused', async () => {    const before = structuredClone(getConfig());
     const c = structuredClone(before);
     c.vcs = [{ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: '', secretRef: 'gh.token', cliPreference: 'cli', cliCommand: 'gh' } as never];
     c.projects.issues.vcsId = 'gh';

@@ -31,7 +31,23 @@ export interface QuestionChain {
   open: boolean;
 }
 
-export type ThreadRow = { type: 'message'; message: ForumMessage } | { type: 'chain'; chain: QuestionChain; messages: ForumMessage[] };
+/**
+ * A row of a thread: a message, the chain a question walked, or a round of commands: the app's lines about the commands one agent ran (or asked to run) one after
+ * the other, with nothing else said in between, which the conversation shows folded.
+ */
+export type ThreadRow = { type: 'message'; message: ForumMessage } | { type: 'chain'; chain: QuestionChain; messages: ForumMessage[] } | { type: 'commands'; agent: string; messages: ForumMessage[] };
+
+/** The app's lines about one command: one ran (in a sandbox or on this computer), one waits for the person, the person's answer to it. */
+const COMMAND_CODES: ReadonlySet<string> = new Set(['runner.exec', 'runner.exec.host', 'runner.command.ask', 'runner.command.once', 'runner.command.stage', 'runner.command.deny']);
+
+export const isCommandLine = (m: ForumMessage): boolean => m.kind === 'system' && !!m.code && COMMAND_CODES.has(m.code);
+
+const commandAgent = (m: ForumMessage): string => String((m.params as Record<string, unknown> | undefined)?.agent ?? '');
+
+/** What the folded round says of itself: how many commands ran, and whether the last one still waits for the person (then it is shown open). */
+export function commandRound(messages: readonly ForumMessage[]): { ran: number; waiting: boolean } {
+  return { ran: messages.filter((m) => m.code === 'runner.exec' || m.code === 'runner.exec.host').length, waiting: messages.at(-1)?.code === 'runner.command.ask' };
+}
 
 const target = (m: ForumMessage): string => m.to ?? 'person';
 const isAgent = (a: Author, id: string): boolean => a.type === 'agent' && a.id === id;
@@ -101,6 +117,13 @@ export function groupThread(messages: readonly ForumMessage[], text: (m: ForumMe
       waiting.chain.open = false;
       waiting.messages.push(m);
       at.waiting = null;
+      continue;
+    }
+    // A command line joins the round the same agent is in, when nothing else was said since; otherwise it starts one.
+    if (isCommandLine(m)) {
+      const last = rows.at(-1);
+      if (last?.type === 'commands' && last.agent === commandAgent(m)) last.messages.push(m);
+      else rows.push({ type: 'commands', agent: commandAgent(m), messages: [m] });
       continue;
     }
     rows.push({ type: 'message', message: m });
