@@ -21,6 +21,7 @@ import {
   conflictsDir,
   findClone,
   git,
+  mergeMessage,
   prepareWorktree,
   pushBranch,
   removeWorktree,
@@ -693,8 +694,8 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
   const ref = crRef(primaryKind(), project, iid, { full: true });
   const prov = vcsProvider();
-  const [mr, repo, user] = await Promise.all([prov.getMr(project, iid), prov.getRepo(project), prov.currentUser()]);
-  assertResolvable(ref, mr, { me: user.username, defaultBranch: repo.defaultBranch });
+  const [mr, user] = await Promise.all([prov.getMr(project, iid), prov.currentUser()]);
+  assertResolvable(ref, mr, { me: user.username });
   const tgtSha = await prov.getBranchSha(project, mr.targetBranch);
 
   const key = `conflict:${ref}:${tgtSha}`;
@@ -728,7 +729,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     issue,
     issueTitle: card.title,
     stage: card.stage ?? '',
-    release: t('main.actions.mrInConflict'),
+    release: t('main.actions.mrInConflict', { target: mr.targetBranch }),
     mrs: [{ ref, url: mr.webUrl, branch: mr.sourceBranch, behind: 0 }],
     files: [],
     unit: unit as unknown as Record<string, unknown>,
@@ -885,7 +886,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     const { a, r } = resolved(id);
     if (!r.appliedAt) throw new Error(t('main.actions.applyFirst'));
     if (r.commit) throw new Error(t('main.actions.alreadyCommitted'));
-    const sha = await commitMerge(r.worktree, r.branch, r.mainSha, await mergeIdentity(r.clone));
+    const sha = await commitMerge(r.worktree, r.branch, r.target, r.mainSha, await mergeIdentity(r.clone));
     const push = blank({
       key: `conflict-push:${a.id}:${sha}`,
       kind: 'conflict-push',
@@ -902,7 +903,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
         // i18n-ignore: a git command line shown as it runs
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
         // i18n-ignore: a git command line shown as it runs
-        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: `Merge branch 'main' into '${r.branch}'` }),
+        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: mergeMessage(r.branch, r.target) }),
         r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
     });

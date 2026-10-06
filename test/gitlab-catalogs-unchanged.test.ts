@@ -130,11 +130,26 @@ const INTENDED: Record<string, Intended> = {
       ],
     ],
   },
+  // The conflict of an MR is resolved against the branch it targets, which may be a release branch: the texts name it instead of main.
+  'main.actions.mrInConflict': {
+    reason: 'the conflict of an MR is resolved against the branch it targets, not always main',
+    language: 'both',
+    replace: [
+      ['com a main', 'com a {target}'],
+      ['with main', 'with {target}'],
+    ],
+  },
+  'ui.resolver.publish.intro': {
+    reason: 'the merge commit names the branch it merged in, the target of the MR, not always main',
+    language: 'both',
+    replace: [["Merge branch 'main'", "Merge branch '{target}'"]],
+  },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 
 // Keys of main that this change takes out of the catalogs for good: what they said no longer happens. Each one must be gone from CATALOGS.
 const REMOVED: Record<string, string> = {
+  'main.conflictMr.notMain': 'the conflict of an MR is resolved against whatever branch it targets, a release branch included, so nothing refuses a target other than main',
   'ui.retro.improvements.title': 'the retro has no section of proposed improvements any more (rule 1)',
   'ui.retro.improvements.hint': 'the retro no longer offers the IMPROVEMENTS.md flow to take by hand (decision 5)',
   'ui.retro.improvements.hintPlain': 'the retro no longer offers the team improvements record to take by hand (decision 5)',

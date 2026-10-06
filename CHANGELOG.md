@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Resolving the conflict of a pull request that targets a release branch.** *Resolve conflict* refused any pull request whose base was not the repository's default branch, so a feature pull request aimed at an open `release/X.Y.Z` could not be resolved in the app. The app now merges the pull request's own target into its branch, whatever that target is, and the merge commit, the action and the publish step name that branch instead of `main`. It no longer reads the repository's default branch for this.
+
 ## [0.7.0-beta.9] - 2026-10-06
 
 ### Fixed
