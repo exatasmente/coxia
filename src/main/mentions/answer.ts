@@ -15,7 +15,8 @@ import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { type ProposalOutcome } from './propose';
-import { reposOnDisk, type MentionPlace } from './place';
+import { reposOnDisk, runRepo, type MentionPlace } from './place';
+import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
 // One owner per place: the runner owns the run's thread (it has the worktree, the cycle folder and the publisher) and calls this; the mentions module owns the rest.
@@ -69,6 +70,19 @@ const repoTitles = (place: MentionPlace): string[] => reposOnDisk(place).map((r)
 /** The files a run's thread gives the agent (the cycle folder, the issue record first). */
 function runFiles(run: Run): FolderFile[] {
   return existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [];
+}
+
+/**
+ * The documentation ask of an answer: inside a run, the worktree (the repository's folder when the worktree is gone) at the stage the run is at, over the paths the
+ * run's work touches; elsewhere, the repositories of the place that exist on disk, with no stage and no paths.
+ */
+async function docsAskOf(place: MentionPlace, config: WorkspaceConfig, files: FolderFile[]): Promise<DocsAsk> {
+  const run = place.kind === 'run' ? place.run : undefined;
+  if (!run) return { repos: reposOnDisk(place).map((r) => r.path), stage: null, paths: [] };
+  const stage = stageOfRun(run, config);
+  if (existsSync(run.worktree)) return runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage, texts: files.map((f) => f.text) });
+  const repo = runRepo(config, run);
+  return { repos: repo && existsSync(repo.path) ? [repo.path] : [], stage, paths: [] };
 }
 
 /** What the answer's system text and files are, by place. */
@@ -148,6 +162,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         proposals: mayPropose(def, deps, place),
         autonomous: autonomyOf(config, def),
       });
+      call.docs = await docsAskOf(place, config, info.files);
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
       call.beat = watch.beat;

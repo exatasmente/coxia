@@ -283,7 +283,7 @@
   "wizard.docs.sourceFallback": "Found by a simple search for .claude/, CLAUDE.md and .mcp.json in your projects and in ~/.claude.",
   "wizard.docs.nothingNew": "Nothing new to add.",
   "wizard.docs.autoDetect": "Detect automatically",
-  "wizard.docs.autoDetectHint": "Adds to what is listed whatever Claude Code would load by itself: ~/.claude and each project's .claude folder.",
+  "wizard.docs.autoDetectHint": "Adds to what is listed what the ceremonies' agents would load from Claude Code by itself (~/.claude and the .claude folder and CLAUDE.md of each project), and the .mcp.json of each project for every agent. The agents of runs, mentions and conversations do not read the Claude Code files: they read the .coxia folder of each repository.",
   "wizard.docs.empty": "Nothing listed.",
   "wizard.docs.missing": "not found",
   "wizard.docs.found": "found",

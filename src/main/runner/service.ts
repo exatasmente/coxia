@@ -106,6 +106,7 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
 import { proposeMention } from '../mentions/propose';
 import type { IssueMade, Publisher } from './publish';
@@ -1107,6 +1108,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
+        call.docs = existsSync(run.worktree)
+          ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+          : { repos: [], stage: stageOfRun(run, config), paths: [] };
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));
@@ -1174,6 +1179,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     let partial = false;
     try {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
+      call.docs = call.cwd === run.worktree
+        ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+        : { repos: [call.cwd], stage: stageOfRun(run, config), paths: [] };
       const abort = new AbortController();
       chainAborts.set(id, abort);
       const watch = watchdog(abort, limitsOf(config, deps));

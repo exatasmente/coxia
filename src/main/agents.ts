@@ -30,6 +30,7 @@ import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { type DocsAsk, harnessDirs, harnessSection } from './harness/deliver';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
@@ -362,8 +363,8 @@ function systemPrompt(role: ModelRole): string {
 }
 
 // Which documentation sources of the config a role may read (agents.roles[role].docs): all of them unless the workspace narrowed it.
-function docsFor(role: ModelRole): ResolvedDocs {
-  const d = docsSources();
+function docsFor(role: ModelRole, opts: { claude?: boolean } = {}): ResolvedDocs {
+  const d = docsSources(opts);
   const pick = getConfig().agents.roles[role].docs;
   return {
     ...d,
@@ -377,8 +378,8 @@ function docsFor(role: ModelRole): ResolvedDocs {
 }
 
 // Folders the config lists as documentation but that sit outside the working directory: the agent may read them too.
-function extraDirs(cwd: string, role: ModelRole): string[] {
-  const d = docsFor(role);
+function extraDirs(cwd: string, role: ModelRole, opts: { claude?: boolean } = {}): string[] {
+  const d = docsFor(role, opts);
   const listed = [...d.claudeMdRoots, ...d.skillsDirs, ...d.rulesDirs, ...d.agentsDirs, ...d.knowledgeDirs].filter((p) => !d.detected.includes(p));
   return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
 }
@@ -411,21 +412,25 @@ function sdkOptions(req: EngineRequest): Options {
     hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
     outputFormat: { type: 'json_schema', schema: req.schema },
     maxTurns: 8,
+    // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
+    // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
+    ...(req.isolated ? { settingSources: [], settings: { autoMemoryEnabled: false } } : {}),
     ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
     ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
   };
 }
 
-// Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist.
-function openDocs(cwd: string, role: ModelRole): DocSources {
-  const d = docsFor(role);
+// Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist. An isolated call never
+// falls back to them: its lists are the ones the person wrote (and the project's `.mcp.json`), always defined, because an empty list is not an absent one.
+function openDocs(cwd: string, role: ModelRole, isolated = false): DocSources {
+  const d = docsFor(role, isolated ? { claude: false } : {});
   const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
-  return Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
+  return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
 /** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
-export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection {
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false): OpenEngineSelection {
   const c = t.capabilities;
   return {
     provider: {
@@ -440,7 +445,7 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
     },
     ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}) } } : {}),
     structured: t.structured,
-    docs: openDocs(cwd, t.role),
+    docs: openDocs(cwd, t.role, isolated),
   };
 }
 
@@ -465,8 +470,10 @@ async function commandPath(): Promise<Record<string, string>> {
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
-  // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
-  const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
+  // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read. The hook carries no
+  // `docs`, which the bridge would fill with the defaults (CLAUDE.md up the tree, ~/.claude): an isolated call gets its own lists whichever way the selection came.
+  const hook = openEngineFromEnv();
+  const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
   const tool = wantsVcsTool(req);
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
@@ -979,6 +986,8 @@ export interface AgentCall {
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
   cwd: string;
   confine?: Confinement;
+  /** What the call works on, for the documentation of the repositories (`.coxia/`) it is handed. Absent: it gets none (and still reads nothing of Claude Code). */
+  docs?: DocsAsk;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
   exec?: SandboxSession;
   /** What the live activity calls it (the agent's id). */
@@ -1048,15 +1057,23 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
+    // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
+    const docs = call.docs ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
+      console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
+      return '';
+    }) : '';
+    const outside = (dir: string): boolean => dir !== call.cwd && !dir.startsWith(`${call.cwd}/`);
     const request: EngineRequest = {
       role: target.role,
       prompt: call.prompt,
       schema: call.schema,
       target,
-      system: call.system,
+      system: [call.system, docs].filter(Boolean).join('\n\n'),
       cwd: call.cwd,
       allowedTools: [...allowedTools, ...rules],
-      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole),
+      // The folders of the project's own documentation that sit outside the working directory (a conversation at the root of the projects) are readable too.
+      extraDirs: call.confine ? [] : [...extraDirs(call.cwd, modelRole, { claude: false }), ...harnessDirs(call.docs).filter(outside)],
+      isolated: true,
       shell: { rules, patterns: shell.patterns },
       extra: { maxTurns: call.maxTurns },
       activity,

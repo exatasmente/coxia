@@ -351,7 +351,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       }),
       vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),
       docs: object('Where the agents find their context (Claude Code layout).', {
-        autoDetect: boolean('Add ~/.claude, <project>/.claude, CLAUDE.md and .mcp.json when present.'),
+        autoDetect: boolean('For the ceremonies, add ~/.claude, <project>/.claude and CLAUDE.md when present; for every agent, add the .mcp.json of each project. The agents of runs, mentions and conversations read the .coxia folder of the repositories, not the Claude Code files.'),
         claudeMdRoots: strings('Folders whose CLAUDE.md is part of the context.'),
         skillsDirs: strings('Skills folders.'),
         rulesDirs: strings('Rules folders.'),

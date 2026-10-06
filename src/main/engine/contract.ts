@@ -95,6 +95,11 @@ export interface EngineRequest {
    * `none`: nothing of the host.
    */
   tracker?: 'workspace' | 'tool' | 'none';
+  /**
+   * The call reads no documentation of Claude Code: neither the `CLAUDE.md` and `.claude/` of the working directory or the home, nor its settings and its automatic
+   * memory. Set for the agents of the team (`runAgent`); the ceremonies leave it off and read what they read.
+   */
+  isolated?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */

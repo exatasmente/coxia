@@ -21,6 +21,7 @@ import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
+import { runDocsAsk } from '../harness/deliver';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 
@@ -427,6 +428,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session }),
     system: systemText(input),
     cwd: wt,
+    // The documentation of the repository (`.coxia/`) for this stage: chosen by the stage, the agent and the files the work touches. Nothing is read from git when there is none.
+    docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
     confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,
     exec: session ?? undefined,
     label: agent.id,
