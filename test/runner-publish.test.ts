@@ -602,6 +602,29 @@ describe('the push and the pull request', () => {
   });
 });
 
+describe('the push asked for while the next stage works', () => {
+  it('sends what is committed and leaves the cycle memory the next stage wrote for that stage to commit', async () => {
+    forge = makeForge({ pr: null });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    const push = actions.listActions().find((a) => a.kind === 'run-push')!;
+    // the app wrote a handover into the memory as the next stage started; that stage has not committed yet
+    const { appendFileSync } = await import('node:fs');
+    const memory = join(end.worktree, end.cycleFolder, 'MEMORY.md');
+    appendFileSync(memory, '- Handover: next.\n');
+    const head = git(end.worktree, 'rev-parse', 'HEAD').trim();
+    const pushed = await actions.approveAction(push.id);
+    expect(pushed.state).toBe('done');
+    expect(git(b.repo.clone, 'rev-parse', `refs/heads/${end.branch}`).trim()).toBe(head);
+    // the memory is still there, uncommitted, for the stage's own commit
+    expect(readFileSync(memory, 'utf8')).toContain('- Handover: next.');
+    expect(git(end.worktree, 'status', '--porcelain')).toContain('MEMORY.md');
+  });
+});
+
 describe('an agent whose autonomy is switched in the middle of its stage', () => {
   it('still posts that stage by itself, and waits from the next stage on', async () => {
     forge = makeForge();
