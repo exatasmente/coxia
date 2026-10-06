@@ -86,7 +86,7 @@ describe('which ceremonies the workspace offers', () => {
 describe('applying and managing templates', () => {
   it('lists the built-in templates in the language of the workspace', () => {
     const pt = core.listTemplates('pt-BR');
-    expect(pt.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering', 'release-flow']);
+    expect(pt.map((t) => t.id)).toEqual(['sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'agent-flow', 'agent-flow-engineering', 'release-flow', 'docs-flow']);
     expect(pt[0]).toMatchObject({ name: 'SDD (spec-driven, gates e QA)', builtIn: true });
     expect(pt[0].ceremonies).toHaveLength(6);
     expect(core.listTemplates('en')[4].name).toBe('Minimal (only the daily prep and unblocking)');

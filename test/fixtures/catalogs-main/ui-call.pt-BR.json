@@ -102,8 +102,6 @@
   "ui.deep.back": "Voltar",
   "ui.deep.busy.ask": "O agente está lendo e investigando…",
   "ui.deep.busy.options": "O agente está montando as saídas…",
-  "ui.deep.conflict": "MR com conflito",
-  "ui.deep.conflictNote": "Prepara a resolução com a main numa cópia de trabalho e abre a tela do conflito. Nada é enviado sem o seu “sim”.",
   "ui.deep.conversation": "Conversa",
   "ui.deep.end": "Encerrar",
   "ui.deep.goesToMinutes": "Vai para a ata",

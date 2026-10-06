@@ -11,6 +11,8 @@ export interface CeremonyCommand {
   id: string;
   /** The agent of the team that asked (the system agent of the ceremony: deep, turn, reply...). */
   agent: string;
+  /** The name the team gives an agent that is not a system one (an agent called with `@` in a conversation); absent for a system agent, whose name is translated. */
+  name?: string;
   command: string;
   /** It writes to the code host: it can be allowed once, never always. */
   write: boolean;

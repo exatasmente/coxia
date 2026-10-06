@@ -11,6 +11,14 @@ const MAX_STACK_LINES = 10;
 const MAX_STACK = 1800;
 const DAY_MS = 24 * 3600_000;
 
+// `name: value` where the name looks like a secret's (`apiKey: string;` in a type, `token = next()` in code): right in a message, wrong in a quoted piece of code.
+const ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi;
+
+// The same, only when the value is a quoted literal that is not empty (`password = "hunter2"`, `"apiKey": "…"`): what a person typed, as against an identifier or a type.
+const QUOTED_ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"\n]+"|'[^'\n]+')/gi;
+
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+
 // Ordered: specific shapes first, the generic opaque-string rule last.
 const SECRETS: [RegExp, string][] = [
   [/\b(Authorization|Proxy-Authorization|PRIVATE-TOKEN|Job-Token|X-Api-Key|X-Auth-Token|Set-Cookie|Cookie)\s*[:=]\s*[^\n]+/gi, '$1: [redacted]'],
@@ -19,18 +27,51 @@ const SECRETS: [RegExp, string][] = [
   [/\b(glpat|sk-or-v1|sk-or|sk-ant|sk|ghp|gho|github_pat|xox[abprs]|AKIA|AIza)[-_][\w-]{8,}/g, '[key]'],
   [/\bAKIA[0-9A-Z]{12,}\b/g, '[key]'],
   [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g, '[jwt]'],
-  [/(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi, '$1[redacted]'],
+  [ASSIGNMENT, '$1[redacted]'],
   [/(\/\/)[^\s/@:]+:[^\s/@]+@/g, '$1[redacted]@'],
   [/(https?:\/\/[^\s?#"')]+)\?[^\s"')]+/g, '$1?[redacted]'],
-  [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]'],
+  [EMAIL, '[email]'],
   [/\b(?=[A-Za-z0-9_+=-]*\d)(?=[A-Za-z0-9_+=-]*[A-Za-z])[A-Za-z0-9_+=-]{32,}\b/g, '[redacted]'],
 ];
 
 export function redact(text: string, home = homedir()): string {
+  return scrub(text, home, { assignments: 'all', email: 'all' });
+}
+
+interface Scrub {
+  /** `quoted`: only an assignment whose value is a quoted literal (code, where `apiKey: string;` is what the code says). */
+  assignments: 'all' | 'quoted';
+  /** `doc`: a version pinned with `@` (`pnpm@9.0.0`, `uses: x@v4.1.1`) and an ssh remote (`git@host:org/repo.git`) are not an address. */
+  email: 'all' | 'doc';
+}
+
+function scrub(text: string, home: string, o: Scrub): string {
   let out = text;
   if (home && home !== '/') out = out.split(home).join('~');
-  for (const [pattern, replacement] of SECRETS) out = out.replace(pattern, replacement);
+  for (const [pattern, replacement] of SECRETS) {
+    if (pattern === ASSIGNMENT && o.assignments === 'quoted') out = out.replace(QUOTED_ASSIGNMENT, replacement);
+    else if (pattern === EMAIL && o.email === 'doc') out = out.replace(EMAIL, (m: string, at: number, whole: string) => (/^@v?\d/.test(m.slice(m.indexOf('@'))) || /^:[\w~./-]/.test(whole.slice(at + m.length)) ? m : replacement));
+    else out = out.replace(pattern, replacement);
+  }
   return out;
+}
+
+/**
+ * `redact` for the prose of the documentation of a repository: the same, except that what only looks like an address is left alone (a pinned version such as
+ * `pnpm@9.0.0`, an ssh remote such as `git@example.com:org/repo.git`). A real address in prose is still masked.
+ */
+export function redactDoc(text: string, home = homedir()): string {
+  return scrub(text, home, { assignments: 'all', email: 'doc' });
+}
+
+/**
+ * `redact` for text that is quoted code (a fenced block, a code span of a document): the same masking of what is a credential by its shape (a key with a known prefix, a
+ * token, a header, an address with a password, an email, a long opaque string) and of the home folder, and of an assignment of a quoted literal to a name that looks like a
+ * secret's (`password = "hunter2"`); not of an identifier or a type (`apiKey: string;`, `token = next()`), which in code is what the code says. Pinned versions and ssh remotes
+ * are left alone as in `redactDoc`.
+ */
+export function redactCode(text: string, home = homedir()): string {
+  return scrub(text, home, { assignments: 'quoted', email: 'doc' });
 }
 
 export function trimStack(stack: string, home?: string): string {

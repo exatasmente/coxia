@@ -18,6 +18,8 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   minutes: { key: 'ui.audit.kind.minutes' },
   exec: { key: 'ui.audit.kind.exec' },
   release: { key: 'ui.audit.kind.release' },
+  'plugin-write': { key: 'ui.audit.kind.pluginWrite' },
+  'plugin-request': { key: 'ui.audit.kind.pluginRequest' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

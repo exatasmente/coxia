@@ -12,8 +12,6 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
-import { ResolveConflict } from './ResolveConflict';
-import { conflictMrs } from '../dashboard';
 import { intlLocale, useT, useVoiceEnabled } from '../i18n';
 import { voiceEnabled } from '../../../shared/i18n';
 
@@ -242,13 +240,6 @@ export function Deep({
           </main>
 
           <aside className="deep-side" style={{ flex: '1 1 320px', maxWidth: 400, minWidth: 290, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {conflictMrs(card).length > 0 && (
-              <section className="panel">
-                <h2 className="section-title">{t('ui.deep.conflict')}</h2>
-                <p className="small faint">{t('ui.deep.conflictNote')}</p>
-                <ResolveConflict card={card} go={go} place="deep" />
-              </section>
-            )}
             <section className="panel">
               <h2 className="section-title">{t('ui.deep.options')}</h2>
               {!options && (
