@@ -1,15 +1,17 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
+import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
-import { copyTree } from '../sandbox/copy';
+import { copyTracked } from '../sandbox/copy';
+import { dependencyFolders } from '../runner/dependencies';
 import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
@@ -41,6 +43,11 @@ export interface MentionDeps {
   callOf?: (agent: string) => { activity: RunActivity; queued: boolean } | null;
   /** Called once per agent named, when its call is over (answered, failed or not of the team), so the caller lets the next call begin. */
   release?: (agent: string) => void;
+  /**
+   * Asks the person about a command an agent set to `host` wants to run outside a run: the app-wide command notice, on every screen and on a paired phone, which
+   * also answers from the agent's always-allowed rules. Absent: every host command is refused, since there is nobody to ask.
+   */
+  askCommand?: (agent: AgentDef, command: string, signal: AbortSignal) => Promise<{ ok: boolean; note?: string }>;
   /** Whether the agent's provider is held (its key ran out of budget, a run's thread): the answer spends no call, and the thread says why. */
   held?: (def: AgentDef) => { provider: string; reason: string } | null;
   /**
@@ -130,16 +137,16 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     const abort = new AbortController();
     const watch = watchdog(abort, limitsOf(config));
     let session: SandboxSession | null = null;
-    let source: { cwd: string; made: boolean; reader: boolean } | null = null;
+    let source: { cwd: string; made: boolean; reader: boolean; clone?: string } | null = null;
     // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
     let ran = false;
     try {
       if (wantsCommands) {
-        source = await shellSourceOf(place, def, message.seq, abort.signal);
+        source = await shellSourceOf(place, def, message.seq, abort.signal, config.runner.sandbox.limits.copyMb * 1024 * 1024);
         if (!source) {
           deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: t('main.mentions.noRepo') }, stage });
         } else {
-          session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, abort.signal, { beat: watch.beat, pause: watch.pause }) : openMentionSession(deps, def, source, place.thread, abort.signal)).catch((e: unknown) => {
+          session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, abort.signal, { beat: watch.beat, pause: watch.pause }) : openMentionSession(deps, def, source, place.thread, abort.signal, watch.pause)).catch((e: unknown) => {
             deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }, stage });
             return null;
           });
@@ -169,8 +176,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');
       ran = true;
-      const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : `mention:${place.thread}`, () => deps.engine(call, [])));
-      const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
+      const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : mentionJob(place.thread), () => deps.engine(call, [])));
+      const text = answerText((r.data as { text?: unknown })?.text);
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
       if (mayPropose(def, deps, place)) await raiseWrites(deps, place, def, message.seq, id, readProposedWrites((r.data as { proposals?: unknown }).proposals));
@@ -192,6 +199,22 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
 
 /** Whether the agent is autonomous now: the team's current entry, which a change in Settings updates, before the definition the call started with. */
 const autonomyOf = (config: WorkspaceConfig, def: AgentDef): boolean => config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+
+/**
+ * The text of an answer. A model sometimes writes its whole answer object as the text (`{"text": "…"}`, the line ends escaped): the person would read the JSON, so
+ * the text inside it is taken instead. Anything else is the text as it came.
+ */
+export function answerText(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const text = raw.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return text;
+  try {
+    const inner = (JSON.parse(text) as { text?: unknown }).text;
+    return typeof inner === 'string' && inner.trim() ? inner.trim() : text;
+  } catch {
+    return text;
+  }
+}
 
 /**
  * The writes an answer raised, offered wherever the place proposes them: every place plans each write with the provider and puts it in Actions (or lets a low-risk one
@@ -223,41 +246,58 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
  * under the workspace's data (the one repository itself in a folder, or one subfolder per repository), which the caller removes when the answer ends. `null`
  * when the place has no repository on disk (a ceremony, or a place with none): the agent answers without commands and the thread says why.
  */
-async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, signal: AbortSignal): Promise<{ cwd: string; made: boolean; reader: boolean } | null> {
+async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, signal: AbortSignal, maxBytes: number): Promise<{ cwd: string; made: boolean; reader: boolean; clone?: string } | null> {
   if (place.kind === 'run' && place.run && existsSync(place.run.worktree)) return { cwd: place.run.worktree, made: false, reader: true };
   const repos = reposOnDisk(place);
   if (!repos.length) return null;
   const dir = draftDir(place.thread, seq, def.id);
   mkdirSync(dir, { recursive: true });
-  // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all.
-  for (const repo of repos) await copyTree(repo.path, repos.length === 1 ? dir : join(dir, repo.id), 1024 * 1024 * 1024, signal);
-  return { cwd: dir, made: true, reader: false };
+  // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all. Only what git knows is copied, as a
+  // run's worktree holds it: what a person built or installed (dist, node_modules) is not code, and can weigh gigabytes.
+  for (const repo of repos) await copyTracked(repo.path, repos.length === 1 ? dir : join(dir, repo.id), maxBytes, signal);
+  if (repos.length !== 1) return { cwd: dir, made: true, reader: false };
+  // As in a run's worktree, the clone's dependencies come by link (the sandbox binds them read-only), so the agent can run the repository's own tests.
+  for (const rel of dependencyFolders(repos[0].path)) {
+    if (existsSync(join(dir, rel))) continue;
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    symlinkSync(join(repos[0].path, rel), join(dir, rel));
+  }
+  return { cwd: dir, made: true, reader: false, clone: repos[0].path };
 }
 
 /**
  * Opens the session an agent's commands run in, over the throwaway folder `cwd` (already a copy), read only: a sandbox of this computer, or a host session. A host
  * session keeps the same limit as a run's thread: every command waits for the person, and without the app to ask it is refused, never run unattended.
  */
-function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean }, thread: string, signal: AbortSignal): Promise<SandboxSession> {
+function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean; clone?: string }, thread: string, signal: AbortSignal, pause: () => () => void): Promise<SandboxSession> {
   const sandbox = deps.sandbox;
   if (!sandbox) return Promise.reject(new Error(t('main.mentions.noRepo')));
   const config = deps.config();
-  const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }): void => {
+  const host = def.shell === 'host';
+  const say = (code: string, params: Record<string, string | number>): void => {
     try {
-      deps.forum.append(thread, {
-        kind: 'system',
-        author: { type: 'app' },
-        code: 'runner.exec',
-        params: { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' },
-      });
+      deps.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params });
     } catch {
       // A note that cannot be recorded does not stop the answer.
     }
   };
-  // A host command runs on the person's computer: like a run's thread, each one waits for their yes; a mention place has no screen to ask on today, so it is refused
-  // rather than run unattended.
-  const approve = (_command: string): Promise<{ ok: boolean }> => Promise.resolve({ ok: false });
+  const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }): void =>
+    say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
+  // A host command runs on the person's computer: like a run's thread, each one waits for their yes, here through the command notice every screen shows. The
+  // agent's clock stops while the person decides, and the thread keeps the ask and the answer next to the command.
+  const approve = async (command: string): Promise<{ ok: boolean; note?: string }> => {
+    if (!deps.askCommand || signal.aborted) return { ok: false };
+    say('runner.command.ask', { agent: def.id, command: redact(command.replace(/\s+/g, ' ')).slice(0, 300) });
+    const resume = pause();
+    try {
+      const answer = await deps.askCommand(def, command, signal);
+      say(answer.ok ? 'runner.command.once' : 'runner.command.deny', { agent: def.id, note: answer.note?.trim() || '—' });
+      return answer;
+    } finally {
+      resume();
+    }
+  };
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal, ...(source.clone ? { clone: source.clone } : {}) });
 }
 

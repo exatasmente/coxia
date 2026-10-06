@@ -1,3 +1,4 @@
+import type { SandboxGui } from '../sandbox/session';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, messageText } from '../../shared/forum';
 import type { OutputKind, RoutingWhy } from '../../shared/runs';
@@ -37,7 +38,7 @@ export interface StageInput {
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
-  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean };
+  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
@@ -62,6 +63,8 @@ export interface StageInput {
   priorityHint?: string[];
   /** A release run: the section that says which version, the state of its branch and the activities as last read (already fenced). */
   release?: string;
+  /** What the plugins that are on tell the agents, each under its name: the plugin's words, material and never the person's instruction. */
+  plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
   /** The stage changes the branch and the repository keeps documentation in `.coxia/`: the agent is told to keep it true in the same change. */
@@ -90,6 +93,21 @@ export function threadText(messages: ForumMessage[]): string {
 
 export const DIFF_LIMIT = DIFF_MAX;
 
+/**
+ * How to test an interface in this stage's sandbox: the general way, then one line for each piece the person switched on, saying whether the stage has it. Absent when
+ * the person switched neither on, so such a stage's prompt is what it was.
+ */
+function guiRules(gui: SandboxGui, look: boolean): string {
+  return [
+    cp('runner.rules.gui'),
+    gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
+    gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
+    look ? cp('runner.rules.gui.look') : cp('runner.rules.gui.noLook'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function systemText(i: StageInput): string {
   const folder = i.run.cycleFolder;
   const rules = i.writes
@@ -102,6 +120,7 @@ export function systemText(i: StageInput): string {
     rules,
     i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true) : '',
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
@@ -166,6 +185,7 @@ export function stagePrompt(i: StageInput): string {
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   if (i.release) sections.push(i.release);
   if (i.behind?.length) sections.push(cp('runner.section.docsBehind', { text: fence(i.behind.map((b) => `- ${b.file}: ${b.changed.join(', ')}`).join('\n')) }));
+  if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));

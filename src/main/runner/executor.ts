@@ -1,3 +1,4 @@
+import { offersViewImage } from '../sandbox/tool';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
@@ -56,6 +57,8 @@ export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ dat
 
 export interface ExecutorDeps {
   engine: StageEngine;
+  /** What the plugins that are on tell the agents; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
   config(): WorkspaceConfig;
   forum: ForumStore;
   /** The identity of a repository, when the workspace names none: its own `.git/config` by default (`repoIdentity`), never the global one. */
@@ -276,9 +279,22 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
+  const appendGui = (code: string, params: Record<string, string>): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params: { agent: agent.id, ...params }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+    }
+  };
   try {
     if (host) return await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal });
-    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal });
+    // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox.
+    const session = await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display: outputKindOf(stage.kind) === 'qa' });
+    const gui = session.gui;
+    // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
+    if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
+    if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
+    return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -411,6 +427,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
     docsKeep: documented && writes,
     behind,
+    plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),
@@ -426,7 +443,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
-    sandbox: session ? { network: config.runner.sandbox.network, reader: !writes, host: agent.shell === 'host' } : undefined,
+    sandbox: session
+      ? {
+          network: config.runner.sandbox.network,
+          reader: !writes,
+          host: agent.shell === 'host',
+          ...(session.gui ? { gui: session.gui, look: offersViewImage(session) && config.llm.providers.find((p) => p.id === config.llm.roles[agent.model.role ?? 'deep']?.provider)?.capabilities?.images !== false } : {}),
+        }
+      : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
     // A release run says which version it is about, the state of its branch and what is aimed at it, as of the stage's start.
     release: run.subject ? releaseSection(run, await releaseStateOf(wt, run.subject.version), config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) : undefined,

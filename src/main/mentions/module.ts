@@ -1,6 +1,11 @@
+import { mentionJob } from '../../shared/activity';
+import { rulesAllow } from '../../shared/ceremonyCommands';
+import { cycleText } from '../../shared/cycles/text';
 import type { ForumMessage, ThreadSummary } from '../../shared/forum';
 import { MAX_MENTIONS } from '../../shared/forum';
-import { runAgent } from '../agents';
+import { type RunActivity, beginCallActivity } from '../activity';
+import { runAgent, secretPath } from '../agents';
+import { ceremonyCommands } from '../ceremonyCommands';
 import { ATAS, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
@@ -20,6 +25,10 @@ let queue: Map<string, Promise<void>> | null = null;
 
 /** The chains of the running workspace: one promise per thread, so an answer never overtakes another in the same thread. */
 const inFlight = (): Map<string, Promise<void>> => (queue ??= new Map());
+
+/** The line of each call, from when the message was accepted until the call ends: what the conversation shows under the message. */
+const callLines = new Map<string, { activity: RunActivity; queued: boolean }>();
+const lineKey = (thread: string, seq: number, agent: string): string => `${thread}:${seq}:${agent}`;
 
 /**
  * The agents a message calls on, up to the limit. A person's post calls the names it wrote; in the direct conversation of an agent (`agent-<id>`) it also calls the
@@ -46,6 +55,11 @@ export const mentionsModule: Module = () => {
     sandbox,
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    // A host command asks the person through the notice every screen shows, as the ceremonies do; a command the agent's rules always allow runs without asking.
+    askCommand: (def, command, signal) => {
+      const rules = getConfig().agents.team.find((a) => a.id === def.id)?.allowedCommands ?? def.allowedCommands;
+      return rulesAllow(rules, command) ? Promise.resolve({ ok: true }) : ceremonyCommands.ask(def.id, command, signal, cycleText(def.name || def.id, getConfig().language));
+    },
   };
   forum.subscribe((message) => {
     // A run's thread is the runner's: it is not this module's to answer.
@@ -55,12 +69,37 @@ export const mentionsModule: Module = () => {
     if (!calls.length) return;
     const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
     if (!place || place.kind === 'run') return;
-    const prior = inFlight().get(message.thread) ?? Promise.resolve();
+    const prior = inFlight().get(message.thread);
+    // Every agent called gets its line as soon as the message is accepted, as in a run's thread: working, or waiting its turn behind an answer still going in
+    // this conversation or an agent named before it in the same message.
+    const team = getConfig().agents.team;
+    const root = rc().projectsRoot ?? ATAS;
+    let ahead = !!prior;
+    for (const id of calls) {
+      if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
+      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, root) });
+      activity.status(ahead ? 'queued' : 'started');
+      callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
+      ahead = true;
+    }
     // An agent set to run commands gets a throwaway copy here; the person's own folder is only the fallback.
-    const next = prior
+    const next = (prior ?? Promise.resolve())
       // The owner of a direct conversation answers without an `@`: the calls are the ones this module resolved.
-      .then(() => answerMentions(place, message, { ...deps, calls }).then(() => undefined))
-      .catch(() => undefined);
+      .then(() =>
+        answerMentions(place, message, {
+          ...deps,
+          calls,
+          callOf: (id) => callLines.get(lineKey(message.thread, message.seq, id)) ?? null,
+          release: (id) => void callLines.delete(lineKey(message.thread, message.seq, id)),
+        }).then(() => undefined),
+      )
+      .catch(() => {
+        // Whatever ended the chain early, no line of this message may stay on screen.
+        for (const id of calls) {
+          callLines.get(lineKey(message.thread, message.seq, id))?.activity.status('failed');
+          callLines.delete(lineKey(message.thread, message.seq, id));
+        }
+      });
     inFlight().set(message.thread, next);
     void next.finally(() => {
       if (inFlight().get(message.thread) === next) inFlight().delete(message.thread);

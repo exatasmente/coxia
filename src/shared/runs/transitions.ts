@@ -774,6 +774,31 @@ export function stageWaitingOnBudget(run: Run, input: { provider: string; engine
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.wait.budget', params: { stage: run.stage, provider: input.provider, engine: input.engine, detail: input.detail }, stage: run.stage }] };
 }
 
+/**
+ * A plugin of the run asked the person for something it was not allowed (its network, its write): the stage does not start until every request of the
+ * run is answered. A wait, not a failure: nothing of the stage ran, and the run goes on where it was held.
+ */
+export function stageWaitingOnPlugin(run: Run, input: { plugin: string; need: string }, at: string): Transition {
+  need(run, 'working');
+  const out = clone(run, at);
+  out.status = 'waiting';
+  out.wait = { kind: 'plugin', since: at, plugin: input.plugin, detail: input.need };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'wait-started', run.stage, 'app', `plugin:${input.plugin}`);
+  return { run: out, messages: [{ kind: 'system', author: app, code: `run.stage.wait.plugin.${input.need === 'write' ? 'write' : 'network'}`, params: { stage: run.stage, plugin: input.plugin }, stage: run.stage }] };
+}
+
+/** Every plugin request of the run was answered (allowed or refused): the held stage starts. */
+export function pluginWaitDone(run: Run, at: string): Transition {
+  need(run, 'waiting');
+  const out = clone(run, at);
+  log(out, at, 'wait-done', run.stage, 'app', 'plugin');
+  out.wait = null;
+  out.status = 'working';
+  (record(out, run.stage) as StageRecord).status = 'running';
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'wait.done.plugin', params: { stage: run.stage }, stage: run.stage }] };
+}
+
 // What goes on after the event: a wait stage is done and the run follows it; an agent's own stage goes back to work, with what came as its answer.
 function resume(out: Run, flow: FlowStage[], at: string, by: 'app' | 'person', answer: ForumDraft | null, messages: ForumDraft[]): void {
   const stage = stageOf(flow, out.stage);

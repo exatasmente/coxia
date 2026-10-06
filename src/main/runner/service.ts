@@ -65,6 +65,8 @@ import {
   stageDone,
   stageFailed,
   stageWaitingOnBudget,
+  stageWaitingOnPlugin,
+  pluginWaitDone,
   squadErrors,
   squadIssueText,
   startRun,
@@ -77,6 +79,7 @@ import {
   type PendingCommand,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
+import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
@@ -181,6 +184,21 @@ export interface RunnerDeps {
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
   limits?: Partial<{ idleMs: number; maxMs: number }>;
+  /**
+   * Told when an event of the fixed catalog happens (a stage was entered or finished, a gate was decided, a run finished), so the plugins that
+   * observe it are called. Optional: without it the runner runs exactly as before. What it hands over is material for the plugins, and a plugin
+   * that fails is not the runner's to know.
+   */
+  pluginEvent?(event: PluginEvent, context: { run: Run }): void | Promise<void>;
+  /**
+   * A request of a plugin of this run waits for the person (a network or a write it was not allowed): the runner does not start a stage of the run
+   * meanwhile, and the run waits with the reason. Optional: without it nothing is held.
+   */
+  pluginHold?(runId: string): { plugin: string; need: string } | null;
+  /** The person goes on without answering the plugin requests that hold the run: they stay in Actions, and no longer hold it. */
+  pluginRelease?(runId: string): void;
+  /** What the plugins that are on tell the agents, added to every stage's context; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -217,6 +235,8 @@ export interface Runner {
   undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
   skipWait(id: string, reason: string): Run;
+  /** A plugin request of the run was answered: `note` goes to its conversation, and a run held by plugin requests goes on when none is left. */
+  pluginSettled(id: string, note: { code: string; params: Record<string, string> } | null): void;
   /**
    * The person sends the run back to an earlier work stage of its flow, from a wait, a gate, a stage that waits to start or to be accepted, a failure, a question
    * or the end (which reopens the run). `stageId` empty: the default of `defaultSendBackTarget`. The note is the person's handoff to that stage's agent, with what
@@ -272,7 +292,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -350,6 +370,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   };
 
+  // An event of the fixed catalog happened: the plugins that observe it are called through the same door the app already uses for everything else.
+  // A plugin that fails, that is off or whose declaration was refused is the plugin service's to leave out, and a call that throws is said in the log
+  // and the run goes on. What reaches back into the run is only a request the person has to answer (pluginHold).
+  async function pluginDone(event: PluginEvent, run: Run): Promise<void> {
+    if (!deps.pluginEvent) return;
+    try {
+      await deps.pluginEvent(event, { run });
+    } catch (e) {
+      console.error('[runner] could not tell the plugins', run.id, e instanceof Error ? e.message : e);
+    }
+  }
+
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
   function tell(prior: Run | null, run: Run): void {
@@ -366,6 +398,9 @@ export function createRunner(deps: RunnerDeps): Runner {
         publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
       }
     }
+    // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
+    if (!prior || prior.stage !== run.stage) void pluginDone('stage-entered', run);
+    if (isTerminal(run) && (!prior || !isTerminal(prior))) void pluginDone('run-finished', run);
     // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
     if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;
@@ -414,6 +449,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (let i = 0; i < MAX_STEPS; i++) {
       const run = deps.runs.get(id);
       if (!run || run.status !== 'working') return;
+      // A plugin of the run asked the person for something: the stage does not start until every request is answered (pluginSettled lets it go).
+      const hold = deps.pluginHold?.(id) ?? null;
+      if (hold) {
+        tell(run, moveRun(d, id, (r) => stageWaitingOnPlugin(r, hold, now())));
+        return;
+      }
       await step(run);
       if (deps.runs.get(id)?.rev === run.rev) return;
     }
@@ -445,7 +486,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!current || current.status !== 'working' || current.stage !== run.stage) return;
     try {
       if (failure) fail(current, failure);
-      else if (result) settle(current, result);
+      else if (result) await settle(current, result);
     } catch (e) {
       if (e instanceof RunError && (e.code === 'wrong-state' || e.code === 'not-active')) return;
       fail(deps.runs.get(run.id) ?? current, e);
@@ -468,7 +509,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done.
-  function settle(run: Run, r: StageRun): void {
+  // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done. Asynchronous because the plugins
+  // that observe the end of a stage run before the run moves on; everything else in it is the same work it was.
+  async function settle(run: Run, r: StageRun): Promise<void> {
     const flow = flowFor(run);
     const { agent, stage: flowStage } = pickAgent(deps.config(), run, flow);
     const by = agent.id;
@@ -497,6 +540,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!holder) publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
+    // The stage concluded (it did not pause with a question): the plugins that observe `stage-finished` are called before the run moves on, so one
+    // that adds a document finds the cycle folder as the stage left it. This one is waited for: a plugin runs inside a sandbox, and a stage of a run
+    // must not have two of them at once over the same worktree.
+    await pluginDone('stage-finished', run);
     if (run.routing && flow[0]?.id === stage) {
       routeFrontDoor(run, { agent, out, written: r.written, autonomous });
       ended();
@@ -889,6 +936,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
       const decided = (run: Run): Run => {
         if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+        // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
+        if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
         return run;
       };
       // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
@@ -934,7 +983,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
-    skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
+    skipWait: (id, reason) => {
+      // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would). The reason is
+      // checked first, so a refused skip never lets the requests go.
+      if (!reason.trim()) throw new RunError('empty-reason');
+      if (deps.runs.get(id)?.wait?.kind === 'plugin') deps.pluginRelease?.(id);
+      return move(id, (r, f, at) => waitSkip(r, f, reason, at));
+    },
+    pluginSettled(id, note) {
+      const run = deps.runs.get(id);
+      if (!run) return;
+      if (note) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: note.code, params: note.params, stage: run.stage, public: false });
+      if (run.status === 'waiting' && run.wait?.kind === 'plugin' && !deps.pluginHold?.(id)) move(id, (r, _f, at) => pluginWaitDone(r, at));
+    },
     sendBack(id, stageId, note) {
       const before = need(id);
       // A reopened run is an active one again: it cannot be while another run of the issue is going.
@@ -1448,6 +1509,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
       const w = run.wait;
       if (!w || w.kind === 'budget') continue;
+      // A run held by a plugin request waits for the person's answer in Actions, never for the host: a comment on the issue is not that answer. When no
+      // request of it is left (the app closed between the answer and the release, say), it goes on here.
+      if (w.kind === 'plugin') {
+        if (!deps.pluginHold?.(run.id)) {
+          try {
+            sent.push(move(run.id, (r, _f, at) => pluginWaitDone(r, at)));
+          } catch (e) {
+            console.error('[runner] could not let a run held by a plugin go', run.id, e instanceof Error ? e.message : e);
+          }
+        }
+        continue;
+      }
       let over: { over: boolean; reply?: string } = { over: false };
       if (w.kind === 'linked-done') {
         // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).

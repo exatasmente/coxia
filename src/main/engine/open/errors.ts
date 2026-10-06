@@ -156,6 +156,8 @@ export interface Learned {
   echoReasoning?: boolean;
   // The model answered that it cannot use tools: the engine stops offering them.
   noTools?: boolean;
+  // The server refused a request with an image: images are replaced by a line from then on, and Read says the model does not see them.
+  noImages?: boolean;
 }
 
 export function newLearned(): Learned {
@@ -175,10 +177,23 @@ function outputLimit(message: string, current: number): number | null {
 }
 
 // Returns the body to retry with, or null when the error is not one of the known parameter complaints.
-export function adaptBodyForError(body: ChatRequest, status: number, message: string, learned: Learned): ChatRequest | null {
+const hasImage = (body: ChatRequest): boolean => body.messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url'));
+
+/** The messages with every image replaced by a line that says one was there: what a server that takes no image gets. */
+export function withoutImages(messages: ChatRequest['messages'], note: string): ChatRequest['messages'] {
+  return messages.map((m) => (Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url') ? { ...m, content: m.content.map((c) => (c.type === 'image_url' ? { type: 'text' as const, text: note } : c)) } : m));
+}
+
+export function adaptBodyForError(body: ChatRequest, status: number, message: string, learned: Learned, imageNote = '[image]'): ChatRequest | null {
   if (status !== 400 && status !== 422) return null;
   const m = message.toLowerCase();
   const next: ChatRequest = { ...body };
+  // A model that takes no image says so in many words; the request goes again without them, and the client stops sending any.
+  if (hasImage(body) && /image|vision|multimodal|multi-modal|image_url|content type|content part/.test(m)) {
+    learned.noImages = true;
+    next.messages = withoutImages(body.messages, imageNote);
+    return next;
+  }
   if (next.max_tokens !== undefined && /max_completion_tokens/.test(m)) {
     next.max_completion_tokens = next.max_tokens;
     delete next.max_tokens;

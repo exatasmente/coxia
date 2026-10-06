@@ -3,7 +3,6 @@ import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, new
 import type { JsonSchema } from '../src/shared/config';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
-import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
 
 // Keys of every object the schema describes, as dotted paths ("llm.providers[].id"): what a config can hold.
 function schemaKeys(s: JsonSchema, path = ''): string[] {
@@ -40,9 +39,8 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...runner, release: { soleMaintainer: 'yes' } } }).ok).toBe(false);
   });
 
-  it('keeps the documentation sources as they were: the same fields and types, autoDetect on by default, and the schema version unchanged', () => {
-    // What autoDetect does with them is the app's behaviour; the format of the file did not change, so there is no migration step.
-    expect(CONFIG_SCHEMA_VERSION).toBe(13);
+  it('keeps the documentation sources as they were: the same fields and types, and autoDetect on by default', () => {
+    // What autoDetect does with them is the app's behaviour; the format of the file did not change, so there is no migration step for them.
     const docs = CONFIG_SCHEMA.properties?.docs;
     expect(Object.keys(docs?.properties ?? {})).toEqual(['autoDetect', 'claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles', 'specsDir']);
     expect(docs?.properties?.autoDetect.type).toBe('boolean');
@@ -89,7 +87,7 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 14 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: 16 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
   });
@@ -118,7 +116,7 @@ describe('config schema', () => {
   });
 
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 13, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: 15, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);

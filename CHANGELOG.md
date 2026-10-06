@@ -18,6 +18,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **The agents of a run, a mention or a conversation no longer read the Claude Code files.** They used to pick up the `CLAUDE.md` and `.claude/` of the repository and of your home (and the Claude Code settings and automatic memory) as if they were the project's own rules, so a rule written for a Claude Code session, such as who pushes, reached an agent whose runner does that differently. They now read the `.coxia/` folder of each repository, and the stage prompt that told them the repository's `CLAUDE.md` applies now points at that documentation. The sources you list in the configuration still count, and **Detect automatically** now only reaches the ceremonies and each project's `.mcp.json` (the configuration format and its version are unchanged). The ceremonies' own agents (`turn`, `reply`, `deep`, `teams`, `fix`) still read the Claude Code files as before. On the Claude Agent SDK engine this also means the skills and subagents of `~/.claude` are no longer found by those agents' `Skill` and `Agent` tools; the `skills/` of `.coxia/` are read as text instead.
 
+## [0.7.0-beta.8] - 2026-10-06
+
+### Added
+
+- **Web search for the agents.** The first real plugin, in `plugins/web-search/`: an agent writes its questions in `SEARCH_REQUESTS.md`, and when the stage ends they are searched on a SearXNG instance of your own (set its address in the plugin list); the next stage reads `WEB_SEARCH.md` with up to five results per question and their sources. A plugin can now tell the agents what it offers: its note enters every stage's context, marked as the plugin's words, while it is on.
+
+- **Plugins in JavaScript, with settings and requests the app makes for them.** A plugin whose entry is an `.mjs` module runs in the stage sandbox through the app's own runtime (nothing to install) and gets a typed context (`docs/plugins/kit/coxia-plugin.d.ts`). It may declare settings the person fills in the plugin list — a URL, a text or a key; a key goes to the secrets store and never reaches the plugin — and requests the app makes for it, outside the sandbox, to a declared address or to one the person set (a local instance included), with the key put in by the app. Reads need the plugin's network permission; writes follow the same permission contract as a plugin's write. Every call is in the audit log, without the key and without the body. A declared address only reaches a public host name, checked on the address connected to; only an address you set reaches a local one; only a GET is a read. An "always" now holds for what the plugin declared when it was given: if the declaration changes, the plugin asks again (one given in an earlier beta asks once more). Configuration schema 15.
+
+## [0.7.0-beta.7] - 2026-10-06
+
+### Added
+
+- **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 14 adds the `plugins` section; a workspace without plugins behaves as before.
+
+### Fixed
+
+- **An agent's answer no longer shows as JSON.** When the model wrote its whole answer object as the text of the answer, the conversation showed `{"text": "…"}` with the line ends as `\n`; the text inside it is shown now.
+
+## [0.7.0-beta.6] - 2026-10-06
+
+### Fixed
+
+- **An agent called with `@` outside a run can run commands in a repository with large build output.** Its throwaway copy took the whole folder, built packages and installed dependencies included, and a repository over 1 GiB (a `dist` of packages, say) made every such call fail with *the worktree is too large to copy*. The copy now holds what git knows of the repository (the tracked files and the new ones that are not ignored, as they are in the folder), within the sandbox's copy limit of Settings, and the clone's dependencies are lent read-only as in a run's worktree, so the repository's own tests run.
+
+## [0.7.0-beta.5] - 2026-10-06
+
+### Added
+
+- **An agent can test an interface from inside the sandbox.** Two settings in Settings › Runner › Sandbox, on the computer only and off by default. *Browsers folder* (usually `~/.cache/ms-playwright`) is shared read-only with every sandbox, with `PLAYWRIGHT_BROWSERS_PATH` set, so an agent drives a browser without setting anything. *Virtual display for QA* starts a virtual display (Xvfb) inside the QA stage's sandbox, so a window app such as this one can be opened; the computer's own screen is never used. With either on, the stage is told how to test an interface (dev server on the sandbox's loopback, Playwright, screenshots in `/coxia/out`) and gets a `ViewImage` tool that shows it a screenshot from that folder and nowhere else. What is missing (the folder is gone, no Xvfb, a display that did not start) is said in the run's thread and in the prompt, and the stage goes on; Settings shows browsers and display on lines of their own.
+- **An agent on the open engine sees the images it reads.** `Read` now returns a PNG, JPEG, GIF or WebP (up to 4 MB) that the agent may read, with the same path and secret checks as a text file, and the model sees it, as on the Claude Agent SDK: a screenshot from an interface test, a diagram, a picture in the repository. The connection test of an open-engine provider now also shows the model a small picture and records whether it takes images (*Images* in the list of what the provider can do); a model known not to is told the file is an image instead, and when it is not known the engine tries and, if the server refuses, goes on without images.
+
+### Fixed
+
+- **The command notices fit their box.** The notice that asks to run a command (in a ceremony, or in a run on this computer) carried the whole rule in its *Always allow* button, and a button never wrapped: a long command pushed the button, the command and the note field past the notice's edge. The buttons and the agent's name now wrap inside the notice, the command scrolls on its own, and on a narrow screen each button takes the whole width.
+- **Every conversation shows what a called agent is doing, and folds its commands.** The general conversation, the channels and an agent's direct conversation now show, under the message that called an agent, the same live line as a run's thread: working (or waiting its turn), then the step it is on, until its answer arrives. In every thread, the commands an agent ran one after the other, with the asks and your answers, fold into one line (*developer ran 4 commands*) that opens to show each command and its output; it opens by itself while a command waits for you.
+- **An agent set to run commands on this computer asks you outside a run too.** Called with `@` in a channel, a general conversation or its direct conversation, an agent with `shell: host` had every command refused, since there was no screen to ask on. It now asks through the same command notice the ceremonies use, on every screen and on the paired phone: allow once, always allow the suggested rule (it goes into the agent's list in Settings › Team) or do not allow, with a note; a command its list already allows runs without asking. The thread keeps the ask and your answer next to the command, and the notice names the agent of the team.
+
 ## [0.7.0-beta.4] - 2026-10-06
 
 ### Fixed
@@ -248,7 +285,11 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.8...HEAD
+[0.7.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.7...v0.7.0-beta.8
+[0.7.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...v0.7.0-beta.7
+[0.7.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...v0.7.0-beta.6
+[0.7.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...v0.7.0-beta.5
 [0.7.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...v0.7.0-beta.4
 [0.7.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.2...v0.7.0-beta.3
 [0.7.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.1...v0.7.0-beta.2

@@ -20,6 +20,16 @@ export interface ToolContext {
   bashPrefixes: string[];
   // 'auto' tries ripgrep and falls back to the JS walker.
   ripgrep: 'auto' | 'off';
+  // Whether the model takes images now: false when the provider says it does not, or a call with one was refused. Absent: it does not.
+  seesImages?: () => boolean;
+}
+
+/** An image a tool read, for the model to see: the loop sends it in a message of its own, since a tool message carries text only. */
+export interface ToolImage {
+  path: string;
+  mediaType: string;
+  /** The file's bytes, base64. */
+  data: string;
 }
 
 // What a tool returns. `response` has the same shape as the Claude tool's, so the shared PostToolUse hooks can rewrite it;
@@ -27,6 +37,8 @@ export interface ToolContext {
 export interface ToolResult {
   response: unknown;
   render: (response: unknown) => string;
+  /** Images the model should see along with the text (Read of a picture). */
+  images?: ToolImage[];
 }
 
 export interface ToolImpl {

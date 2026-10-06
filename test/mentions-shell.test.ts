@@ -1,6 +1,7 @@
 // Where an agent named in a channel runs its commands: over a throwaway copy of the place's repositories (one repository itself, or one folder holding a copy of
 // each), and no session at all where the place has no repository.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -56,6 +57,26 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened[0].session.closed).toBe(true);
   });
 
+  it('copies only what git knows of a repository, and lends it the clone\'s dependencies read-only through the sandbox', async () => {
+    const r = repo('web');
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: r.path });
+    writeFileSync(join(r.path, '.gitignore'), 'node_modules/\ndist/\n');
+    mkdirSync(join(r.path, 'node_modules/dep'), { recursive: true });
+    writeFileSync(join(r.path, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
+    mkdirSync(join(r.path, 'dist'));
+    writeFileSync(join(r.path, 'dist/huge.bin'), 'x');
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const seen: { readme: boolean; dist: boolean; deps: string | null }[] = [];
+    engine.script('turn', (call) => {
+      seen.push({ readme: existsSync(join(call.cwd, 'README.md')), dist: existsSync(join(call.cwd, 'dist')), deps: lstatSync(join(call.cwd, 'node_modules')).isSymbolicLink() ? readlinkSync(join(call.cwd, 'node_modules')) : null });
+      return { text: 'Read.' };
+    });
+    await answerMentions(place([r]), message(), { forum, config: () => config('sandbox'), engine, sandbox, env: () => ({ fallbackCwd: root }) });
+    expect(seen).toEqual([{ readme: true, dist: false, deps: join(r.path, 'node_modules') }]);
+    expect(sandbox.opened[0].options.clone).toBe(r.path);
+  });
+
   it('gives several repositories one folder holding a copy of each', async () => {
     const sandbox = fakeSandbox();
     const engine = fakeEngine();
@@ -89,7 +110,7 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened).toHaveLength(0);
   });
 
-  it('never runs a host command without asking: a place with no screen refuses it', async () => {
+  it('never runs a host command without asking: with nobody to ask, it is refused', async () => {
     const sandbox = fakeSandbox();
     const engine = fakeEngine();
     const results: { refused?: string; exitCode: number | null }[] = [];
@@ -101,5 +122,45 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened).toHaveLength(1);
     expect(sandbox.opened[0].host).toBe(true);
     expect(results).toMatchObject([{ refused: 'denied' }]);
+  });
+
+  it('asks the person about a host command through the command notice, and runs it once allowed, the ask and the answer in the thread', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const asked: { agent: string; command: string }[] = [];
+    const results: { refused?: string; exitCode: number | null }[] = [];
+    engine.script('turn', async (call) => {
+      if (call.exec) results.push(await call.exec.exec('npm test'));
+      return { text: 'Ran it.' };
+    });
+    await answerMentions(place([repo('api')]), message(), {
+      forum,
+      config: () => config('host'),
+      engine,
+      sandbox,
+      env: () => ({ fallbackCwd: root }),
+      askCommand: async (def, command) => {
+        asked.push({ agent: def.id, command });
+        return { ok: true };
+      },
+    });
+    expect(asked).toEqual([{ agent: 'turn', command: 'npm test' }]);
+    expect(results[0].refused).toBeUndefined();
+    const codes = (forum.read('squads', 0, 100)?.messages ?? []).map((m) => m.code).filter(Boolean);
+    expect(codes).toEqual(['runner.command.ask', 'runner.command.once', 'runner.exec.host']);
+  });
+
+  it('refuses a host command the person did not allow, and the thread keeps the note', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const results: { refused?: string; exitCode: number | null }[] = [];
+    engine.script('turn', async (call) => {
+      if (call.exec) results.push(await call.exec.exec('rm -rf build'));
+      return { text: 'Did not run it.' };
+    });
+    await answerMentions(place([repo('api')]), message(), { forum, config: () => config('host'), engine, sandbox, env: () => ({ fallbackCwd: root }), askCommand: async () => ({ ok: false, note: 'not that one' }) });
+    expect(results).toMatchObject([{ refused: 'denied' }]);
+    const deny = (forum.read('squads', 0, 100)?.messages ?? []).find((m) => m.code === 'runner.command.deny');
+    expect(deny?.params).toMatchObject({ agent: 'turn', note: 'not that one' });
   });
 });
