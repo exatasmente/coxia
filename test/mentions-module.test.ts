@@ -12,6 +12,8 @@ vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => 
 const { MODULES, moduleList } = await import('../src/main/modules');
 const { callsOf, mentionsIdle, mentionsModule } = await import('../src/main/mentions/module');
 const { forumStore } = await import('../src/main/forum');
+const { activityLog } = await import('../src/main/activity');
+const { mentionJob } = await import('../src/shared/activity');
 type ModuleContext = import('../src/main/module').ModuleContext;
 
 const realData = process.env.CERIMONIAS_DATA_DIR;
@@ -67,6 +69,18 @@ describe('the registration', () => {
     // The registration subscribes to the forum: what the app writes to a channel reaches the module only if this ran.
     forumStore().ensureThread({ id: 'squads', kind: 'channel', squad: null, title: 'Squads' });
     forumStore().append('squads', { kind: 'post', author: { type: 'person' }, text: '@turn hi', mentions: ['turn'] });
+    await mentionsIdle();
+  });
+
+  it('opens the line of each call under the conversation as soon as the message is accepted, as a run\'s thread does', async () => {
+    const { ctx } = appContext();
+    mentionsModule(ctx);
+    forumStore().ensureThread({ id: 'squads', kind: 'channel', squad: null, title: 'Squads' });
+    const [m] = forumStore().append('squads', { kind: 'post', author: { type: 'person' }, text: '@turn @reply hi', mentions: ['turn', 'reply'] });
+    // The conversation reads its calls from its own job: one line per agent named, tied to the message, the second waiting its turn.
+    const lines = activityLog.get(mentionJob('squads')).filter((e) => e.call?.message === m.seq);
+    expect([...new Set(lines.map((e) => e.call?.agent))]).toEqual(['turn', 'reply']);
+    expect(lines.find((e) => e.call?.agent === 'reply' && e.kind === 'status')?.state).toBe('queued');
     await mentionsIdle();
   });
 

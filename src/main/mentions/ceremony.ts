@@ -65,7 +65,7 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
         title: ctx.title,
         place: 'ceremony',
         shell: undefined,
-        issue: false,
+        proposals: false,
       });
       const r = await runAgent<{ text?: unknown }>(call, []);
       const said = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';

@@ -47,9 +47,10 @@ O que a seleção entrega a `runOpenOnce`: `OpenEngineSelection` = `{ provider: 
 1. alcança o servidor e lista `GET /models` (inclui a janela de contexto quando o servidor informa: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
 2. resposta simples (com SSE; sem SSE, tenta JSON);
 3. chamada de ferramenta;
-4. `response_format` com `json_schema`.
+4. `response_format` com `json_schema`;
+5. uma imagem numa mensagem (um quadrado vermelho de 16×16): `images` é `true` quando o modelo respondeu, `false` quando o servidor recusou a imagem e fica ausente quando a chamada falhou por outro motivo.
 
-`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow }` alimenta o motor (`Capabilities`). A URL pode ser `http://localhost:11434`, `.../v1` ou `.../v1/chat/completions`.
+`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` alimenta o motor (`Capabilities`). A URL pode ser `http://localhost:11434`, `.../v1` ou `.../v1/chat/completions`.
 
 ### Saída estruturada
 
@@ -65,6 +66,8 @@ Nos três casos a resposta é validada contra o schema (`engine/open/schema.ts`)
 
 Ferramentas: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (sub-agente de leitura), `mcp__<servidor>__<ferramenta>`. Os nomes são os do Claude, então `allowedTools` vale igual.
 
+**Imagens.** O `Read` reconhece PNG, JPEG, GIF e WebP pelos primeiros bytes (nunca pelo nome) e, com as mesmas checagens de caminho e de segredo de um texto, devolve a imagem (até 4 MB). Como uma mensagem de ferramenta só leva texto, o loop manda as imagens lidas numa mensagem `user` logo depois dos resultados. Com `capabilities.images: false` o `Read` diz que o modelo não recebe imagens em vez de anexar. Sem a capacidade conhecida, o motor tenta: um servidor que recusa (400/422 falando de imagem) faz o cliente repetir o pedido com uma linha no lugar de cada imagem e parar de mandá-las (`learned.noImages`). Na estimativa de tokens e na compactação, uma imagem pesa um valor fixo e as antigas viram uma linha.
+
 - Os mesmos hooks de `agents.ts` rodam antes e depois de cada ferramenta (`shellAllowlist`, `noSecrets`, `redactSecretResults`): uma política só para os dois motores. `test/engine-open-tools.test.ts` prova as mesmas recusas.
 - Arquivos de segredo (`.env`, `*secret*.json`, chaves, `~/.ssh`…) ficam fora: a regra é a mesma `secretPath`, aplicada antes de ler e durante a busca (`Grep`/`Glob` não percorrem esses arquivos, e o ripgrep recebe `SECRET_GLOBS`).
 - O `Bash` roda **sem shell**: o comando é dividido em argumentos e executado direto, então `;`, `&&`, `|`, `$()` e variáveis não fazem nada. Só `2>&1` e `| head -n/-c N` são tratados (pelo código). Os prefixos de `Bash(...)` de `allowedTools` também valem.
@@ -75,7 +78,9 @@ Ferramentas: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (sub-a
 
 Fontes configuráveis (`DocSources`): `claudeMd` (arquivos ou pastas; `@imports` até 5 níveis, fora de blocos de código), `skillDirs` (`<nome>/SKILL.md`: só a descrição vai no prompt, o corpo vem pela ferramenta `Skill`), `agentDirs` (definições para a ferramenta `Agent`), `docDirs` (rules e knowledge base: índice no prompt, leitura com `Read`) e `mcpConfigs` (`.mcp.json`; só servidores stdio; só sobem os servidores que têm ferramenta liberada).
 
-Padrão (`defaultDocSources`), quando nenhuma fonte é configurada: CLAUDE.md do cwd para cima, `.claude/{skills,agents,rules,knowledge-base}` do cwd e da home, `.mcp.json` do cwd e `~/.claude.json`.
+Padrão (`defaultDocSources`), quando nenhuma fonte é configurada: CLAUDE.md do cwd para cima, `.claude/{skills,agents,rules,knowledge-base}` do cwd e da home, `.mcp.json` do cwd e `~/.claude.json`. **Só as cerimônias e o gancho de teste o usam.** Um agente do time (etapa de execução, menção, pergunta da cadeia, pedido entre squads) leva listas explícitas (as fontes extras de `docs` e o `.mcp.json` dos projetos, vazias quando não há nada), o que impede o padrão de entrar; a documentação dele, a `.coxia/` dos repositórios, vai por **um texto só, com orçamento**, anexado ao texto de sistema (`systemAppend`), igual ao do caminho do Claude. Veja [`harness.md`](harness.md).
+
+No **caminho do Claude Agent SDK** a chamada de um agente do time leva `settingSources: []` e `settings: { autoMemoryEnabled: false }`: o Claude Code não carrega `CLAUDE.md`, `.claude/`, `settings.json` nem a memória automática. Efeito colateral dito: as skills e os subagentes de `~/.claude` e `<projeto>/.claude` **não são achados** pelas ferramentas `Skill` e `Agent` nesses agentes; as `skills/` de `.coxia/` são lidas como texto, e o interruptor `tools.skills` só deixa de achar skills no caminho do SDK. As cerimônias não definem `settingSources` e seguem como antes.
 
 Quando o servidor diz que o contexto estourou, ou a estimativa passa de 80% da janela conhecida, resultados antigos de ferramenta são encurtados e a chamada se repete.
 
@@ -99,7 +104,7 @@ Importante: **um** modelo real foi testado, em quatro execuções, e só no runn
 ### Limitações conhecidas
 
 - **Modelo pequeno e ferramentas:** modelos locais de poucos bilhões de parâmetros erram argumentos, ignoram ferramentas ou inventam. O loop devolve o erro ao modelo e tenta de novo, mas a qualidade depende do modelo. Use o teste de conexão e prefira modelos treinados para ferramentas.
-- **Janela de contexto:** o prompt do agente (CLAUDE.md, skills, definições de ferramentas) passa de 10 mil tokens. Com 4 mil ou 8 mil tokens a cerimônia não cabe. Ollama usa 4096 por padrão: aumente `num_ctx` (ex.: 16384 ou mais). O servidor muitas vezes trunca em silêncio em vez de dar erro, e nesse caso o adaptador não percebe.
+- **Janela de contexto:** o prompt do agente (CLAUDE.md, skills, definições de ferramentas) passa de 10 mil tokens. Com 4 mil ou 8 mil tokens a cerimônia não cabe. Ollama usa 4096 por padrão: aumente `num_ctx` (ex.: 16384 ou mais). O servidor muitas vezes trunca em silêncio em vez de dar erro, e nesse caso o adaptador não percebe. A documentação de `.coxia/` que um agente do time recebe tem orçamento próprio, reduzido pela janela que o provedor declara (24.000 caracteres no máximo, piso de 3.000).
 - Ferramentas: leitura (`Read`, `Grep`, `Glob`), escrita confinada ao worktree da execução (`Write`, `Edit`) quando a chamada tem raiz de escrita, os comandos listados em `runner.commands` quando a permissão os dá, mais as ferramentas MCP permitidas. Sem rede e sem busca na web (`WebFetch`, `WebSearch`).
 - Chamadas de ferramenta escritas como texto (alguns modelos sem template adequado) não são interpretadas; o servidor precisa devolver `tool_calls`.
 - Entrada de imagem não é usada pelo motor aberto.
@@ -153,9 +158,10 @@ What the selection hands to `runOpenOnce`: `OpenEngineSelection` = `{ provider: 
 1. reaches the server and lists `GET /models` (including the context window when the server reports it: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
 2. plain completion (over SSE; without SSE, plain JSON);
 3. tool call;
-4. `response_format` with `json_schema`.
+4. `response_format` with `json_schema`;
+5. an image in a message (a 16×16 red square): `images` is `true` when the model answered, `false` when the server refused the image, and absent when the call failed for another reason.
 
-`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow }` feeds the engine (`Capabilities`). The URL may be `http://localhost:11434`, `.../v1` or `.../v1/chat/completions`.
+`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` feeds the engine (`Capabilities`). The URL may be `http://localhost:11434`, `.../v1` or `.../v1/chat/completions`.
 
 ### Structured output
 
@@ -171,6 +177,8 @@ In all three the answer is validated against the schema (`engine/open/schema.ts`
 
 Tools: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (read-only sub-agent), `mcp__<server>__<tool>`. Names are Claude's, so `allowedTools` means the same.
 
+**Images.** `Read` tells PNG, JPEG, GIF and WebP by their first bytes (never the name) and, with the same path and secret checks as text, returns the image (up to 4 MB). Since a tool message carries text only, the loop sends the images read in a `user` message right after the tool results. With `capabilities.images: false`, `Read` says the model takes no images instead of attaching one. When the capability is not known the engine tries: a server that refuses (400/422 about an image) makes the client send the request again with a line in place of each image and stop sending them (`learned.noImages`). In the token estimate and in compaction, an image weighs a fixed amount and older ones become a line.
+
 - The same hooks from `agents.ts` run before and after every tool (`shellAllowlist`, `noSecrets`, `redactSecretResults`): one policy for both engines. `test/engine-open-tools.test.ts` proves the same refusals.
 - Secret files (`.env`, `*secret*.json`, keys, `~/.ssh`…) are out of reach: the same `secretPath` rule, applied before reading and while searching (`Grep`/`Glob` never walk those files, and ripgrep gets `SECRET_GLOBS`).
 - `Bash` runs **without a shell**: the command is split into arguments and executed directly, so `;`, `&&`, `|`, `$()` and variables do nothing. Only `2>&1` and `| head -n/-c N` are handled (by code). The `Bash(...)` prefixes in `allowedTools` apply too.
@@ -181,7 +189,9 @@ Tools: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (read-only s
 
 Configurable sources (`DocSources`): `claudeMd` (files or folders; `@imports` up to 5 levels, outside code blocks), `skillDirs` (`<name>/SKILL.md`: only the description goes in the prompt, the body comes through the `Skill` tool), `agentDirs` (definitions for the `Agent` tool), `docDirs` (rules and knowledge base: index in the prompt, read with `Read`) and `mcpConfigs` (`.mcp.json`; stdio servers only; only servers with an allowed tool are started).
 
-When no source is configured, the default (`defaultDocSources`) is: CLAUDE.md from the cwd upward, `.claude/{skills,agents,rules,knowledge-base}` of the cwd and the home, `.mcp.json` of the cwd and `~/.claude.json`.
+When no source is configured, the default (`defaultDocSources`) is: CLAUDE.md from the cwd upward, `.claude/{skills,agents,rules,knowledge-base}` of the cwd and the home, `.mcp.json` of the cwd and `~/.claude.json`. **Only the ceremonies and the test hook use it.** An agent of the team (a stage of a run, a mention, a question of the chain, a request between squads) carries explicit lists (the extra sources of `docs` and the `.mcp.json` of the projects, empty when there is nothing), which keeps the default out; its documentation, the `.coxia/` of the repositories, goes as **one text with a budget** appended to the system text (`systemAppend`), the same as on the Claude path. See [`harness.md`](harness.md).
+
+On the **Claude Agent SDK path** the call of an agent of the team carries `settingSources: []` and `settings: { autoMemoryEnabled: false }`: Claude Code does not load `CLAUDE.md`, `.claude/`, `settings.json` or the automatic memory. A side effect, stated: the skills and subagents of `~/.claude` and `<project>/.claude` are **not found** by the `Skill` and `Agent` tools in those agents; the `skills/` of `.coxia/` are read as text, and the `tools.skills` switch only stops finding skills on the SDK path. The ceremonies do not set `settingSources` and stay as before.
 
 When the server says the context overflowed, or the estimate passes 80% of the known window, old tool results are shortened and the call is repeated.
 
@@ -205,7 +215,7 @@ Important: **one** real model has been tested, in four runs, and only in the run
 ### Known limitations
 
 - **Small models and tools:** local models of a few billion parameters get arguments wrong, ignore tools or make things up. The loop returns the error to the model and tries again, but quality depends on the model. Use the connection test and prefer models trained for tool use.
-- **Context window:** the agent prompt (CLAUDE.md, skills, tool definitions) is over 10k tokens. With 4k or 8k tokens the ceremony does not fit. Ollama defaults to 4096: raise `num_ctx` (for example 16384 or more). Servers often truncate silently instead of erroring, and the adapter cannot notice that.
+- **Context window:** the agent prompt (CLAUDE.md, skills, tool definitions) is over 10k tokens. With 4k or 8k tokens the ceremony does not fit. Ollama defaults to 4096: raise `num_ctx` (for example 16384 or more). Servers often truncate silently instead of erroring, and the adapter cannot notice that. The `.coxia/` documentation an agent of the team receives has a budget of its own, reduced by the window the provider declares (24,000 characters at most, floor of 3,000).
 - Tools: reads (`Read`, `Grep`, `Glob`), writes confined to the run's worktree (`Write`, `Edit`) when the call has a write root, the commands listed in `runner.commands` when the permission grants them, plus the allowed MCP tools. No network and no web search (`WebFetch`, `WebSearch`).
 - Tool calls written as plain text (some models without a proper template) are not interpreted; the server must return `tool_calls`.
 - Image input is not used by the open engine.

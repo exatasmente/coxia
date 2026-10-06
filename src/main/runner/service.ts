@@ -65,6 +65,8 @@ import {
   stageDone,
   stageFailed,
   stageWaitingOnBudget,
+  stageWaitingOnPlugin,
+  pluginWaitDone,
   squadErrors,
   squadIssueText,
   startRun,
@@ -77,7 +79,8 @@ import {
   type PendingCommand,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
-import { autonomousOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import type { PluginEvent } from '../../shared/plugins/events';
+import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
@@ -96,6 +99,7 @@ import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, readFolder, slugOf, writeIssueRecord, writeMemory } from './cycleFolder';
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
+import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, ensureRunIgnore } from './docs';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
@@ -106,7 +110,9 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
+import { proposeMention } from '../mentions/propose';
 import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
@@ -114,7 +120,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -178,6 +184,21 @@ export interface RunnerDeps {
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
   limits?: Partial<{ idleMs: number; maxMs: number }>;
+  /**
+   * Told when an event of the fixed catalog happens (a stage was entered or finished, a gate was decided, a run finished), so the plugins that
+   * observe it are called. Optional: without it the runner runs exactly as before. What it hands over is material for the plugins, and a plugin
+   * that fails is not the runner's to know.
+   */
+  pluginEvent?(event: PluginEvent, context: { run: Run }): void | Promise<void>;
+  /**
+   * A request of a plugin of this run waits for the person (a network or a write it was not allowed): the runner does not start a stage of the run
+   * meanwhile, and the run waits with the reason. Optional: without it nothing is held.
+   */
+  pluginHold?(runId: string): { plugin: string; need: string } | null;
+  /** The person goes on without answering the plugin requests that hold the run: they stay in Actions, and no longer hold it. */
+  pluginRelease?(runId: string): void;
+  /** What the plugins that are on tell the agents, added to every stage's context; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -191,6 +212,16 @@ export interface Runner {
    * repository's checkout, through the door of Actions. The tracking issue is made (or adopted) and the branch opened (or asked to be) by the publisher.
    */
   startRelease(version: string, from?: string, repoId?: string): Promise<Run>;
+  /**
+   * Starts the run that drafts (`create`) or brings up to date (`update`) the documentation of a repository: it has no issue, writes only inside `.coxia/` of its own
+   * worktree, and ends in a push and a pull request that wait for the person's "sim" like every other.
+   */
+  startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run>;
+  /**
+   * What `startDocs` asks before it changes anything that does not depend on the docs flow: the mode, a run already going for the repository, the repository itself and the
+   * identity of the commits. Throws what `startDocs` would; the window calls it before the docs template is applied, so a start that cannot happen leaves the configuration as it was.
+   */
+  checkDocs(repoId: string, mode: string): Promise<void>;
   startStage(id: string): Run;
   accept(id: string, note?: string): Run;
   returnStage(id: string, note: string): Run;
@@ -204,6 +235,8 @@ export interface Runner {
   undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
   skipWait(id: string, reason: string): Run;
+  /** A plugin request of the run was answered: `note` goes to its conversation, and a run held by plugin requests goes on when none is left. */
+  pluginSettled(id: string, note: { code: string; params: Record<string, string> } | null): void;
   /**
    * The person sends the run back to an earlier work stage of its flow, from a wait, a gate, a stage that waits to start or to be accepted, a failure, a question
    * or the end (which reopens the run). `stageId` empty: the default of `defaultSendBackTarget`. The note is the person's handoff to that stage's agent, with what
@@ -259,7 +292,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -337,6 +370,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   };
 
+  // An event of the fixed catalog happened: the plugins that observe it are called through the same door the app already uses for everything else.
+  // A plugin that fails, that is off or whose declaration was refused is the plugin service's to leave out, and a call that throws is said in the log
+  // and the run goes on. What reaches back into the run is only a request the person has to answer (pluginHold).
+  async function pluginDone(event: PluginEvent, run: Run): Promise<void> {
+    if (!deps.pluginEvent) return;
+    try {
+      await deps.pluginEvent(event, { run });
+    } catch (e) {
+      console.error('[runner] could not tell the plugins', run.id, e instanceof Error ? e.message : e);
+    }
+  }
+
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
   function tell(prior: Run | null, run: Run): void {
@@ -353,6 +398,9 @@ export function createRunner(deps: RunnerDeps): Runner {
         publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
       }
     }
+    // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
+    if (!prior || prior.stage !== run.stage) void pluginDone('stage-entered', run);
+    if (isTerminal(run) && (!prior || !isTerminal(prior))) void pluginDone('run-finished', run);
     // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
     if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;
@@ -401,6 +449,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (let i = 0; i < MAX_STEPS; i++) {
       const run = deps.runs.get(id);
       if (!run || run.status !== 'working') return;
+      // A plugin of the run asked the person for something: the stage does not start until every request is answered (pluginSettled lets it go).
+      const hold = deps.pluginHold?.(id) ?? null;
+      if (hold) {
+        tell(run, moveRun(d, id, (r) => stageWaitingOnPlugin(r, hold, now())));
+        return;
+      }
       await step(run);
       if (deps.runs.get(id)?.rev === run.rev) return;
     }
@@ -432,7 +486,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!current || current.status !== 'working' || current.stage !== run.stage) return;
     try {
       if (failure) fail(current, failure);
-      else if (result) settle(current, result);
+      else if (result) await settle(current, result);
     } catch (e) {
       if (e instanceof RunError && (e.code === 'wrong-state' || e.code === 'not-active')) return;
       fail(deps.runs.get(run.id) ?? current, e);
@@ -455,7 +509,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done.
-  function settle(run: Run, r: StageRun): void {
+  // What an attempt means for the run: a question pauses it, findings send it back, anything else is the stage done. Asynchronous because the plugins
+  // that observe the end of a stage run before the run moves on; everything else in it is the same work it was.
+  async function settle(run: Run, r: StageRun): Promise<void> {
     const flow = flowFor(run);
     const { agent, stage: flowStage } = pickAgent(deps.config(), run, flow);
     const by = agent.id;
@@ -484,6 +540,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!holder) publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
+    // The stage concluded (it did not pause with a question): the plugins that observe `stage-finished` are called before the run moves on, so one
+    // that adds a document finds the cycle folder as the stage left it. This one is waited for: a plugin runs inside a sandbox, and a stage of a run
+    // must not have two of them at once over the same worktree.
+    await pluginDone('stage-finished', run);
     if (run.routing && flow[0]?.id === stage) {
       routeFrontDoor(run, { agent, out, written: r.written, autonomous });
       ended();
@@ -719,6 +779,99 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   }
 
+  // ---- the run of the documentation of a repository ---------------------------------------------------------------------------------
+
+  async function startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+    if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
+    const ref = docsRef(String(repoId));
+    if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
+    starting.add(ref);
+    try {
+      return await createDocs(String(repoId), mode);
+    } finally {
+      starting.delete(ref);
+    }
+  }
+
+  // The questions of a documentation start that the docs flow does not enter into: the same ones, in the same order, whether the flow is there or not.
+  async function checkDocs(repoId: string, mode: string): Promise<void> {
+    if (starting.has(docsRef(String(repoId)))) throw new RunError('duplicate', { issue: docsRef(String(repoId)) });
+    await docsPrecheck(String(repoId), mode);
+  }
+
+  async function docsPrecheck(repoId: string, mode: string): Promise<{ repo: { id: string; path: string }; identity: Identity }> {
+    if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
+    const ref = docsRef(repoId);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const env = deps.env();
+    // The repository is named, so no issue project is asked for; one the workspace does not have has no checkout to make a worktree from.
+    if (!env.repos.some((r) => r.id === repoId)) throw new RunnerError('no-clone', { repo: repoId.slice(0, 48) });
+    const repo = await repoFor(repoId, repoId);
+    const identity = await commitIdentity(deps.config().runner.identity, repo.path, deps.identity);
+    if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
+    return { repo, identity };
+  }
+
+  async function createDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+    const config = deps.config();
+    const ref = docsRef(repoId);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const stages = docsFlowOf(config);
+    if (!stages?.length) throw new RunnerError('no-docs-flow');
+    const flow = flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages } }, stages);
+    assertStartable(flow);
+    const broken = flowErrors({ stages, team: config.agents.team }, { asFlow: true });
+    if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+    const { repo, identity } = await docsPrecheck(repoId, mode);
+    const env = deps.env();
+
+    const today = deps.now?.() ?? new Date();
+    const day = dayStamp(today);
+    const branch = docsBranch(repo.id, today);
+    const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `docs-${day}`);
+    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+      throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
+    });
+    let run: Run;
+    try {
+      // What `.coxia/` holds is read before the run puts anything in it. The run's own folder is inside `.coxia/` and ignored by git, so the pull request carries the
+      // documentation and nothing of the run; the ignore file is committed before anything is written there.
+      const record = await docsRecord(dest, { ref, title: docsTitle(repo.id), mode });
+      // A repository whose `.coxia` (or whose ignore file, or run folder) is a link would take these writes, and the agent's, out of the worktree: no run is made.
+      if (!(await ensureRunIgnore(dest))) throw new RunnerError('docs-folder-unsafe');
+      try {
+        writeIssueRecord(dest, DOCS_RUN_FOLDER, record);
+      } catch {
+        throw new RunnerError('docs-folder-unsafe');
+      }
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
+      await commitAll(dest, commitMessage(config.runner.commitMessage, 'ignore the folder of the documentation run', 0), identity);
+      const started = startRun(
+        {
+          id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')),
+          issue: { ref, iid: 0, title: docsTitle(repo.id), url: null },
+          repo: repo.id,
+          branch,
+          worktree: dest,
+          cycleFolder: DOCS_RUN_FOLDER,
+          cycleId: 'docs-flow',
+          base: made.baseSha,
+          docs: { mode },
+        },
+        flow,
+        now(),
+      );
+      run = beginRun(d, started);
+    } catch (e) {
+      await discard(repo.path, dest, branch);
+      throw e;
+    }
+    tell(null, run);
+    // No `ensureDependencies`: the draft reads and writes text and runs nothing of the repository.
+    pump(run.id);
+    return run;
+  }
+
   // The repository of an issue the caller did not name, when the project has several: the one the squad that labels or paths pick owns, if it owns exactly one.
   function repoOfSquad(squads: SquadDef[], labels: string[], text: string, env: RunnerEnv): string | undefined {
     const own = env.repos.filter((r) => r.projectPath === env.issues.project);
@@ -769,6 +922,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     get: (id) => withCommand(deps.runs.get(id)),
     start,
     startRelease,
+    startDocs,
+    checkDocs,
     startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
@@ -781,6 +936,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
       const decided = (run: Run): Run => {
         if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+        // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
+        if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
         return run;
       };
       // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
@@ -826,7 +983,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
-    skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
+    skipWait: (id, reason) => {
+      // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would). The reason is
+      // checked first, so a refused skip never lets the requests go.
+      if (!reason.trim()) throw new RunError('empty-reason');
+      if (deps.runs.get(id)?.wait?.kind === 'plugin') deps.pluginRelease?.(id);
+      return move(id, (r, f, at) => waitSkip(r, f, reason, at));
+    },
+    pluginSettled(id, note) {
+      const run = deps.runs.get(id);
+      if (!run) return;
+      if (note) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: note.code, params: note.params, stage: run.stage, public: false });
+      if (run.status === 'waiting' && run.wait?.kind === 'plugin' && !deps.pluginHold?.(id)) move(id, (r, _f, at) => pluginWaitDone(r, at));
+    },
     sendBack(id, stageId, note) {
       const before = need(id);
       // A reopened run is an active one again: it cannot be while another run of the issue is going.
@@ -842,10 +1011,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     migrateFlow(id) {
       const config = deps.config();
-      // The flow a run moves to is its squad's (the workspace's when it has none), and a release run's is the release flow.
-      const releasing = need(id).subject ? releaseFlowOf(config) : null;
-      if (need(id).subject && !releasing) throw new RunnerError('no-release-flow');
-      const view = releasing ? { agents: { team: effectiveTeam(config) }, devCycle: { stages: releasing } } : squadView(config, need(id).squad);
+      // The flow a run moves to is its squad's (the workspace's when it has none), a release run's is the release flow and a documentation run's the docs flow.
+      const target = need(id);
+      const own = runKindFlowOf(config, target);
+      if (target.subject && !own) throw new RunnerError('no-release-flow');
+      if (target.docs && !own) throw new RunnerError('no-docs-flow');
+      const view = own ? { agents: { team: effectiveTeam(config) }, devCycle: { stages: own } } : squadView(config, target.squad);
       const broken = flowErrors({ stages: view.devCycle.stages, team: view.agents.team }, { asFlow: true });
       if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
       const flow = flowOf(view, view.devCycle.stages);
@@ -921,13 +1092,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         trackLink((made ? linkedIssueCreated(id, String(action.unit.key), made.iid) : linkRefused(id, String(action.unit.key), t('main.runner.comment.noId'))).then(() => undefined));
         return;
       }
-      // The issue an agent named in the thread proposed was created: the thread says where.
-      if (action.unit?.purpose === 'mention-issue') {
-        const made = createdIssueOf(responses[0]);
-        const run = deps.runs.get(id);
-        deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: made ? 'runner.mention.issueCreated' : 'runner.mention.issueNoId', params: { ref: made ? `#${made.iid}` : '—', url: made?.url ?? '—', summary: action.summary ?? '—' }, stage: run?.stage ?? null });
-        return;
-      }
+      // Every write an answer proposed goes through the mentions module's own path: the runner keeps nothing of it.
       publish(id, (p) => p.actionDone(action, responses));
     },
     actionRefused(action, reason) {
@@ -1049,7 +1214,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         const provider = deps.config().llm.roles[def.model.role ?? 'deep']?.provider ?? '';
         return provider && budget.has(provider) ? { provider, reason: budget.get(provider)?.reason ?? '—' } : null;
       },
-      proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
+      // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
+      propose: proposeMention,
     });
   }
 
@@ -1111,6 +1277,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
+        call.docs = existsSync(run.worktree)
+          ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+          : { repos: [], stage: stageOfRun(run, config), paths: [] };
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));
@@ -1178,6 +1348,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     let partial = false;
     try {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
+      call.docs = call.cwd === run.worktree
+        ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+        : { repos: [call.cwd], stage: stageOfRun(run, config), paths: [] };
       const abort = new AbortController();
       chainAborts.set(id, abort);
       const watch = watchdog(abort, limitsOf(config, deps));
@@ -1335,6 +1509,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
       const w = run.wait;
       if (!w || w.kind === 'budget') continue;
+      // A run held by a plugin request waits for the person's answer in Actions, never for the host: a comment on the issue is not that answer. When no
+      // request of it is left (the app closed between the answer and the release, say), it goes on here.
+      if (w.kind === 'plugin') {
+        if (!deps.pluginHold?.(run.id)) {
+          try {
+            sent.push(move(run.id, (r, _f, at) => pluginWaitDone(r, at)));
+          } catch (e) {
+            console.error('[runner] could not let a run held by a plugin go', run.id, e instanceof Error ? e.message : e);
+          }
+        }
+        continue;
+      }
       let over: { over: boolean; reply?: string } = { over: false };
       if (w.kind === 'linked-done') {
         // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).

@@ -143,7 +143,7 @@ async function testOpen(p: LlmProvider, model: string, started: number): Promise
     code: r.ok ? 'ok' : r.reachable ? 'failed' : 'unreachable',
     detail: r.chat.detail ?? r.models.detail ?? '',
     messages: r.messages,
-    capabilities: r.ok ? { chat: caps.chat, tools: caps.tools, jsonSchema: caps.jsonSchema, streaming: caps.streaming, reasoning: caps.reasoning, contextWindow: caps.contextWindow ?? null } : null,
+    capabilities: r.ok ? { chat: caps.chat, tools: caps.tools, jsonSchema: caps.jsonSchema, streaming: caps.streaming, reasoning: caps.reasoning, contextWindow: caps.contextWindow ?? null, ...(caps.images !== undefined ? { images: caps.images } : {}) } : null,
     models: r.models.ids.slice(0, 300),
     answered: r.chat.ok,
     ms: Date.now() - started,

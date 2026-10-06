@@ -26,9 +26,13 @@ export function newId(prefix: string): string {
   return `${prefix}_${id}`;
 }
 
+// What one image costs a model, roughly: a picture is billed by its size, not by its base64, which would count as tens of thousands of tokens of text.
+const IMAGE_TOKENS = 1600;
+
 export function estimateTokens(value: unknown): number {
-  const text = typeof value === 'string' ? value : JSON.stringify(value) ?? '';
-  return Math.ceil(text.length / 4);
+  let images = 0;
+  const text = typeof value === 'string' ? value : (JSON.stringify(value, (_k, v) => (typeof v === 'string' && v.startsWith('data:image/') ? (images++, '') : v)) ?? '');
+  return Math.ceil(text.length / 4) + images * IMAGE_TOKENS;
 }
 
 // Reasoning models behind llama.cpp, Ollama and LM Studio often write <think>…</think> into the content. The tag only counts at the

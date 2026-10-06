@@ -114,7 +114,7 @@ function Waiting({ run, flow, config }: { run: Run; flow: readonly FlowStage[]; 
       {run.status === 'question' && q?.holder && <p className="small muted">{t('ui.cycle.question.holderNote', { agent: agentName(team, q.holder) })}</p>}
       {run.status === 'waiting' && run.wait && (
         <p className="small muted">
-          {t(WAIT_KEY[run.wait.kind] ?? 'ui.cycle.wait.time', { label: run.wait.label ?? '', minutes: run.wait.minutes ?? 0 })}
+          {t(WAIT_KEY[run.wait.kind] ?? 'ui.cycle.wait.time', { label: run.wait.label ?? '', minutes: run.wait.minutes ?? 0, provider: run.wait.provider ?? '', plugin: run.wait.plugin ?? '' })}
         </p>
       )}
       {run.status === 'failed' && run.error && (

@@ -31,7 +31,13 @@ export interface SandboxSpec {
   limits: SandboxLimits;
   /** The size of /tmp, in MiB. */
   tmpMb: number;
+  /** What the sandbox offers to test an interface: the browsers folder (already among the read-only binds) and the display program to start. */
+  gui?: { browsers: string | null; xvfb: string | null };
 }
+
+/** The display a sandbox starts for a stage: the socket of `:99` lives in the sandbox's own /tmp. */
+export const DISPLAY = ':99';
+export const DISPLAY_SOCKET = '/tmp/.X11-unix/X99';
 
 const BASE_PATH = ['/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin'];
 
@@ -68,6 +74,9 @@ export function sandboxEnv(spec: SandboxSpec): Record<string, string> {
     COXIA_PROCS: String(l.processes),
     COXIA_FSIZE: String(l.fileMb * 1024 * 1024),
   };
+  // Playwright finds the browsers the person offered without the agent setting anything; the display program is started by the supervisor, which sets DISPLAY.
+  if (spec.gui?.browsers) env.PLAYWRIGHT_BROWSERS_PATH = spec.gui.browsers;
+  if (spec.gui?.xvfb) Object.assign(env, { COXIA_XVFB: spec.gui.xvfb, DISPLAY });
   if (spec.network === 'proxy') {
     const url = `http://127.0.0.1:${PROXY_PORT}`;
     Object.assign(env, { HTTPS_PROXY: url, HTTP_PROXY: url, https_proxy: url, http_proxy: url, npm_config_proxy: url, npm_config_https_proxy: url, YARN_HTTPS_PROXY: url, YARN_HTTP_PROXY: url, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', COXIA_PROXY: '1' });
@@ -114,7 +123,16 @@ if [ -n "$COXIA_PROXY" ]; then
   while [ ! -e ${OUT}/forward.ready ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
   [ -e ${OUT}/forward.ready ] || { echo no-forwarder; exit 4; }
 fi
-echo ready
+if [ -n "$COXIA_XVFB" ]; then
+  # The display runs for the stage under the same per-process limits as a command, with no TCP listener; its socket stays in the sandbox's own /tmp.
+  prlimit --data="$COXIA_DATA" --nproc="$COXIA_PROCS" --fsize="$COXIA_FSIZE" --core=0 -- "$COXIA_XVFB" ${DISPLAY} -screen 0 1280x800x24 -nolisten tcp >/dev/null 2>&1 &
+  i=0
+  while [ ! -S ${DISPLAY_SOCKET} ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+  # A display that did not come up is no reason to stop the stage: the commands run without DISPLAY and the app says so.
+  if [ -S ${DISPLAY_SOCKET} ]; then echo ready; else unset DISPLAY; echo ready-nodisplay; fi
+else
+  echo ready
+fi
 while IFS=' ' read -r id token secs; do
   [ "$id" = quit ] && exit 0
   (
