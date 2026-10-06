@@ -1442,5 +1442,22 @@
   "main.plugins.write.pluginOff": "Did not go out: the plugin was switched off before the deadline.",
   "main.plugins.write.revoked": "Did not go out: the plugin's permission to write was taken back.",
   "main.plugins.write.changed": "the declared write changed since the request; nothing went out and the plugin asks again",
-  "main.plugins.ask.pluginOff": "Refused: the plugin was switched off."
+  "main.plugins.ask.pluginOff": "Refused: the plugin was switched off.",
+  "main.plugins.request.notDeclared": "The plugin asked for the request \"{id}\", which it did not declare.",
+  "main.plugins.request.settingEmpty": "The request \"{id}\" needs the setting \"{setting}\", which is empty.",
+  "main.plugins.request.badAddress": "The address of the request \"{id}\" is not a valid http(s) one.",
+  "main.plugins.request.badPath": "The path asked for in the request \"{id}\" leaves the declared one.",
+  "main.plugins.request.badQuery": "A parameter of the request \"{id}\" is not accepted.",
+  "main.plugins.request.badBody": "The body of the request \"{id}\" is not accepted (a GET carries none; up to 100 KiB, JSON, text or form).",
+  "main.plugins.request.secretEmpty": "The request \"{id}\" needs the key \"{setting}\", which was not filled in.",
+  "main.plugins.request.redirect": "The request \"{id}\" was redirected; the app does not follow a redirect away from the declared destination.",
+  "main.plugins.request.failed": "The request \"{id}\" failed: {reason}",
+  "main.plugins.request.isWrite": "The request \"{id}\" is a write: the plugin asks for it with write, not request.",
+  "main.plugins.request.isRead": "The request \"{id}\" is a read: the plugin asks for it with request, not write.",
+  "main.plugins.request.summary": "Request of the plugin {plugin}: {target}",
+  "main.plugins.request.status": "The request \"{id}\" answered {status}.",
+  "main.plugins.request.sent": "Sent: {target} answered {status}.",
+  "main.plugins.refusal.setting": "The plugin {plugin} needs the setting \"{setting}\" filled in, in the plugin list.",
+  "main.plugins.settings.unknown": "The plugin does not declare the setting \"{key}\".",
+  "main.plugins.settings.badUrl": "\"{setting}\" must be an http:// or https:// address."
 }

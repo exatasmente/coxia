@@ -118,10 +118,10 @@ describe('import into an existing workspace', () => {
 
   it('keeps what the plugins of the workspace were allowed, and brings in none from the file', () => {
     const dir = workspaceDir(root, 'principal');
-    const mine = { ...neutralConfig(), plugins: { dir: '/p', confirmSeconds: 60, list: [{ id: 'web-search', folder: '/p/web-search', enabled: true, allow: { network: true, write: false } }] } };
+    const mine = { ...neutralConfig(), plugins: { dir: '/p', confirmSeconds: 60, list: [{ id: 'web-search', folder: '/p/web-search', enabled: true, allow: { network: true, write: false }, settings: {} }] } };
     writeConfigFile(dir, mine);
     const theirs = sample();
-    theirs.plugins = { dir: '/elsewhere', confirmSeconds: 5, list: [{ id: 'other', folder: '/x', enabled: true, allow: { network: true, write: true } }] };
+    theirs.plugins = { dir: '/elsewhere', confirmSeconds: 5, list: [{ id: 'other', folder: '/x', enabled: true, allow: { network: true, write: true }, settings: {} }] };
     const text = JSON.stringify({ ...JSON.parse(exportText(sample(), { workspaceName: 'Acme', appVersion: '1', now: new Date(0) })), config: theirs });
     applyImport(deps, { source: { text }, target: { mode: 'existing', id: 'principal' }, secrets: [] }, 'principal');
     // Neither the permissions, nor the folder the code is read from, nor a shorter warning come from the file.

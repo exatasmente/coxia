@@ -97,7 +97,7 @@ describe('the plugin declaration', () => {
   it('reads a declaration that offers nothing else', () => {
     const r = readPluginDeclaration(JSON.stringify({ id: 'plain', name: 'Plain' }), '/p');
     expect(r.refused).toBeNull();
-    expect(r.declaration?.offers).toEqual({ events: [], documents: [], network: [], write: null, entry: null });
+    expect(r.declaration?.offers).toEqual({ events: [], documents: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], requests: [] });
   });
 });
 
@@ -146,7 +146,7 @@ describe('reading the plugins folder', () => {
 
   it('applies the person choices by identity: what is on, what was allowed always', () => {
     write('web-search', declaration());
-    const records = readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: false } }] });
+    const records = readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: false }, settings: {} }] });
     expect(records[0].enabled).toBe(true);
     expect(records[0].allow).toEqual({ network: true, write: false });
   });
@@ -162,22 +162,22 @@ describe('reading the plugins folder', () => {
     const none = () => ({ network: false, write: false });
     const off = pluginViews(readPlugins(dir, neutralPlugins()), none, () => 0);
     expect(off[0].enabled).toBe(false);
-    const on = pluginViews(readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: none() }] }), () => ({ network: true, write: false }), () => 2);
+    const on = pluginViews(readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: none(), settings: {} }] }), () => ({ network: true, write: false }), () => 2);
     expect(on[0]).toMatchObject({ session: { network: true, write: false }, waiting: 2 });
     expect(on[0]).toMatchObject({ enabled: true, events: ['stage-finished'] });
     expect(on[0].documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }]);
   });
 
   it('changes only the entry of the plugin being decided, and keeps the entry of a plugin the read did not find', () => {
-    const gone = { id: 'gone', folder: '/old/gone', enabled: true, allow: { network: true, write: true } };
-    const list = [gone, { id: 'web-search', folder: null, enabled: false, allow: { network: true, write: false } }];
+    const gone = { id: 'gone', folder: '/old/gone', enabled: true, allow: { network: true, write: true }, settings: {} };
+    const list = [gone, { id: 'web-search', folder: null, enabled: false, allow: { network: true, write: false }, settings: {} }];
     const next = withChoice(list, { id: 'web-search', dir: join(dir, 'web-search') }, (c) => ({ ...c, enabled: true }));
-    expect(next).toEqual([gone, { id: 'web-search', folder: join(dir, 'web-search'), enabled: true, allow: { network: true, write: false } }]);
+    expect(next).toEqual([gone, { id: 'web-search', folder: join(dir, 'web-search'), enabled: true, allow: { network: true, write: false }, settings: {} }]);
   });
 
   it('adds the entry of a plugin decided for the first time, off and allowed nothing until the change says otherwise', () => {
     const next = withChoice([], { id: 'web-search', dir: '/p/web-search' }, (c) => c);
-    expect(next).toEqual([{ id: 'web-search', folder: '/p/web-search', enabled: false, allow: { network: false, write: false } }]);
+    expect(next).toEqual([{ id: 'web-search', folder: '/p/web-search', enabled: false, allow: { network: false, write: false }, settings: {} }]);
   });
 });
 

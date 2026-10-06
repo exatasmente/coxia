@@ -424,7 +424,7 @@ async function proposeQaComment(sync: ReleaseAction): Promise<void> {
 type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
 
 /** Where a write came from, for the audit line: a proposal the person approved, or a write an agent's autonomy let go out. */
-interface AuditOrigin {
+export interface AuditOrigin {
   issue: number;
   actionId: string;
   kind: string;
@@ -1218,6 +1218,8 @@ export interface PluginAskUnit {
   hosts: string[];
   to: string | null;
   text: string;
+  /** For a JavaScript plugin's write: the request it asked the app to make, carried out once the person allows it. */
+  request?: { id: string; path?: string; query?: Record<string, string>; body?: string; contentType?: string; target: string };
 }
 
 /** Opens the request of a plugin. Refused in a test workspace (it widens nothing); null when the same request already waits. */
@@ -1276,17 +1278,27 @@ async function writePluginOutbox(origin: AuditOrigin, input: PluginWriteInput): 
 }
 
 /** A plugin's write that goes out now (allowed and reversible): no card, the same door and the same audit log, with the plugin as who. */
+/**
+ * A plugin's write request to a service, made by the plugins service through `audited`: one line in the audit log about what was sent (never the
+ * secret or the body), and a test workspace refuses before anything goes out. `origin` names the announced action or, for a write that goes out at
+ * once, the plugin as who.
+ */
+export function auditPluginRequest(origin: AuditOrigin | { issue: number; key: string; summary: string; plugin: string }, target: string, fields: Record<string, string>, send: () => Promise<string>): Promise<string> {
+  const from: AuditOrigin = 'actionId' in origin ? origin : { issue: origin.issue, actionId: `auto:${origin.key}`, kind: 'plugin-write', key: origin.key, summary: origin.summary, by: origin.plugin };
+  return audited(from, { kind: 'plugin-write', target, via: 'plugin', fields }, send);
+}
+
 export function writePluginNow(w: { issue: number; key: string; summary: string; plugin: string }, input: PluginWriteInput): Promise<string> {
   return writePluginOutbox({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'plugin-write', key: w.key, summary: w.summary, by: w.plugin }, input);
 }
 
 /** Announces a plugin's allowed irreversible write: it waits in Actions until `due`, and the person may block it meanwhile. */
-export function announcePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; runId: string | null; seconds: number; write: PluginWriteInput }): ReleaseAction | null {
+export function announcePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; runId: string | null; seconds: number; write: PluginWriteInput; request?: PluginAskUnit['request'] }): ReleaseAction | null {
   assertExternalWrite(t('main.plugins.write.title'));
   const store = read();
   if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
   const due = new Date(Date.now() + input.seconds * 1000).toISOString();
-  const action = blank({ key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...input.write, runId: input.runId, due }, output: [t('main.plugins.write.to', { to: input.write.to }), '', input.write.text].join('\n') });
+  const action = blank({ key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...input.write, runId: input.runId, due, ...(input.request ? { request: input.request } : {}) }, output: [t('main.plugins.write.to', { to: input.write.to }), '', input.write.text].join('\n') });
   write({ ...store, actions: [action, ...store.actions] });
   return action;
 }
@@ -1321,12 +1333,13 @@ export function rearmPluginWrite(id: string, seconds: number): ReleaseAction {
 }
 
 /** The deadline passed: the announced write goes out, unless the person blocked it meanwhile (then nothing happens). */
-export async function sendDuePluginWrite(id: string): Promise<ReleaseAction | null> {
+export async function sendDuePluginWrite(id: string, execute?: (a: ReleaseAction, origin: AuditOrigin) => Promise<string>): Promise<ReleaseAction | null> {
   const a = read().actions.find((x) => x.id === id);
   if (!a || a.kind !== 'plugin-write' || a.state !== 'pending') return null;
   update(id, (x) => ({ ...x, state: 'running' }));
   try {
-    const output = await writePluginOutbox(originOf(a), pluginWriteOf(a));
+    // A plugin's request to a service is made by the plugins service (it holds the declaration and the secret); the outbox write is this door's own.
+    const output = execute ? await execute(a, originOf(a)) : await writePluginOutbox(originOf(a), pluginWriteOf(a));
     return update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
   } catch (e) {
     return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));

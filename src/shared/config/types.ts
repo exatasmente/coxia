@@ -815,6 +815,8 @@ export interface PluginConfig {
   /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
   enabled: boolean;
   allow: PluginAllow;
+  /** The values of the plugin's `text` and `url` settings, by key. A `secret` setting is never here: it lives in the secrets store (`plugin.<id>.<key>`). */
+  settings: Record<string, string>;
 }
 
 /** The plugins of the workspace: where they live, which ones are on and what each was allowed. They are the team's own code; nothing is downloaded. */

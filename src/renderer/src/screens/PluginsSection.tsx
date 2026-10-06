@@ -37,6 +37,47 @@ function Permission({ p, need, web, revoke }: { p: PluginView; need: PluginNeed;
   );
 }
 
+/** One setting of a plugin: a plain value is shown and saved; a secret is only ever written, and the list says whether it is filled in. */
+function SettingField({ p, s, web, onChange, onError }: { p: PluginView; s: PluginView['settings'][number]; web: boolean; onChange: (v: PluginsView) => void; onError: (message: string) => void }) {
+  const t = useT();
+  const [value, setValue] = useState(s.kind === 'secret' ? '' : (s.value ?? ''));
+  const id = `plugin-${p.id}-${s.key}`;
+  const save = () =>
+    void (s.kind === 'secret' ? pluginsApi.setSecret(p.id, s.key, value) : pluginsApi.setSetting(p.id, s.key, value))
+      .then((v) => {
+        if (s.kind === 'secret') setValue('');
+        onChange(v);
+      })
+      .catch((e) => onError(errorText(e)));
+  const dirty = s.kind === 'secret' ? value.length > 0 : value !== (s.value ?? '');
+  return (
+    <div className="settings-row">
+      <label htmlFor={id} style={{ fontWeight: 600 }}>
+        {s.label}
+        {s.required && !s.filled && <span className="small error"> {t('ui.plugins.setting.required')}</span>}
+      </label>
+      <div className="row" style={{ minWidth: 0, flexWrap: 'nowrap' }}>
+        <input
+          id={id}
+          className="text-input mono"
+          style={{ minWidth: 0, flex: 1 }}
+          type={s.kind === 'secret' ? 'password' : s.kind === 'url' ? 'url' : 'text'}
+          autoComplete="off"
+          placeholder={s.kind === 'secret' ? t(s.filled ? 'ui.plugins.setting.secretFilled' : 'ui.plugins.setting.secretEmpty') : ''}
+          value={value}
+          disabled={web}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {!web && (
+          <button type="button" className="btn" disabled={!dirty} onClick={save}>
+            {t('ui.plugins.setting.save')}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PluginItem({ p, web, onChange, onError }: { p: PluginView; web: boolean; onChange: (v: PluginsView) => void; onError: (message: string) => void }) {
   const t = useT();
   const run = (fn: () => Promise<PluginsView>) =>
@@ -72,6 +113,21 @@ function PluginItem({ p, web, onChange, onError }: { p: PluginView; web: boolean
             {p.write ? t(p.write.reversible ? 'ui.plugins.asks.write' : 'ui.plugins.asks.writeIrreversible', { to: p.write.to }) : t('ui.plugins.asks.noWrite')}
           </div>
           {p.write && <Permission p={p} need="write" web={web} revoke={(need) => run(() => pluginsApi.revoke(p.id, need))} />}
+          {p.requests.length > 0 && (
+            <div className="small">
+              {t('ui.plugins.requests')}
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                {p.requests.map((r) => (
+                  <li key={r.id} className="mono" style={{ overflowWrap: 'anywhere' }}>
+                    {r.method} {r.url} · {t(!r.write ? 'ui.plugins.request.read' : r.reversible ? 'ui.plugins.request.write' : 'ui.plugins.request.writeIrreversible')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {p.settings.map((s) => (
+            <SettingField key={s.key} p={p} s={s} web={web} onChange={onChange} onError={onError} />
+          ))}
           {p.waiting > 0 && <p className="small" role="status">{t('ui.plugins.waiting', { count: p.waiting })}</p>}
         </>
       )}
