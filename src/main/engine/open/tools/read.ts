@@ -31,7 +31,7 @@ export function confine(p: unknown, ctx: ToolContext): string {
   const resolved = resolve(real(probe), abs.slice(probe.length).replace(/^[\\/]/, ''));
   const roots = ctx.roots.map(real);
   if (!roots.some((r) => resolved === r || resolved.startsWith(r.endsWith(sep) ? r : r + sep))) {
-    throw new ToolError(t('main.engine.text.read.outside'));
+    throw new ToolError(t('main.engine.text.read.outside', { path: String(p).slice(0, 300), folders: roots.join(', ').slice(0, 300) }));
   }
   return resolved;
 }

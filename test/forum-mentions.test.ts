@@ -81,6 +81,8 @@ describe('the answer in another thread', () => {
     expect(posts[0]).toMatchObject({ text: 'Here is what I read.', public: false, mentions: [] });
     expect(posts[0].author).toEqual({ type: 'agent', id: 'turn' });
     expect(engine.calls[0].confine).toBeUndefined();
+    // a channel has no worktree to be confined to: the caller gives no read root, and the mention keeps the policy of the ceremonies
+    expect(engine.calls[0].readRoot).toBeUndefined();
     expect(engine.calls[0].prompt).toContain('@turn check this');
   });
 

@@ -6,6 +6,7 @@ import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
+import type { ReadConfinement } from '../engine/contract';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
@@ -43,6 +44,11 @@ export interface MentionDeps {
   held?: (def: AgentDef) => { provider: string; reason: string } | null;
   /** Only a run has one: where the issue the agent proposed waits. Without it, an issue the agent raises is not offered. */
   proposeIssue?: (runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string | null }) => Promise<unknown>;
+  /**
+   * The read confinement of the call, for a caller that has one (the runner, over the run's worktree). Absent, or `undefined` for a place with no
+   * worktree to be confined to (a channel, a general conversation, a ceremony), the mention keeps the read policy of the ceremonies: no confinement.
+   */
+  readRoot?: (place: MentionPlace, agent: AgentDef, cwd: string) => ReadConfinement | undefined;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -139,6 +145,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       });
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
+      // An agent named in a run's thread reads only inside that run's worktree, like a reading stage of it; elsewhere the caller gives none.
+      call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');

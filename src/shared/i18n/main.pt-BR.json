@@ -508,7 +508,7 @@
   "main.engine.text.bash.exit": "[código de saída {code}]",
   "main.engine.text.bash.noOutput": "(sem saída)",
   "main.engine.text.read.missing": "Caminho ausente.",
-  "main.engine.text.read.outside": "Caminho fora das pastas permitidas para esta cerimônia.",
+  "main.engine.text.read.outside": "Caminho fora das pastas que esta chamada pode ler: {path}. Permitidas: {folders}.",
   "main.engine.text.read.secret": "Arquivo de configuração ou segredo: fora do alcance da cerimônia.",
   "main.engine.text.read.noFile": "File does not exist: {path}. O diretório de trabalho é {cwd}.",
   "main.engine.text.read.directory": "É um diretório; use Glob ou Grep para listar.",

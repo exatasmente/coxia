@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Fixed
+
+- **An agent that only reads in a run no longer reads outside the run's worktree.** A reading stage (refinement, review, QA), an agent named with `@` in a run's thread and an agent answering a question of the chain used to reach any file the process could open, with only secret-looking names refused. They now get the same path guard the writing agent already had, over `Read`, `Grep` and `Glob`: no absolute path outside the worktree, no `..`, no `~`, no symbolic link that leads out, nothing under `.git`, no secret file. A refused read is said in the run's thread and shows as blocked in the live activity, like the other refusals. Nothing is loosened: the secret-file filter, the secret result redaction and the broad-search refusal still apply on top, and an agent that writes is unchanged. What already runs outside a run (a mention in a channel, a general conversation or a ceremony, and a squad's contact reading its own repository) keeps today's behavior.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed

@@ -99,7 +99,7 @@ import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './releas
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
@@ -1050,6 +1050,14 @@ export function createRunner(deps: RunnerDeps): Runner {
         return provider && budget.has(provider) ? { provider, reason: budget.get(provider)?.reason ?? '—' } : null;
       },
       proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
+      // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
+      readRoot: (p, def, _cwd) => {
+        const r = p.run;
+        if (!r || !existsSync(r.worktree)) return undefined;
+        return readConfinement(r.worktree, def.model.role ?? 'deep', (den) => {
+          deps.forum.append(runThreadId(r.id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: def.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: r.stage });
+        });
+      },
     });
   }
 
@@ -1111,6 +1119,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        // The agent that answers a question only reads: what it reads stays in the run's worktree, and a refusal is told in the run's thread.
+        call.readRoot = readConfinement(run.worktree, holder.model.role ?? 'deep', (den) => {
+          deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: holder.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: run.stage });
+        });
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));
