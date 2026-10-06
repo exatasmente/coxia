@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { t } from '../../shared/i18n';
 import { HARNESS_DIR } from '../../shared/harness/format';
 import { git } from '../conflictGit';
+import { realFolderIn } from '../engine/guard';
 import { scanHarness } from '../harness/scan';
 import { checkHarness } from '../harness/stale';
 import { redact } from '../errorlog-core';
@@ -32,13 +32,29 @@ export const DOCS_RUN_FOLDER = `${HARNESS_DIR}/.run`;
 
 const IGNORE_LINE = '.run/';
 
-/** Makes `.coxia/.gitignore` say `.run/`, keeping whatever else the repository already had there. */
-export async function ensureRunIgnore(wt: string): Promise<void> {
+/**
+ * Makes sure `.coxia/` is a real folder of the worktree (made when absent), and says whether it is. A repository can carry `.coxia` as a symbolic link, or as a file: the run
+ * would write, and let its agent write, wherever the link leads. Uses `lstat`, which never follows a link.
+ */
+export async function prepareDocsFolder(wt: string): Promise<boolean> {
+  const dir = join(wt, HARNESS_DIR);
+  if (!(await lstat(dir).catch(() => null))) await mkdir(dir, { recursive: true });
+  return realFolderIn(dir, wt);
+}
+
+/**
+ * Makes `.coxia/.gitignore` say `.run/`, keeping whatever else the repository already had there. Says false, writing nothing, when `.coxia` is not a real folder or the
+ * ignore file is not a regular file (a link would take the write to another file).
+ */
+export async function ensureRunIgnore(wt: string): Promise<boolean> {
+  if (!(await prepareDocsFolder(wt))) return false;
   const file = join(wt, HARNESS_DIR, '.gitignore');
-  await mkdir(join(wt, HARNESS_DIR), { recursive: true });
-  const had = existsSync(file) ? await readFile(file, 'utf8') : '';
-  if (had.split('\n').some((line) => line.trim() === IGNORE_LINE)) return;
+  const info = await lstat(file).catch(() => null);
+  if (info && !info.isFile()) return false;
+  const had = info ? await readFile(file, 'utf8') : '';
+  if (had.split('\n').some((line) => line.trim() === IGNORE_LINE)) return true;
   await writeFile(file, `${had && !had.endsWith('\n') ? `${had}\n` : had}${IGNORE_LINE}\n`);
+  return true;
 }
 
 const CANDIDATES_MAX = 200;

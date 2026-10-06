@@ -1389,6 +1389,7 @@
   "main.forum.code.runner.release.notInPlan": "O {crLong} #{pr} (em {now}) não estava no plano que você aceitou. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo.",
   "main.runner.error.no-docs-flow": "Este workspace não tem o fluxo de documentação: aplique o template de documentação para adicioná-lo.",
   "main.runner.error.bad-docs-mode": "\"{mode}\" não é um modo de execução de documentação: é create ou update.",
+  "main.runner.error.docs-folder-unsafe": "O .coxia deste repositório é um link simbólico ou não é uma pasta, então a documentação não pode ser escrita nele com segurança: troque-o por uma pasta de verdade no repositório e comece de novo.",
   "main.runner.docs.record.create": "Tarefa: criar a documentação deste repositório na pasta .coxia dele. Leia o código e os arquivos do Claude Code listados abaixo, e escreva a visão geral, as regras com a evidência e, onde valer a pena, procedimentos (skills) e notas para os papéis do time.",
   "main.runner.docs.record.update": "Tarefa: atualizar a documentação deste repositório. Confira no código cada arquivo não conferido, listado abaixo, corrija o que deixou de ser verdade e acrescente o que falta.",
   "main.runner.docs.record.existing": "O que a .coxia tem agora",

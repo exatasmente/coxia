@@ -1389,6 +1389,7 @@
   "main.forum.code.runner.release.notInPlan": "{CrLong} #{pr} (at {now}) was not in the plan you accepted. It will not be merged by the agent: send the run back to the plan so that it is planned again.",
   "main.runner.error.no-docs-flow": "This workspace has no documentation flow: apply the documentation template to add it.",
   "main.runner.error.bad-docs-mode": "\"{mode}\" is not a mode of a documentation run: it is create or update.",
+  "main.runner.error.docs-folder-unsafe": "The .coxia of this repository is a symbolic link or not a folder, so the documentation cannot be written there safely: replace it with a real folder in the repository and start again.",
   "main.runner.docs.record.create": "Task: create the documentation of this repository in its .coxia folder. Read the code and the Claude Code files listed below, and write the overview, the rules with their evidence and, where it is worth it, procedures (skills) and notes for the roles of the team.",
   "main.runner.docs.record.update": "Task: bring the documentation of this repository up to date. Check against the code each file that is not checked, listed below, correct what is no longer true and add what is missing.",
   "main.runner.docs.record.existing": "What .coxia has now",

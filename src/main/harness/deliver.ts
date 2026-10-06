@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import type { StageKind } from '../../shared/config/types';
@@ -24,9 +24,18 @@ export interface DocsAsk {
   paths: string[];
 }
 
+/** Whether `<repo>/.coxia` is a real folder: `lstat`, so a link (which could lead outside the repository) is not one, as the scan of the folder sees it too. */
+function hasHarnessDir(repo: string): boolean {
+  try {
+    return lstatSync(join(repo, HARNESS_DIR)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** The folders `.coxia/` of the repositories that have one, for the agent to read besides its working directory. */
 export function harnessDirs(ask: DocsAsk | undefined): string[] {
-  return [...new Set(ask?.repos ?? [])].map((r) => join(r, HARNESS_DIR)).filter((d) => existsSync(d));
+  return [...new Set(ask?.repos ?? [])].filter(hasHarnessDir).map((r) => join(r, HARNESS_DIR));
 }
 
 const CITED_MAX = 200;
@@ -65,7 +74,7 @@ export function stageOfRun(run: Pick<Run, 'flow' | 'squad' | 'stage'>, config: C
 
 /** The ask of a stage of a run (or of a call that answers inside it): nothing is read from git when the worktree has no documentation folder. */
 export async function runDocsAsk(i: { wt: string; base: string | null; cycleFolder: string; stage: { id: string; kind: StageKind } | null; texts: string[] }): Promise<DocsAsk> {
-  const has = existsSync(join(i.wt, HARNESS_DIR));
+  const has = hasHarnessDir(i.wt);
   return { repos: [i.wt], stage: i.stage, paths: has ? await workPaths(i.wt, i.base, i.cycleFolder, i.texts) : [] };
 }
 

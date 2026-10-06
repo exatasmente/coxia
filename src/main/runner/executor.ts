@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
@@ -21,6 +21,7 @@ import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
+import { prepareDocsFolder } from './docs';
 import { runDocsAsk } from '../harness/deliver';
 import { scanHarness } from '../harness/scan';
 import { behindOf } from '../harness/stale';
@@ -33,7 +34,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -319,6 +320,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const writes = agent.permission === 'worktree';
+  // A documentation run's agent writes only in `.coxia/`, and only if that is a real folder of the worktree: a link committed in its place would take every write away.
+  if (writes && run.docs && !(await prepareDocsFolder(run.worktree))) throw new StageError('docs-folder-unsafe');
   // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too. It comes
   // before the sandbox is made, because the sandbox shares the folders those links point to.
   // A documentation run reads and writes text: it runs no code, so it needs none of the repository's dependencies.
@@ -437,9 +440,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
   };
 
-  // The agent of a documentation run reads the whole worktree and changes only `.coxia/`, which exists before it starts (a path guard needs its root to).
+  // The agent of a documentation run reads the whole worktree and changes only `.coxia/`, which `executeStage` made sure exists as a real folder (a path guard needs its root to).
   const writeRoot = writes && run.docs ? join(wt, HARNESS_DIR) : undefined;
-  if (writeRoot) mkdirSync(writeRoot, { recursive: true });
 
   const call: AgentCall = {
     agent,

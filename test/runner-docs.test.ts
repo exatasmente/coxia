@@ -1,7 +1,7 @@
 // The run that drafts the documentation of a repository. It goes through the docs flow against a real temporary repository and a fake host with a memory: the real
 // provider, the real list of writes, the real door (proposals in Actions, the refusal of a test workspace), the real guard of the agent's files, and a scripted engine for
 // the model. What the host received is checked, and so is what it never did: a documentation run has no issue, so nothing may be planned for issue number 0.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +29,7 @@ const { harnessSection } = await import('../src/main/harness/deliver');
 const { obj, runAgent, str } = await import('../src/main/agents');
 const { confinedHooks } = await import('../src/main/runner/hooks');
 const { policyFromHooks } = await import('../src/main/engine/open/policy');
-const { writeTool } = await import('../src/main/engine/open/tools/write');
+const { editTool, writeTool } = await import('../src/main/engine/open/tools/write');
 const { newAgent } = await import('../src/shared/config/team');
 const { newProvider } = await import('../src/shared/config/defaults');
 
@@ -77,6 +77,17 @@ function repoWithClaude(): Repo {
   writeFileSync(join(seed, '.claude/rules/x.md'), 'x\n');
   git(seed, 'add', '.');
   git(seed, 'commit', '-q', '-m', 'claude files');
+  git(seed, 'push', '-q', 'origin', 'main');
+  return repo;
+}
+
+/** A repository whose main branch carries `.coxia` as a symbolic link to a folder outside it (what a hostile commit would do). */
+function repoWithLinkedHarness(outside: string): Repo {
+  const repo = makeRepo();
+  const seed = join(repo.root, 'seed');
+  symlinkSync(outside, join(seed, '.coxia'));
+  git(seed, 'add', '.');
+  git(seed, 'commit', '-q', '-m', 'link the documentation folder');
   git(seed, 'push', '-q', 'origin', 'main');
   return repo;
 }
@@ -218,6 +229,32 @@ describe('starting a documentation run', () => {
     expect(await startDocsRun(deps, 'app', 'update', false).catch((e: Error) => e.message)).toMatch(/exists/i);
   });
 
+  it('refuses a repository whose .coxia is a link out of it: no worktree, no run, and nothing written where the link leads', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-link-out-'));
+    const b = await bootDocs({ repo: repoWithLinkedHarness(outside) });
+    script(b);
+    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/symbolic link/);
+    expect(readdirSync(outside)).toEqual([]);
+    expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
+    expect(b.engine.calls).toEqual([]);
+  });
+
+  it('refuses a repository whose .coxia/.run is a link too: the record of the run is not written through it', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-run-out-'));
+    const repo = makeRepo();
+    const seed = join(repo.root, 'seed');
+    mkdirSync(join(seed, '.coxia'));
+    symlinkSync(outside, join(seed, '.coxia/.run'));
+    git(seed, 'add', '.');
+    git(seed, 'commit', '-q', '-m', 'link the folder of the run');
+    git(seed, 'push', '-q', 'origin', 'main');
+    const b = await bootDocs({ repo });
+    script(b);
+    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/symbolic link/);
+    expect(readdirSync(outside)).toEqual([]);
+    expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
+  });
+
   it('keeps what the repository already ignores in .coxia and is idempotent', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'docs-ignore-'));
     mkdirSync(join(dir, '.coxia'));
@@ -228,6 +265,22 @@ describe('starting a documentation run', () => {
     const fresh = mkdtempSync(join(tmpdir(), 'docs-ignore-'));
     await ensureRunIgnore(fresh);
     expect(readFileSync(join(fresh, '.coxia/.gitignore'), 'utf8')).toBe('.run/\n');
+  });
+
+  it('writes no ignore file through a link: not when .coxia is one, not when .coxia/.gitignore is one', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-ignore-out-'));
+    const linked = mkdtempSync(join(tmpdir(), 'docs-ignore-'));
+    symlinkSync(outside, join(linked, '.coxia'));
+    expect(await ensureRunIgnore(linked)).toBe(false);
+    expect(readdirSync(outside)).toEqual([]);
+
+    const target = join(outside, 'elsewhere.txt');
+    writeFileSync(target, 'keep\n');
+    const file = mkdtempSync(join(tmpdir(), 'docs-ignore-'));
+    mkdirSync(join(file, '.coxia'));
+    symlinkSync(target, join(file, '.coxia/.gitignore'));
+    expect(await ensureRunIgnore(file)).toBe(false);
+    expect(readFileSync(target, 'utf8')).toBe('keep\n');
   });
 
   it('lists as candidates the CLAUDE.md anywhere and the .claude folder, nothing else', async () => {
@@ -280,6 +333,22 @@ describe('the draft', () => {
     expect(pending()).toEqual([]);
     expect(forge.writes).toEqual([]);
     expect(git(b.repo.clone, 'branch', '-r')).not.toContain(BRANCH);
+  });
+
+  it('fails the stage, with a message and without calling the agent, when .coxia has become a link out of the worktree', async () => {
+    const b = await bootDocs();
+    script(b);
+    const run = await toGate(b);
+    const outside = mkdtempSync(join(tmpdir(), 'docs-stage-out-'));
+    rmSync(join(run.worktree, '.coxia'), { recursive: true, force: true });
+    symlinkSync(outside, join(run.worktree, '.coxia'));
+    b.runner.gate(run.id, 'reject', 'Again.');
+    await b.settle();
+    const failed = b.runner.get(run.id) as Run;
+    expect(failed.status).toBe('failed');
+    expect(failed.error?.detail).toMatch(/symbolic link/);
+    expect(b.engine.calls).toHaveLength(1);
+    expect(readdirSync(outside)).toEqual([]);
   });
 
   it('goes back to the draft when the gate is rejected, with the reason for the agent, and stops at the gate again', async () => {
@@ -519,6 +588,45 @@ describe('what a documentation agent may write, on both engines', () => {
     expect(await sdk(hooks, 'Read', { file_path: join(outside, 'x.md') })).toBe('deny');
     expect(await sdk(hooks, 'Bash', { command: 'npm test' })).toBe('deny');
     expect(await sdk(hooks, 'WebFetch', { url: 'https://example.com' })).toBe('deny');
+  });
+
+  describe('when .coxia is not a real folder of the worktree', () => {
+    let linked: string;
+    let into: string;
+    beforeAll(() => {
+      linked = mkdtempSync(join(tmpdir(), 'docs-linked-'));
+      into = join(linked, 'inside');
+      mkdirSync(into);
+      mkdirSync(join(linked, 'src'));
+      symlinkSync(outside, join(linked, '.coxia'));
+    });
+    const ctxOf = (cwd: string) => ({ cwd, roots: [cwd], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: join(cwd, '.coxia') });
+
+    it('the hooks of the SDK refuse a write through .coxia as a link, relative or absolute, and one through a link to a folder of the worktree', async () => {
+      const hooks = confinedHooks({ root: linked, writeRoot: join(linked, '.coxia'), commands: [] });
+      for (const tool of ['Write', 'Edit', 'MultiEdit']) {
+        expect(await sdk(hooks, tool, { file_path: '.coxia/x.md', content: 'x' }), `${tool} relative`).toBe('deny');
+        expect(await sdk(hooks, tool, { file_path: join(linked, '.coxia/x.md'), content: 'x' }), `${tool} absolute`).toBe('deny');
+      }
+      rmSync(join(linked, '.coxia'));
+      symlinkSync(into, join(linked, '.coxia'));
+      expect(await sdk(hooks, 'Write', { file_path: '.coxia/x.md', content: 'x' }), 'a link that stays inside the worktree').toBe('deny');
+      rmSync(join(linked, '.coxia'));
+      symlinkSync(outside, join(linked, '.coxia'));
+      expect(existsSync(join(outside, 'x.md'))).toBe(false);
+    });
+
+    it('the Write and Edit tools of the open engine refuse it too, and the policy built from the hooks does before them', async () => {
+      const ctx = ctxOf(linked);
+      writeFileSync(join(outside, 'present.md'), 'old\n');
+      await expect(writeTool.run({ file_path: '.coxia/x.md', content: 'x' }, ctx)).rejects.toThrow();
+      await expect(writeTool.run({ file_path: join(linked, '.coxia/x.md'), content: 'x' }, ctx)).rejects.toThrow();
+      await expect(editTool.run({ file_path: '.coxia/present.md', old_string: 'old', new_string: 'new' }, ctx)).rejects.toThrow();
+      expect(existsSync(join(outside, 'x.md'))).toBe(false);
+      expect(readFileSync(join(outside, 'present.md'), 'utf8')).toBe('old\n');
+      const policy = policyFromHooks(confinedHooks({ root: linked, writeRoot: join(linked, '.coxia'), commands: [] }), 'fake');
+      expect(await policy.pre('Write', { file_path: '.coxia/x.md', content: 'x' }, linked)).toBeTruthy();
+    });
   });
 
   it('an agent with no writeRoot (an issue run) writes in the whole worktree, as before', async () => {

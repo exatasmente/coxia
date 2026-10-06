@@ -18,6 +18,11 @@ export interface CheckOptions {
   read?: boolean;
   /** The secret-file rule of the app (`secretPath` in agents.ts), asked with the resolved path. */
   isSecret?: (path: string) => boolean;
+  /**
+   * The folder `root` must really sit in, for a root narrower than the worktree (a documentation run's `.coxia/`): `root` has to be a real folder, not a link, whose real
+   * place is inside the real `fence`. A narrow root that is a link would carry every write to wherever the link leads.
+   */
+  fence?: string;
   home?: string;
 }
 
@@ -31,6 +36,18 @@ function real(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Whether `folder` is a real folder (not a symbolic link) whose real place is inside the real `fence`. */
+export function realFolderIn(folder: string, fence: string): boolean {
+  try {
+    if (!lstatSync(folder).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  const inner = real(folder);
+  const outer = real(fence);
+  return inner !== null && outer !== null && inner.startsWith(outer + sep);
 }
 
 function exists(path: string): boolean {
@@ -76,6 +93,7 @@ function segmentsCode(segments: string[], read: boolean): DenialCode | null {
 export function checkPath(root: string, input: unknown, options: CheckOptions = {}): PathCheck {
   if (typeof input !== 'string' || !input.trim() || input.includes('\0') || input.length > 4096) return { ok: false, code: 'no-path' };
   const raw = input.trim();
+  if (options.fence && !realFolderIn(root, options.fence)) return { ok: false, code: 'outside' };
   // A `..` is refused wherever it stands: after a link it would climb out of the link's target, not out of the folder it was written in.
   if (raw.split(/[\\/]+/).includes('..')) return { ok: false, code: 'traversal' };
   const home = options.home ?? homedir();

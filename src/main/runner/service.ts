@@ -117,7 +117,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -770,8 +770,13 @@ export function createRunner(deps: RunnerDeps): Runner {
       // What `.coxia/` holds is read before the run puts anything in it. The run's own folder is inside `.coxia/` and ignored by git, so the pull request carries the
       // documentation and nothing of the run; the ignore file is committed before anything is written there.
       const record = await docsRecord(dest, { ref, title: docsTitle(repo.id), mode });
-      await ensureRunIgnore(dest);
-      writeIssueRecord(dest, DOCS_RUN_FOLDER, record);
+      // A repository whose `.coxia` (or whose ignore file, or run folder) is a link would take these writes, and the agent's, out of the worktree: no run is made.
+      if (!(await ensureRunIgnore(dest))) throw new RunnerError('docs-folder-unsafe');
+      try {
+        writeIssueRecord(dest, DOCS_RUN_FOLDER, record);
+      } catch {
+        throw new RunnerError('docs-folder-unsafe');
+      }
       // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(dest, commitMessage(config.runner.commitMessage, 'ignore the folder of the documentation run', 0), identity);
       const started = startRun(

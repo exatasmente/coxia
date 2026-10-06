@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -196,5 +196,13 @@ describe('the files the work touches', () => {
     const has = await runDocsAsk({ wt: r.dir, base: 'HEAD', cycleFolder: 'docs/cycles/1-x', stage, texts: [] });
     expect(has.paths).toEqual(['src/a.ts']);
     expect(harnessDirs(has)).toEqual([join(r.dir, '.coxia')]);
+  });
+
+  it('does not offer a .coxia that is a symbolic link as a folder to read', () => {
+    const r = new Repo();
+    const outside = mkdtempSync(join(tmpdir(), 'cerimonias-deliver-out-'));
+    roots.push(outside);
+    symlinkSync(outside, join(r.dir, '.coxia'));
+    expect(harnessDirs({ repos: [r.dir], stage, paths: [] })).toEqual([]);
   });
 });
