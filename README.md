@@ -72,7 +72,7 @@ Agents are read-only. Anything with an effect outside the app (a comment, a labe
 2. `chmod +x` the AppImage and run it, or `sudo apt install ./<file>.deb`.
 3. Follow the first-run wizard: language and name, models, the Claude Agent SDK (only if you use Claude models), your projects, your code host, the documentation the agents read, your development cycle, voice (optional).
 
-> Release files are named `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb`. The installed executable, the data folders (`~/.local/share/cerimonias`) and the desktop entry keep the project's original name `cerimonias`, so an install made by an earlier version is replaced in place and keeps its data. AppImages update themselves from GitHub Releases ([`docs/updates.md`](docs/updates.md)); the `.deb` is updated by your package manager. CI builds an unsigned Windows installer for pushes and pull requests targeting `main` or `release/**`, but Windows runtime behavior is not yet verified; Windows and macOS release packages remain experimental.
+> Release files are named `coxia-<version>.AppImage` and `coxia_<version>_amd64.deb`. The installed executable, the data folders (`~/.local/share/cerimonias`) and the desktop entry keep the project's original name `cerimonias`, so an install made by an earlier version is replaced in place and keeps its data. AppImages update themselves from GitHub Releases ([`docs/updates.md`](docs/updates.md)); the `.deb` is updated by your package manager. Each release also carries an **unsigned** Windows installer, `coxia-setup-<version>.exe`: Windows shows a SmartScreen warning, and its runtime behavior is not yet verified. macOS release packages remain experimental.
 
 ### From source
 
