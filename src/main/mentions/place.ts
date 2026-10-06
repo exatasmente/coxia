@@ -1,12 +1,14 @@
 import { existsSync } from 'node:fs';
 import type { RepoConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
+import { expandHome } from '../../shared/config/paths';
 import { squadOf, squadsOf } from '../../shared/config/squads';
 import { GENERAL_THREAD, SQUADS_CHANNEL, type ThreadSummary, runThreadId } from '../../shared/forum';
 import type { Run } from '../../shared/runs';
 
 // Where a person wrote: the place a mention is answered in. A run's thread is answered by the runner and carries its worktree and cycle folder; the rest are a squad
 // channel (with or without a squad), the general conversation, the direct conversation of an agent, or a ceremony. The place says what the agent may read (the squad's
-// mission, the repositories) and, when it runs commands, where the throwaway copy of the code comes from. Pure: the caller passes what it reads (the run store, the config).
+// mission, the repositories) and, when it runs commands, where the throwaway copy of the code comes from. Pure: the caller passes what it reads (the run store, the config,
+// the home a `~/` path of the config stands for).
 
 export interface MentionPlace {
   /** The id of the thread the answer is posted in. */
@@ -27,11 +29,11 @@ export interface MentionPlace {
 /**
  * The place a thread is: `run-<id>` through the run store; a squad's channel (its mission and its scope's repositories); the channel the squads talk in, a general
  * conversation, or the direct conversation of an agent (no squad, the workspace's repositories, the owner named). A run thread of a run that is gone, or any thread
- * that is not one of these, is no place (null).
+ * that is not one of these, is no place (null). With `home`, a repository path the config keeps as `~/…` is expanded, so the place can be looked for on disk.
  */
-export function placeOfThread(summary: ThreadSummary | null, runs: (id: string) => Run | null, config: WorkspaceConfig): MentionPlace | null {
+export function placeOfThread(summary: ThreadSummary | null, runs: (id: string) => Run | null, config: WorkspaceConfig, home?: string): MentionPlace | null {
   if (!summary) return null;
-  const repos = config.projects.repos;
+  const repos = home ? config.projects.repos.map((r) => ({ ...r, path: expandHome(r.path, home) })) : config.projects.repos;
   if (summary.kind === 'run' && summary.runId) {
     const run = runs(summary.runId);
     if (!run) return null;
@@ -43,10 +45,16 @@ export function placeOfThread(summary: ThreadSummary | null, runs: (id: string) 
   if (summary.kind === 'agent') return { thread: summary.id, kind: 'channel', squad: null, owner: summary.agent ?? summary.squad ?? null, repos };
   if (summary.id.startsWith('squad-')) {
     const squad = squadOf(config, squadIdOfThread(summary.id));
-    return { thread: summary.id, kind: 'channel', squad, repos: squad ? repos.filter((r) => squad.scope.repos.includes(r.id)) : repos };
+    const own = squad ? scopeRepoIds(squad) : new Set<string>();
+    return { thread: summary.id, kind: 'channel', squad, repos: own.size ? repos.filter((r) => own.has(r.id)) : repos };
   }
   // A general thread the person opened.
   return { thread: summary.id, kind: 'general', repos };
+}
+
+/** The repositories a squad's scope names: its own, and those its paths are in. A squad that names none (it goes by labels only) reads them all. */
+function scopeRepoIds(squad: SquadDef): Set<string> {
+  return new Set([...squad.scope.repos, ...squad.scope.paths.map((p) => p.repo)]);
 }
 
 /** The repositories of the place that exist on disk, in the order the config lists them. */

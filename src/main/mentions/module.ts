@@ -1,7 +1,7 @@
 import type { ForumMessage, ThreadSummary } from '../../shared/forum';
 import { MAX_MENTIONS } from '../../shared/forum';
 import { runAgent } from '../agents';
-import { ATAS } from '../env';
+import { ATAS, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
 import { runStore } from '../runs';
@@ -53,7 +53,7 @@ export const mentionsModule: Module = () => {
     const owner = ownerOfThread(forum.summary(message.thread));
     const calls = callsOf(message, owner);
     if (!calls.length) return;
-    const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig());
+    const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
     if (!place || place.kind === 'run') return;
     const prior = inFlight().get(message.thread) ?? Promise.resolve();
     // An agent set to run commands gets a throwaway copy here; the person's own folder is only the fallback.

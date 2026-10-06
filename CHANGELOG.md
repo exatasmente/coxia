@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **An agent called with `@` outside a run finds the workspace's code.** In the general conversation, the squads' channels, an agent's direct conversation and the conversations you open, an agent set to run commands always said there was no repository at hand: a repository path written as `~/…` in the config was looked for as is, and a squad's channel only counted the repositories its scope names, not the ones its paths are in. Both now count, and a squad that goes by labels only reads every repository of the workspace. An agent set to run commands on this computer (`host`) still has each command refused there, since that place has no screen to ask on.
+
 ## [0.7.0-beta.2] - 2026-10-05
 
 ### Added
