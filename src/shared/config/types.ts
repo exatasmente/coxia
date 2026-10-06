@@ -40,6 +40,8 @@ export interface ProviderCapabilities {
   reasoning: boolean;
   /** Context window in tokens, when the server reports it. */
   contextWindow: number | null;
+  /** The model takes an image in a message (what an agent's Read of a screenshot needs). Absent: not known, and the engine tries. */
+  images?: boolean;
 }
 
 export interface LlmProvider {

@@ -438,7 +438,7 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
       ...(t.temperature !== null ? { temperature: t.temperature } : {}),
       ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
     },
-    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}) } } : {}),
+    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}), ...(c.images !== undefined ? { images: c.images } : {}) } } : {}),
     structured: t.structured,
     docs: openDocs(cwd, t.role),
   };

@@ -24,8 +24,8 @@ import { type McpServerConfig, loadMcpConfigs, mcpTools } from './tools/mcp';
 import { readTool } from './tools/read';
 import { editTool, writeTool } from './tools/write';
 import { globTool, grepTool } from './tools/search';
-import { type ToolContext, type ToolImpl, ToolError } from './tools/types';
-import type { ChatMessage, Completion, Json, ToolCall, ToolChoice, ToolDef } from './types';
+import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
+import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import { t } from '../../../shared/i18n';
 
 export type StructuredStrategy = 'auto' | 'response_format' | 'tool' | 'prompt';
@@ -36,6 +36,8 @@ export interface Capabilities {
   // true: response_format json_schema works (from the probe).
   jsonSchema?: boolean;
   contextWindow?: number;
+  // false: the model does not take images, so Read says so instead of attaching one. Unknown (undefined) is tried, and a refusal is learned.
+  images?: boolean;
 }
 
 export interface RunEvents {
@@ -180,9 +182,22 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   return tools;
 }
 
+/** The message that shows the model the images its tools read: one line naming them, then each picture. */
+function imageMessage(images: ToolImage[]): ChatMessage {
+  const parts: ContentPart[] = [{ type: 'text', text: t('main.engine.text.images', { paths: images.map((i) => i.path).join(', ') }) }];
+  for (const i of images) parts.push({ type: 'image_url', image_url: { url: `data:${i.mediaType};base64,${i.data}` } });
+  return { role: 'user', content: parts };
+}
+
 function compact(messages: ChatMessage[], keepLast = 2, limit = 1200): boolean {
   const toolIdx = messages.flatMap((m, i) => (m.role === 'tool' ? [i] : []));
   let changed = false;
+  // An image weighs most: every one but the latest message of them is replaced by a line that says it was there.
+  const imageIdx = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url') ? [i] : []));
+  for (const i of imageIdx.slice(0, -1)) {
+    messages[i] = { ...messages[i], content: (messages[i].content as ContentPart[]).map((c) => (c.type === 'image_url' ? { type: 'text' as const, text: t('main.engine.text.oldImage') } : c)) };
+    changed = true;
+  }
   for (const i of toolIdx.slice(0, Math.max(0, toolIdx.length - keepLast))) {
     const c = messages[i].content;
     if (typeof c === 'string' && c.length > limit) {
@@ -274,6 +289,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),
     ripgrep: p.ripgrep ?? 'auto',
+    seesImages: () => p.capabilities?.images !== false && client.learned.noImages !== true,
   };
   const policy = policyFromHooks(p.hooks, sessionId);
 
@@ -361,15 +377,15 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     }
   };
 
-  const execute = async (tc: ToolCall): Promise<string> => {
+  const execute = async (tc: ToolCall): Promise<{ text: string; images?: ToolImage[] }> => {
     const impl = byApi.get(tc.function.name);
     const input = parseToolArguments(tc.function.arguments);
     const name = impl?.name ?? tc.function.name;
     sources.push(describe(name, input));
     events.onToolUse?.(name, input);
-    const fail = (text: string): string => {
+    const fail = (text: string): { text: string } => {
       events.onToolResult?.(name, true);
-      return t('main.engine.text.toolError', { text });
+      return { text: t('main.engine.text.toolError', { text }) };
     };
     if (!impl) return fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') }));
     const argErrors = validate(input, impl.parameters);
@@ -380,7 +396,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       const r = await impl.run(input, ctx);
       const rewritten = await policy.post(impl.name, input, r.response, p.cwd);
       events.onToolResult?.(name, false);
-      return r.render(rewritten ?? r.response);
+      return { text: r.render(rewritten ?? r.response), ...(r.images?.length ? { images: r.images } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
       return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
@@ -427,7 +443,10 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       }
       if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
-      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
+      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i].text)));
+      // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
+      const images = results.flatMap((r) => r.images ?? []);
+      if (images.length) write(imageMessage(images));
       continue;
     }
     if (!p.schema) return done(c.text, turns);
