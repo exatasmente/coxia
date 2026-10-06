@@ -2,34 +2,36 @@
 
 ## Decisões
 
-- Issue 122 é um pedido de funcionalidade (`enhancement`), não um defeito, não uma pergunta e não uma duplicata: um agente que trabalha uma etapa deve poder receber mensagem durante a etapa sem reiniciá-la, mandar mensagem sem terminar a etapa e chamar outro agente para discutir um ponto.
-- A triagem não fez pergunta a quem abriu nem pausou a etapa: a issue é uma especificação funcional completa e diz que o desenho da solução pertence ao refino e ao planejamento. Não falta nada que só quem abriu possa dizer.
-- Sugestão de prioridade `priority:high` no documento da triagem (não preenchida): hoje a única forma de o time trocar informação numa execução é a pergunta que para a etapa, a menção que responde numa cópia descartável ou esperar o fim da etapa; e a issue entra na autonomia e na lista de comandos por agente.
-- Proposta de squad: `plataforma` (o pedido é do runtime). A fatia de tela (aviso de entrega, link entre a execução e a conversa do fórum, o `@` da pessoa) pertence a `experiencia`, mas quem leva a issue é o runtime.
+- Issue 122 é um pedido de funcionalidade (`enhancement`): um agente que trabalha uma etapa deve poder receber mensagem durante a etapa sem reiniciá-la, mandar mensagem sem terminar a etapa e chamar outro agente para discutir um ponto. A triagem não pausou em pergunta; o refino também não: nada aqui é decisão de quem abriu.
+- A especificação funcional está escrita em `docs/cycles/[redacted]/1_SPEC.md`, nas palavras do produto e citando a issue em bloco. Ela cobre receber/ mandar/ chamar, os limites, o que muda para quem usa, fora de escopo, critérios de aceite e o que ficou em aberto. Não projeta solução.
+- Proposta de prioridade mantida: `priority:high` (não preenchida). Motivo: hoje o time só troca informação por uma pergunta que para a etapa, uma menção que responde numa cópia descartável, ou esperando o fim da etapa; e a issue entra na autonomia e na lista de comandos por agente. Sem marco: o repositório não declara marcos e a issue não cita um.
+- Squad: `plataforma` (o pedido é do runtime). A fatia de tela (aviso de entrega, link entre a execução e a conversa do fórum, o `@` da pessoa) pertence a `experiencia`.
 
 ## Restrições
 
-- Correção ao texto da issue, conferida por leitura: hoje uma mensagem com `@` a um agente que trabalha **já é atendida em paralelo**, mas como uma execução separada, sempre somente leitura (sem `Edit` nem `Write`, qualquer que seja a permissão), numa sessão sobre uma **cópia descartável** do código (`src/main/mentions/answer.ts`). O que a seção 1 pede é diferente: a mensagem entrar na sessão da **própria etapa**, entre dois passos do modelo, nos dois motores, sem reiniciar a etapa.
-- Uma pergunta continua parando a etapa (`ask`, `src/main/runner/service.ts:479-486`) e a etapa seguinte recebe pergunta e resposta no prompt (`pendingAnswer`, `src/main/runner/executor.ts:116-124`). `turnsTo` só serve para pergunta; só mensagem de pessoa chama agente (`src/main/runner/service.ts:894-898`), até três por mensagem, em fila serial por execução.
-- Não existe ferramenta `SendMessage` nem `CallAgent` hoje (busca no código): as ferramentas de um agente são leitura, escrita confinada, shell e as do app (`src/main/engine/contract.ts`, `src/main/agents.ts`).
-- A issue cita o limite de rodadas por conversa (configuração do workspace), o teto de conversas por etapa, o uso do modelo da chamada contando na etapa de quem chamou, os relógios da etapa andando, a recusa de um ciclo de chamadas e a exigência de um escritor por vez no worktree. Agentes de execuções diferentes conversando entre si estão fora de escopo.
-- Um agente chamado por `@` usa o mesmo limite de turnos de uma etapa que só lê (`runner.turns.read`), com a retomada de uma vez sem ferramentas; hoje isso está em `docs/runner.md` (\"Perguntas e menções\").
-- A issue cita a issue 118 (autonomia e a lista de comandos por agente) como dependência, e a aceitação cobra que o comando de um agente chamado apareça na lista de comandos da execução sob ele.
+- Correção ao texto da issue, conferida por leitura: uma mensagem com `@` a um agente que trabalha **já é atendida em paralelo**, mas como execução separada, sempre somente leitura, numa sessão sobre **cópia descartável** do código quando roda comandos (`src/main/mentions/answer.ts`). A seção 1 pede outra coisa: a mensagem entrar na sessão da **própria etapa**, entre dois passos do modelo, nos dois motores, sem reiniciar.
+- Uma pergunta continua parando a etapa; a etapa seguinte recebe pergunta e resposta no prompt (`pendingAnswer`, `src/main/runner/executor.ts`). Só mensagem de pessoa chama agente (`src/main/runner/service.ts:894-898`), com fila serial por execução.
+- Não existe ferramenta `SendMessage` nem `CallAgent` hoje (busca no código): as ferramentas do agente são leitura, escrita confinada ao worktree, shell e as do app (`src/main/engine/contract.ts`).
+- A issue cita: limite de rodadas por conversa (configuração do workspace), teto de conversas por etapa, uso do modelo contando na etapa de quem chamou, relógios da etapa andando, recusa de ciclo de chamadas e um escritor por vez no worktree. Agentes de execuções diferentes conversando está fora de escopo.
+- A issue cita a 118 (autonomia e lista de comandos por agente) como dependência; a aceitação cobra que o comando de um agente chamado apareça na lista de comandos da execução sob ele.
+- Toda especificação só afirma o conferido: nesta etapa tudo foi por leitura; nada foi executado quanto ao comportamento novo.
 
 ## Tentado e descartado
 
-- Perguntar a quem abriu algo que a triagem precisa ouvir: nada foi encontrado que falte, então não houve pergunta.
-- Tratar o pedido como bug: o que a issue descreve como estado atual confere com o código; não há comportamento errado a reproduzir.
-- Tratar as issues de menção (o `@` em qualquer lugar onde a pessoa escreve; o aviso de que um agente chamado está trabalhando) como duplicatas: são relacionadas — uma compartilha o ponto de partida, a outra é o aviso de tela que a seção 1 reaproveita — mas pedem coisas diferentes.
+- Perguntar a quem abriu: nada falta que só ele saiba; a issue é especificação funcional completa e adia o desenho.
+- Tratar como bug: o estado atual que a issue descreve confere; não há defeito a reproduzir.
+- Tratar as issues de menção como duplicatas: são relacionadas, pedem coisas diferentes.
+- Deixar a spec escolher os padrões e o encaixe entre passos: pertence ao plano, não ao produto.
 
 ## Perguntas abertas
 
-- Quantas rodadas por conversa e quantas conversas por etapa um workspace ganha por padrão (decisão de refino; o teto por conversa já vem de configuração do workspace).
+- Quantas rodadas por conversa e quantas conversas por etapa um workspace ganha por padrão (decisão de refino/plano).
 - O que uma etapa faz com uma mensagem que chega quando ela está prestes a terminar.
-- Não verificado nesta etapa: a forma exata como cada motor aceita uma mensagem no meio de uma sessão (Claude Agent SDK e motor aberto). O refino precisa conferir isso na leitura.
+- Não verificado: a forma exata como cada motor (Claude Agent SDK e motor aberto) aceita uma mensagem no meio de uma sessão já em andamento. O plano precisa conferir.
 
 ## Onde o trabalho está
 
-- Etapa de triagem concluída, sem pausa em pergunta. Documento produzido: `docs/cycles/[redacted]/0_TRIAGE.md` (tipo, entendimento, o que falta, issues relacionadas e a sugestão de prioridade).
-- A etapa seguinte (refino do produto, `1_SPEC.md`) escreve a especificação; o desenho da solução e o plano vêm depois.
-- Nada foi executado nesta etapa: a issue, os documentos do ciclo, `docs/runner.md`, `docs/cycles.md`, `docs/configuration.md`, `CONTRIBUTING.md` e o código citado foram lidos.
+- Triagem (`0_TRIAGE.md`) e refino do produto (`1_SPEC.md`) concluídos, sem pausa em pergunta. O documento do refino cita a issue em bloco nas seções de comportamento e nos aceites.
+- A etapa seguinte (plano técnico, `2_PLAN.md`) resolve o desenho: o encaixe da mensagem entre dois passos nos dois motores, um escritor por vez no worktree, onde rodam os comandos de um agente chamado e como entram na lista de comandos sob ele, o que é commitado e com que etapa, a autonomia para host/escrita externa/push, e os padrões de rodadas e de conversas.
+- Nada foi executado nesta etapa. Verificação: `node scripts/public-audit.mjs` passou (908 arquivos, nada que pertença a empresa ou pessoa). Conferido por leitura: docs/runner.md, docs/cycles.md, docs/configuration.md, src/main/mentions/answer.ts, src/main/engine/contract.ts, src/main/runner/executor.ts e src/main/runner/service.ts.
+- Passagem support → product-owner: A issue é um pedido de funcionalidade claro e completo: o refino pode seguir sem perguntar a quem abriu. Ao escrever a especificação, partir da correção da triagem: hoje a menção a um agente que trabalha já é atendida em paralelo, mas numa execução separada e somente leitura, numa cópia descartável do código — o que a seção 1 pede é diferente, é a mensagem entrar na sessão da etapa, entre dois passos do modelo, nos dois motores, sem reiniciar a etapa. O desenho precisa dizer o que a issue já cobra: um escritor por vez no worktree (e o que o outro vê), onde rodam os comandos de um agente chamad… <!-- handoff:7 -->
