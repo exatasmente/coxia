@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The command notices fit their box.** The notice that asks to run a command (in a ceremony, or in a run on this computer) carried the whole rule in its *Always allow* button, and a button never wrapped: a long command pushed the button, the command and the note field past the notice's edge. The buttons and the agent's name now wrap inside the notice, the command scrolls on its own, and on a narrow screen each button takes the whole width.
+- **Every conversation shows what a called agent is doing, and folds its commands.** The general conversation, the channels and an agent's direct conversation now show, under the message that called an agent, the same live line as a run's thread: working (or waiting its turn), then the step it is on, until its answer arrives. In every thread, the commands an agent ran one after the other, with the asks and your answers, fold into one line (*developer ran 4 commands*) that opens to show each command and its output; it opens by itself while a command waits for you.
+- **An agent set to run commands on this computer asks you outside a run too.** Called with `@` in a channel, a general conversation or its direct conversation, an agent with `shell: host` had every command refused, since there was no screen to ask on. It now asks through the same command notice the ceremonies use, on every screen and on the paired phone: allow once, always allow the suggested rule (it goes into the agent's list in Settings › Team) or do not allow, with a note; a command its list already allows runs without asking. The thread keeps the ask and your answer next to the command, and the notice names the agent of the team.
+
 ## [0.7.0-beta.4] - 2026-10-06
 
 ### Fixed

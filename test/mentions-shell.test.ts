@@ -89,7 +89,7 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened).toHaveLength(0);
   });
 
-  it('never runs a host command without asking: a place with no screen refuses it', async () => {
+  it('never runs a host command without asking: with nobody to ask, it is refused', async () => {
     const sandbox = fakeSandbox();
     const engine = fakeEngine();
     const results: { refused?: string; exitCode: number | null }[] = [];
@@ -101,5 +101,45 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened).toHaveLength(1);
     expect(sandbox.opened[0].host).toBe(true);
     expect(results).toMatchObject([{ refused: 'denied' }]);
+  });
+
+  it('asks the person about a host command through the command notice, and runs it once allowed, the ask and the answer in the thread', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const asked: { agent: string; command: string }[] = [];
+    const results: { refused?: string; exitCode: number | null }[] = [];
+    engine.script('turn', async (call) => {
+      if (call.exec) results.push(await call.exec.exec('npm test'));
+      return { text: 'Ran it.' };
+    });
+    await answerMentions(place([repo('api')]), message(), {
+      forum,
+      config: () => config('host'),
+      engine,
+      sandbox,
+      env: () => ({ fallbackCwd: root }),
+      askCommand: async (def, command) => {
+        asked.push({ agent: def.id, command });
+        return { ok: true };
+      },
+    });
+    expect(asked).toEqual([{ agent: 'turn', command: 'npm test' }]);
+    expect(results[0].refused).toBeUndefined();
+    const codes = (forum.read('squads', 0, 100)?.messages ?? []).map((m) => m.code).filter(Boolean);
+    expect(codes).toEqual(['runner.command.ask', 'runner.command.once', 'runner.exec.host']);
+  });
+
+  it('refuses a host command the person did not allow, and the thread keeps the note', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    const results: { refused?: string; exitCode: number | null }[] = [];
+    engine.script('turn', async (call) => {
+      if (call.exec) results.push(await call.exec.exec('rm -rf build'));
+      return { text: 'Did not run it.' };
+    });
+    await answerMentions(place([repo('api')]), message(), { forum, config: () => config('host'), engine, sandbox, env: () => ({ fallbackCwd: root }), askCommand: async () => ({ ok: false, note: 'not that one' }) });
+    expect(results).toMatchObject([{ refused: 'denied' }]);
+    const deny = (forum.read('squads', 0, 100)?.messages ?? []).find((m) => m.code === 'runner.command.deny');
+    expect(deny?.params).toMatchObject({ agent: 'turn', note: 'not that one' });
   });
 });

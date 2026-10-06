@@ -19,7 +19,7 @@ const event = (list: CeremonyCommand[]): AppEvent => ({ type: 'module', name: CE
 
 export const ceremonyCommands = createCommandStore({
   changed: (list) => emit?.(event(list)),
-  asked: (c) => notify?.({ title: t('main.ceremonyCommand.notice.title', { agent: c.agent }), body: c.command.slice(0, 200), onClick: event(ceremonyCommands.list()) }),
+  asked: (c) => notify?.({ title: t('main.ceremonyCommand.notice.title', { agent: c.name ?? c.agent }), body: c.command.slice(0, 200), onClick: event(ceremonyCommands.list()) }),
   remember: (agent, rule) => {
     updateConfig((config) => {
       const def = config.agents.team.find((a) => a.id === agent);
