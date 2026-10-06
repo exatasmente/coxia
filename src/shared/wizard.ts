@@ -10,7 +10,7 @@ import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInput, type SecretS
 export const WIZARD_STEPS = ['language', 'models', 'sdk', 'projects', 'integrations', 'docs', 'cycle', 'voice', 'review'] as const;
 export type WizardStepId = (typeof WIZARD_STEPS)[number];
 
-/** The first and the last step always run; every other one may be skipped. */
+/** The opening step and the last one always run; every step between them, the model choice included, may be skipped. */
 export const SKIPPABLE_STEPS: readonly WizardStepId[] = ['models', 'sdk', 'projects', 'integrations', 'docs', 'cycle', 'voice'];
 
 export interface WizardProgress {

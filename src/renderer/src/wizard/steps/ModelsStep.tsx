@@ -221,6 +221,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
   return (
     <div className="wz-stack">
       <Notice tone="info">{t('wizard.models.noSubscription')}</Notice>
+      <Notice tone="info">{t('wizard.models.noModelNoAgent')}</Notice>
       {error && <div className="error" role="alert">{error}</div>}
 
       <section className="wz-stack" aria-labelledby="wz-providers">

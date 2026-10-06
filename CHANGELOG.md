@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Changed
+
+- **A fresh install asks for the model provider right after the language, and says why.** The setup wizard opens on *Language and name* as before, and the very next step is *Models*, before any integration; the wizard's opening line says the steps after the first one, up to the review, can be skipped. On the models step a new notice states that without a model provider no agent runs. Skipping the step is still possible and *Continue* still asks for at least one provider.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed

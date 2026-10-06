@@ -49,6 +49,12 @@ const RENAMED: Record<string, string> = {
 const MASCULINE = 'pt-BR gender normalisation: the text said "a MR", the noun is masculine everywhere now';
 type Intended = { reason: string; language?: 'pt-BR' | 'both'; replace?: [string, string][] };
 const INTENDED: Record<string, Intended> = {
+  // The wizard opens on language and name and every step after it, up to the review, can be skipped: the old subtitle promised the setup
+  // could be picked up in Settings, which is no longer how a fresh install leaves the wizard.
+  'wizard.subtitle.first': {
+    reason: 'the wizard opens on language and name, and the steps that can be skipped come after it, up to the review',
+    language: 'both',
+  },
   'sameDay.change.mrAdded': { reason: MASCULINE, replace: [['MR nova', 'MR novo']] },
   'main.watchers.shippedMr': { reason: MASCULINE, replace: [['mergeada', 'mergeado']] },
   'main.radar.recommendation.same-fix': { reason: MASCULINE, replace: [['nas duas MRs', 'nos dois MRs']] },
