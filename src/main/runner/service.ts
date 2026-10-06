@@ -103,7 +103,7 @@ import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, 
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
@@ -1216,6 +1216,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       },
       // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
       propose: proposeMention,
+      // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
+      readRoot: (p, def, _cwd) => {
+        const r = p.run;
+        if (!r || !existsSync(r.worktree)) return undefined;
+        return readConfinement(r.worktree, def.model.role ?? 'deep', (den) => {
+          deps.forum.append(runThreadId(r.id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: def.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: r.stage });
+        });
+      },
     });
   }
 
@@ -1281,6 +1289,10 @@ export function createRunner(deps: RunnerDeps): Runner {
         call.docs = existsSync(run.worktree)
           ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
           : { repos: [], stage: stageOfRun(run, config), paths: [] };
+        // The agent that answers a question only reads: what it reads stays in the run's worktree, and a refusal is told in the run's thread.
+        call.readRoot = readConfinement(run.worktree, holder.model.role ?? 'deep', (den) => {
+          deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: holder.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: run.stage });
+        });
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));

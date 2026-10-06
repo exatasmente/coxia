@@ -174,6 +174,41 @@ describe('a stage that goes wrong', () => {
     expect(Object.fromEntries(c.engine.calls.map((x) => [x.agent.id, x.maxTurns]))).toEqual({ refiner: 7, planner: 7, developer: 11, reviewer: 7, qa: 7 });
   });
 
+  it('gives a reading stage the read confinement of the run\'s worktree and the writing stage its own, never the other way round', async () => {
+    const b = await boot();
+    easy(b);
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    const readers = b.engine.calls.filter((c) => c.agent.permission === 'read');
+    const writers = b.engine.calls.filter((c) => c.agent.permission === 'worktree');
+    expect(readers.length).toBeGreaterThan(0);
+    expect(writers.length).toBeGreaterThan(0);
+    for (const c of readers) {
+      expect(c.confine).toBeUndefined();
+      expect(c.readRoot?.root).toBe(run.worktree);
+      expect(c.readRoot?.hooks).toBeTruthy();
+    }
+    for (const c of writers) {
+      expect(c.readRoot).toBeUndefined();
+      expect(c.confine?.root).toBe(run.worktree);
+    }
+  });
+
+  it('records a refused read of a reading stage in the thread and marks the call blocked in the activity', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', async (call) => {
+      // the fake guard the stage gave it: what the real reader receives
+      const { policyFromHooks } = await import('../src/main/engine/open/policy');
+      const policy = policyFromHooks(call.readRoot?.hooks, 'fake');
+      const reason = await policy.pre('Read', { file_path: '/etc/passwd' }, call.cwd);
+      expect(reason).toBeTruthy();
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    const line = b.thread(run).find((m) => m.code === 'runner.denied');
+    expect(line?.params).toMatchObject({ agent: 'refiner', tool: 'Read', target: '/etc/passwd' });
+  });
+
   it('records what each stage\'s model calls used, over its attempts, and keeps what a stage that failed had used', async () => {
     const b = await boot({ timeoutMs: 60 });
     easy(b);
@@ -769,7 +804,27 @@ describe('the thread', () => {
     const call = b.engine.calls.find((c) => c.agent.id === 'developer');
     expect(call?.confine).toBeUndefined();
     expect(call?.agent.permission).toBe('read');
+    // named in a run's thread, the agent reads only inside that run's worktree
+    expect(call?.readRoot?.root).toBe(run.worktree);
+    expect(call?.readRoot?.hooks).toBeTruthy();
     expect(b.thread(run).some((m) => m.text === 'The scope is the Y case only.')).toBe(true);
+  });
+
+  it('gives an agent named in a run\'s thread no place to read from but the worktree, even when it runs no commands', async () => {
+    const b = await boot();
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('refiner', () => ({ text: 'Only in the worktree.' }));
+    const [m] = b.forum.append(`run-${run.id}`, { kind: 'post', author: { type: 'person' }, text: '@refiner where?', mentions: ['refiner'] });
+    b.runner.onMessage(m);
+    await b.settle();
+    const call = b.engine.calls.find((c) => c.agent.id === 'refiner' && !c.confine)!;
+    // A relative path the model writes is judged against the guard's root and read from the working folder: one folder, never two, or the read
+    // resolves outside the worktree while the guard approves it.
+    expect(call.readRoot?.root).toBe(run.worktree);
+    expect(call.cwd).toBe(run.worktree);
+    expect(call.cwd).not.toBe(b.deps.env().fallbackCwd);
   });
 
   it('says in the thread when the agent could not answer', async () => {

@@ -12,7 +12,7 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, clipProviderText } from './engine/budget';
@@ -384,17 +384,31 @@ function extraDirs(cwd: string, role: ModelRole, opts: { claude?: boolean } = {}
   return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
 }
 
+/**
+ * The documentation folders outside the working directory that a reading agent of a run may still reach: the same list the engine is given as
+ * additional directories, so what the engine sees and what the guard allows cannot diverge. Empty when the working directory is empty or relative:
+ * a relative root is not a root to confine anything to.
+ */
+export function extraReadRoots(cwd: string, role: ModelRole): string[] {
+  if (!isAbsolute(cwd)) return [];
+  return extraDirs(cwd, role, { claude: false }).filter((p) => isAbsolute(p) && p !== cwd && !p.startsWith(`${cwd}/`));
+}
+
 // The call as SDK options, which is also the shape the open engine takes: the permissions, hooks and limits are one policy for both engines.
 // A call with `confine` is an agent that changes files inside its run's worktree: it gets Edit and Write, the hooks of the confinement
 // instead of the read-only ones, and a shell only for the exact commands it was given. Everything else stays denied.
+// A call with `read` instead is an agent of a run that only reads: the hooks that confine its file tools, and its documentation folders added
+// to the directories the engine may look at. It opens no tool: `Edit`/`Write`, the shell and the VCS read are decided by `confine` alone.
 function sdkOptions(req: EngineRequest): Options {
   const confine = req.confine;
+  const read = req.read;
   // A call with no code host read has no CLI to allow either: its shell is whatever commands it was given.
   const host = (req.tracker ?? 'workspace') === 'workspace';
-  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host, req.ask);
+  const hooks = confine ? confine.hooks : read ? read.hooks : agentHooks(req.shell.patterns, host, req.ask);
   // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
   const asks = !confine && !!req.ask;
   const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
+  const dirs = [...req.extraDirs, ...(read?.roots ?? [])];
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -415,7 +429,7 @@ function sdkOptions(req: EngineRequest): Options {
     // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
     // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
     ...(req.isolated ? { settingSources: [], settings: { autoMemoryEnabled: false } } : {}),
-    ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
+    ...(dirs.length ? { additionalDirectories: dirs } : {}),
     ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
   };
@@ -987,6 +1001,8 @@ export interface AgentCall {
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
   cwd: string;
   confine?: Confinement;
+  /** The confinement of a reading agent of a run: its file tools stay inside it, and it is offered no Edit, no Write and no shell. */
+  readRoot?: ReadConfinement;
   /** What the call works on, for the documentation of the repositories (`.coxia/`) it is handed. Absent: it gets none (and still reads nothing of Claude Code). */
   docs?: DocsAsk;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
@@ -1079,6 +1095,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       extra: { maxTurns: call.maxTurns },
       activity,
       confine: call.confine,
+      read: call.readRoot,
       tracker,
       tools,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
@@ -1119,6 +1136,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       extraDirs: [],
       shell: { rules: [], patterns: request.shell.patterns },
       extra: { maxTurns: 2, resume: e.sessionId, tools: [], allowedTools: [] },
+      // No tool of any kind, so no read confinement to carry either: the answer can only come from what was already read.
+      read: undefined,
       exec: undefined,
       release: undefined,
     });

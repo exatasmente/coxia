@@ -26,6 +26,8 @@ export interface CheckOptions {
   /** Names directly under `root` the app keeps for itself: a write to one (or under it) is refused, whatever the case it is spelled in. */
   reserved?: readonly string[];
   home?: string;
+  /** Absolute folders outside `root` a read may still reach (the documentation the config lists); ignored for a write, and for a root that is not a folder. */
+  roots?: string[];
 }
 
 const GIT_DIR = '.git';
@@ -106,11 +108,20 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   const place = landing(abs);
   if (place === 'dangling') return { ok: false, code: 'dangling' };
   // The root itself is somewhere to look (a search starts there), never something to write.
-  if (place === base && options.read) return { ok: true, path: place, rel: '' };
-  if (place === base || !place.startsWith(base + sep)) return { ok: false, code: 'outside' };
-  const rel = relative(base, place);
+  if (place === base) return options.read ? { ok: true, path: place, rel: '' } : { ok: false, code: 'outside' };
+  // A reader may also be given documentation folders that sit outside the worktree; a path in one of them is judged by the same rules below,
+  // with the names as written resolved against that folder, so which folder it is decides the relative path that names `.git` or a secret.
+  const extra = options.read ? (options.roots ?? []).map((r) => real(r)).filter((r): r is string => r !== null) : [];
+  let judge = base;
+  if (!place.startsWith(base + sep)) {
+    const hit = extra.find((r) => place === r || place.startsWith(r + sep));
+    if (!hit) return { ok: false, code: 'outside' };
+    judge = hit;
+  }
+  if (place === judge && options.read) return { ok: true, path: place, rel: '' };
+  const rel = relative(judge, place);
   // The names as written count too: a link called notes that leads to .git is caught by `place`, and one named .git by the lexical path.
-  const written = relative(base, abs).split(sep);
+  const written = relative(judge, abs).split(sep);
   const code = segmentsCode(rel.split(sep), !!options.read) ?? segmentsCode(written, !!options.read);
   if (code) return { ok: false, code };
   if (options.reserved?.length && !options.read) {

@@ -508,7 +508,7 @@
   "main.engine.text.bash.exit": "[exit code {code}]",
   "main.engine.text.bash.noOutput": "(no output)",
   "main.engine.text.read.missing": "Path missing.",
-  "main.engine.text.read.outside": "Path outside the folders allowed for this ceremony.",
+  "main.engine.text.read.outside": "Path outside the folders this call may read: {path}. Allowed: {folders}.",
   "main.engine.text.read.secret": "Configuration or secret file: out of reach of the ceremony.",
   "main.engine.text.read.noFile": "File does not exist: {path}. The working directory is {cwd}.",
   "main.engine.text.read.directory": "It is a directory; use Glob or Grep to list it.",

@@ -106,6 +106,14 @@ const INTENDED: Record<string, Intended> = {
       ['paired devices, the glossary and the conflict verification commands.', 'paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification).'],
     ],
   },
+  'main.engine.text.read.outside': {
+    reason: 'the same refusal now serves a ceremony and a reading agent of a run, and it names the path tried and the folders allowed',
+    language: 'both',
+    replace: [
+      ['Path outside the folders allowed for this ceremony.', 'Path outside the folders this call may read: {path}. Allowed: {folders}.'],
+      ['Caminho fora das pastas permitidas para esta cerimônia.', 'Caminho fora das pastas que esta chamada pode ler: {path}. Permitidas: {folders}.'],
+    ],
+  },
   'ui.webAccess.effects.hint': {
     reason: 'a paired browser may start a release when this switch is on, so the switch says it',
     language: 'both',

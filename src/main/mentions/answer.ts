@@ -7,6 +7,7 @@ import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
+import type { ReadConfinement } from '../engine/contract';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
@@ -60,6 +61,11 @@ export interface MentionDeps {
    * without an `@`. Absent: the mentions the message carries.
    */
   calls?: readonly string[];
+  /**
+   * The read confinement of the call, for a caller that has one (the runner, over the run's worktree). Absent, or `undefined` for a place with no
+   * worktree to be confined to (a channel, a general conversation, a ceremony), the mention keeps the read policy of the ceremonies: no confinement.
+   */
+  readRoot?: (place: MentionPlace, agent: AgentDef, cwd: string) => ReadConfinement | undefined;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -159,7 +165,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         message,
         thread: deps.forum.read(place.thread, 0, 2000)?.messages ?? [],
         files: info.files,
-        cwd: source?.cwd ?? deps.env().fallbackCwd,
+        cwd: source?.cwd ?? (place.run && existsSync(place.run.worktree) ? place.run.worktree : deps.env().fallbackCwd),
         ref: info.ref,
         title: info.title,
         mission: info.mission,
@@ -172,6 +178,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       call.docs = await docsAskOf(place, config, info.files);
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
+      // An agent named in a run's thread reads only inside that run's worktree, like a reading stage of it; elsewhere the caller gives none.
+      // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
+      call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');

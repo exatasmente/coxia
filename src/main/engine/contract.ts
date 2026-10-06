@@ -65,6 +65,19 @@ export interface Confinement {
   hooks: NonNullable<Options['hooks']>;
 }
 
+/**
+ * What a reading agent of a run is confined to: the run's worktree and the documentation folders it was given. Only a call of a run
+ * carries one, and it never opens a tool: it says where the file tools may look, so a reader stays a reader.
+ */
+export interface ReadConfinement {
+  /** The run's worktree: the only folder a file tool may touch, besides `roots`. */
+  root: string;
+  /** Absolute folders the config lists as documentation outside the worktree, which the reader may still reach. */
+  roots: string[];
+  /** The hooks that enforce it (runner/hooks.ts, `readConfinedHooks`): the read policy plus the path guard, never one instead of the other. */
+  hooks: NonNullable<Options['hooks']>;
+}
+
 export interface CommandAsk {
   /** The agent's own rules (`allowedCommands`). */
   rules: string[];
@@ -93,6 +106,11 @@ export interface EngineRequest {
   tools?: AgentToolsConfig;
   /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
   confine?: Confinement;
+  /**
+   * Set for an agent of a run that only reads: its file tools (`Read`, `Grep`, `Glob`) are confined to `root` and `roots`, and it is offered no `Edit`, no `Write` and no shell.
+   * A call with `confine` leaves this out, and so does every call outside a run (a ceremony, a channel): neither has a worktree to be confined to.
+   */
+  read?: ReadConfinement;
   /**
    * How much of the code host the call may read. `workspace` (the default, what the ceremonies and a reader with `tracker: read` get): the host CLI allow-list, the `VcsRead`
    * tool and the tracker MCP tools the workspace switched on. `tool`: only the `VcsRead` tool (an agent that writes with `tracker: read`: no CLI, no MCP server).

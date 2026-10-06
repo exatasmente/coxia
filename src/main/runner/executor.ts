@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
+import { type ModelRole } from '../../shared/settings';
 import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
-import { MaxTurnsError, ProviderBudgetError } from '../engine/contract';
+import { type AgentCall, extraReadRoots } from '../agents';
+import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -19,7 +20,7 @@ import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
-import { type Denial, confinedHooks } from './hooks';
+import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
 import { prepareDocsFolder } from './docs';
@@ -354,6 +355,16 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   }
 }
 
+/**
+ * The confinement of a reading agent of a run: the run's worktree and the documentation folders the config lists outside it. `undefined` when there is no
+ * worktree to be confined to (a call outside a run, or a stage whose worktree is gone): inventing a root would close the read over a folder that is not the run's.
+ */
+export function readConfinement(root: string, role: ModelRole, onDenied?: (denial: Denial) => void): ReadConfinement | undefined {
+  if (!existsSync(root)) return undefined;
+  const roots = extraReadRoots(root, role);
+  return { root, roots, hooks: readConfinedHooks({ root, roots, onDenied }) };
+}
+
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: { watch?: Watchdog; allowed: Set<string> }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
@@ -477,6 +488,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // The documentation of the repository (`.coxia/`) for this stage: chosen by the stage, the agent and the files the work touches. Nothing is read from git when there is none.
     docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
     confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeReserved: HARNESS_OWN } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeReserved: writeRoot ? HARNESS_OWN : undefined, commands, onDenied: denied }) } : undefined,
+    readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
