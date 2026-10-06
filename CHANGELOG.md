@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Changed
+
+- **The trigger label now says what it needs.** Where the trigger label is configured and documented — the runner block of the configuration document, the settings screen and the code host reference, in both languages — it now says that a run only starts by itself for an open issue that carries the label **and is assigned to the person**, the way the app has always worked. A labeled issue nobody is assigned to does not start a run, and the hint of the field no longer leaves that out.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed
