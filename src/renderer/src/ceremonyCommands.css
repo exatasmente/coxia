@@ -1,6 +1,10 @@
 .cc-stack { position: fixed; top: 12px; left: 0; right: 0; z-index: 60; display: flex; flex-direction: column; gap: 8px; padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); pointer-events: none; }
-.cc-item { pointer-events: auto; display: grid; gap: 8px; max-width: 640px; width: 100%; margin: 0 auto; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); box-shadow: 0 6px 24px var(--glow); }
+.cc-item { pointer-events: auto; display: grid; gap: 8px; max-width: 640px; width: 100%; min-width: 0; box-sizing: border-box; max-height: calc(100vh - 24px); overflow: auto; margin: 0 auto; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); box-shadow: 0 6px 24px var(--glow); }
 .cc-write { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
-.cc-title { margin: 0; font-size: 13px; font-weight: 700; }
+.cc-title { margin: 0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .cc-command { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 30vh; overflow: auto; }
 .cc-actions { gap: 8px; flex-wrap: wrap; }
+/* A button carries a rule as long as the command it allows: it wraps inside the notice instead of widening it. */
+.cc-actions .btn { flex: 1 1 auto; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.25; padding-top: 8px; padding-bottom: 8px; }
+.cc-item .text-input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 600px) { .cc-actions .btn { flex-basis: 100%; } }

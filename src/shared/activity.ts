@@ -4,6 +4,9 @@ export type ActivityKind = 'tool' | 'text' | 'status';
 export type ActivityState = 'queued' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
 
 /** The `@` call a run belongs to: which agent answers, in which thread, for which message. */
+/** The activity job of a conversation outside a run (a channel, a general conversation, an agent's direct one): what its calls and their steps are kept under. */
+export const mentionJob = (thread: string): string => `mention:${thread}`;
+
 export interface ActivityCall {
   /** The id of the agent that answers. */
   agent: string;
