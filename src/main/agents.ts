@@ -508,6 +508,12 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   }
 }
 
+// The SDK prices a call as if it went to Anthropic's own API, whatever provider the role is mapped to: outside it, that list price says nothing about what was
+// charged, so the figure the result carries is kept as an estimate and marked as one. Same test the environment uses to decide how to authenticate.
+function isAnthropicApi(target: EngineRequest['target']): boolean {
+  return target.kind === 'anthropic' && /^https:\/\/api\.anthropic\.com\/?$/.test(target.baseUrl);
+}
+
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
@@ -571,7 +577,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (m.type === 'result') {
       sessionId = m.session_id;
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
-      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
+      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       if (m.subtype !== 'success' || m.structured_output == null) {
         // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.

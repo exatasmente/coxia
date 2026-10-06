@@ -189,13 +189,34 @@ describe('a stage that goes wrong', () => {
     await b.settle();
     // the first attempt was stopped for silence, and its use is kept
     expect(b.runner.get(run.id)).toMatchObject({ status: 'failed' });
-    expect(b.runner.get(run.id)!.stages[0].usage).toEqual({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, calls: 1, costUsd: 0.002 });
+    expect(b.runner.get(run.id)!.stages[0].usage).toEqual({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, calls: 1, costUsd: 0.002, costEstimated: false });
     b.runner.retry(run.id);
     await b.settle();
     run = b.runner.get(run.id)!;
-    expect(run.stages[0]).toMatchObject({ attempts: 2, usage: { promptTokens: 1200, completionTokens: 120, cachedTokens: 100, calls: 3, costUsd: 0.003 } });
+    expect(run.stages[0]).toMatchObject({ attempts: 2, usage: { promptTokens: 1200, completionTokens: 120, cachedTokens: 100, calls: 3, costUsd: 0.003, costEstimated: false } });
     // a stage whose engine reported nothing has no usage
     expect(run.stages.find((s) => s.stage === 'gate1')?.usage).toBeUndefined();
+  });
+
+  it('keeps what a stage whose cost was only an estimate used, marked as an estimate over its attempts', async () => {
+    const b = await boot({ timeoutMs: 60 });
+    easy(b);
+    b.engine.script('refiner', (call) => {
+      call.onUsage?.({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, costUsd: 0.002, costEstimated: true });
+      return never();
+    }, (call) => {
+      call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0, costUsd: 0.001, costEstimated: true });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+    });
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    // the stopped attempt alone leaves the stage estimated
+    expect(run.stages[0].usage).toEqual({ promptTokens: 700, completionTokens: 70, cachedTokens: 100, calls: 1, costUsd: 0.002, costEstimated: true });
+    b.runner.retry(run.id);
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    expect(run.stages[0].usage).toMatchObject({ promptTokens: 1000, completionTokens: 100, cachedTokens: 100, calls: 2, costUsd: 0.003, costEstimated: true });
   });
 
   it('runs the workspace\'s commands in the worktree before QA and gives QA the results, and keeps the exit codes', async () => {

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Fixed
+
+- **A stage no longer shows Anthropic's list price for a call that went to another provider.** On the Claude Agent SDK path, the figure the SDK reports is a price for a Claude model at Anthropic's list, so on any provider that is not Anthropic's own API (Bedrock, Vertex, Foundry, a custom endpoint) it now appears marked as an estimate instead of as the amount charged. The tokens keep being recorded as before.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed

@@ -256,11 +256,11 @@ export const filterCounts = (runs: readonly Pick<Run, 'status' | 'question'>[]):
 
 // ---- what a stage's model calls used --------------------------------------------------------------------------------------------------
 
-/** The numbers of a stage's use as the timeline says them, in the reader's locale. The cost is only there when a provider or the SDK reported one. */
-export function usageParams(u: StageUsage, locale: string): { calls: string; prompt: string; cached: string; completion: string; cost: string | null } {
+/** The numbers of a stage's use as the timeline says them, in the reader's locale. The cost is only there when a provider or the SDK reported one, and `estimated` says whether that figure is an estimate. */
+export function usageParams(u: StageUsage, locale: string): { calls: string; prompt: string; cached: string; completion: string; cost: string | null; estimated: boolean } {
   const n = new Intl.NumberFormat(locale);
   const money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  return { calls: n.format(u.calls), prompt: n.format(u.promptTokens), cached: n.format(u.cachedTokens), completion: n.format(u.completionTokens), cost: u.costUsd === null ? null : money.format(u.costUsd) };
+  return { calls: n.format(u.calls), prompt: n.format(u.promptTokens), cached: n.format(u.cachedTokens), completion: n.format(u.completionTokens), cost: u.costUsd === null ? null : money.format(u.costUsd), estimated: u.costEstimated === true };
 }
 
 // ---- the commits a release plan is accepted at ---------------------------------------------------------------------------------------

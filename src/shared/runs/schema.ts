@@ -37,6 +37,7 @@ const stageRecord = object(
         cachedTokens: { type: 'integer', description: 'Of the tokens sent, the ones the provider served from its cache.', minimum: 0 },
         calls: { type: 'integer', description: 'Model calls.', minimum: 0 },
         costUsd: { type: ['number', 'null'], description: 'What a provider or the SDK said it cost; null when none did.', minimum: 0 },
+        costEstimated: { type: 'boolean', description: 'The cost is an estimate: no provider reported what the calls were charged. Absent: charged.' },
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),

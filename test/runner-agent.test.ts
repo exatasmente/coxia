@@ -27,6 +27,8 @@ import { activityLog, withActivityContext } from '../src/main/activity';
 import { runAgent, obj, str } from '../src/main/agents';
 import { confinedHooks } from '../src/main/runner/hooks';
 import { newAgent } from '../src/shared/config/team';
+import { neutralConfig } from '../src/shared/config';
+import type { LlmProvider } from '../src/shared/config/types';
 import { installEnvSecret } from './helpers/config';
 
 const done = (data: unknown): Msg[] => [
@@ -38,15 +40,31 @@ beforeAll(async () => {
   await installEnvSecret('llm.anthropic');
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   calls.length = 0;
   queue = null;
   script = done({ fala: 'ok' });
+  await pointProviderAt({ kind: 'anthropic', baseUrl: 'https://api.anthropic.com' });
 });
 
 const reader = newAgent({ id: 'refiner', permission: 'read' });
 const writer = newAgent({ id: 'developer', permission: 'worktree' });
 const schema = obj({ fala: str });
+
+/** Points the agent's provider at a base URL of the test's choosing, so the SDK path can be exercised for each kind of endpoint. */
+async function pointProviderAt(provider: Partial<LlmProvider> & Pick<LlmProvider, 'kind' | 'baseUrl'>): Promise<void> {
+  const { saveConfig } = await import('../src/main/workspaceConfig');
+  const c = neutralConfig();
+  c.llm.providers = [{ ...c.llm.providers[0], ...provider, id: 'llm-target' }];
+  c.llm.roles = Object.fromEntries(Object.entries(c.llm.roles).map(([role, model]) => [role, { ...model, provider: 'llm-target' }])) as typeof c.llm.roles;
+  saveConfig(c);
+}
+
+/** The result message the SDK sends at the end of a call, carrying only what the whole call cost. */
+const sdkCost = (usd: number): Msg[] => [
+  { type: 'system', subtype: 'init', session_id: 's1' },
+  { type: 'result', subtype: 'success', session_id: 's1', structured_output: { fala: 'ok' }, total_cost_usd: usd },
+];
 
 describe('runAgent on the Claude SDK', () => {
   it('reports the use of each response once, even when its blocks come as several messages, and the cost the SDK gives at the end', async () => {
@@ -68,6 +86,31 @@ describe('runAgent on the Claude SDK', () => {
       { promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.0123 },
     ]);
     expect(beats).toBe(5);
+  });
+
+  it('takes the SDK figure as the charged cost only on Anthropic\'s own API', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agent-cost-api-'));
+    script = sdkCost(0.0123);
+    const reports: unknown[] = [];
+    await runAgent({ agent: reader, prompt: 'p', schema, system: 'sys', cwd, label: 'refiner', maxTurns: 7, onUsage: (u) => void reports.push(u) });
+    expect(reports).toEqual([{ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.0123 }]);
+  });
+
+  it('marks the SDK figure as an estimate on any provider that is not Anthropic\'s own API', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agent-cost-other-'));
+    const cases: (Partial<LlmProvider> & Pick<LlmProvider, 'kind' | 'baseUrl'>)[] = [
+      { kind: 'anthropic', baseUrl: 'https://gateway.example.com', legacyCustomEndpoint: true },
+      { kind: 'bedrock', baseUrl: '' },
+      { kind: 'vertex', baseUrl: '' },
+      { kind: 'foundry', baseUrl: '' },
+    ];
+    for (const provider of cases) {
+      await pointProviderAt(provider);
+      script = sdkCost(51.55);
+      const reports: unknown[] = [];
+      await runAgent({ agent: reader, prompt: 'p', schema, system: 'sys', cwd, label: 'refiner', maxTurns: 7, onUsage: (u) => void reports.push(u) });
+      expect(reports, provider.kind).toEqual([{ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 51.55, costEstimated: true }]);
+    }
   });
 
   it('gives a reader the tools of the ceremonies: no Edit, no Write, no network', async () => {
