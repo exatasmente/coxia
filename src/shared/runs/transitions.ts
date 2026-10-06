@@ -5,7 +5,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
+import { HISTORY_DETAIL_MAX, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -31,7 +31,8 @@ const refsOf = (names: string[]): ArtifactRef[] => names.map((path) => ({ path }
 const unique = (list: string[]): string[] => [...new Set(list)];
 
 function log(run: Run, at: string, type: HistoryType, stage: string | null, by: string, detail: string | null = null): void {
-  const entry: HistoryEntry = { at, type, stage, by, detail };
+  // A long answer or reason must not make the file one the store refuses: the entry keeps its start, the thread keeps it whole.
+  const entry: HistoryEntry = { at, type, stage, by, detail: detail === null ? null : detail.slice(0, HISTORY_DETAIL_MAX) };
   run.history.push(entry);
   if (run.history.length > HISTORY_MAX) run.history.splice(1, run.history.length - HISTORY_MAX);
 }
