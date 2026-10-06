@@ -12,6 +12,8 @@ export interface ToolContext {
   signal?: AbortSignal;
   // The folder a Write or Edit may change (the run's worktree). null: the call is read-only and those tools refuse.
   writeRoot?: string | null;
+  // Names directly under writeRoot that Write and Edit refuse: what the app itself keeps there.
+  writeReserved?: readonly string[];
   outputMax: number;
   env: Record<string, string>;
   // Bash(<prefix>:*) rules from the allowed tools; empty means the hook policy alone decides.

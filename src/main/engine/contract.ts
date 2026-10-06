@@ -55,8 +55,12 @@ export interface ShellPolicy {
 
 /** What an agent that writes is confined to: only a stage of a run whose agent has the `worktree` permission carries one. */
 export interface Confinement {
-  /** The run's worktree: the only folder the agent may change, and its working directory. */
+  /** The run's worktree: its working directory, which it may read whole, and the only folder it may change unless `writeRoot` narrows that. */
   root: string;
+  /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
+  writeRoot?: string;
+  /** Names directly under `writeRoot` the app owns and the agent may not write (the ignore file and the run folder of a documentation run). */
+  writeReserved?: readonly string[];
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }
@@ -95,6 +99,11 @@ export interface EngineRequest {
    * `none`: nothing of the host.
    */
   tracker?: 'workspace' | 'tool' | 'none';
+  /**
+   * The call reads no documentation of Claude Code: neither the `CLAUDE.md` and `.claude/` of the working directory or the home, nor its settings and its automatic
+   * memory. Set for the agents of the team (`runAgent`); the ceremonies leave it off and read what they read.
+   */
+  isolated?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */

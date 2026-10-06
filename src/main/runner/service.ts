@@ -80,7 +80,7 @@ import {
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
-import { autonomousOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
@@ -99,6 +99,7 @@ import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, readFolder, slugOf, writeIssueRecord, writeMemory } from './cycleFolder';
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
+import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, ensureRunIgnore } from './docs';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
@@ -109,6 +110,7 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
 import { proposeMention } from '../mentions/propose';
 import type { IssueMade, Publisher } from './publish';
@@ -118,7 +120,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -210,6 +212,16 @@ export interface Runner {
    * repository's checkout, through the door of Actions. The tracking issue is made (or adopted) and the branch opened (or asked to be) by the publisher.
    */
   startRelease(version: string, from?: string, repoId?: string): Promise<Run>;
+  /**
+   * Starts the run that drafts (`create`) or brings up to date (`update`) the documentation of a repository: it has no issue, writes only inside `.coxia/` of its own
+   * worktree, and ends in a push and a pull request that wait for the person's "sim" like every other.
+   */
+  startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run>;
+  /**
+   * What `startDocs` asks before it changes anything that does not depend on the docs flow: the mode, a run already going for the repository, the repository itself and the
+   * identity of the commits. Throws what `startDocs` would; the window calls it before the docs template is applied, so a start that cannot happen leaves the configuration as it was.
+   */
+  checkDocs(repoId: string, mode: string): Promise<void>;
   startStage(id: string): Run;
   accept(id: string, note?: string): Run;
   returnStage(id: string, note: string): Run;
@@ -767,6 +779,99 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   }
 
+  // ---- the run of the documentation of a repository ---------------------------------------------------------------------------------
+
+  async function startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+    if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
+    const ref = docsRef(String(repoId));
+    if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
+    starting.add(ref);
+    try {
+      return await createDocs(String(repoId), mode);
+    } finally {
+      starting.delete(ref);
+    }
+  }
+
+  // The questions of a documentation start that the docs flow does not enter into: the same ones, in the same order, whether the flow is there or not.
+  async function checkDocs(repoId: string, mode: string): Promise<void> {
+    if (starting.has(docsRef(String(repoId)))) throw new RunError('duplicate', { issue: docsRef(String(repoId)) });
+    await docsPrecheck(String(repoId), mode);
+  }
+
+  async function docsPrecheck(repoId: string, mode: string): Promise<{ repo: { id: string; path: string }; identity: Identity }> {
+    if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
+    const ref = docsRef(repoId);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const env = deps.env();
+    // The repository is named, so no issue project is asked for; one the workspace does not have has no checkout to make a worktree from.
+    if (!env.repos.some((r) => r.id === repoId)) throw new RunnerError('no-clone', { repo: repoId.slice(0, 48) });
+    const repo = await repoFor(repoId, repoId);
+    const identity = await commitIdentity(deps.config().runner.identity, repo.path, deps.identity);
+    if (!identity) throw new RunnerError('no-identity', { repo: repo.id });
+    return { repo, identity };
+  }
+
+  async function createDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+    const config = deps.config();
+    const ref = docsRef(repoId);
+    if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
+    const stages = docsFlowOf(config);
+    if (!stages?.length) throw new RunnerError('no-docs-flow');
+    const flow = flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages } }, stages);
+    assertStartable(flow);
+    const broken = flowErrors({ stages, team: config.agents.team }, { asFlow: true });
+    if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
+    const { repo, identity } = await docsPrecheck(repoId, mode);
+    const env = deps.env();
+
+    const today = deps.now?.() ?? new Date();
+    const day = dayStamp(today);
+    const branch = docsBranch(repo.id, today);
+    const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `docs-${day}`);
+    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+      throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
+    });
+    let run: Run;
+    try {
+      // What `.coxia/` holds is read before the run puts anything in it. The run's own folder is inside `.coxia/` and ignored by git, so the pull request carries the
+      // documentation and nothing of the run; the ignore file is committed before anything is written there.
+      const record = await docsRecord(dest, { ref, title: docsTitle(repo.id), mode });
+      // A repository whose `.coxia` (or whose ignore file, or run folder) is a link would take these writes, and the agent's, out of the worktree: no run is made.
+      if (!(await ensureRunIgnore(dest))) throw new RunnerError('docs-folder-unsafe');
+      try {
+        writeIssueRecord(dest, DOCS_RUN_FOLDER, record);
+      } catch {
+        throw new RunnerError('docs-folder-unsafe');
+      }
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
+      await commitAll(dest, commitMessage(config.runner.commitMessage, 'ignore the folder of the documentation run', 0), identity);
+      const started = startRun(
+        {
+          id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')),
+          issue: { ref, iid: 0, title: docsTitle(repo.id), url: null },
+          repo: repo.id,
+          branch,
+          worktree: dest,
+          cycleFolder: DOCS_RUN_FOLDER,
+          cycleId: 'docs-flow',
+          base: made.baseSha,
+          docs: { mode },
+        },
+        flow,
+        now(),
+      );
+      run = beginRun(d, started);
+    } catch (e) {
+      await discard(repo.path, dest, branch);
+      throw e;
+    }
+    tell(null, run);
+    // No `ensureDependencies`: the draft reads and writes text and runs nothing of the repository.
+    pump(run.id);
+    return run;
+  }
+
   // The repository of an issue the caller did not name, when the project has several: the one the squad that labels or paths pick owns, if it owns exactly one.
   function repoOfSquad(squads: SquadDef[], labels: string[], text: string, env: RunnerEnv): string | undefined {
     const own = env.repos.filter((r) => r.projectPath === env.issues.project);
@@ -817,6 +922,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     get: (id) => withCommand(deps.runs.get(id)),
     start,
     startRelease,
+    startDocs,
+    checkDocs,
     startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
@@ -904,10 +1011,12 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     migrateFlow(id) {
       const config = deps.config();
-      // The flow a run moves to is its squad's (the workspace's when it has none), and a release run's is the release flow.
-      const releasing = need(id).subject ? releaseFlowOf(config) : null;
-      if (need(id).subject && !releasing) throw new RunnerError('no-release-flow');
-      const view = releasing ? { agents: { team: effectiveTeam(config) }, devCycle: { stages: releasing } } : squadView(config, need(id).squad);
+      // The flow a run moves to is its squad's (the workspace's when it has none), a release run's is the release flow and a documentation run's the docs flow.
+      const target = need(id);
+      const own = runKindFlowOf(config, target);
+      if (target.subject && !own) throw new RunnerError('no-release-flow');
+      if (target.docs && !own) throw new RunnerError('no-docs-flow');
+      const view = own ? { agents: { team: effectiveTeam(config) }, devCycle: { stages: own } } : squadView(config, target.squad);
       const broken = flowErrors({ stages: view.devCycle.stages, team: view.agents.team }, { asFlow: true });
       if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
       const flow = flowOf(view, view.devCycle.stages);
@@ -1168,6 +1277,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
+        call.docs = existsSync(run.worktree)
+          ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+          : { repos: [], stage: stageOfRun(run, config), paths: [] };
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));
@@ -1235,6 +1348,10 @@ export function createRunner(deps: RunnerDeps): Runner {
     let partial = false;
     try {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
+      call.docs = call.cwd === run.worktree
+        ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
+        : { repos: [call.cwd], stage: stageOfRun(run, config), paths: [] };
       const abort = new AbortController();
       chainAborts.set(id, abort);
       const watch = watchdog(abort, limitsOf(config, deps));

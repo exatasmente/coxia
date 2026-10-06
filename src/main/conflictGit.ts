@@ -34,9 +34,9 @@ function checkRef(ref: string, what: string): string {
   return ref;
 }
 
-export async function git(cwd: string, args: string[], options: { fail?: boolean } = {}): Promise<GitResult> {
+export async function git(cwd: string, args: string[], options: { fail?: boolean; timeout?: number } = {}): Promise<GitResult> {
   try {
-    const { stdout, stderr } = await run('git', ['-C', cwd, ...args], { env: gitEnv(), timeout: 10 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    const { stdout, stderr } = await run('git', ['-C', cwd, ...args], { env: gitEnv(), timeout: options.timeout ?? 10 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     return { stdout, stderr, code: 0 };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; code?: number | string; message: string };

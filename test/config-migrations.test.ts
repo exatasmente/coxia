@@ -372,3 +372,18 @@ describe('startup on the real current layout', () => {
     expect(JSON.parse(readFileSync(join(root, 'workspaces.json'), 'utf8')).list[0].test).toBe(false);
   });
 });
+
+describe('the documentation sources (what autoDetect means is the app\'s, not the file\'s)', () => {
+  it('has no step for a file that already holds the lists: a current file comes out as it went in, with no notes, whatever the version is', () => {
+    const file = { ...neutralConfig(), schemaVersion: CONFIG_SCHEMA_VERSION };
+    file.docs = { autoDetect: true, claudeMdRoots: ['~/notes'], skillsDirs: ['~/skills'], rulesDirs: ['~/rules'], agentsDirs: ['~/agents'], knowledgeDirs: ['~/kb'], mcpConfigFiles: ['~/.mcp.json'], specsDir: '~/specs' };
+    const r = migrateConfig(structuredClone(file), { legacyInstall: false });
+    expect(r.fromVersion).toBe(CONFIG_SCHEMA_VERSION);
+    expect(r.changed).toBe(false);
+    expect(r.notes).toEqual([]);
+    expect(r.config).toEqual(file);
+    // a file from a newer app is still refused, as before
+    expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+});
+

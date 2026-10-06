@@ -60,8 +60,8 @@ export function rc(): ResolvedConfig {
   return state.resolved;
 }
 
-export function docsSources(): ResolvedDocs {
-  return resolveDocs(getConfig(), context(), existsSync);
+export function docsSources(opts?: { claude?: boolean }): ResolvedDocs {
+  return resolveDocs(getConfig(), context(), existsSync, opts);
 }
 
 const flowInputs = (c: unknown): string => {

@@ -282,6 +282,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const known = run.comments.pr;
     const { issue, repo } = projects(run);
     if (known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId))) return { project: repo, iid: Number(known.noteId), url: known.url };
+    // A documentation run has no issue to link a pull request to: what it opened is the one it recorded, and nothing is looked for under the issue number 0.
+    if (run.docs) return null;
     try {
       const found = (await provider.linkedMrs(issue, run.issue.iid)).find((m) => m.sourceBranch === run.branch && m.state === 'open');
       if (!found) return null;
@@ -297,6 +299,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function deliver(runId: string, x: Delivery): Promise<void> {
     let run = need(runId);
+    // A documentation run has no issue: what would be a comment on it stays in the run's own thread, which is its record, and nothing is drafted, proposed or written.
+    if (x.target === 'issue' && run.docs) return;
     const hash = hashOf(x.body);
     const had = run.comments[x.key];
     if (had && (had.status === 'published' || had.status === 'proposed') && had.bodyHash === hash) return;
@@ -659,14 +663,20 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   async function pushStage(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
     const run = need(runId);
-    const pr = config.devCycle.comments.pr;
+    const pr = config.devCycle.comments[run.docs ? 'docs-pr' : 'pr'];
     if (pr) {
       const marker = markerOf(run.id, 'pr');
-      const closes = closesOf(run);
+      // What the pull request of an issue's run says last is the line that closes the issue; a documentation run has none to close.
+      const closes = run.docs ? undefined : closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
       moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
+    } else if (run.docs) {
+      // No template for it (the person removed it): the description is what the stage said it did, still checked like any text that leaves the machine.
+      const checked = checkComment(end.output.summary, { ...checkOptions(run, config), status: '', marker: markerOf(run.id, 'pr'), technicalDetail: false });
+      const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
+      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: '', title }, now()));
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.
     const attempt = run.stages.find((s) => s.stage === end.stage.id)?.attempts ?? 1;
@@ -684,9 +694,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const draft = run.comments.pr;
       const { repo } = projects(run);
       const title = (draft?.title || run.issue.title).trim();
-      // The description comes from the template; a cycle with none still says which issue the pull request closes.
-      const closes = closesOf(run);
-      const body = draft?.body ? draft.body : `${closes}\n`;
+      // The description comes from the template; a cycle with none still says which issue the pull request closes (a documentation run closes none).
+      const body = draft?.body ? draft.body : run.docs ? '' : `${closesOf(run)}\n`;
       const target = (await provider.getRepo(repo)).defaultBranch;
       const commands = await provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: body, unit: { runId, purpose: 'run-pr' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
@@ -838,6 +847,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!to) return;
     const config = deps.config();
     const run = need(runId);
+    // A documentation run has no issue whose labels could be read or proposed: it is told nothing of a priority (the flow of a workspace can be edited, so the guard is here).
+    if (run.docs) return;
     const levels = config.devCycle.priority.labels;
     // Only the stage that owns the priority proposes it: a level any other stage returned is said not to have been taken.
     const flow = flowOfRun(run, config);
@@ -868,6 +879,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const known = run.comments.pr;
     const { issue, repo } = projects(run);
     if (known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId))) return (await provider.getMr(repo, Number(known.noteId))).state;
+    if (run.docs) return null;
     const found = (await provider.linkedMrs(issue, run.issue.iid)).find((m) => m.sourceBranch === run.branch);
     return found ? found.state : null;
   }
@@ -888,6 +900,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (w.kind === 'beta-age') return { over: await betaAged(run, provider, w) };
       if (w.kind === 'beta-out') return { over: await betaOut(run, provider) };
       if (w.kind === 'stable-out') return { over: await stableOut(run) };
+      // What is left is read from the issue (its label, a reply to it): a documentation run has none, so such a wait is never over by itself and the person skips it.
+      if (run.docs) return { over: false };
       if (w.kind === 'label') {
         const want = (w.label ?? '').trim().toLowerCase();
         return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
@@ -912,6 +926,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const remove = e.previous?.trackerStatus && e.previous.trackerStatus !== add ? e.previous.trackerStatus : null;
     if ((!add || add === e.previous?.trackerStatus) && !remove) return;
     const run = need(runId);
+    // A documentation run has no issue to carry a status label.
+    if (run.docs) return;
     const refusal = door.refusal();
     if (refusal) return say(run, 'runner.status.refused', { label: add ?? remove ?? '' }, e.stage.id);
     const provider = door.provider();
@@ -940,6 +956,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade> {
     const run = need(runId);
+    // A documentation run has no tracker project of its own to open an issue in for another squad.
+    if (run.docs) return { status: 'no-host', reason: '' };
     const refusal = door.refusal();
     if (refusal) {
       say(run, 'runner.request.refused', { title: e.title });
@@ -976,6 +994,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const label = e.label.trim();
     if (!label) return;
     const run = need(runId);
+    // A documentation run has no issue to label with a squad.
+    if (run.docs) return;
     if (door.refusal()) return say(run, 'runner.squad.refused', { label });
     const provider = door.provider();
     if (!provider) return;
