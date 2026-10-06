@@ -257,3 +257,129 @@ fechada) e os gates os leem a partir da configuração de ciclo; o canal de acon
 da interface é separado do que seria um ponto de extensão; a configuração tem versão de
 esquema e migração degrau a degrau, com os três arquivos que precisam andar juntos.
 Não verificado: qualquer execução, o resultado dos portões e o comportamento em tela.
+
+## Rodada 2: o contrato de permissão e os bloqueantes da revisão
+
+A revisão reprovou a primeira implementação e a pessoa fixou o contrato de permissão
+(spec, "O contrato de permissão"). Esta rodada troca o modelo de concessão e fecha os
+bloqueantes; o que a primeira rodada acertou (declaração, catálogo, sandbox da etapa,
+disparo pelo runner) fica.
+
+### Configuração (esquema 13, ainda não publicado)
+
+O esquema 13 não saiu em versão nenhuma, então muda de forma sem degrau novo:
+
+- `PluginConfig` = `{ id, folder, enabled, allow: { network: boolean, write: boolean } }`.
+  `allow` é só o "sempre"; some o `granted` e os valores `network`/`network-open`.
+- `PluginsConfig` ganha `confirmSeconds` (número, padrão 30): o prazo do aviso.
+- Os três espelhos (`types.ts`, `defaults.ts`, `schema.ts`) e o degrau `v12ToV13`
+  andam juntos; `test/config-schema.test.ts` confere.
+- Gravar a lista nunca a remonta do disco: ligar, desligar, permitir ou retirar muda
+  só a entrada daquele plugin, e uma entrada de plugin que a leitura não achou fica.
+  A exportação sai sem a lista (já está assim) e a importação mantém a lista que o
+  espaço de trabalho de destino já tinha.
+
+### Declaração
+
+`offers.write` passa a ser `{ "to": "<nome>", "reversible": true|false }`. Um `to` que
+escapa da pasta é recusado como hoje; `reversible` ausente lê como `false`. A forma
+antiga (texto) é lida como `{ to, reversible: false }`.
+
+### Onde a permissão é consultada
+
+Um módulo puro (`src/shared/plugins/grants.ts`) decide, a partir de
+`{ declarado, allow (sempre), sessão, pedido respondido }`, se o plugin roda, com que
+rede, e se a escrita sai, pede, ou entra no aviso com prazo. O serviço
+(`src/main/plugins/module.ts`) é o único que chama esse módulo antes de rodar.
+
+- **Rede:** permitida, a sandbox do plugin abre em modo `registry` com
+  `registryHosts` = **só** os destinos que o plugin declarou (não os do espaço de
+  trabalho). Sem permissão, o plugin não roda: o serviço abre o pedido.
+- **Escrita:** permitida e reversível, sai na hora pela porta única. Permitida e
+  irreversível, entra em Ações como aviso com prazo. Sem permissão, abre o pedido.
+- **Sessão:** um conjunto em memória no processo principal (`plugin:need`); fecha com
+  o aplicativo.
+
+### O pedido e a resposta
+
+- Tipo novo em Ações, `plugin-ask`, com `unit = { plugin, need: 'network'|'write',
+  reversible, runId, event, stage, text }`. Tudo o que é preciso para refazer a chamada
+  fica no próprio pedido, então um pedido sobrevive a fechar o aplicativo.
+- Canal `plugins:answer(id, 'once'|'session'|'always'|'refuse')`, só no computador
+  (`webPolicy.DESKTOP_ONLY`). Um pedido de escrita irreversível só aceita
+  `always`/`refuse`. `actions:approve` recusa um `plugin-ask` (ele precisa do alcance).
+- Responder permitindo refaz a chamada guardada: roda o plugin (rede) ou faz a escrita
+  (escrita). Recusar fecha o pedido com o motivo; o plugin volta a pedir no próximo
+  acontecimento. Nada abre um pedido igual a um que já espera.
+
+### O aviso com prazo
+
+- Tipo `plugin-write` em Ações com `unit.due` (agora + `confirmSeconds`). Um
+  temporizador no processo principal faz a escrita no prazo, pela porta única, se o
+  aviso ainda estiver pendente. Ao abrir o aplicativo, um aviso que ficou pendente
+  recomeça a contagem (nunca sai sem a pessoa ter tido o prazo inteiro).
+- **Bloquear** é `actions:skip` (o navegador pareado pode, porque reduz). **Revogar** é
+  `plugins:revoke(id)`, só no computador: pula o aviso e tira `allow.write`.
+
+### O destino neutro tem um executor de verdade
+
+A escrita do exemplo sai para uma caixa de saída local do espaço de trabalho
+(`<dados do espaço de trabalho>/plugins-out/<plugin>/<to>.md`, anexando). É uma escrita
+de verdade, conferível, sem serviço de terceiro; a linha de auditoria descreve o que foi
+escrito. Num espaço de trabalho de teste, `assertExternalWrite` recusa antes.
+
+### A execução espera
+
+- `WAIT_KINDS` ganha `plugin`; `WaitState` usa `detail` (o motivo) e `plugin`.
+- `RunnerDeps.pluginHold?(runId)` diz se há um pedido de plugin daquela execução
+  esperando. Antes de começar uma etapa, o runner consulta; havendo pedido, aplica uma
+  transição `stageWaitingOnPlugin` (a execução fica `waiting`) em vez de começar.
+- Quando o último pedido da execução é respondido, o serviço chama
+  `runner.pluginReleased(runId)`, que aplica `waitDone` e retoma. `runs:skipWait` segue
+  valendo (a pessoa segue sem responder; o pedido fica em Ações).
+- Execução terminada não espera: o pedido fica só em Ações.
+
+### Bloqueantes da revisão
+
+| # | Bloqueante | Como fecha |
+|---|---|---|
+| 1 | Concessão de rede nunca consultada | Sandbox do plugin com só os destinos dele, e só quando permitido; sem permissão, pedido e espera |
+| 2 | Concessão de escrita nunca consultada | Decisão pura antes de propor; sai, pede ou entra no aviso |
+| 3 | Aprovação audita escrita que não houve | Caixa de saída local como executor; auditoria do que foi escrito |
+| 4 | Resultado do plugin não vira documento | `writePluginDocument` pelo `writeArtifact`/`checkPath` da etapa (já na rodada do developer) |
+| 5 | Gate procura na raiz | A fonte dos plugins procura na raiz e em cada `sub` do layout, como `specInfo` |
+| 6 | Lista reescrita do disco / importação apaga | Gravação por entrada; importação mantém a lista de destino |
+| 7 | Navegador pareado alcança decisão de plugin | Canais `plugins:*` de decisão em `DESKTOP_ONLY`; teste que percorre os canais de plugin. A política aberta por omissão para canal não classificado é anterior a esta issue e fica fora desta entrega |
+| 8 | Pedido sem representação na tela | Cartões de `plugin-ask` e de aviso em Ações; tela de plugins |
+
+### A tela de plugins
+
+Seção nova em Configurações: a pasta, o prazo do aviso e, por plugin, o nome, o que
+oferece, o que pede (rede com os destinos; escrita, reversível ou não), o interruptor, a
+permissão "sempre" com **Retirar**, e o motivo da recusa da declaração. Tudo por `t()`,
+nos dois catálogos, e só tokens de tema.
+
+### Ordem
+
+1. Configuração (`allow`, `confirmSeconds`) e declaração (`write` objeto).
+2. Decisão pura de permissão e seus testes.
+3. Serviço: pedido, resposta, sessão, gravação por entrada.
+4. Executor da caixa de saída, aviso com prazo, canais e política do navegador.
+5. Espera no runner.
+6. Gate (raiz e `sub`).
+7. Telas: Ações e Configurações.
+8. Kit e exemplo; documentação do app.
+
+### Testes novos
+
+- Decisão pura: cada combinação de sempre/sessão/uma vez/sem permissão × reversível ou
+  não × rede declarada ou não.
+- Serviço: pedido aberto uma vez; responder uma vez/sessão/sempre/recusar; religar
+  mantém "sempre"; gravação de uma entrada não apaga as outras; importação mantém.
+- Aviso: escrita sai no prazo; bloquear e revogar impedem; revogar tira a permissão;
+  espaço de trabalho de teste recusa.
+- Runner: execução com pedido pendente fica `waiting` (`plugin`) e não começa a
+  etapa; `pluginReleased` retoma; execução terminada não espera.
+- Navegador: `plugins:answer`, `plugins:set-enabled`, `plugins:set-allow` e
+  `plugins:revoke` negados; `actions:skip` de aviso permitido.
+- Gate: documento de plugin na raiz e numa `sub` é achado.
