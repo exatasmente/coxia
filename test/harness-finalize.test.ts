@@ -127,6 +127,31 @@ describe('the text check of the documentation', () => {
       expect(done.rewritten).toEqual([{ file: '.coxia/rules/r.md', paths: 1, secrets: 2 }]);
     });
 
+    it('masks a quoted literal assigned to a name that looks like a secret, and leaves an identifier or a type alone', async () => {
+      const dir = repo();
+      const body = [
+        'Use `password = "hunter2"` never.',
+        '',
+        '```ts',
+        'const password = "hunter2";',
+        "const cfg = { token: 'abc123', \"apiKey\": \"s3cr3t\", secret: '' };",
+        'let apiKey: string;',
+        'const token = next();',
+        'type T = { password: string | null; credential?: Credential };',
+        '```',
+        '',
+      ].join('\n');
+      put(dir, '.coxia/rules/r.md', file(['evidence: [src/a.ts]'], body));
+      const done = await finalizeHarness(dir, o(dir));
+      const text = readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8');
+      expect(text).toContain('Use `password = [redacted]` never.');
+      expect(text).toContain('const password = [redacted];');
+      expect(text).toContain("token: [redacted], \"apiKey\": [redacted], secret: ''");
+      expect(text).not.toMatch(/hunter2\";|abc123|s3cr3t/);
+      expect(text).toContain('let apiKey: string;\nconst token = next();\ntype T = { password: string | null; credential?: Credential };');
+      expect(done.rewritten[0].secrets).toBe(4);
+    });
+
     it('takes an unclosed fence for code to the end, a longer fence for one that closes only with as many marks, and a lone backtick for prose', async () => {
       const dir = repo();
       const body = ['A lone ` tick and /var/log/a.log here.', '', 'Another ` tick and /var/log/z.log here.', '', '````', '```', 'apiKey: string', '````', '', 'Back to prose /var/log/b.log.', '', '```', 'apiKey: string /var/log/c.log', ''].join('\n');

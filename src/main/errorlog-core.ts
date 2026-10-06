@@ -14,6 +14,9 @@ const DAY_MS = 24 * 3600_000;
 // `name: value` where the name looks like a secret's (`apiKey: string;` in a type, `token = next()` in code): right in a message, wrong in a quoted piece of code.
 const ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi;
 
+// The same, only when the value is a quoted literal that is not empty (`password = "hunter2"`, `"apiKey": "…"`): what a person typed, as against an identifier or a type.
+const QUOTED_ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"\n]+"|'[^'\n]+')/gi;
+
 // Ordered: specific shapes first, the generic opaque-string rule last.
 const SECRETS: [RegExp, string][] = [
   [/\b(Authorization|Proxy-Authorization|PRIVATE-TOKEN|Job-Token|X-Api-Key|X-Auth-Token|Set-Cookie|Cookie)\s*[:=]\s*[^\n]+/gi, '$1: [redacted]'],
@@ -30,22 +33,31 @@ const SECRETS: [RegExp, string][] = [
 ];
 
 export function redact(text: string, home = homedir()): string {
+  return scrub(text, home, { assignments: 'all' });
+}
+
+interface Scrub {
+  /** `quoted`: only an assignment whose value is a quoted literal (code, where `apiKey: string;` is what the code says). */
+  assignments: 'all' | 'quoted';
+}
+
+function scrub(text: string, home: string, o: Scrub): string {
   let out = text;
   if (home && home !== '/') out = out.split(home).join('~');
-  for (const [pattern, replacement] of SECRETS) out = out.replace(pattern, replacement);
+  for (const [pattern, replacement] of SECRETS) {
+    if (pattern === ASSIGNMENT && o.assignments === 'quoted') out = out.replace(QUOTED_ASSIGNMENT, replacement);
+    else out = out.replace(pattern, replacement);
+  }
   return out;
 }
 
 /**
  * `redact` for text that is quoted code (a fenced block, a code span of a document): the same masking of what is a credential by its shape (a key with a known prefix, a
- * token, a header, an address with a password, an email, a long opaque string) and of the home folder, but not of an assignment to a name that merely looks like a secret's
- * (`apiKey: string;`), which in code is what the code says.
+ * token, a header, an address with a password, an email, a long opaque string) and of the home folder, and of an assignment of a quoted literal to a name that looks like a
+ * secret's (`password = "hunter2"`); not of an identifier or a type (`apiKey: string;`, `token = next()`), which in code is what the code says.
  */
 export function redactCode(text: string, home = homedir()): string {
-  let out = text;
-  if (home && home !== '/') out = out.split(home).join('~');
-  for (const [pattern, replacement] of SECRETS) if (pattern !== ASSIGNMENT) out = out.replace(pattern, replacement);
-  return out;
+  return scrub(text, home, { assignments: 'quoted' });
 }
 
 export function trimStack(stack: string, home?: string): string {
