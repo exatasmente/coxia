@@ -2,31 +2,35 @@
 
 ## Decisões
 
-- Escopo aceito, e nada mais: documentação e dica de campo, sem comportamento novo. Os três lugares são `docs/configuration.md` (dois idiomas), a dica `ui.runner.triggerHint` nos dois catálogos e uma linha em `docs/vcs-providers.md` sobre o filtro por responsável nos três hosts. O aviso na tela de execuções para issue com rótulo e sem responsável ficou na issue 105.
-- Squad: `experiencia` (é o que a pessoa lê: catálogos, telas e documentos). Fronteira de `plataforma`: só se o filtro por responsável precisar mudar.
-- Prioridade proposta pelo refino: `priority:medium`, como a issue já está rotulada — a mudança não altera comportamento, só corrige o texto. Marco: nenhum proposto. Ambas são propostas para a pessoa aceitar.
-- A especificação fixa que os três textos contam a mesma história (issue aberta, com o rótulo e atribuída à pessoa) e que nenhum deles diz que o rótulo sozinho basta. Ganho é de entendimento, não de ação do app.
+- Plano fechado em `2_PLAN.md`: três textos corrigidos, zero comportamento. `docs/configuration.md` (bloco `runner`, pt-BR linha 73 e inglês linha 221), a dica `ui.runner.triggerHint` nos dois catálogos e uma nota em `docs/vcs-providers.md` sobre o filtro por responsável nos três hosts. Nada de tela, mensagem ou aviso novo.
+- **Decisão de plano nova:** `ui.runner.enabledHint` (linhas 191-192 dos dois catálogos) **entra** na mudança, junto com `triggerHint`. Ela fica logo acima do campo do rótulo e hoje diz só "o app começa uma execução para cada issue com o rótulo abaixo"; sem corrigi-la, o bloco sairia com uma dica com as três condições e outra só com o rótulo. As duas chaves dizem a mesma coisa (aberta + rótulo + atribuída), sem chave nova.
+- Squad `experiencia` (é o que a pessoa lê). Fronteira de `plataforma`: só se o filtro por responsável precisar mudar, o que ficou fora.
+- Prioridade `priority:medium` como a issue já está; marco nenhum. Ambos propostos, para a pessoa aceitar.
+- O aviso na tela de execuções para issue com rótulo e sem responsável segue fora, na issue 105.
 
 ## Restrições
 
-- Nada de comportamento novo e nenhuma tela, mensagem ou aviso novo: a dica do campo é texto de ajuda. O gatilho continua exigindo issue aberta, com o rótulo e atribuída à pessoa; dispensar a atribuição segue descartado.
+- O gatilho continua exigindo issue aberta, com o rótulo e atribuída à pessoa; dispensar a atribuição segue descartado. Nada em `src/main/runner` nem `src/main/vcs` é tocado.
 - Todo texto de interface vai pelos catálogos (`t()`), nos dois idiomas; a rota é a dica do campo, não uma tela nova.
-- A documentação deve ser mais estreita que o comportamento observado: o GitHub (`issues?filter=assigned` ou `assignee=<usuário>`), o GitLab (`scope=assigned_to_me`) e o Bitbucket (`assignee.uuid`) filtram por responsável nas leituras, mas o funil comum do runner (`src/main/runner/module.ts:35-40`) só acrescenta estado e rótulo, sem reaplicar a checagem de responsável (não verificado no funil). Não prometer filtro geral sem confirmar.
-- Regra pública: sem nome de empresa, pessoa, host ou número real de issue fora do que o repositório já usa; placeholders neutros; a auditoria pública é gate.
-- Nenhuma asserção sem verificação: o que só foi lido vai como lido; nada foi executado nesta etapa (nada de `npx vitest`, `tsc`, auditoria pública ou host real).
+- **A documentação não pode prometer o filtro como regra geral:** o funil comum do runner (`src/main/runner/module.ts:39`) só acrescenta estado (`open`) e rótulo sobre a lista "minhas"; não reaplica a checagem de responsável. O texto de `docs/vcs-providers.md` diz que a leitura que alimenta o gatilho é a das issues atribuídas, com o filtro de cada host — não que o app reconfere o responsável em todo caminho (isso não foi verificado).
+- Regra pública: sem nome de empresa, pessoa, host ou número real de issue; placeholders neutros; `scripts/public-audit.mjs` é gate.
+- Nenhuma asserção sem verificação: nesta etapa nada foi executado (nada de `npx vitest`, `tsc`, auditoria pública ou host real); tudo foi lido.
 
 ## Tentado e descartado
 
-- Levar o aviso da tela de execuções junto: já estava fora do escopo no comentário de 2026-10-06 e vive na issue 105.
-- Tratar a issue como bug: o comportamento do runner (iniciar só a issue atribuída) é o desenhado; com isso, a única falha é o texto do gatilho.
-- Usar as outras issues abertas (53, 52, 29, 16, 58) como duplicatas: nenhuma trata do gatilho, da atribuição ou do filtro por responsável.
+- Levar o aviso da tela de execuções junto: vive na issue 105.
+- Corrigir só `triggerHint` e deixar `enabledHint` como estava: descartado no plano, pela inconsistência que criaria no mesmo bloco.
+- Tratar a issue como bug: o comportamento do runner (iniciar só a issue atribuída) é o desenhado; a falha é o texto do gatilho.
+- Prometer em `vcs-providers.md` um filtro por responsável geral no app: o funil não o reaplica; ficou como descrição da leitura de cada host.
 
 ## Perguntas abertas
 
-- Nenhuma: falta só o que as etapas seguintes fazem (escrever a documentação e a dica), não uma resposta de quem abriu a issue.
+- Nenhuma: falta só o que as etapas seguintes fazem (escrever os textos e rodar os gates), não uma resposta de quem abriu a issue.
 
 ## Onde o trabalho está
 
-- Triagem concluída (`0_TRIAGE.md`) e especificação funcional escrita (`1_SPEC.md`): o que muda para quem usa, o que passa a ser dito, regras, sete critérios de aceite e fora do escopo. Confirmado por leitura: `docs/configuration.md` omite a atribuição nos dois idiomas (linhas 73 e 221); `docs/runner.md` já diz o requisito (linhas 60 e 278); a dica `ui.runner.triggerHint` só fala da caixa (`ui-team.pt-BR.json:253`, `ui-team.en.json:253`) e `ui.runner.enabledHint` (191-192) também omite; os três hosts filtram por responsável. Nada foi implementado nem testado; a conferência dos gates fica para quem escrever.
-- Próximo passo: escrever os três textos (configuração do runner e documento de provedores nos dois idiomas, mais a dica do campo nos dois catálogos), mantendo a consistência entre eles, e rodar os gates do repositório.
+- Triagem (`0_TRIAGE.md`), especificação (`1_SPEC.md`) e plano (`2_PLAN.md`) escritos. Confirmado por leitura nesta etapa: `docs/configuration.md` omite a atribuição nos dois idiomas (linhas 73 e 221); `docs/runner.md` já diz o requisito (pt-BR linha 60, inglês linha 278); `ui.runner.triggerHint` (253) e `ui.runner.enabledHint` (191-192) só falam do rótulo/caixa nos dois catálogos; as duas chaves são usadas em `RunnerSection.tsx` (66 e 68); os três hosts filtram por responsável (GitHub `assignee=...` ou `filter=assigned`, `github.ts:285-292`; GitLab `scope=assigned_to_me`, `gitlab.ts:282-284`; Bitbucket `assignee.uuid`, `bitbucket.ts:247-253`); o funil do runner só filtra estado e rótulo (`module.ts:35-40`); `test/team-catalog.test.ts` confere as chaves nomeadas e a ausência de chaves órfãs. Nada foi implementado nem testado; os gates ficam para quem escrever.
+- Próximo passo: escrever os quatro textos (`configuration.md` nos dois idiomas; `triggerHint` e `enabledHint` nos dois catálogos; a nota em `vcs-providers.md` nos dois idiomas), mantendo a consistência entre eles e com `runner.md`, mais a linha do `CHANGELOG.md`, e rodar os gates do repositório (`npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`).
+- Passagem product-owner → pessoa: o plano nomeia os arquivos e o conteúdo de cada texto; quem escrever confere na tela de Configurações › Runner se as duas dicas ficam consistentes e não longas demais.
 - Passagem support → product-owner: Escrever as mudanças de documentação e a dica do campo: em `docs/configuration.md` (pt-BR, linha 73, e inglês, linha 221), dizer que o app inicia sozinho só uma issue aberta, com o rótulo `triggerLabel` e atribuída à pessoa, e ligar ao parágrafo de `docs/runner.md` que já diz isso (linhas 60 e 278); trocar a dica `ui.runner.triggerHint` nos dois catálogos (`src/shared/i18n/ui-team.pt-BR.json:253` e `ui-team.en.json:253`) para incluir a atribuição, mantendo o aviso de que a caixa não importa; e acrescentar em `docs/vcs-providers.md` a linha sobre o filtro por responsável nos três hosts (GitHub … <!-- handoff:7 -->
+- Passagem product-owner → pessoa: Escrever os três textos, sem tocar em comportamento: 1. `docs/configuration.md`, no bloco `runner` (pt-BR na linha 73, inglês na linha 221): a frase que hoje diz que o app inicia execuções "para as issues que levam o rótulo `triggerLabel`" deve passar a dizer que é só uma issue **aberta**, com o rótulo **e atribuída à pessoa**, ligando ao parágrafo de `docs/runner.md` (pt-BR linha 60, inglês linha 278) que já diz isso. Conferir se `ui.runner.enabledHint` (linhas 191-192 dos dois catálogos) precisa da mesma correção para os textos ficarem consistentes; a spec exige consistência entre os três lu… <!-- handoff:12 -->
