@@ -9,12 +9,12 @@ import { slugOf, uniqueId } from './agentEdit';
 import { DEFAULT_ROUND, stageFieldProblems } from './flowEdit';
 import { KIND_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
 import { agentName, shown } from './text';
-
-// What a run waits on by itself (a provider with no budget, a plugin's request): never an event a wait stage of the flow can be set to.
-const RUN_ONLY_WAITS = new Set<WaitKind>(['budget', 'plugin']);
 import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
 // The side panel of one stage: every field of the stage, the checks of the flow that are about it, and the agent made in place.
+
+// What a run waits on by itself (a provider with no budget, a plugin's request): never an event a wait stage of the flow can be set to.
+const RUN_ONLY_WAITS = new Set<WaitKind>(['budget', 'plugin']);
 
 export interface StagePanelProps {
   stages: StageDef[];

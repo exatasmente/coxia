@@ -874,7 +874,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
     skipWait: (id, reason) => {
-      // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would).
+      // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would). The reason is
+      // checked first, so a refused skip never lets the requests go.
+      if (!reason.trim()) throw new RunError('empty-reason');
       if (deps.runs.get(id)?.wait?.kind === 'plugin') deps.pluginRelease?.(id);
       return move(id, (r, f, at) => waitSkip(r, f, reason, at));
     },
