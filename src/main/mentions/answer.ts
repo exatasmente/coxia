@@ -162,7 +162,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       if (made?.queued) made.activity.status('started');
       ran = true;
       const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : mentionJob(place.thread), () => deps.engine(call, [])));
-      const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
+      const text = answerText((r.data as { text?: unknown })?.text);
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
       if (mayPropose(def, deps, place)) await raiseWrites(deps, place, def, message.seq, id, readProposedWrites((r.data as { proposals?: unknown }).proposals));
@@ -184,6 +184,22 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
 
 /** Whether the agent is autonomous now: the team's current entry, which a change in Settings updates, before the definition the call started with. */
 const autonomyOf = (config: WorkspaceConfig, def: AgentDef): boolean => config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+
+/**
+ * The text of an answer. A model sometimes writes its whole answer object as the text (`{"text": "…"}`, the line ends escaped): the person would read the JSON, so
+ * the text inside it is taken instead. Anything else is the text as it came.
+ */
+export function answerText(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const text = raw.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return text;
+  try {
+    const inner = (JSON.parse(text) as { text?: unknown }).text;
+    return typeof inner === 'string' && inner.trim() ? inner.trim() : text;
+  } catch {
+    return text;
+  }
+}
 
 /**
  * The writes an answer raised, offered wherever the place proposes them: every place plans each write with the provider and puts it in Actions (or lets a low-risk one
