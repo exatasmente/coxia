@@ -59,6 +59,11 @@ describe('providers', () => {
     for (const p of OPEN_PRESETS) if (p.id !== 'custom') expect(p.baseUrl).toMatch(/^https?:\/\//);
     expect(OPEN_PRESETS.find((p) => p.id === 'ollama')).toMatchObject({ baseUrl: 'http://localhost:11434/v1', local: true, keyRequired: false });
     expect(OPEN_PRESETS.find((p) => p.id === 'lmstudio')).toMatchObject({ baseUrl: 'http://localhost:1234/v1', local: true });
+    const deepinfra = OPEN_PRESETS.find((p) => p.id === 'deepinfra');
+    expect(deepinfra).toMatchObject({ baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true });
+    expect(deepinfra?.keyUrl).toMatch(/^https:\/\//);
+    expect(deepinfra?.suggestedModels.length).toBeGreaterThan(0);
+    expect(new Set(OPEN_PRESETS.map((p) => p.id)).size).toBe(OPEN_PRESETS.length);
   });
 });
 

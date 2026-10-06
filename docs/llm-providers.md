@@ -93,6 +93,7 @@ Importante: **um** modelo real foi testado, em quatro execuções, e só no runn
 | OpenAI (`max_completion_tokens`, `temperature` fixo em modelos de raciocínio: tratados por fallback) | esperado funcionar; não testado |
 | OpenRouter com DeepSeek v4.1 flash | testado no runner (motor aberto, duas issues pequenas em quatro execuções, host falso); só esse modelo |
 | Groq, DeepSeek direto, outros modelos do OpenRouter (não Claude) | esperado funcionar; não testado |
+| DeepInfra (`https://api.deepinfra.com/v1/openai`, atalho na lista do motor aberto) | esperado funcionar; não testado |
 
 ### Limitações conhecidas
 
@@ -197,6 +198,7 @@ Important: **one** real model has been tested, in four runs, and only in the run
 | OpenAI (`max_completion_tokens`, fixed `temperature` on reasoning models: handled by fallback) | expected to work; untested |
 | OpenRouter with DeepSeek v4.1 flash | tested in the runner (open engine, two small issues in four runs, fake host); that model only |
 | Groq, DeepSeek direct, other OpenRouter models (non-Claude) | expected to work; untested |
+| DeepInfra (`https://api.deepinfra.com/v1/openai`, a preset in the open engine's list) | expected to work; untested |
 
 ### Known limitations
 
@@ -209,3 +211,4 @@ Important: **one** real model has been tested, in four runs, and only in the run
 - Reasoning that arrives as `<think>` is recognised only at the start of the answer; reasoning text never reaches the final answer.
 - The two engines keep separate sessions: a Claude session does not resume on the open engine (it starts a new one).
 - Dollar cost is not computed by the app: tokens are recorded (per stage, in the runner) and a cost only shows when the provider reports one (OpenRouter does) or the Claude SDK does.
+s.

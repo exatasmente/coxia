@@ -2,25 +2,22 @@
 
 ## Decisões
 
-- A issue é um pedido de funcionalidade (`enhancement`), não um defeito: falta um atalho na lista do motor aberto.
-- Escopo reduzido por quem abriu: entrada de atalho no motor aberto, uma linha em `docs/llm-providers.md` e o texto novo nos dois catálogos. O aviso do wizard para `unrecognized_model` fica fora — outra issue, se fizer falta.
-- Squad: `plataforma`. Prioridade: `priority:medium`. Marco: nenhum. Gate 1 aprovado.
-- Especificação em `1_SPEC.md`; plano técnico em `2_PLAN.md`. Desenho fixado: id do atalho `deepinfra` (`PresetId` e `OPEN_PRESETS`, `src/shared/wizard.ts`), `baseUrl: 'https://api.deepinfra.com/v1/openai'`, `local: false`, `keyRequired: true`, `keyUrl` da página de chave, `headers: {}`, sugestão de modelo que o teste de conexão troca pela lista real; rótulo `wizard.preset.deepinfra` = "DeepInfra" nos dois catálogos; linha nas duas tabelas de `docs/llm-providers.md`; linha em `CHANGELOG.md` sob `## [Unreleased] › ### Added`.
-- A entrada fica entre as de nuvem e `custom`. `buildProvider` usa o id do atalho como base (`deepinfra`, `deepinfra-2`); nada a mudar. Nenhum arquivo do renderer muda.
-- Não acrescentar "DeepInfra" ao texto de `wizard.kind.openai-compatible.hint`: é chave existente do snapshot e a mudança não é do escopo.
+- A issue é um pedido de funcionalidade (`enhancement`): faltava um atalho na lista do motor aberto. Escopo reduzido por quem abriu: entrada de atalho, uma linha em `docs/llm-providers.md` e o texto novo nos dois catálogos; o aviso do wizard para `unrecognized_model` fica fora. Squad `plataforma`, `priority:medium`, sem marco. Gate 1 e Gate 2 aprovados.
+- Desenho implementado: id `deepinfra` em `PresetId` e em `OPEN_PRESETS` (`src/shared/wizard.ts`), com `baseUrl: 'https://api.deepinfra.com/v1/openai'`, `local: false`, `keyRequired: true`, `suggestedModels: ['meta-llama/Meta-Llama-3.1-8B-Instruct']`, `keyUrl: 'https://deepinfra.com/dash/api_keys'`, `headers: {}`. Entrada entre `deepseek` e `ollama`.
+- Rótulo `wizard.preset.deepinfra` = "DeepInfra" nos dois catálogos do wizard. A linha do serviço entrou nas duas tabelas de `docs/llm-providers.md` com a legenda "esperado funcionar; não testado" (pt-BR) / "expected to work; untested" (inglês), e uma linha em `CHANGELOG.md` sob `## [Unreleased] › ### Added`.
+- Não tocar em `wizard.kind.openai-compatible.hint` (chave existente do snapshot) nem em `test/fixtures/catalogs-main/` (a chave nova não está no snapshot; nenhuma chave antiga mudou de texto). Nenhum arquivo do renderer muda.
 
 ## Restrições
 
-- Cada atalho precisa da chave `wizard.preset.<id>` nos dois catálogos (`test/wizard-i18n.test.ts` expande a família a partir de `OPEN_PRESETS`) e os dois catálogos têm de ter as mesmas chaves e os mesmos placeholders (`test/i18n.test.ts`). `npm run i18n:lint` (`--keys`) só compara os dois arquivos da pasta `src/shared/i18n`; não acusa chave não usada.
-- `test/gitlab-catalogs-unchanged.test.ts` compara o texto de cada chave do snapshot `test/fixtures/catalogs-main/`; a chave nova não está no snapshot e nenhuma chave antiga muda de texto, então nenhuma lista `INTENDED` é precisa e o fixture não é tocado.
-- `test/host-terms-leak.test.ts` e `test/voice-terminology.test.ts` varrem todas as chaves dos catálogos: "DeepInfra" não carrega palavra de outro host nem a palavra restrita dos testes de voz.
-- Nada foi executado nesta etapa: é leitura de código e de documentação. O teste de conexão contra o serviço real (conversa, ferramentas, `json_schema`) segue não verificado.
+- Cada atalho precisa da chave `wizard.preset.<id>` nos dois catálogos (`test/wizard-i18n.test.ts` expande a família a partir de `OPEN_PRESETS`); os dois catálogos têm de ter as mesmas chaves e os mesmos placeholders (`test/i18n.test.ts`). `test/gitlab-catalogs-unchanged.test.ts` compara o texto de cada chave do snapshot; a chave nova não está lá, então o fixture não muda.
+- `test/host-terms-leak.test.ts` e `test/voice-terminology.test.ts` varrem todas as chaves: "DeepInfra" não dispara nenhum padrão.
+- Nenhum teste da árvore pode chamar a rede; o teste de conexão real é manual.
 
 ## Tentado e descartado
 
-- Perguntar a quem abriu pelo endereço da página de chave ou pelo modelo sugerido: descartado; a issue traz os dois.
-- Mudar o texto de `wizard.kind.openai-compatible.hint` para citar o serviço: descartado (chave existente do snapshot, fora do escopo do atalho).
-- Acrescentar a chave nova ao fixture `test/fixtures/catalogs-main/`: descartado; não é preciso, porque o teste só cobra as chaves do snapshot.
+- Mudar o texto de `wizard.kind.openai-compatible.hint`: descartado (chave existente do snapshot, fora do escopo).
+- Acrescentar a chave nova ao fixture `test/fixtures/catalogs-main/`: descartado; o teste só cobra as chaves do snapshot.
+- Afirmar "testado" na tabela sem exercitar o serviço: descartado; a linha diz "esperado funcionar; não testado".
 
 ## Perguntas abertas
 
@@ -28,10 +25,9 @@
 
 ## Onde o trabalho está
 
-- Plano técnico concluído: `2_PLAN.md` na pasta do ciclo. A próxima etapa é a implementação.
-- Fatos lidos: `PresetId` e `OPEN_PRESETS` em `src/shared/wizard.ts:86-109`; `buildProvider` (:153-177); `ModelsStep.tsx:31,82-100,283-295` (preenche endereço, reinicia modelo, `keyRequired`, `keyUrl`, teste de conexão em :111-123); `wizard.preset.*` em `wizard.en.json:88` e `wizard.pt-BR.json:88`; `test/wizard-i18n.test.ts:28,79-84`; `test/i18n.test.ts:61-69`; `test/gitlab-catalogs-unchanged.test.ts`; `test/wizard-shared.test.ts:58-62`; `docs/llm-providers.md:80-95` e `:184-199`; `CHANGELOG.md:9-11`; `CONTRIBUTING.md:127-129`; `docs/i18n.md`.
-- Nenhuma menção ao serviço no código.
-- Passagem plano → implementação: implementar a entrada, a chave nos dois catálogos, a linha na tabela e a linha do changelog; rodar as cinco verificações do `CLAUDE.md`; exercitar, se houver chave, o teste de conexão contra o serviço real e registrar na tabela só o que foi exercitado. O aviso de `unrecognized_model` fica fora. <!-- handoff:21 -->
-- Passagem product-owner → plano: escrever o plano técnico a partir de `1_SPEC.md`, com a entrada em `OPEN_PRESETS`/`PresetId`, a chave `wizard.preset.<id>` nos dois catálogos e a linha na tabela de testados (português e inglês). O teste de conexão contra o serviço real segue não verificado. <!-- handoff:16 -->
-- Passagem support → product-owner: refinar a issue 60 em uma especificação: fixar a entrada nova de atalho no motor aberto (id, rótulo nos dois catálogos, endereço base, chave exigida, `keyUrl` e modelo sugerido) e a linha na tabela; confirmar que o aviso de `unrecognized_model` fica fora, o squad (plataforma) e a prioridade (`priority:medium`). <!-- handoff:7 -->
-- Passagem plano (esta etapa): plano técnico em `2_PLAN.md`, sem código alterado. Sem pergunta em aberto. <!-- handoff:23 -->
+- Implementação concluída no worktree. Arquivos mudados: `src/shared/wizard.ts` (`PresetId`, `OPEN_PRESETS`), `src/shared/i18n/wizard.en.json` e `wizard.pt-BR.json` (chave nova), `docs/llm-providers.md` (duas linhas), `CHANGELOG.md` (uma linha), `test/wizard-shared.test.ts` (caso novo). Nada commitado; o commit é do app.
+- Verificações rodadas nesta etapa: `npx tsc --noEmit` (0), `node scripts/theme-audit.mjs` (0), `npm run i18n:lint` (0, 4055 chaves), `node scripts/public-audit.mjs` (0, 909 arquivos). `npx vitest run` rodou até o fim com 5 arquivos falhando por estouro de tempo sob carga paralela (`conflict-resolve`, `release-git`, `update-script`, `runner-chain`, um caso de `host-terms-leak`), sem relação com a mudança; os seis testes que tocam o atalho/catálogos/varredura de texto passaram em isolamento (52 casos).
+- Não verificado: o teste de conexão contra o serviço real (conversa, ferramentas, `json_schema`), a página de chave e o modelo sugerido contra a lista real, e a tela aberta. A legenda da tabela só vira "testado" com esse exercício.
+- Próxima etapa: revisão/QA. Passagem implementação → próxima: conferir a entrada nova, os dois catálogos, as duas tabelas e o changelog; exercitar o teste de conexão real se houver chave, trocando a legenda só com esse resultado. <!-- handoff:26 -->
+- Passagem support → product-owner: Refinar a issue 60 em uma especificação: fixar a entrada nova de atalho no motor aberto (id, rótulo nos dois catálogos, endereço base, chave exigida, `keyUrl` e modelo sugerido) e a linha na tabela de `docs/llm-providers.md`; confirmar que o aviso de wizard para modelo não reconhecido fica fora; confirmar o squad proposto (plataforma) e a prioridade (sugerida: priority:medium). A implementação ainda não foi exercitada contra o serviço real — o teste de conexão precisa ser rodado por uma etapa posterior. <!-- handoff:7 -->
+- Passagem product-owner → pessoa: A próxima etapa é o plano técnico a partir de `1_SPEC.md`: fixar a entrada nova em `OPEN_PRESETS` (`src/shared/wizard.ts`) e no tipo `PresetId`, a chave `wizard.preset.<id>` nos dois catálogos (`src/shared/i18n/wizard.en.json` e `wizard.pt-BR.json`), e a linha na tabela de testados de `docs/llm-providers.md` (português e inglês). Manter fora o aviso de wizard para `unrecognized_model`, conforme a decisão de quem abriu. O teste de conexão contra o serviço real (conversa, ferramentas e `json_schema`) continua não verificado: precisa ser exercitado por uma etapa posterior — nenhuma ferramenta o r… <!-- handoff:16 -->

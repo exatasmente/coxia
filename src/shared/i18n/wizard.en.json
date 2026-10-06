@@ -89,6 +89,7 @@
   "wizard.preset.openrouter": "OpenRouter",
   "wizard.preset.groq": "Groq",
   "wizard.preset.deepseek": "DeepSeek",
+  "wizard.preset.deepinfra": "DeepInfra",
   "wizard.preset.ollama": "Ollama (local)",
   "wizard.preset.lmstudio": "LM Studio (local)",
   "wizard.preset.custom": "Custom address",
