@@ -58,7 +58,7 @@ function choicesOf(config: PluginsConfig): Map<string, PluginConfig> {
 
 /** Refuses a folder-wide read with a reason the person reads. */
 function refusedRecord(folder: string, reason: string): PluginRecord {
-  return { id: '', name: folder, dir: folder, enabled: false, allow: NONE, documents: [], events: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], values: {}, requests: [], reach: '', refused: reason };
+  return { id: '', name: folder, dir: folder, enabled: false, allow: NONE, documents: [], events: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], values: {}, requests: [], agents: null, reach: '', refused: reason };
 }
 
 /**
@@ -120,6 +120,7 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
       settings: d.offers.settings,
       values: choice?.settings ?? {},
       requests: d.offers.requests,
+      agents: d.offers.agents,
       reach,
       refused: null,
     });
@@ -150,6 +151,7 @@ export function pluginViews(records: PluginRecord[], session: (id: string, reach
     session: session(r.id, r.reach),
     settings: r.settings.map((x) => ({ ...x, value: x.kind === 'secret' ? null : (r.values[x.key] ?? ''), filled: x.kind === 'secret' ? secretFilled(r.id, x.key) : !!r.values[x.key]?.trim(), goesTo: x.kind === 'secret' ? r.requests.filter((q) => q.secret?.setting === x.key).map((q) => `${q.method} ${q.url}`) : [] })),
     requests: r.requests.map(({ id, method, url, write, reversible }) => ({ id, method, url, write, reversible })),
+    agents: r.agents,
     waiting: waiting(r.id),
     refused: r.refused,
   }));

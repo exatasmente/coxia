@@ -295,6 +295,7 @@ export interface BootOptions {
   pluginEvent?: RunnerDeps['pluginEvent'];
   pluginHold?: RunnerDeps['pluginHold'];
   pluginRelease?: RunnerDeps['pluginRelease'];
+  pluginNotes?: RunnerDeps['pluginNotes'];
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -337,6 +338,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginEvent: options.pluginEvent,
     pluginHold: options.pluginHold,
     pluginRelease: options.pluginRelease,
+    pluginNotes: options.pluginNotes,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

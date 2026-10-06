@@ -19,7 +19,7 @@ vi.mock('../src/main/workspace', async (orig) => ({
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
 
-const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
+const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, pluginNotes, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
 
 // The script of a plugin is read from its folder: each record points at a throwaway folder that holds one.
 const root = mkdtempSync(join(tmpdir(), 'coxia-plugins-service-'));
@@ -47,6 +47,7 @@ const plugin = (over: Partial<PluginRecord> = {}): PluginRecord => ({
   settings: [],
   values: {},
   requests: [],
+  agents: null,
   reach: 'r',
   refused: null,
   ...over,
@@ -541,6 +542,15 @@ describe('a JavaScript plugin and the requests the app makes for it', () => {
   });
 });
 
+describe('the note a plugin gives the agents', () => {
+  it('comes from the plugins that are on and not refused, with their names', () => {
+    const h = harness([plugin({ agents: 'search for you' }), plugin({ id: 'off', name: 'Off', enabled: false, agents: 'x' }), plugin({ id: 'quiet', name: 'Quiet' })]);
+    expect(pluginNotes(h.deps)).toEqual([{ name: 'Web search', note: 'search for you' }]);
+    setPluginEnabled('web-search', false, h.deps);
+    expect(pluginNotes(h.deps)).toEqual([]);
+  });
+});
+
 describe('what the review of the requests asked for', () => {
   const settings = [{ key: 'url', label: 'Instance URL', kind: 'url' as const, required: true }];
   const read = { id: 'search', method: 'GET' as const, url: '{settings.url}/search', secret: null, write: false, reversible: false };
@@ -612,6 +622,23 @@ describe('a declaration that changed', () => {
     await firePluginEvent('stage-finished', ctx('r2'), h.deps);
     expect(h.runs).toHaveLength(1);
     expect(h.actions).toHaveLength(2);
+  });
+});
+
+describe('the notes the agents get', () => {
+  it('leave out a plugin missing a required setting, and keep each note on one line within a budget', () => {
+    const settings = [{ key: 'url', label: 'URL', kind: 'url' as const, required: true }];
+    const h = harness([
+      plugin({ id: 'a', name: 'A', agents: 'first\nline' }),
+      plugin({ id: 'b', name: 'B', agents: 'needs a url', entry: 'index.mjs', runtime: 'js', settings, values: {} }),
+      plugin({ id: 'c', name: 'C'.repeat(200), agents: 'x'.repeat(1000) }),
+      ...Array.from({ length: 6 }, (_, i) => plugin({ id: `z${i}`, name: `Z${i}`, agents: 'y'.repeat(1000) })),
+    ]);
+    const notes = pluginNotes(h.deps);
+    expect(notes[0]).toEqual({ name: 'A', note: 'first line' });
+    expect(notes.some((n) => n.name === 'B')).toBe(false);
+    expect(notes[1].name).toHaveLength(60);
+    expect(notes.reduce((n, x) => n + x.name.length + x.note.length + 3, 0)).toBeLessThanOrEqual(4000);
   });
 });
 

@@ -15,8 +15,9 @@ executado.
   do que está ligado e as permissões. Veja [`configuration.md`](../configuration.md).
 - O contrato, os tipos de tudo o que atravessa a fronteira e a lista fixa de acontecimentos:
   [`src/shared/plugins/`](../../src/shared/plugins/) (`declaration.ts`, `events.ts`).
-- O exemplo que compila e roda, base da primeira entrega (busca na web para os agentes):
-  [`example-web-search/`](example-web-search/).
+- O exemplo do kit, em shell e com destino neutro: [`example-web-search/`](example-web-search/).
+- O primeiro plugin de verdade, em JavaScript: a busca na web dos agentes, em
+  [`plugins/web-search/`](../../plugins/web-search/README.md).
 
 ### O contrato
 
@@ -31,6 +32,7 @@ Um plugin publica `plugin.json`:
 | `offers.documents` | tipos de documento novos do ciclo (`name`, `label`) |
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
 | `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
+| `offers.agents` | uma nota curta (até 1000 caracteres) que entra no contexto de todas as etapas enquanto o plugin está ligado, marcada como a palavra do plugin: o que ele oferece aos agentes |
 | `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`; o que ele imprime é o resultado |
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
@@ -138,8 +140,9 @@ run.
   what is on and the permissions. See [`configuration.md`](../configuration.md).
 - The contract, the types of everything that crosses the boundary and the fixed list of events:
   [`src/shared/plugins/`](../../src/shared/plugins/) (`declaration.ts`, `events.ts`).
-- The example that compiles and runs, the base of the first delivery (web search for the agents):
-  [`example-web-search/`](example-web-search/).
+- The kit's example, in shell with a neutral destination: [`example-web-search/`](example-web-search/).
+- The first real plugin, in JavaScript: the agents' web search, in
+  [`plugins/web-search/`](../../plugins/web-search/README.md).
 
 ### The contract
 
@@ -154,6 +157,7 @@ A plugin publishes `plugin.json`:
 | `offers.documents` | new cycle document types (`name`, `label`) |
 | `offers.network` | destinations the plugin declares it needs, by host name |
 | `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
+| `offers.agents` | a short note (up to 1000 characters) added to every stage's context while the plugin is on, marked as the plugin's words: what it offers the agents |
 | `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1`; what it prints is its result |
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin

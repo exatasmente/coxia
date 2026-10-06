@@ -14,6 +14,7 @@
   "ui.errors.sources": "origem: {list}",
   "ui.errors.title": "Erros recentes",
   "ui.errors.workspaces": "workspace: {list}",
+  "ui.plugins.agents": "Diz aos agentes: {note}",
   "ui.plugins.allowed.network.always": "Rede: permitida sempre",
   "ui.plugins.allowed.network.none": "Rede: pede a cada vez",
   "ui.plugins.allowed.network.session": "Rede: permitida nesta sessão",

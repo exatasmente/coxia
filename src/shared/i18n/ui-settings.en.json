@@ -14,6 +14,7 @@
   "ui.errors.sources": "source: {list}",
   "ui.errors.title": "Recent errors",
   "ui.errors.workspaces": "workspace: {list}",
+  "ui.plugins.agents": "Tells the agents: {note}",
   "ui.plugins.allowed.network.always": "Network: allowed always",
   "ui.plugins.allowed.network.none": "Network: asks every time",
   "ui.plugins.allowed.network.session": "Network: allowed for this session",

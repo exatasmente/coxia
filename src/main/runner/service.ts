@@ -195,6 +195,8 @@ export interface RunnerDeps {
   pluginHold?(runId: string): { plugin: string; need: string } | null;
   /** The person goes on without answering the plugin requests that hold the run: they stay in Actions, and no longer hold it. */
   pluginRelease?(runId: string): void;
+  /** What the plugins that are on tell the agents, added to every stage's context; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -278,7 +280,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();

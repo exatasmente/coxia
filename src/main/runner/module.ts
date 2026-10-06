@@ -14,7 +14,7 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
-import { firePluginEvent, liveContext, pluginHold, pluginRunHooks, releasePluginAsks } from '../plugins/module';
+import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
@@ -112,6 +112,7 @@ export const runsModule: Module = (ctx) => {
     // A plugin's request waits for the person: the run does not start another stage until it is answered.
     pluginHold: (runId) => pluginHold(runId),
     pluginRelease: (runId) => releasePluginAsks(runId),
+    pluginNotes: () => pluginNotes(),
   });
   current = r;
   pluginRunHooks.settled = (id, note) => {

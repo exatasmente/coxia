@@ -63,6 +63,8 @@ export interface StageInput {
   priorityHint?: string[];
   /** A release run: the section that says which version, the state of its branch and the activities as last read (already fenced). */
   release?: string;
+  /** What the plugins that are on tell the agents, each under its name: the plugin's words, material and never the person's instruction. */
+  plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
 }
@@ -177,6 +179,7 @@ export function stagePrompt(i: StageInput): string {
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   if (i.release) sections.push(i.release);
+  if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
