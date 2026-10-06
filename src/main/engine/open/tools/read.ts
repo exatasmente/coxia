@@ -2,7 +2,7 @@ import { closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
-import { type ToolContext, type ToolImpl, ToolError, clip } from './types';
+import { type ToolContext, type ToolImpl, type ToolResult, ToolError, clip } from './types';
 import { t } from '../../../../shared/i18n';
 
 function real(p: string): string {
@@ -49,12 +49,32 @@ export function isBinary(path: string): boolean {
 
 const MAX_FILE = 8 * 1024 * 1024;
 const LINE_MAX = 2000;
+// What a provider takes for one image, with room to spare: the base64 of 4 MB is about 5.3 MB.
+const MAX_IMAGE = 4 * 1024 * 1024;
+
+/** The image type of a file, from its first bytes (never its name): PNG, JPEG, GIF or WebP, the ones the providers take; null for anything else. */
+export function imageType(path: string): string | null {
+  const fd = openSync(path, 'r');
+  try {
+    const b = Buffer.alloc(12);
+    const n = readSync(fd, b, 0, 12, 0);
+    if (n >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+    if (n >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (n >= 6 && /^GIF8[79]a$/.test(b.subarray(0, 6).toString('latin1'))) return 'image/gif';
+    if (n >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
 
 export const readTool: ToolImpl = {
   name: 'Read',
   description:
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-    'Reads a text file from the local filesystem. file_path is absolute or relative to the working directory. Returns the lines numbered ("N<TAB>text"). ' +
+    'Reads a file from the local filesystem. file_path is absolute or relative to the working directory. A text file comes back with its lines numbered ("N<TAB>text"); ' +
+    // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+    'an image (PNG, JPEG, GIF, WebP) is shown to you when the model can see images. ' +
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Use offset (first line, 1-based) and limit (number of lines, default 2000) to read part of a large file.',
   parameters: {
@@ -79,6 +99,8 @@ export const readTool: ToolImpl = {
     }
     if (st.isDirectory()) throw new ToolError(t('main.engine.text.read.directory'));
     if (st.size > MAX_FILE) throw new ToolError(t('main.engine.text.read.tooBig', { size: st.size }));
+    const image = imageType(path);
+    if (image) return readImage(path, image, st.size, ctx);
     if (isBinary(path)) throw new ToolError(t('main.engine.text.read.binary'));
     const lines = (await readFile(path, 'utf8')).split('\n');
     const offset = Math.max(1, Number(input.offset) || 1);
@@ -93,4 +115,16 @@ export const readTool: ToolImpl = {
 function renderRead(response: unknown, max: number, more: string): string {
   const content = (response as { file?: { content?: unknown } })?.file?.content;
   return clip(typeof content === 'string' ? content : '', max) + more;
+}
+
+/** A picture: the model gets it to see when it can, and a line that says what it is either way. The same path and secret checks as a text file came first. */
+async function readImage(path: string, mediaType: string, size: number, ctx: ToolContext): Promise<ToolResult> {
+  if (!ctx.seesImages?.()) throw new ToolError(t('main.engine.text.read.noImages', { path }));
+  if (size > MAX_IMAGE) throw new ToolError(t('main.engine.text.read.imageTooBig', { size, max: MAX_IMAGE }));
+  const data = (await readFile(path)).toString('base64');
+  return {
+    response: { type: 'image', file: { filePath: path, type: mediaType, originalSize: size } },
+    render: () => t('main.engine.text.read.image', { path, type: mediaType, size }),
+    images: [{ path, mediaType, data }],
+  };
 }

@@ -52,6 +52,7 @@ const provider = object(
           streaming: boolean('Server-sent events work.'),
           reasoning: boolean('The model returns its reasoning separately.'),
           contextWindow: { type: ['integer', 'null'], description: 'Context window in tokens, when the server reports it.', minimum: 256 },
+          images: boolean('The model takes an image in a message; absent when not known.'),
         },
         ['chat', 'tools', 'jsonSchema'],
       ),

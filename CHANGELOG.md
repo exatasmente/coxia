@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent on the open engine sees the images it reads.** `Read` now returns a PNG, JPEG, GIF or WebP (up to 4 MB) that the agent may read, with the same path and secret checks as a text file, and the model sees it, as on the Claude Agent SDK: a screenshot from an interface test, a diagram, a picture in the repository. The connection test of an open-engine provider now also shows the model a small picture and records whether it takes images (*Images* in the list of what the provider can do); a model known not to is told the file is an image instead, and when it is not known the engine tries and, if the server refuses, goes on without images.
+
 ## [0.7.0-beta.4] - 2026-10-06
 
 ### Fixed

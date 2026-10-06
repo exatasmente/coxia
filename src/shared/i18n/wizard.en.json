@@ -146,6 +146,7 @@
   "wizard.cap.streaming": "Streaming",
   "wizard.cap.context": "Context: {tokens} tokens",
   "wizard.cap.contextUnknown": "Context not reported",
+  "wizard.cap.images": "Images",
   "wizard.warn.no-chat": "The model did not answer a simple prompt.",
   "wizard.warn.no-tools": "This model does not call tools, and the ceremonies need them to read files and return structured answers. Prefer another model.",
   "wizard.warn.small-context": "Small context window (under 12 thousand tokens): the agent prompt alone is over 10 thousand. Raise the context on the server or use a bigger model.",

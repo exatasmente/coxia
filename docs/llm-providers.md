@@ -45,9 +45,10 @@ O que a camada de configuração precisa entregar a `runOpenOnce`: `OpenEngineSe
 1. alcança o servidor e lista `GET /models` (inclui a janela de contexto quando o servidor informa: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
 2. resposta simples (com SSE; sem SSE, tenta JSON);
 3. chamada de ferramenta;
-4. `response_format` com `json_schema`.
+4. `response_format` com `json_schema`;
+5. uma imagem numa mensagem (um quadrado vermelho de 16×16): `images` é `true` quando o modelo respondeu, `false` quando o servidor recusou a imagem e fica ausente quando a chamada falhou por outro motivo.
 
-`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow }` alimenta o motor (`Capabilities`). A URL pode ser `http://localhost:11434`, `.../v1` ou `.../v1/chat/completions`.
+`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` alimenta o motor (`Capabilities`). A URL pode ser `http://localhost:11434`, `.../v1` ou `.../v1/chat/completions`.
 
 ### Saída estruturada
 
@@ -62,6 +63,8 @@ Nos três casos a resposta é validada contra o schema (`engine/open/schema.ts`)
 ### Ferramentas e segurança (mesma política do caminho Claude)
 
 Ferramentas: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (sub-agente de leitura), `mcp__<servidor>__<ferramenta>`. Os nomes são os do Claude, então `allowedTools` vale igual.
+
+**Imagens.** O `Read` reconhece PNG, JPEG, GIF e WebP pelos primeiros bytes (nunca pelo nome) e, com as mesmas checagens de caminho e de segredo de um texto, devolve a imagem (até 4 MB). Como uma mensagem de ferramenta só leva texto, o loop manda as imagens lidas numa mensagem `user` logo depois dos resultados. Com `capabilities.images: false` o `Read` diz que o modelo não recebe imagens em vez de anexar. Sem a capacidade conhecida, o motor tenta: um servidor que recusa (400/422 falando de imagem) faz o cliente repetir o pedido com uma linha no lugar de cada imagem e parar de mandá-las (`learned.noImages`). Na estimativa de tokens e na compactação, uma imagem pesa um valor fixo e as antigas viram uma linha.
 
 - Os mesmos hooks de `agents.ts` rodam antes e depois de cada ferramenta (`shellAllowlist`, `noSecrets`, `redactSecretResults`): uma política só para os dois motores. `test/engine-open-tools.test.ts` prova as mesmas recusas.
 - Arquivos de segredo (`.env`, `*secret*.json`, chaves, `~/.ssh`…) ficam fora: a regra é a mesma `secretPath`, aplicada antes de ler e durante a busca (`Grep`/`Glob` não percorrem esses arquivos, e o ripgrep recebe `SECRET_GLOBS`).
@@ -149,9 +152,10 @@ What the configuration layer hands to `runOpenOnce`: `OpenEngineSelection` = `{ 
 1. reaches the server and lists `GET /models` (including the context window when the server reports it: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
 2. plain completion (over SSE; without SSE, plain JSON);
 3. tool call;
-4. `response_format` with `json_schema`.
+4. `response_format` with `json_schema`;
+5. an image in a message (a 16×16 red square): `images` is `true` when the model answered, `false` when the server refused the image, and absent when the call failed for another reason.
 
-`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow }` feeds the engine (`Capabilities`). The URL may be `http://localhost:11434`, `.../v1` or `.../v1/chat/completions`.
+`capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` feeds the engine (`Capabilities`). The URL may be `http://localhost:11434`, `.../v1` or `.../v1/chat/completions`.
 
 ### Structured output
 
@@ -166,6 +170,8 @@ In all three the answer is validated against the schema (`engine/open/schema.ts`
 ### Tools and security (same policy as the Claude path)
 
 Tools: `Read`, `Grep`, `Glob`, `Bash` (allowlist), `Skill`, `Agent` (read-only sub-agent), `mcp__<server>__<tool>`. Names are Claude's, so `allowedTools` means the same.
+
+**Images.** `Read` tells PNG, JPEG, GIF and WebP by their first bytes (never the name) and, with the same path and secret checks as text, returns the image (up to 4 MB). Since a tool message carries text only, the loop sends the images read in a `user` message right after the tool results. With `capabilities.images: false`, `Read` says the model takes no images instead of attaching one. When the capability is not known the engine tries: a server that refuses (400/422 about an image) makes the client send the request again with a line in place of each image and stop sending them (`learned.noImages`). In the token estimate and in compaction, an image weighs a fixed amount and older ones become a line.
 
 - The same hooks from `agents.ts` run before and after every tool (`shellAllowlist`, `noSecrets`, `redactSecretResults`): one policy for both engines. `test/engine-open-tools.test.ts` proves the same refusals.
 - Secret files (`.env`, `*secret*.json`, keys, `~/.ssh`…) are out of reach: the same `secretPath` rule, applied before reading and while searching (`Grep`/`Glob` never walk those files, and ripgrep gets `SECRET_GLOBS`).
