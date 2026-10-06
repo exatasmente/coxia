@@ -20,6 +20,7 @@ import { type ExecResult, type SandboxService, type SandboxSession, SandboxError
 import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
+import { type StageInbox, openInbox } from './inbox';
 import { releaseSection, releaseStateOf } from './release';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
@@ -439,6 +440,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
   call.onUsage = usage;
+  // The mailbox of the stage: a message addressed to this agent while it works enters the session between two steps. It is opened with the attempt and closed
+  // before the sandbox, so nothing the stage hands over outlives it.
+  const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());
+  call.incoming = async (delivered) => {
+    const message = await inbox.next();
+    if (message !== null) delivered(message);
+    return message;
+  };
 
   let data: unknown;
   try {
@@ -448,6 +457,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
     throw e;
   } finally {
+    // The stage begins finishing: a message that arrives now is not handed over and comes back in the thread with the reason.
+    inbox.closing();
+    inbox.close();
     // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.
     await session?.close();
   }

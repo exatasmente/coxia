@@ -500,12 +500,48 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
+    incoming: req.incoming,
     });
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
     throw e;
   }
+}
+
+// The input of a call whose session stays open: the stage's prompt first, then each message the door hands over, as user turns of the same session. The SDK's
+// streaming input keeps the process alive between turns, so a message never restarts the session.
+interface MessageStream extends AsyncIterable<{ type: 'user'; message: { role: 'user'; content: string }; parent_tool_use_id: null }> {
+  push(text: string): void;
+  end(): void;
+}
+
+function messageStream(prompt: string): MessageStream {
+  const queued: string[] = [prompt];
+  let wake: (() => void) | null = null;
+  let done = false;
+  const flush = (): void => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+  return {
+    push: (text) => {
+      queued.push(text);
+      flush();
+    },
+    end: () => {
+      done = true;
+      flush();
+    },
+    async *[Symbol.asyncIterator]() {
+      for (;;) {
+        while (queued.length) yield { type: 'user' as const, message: { role: 'user' as const, content: queued.shift() as string }, parent_tool_use_id: null };
+        if (done) return;
+        await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+  };
 }
 
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
@@ -526,16 +562,17 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
-  const q = query({
-    prompt: req.prompt,
-    options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
-      ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
-      model: req.target.model,
-      env,
-      ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
-    },
-  });
+  const options = {
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+    ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
+    model: req.target.model,
+    env,
+    ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
+  };
+  // A stage that talks while it works keeps the session open: the message a person or another agent sent enters as a user turn between two steps, and the
+  // stage does not restart. The door decides; without one the call is a single prompt, exactly as before.
+  const stream = req.incoming ? messageStream(req.prompt) : null;
+  const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
   const assistantText: string[] = [];
@@ -573,6 +610,13 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
       if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
+      // A stage that talks while it works: the turn ended with no final answer, so the door may have a message for the session. The stage goes on in the same
+      // session; the collection pass (no message left) asks for the final answer with what the session already has.
+      if (stream && req.incoming && m.subtype === 'success' && m.structured_output == null) {
+        const message = await req.incoming((text) => req.activity?.text(`${t('main.engine.text.messageIn')}\n${text}`));
+        stream.push(message === null ? t('main.engine.text.collect') : `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}`);
+        continue;
+      }
       if (m.subtype !== 'success' || m.structured_output == null) {
         // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
         const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
@@ -581,6 +625,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // i18n-ignore: developer error from the SDK result
         throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
       }
+      stream?.end();
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
@@ -978,6 +1023,8 @@ export interface AgentCall {
   confine?: Confinement;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
   exec?: SandboxSession;
+  /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
+  incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1063,6 +1110,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
+      incoming: call.incoming,
     };
     let r: Run<T>;
     try {

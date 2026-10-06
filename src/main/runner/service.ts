@@ -100,6 +100,7 @@ import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
+import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
@@ -896,15 +897,30 @@ export function createRunner(deps: RunnerDeps): Runner {
       const runId = message.thread.slice(4);
       const run = deps.runs.get(runId);
       if (!run) return;
+      // The agent working the stage is reached inside the stage: the message queues for its next step and the stage does not restart. Every other agent named
+      // keeps today's behaviour (a call in parallel, read-only), and a run that is not working has no stage to reach.
+      const text = (message.text ?? '').trim();
+      const working = workingAgent(run);
+      const inbox = working ? inboxOf(runId) : null;
+      const toStage = inbox && working ? message.mentions.slice(0, MAX_MENTIONS).filter((id) => id === working) : [];
+      if (inbox && toStage.length && text) {
+        for (const id of toStage) {
+          const queued = inbox.post(text);
+          deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: queued ? 'runner.message.waiting' : 'runner.message.afterClose', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
+        }
+      }
+      const call = message.mentions.slice(0, MAX_MENTIONS).filter((id) => !toStage.includes(id));
+      if (!call.length) return;
+      const rest = { ...message, mentions: call };
       // Each agent named gets its call line at once, before the queue: the person sees who was called and who waits its turn.
       try {
-        openCalls(runId, run, message);
+        openCalls(runId, run, rest);
       } catch (e) {
         console.error('[runner] could not open the mention calls', runId, e instanceof Error ? e.message : e);
       }
       const prior = mentions.get(runId) ?? Promise.resolve();
       // One answer at a time per run: the thread reads in order.
-      const next = prior.then(() => answerMention(runId, message)).catch(() => undefined);
+      const next = prior.then(() => answerMention(runId, rest)).catch(() => undefined);
       mentions.set(runId, next);
       void next.finally(() => {
         if (mentions.get(runId) === next) mentions.delete(runId);
@@ -990,6 +1006,13 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- the agents named in a message ------------------------------------------------------------------------------------------------
 
   const callKey = (runId: string, message: number, agent: string): string => `${runId}:${message}:${agent}`;
+
+  /** The agent working the stage of a run right now; null when the run is not working a stage. */
+  function workingAgent(run: Run): string | null {
+    if (run.status !== 'working') return null;
+    const stage = flowFor(run).find((s) => s.id === run.stage);
+    return stage?.agent ?? null;
+  }
 
   // Every agent named in the message gets its call as soon as the message is accepted, before the queue: the line exists while it waits its turn.
   function openCalls(runId: string, run: { worktree: string }, message: ForumMessage): void {

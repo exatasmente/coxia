@@ -86,6 +86,8 @@ export interface OpenRunParams {
   events?: RunEvents;
   // How a tool call shows up in the sources list.
   describeTool?: (name: string, input: Json) => string;
+  // The door of a stage that talks while it works (see EngineRequest.incoming): a message delivered between two steps restarts the loop with it in the dialog.
+  incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   // Shared by sub-agents so their reads count as the parent's sources.
   sources?: string[];
   depth?: number;
@@ -395,13 +397,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   let nudges = 0;
   let repairs = 0;
   let forceFinal = finalDef !== null && impls.length === 0;
+  // The door of a stage that talks while it works: no message yet delivered, no collection pass asked for.
+  let collecting = false;
+  const deliver = (text: string): void => events.onInterim?.(`${t('main.engine.text.messageIn')}\n${text}`);
   const responseFormat: Json | undefined = p.schema ? { type: 'json_schema', json_schema: { name: 'answer', schema: p.schema, strict: false } } : undefined;
   for (;;) {
     if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
     turns++;
     let c: Completion;
     try {
-      c = await call({ tools: apiTools(), toolChoice: forceFinal && finalDef ? { type: 'function', function: { name: FINAL } } : undefined });
+      // The collection pass asks for the final answer with no tool at all, so a message delivered in the middle never costs the stage its shape.
+      c = await call({ tools: collecting ? [] : apiTools(), toolChoice: forceFinal && finalDef ? { type: 'function', function: { name: FINAL } } : undefined, responseFormat: collecting ? responseFormat : undefined });
     } catch (e) {
       // A model that cannot do tools still answers from the prompt: switch to plain JSON instead of failing the ceremony.
       if (e instanceof EngineError && e.kind === 'no_tools' && turns === 1 && !prior && impls.length + (finalDef ? 1 : 0) > 0) {
@@ -410,7 +416,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       }
       throw e;
     }
-    if (c.toolCalls.length) {
+    if (c.toolCalls.length && !collecting) {
       const fin = finalDef ? c.toolCalls.find((t) => t.function.name === FINAL) : undefined;
       if (fin && p.schema) {
         const raw = parseToolArguments(fin.function.arguments);
@@ -431,30 +437,45 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       continue;
     }
     if (!p.schema) return done(c.text, turns);
-    const first = extractAnswer(c.text, p.schema);
-    if (first.ok) return done(first.value, turns);
+    const parsed = extractAnswer(c.text, p.schema);
+    if (parsed.ok) return done(parsed.value, turns);
 
-    if (strategy === 'tool' && nudges < 2) {
+    // A stage that talks while it works: a message from outside entered between two steps and the model goes on with it in the same dialog. The stage did not
+    // restart; the work it did so far and its tool results are still here.
+    if (p.incoming && !collecting) {
+      const message = await p.incoming(deliver);
+      if (message !== null) {
+        turns--;
+        write({ role: 'user', content: `# ${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
+        continue;
+      }
+      collecting = true;
+      turns--;
+      write({ role: 'user', content: t('main.engine.text.collect') });
+      continue;
+    }
+
+    if (strategy === 'tool' && nudges < 2 && !collecting) {
       nudges++;
       turns--;
       write({ role: 'user', content: t('main.engine.text.callFinal', { tool: FINAL }) });
       forceFinal = true;
       continue;
     }
-    if (strategy === 'tool') throw new StructuredOutputError(describeErrors(first.errors));
+    if (strategy === 'tool' && !collecting) throw new StructuredOutputError(describeErrors(parsed.errors));
 
     // response_format and prompt strategies: a closing call that asks for the JSON (with response_format when the server has it),
     // then one correction round with the validation errors.
-    write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(first.errors) })}` });
+    write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(parsed.errors) })}` });
     let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
-    let parsed = extractAnswer(last.text, p.schema);
-    if (!parsed.ok) {
-      write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
+    let fixed = extractAnswer(last.text, p.schema);
+    if (!fixed.ok) {
+      write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(fixed.errors) }) });
       last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
-      parsed = extractAnswer(last.text, p.schema);
+      fixed = extractAnswer(last.text, p.schema);
     }
-    if (parsed.ok) return done(parsed.value, turns);
-    throw new StructuredOutputError(describeErrors(parsed.errors));
+    if (fixed.ok) return done(fixed.value, turns);
+    throw new StructuredOutputError(describeErrors(fixed.errors));
   }
 
 }
