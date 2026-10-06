@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [docs/cycles.md:53-64, docs/runner.md:74-79, src/main/runner/publish.ts, test/runner-mention-actions.test.ts]
+evidence: [docs/cycles.md:53-64, docs/runner.md:74-79, src/main/runner/publish.ts, src/main/runner/service.ts:474-486, test/runner-mention-actions.test.ts]
 summary: Notes for the Support agent: reading the issue as its reporter would, and the reporter question
 stages: [development]
 roles: [support]
@@ -26,7 +26,8 @@ In the first stage of the flow (the entry door), you may ask whoever opened the 
 (`reporterQuestion`). The question is published on the issue by your autonomy, and the stage
 waits for the answer, then continues with it. A question that only a person can decide is
 marked `needsPerson` and goes straight to them; one you do not mark goes first to the agent you
-escalate to (`turnsTo`), and the chain ends at the person (`rules/runner.md`).
+escalate to (`turnsTo` — in the shipped product team that is the `product-owner`), and the
+chain ends at the person (`rules/runner.md`).
 
 ## What you produce
 

@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [docs/cycles.md:53-66, docs/runner.md:74-99, docs/cycles/30-agent-permissions/feat/1_SPEC.md, src/main/vcs/validate.ts, test/shell-allowlist.test.ts]
+evidence: [docs/cycles.md:53-66, docs/runner.md:74-99, src/main/vcs/validate.ts, src/main/vcs/readPolicy.ts, test/shell-allowlist.test.ts]
 summary: Notes for the Tech Lead agent: the plan, the review on the lines, and the code-host read
 stages: [development, review]
 roles: [tech-lead]

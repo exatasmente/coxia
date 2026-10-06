@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [docs/verify-commands.md:1-54, src/main/verify-move.ts, src/shared/verifyCommands.ts, test/verify-commands.test.ts, test/verify-move.test.ts, docs/configuration.md:49-51]
+evidence: [docs/verify-commands.md:36-54, src/main/verify-move.ts, src/shared/verifyCommands.ts, src/main/conflictVerify.ts, src/renderer/src/conflictVerifyDefaults.ts, src/renderer/src/screens/ConflictVerifySection.tsx, test/verify-commands.test.ts, test/verify-move.test.ts, test/verifyDefaults.test.ts]
 summary: The per-project command run in the conflict worktree before the merge commit
 stages: [development]
 roles: [developer]
@@ -26,8 +26,12 @@ read but not choose what Apply executes.
 
 The screen lists the workspace's repositories (by `projectPath`, or the path of the
 `remoteUrl`; a repo with no remote has no project), the projects of the release mirrors and the
-projects that already have a command. The **Suggestion (Node)** button fills a project's field
-with the Node command from the renderer's defaults file; save for it to count.
+projects that already have a command there. A command is at most
+`VERIFY_COMMAND_MAX` characters (`src/shared/verifyCommands.ts`) and a project key is
+`group/project` (`isVerifyProject`). The **Suggestion** button fills a project's field with the
+Node command defined in `src/renderer/src/conflictVerifyDefaults.ts` (`VERIFY_SUGGESTION`, the
+one `docs/verify-commands.md` documents); save for it to count, and a paired browser sees the
+field read-only (`ui.verify.webNote`).
 
 ## The Node command
 
@@ -47,10 +51,12 @@ Write the command the project needs, and follow two rules: do not write outside 
 The commands used to live in one file shared by every workspace,
 `<data>/conflict-verify.json`. At the first start after the update the app copies each command
 into the workspaces whose repository or mirror is that project (without replacing a command a
-workspace already has) and renames the file to `conflict-verify.json.migrated`. A command whose
-project no workspace lists is not lost: it stays in the `.migrated` file, in
-`conflict-verify.unclaimed.json` and, as names only, in `workspaces/migration.log`, and the
-screen shows a note with "Use here". `test/verify-move.test.ts` pins the move.
+workspace already has) and renames the file to `conflict-verify.json.migrated`. While some
+workspace's config still cannot be read, the file stays where it is and the next start tries
+again (`deferred`). A command whose project no workspace lists is not lost: it stays in the
+`.migrated` file, in `conflict-verify.unclaimed.json` and, as names only, in
+`workspaces/migration.log`, and the screen shows a note offering "Use here" (which fills the
+field; save for it to count). `test/verify-move.test.ts` pins the move.
 
 ## What was verified
 

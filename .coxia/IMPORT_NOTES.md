@@ -1,15 +1,16 @@
 ---
-checked-commit: 0000000
-checked-date: 2000-01-01
-evidence: [CLAUDE.md, CONTRIBUTING.md, README.md, docs/README.md, package.json]
-summary: What was imported from this repository's Claude Code files into the .coxia docs, and what was left out and why
+checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-date: 2026-10-06
+evidence: [CLAUDE.md, CONTRIBUTING.md, README.md, docs/README.md, docs/documentation.md, scripts/public-audit.mjs, package.json]
+summary: What was imported from this repository's Claude Code files into the .coxia docs, what was left out and why, and what a later pass re-checked against the code
 ---
 
 # Import notes
 
 This run creates the agent documentation in `.coxia/`. The issue lists one Claude Code file to
-read and import, never to alter: `CLAUDE.md`. This note says what was imported and where, and
-what was left out and why, so a person can disagree.
+read and import, never to alter: `CLAUDE.md`. This note says what was imported and where, what
+was left out and why, so a person can disagree, and what a later pass re-checked against the
+code after the draft was approved.
 
 ## What the task listed
 
@@ -71,3 +72,31 @@ code host" is a project fact and is imported.
 - The current code's schema version and template list change over time: the `.coxia` files
   point at the source (`src/shared/config/types.ts`, `src/shared/cycles/index.ts`) and at
   `docs/`, rather than copying numbers that go stale.
+
+## Re-checked after the draft was approved
+
+The draft was approved, and the files were re-read against the current code before this
+description was written. No command was run, so the gates still have not been exercised. The
+`evidence` headers of the files touched here still carry the round's original commit and date;
+the app writes the real commit and day when it commits the change.
+
+| What was off | Where | Fixed by reading |
+|---|---|---|
+| A cross-reference to `rules/secrets.md`, a name that does not exist | `rules/safety-model.md` | Points at `rules/key-store.md` |
+| The `checkFlow` error list was missing `agent-on-non-work` and `returns-to-non-work` | `rules/development-cycles.md` | `src/shared/runs/flowCheck.ts:10-11` |
+| `runs:migrateFlow` was described as moving the run's own copy of the flow | `rules/development-cycles.md` | `src/shared/runs/flow.ts:65-82`: the run keeps its snapshot; the command moves the configuration's flow |
+| `flows` (the per-squad flows) was missing from the `devCycle` field table | `rules/development-cycles.md` | `src/shared/config/types.ts`, `src/shared/runs/squadCheck.ts:157-178` |
+| The engineering flow was said to reuse the `reviewer` agent | `rules/development-cycles.md` | `src/shared/cycles/templates/agentFlow.ts:33` names `tech-lead` |
+| The cross-reference for the team's permissions pointed at the wrong rule | `rules/development-cycles.md` | Now points at `docs/cycles.md` and `src/shared/config/team.ts` |
+| The GitLab read list did not match `GLAB_READ`, and the read path was described as always going through `VcsRead` | `rules/code-hosts.md` | `src/main/vcs/readPolicy.ts:13-26,66-72` |
+| The escalation chain (`turnsTo`, the liaison hop, squad autonomy) was missing | `rules/runner.md` | `src/shared/config/types.ts:541-545`, `src/shared/config/squads.ts:74-94`, `src/main/runner/service.ts:479-486` |
+| The rule that a run's own scripts come from the clone was missing from the runner rule | `rules/runner.md` | `RELEASING.md`, `docs/runner.md`, `src/main/runner/door.ts` |
+| The conflict-verification rule mismatched the screen's own words and lacked the command cap | `rules/conflict-verification.md` | `src/renderer/src/screens/ConflictVerifySection.tsx`, `src/shared/verifyCommands.ts:8-13` |
+| Evidence headers named a translated Portuguese document (`docs/cycles/30-agent-permissions/feat/1_SPEC.md`) and three tests that do not exist (`test/secrets.test.ts`, `test/vcs-read-policy.test.ts`, `test/verify-defaults.test.ts`) | `roles/qa.md`, `roles/tech-lead.md` | Replaced with the code that states the same thing (`src/main/runner/commands.ts`, `src/main/vcs/readPolicy.ts`); the conflict rule gained `test/verifyDefaults.test.ts` |
+| A restatement of the two-folder split, which `docs/documentation.md` already owns | `rules/documentation.md` | Shortened, and the index summary now names both sections |
+
+Two things in the draft were left as they are, deliberately: `rules/documentation.md` repeats
+`docs/documentation.md` about a new interface string needing `t()` (a reader of `.coxia/` should
+not have to open `docs/` for it), and `rules/public-repo.md` restates `CLAUDE.md`'s summary of
+what the audit hunts (the coded patterns themselves are not readable, so the rule has to carry
+the description). Both are the kind of repetition a reviewer may want to cut.

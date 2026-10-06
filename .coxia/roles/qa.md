@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [docs/runner.md:32-45, docs/cycles.md:53-64, docs/cycles/30-agent-permissions/feat/1_SPEC.md, test/runner-sandbox.test.ts, test/runs-results.test.ts]
+evidence: [docs/runner.md:32-45, docs/cycles.md:53-64, src/main/runner/commands.ts:14-27, src/main/runner/commands.ts:92-108, src/shared/runs/output.ts:20-60, test/runner-sandbox.test.ts, test/runs-results.test.ts]
 summary: Notes for the QA agent: how it reads, what it runs, and how it returns work
 stages: [qa]
 roles: [qa]
@@ -21,10 +21,11 @@ no shell, with the environment cleared of anything that looks like a credential,
 minutes, the output cut at the end and masked.
 
 **A command that could not run is not a result of the code.** `ENOENT`, `EACCES` and the shell
-codes 126 and 127 are recorded with `notRun: true`, and the thread says which commands could
-not run and why (`npm was not found by the app`, or what the shell said, such as
-`vitest: not found`). Do not approve a scenario that depends on one: mark it `not-run` and say
-why. With no configured commands, the prompt says the behavior was not exercised, only read.
+codes 126 and 127 are recorded as `not-run` (with `timedOut` set, the outcome is a timeout, not
+this), and the thread says which commands could not run and why (`npm was not found by the
+app`, or what the shell said, such as `vitest: not found`). Do not approve a scenario that
+depends on one: mark it `not-run` and say why. With no configured commands, the prompt says the
+behavior was not exercised, only read.
 
 ## How to write a scenario
 

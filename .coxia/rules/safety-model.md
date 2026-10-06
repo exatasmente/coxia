@@ -27,8 +27,8 @@ engine runs commands with no shell at all.
 
 `.env` files, keys, the SSH folder, `.mcp.json`, anything named like a secret or a credential
 is blocked before reading and while searching (`secretPath` in `src/main/agents.ts`, applied
-by `Grep`/`Glob` too), and tool results are redacted. The secrets store
-(`rules/secrets.md`) never returns a value except to a child process or an HTTP header.
+by `Grep`/`Glob` too), and tool results are redacted. The credential store
+(`rules/key-store.md`) never returns a value except to a child process or an HTTP header.
 
 ## The single write door
 

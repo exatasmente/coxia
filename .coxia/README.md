@@ -44,6 +44,13 @@ executable and the desktop entry keep that name, while the product name is Coxia
 | `roles/developer.md`, `roles/qa.md`, `roles/tech-lead.md`, `roles/product-owner.md`, `roles/support.md`, `roles/customer-success.md`, `roles/release-manager.md` | Notes for each agent of the shipped team |
 | `IMPORT_NOTES.md` | What was imported from this repository's Claude Code files, and what was left out and why |
 
+## What this folder is, and what it is not
+
+`.coxia/` is the documentation the app's own agents read. `docs/` at the repository root is the
+project's documentation for people; this folder does not replace it. Both live in the same
+tree, so keep them consistent: a change that makes a statement here false should fix it in the
+same pull request.
+
 ## The shape of a change
 
 1. Branch from the open release branch (`release/X.Y.Z`) or, when no version is open, from

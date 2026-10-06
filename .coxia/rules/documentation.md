@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [docs/README.md:1-33, CONTRIBUTING.md:133-138, docs/configuration.md:1-3, docs/runner.md:1-5]
+evidence: [docs/README.md:1-33, docs/README.md:28-32, CONTRIBUTING.md:133-138, .coxia/.gitignore, docs/configuration.md:1-3, docs/runner.md:1-5]
 summary: How the docs in docs/ are written, indexed and kept honest
 stages: [development, review]
 roles: [developer, tech-lead]
@@ -21,7 +21,7 @@ top.
 `cycles.md` (the cycle templates), `runner.md` (how an issue goes through the agent cycle),
 `voice.md`, `updates.md`, `i18n.md`, `verify-commands.md`, plus the root `CONTRIBUTING.md`,
 `RELEASING.md`, `SECURITY.md`, `GOVERNANCE.md`, `MAINTAINERS.md` and `THIRD_PARTY_NOTICES.md`.
-Per-issue design records live under `docs/cycles/<n>-<title>/`.
+Per-issue design records and run documents live under `docs/cycles/<n>-<title>/`.
 
 ## The rules
 
@@ -34,5 +34,15 @@ Per-issue design records live under `docs/cycles/<n>-<title>/`.
   `group/project` and `#123`. This is enforced by the public audit (`rules/public-repo.md`).
 - **A new interface string goes through `t()`** in both catalogs (`rules/i18n.md`).
 
-The folder you are reading (`.coxia/`) is the documentation the app's own agents read; it is
-separate from `docs/`, which is for people. This folder does not replace `docs/`.
+**This app's own documentation lives in two places, and they are not the same.** `docs/` is
+for people. `.coxia/` is the documentation an agent of this app reads when it works a stage on
+a repository, and it is written from the code on purpose: it says how the app is built and
+tested, the rules of each domain, the procedures and the notes for each agent. It does not
+replace `docs/`, and it is not kept in sync with it mechanically — a fact belongs in one of
+them, and the other should point at it rather than say it again. A default `.coxia/.gitignore`
+excludes the folder and its `.run/` artifacts in a *consumer* repository; here `.coxia/` is
+versioned on purpose, because it is the shipped documentation.
+
+**Nothing in this folder restates a person's private session.** Do not write a credential, a
+host name, a local machine path, a person's name or any address: the folder is versioned and
+may be public, and relative repository paths are the only paths that belong here.

@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [src/main/vcs/types.ts, src/main/vcs/runtime.ts, src/main/vcs/validate.ts, src/main/vcs/readPolicy.ts, src/main/vcs/github.ts, src/main/vcs/probe.ts, test/vcs-writes.test.ts:1-40, test/vcs-read-policy.test.ts, docs/vcs-providers.md:1-150]
+evidence: [src/main/vcs/types.ts, src/main/vcs/runtime.ts, src/main/vcs/validate.ts, src/main/vcs/readPolicy.ts:13-26, src/main/vcs/readPolicy.ts:66-72, src/main/vcs/github.ts, src/main/vcs/probe.ts, test/vcs-writes.test.ts:1-40, test/vcs-read-policy.test.ts, docs/vcs-providers.md:1-150]
 summary: The neutral code-host interface, the providers, the single write path and the read policy
 stages: [development, review]
 roles: [developer, tech-lead]
@@ -61,16 +61,18 @@ stored and again before it runs. In particular the GitHub review never sends `AP
 
 | Integration | What an agent may run |
 |---|---|
-| GitLab with CLI | `glab api projects/...`, `glab mr view`, `glab issue view` |
+| GitLab with CLI | `glab api projects/<group>/<project>/merge_requests\|issues/<iid>[/discussions\|notes\|approvals\|changes\|pipelines]`, `glab api projects/…/pipelines`, `glab mr view <iid> -R <project>`, `glab issue view <iid> -R <project>` (the `view` calls may carry `--comments`) |
 | GitHub with CLI | `gh api repos/...`, `gh pr view`, `gh issue view`; no flags beyond `--paginate` (`-f`, `-F`, `--input`, `--method` become a write) |
 | Bitbucket, or any API-only integration | The shell stays closed; the app's `VcsRead` tool reads (issue, comments, MR, threads, changes, CI) |
 
 The lists are strict regular expressions (one command, no `;`, `&&` or pipes beyond
 `| head`, no `..`): `GLAB_READ` and `GH_READ` in `src/main/vcs/readPolicy.ts`, tested in
-`test/shell-allowlist.test.ts` and `test/vcs-read-policy.test.ts`. Every agent of a run reads
-the host only through the app's `VcsRead` tool (never the host CLI or the tracker MCP, which
-stay for the ceremonies), and only the workspace's projects. A workspace that names no
-project gives its agents no host read.
+`test/shell-allowlist.test.ts` and `test/vcs-read-policy.test.ts`. Who reads is decided by
+`readPolicyFor`: an integration with a CLI reads through the CLI, an API-only one through the
+app's `VcsRead` tool, and one that is off or unusable gets no read at all. Every agent of a run
+reads the host only through the policy of the workspace's **primary** integration (never the
+host CLI or the tracker MCP, which stay for the ceremonies), and only the workspace's projects.
+A workspace that names no project gives its agents no host read.
 
 ## Testing an integration
 

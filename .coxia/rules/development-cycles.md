@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [src/shared/cycles/index.ts:1-29, src/shared/cycles/types.ts, src/shared/cycles/templates/agentFlow.ts, src/shared/runs/flowCheck.ts, src/shared/runs/transitions.ts, test/cycle-templates.test.ts, docs/cycles.md:1-130]
+evidence: [src/shared/cycles/index.ts:1-29, src/shared/cycles/types.ts, src/shared/cycles/templates/agentFlow.ts:14-70, src/shared/runs/flowCheck.ts:10-11, src/shared/runs/flow.ts:29-82, src/shared/config/team.ts:66-75, src/shared/runs/squadCheck.ts:10-11, test/cycle-templates.test.ts, docs/cycles.md:1-130]
 summary: The cycle templates, the devCycle section, stages, the agent flow and its teams
 stages: [development, review]
 roles: [developer, tech-lead, product-owner]
@@ -31,6 +31,7 @@ the app and export it as a file, and a shipped template is one TypeScript file u
 | `templateId` | Which template it came from (informative once edited) |
 | `ceremonies`, `ceremonyParams` | Which ceremonies are on, and each one's parameters |
 | `stages[]` | The stage vocabulary: `id`, `label`, `match`, `kind`, `rank`, and, for an agent cycle, `agentId`, `artifacts`, `human` |
+| `flows` | Optional: a flow per squad id (`rules` below), or per run kind |
 | `stageMapping[]` | Rules tying what the provider reports to a stage: `{ provider, source, name, pattern, stage }`. The first rule that matches wins; the rest fall to the stages' `match` |
 | `meanings` | What counts as a blocker, as a question for me, and as ready for QA |
 | `enrichment` | What an agent receives of each card: `specFolder`, `cardFields`, `extraFiles` |
@@ -54,16 +55,28 @@ order is the list's order. Read `docs/cycles.md` for the full field table.
 
 **One pure check serves everyone:** `checkFlow` in `src/shared/runs/flowCheck.ts` runs at
 configuration save, before the runner starts a run, and in the flow editor. Its errors
-(`no-stages`, `gate-first`, `work-no-agent`, `agent-unknown`, `next-nowhere`,
-`returns-nowhere`, `no-return-target`, `unreachable`, `no-end`, `artifact-unproduced`,
-`artifact-duplicate`, `wait-no-event`, `turns-unknown`, `turns-self`, `turns-loop`) block
-saving a flow change and block starting a run; its warnings (`agent-idle`, `gate-last`,
-`end-no-agent`) do not. A flow already saved with a problem opens as it is; the runner
-refuses to start in it. `flowIssueText` translates the codes.
+(`FLOW_ERRORS`: `no-stages`, `gate-first`, `work-no-agent`, `agent-unknown`,
+`agent-on-non-work`, `next-nowhere`, `returns-nowhere`, `returns-to-non-work`,
+`no-return-target`, `unreachable`, `no-end`, `artifact-unproduced`, `artifact-duplicate`,
+`wait-no-event`, `turns-unknown`, `turns-self`, `turns-loop`) block saving a flow change and
+block starting a run; its warnings (`FLOW_WARNINGS`: `agent-idle`, `gate-last`, `end-no-agent`)
+do not. A flow already saved with a problem opens as it is; the runner refuses to start in it.
+`flowIssueText` translates the codes. The two lists are code constants: read them there rather
+than trusting this list.
 
-**A run keeps a copy of the flow it started with** (`Run.flow.hash`) and follows it after the
-cycle is edited; `runs:migrateFlow` moves it to the current flow while its stage still exists
-and has the same type. The agents' autonomy is not part of the copy.
+**A run keeps a copy of the flow it started with** (`snapshotOf`, `Run.flow.hash` and
+`Run.flow.stages`) and follows it after the cycle is edited: `flowOfRun` reads the agents as
+they are now and falls back to `stageAgent` when the agent of a stage has left the team. The
+agents' autonomy is not part of the hash, so switching one on or off never makes a new
+version. The flow snapshot is what the agent read; `runs:migrateFlow` moves the
+configuration's flow to the current one.
+
+The flow the stages of a cycle become is `flowOf` in `src/shared/runs/flow.ts`: a stage with
+no `type` is `work`, `next` defaults to the next stage in the list, `returnsTo` to the nearest
+earlier work stage, `roundLimit` to `DEFAULT_ROUND_LIMIT`, and a `comment` left unset defaults
+to the stage's own id (an empty `comment` means none). A work stage is picked by
+`stageAgent`: the `agentId` it names, else the first agent of the team that lists the stage;
+a gate and a wait never have one.
 
 ## The shipped agent team
 
@@ -72,10 +85,13 @@ review → qa → ready → communicate`. The stages name their agent (`agentId`
 they must produce (`0_TRIAGE.md` … `6_RELEASE_NOTE.md`, straight in the cycle folder, no
 subfolder). The two gates wait for the person; `ready` is a wait; `communicate` runs after
 the pull request is merged. `agent-flow-engineering` is the same flow with the engineering
-roles only (`refine → gate1 → plan → gate2 → implement → review → qa → ready`).
+roles only (`refine → gate1 → plan → gate2 → implement → review → qa → ready`); its review is
+worked by `tech-lead` and its runs end at the wait, so an engineering run posts no release
+note.
 
-The shipped team, one row per agent (see `rules/runner.md` and
-`docs/cycles.md` for the permissions and the escalation chain):
+The shipped team, one row per agent (see `docs/cycles.md` for the permissions and the
+escalation chain; the recommended `tracker` and `shell` come from `RECOMMENDED` in
+`src/shared/config/team.ts`):
 
 | Agent (`id`) | Stages | What it does |
 |---|---|---|

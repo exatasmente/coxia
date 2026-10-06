@@ -1,7 +1,7 @@
 ---
 checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
-evidence: [src/main/runner/service.ts:1-120, src/main/runner/door.ts:1-35, src/main/runner/executor.ts, src/main/runner/memory.ts, src/main/runner/git.ts, src/main/engine/guard.ts:1-80, test/runner-memory.test.ts, test/worktree-guard.test.ts, docs/runner.md:1-130]
+evidence: [src/main/runner/service.ts:1-120, src/main/runner/door.ts:1-35, src/main/runner/executor.ts, src/main/runner/memory.ts, src/main/runner/git.ts, src/main/engine/guard.ts:1-80, src/shared/config/squads.ts:74-94, test/runner-memory.test.ts, test/worktree-guard.test.ts, docs/runner.md:1-130]
 summary: How the runner takes an issue through the agent cycle: worktree, stages, gates, autonomy, the one write door and the cycle memory
 stages: [development, review]
 roles: [developer, tech-lead, qa]
@@ -92,6 +92,19 @@ waiting; a stage whose agent **waits** stays `to-start` until the person starts 
 the next stage, never mid-stage. Pushing the branch and opening the pull request always wait
 for a yes, and a test workspace keeps refusing every external write.
 
+## A question the agent cannot answer
+
+A question an agent cannot decide is passed on along a chain that ends at the person.
+`AgentDef.turnsTo` names the agent it goes to first (or the person, when null); a member of a
+squad that turns to the person goes through its **liaison** first
+(`turnTarget` in `src/shared/config/squads.ts`, used by `askTarget` in
+`src/main/runner/executor.ts`). The agent that receives it answers when it can and otherwise
+passes the question on; a question marked `needsPerson` skips the chain and reaches the person
+at once, and what reaches the person is also asked on the issue. The chain is checked by
+`checkFlow` (`turns-unknown`, `turns-self`, `turns-loop`) and by `checkSquads`
+(`turns-other-squad`, `chain-skips-liaison`, `chain-loop`). Squad autonomy rides on the same
+switch: a squad that is off holds every member (`autonomousOf`).
+
 With `runner.enabled`, a sweep every 5 minutes lists the open issues assigned to the person
 that carry `runner.triggerLabel` and starts runs up to `runner.maxConcurrentRuns` working at
 once. An issue that already had a run, in any state, is not started again on its own. The same
@@ -106,7 +119,9 @@ the agent and deletes nothing.
 the machine from a run goes through the same proposals, the same refusal in a test workspace
 and the same audit log as what a person starts by hand: a comment per stage, the review on the
 pull request's lines, the push and the pull request. The push and the pull request always wait
-for a yes. `rules/code-hosts.md` explains the write path.
+for a yes. `rules/code-hosts.md` explains the write path. A run's own scripts come from the
+**clone** (the workspace's `projects.repos`), never from the worktree: a merged pull request
+cannot change what runs. The push itself is the `run-push` action, not a provider command.
 
 ## The cycle memory
 
@@ -122,7 +137,8 @@ stage receives.
   each thread handoff, each marked with the message number, so rewriting does not duplicate a
   line.
 - **The cap** is a code constant, `MEMORY_MAX` (10,000 characters), not a setting; over it, the
-  file is still read whole and the stage is told to shorten it.
+  file is still read whole and the stage is told to shorten it. The read itself has a wider
+  ceiling of its own, so a runaway answer is not cut without a word.
 - **The person can correct it** on the run screen (`runs:memory`). The app commits it as the
   person's and records it; the edit is refused while an agent works in the folder
   (`memory-busy`).
