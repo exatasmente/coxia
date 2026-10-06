@@ -3,6 +3,7 @@ import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, new
 import type { JsonSchema } from '../src/shared/config';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
+import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
 
 // Keys of every object the schema describes, as dotted paths ("llm.providers[].id"): what a config can hold.
 function schemaKeys(s: JsonSchema, path = ''): string[] {
@@ -37,6 +38,17 @@ describe('config schema', () => {
     expect(r.errors).toEqual([]);
     expect(r.config?.runner.release).toEqual({ soleMaintainer: false });
     expect(validateConfig({ ...neutralConfig(), runner: { ...runner, release: { soleMaintainer: 'yes' } } }).ok).toBe(false);
+  });
+
+  it('keeps the documentation sources as they were: the same fields and types, autoDetect on by default, and the schema version unchanged', () => {
+    // What autoDetect does with them is the app's behaviour; the format of the file did not change, so there is no migration step.
+    expect(CONFIG_SCHEMA_VERSION).toBe(13);
+    const docs = CONFIG_SCHEMA.properties?.docs;
+    expect(Object.keys(docs?.properties ?? {})).toEqual(['autoDetect', 'claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles', 'specsDir']);
+    expect(docs?.properties?.autoDetect.type).toBe('boolean');
+    expect(neutralConfig().docs).toEqual({ autoDetect: true, claudeMdRoots: [], skillsDirs: [], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null });
+    const filled = { ...neutralConfig(), docs: { autoDetect: true, claudeMdRoots: ['~/a'], skillsDirs: ['~/b'], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null } };
+    expect(validateConfig(filled).config?.docs).toEqual(filled.docs);
   });
 
   it('accepts the example legacy profile merged over the defaults', () => {

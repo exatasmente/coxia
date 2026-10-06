@@ -336,3 +336,19 @@ describe('startup on the real current layout', () => {
     expect(JSON.parse(readFileSync(join(root, 'workspaces.json'), 'utf8')).list[0].test).toBe(false);
   });
 });
+
+describe('the documentation sources (what autoDetect means is the app\'s, not the file\'s)', () => {
+  it('has no step for a file that already holds the lists: a schema 13 file comes out as it went in, with no notes, and the version stays 13', () => {
+    expect(CONFIG_SCHEMA_VERSION).toBe(13);
+    const file = { ...neutralConfig(), schemaVersion: 13 };
+    file.docs = { autoDetect: true, claudeMdRoots: ['~/notes'], skillsDirs: ['~/skills'], rulesDirs: ['~/rules'], agentsDirs: ['~/agents'], knowledgeDirs: ['~/kb'], mcpConfigFiles: ['~/.mcp.json'], specsDir: '~/specs' };
+    const r = migrateConfig(structuredClone(file), { legacyInstall: false });
+    expect(r.fromVersion).toBe(13);
+    expect(r.changed).toBe(false);
+    expect(r.notes).toEqual([]);
+    expect(r.config).toEqual(file);
+    // an app that understands up to 13 is the only thing that reads it, as before
+    expect(() => migrateConfig({ schemaVersion: 14 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+});
+
