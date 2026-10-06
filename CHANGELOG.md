@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Changed
+
+- **The documentation of the open engine says what it does.** The wizard note no longer calls the open engine read-only: it now says the engine reads, writes inside the run's worktree and runs commands under the same safety policy as the Claude Agent SDK, and that quality depends on the model. The model provider page explains that the provider and the role in the configuration choose the engine, keeps the environment variables as a test aid, and stops saying the open engine was only tested against a fake server.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed

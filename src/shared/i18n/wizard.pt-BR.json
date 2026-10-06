@@ -115,7 +115,7 @@
   "wizard.models.foundryResourceHint": "O nome do recurso do Azure, que aparece no endereço https://<recurso>.services.ai.azure.com.",
   "wizard.models.foundryCreds": "Use uma chave do recurso, ou deixe sem chave e entre com az login nesta máquina.",
   "wizard.models.useKey": "Este provedor usa uma chave",
-  "wizard.models.openEngineNote": "Este provedor roda no motor aberto: ferramentas só de leitura, e a qualidade depende do modelo escolhido.",
+  "wizard.models.openEngineNote": "Este provedor roda no motor aberto (o loop de agente do Coxia): ele lê, escreve dentro do worktree da execução e roda comandos sob a mesma política de segurança do Claude Agent SDK. A qualidade depende do modelo escolhido.",
   "wizard.models.problem.baseUrl": "O endereço base precisa começar com http:// ou https://.",
   "wizard.models.problem.region": "Informe a região da AWS.",
   "wizard.models.problem.vertex": "Informe o projeto e a região do Google Cloud.",
