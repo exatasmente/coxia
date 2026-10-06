@@ -30,8 +30,8 @@ Um plugin publica `plugin.json`:
 | `offers.events` | acontecimentos observados, da lista fixa |
 | `offers.documents` | tipos de documento novos do ciclo (`name`, `label`) |
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
-| `offers.write` | destino neutro da escrita externa (um exemplo, nunca um serviço de terceiro) |
-| `offers.entry` | script rodado quando um acontecimento observado acontece, dentro da pasta do plugin |
+| `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
+| `offers.entry` | script de shell rodado quando um acontecimento observado acontece, dentro da pasta do plugin; recebe o acontecimento em `$1` e o que ele imprime é o resultado |
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -54,13 +54,30 @@ quando uma execução termina. Um plugin que falha não derruba a execução nem
 
 ### A fronteira
 
-- O script do plugin roda dentro da **mesma** sandbox que o aplicativo já dá a uma etapa: sem rede por padrão e
-  com a rede só para os destinos que a pessoa listou para o espaço de trabalho. Não existe uma sandbox própria
-  do plugin.
-- O que o plugin pode alcançar está declarado nele e é dito na lista de plugins; o que não estiver declarado é
-  recusado, com o motivo.
-- Um plugin nunca escreve por conta própria: ele descreve o pedido, e o pedido entra na porta única de Ações,
-  espera o "sim" e entra no registro de auditoria. Num espaço de trabalho de teste a confirmação é recusada.
+- O script do plugin roda dentro da **mesma** sandbox que o aplicativo já dá a uma etapa, entregue como o próprio
+  comando (a pasta do plugin não é montada). Sem rede por padrão; com a permissão, a rede alcança **só** os
+  destinos que o plugin declarou — não os que o espaço de trabalho libera para as etapas. Não existe uma sandbox
+  própria do plugin.
+- O que o plugin pode alcançar está declarado nele e é dito na lista de plugins (Configurações → Plugins); o que
+  não estiver declarado é recusado, com o motivo.
+- O que o plugin imprime vira o documento que ele declarou na pasta do ciclo da execução, escrito pelo
+  aplicativo pelo mesmo caminho dos documentos de uma etapa.
+- Um plugin nunca escreve por conta própria: a escrita declarada sai pela porta única de Ações, só com a
+  permissão, e entra no registro de auditoria. Num espaço de trabalho de teste nada é pedido e nada sai.
+
+### As permissões
+
+- Um plugin que precisa de rede ou de escrita e não tem permissão abre um **pedido** em Ações. A pessoa responde
+  **uma vez** (só aquele pedido), **nesta sessão** (até o aplicativo fechar), **sempre** (fica na lista de
+  permissões do plugin) ou **recusar**.
+- Enquanto um pedido de uma execução espera, a execução não começa a etapa seguinte. Uma recusa não derruba a
+  execução: o plugin não roda (ou a escrita não sai), e a conversa da execução diz por quê. O plugin volta a
+  pedir enquanto não tiver "sempre".
+- Uma escrita **irreversível** só aceita "sempre" (acrescentar à lista) ou recusar. Já permitida, cada vez que vai
+  sair ela é **anunciada** em Ações com uma contagem (`plugins.confirmSeconds`, 30 s por padrão); nesse intervalo a
+  pessoa pode **bloquear** (só aquela vez) ou **revogar** (aquela vez e a permissão).
+- "Sempre" sobrevive a desligar e religar o plugin e não viaja numa exportação de configuração; uma importação
+  mantém a lista do espaço de trabalho de destino. Retirar é na lista de plugins, no computador.
 - Texto que vem de um plugin entra como material, entre as marcas que o aplicativo já usa; nada dele é tratado
   como instrução.
 - Ampliar o que um plugin alcança é decisão da pessoa, no computador; um navegador pareado não liga, desliga nem
@@ -94,8 +111,8 @@ A plugin publishes `plugin.json`:
 | `offers.events` | events it observes, from the fixed list |
 | `offers.documents` | new cycle document types (`name`, `label`) |
 | `offers.network` | destinations the plugin declares it needs, by host name |
-| `offers.write` | neutral destination of the external write (an example, never a third-party service) |
-| `offers.entry` | script run when an observed event happens, inside the plugin folder |
+| `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
+| `offers.entry` | shell script run when an observed event happens, inside the plugin folder; it gets the event as `$1`, and what it prints is its result |
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.
@@ -118,13 +135,30 @@ plugin that fails brings down neither the run nor the app.
 
 ### The boundary
 
-- The plugin script runs inside the **same** sandbox the app already gives a stage: no network by default and
-  the network only for the destinations the person listed for the workspace. There is no sandbox of the plugin's
-  own.
-- What a plugin may reach is declared in it and is said in the plugin list; whatever is not declared is refused,
-  with the reason.
-- A plugin never writes by itself: it describes the request, and the request goes into the single door of
-  Actions, waits for the "yes" and lands in the audit log. In a test workspace the confirmation is refused.
+- The plugin script runs inside the **same** sandbox the app already gives a stage, handed over as the command
+  itself (the plugin folder is not mounted). No network by default; with the permission, the network reaches
+  **only** the destinations the plugin declared — not the ones the workspace lets its stages reach. There is no
+  sandbox of the plugin's own.
+- What a plugin may reach is declared in it and is said in the plugin list (Settings → Plugins); whatever is not
+  declared is refused, with the reason.
+- What the plugin prints becomes the document it declared in the run's cycle folder, written by the app through
+  the same path as the documents of a stage.
+- A plugin never writes by itself: its declared write goes out through the single door of Actions, only with the
+  permission, and lands in the audit log. In a test workspace nothing is asked and nothing goes out.
+
+### The permissions
+
+- A plugin that needs the network or its write and was not allowed opens a **request** in Actions. The person
+  answers **once** (that request only), **for this session** (until the app closes), **always** (it stays in the
+  plugin's list of permissions) or **refuse**.
+- While a request of a run waits, the run does not start its next stage. A refusal does not bring the run down:
+  the plugin does not run (or the write does not go out), and the run's conversation says why. The plugin keeps
+  asking until it has "always".
+- An **irreversible** write only takes "always" (add to the list) or refuse. Once allowed, every time it is about
+  to go out it is **announced** in Actions with a countdown (`plugins.confirmSeconds`, 30 s by default); meanwhile
+  the person may **block** it (that time only) or **revoke** it (that time and the permission).
+- "Always" survives switching the plugin off and on and does not travel in a configuration export; an import
+  keeps the list of the target workspace. Taking it back is in the plugin list, on the computer.
 - Text that comes from a plugin enters as material, between the markers the app already uses; none of it is
   treated as instruction.
 - Widening what a plugin may reach is the person's decision, on the computer; a paired browser neither turns a

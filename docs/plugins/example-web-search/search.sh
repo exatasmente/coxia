@@ -2,18 +2,18 @@
 # The example plugin of the kit: it searches the web when a stage finishes and prints a document with the result
 # and the source it came from. It is the base of the first delivery (web search for the agents).
 #
-# It runs inside the stage sandbox: no network by default, and the network only through the destinations the
-# person listed for the workspace (runner.sandbox). The query is the event name the app passes as the first
-# argument; a real plugin would build it from the stage's work.
+# It runs inside the stage sandbox, handed over as the command itself (the plugin folder is never mounted), with
+# the event name as $1. It reaches the network only after the person allowed it, and then only the destination it
+# declared in plugin.json; until then the app does not run it and asks the person in Actions. The query is the
+# event name; a real plugin would build it from the stage's work.
 #
-# Without the network the search fails with the reason, and a real plugin would say so; here the refusal is
-# caught so the example never breaks a stage.
+# What it prints becomes the document 7_WEB_SEARCH.md of the run's cycle folder, and the text of the write it
+# declared (to its outbox, "results"), which goes out only with the person's permission.
 set -eu
 
 event="${1:-}"
 
-# The destination the plugin declared. It is reached only if the person listed it for the workspace; without the
-# list the request never leaves the sandbox.
+# The destination the plugin declared: the only one its sandbox reaches, and only once the person allowed it.
 destination="search.example.com"
 query="web search for the event ${event}"
 
@@ -22,8 +22,7 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 0
 fi
 
-# A refusal (the destination is not in the workspace's list) is told, not hidden: the reason is what the person
-# needs to grant it.
+# A refusal is told, not hidden: the reason is what the person needs to see.
 result="$(curl -fsS --max-time 20 "https://${destination}/search?q=$(printf '%s' "${query}" | tr ' ' '+')" 2>&1)" || {
   echo "network refused for ${destination}: ${result}"
   exit 0

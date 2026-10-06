@@ -17,7 +17,7 @@ Dá. É um pedido de capacidade nova, não há defeito a reproduzir, e o que a i
 Ressalvas de leitura, para o refino conferir o resto:
 
 - O `types.ts` citado pela issue é um arquivo de cerca de 800 linhas; foi lido inteiro e a ausência de campo de plugin vale para ele. A busca por `plugin` cobriu `src/` e uma passagem mais ampla pelo repositório; nenhuma delas encontrou um conceito de plugin de aplicação.
-- O que a issue chama de "Prototypes, Clockify, Jira" não foi encontrado descrito em nenhum documento do repositório: só aparece no próprio texto da issue. Não foi possível confirmar que escopo cada um deles tem hoje.
+- O que a issue chama de "Prototypes, [uma integração nomeada], Jira" não foi encontrado descrito em nenhum documento do repositório: só aparece no próprio texto da issue. Não foi possível confirmar que escopo cada um deles tem hoje.
 - O código tem registros fechados (motores em `src/main/engine/registry.ts`, modelos de ciclo em `src/shared/cycles/index.ts`, provedores de código montados em tempo de execução em `src/main/vcs/index.ts`), mas nenhum deles é um ponto genérico para uma unidade de terceiro entrar com manifesto.
 - "Artifact type" não corresponde a um conceito nomeado do código. O mais próximo é o conjunto de documentos que uma etapa de trabalho produz na pasta do ciclo e o que os gates leem (`SpecLayout`, `src/shared/config/types.ts:252-270`; `GateFiles`, `:244`), além do catálogo fechado de cerimônias (`CEREMONY_IDS`, `:172`) e dos artefatos de uma execução (`Run.artifacts`, `docs/runner.md`). Nada disso foi alterado nem exercitado nesta etapa.
 
@@ -30,7 +30,7 @@ A resposta da pessoa esclareceu o ponto que decidia o desenho: os plugins são c
 O que a issue ainda não fixa e fica para o refino:
 
 - Quais são "os outros itens" que dependem desta plataforma e o que cada um pede hoje, para a plataforma nascer com o alvo certo. A issue só diz que eles existem, e a resposta não os nomeou.
-- O que os Prototypes, o Clockify e o Jira fazem hoje e onde vivem; sem isso, o exemplo de primeira entrega ("um artefato novo mais uma integração externa") fica sem referência concreta. Não foram encontrados descritos em nenhum lugar do repositório além da issue.
+- O que os Prototypes, o [uma integração nomeada] e o Jira fazem hoje e onde vivem; sem isso, o exemplo de primeira entrega ("um artefato novo mais uma integração externa") fica sem referência concreta. Não foram encontrados descritos em nenhum lugar do repositório além da issue.
 - O que conta como um tipo de artefato novo para a aceitação que diz que ele deve ser acrescentável sem tocar no núcleo, e o que significa, na prática, "um plugin não alcança outro espaço de trabalho sem permissão explícita".
 
 Nada disso bloqueia a leitura da issue; o contrato de extensão é declaradamente assunto do refino e do plano.

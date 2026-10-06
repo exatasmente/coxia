@@ -40,7 +40,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `claudeSdk` | `{ installed, version, path }`: de onde sai o Claude Agent SDK |
 | `externalTools` | integrações **opcionais**, todas desligadas até serem configuradas: `cardSource` (comando que lista os cartões do dia), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
 | `runner` | o que leva uma issue pelo ciclo de agentes sozinho: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `linkDependencies`, `release` (veja abaixo) |
-| `plugins` | os plugins do espaço de trabalho: `dir` (pasta que guarda os plugins; vazia: a pasta `plugins` dos dados) e `list[]` = o que cada plugin oferece e o que a pessoa decidiu (`id`, `enabled`, `granted`, `network`, `documents`, `refused`). O kit e o exemplo estão em [`plugins/`](plugins/README.md) |
+| `plugins` | os plugins do espaço de trabalho: `dir` (pasta que guarda os plugins; vazia: a pasta `plugins` dos dados) `list[]` = o que a pessoa decidiu sobre cada plugin (`id`, `folder`, `enabled`, `allow` = o que foi permitido **sempre**: `network`, `write`) e `confirmSeconds` (o prazo, padrão 30 s, em que uma escrita irreversível permitida fica anunciada em Ações antes de sair). O resto vem da pasta de cada plugin. A lista não viaja numa exportação e uma importação mantém a do espaço de trabalho de destino. O kit e o exemplo estão em [`plugins/`](plugins/README.md) |
 
 Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil. O acesso pelo navegador (host, porta, URL pública) é da máquina e fica em `web.json`.
 
@@ -189,7 +189,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `claudeSdk` | `{ installed, version, path }`: where the Claude Agent SDK comes from |
 | `externalTools` | **optional** integrations, all off until configured: `cardSource` (command that lists the day's cards), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
 | `runner` | what takes an issue through the agent cycle by itself: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `linkDependencies`, `release` (below) |
-| `plugins` | the workspace's plugins: `dir` (folder that holds the plugins; empty: the `plugins` folder of the data dir) and `list[]` = what each plugin offers and what the person decided (`id`, `enabled`, `granted`, `network`, `documents`, `refused`). The kit and the example live in [`plugins/`](plugins/README.md) |
+| `plugins` | the workspace's plugins: `dir` (folder that holds the plugins; empty: the `plugins` folder of the data dir) `list[]` = what the person decided about each plugin (`id`, `folder`, `enabled`, `allow` = what was allowed **always**: `network`, `write`) and `confirmSeconds` (the deadline, 30 s by default, an allowed irreversible write is announced in Actions before it goes out). The rest comes from each plugin's folder. The list does not travel in an export, and an import keeps the one of the target workspace. The kit and the example live in [`plugins/`](plugins/README.md) |
 
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 

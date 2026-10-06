@@ -9,7 +9,7 @@
 
 ## What should happen
 
-Everything new in Coxia should extend the platform through plugins — hooks, events and actions — rather than being added to the core. Prototypes, Clockify, Jira and the other integrations are the examples; none of them should require changing the core.
+Everything new in Coxia should extend the platform through plugins — hooks, events and actions — rather than being added to the core. [One named integration], [another] and the other integrations are the examples; none of them should require changing the core.
 
 Today there is no plugin concept in the code: `grep -i plugin` under `cerimonias/src` returns nothing, and `src/shared/config/types.ts` has no field for plugins or extension points. This is a platform to build, not a switch to flip.
 
@@ -17,7 +17,7 @@ This is the foundation the other items depend on: without it, new artifact types
 
 ## What the person must decide
 
-- The minimum scope of the first plugin: one new artifact plus one external integration (for example Clockify) would exercise event → artifact → external effect without opening three fronts at once.
+- The minimum scope of the first plugin: one new artifact plus one external integration (for example [one named integration]) would exercise event → artifact → external effect without opening three fronts at once.
 - The boundary of a plugin: what it can see, what it can trigger and where it runs. A public app that runs plugin code against people's data needs this boundary defined before any plugin ships.
 
 ## Acceptance

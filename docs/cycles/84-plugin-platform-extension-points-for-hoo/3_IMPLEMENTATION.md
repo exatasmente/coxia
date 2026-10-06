@@ -162,3 +162,98 @@ serviço é coberto à parte, com dependências injetadas.
 Não verificado: a lista de plugins e o interruptor numa tela; um plugin de verdade rodando numa sandbox real (os
  testes usam uma sandbox falsa); e o comportamento em Windows e macOS (só o caminho puro é comum, que é o que
  garante a Regra 2).
+
+## Rodada 2: o contrato de permissão
+
+Feita sobre a revisão reprovada (`4_REVIEW.md`) e o contrato que a pessoa fixou
+(spec, "O contrato de permissão"; plano, "Rodada 2"). O que a rodada anterior do
+desenvolvedor deixou sem commit foi aproveitado onde batia com o contrato (o
+documento escrito pelo aplicativo, a exportação sem a lista) e trocado onde não batia
+(o modelo `none`/`network`/`network-open`, o `pluginConfined` na sandbox e o registro
+`plugin-requests.json`, que saíram).
+
+### O que passou a existir
+
+- **Permissão em três alcances.** `PluginConfig.allow = { network, write }` é o
+  "sempre" (esquema 13, ainda não publicado, então sem degrau novo); "na sessão" é um
+  mapa no processo principal; "uma vez" é a resposta ao pedido. A decisão é pura, em
+  `src/shared/plugins/grants.ts` (`mayReachNetwork`, `pluginNetworkSandbox`,
+  `pluginWriteStep`, `pluginAnswers`).
+- **Rede só dos destinos declarados.** Permitida, a sandbox do plugin abre em
+  `registry` com `registryHosts` = os destinos do plugin, e não a lista do espaço de
+  trabalho; sem permissão, o plugin não roda e abre um pedido.
+- **O pedido** (`plugin-ask` em Ações) leva tudo o que é preciso para refazer a chamada
+  (`PluginAskUnit`). `plugins:answer` responde `once`/`session`/`always`/`refuse`;
+  `session` e `always` respondem também os outros pedidos do mesmo plugin para a mesma
+  coisa. `actions:approve` recusa um pedido; `actions:skip` (o navegador pareado pode)
+  vale como recusa.
+- **A execução espera.** `WAIT_KINDS` ganhou `plugin`; antes de começar uma etapa o
+  runner consulta `pluginHold` e aplica `stageWaitingOnPlugin`; `pluginSettled` põe a
+  recusa na conversa e aplica `pluginWaitDone` quando não sobra pedido da execução.
+- **A escrita de verdade.** O destino neutro é a caixa de saída do plugin no espaço de
+  trabalho (`plugins-out/<plugin>/<to>.md`), escrita por `audited`: a auditoria
+  descreve o que foi escrito e o espaço de trabalho de teste recusa antes.
+  Reversível e permitida, sai na hora (`writePluginNow`).
+- **Escrita irreversível.** A declaração diz `write: { to, reversible }`; o que não diz
+  é irreversível. Só aceita "sempre"; já permitida, é anunciada (`plugin-write` com
+  `unit.due`) pelo prazo `plugins.confirmSeconds` (30 s), sai no prazo
+  (`sendDuePluginWrite`), é bloqueada por `actions:skip` e revogada por
+  `plugins:revoke-write`. Ao abrir o aplicativo, um aviso pendente recomeça o prazo.
+- **O script não é montado.** A pasta de plugins padrão fica nos dados do aplicativo,
+  que nenhuma sandbox vê; o texto do script de entrada é lido pelo aplicativo (dentro
+  da pasta do plugin, sem link, até 64 KiB) e entregue como o próprio comando da
+  sessão, com o acontecimento em `$1`.
+- **A lista por entrada.** Ligar, permitir e retirar mudam só a entrada do plugin
+  (`withChoice`), aplicadas sobre a configuração do momento da gravação; a importação
+  mantém a lista do espaço de trabalho de destino e um espaço novo nasce sem nenhuma.
+- **O gate** procura o documento de plugin na raiz e em cada `sub` do layout.
+- **A política do navegador:** `plugins:set-enabled`, `plugins:settings`,
+  `plugins:answer`, `plugins:revoke` e `plugins:revoke-write` em `DESKTOP_ONLY`; um
+  teste percorre os canais que o módulo registra.
+- **As telas:** Configurações → Plugins (pasta, prazo, e por plugin o que oferece, o
+  que pede, o que foi permitido, retirar, pedidos esperando e o motivo de uma recusa)
+  e, em Ações, o cartão do pedido (as respostas que valem para ele; no navegador só
+  recusar) e o do aviso (contagem, bloquear, revogar).
+
+### Bloqueantes da revisão
+
+| # | Como ficou |
+|---|---|
+| 1 rede não consultada | `pluginNetworkSandbox` só abre com permissão, e só para os destinos do plugin |
+| 2 escrita não consultada | `pluginWriteStep` decide entre sair, anunciar e pedir |
+| 3 auditoria sem efeito | caixa de saída escrita dentro de `audited` |
+| 4 resultado não vira documento | `writePluginDocument` pelo `writeArtifact`/`checkPath` (mantido) |
+| 5 gate na raiz | raiz e cada `sub` |
+| 6 lista reescrita / importação | gravação por entrada; importação mantém a lista |
+| 7 navegador pareado | canais de plugin em `DESKTOP_ONLY`, com teste. A política aberta por omissão para canal não classificado é anterior a esta issue e não mudou |
+| 8 sem tela | cartões em Ações e seção em Configurações |
+
+### Testes da rodada
+
+`test/plugin-grants.test.ts` (novo), `test/plugins-web-policy.test.ts` (novo),
+`test/plugins-service.test.ts` e `test/plugin-write.test.ts` (reescritos),
+`test/plugin-runtime.test.ts` (o teste antigo escrevia o documento dentro do próprio
+repositório; agora usa uma pasta temporária), `test/plugins-core.test.ts`,
+`test/runner-plugin-events.test.ts` (execução segurada e solta),
+`test/gate-plugin-documents.test.ts` (`sub`), `test/config-transfer.test.ts`
+(importação mantém a lista), `test/config-migrations.test.ts`, `test/web-server.test.ts`.
+
+### Portões desta rodada
+
+- `npx tsc --noEmit`: limpo.
+- `npx vitest run`: 3756 passam, 1 falha em `test/release-workflow.test.ts` (o passo
+  de shell da checagem do Windows) que passa sozinho (21/21): instável sob carga, sem
+  relação com esta mudança.
+- `node scripts/theme-audit.mjs`: passa. `npm run i18n:lint`: 4157 chaves, 0 literais.
+- `node scripts/public-audit.mjs`: limpo. As ocorrências antigas eram o nome de uma
+  ferramenta de horas citada no texto da issue, nos documentos do ciclo; trocado pelo
+  marcador neutro que a spec já usava.
+- `npx electron-vite build`: compila.
+
+### Não verificado
+
+- A tela em uso: nada foi aberto no aplicativo.
+- Um plugin de verdade numa sandbox real (bwrap) e uma busca de verdade; os testes usam
+  sandbox falsa. Windows e macOS.
+- Uma execução de ponta a ponta com um plugin ligado no runner real (o runner é
+  exercitado com `pluginHold` falso; o serviço, com dependências injetadas).
