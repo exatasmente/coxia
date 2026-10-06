@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
+### Fixed
+
+- **Blank or black repaints on Windows.** The app now draws without hardware acceleration on Windows, a mitigation for the blank windows reported there; it has not been checked on a Windows desktop yet.
+
 ## [0.6.1] - 2026-10-05
 
 ### Changed
