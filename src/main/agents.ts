@@ -5,7 +5,8 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
-import type { AgentDef } from '../shared/config/types';
+import type { AgentDef, AgentToolsConfig } from '../shared/config/types';
+import { toolsForAgent } from '../shared/config/team';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
@@ -47,19 +48,19 @@ export function workspaceProjects(): string[] {
   return [...new Set([...(issues ? [issues] : []), ...rc().repos.flatMap((r) => (r.projectPath ? [r.projectPath] : []))])];
 }
 
-function trackerMcpTools(): string[] {
-  const server = getConfig().agents.tools.trackerMcpServer.trim();
+function trackerMcpTools(tools: AgentToolsConfig): string[] {
+  const server = tools.trackerMcpServer.trim();
   return server ? [`mcp__${server}__get_issue_details_and_comments`, `mcp__${server}__get_merge_request_details_and_changes`] : [];
 }
 
-// Tools pre-approved for a role, from the workspace config; dontAsk denies everything else.
-export function allowedFor(role: ModelRole, host = true): string[] {
+// Tools pre-approved for a role, from the workspace config (or the agent's own when it names them); dontAsk denies everything else.
+export function allowedFor(role: ModelRole, host = true, tools?: AgentToolsConfig): string[] {
   if (role === 'teams') return [];
-  const t = getConfig().agents.tools;
+  const t = tools ?? getConfig().agents.tools;
   return [
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
-    ...(host && t.trackerMcp ? trackerMcpTools() : []),
+    ...(host && t.trackerMcp ? trackerMcpTools(t) : []),
     ...(host ? vcsReadPolicy().rules : []),
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
@@ -448,9 +449,10 @@ function wantsVcsTool(req: EngineRequest): boolean {
   if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
-  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the workspace's host-read switches on.
+  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the host-read switches of the agent on. The
+  // workspace's own read path decides every other call: an agent naming its tools may turn a tool off, never move the read of the host to another path.
   if (mode === 'tool') {
-    const tools = getConfig().agents.tools;
+    const tools = req.tools ?? getConfig().agents.tools;
     return (tools.vcsCli || tools.trackerMcp) && vcsReady();
   }
   return !req.confine && vcsReadPolicy().via === 'tool';
@@ -636,7 +638,8 @@ async function runOnce<T>(
   const reads = (agent?.tracker ?? 'read') === 'read';
   const id = agent?.id ?? role;
   const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', ask });
+  const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -995,12 +998,13 @@ export interface AgentCall {
   onUsage?: (usage: UsageReport) => void;
 }
 
-// What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
-// An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given.
-function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']> } {
+// What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
+// code host reads. An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given. A mention never gets Edit or Write.
+function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']>; tools: AgentToolsConfig } {
   const tracker = trackerOf(call.agent);
-  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace'), shell: { rules: [], patterns: [] }, tracker };
-  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker };
+  const tools = call.confine ? getConfig().agents.tools : toolsForAgent(getConfig(), call.agent);
+  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace', tools), shell: { rules: [], patterns: [] }, tracker, tools };
+  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker, tools };
 }
 
 /**
@@ -1041,7 +1045,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
   if (!call.activity) activity.status('started');
   try {
-    const { allowedTools, shell, tracker } = toolsOf(call);
+    const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
     const request: EngineRequest = {
@@ -1058,6 +1062,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       activity,
       confine: call.confine,
       tracker,
+      tools,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
       release: call.release,
       abort: call.abort,

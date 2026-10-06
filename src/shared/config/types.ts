@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 12;
+export const CONFIG_SCHEMA_VERSION = 13;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -531,6 +531,11 @@ export interface AgentDef {
    * Absent: none.
    */
   allowedCommands?: string[];
+  /**
+   * The tools this agent may use, when the person said so for this agent alone: it overrides the workspace's `agents.tools` field by field, so an agent may use a tool
+   * the workspace turned off. Absent: the agent uses the workspace's tools. This is a permission of tools, never of confinement: a mention never gets Edit or Write.
+   */
+  tools?: AgentToolsConfig;
   /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,

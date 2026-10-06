@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { squadsOf } from '../../../../shared/config/squads';
 import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText } from '../../api';
@@ -180,6 +180,7 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
         <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
+        <ToolsFields config={config} draft={draft} set={set} />
 
         <Labeled label={t('ui.team.f.squad')} hint={t('ui.team.f.squadHint')}>
           {(id) => (
@@ -277,6 +278,34 @@ function PermissionFields({ config, initial, draft, isNew, set, error }: { confi
       {status && !status.available && !web && <p className="small muted">{t('ui.team.shell.noSandbox', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}</p>}
       {status && !status.available && web && <p className="small muted">{t('ui.team.shell.noSandboxWeb')}</p>}
     </>
+  );
+}
+
+/** The tools this agent uses: absent, it follows the workspace's; present, it overrides them field by field, so an agent may use one the workspace turned off. */
+function ToolsFields({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const own = draft.tools;
+  const effective = own ?? config.agents.tools;
+  const setTool = <K extends keyof AgentToolsConfig>(key: K, value: AgentToolsConfig[K]) => set({ tools: { ...effective, [key]: value } });
+  return (
+    <fieldset className="wz-fieldset">
+      <legend className="wz-label">{t('ui.team.tools')}</legend>
+      <p className="small muted">{t('ui.team.tools.hint')}</p>
+      <div role="group" aria-label={t('ui.team.tools')} className="wz-pills">
+        <button type="button" aria-pressed={!own} className={`filter ${!own ? 'on' : ''}`} onClick={() => set({ tools: null })}>{t('ui.team.tools.inherit')}</button>
+        <button type="button" aria-pressed={!!own} className={`filter ${own ? 'on' : ''}`} onClick={() => own || set({ tools: { ...config.agents.tools } })}>{t('ui.team.tools.own')}</button>
+      </div>
+      <Toggle checked={effective.files} onChange={(files) => setTool('files', files)} label={t('ui.team.tools.files')} hint={t('ui.team.tools.files.hint')} />
+      <Toggle checked={effective.skills} onChange={(skills) => setTool('skills', skills)} label={t('ui.team.tools.skills')} hint={t('ui.team.tools.skills.hint')} />
+      <Toggle checked={effective.vcsCli} onChange={(vcsCli) => setTool('vcsCli', vcsCli)} label={t('ui.team.tools.vcsCli')} hint={t('ui.team.tools.vcsCli.hint')} />
+      <Toggle checked={effective.trackerMcp} onChange={(trackerMcp) => setTool('trackerMcp', trackerMcp)} label={t('ui.team.tools.trackerMcp')} hint={t('ui.team.tools.trackerMcp.hint')} />
+      <Toggle checked={effective.subagents} onChange={(subagents) => setTool('subagents', subagents)} label={t('ui.team.tools.subagents')} hint={t('ui.team.tools.subagents.hint')} />
+      {effective.trackerMcp && (
+        <Labeled label={t('ui.team.tools.trackerMcpServer')} hint={t('ui.team.tools.trackerMcpServer.hint')}>
+          {(id) => <input id={id} className="text-input mono" maxLength={100} spellCheck={false} value={effective.trackerMcpServer} onChange={(e) => setTool('trackerMcpServer', e.target.value)} />}
+        </Labeled>
+      )}
+    </fieldset>
   );
 }
 

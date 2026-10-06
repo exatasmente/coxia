@@ -56,7 +56,7 @@ describe('export', () => {
     const file = JSON.parse(text);
     expect(file).toMatchObject({ format: EXPORT_FORMAT, formatVersion: 1, app: { name: 'coxia', version: '1.2.3' }, workspace: { name: 'Acme' }, exportedAt: '2026-10-02T12:00:00.000Z' });
     expect(file.requiredSecrets.map((s: { ref: string }) => s.ref).sort()).toEqual(['llm.anthropic', 'vcs.github']);
-    expect(file.config.schemaVersion).toBe(12);
+    expect(file.config.schemaVersion).toBe(13);
     expect(file.config.vcs[0].secretRef).toBe('vcs.github');
     expect(text).not.toMatch(/"(apiKey|token|password|secret)"/i);
   });
@@ -179,7 +179,7 @@ describe('what an import refuses', () => {
     expect(parseImport('[]').ok).toBe(false);
     expect(parseImport(JSON.stringify({ ...good(), formatVersion: 7 })).errors[0].message).toMatch(/newer/);
     const newer = good();
-    newer.config.schemaVersion = 13;
+    newer.config.schemaVersion = 14;
     expect(parseImport(JSON.stringify(newer)).errors[0].message).toMatch(/newer app/);
   });
 
