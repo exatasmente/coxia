@@ -1,4 +1,5 @@
 // Upstream failures as typed errors, and the parameter fallbacks that make one request body work across OpenAI-compatible servers.
+import { budgetRefusal } from '../budget';
 import { type Lang, msg } from './messages';
 import { estimateTokens } from './text';
 import type { ChatRequest } from './types';
@@ -6,6 +7,7 @@ import type { ChatRequest } from './types';
 export type ErrorKind =
   | 'auth'
   | 'forbidden'
+  | 'budget'
   | 'not_found'
   | 'rate_limit'
   | 'quota'
@@ -91,6 +93,8 @@ export function mapHttpError(status: number, bodyText: string, headers: { get(na
   const wait = retryAfterMs(headers);
 
   if (status === 401) return new EngineError(msg(ctx.lang, 'auth', { status, detail }), 'auth', status);
+  // A refusal by budget, not a failure: the runner waits on it instead of spending an attempt. The 403 is read by its body, never by the word "authenticate".
+  if (budgetRefusal(status, detail)) return new EngineError(msg(ctx.lang, 'budget', { status, provider: ctx.host, detail }), 'budget', status);
   if (status === 403) return new EngineError(msg(ctx.lang, 'forbidden', { status, detail }), 'forbidden', status);
   if (status === 402 || parsed.code === 'insufficient_quota' || (status === 429 && /quota|billing|credit|balance/.test(lower))) {
     return new EngineError(msg(ctx.lang, 'quota', { detail }), 'quota', status);

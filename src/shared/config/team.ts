@@ -21,7 +21,8 @@ export function systemAgent(role: LlmRole, seed: RoleSeed = {}): AgentDef {
     model: { role: modelRole, provider: '', model: '' },
     stages: [],
     permission: 'read',
-    tracker: 'none',
+    // The ceremonies read the code host (when the workspace's tools allow it); the agent of a ceremony says so, and turning it off takes that read away.
+    tracker: 'read',
     shell: 'none',
     autonomous: false,
     turnsTo: null,
@@ -47,6 +48,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     // What an agent could do before the two fields existed: an agent that writes ran the commands of the workspace, one that reads ran none and had no say about the host.
     tracker: partial.tracker ?? 'none',
     shell: partial.shell ?? ((partial.permission ?? 'read') === 'worktree' ? 'allowlist' : 'none'),
+    ...(partial.allowedCommands?.length ? { allowedCommands: [...partial.allowedCommands] } : {}),
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
@@ -99,6 +101,8 @@ export function updateAgent(config: WorkspaceConfig, id: string, patch: AgentPat
   const next = structuredClone(config);
   const i = next.agents.team.findIndex((a) => a.id === id);
   const merged: AgentDef = { ...current, ...structuredClone(patch), id: current.id, system: current.system };
+  // A field the patch sets to undefined is dropped: the editor clears the last allowed command that way, and a key left holding undefined fails the schema.
+  for (const key of Object.keys(merged) as (keyof AgentDef)[]) if (merged[key] === undefined) delete merged[key];
   next.agents.team[i] = merged;
   if (current.system && isSystemId(id)) {
     const role = next.agents.roles[id as LlmRole];

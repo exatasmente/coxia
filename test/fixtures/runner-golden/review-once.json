@@ -7,6 +7,7 @@
    "refiner",
    "done",
    [
+    "MEMORY.md",
     "1_SPEC.md"
    ],
    1,
@@ -25,6 +26,7 @@
    "planner",
    "done",
    [
+    "MEMORY.md",
     "2_PLAN.md"
    ],
    1,
@@ -43,7 +45,8 @@
    "developer",
    "done",
    [
-    "3_IMPLEMENTATION.md"
+    "3_IMPLEMENTATION.md",
+    "MEMORY.md"
    ],
    2,
    true
@@ -391,6 +394,9 @@
    true,
    [
     {
+     "path": "MEMORY.md"
+    },
+    {
      "path": "1_SPEC.md"
     }
    ],
@@ -509,6 +515,9 @@
    null,
    true,
    [
+    {
+     "path": "MEMORY.md"
+    },
     {
      "path": "2_PLAN.md"
     }
@@ -747,6 +756,9 @@
    null,
    true,
    [
+    {
+     "path": "MEMORY.md"
+    },
     {
      "path": "3_IMPLEMENTATION.md"
     }

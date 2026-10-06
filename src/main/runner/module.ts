@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
-import { runAgent } from '../agents';
+import { runAgent, probeProviderBudget } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
 import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
 import { createdIssueOf } from '../../shared/runs/links';
@@ -13,6 +13,7 @@ import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
+import { sandbox } from '../sandbox/workspace';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
@@ -66,13 +67,17 @@ export function retroIssueDone(action: ReleaseAction, responses: unknown[], star
   void start(`${rc().issues.refPrefix}${made.iid}`).catch((err) => noteRetroIssue(retro, 'main.retro.issue.noRun', { reason: failureText(err) }));
 }
 
-/** The sandbox of the running workspace's agents. Its folders live under the workspace's data and are the app's own: nothing from an earlier process is kept. */
-export const sandbox = createSandboxService({ dir: join(ATAS, 'sandbox'), home: HOME, protect: [DATA_ROOT] });
-
+/** The sandbox of the running workspace's agents, shared with the mentions answered outside a run's thread. */
+export { sandbox } from '../sandbox/workspace';
 export const runsModule: Module = (ctx) => {
   sandbox.purge();
   const r = createRunner({
     sandbox,
+    // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
+    probeBudget: async (providerId) => {
+      const result = await probeProviderBudget(providerId);
+      return result.ok ? { state: 'ok' as const, detail: '' } : result.refusal ? { state: 'out' as const, detail: result.refusal.detail } : { state: 'unknown' as const, detail: result.detail };
+    },
     runs: runStore(),
     forum: forumStore(),
     config: getConfig,
@@ -120,6 +125,7 @@ export const runsModule: Module = (ctx) => {
     const found = typeof run === 'string' ? r.get(run) : null;
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
+  ctx.handle('runs:memory', (run: unknown, body: unknown) => r.editMemory(id(run), text(body)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
   // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
   ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));

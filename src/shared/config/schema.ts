@@ -199,6 +199,7 @@ const agentDef = object(
     permission: enumOf('read: only reads; worktree: also changes files inside the worktree of its run, nowhere else.', AGENT_PERMISSIONS),
     tracker: enumOf('none: no code host reads in a run; read: reads issues, comments and pull requests (never a write). Absent: none.', AGENT_TRACKERS),
     shell: enumOf('none: no commands; allowlist: the commands of runner.commands exactly as written (agents that write only); sandbox: any command inside a sandbox built for the stage; host: any command on this computer, unsandboxed. Absent: allowlist for an agent that writes, else none.', AGENT_SHELLS),
+    allowedCommands: list('Commands the person allowed this agent always in a ceremony: "prefix:*" allows the prefix and anything after a space, anything else only that exact command. Never a command that writes to the code host.', string('A rule.', { minLength: 1, maxLength: 200 }), { maxItems: 200, uniqueItems: true }),
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
@@ -449,6 +450,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),
+        release: object('How a release run integrates its pull requests.', {
+          soleMaintainer: boolean('The person is the repository\'s only maintainer: their "yes" in Actions on a merge-pr stands for the host\'s approval of a pull request opened by the account the app uses on the host, with no changes asked; every merge-pr then waits for that "yes". Optional: absent reads as false.'),
+        }),
       }),
     },
     ['schemaVersion'],

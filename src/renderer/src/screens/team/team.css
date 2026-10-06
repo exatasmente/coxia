@@ -106,3 +106,5 @@
 .tm-readonly { display: grid; gap: 4px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .tm-readonly dd { margin: 0 0 8px; overflow-wrap: anywhere; }
 .tm-readonly-list { margin: 0; padding-left: 18px; }
+.team-allowed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.team-allowed code { overflow-wrap: anywhere; }

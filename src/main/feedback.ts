@@ -16,6 +16,7 @@ import type {
 } from '../shared/feedback';
 import { listActions, proposeVcsCommands } from './actions';
 import { askAgent, obj, str, strOrNull } from './agents';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { returnedFromQa } from '../shared/cycles/stages';
 import { cycle, formatTime, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { loadCards } from './cards';
@@ -343,6 +344,7 @@ export async function prepareReentry(card: Card): Promise<Reentry> {
 export async function askReentry(iid: string, question: string): Promise<Reentry> {
   const re = getReentry(iid);
   if (!re) throw new Error(tv('err.reentryNotPrepared'));
+  const mentioned = await answerCeremonyMentions(question, { thread: re.iid, ref: re.ref, title: re.title, msgs: re.talk.map((m) => ({ who: m.me ? 'me' : (m.agent ?? 'app'), text: m.text })) });
   const r = await askAgent<{ fala: string; texto: string }>(
     'deep',
     cp('reentry.ask', { ref: re.ref, question }),
@@ -350,7 +352,7 @@ export async function askReentry(iid: string, question: string): Promise<Reentry
     { maxTurns: 12, ...(re.sessionId ? { resume: re.sessionId } : {}) },
   );
   re.sessionId = r.sessionId || re.sessionId;
-  re.talk.push({ me: true, text: question, at: now() }, { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
+  re.talk.push({ me: true, text: question, at: now() }, ...mentioned.map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })), { me: false, text: r.data.texto || r.data.fala, speech: r.data.fala, at: now(), ...(r.partial ? { partial: true } : {}) });
   writeJson(reentryFile(iid), re);
   return re;
 }

@@ -1,0 +1,6 @@
+.cc-stack { position: fixed; top: 12px; left: 0; right: 0; z-index: 60; display: flex; flex-direction: column; gap: 8px; padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); pointer-events: none; }
+.cc-item { pointer-events: auto; display: grid; gap: 8px; max-width: 640px; width: 100%; margin: 0 auto; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); box-shadow: 0 6px 24px var(--glow); }
+.cc-write { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
+.cc-title { margin: 0; font-size: 13px; font-weight: 700; }
+.cc-command { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 30vh; overflow: auto; }
+.cc-actions { gap: 8px; flex-wrap: wrap; }

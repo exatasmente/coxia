@@ -19,6 +19,15 @@ export const isReleasePush = (op: ReleaseOp): boolean => RELEASE_PUSH_OPS.includ
 export const RELEASE_WAIT_OPS: readonly ReleaseOp[] = ['beta', 'stable', 'push-branch', 'push-tag'];
 export const alwaysWaits = (op: ReleaseOp): boolean => RELEASE_WAIT_OPS.includes(op);
 
+/** Whether the workspace says the person is the repository's only maintainer (`runner.release.soleMaintainer`); a config stored without it says no. */
+export const soleMaintainerOf = (runner: { release?: { soleMaintainer?: boolean } } | null | undefined): boolean => runner?.release?.soleMaintainer === true;
+
+/**
+ * Whether a step waits for the person's "sim" whatever the agent's autonomy: the ones of `RELEASE_WAIT_OPS`, and `merge-pr` when the person is the only maintainer, because
+ * then their "sim" is what stands for the review of a pull request they opened, and an agent's autonomy cannot give it.
+ */
+export const releaseWaits = (op: ReleaseOp, soleMaintainer: boolean): boolean => alwaysWaits(op) || (soleMaintainer && op === 'merge-pr');
+
 /** Which branch a `push-branch` sends: the release branch, or `main` after a stable was cut on it (the workflow refuses a stable tag that is not on `origin/main`). */
 export const RELEASE_BRANCHES = ['release', 'main'] as const;
 export type ReleaseBranch = (typeof RELEASE_BRANCHES)[number];
@@ -177,9 +186,10 @@ export const RELEASE_MCP_TOOL_NAME = `mcp__${RELEASE_MCP_SERVER}__release_action
 // i18n-ignore-start: the tool text for the model: English by design
 export const RELEASE_TOOL_DESCRIPTION =
   'Asks the app to do one step of the release of this run\'s version, by the release script of the repository. `open` makes release/<version> (`from` is the stable tag a patch is cut from), ' +
-  '`merge-pr` merges an approved pull request into it locally (`pr` is its number, `head` is required: the commit you read it at, which must be the one the plan approved), `beta` and `stable` cut the next beta or the stable version locally, ' +
+  '`merge-pr` merges a pull request the activities list as ready into it locally (`pr` is its number, `head` is required: the commit you read it at, which must be the one the plan approved); ' +
+  'one listed as waiting for the person\'s yes (the workspace says they are the only maintainer, so their yes stands for the review) is asked the same way and waits in Actions. `beta` and `stable` cut the next beta or the stable version locally, ' +
   '`push-branch` and `push-tag` send the branch (`release`, or `main` after a stable) or the tag (`beta`, the latest one, or `stable`). The version is X.Y.Z. A push, a beta and a stable ALWAYS wait for the person; ' +
-  '`open` and `merge-pr` run by themselves only when you are set to run by themselves, and otherwise wait for the person too. Steps asked in the same stage are carried out in the order they ' +
+  '`open` and `merge-pr` run by themselves only when you are set to run by themselves (and `merge-pr` never for an only maintainer), and otherwise wait for the person too. Steps asked in the same stage are carried out in the order they ' +
   'need each other: a push can only be approved once the cut or merge it sends is done, and the tag once its branch is sent. The answer says which happened.';
 
 export const RELEASE_TOOL_SCHEMA = {

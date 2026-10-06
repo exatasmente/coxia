@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
-import { type ForumDraft, type ForumMessage, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
+import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import {
   type FlowStage,
@@ -39,6 +39,7 @@ import {
   leaveSquad,
   linkUpdate,
   MAX_QUESTION_HOPS,
+  memoryEdited,
   newRunId,
   passQuestion,
   producerOf,
@@ -63,6 +64,7 @@ import {
   reviewReturn,
   stageDone,
   stageFailed,
+  stageWaitingOnBudget,
   squadErrors,
   squadIssueText,
   startRun,
@@ -80,8 +82,8 @@ import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
 import { updateAgent } from '../../shared/config/team';
-import { withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
+import { beginCallActivity, type RunActivity, withActivityContext } from '../activity';
+import { type AgentCall, secretPath } from '../agents';
 import { findClone, git } from '../conflictGit';
 import { ensureDependencies } from './dependencies';
 import { redact } from '../errorlog-core';
@@ -92,7 +94,7 @@ import { beginRun, moveRun } from '../runs-forum';
 import type { Notice } from '../scheduler';
 import type { ReleaseAction } from '../../shared/types';
 import type { VcsComment, VcsIssue } from '../vcs/types';
-import { CYCLES_DIR, cycleFolderOf, issueRecord, readFolder, slugOf, writeIssueRecord } from './cycleFolder';
+import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, readFolder, slugOf, writeIssueRecord, writeMemory } from './cycleFolder';
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
@@ -100,9 +102,11 @@ import { reasonText, type SandboxService } from '../sandbox';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
+import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
-import { mentionCall, readProposedIssue } from './mention';
+import { answerMentions } from '../mentions/answer';
+import type { MentionPlace } from '../mentions/place';
 import type { IssueMade, Publisher } from './publish';
 
 // The runner: it takes an issue through the agent cycle. A run is started (a branch, a worktree, the cycle folder with the issue in it), and then every
@@ -110,7 +114,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -168,6 +172,8 @@ export interface RunnerDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
   sandbox?: SandboxService;
+  /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
+  probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
@@ -206,6 +212,11 @@ export interface Runner {
   sendBack(id: string, stageId: string, note: string): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
   migrateFlow(id: string): Run;
+  /**
+   * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; refused while a stage is
+   * working in the worktree, so the person never races an agent for the file. Returns the text as it was written (masked), or null when the run has no worktree.
+   */
+  editMemory(id: string, text: string): Promise<{ text: string; clipped: boolean } | null>;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
   setSquad(id: string, squad: string | null): Run;
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
@@ -236,6 +247,8 @@ export interface Runner {
 }
 
 const MAX_STEPS = 200;
+/** The most the person may paste as the memory from the run screen: the same ceiling the screen reads back, so nothing is written that could not be shown. */
+const MEMORY_EDIT_MAX = 200_000;
 /** A release run that ended is watched this long for the stable version to be published (and its tracking issue closed). */
 const RELEASE_WATCH_DAYS = 30;
 const iso = (d: Date): string => d.toISOString();
@@ -264,6 +277,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   const again = new Set<string>();
   const aborts = new Map<string, AbortController>();
   const mentions = new Map<string, Promise<void>>();
+  // The `@` calls that were accepted and not yet finished, and how many of them each run has going: a second call of a run is opened as waiting.
+  const calls = new Map<string, { activity: RunActivity; queued: boolean }>();
+  const liveCalls = new Map<string, number>();
   const chains = new Map<string, Promise<void>>();
   const chainAborts = new Map<string, AbortController>();
   // The command each run's working stage waits for the person to allow (`shell: host`): one at a time, since a stage runs one command at a time. Never saved: it
@@ -312,6 +328,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   let scanning: Promise<Run[]> | null = null;
   let ticking: Promise<Run[]> | null = null;
   let sweeping: Promise<void> | null = null;
+  // The providers whose key ran out of budget: while one is here, nothing new starts on it, and the sweep probes it (one call, not one per run).
+  const budget = new Map<string, WaitingProvider>();
 
   const need = (id: string): Run => {
     const run = deps.runs.get(id);
@@ -363,6 +381,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- running the stages -----------------------------------------------------------------------------------------------------------
 
   function pump(id: string): void {
+    // A provider whose key ran out of budget holds every run that would keep working on it: nothing new starts until a call goes through again.
+    const paused = deps.runs.get(id)?.status === 'waiting' && deps.runs.get(id)?.wait?.kind === 'budget';
+    if (paused || budget.size) return;
     if (inflight.has(id)) {
       again.add(id);
       return;
@@ -420,6 +441,14 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function fail(run: Run, e: unknown): void {
     if (deps.runs.get(run.id)?.status !== 'working') return;
+    // A refusal by budget is a wait, not a failure: the run keeps its place, no retry is offered, and the sweep probes the provider instead of the runs.
+    if (e instanceof StageError && e.code === 'budget') {
+      const provider = String(e.params.provider ?? '');
+      const reason = e.message;
+      budget.set(provider, { engine: String(e.params.engine ?? ''), reason, since: now() });
+      tell(run, moveRun(d, run.id, (r) => stageWaitingOnBudget(r, { provider, engine: String(e.params.engine ?? ''), detail: reason }, now())));
+      return;
+    }
     const detail = redact(e instanceof Error ? e.message : String(e)).slice(0, 500);
     if (!(e instanceof StageError)) console.error('[runner]', run.id, run.stage, detail);
     tell(run, moveRun(d, run.id, (r) => stageFailed(r, detail, now())));
@@ -783,6 +812,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!deps.publisher || !rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') throw new RunnerError('nothing-to-undo', { key: key.slice(0, 48) });
       return deps.publisher.undo(id, key);
     },
+    async editMemory(id, text) {
+      const run = need(id);
+      // The agent has the worktree: a write now would race it for the file, and the stage's own commit is what carries the memory.
+      if (inflight.has(id) || run.status === 'working') throw new RunnerError('memory-busy');
+      if (!existsSync(run.worktree)) throw new RunnerError('worktree-gone');
+      const config = deps.config();
+      const identity = await commitIdentity(config.runner.identity, run.worktree, deps.identity);
+      if (!identity) throw new RunnerError('no-identity');
+      // The person's own words, masked like every other document; the path guard is `writeMemory`'s.
+      writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
+      await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
+      move(id, (r, _f, at) => memoryEdited(r, at));
+      return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
+    },
     skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
     sendBack(id, stageId, note) {
       const before = need(id);
@@ -851,6 +894,14 @@ export function createRunner(deps: RunnerDeps): Runner {
     onMessage(message) {
       if (message.author.type !== 'person' || message.kind !== 'post' || !message.mentions.length || !message.thread.startsWith('run-')) return;
       const runId = message.thread.slice(4);
+      const run = deps.runs.get(runId);
+      if (!run) return;
+      // Each agent named gets its call line at once, before the queue: the person sees who was called and who waits its turn.
+      try {
+        openCalls(runId, run, message);
+      } catch (e) {
+        console.error('[runner] could not open the mention calls', runId, e instanceof Error ? e.message : e);
+      }
       const prior = mentions.get(runId) ?? Promise.resolve();
       // One answer at a time per run: the thread reads in order.
       const next = prior.then(() => answerMention(runId, message)).catch(() => undefined);
@@ -909,6 +960,12 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (first !== null) throw first;
       })().finally(() => (sweeping = null))),
     resume() {
+      // The app that just opened remembers no provider from before: the runs that were waiting on one are read back from their `wait`, and the sweep probes them.
+      for (const run of deps.runs.list()) {
+        if (run.status === 'waiting' && run.wait?.kind === 'budget' && run.wait.provider) {
+          budget.set(run.wait.provider, { engine: '', reason: run.wait.detail ?? '', since: run.wait.since });
+        }
+      }
       for (const run of deps.runs.list().reverse()) {
         if (run.status !== 'cancelled' && Object.values(run.comments).some((c) => c.status === 'draft' && c.target === 'mr')) publish(run.id, (p) => p.flushReviews(run.id));
         if (isTerminal(run)) continue;
@@ -932,52 +989,68 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- the agents named in a message ------------------------------------------------------------------------------------------------
 
+  const callKey = (runId: string, message: number, agent: string): string => `${runId}:${message}:${agent}`;
+
+  // Every agent named in the message gets its call as soon as the message is accepted, before the queue: the line exists while it waits its turn.
+  function openCalls(runId: string, run: { worktree: string }, message: ForumMessage): void {
+    const team = deps.config().agents.team;
+    const cwd = existsSync(run.worktree) ? run.worktree : deps.env().fallbackCwd;
+    for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
+      if (!team.some((a) => a.id === id) || calls.has(callKey(runId, message.seq, id))) continue;
+      const queued = (liveCalls.get(runId) ?? 0) > 0;
+      const activity = beginCallActivity(id, { jobId: `run:${runId}`, call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, cwd) });
+      activity.status(queued ? 'queued' : 'started');
+      calls.set(callKey(runId, message.seq, id), { activity, queued });
+      liveCalls.set(runId, (liveCalls.get(runId) ?? 0) + 1);
+    }
+  }
+
+  /** The call is over (it answered or it failed): the line goes with it, and the next one of the run may begin. */
+  function releaseCall(runId: string, message: number, agent: string): void {
+    if (!calls.delete(callKey(runId, message, agent))) return;
+    const left = (liveCalls.get(runId) ?? 1) - 1;
+    if (left > 0) liveCalls.set(runId, left);
+    else liveCalls.delete(runId);
+  }
+
   // The agent answers in the thread without ever writing to the run: whatever its own permission is, a mention never gets it Edit or Write. An agent set to run
   // commands runs them over a throwaway copy of the code (with the person's yes per command on `host`), and one that reads the code host may propose an issue,
-  // which waits in Actions.
+  // which waits in Actions. The loop is the mentions core; the run is one of its places, with the worktree, the flow stage and the publisher of a run.
   async function answerMention(runId: string, message: ForumMessage): Promise<void> {
     const run = deps.runs.get(runId);
-    if (!run) return;
-    const config = deps.config();
-    const threadId = runThreadId(runId);
-    const stage = run.stage;
-    for (const id of message.mentions.slice(0, 3)) {
-      const def = config.agents.team.find((a) => a.id === id);
-      if (!def) continue;
-      const reader = { ...def, permission: 'read' as const };
-      const env = deps.env();
-      const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
-      const thread = deps.forum.read(threadId, 0, 2000)?.messages ?? [];
-      const abort = new AbortController();
-      const watch = watchdog(abort, limitsOf(config, deps));
-      const clock: StageClock = { pause: () => watch.pause(), allowed: new Set() };
-      let session: Awaited<ReturnType<typeof openStageSandbox>> | null = null;
-      try {
-        const flowStage = flowFor(run).find((s) => s.id === stage);
-        if ((def.shell === 'sandbox' || def.shell === 'host') && flowStage && existsSync(run.worktree)) {
-          // A machine that cannot make the sandbox still gets the answer, read only, and the thread says why it ran nothing.
-          session = await openStageSandbox(exec, run, flowStage, reader, false, abort.signal, clock).catch((e: unknown) => {
-            deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }, stage });
-            return null;
-          });
-        }
-        const proposes = !!deps.publisher && (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
-        const call: AgentCall = mentionCall({ run, agent: reader, config, message, thread, files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined, issue: proposes });
-        if (session) call.exec = session;
-        call.beat = watch.beat;
-        const r = await watch.guard(withActivityContext(`run:${runId}`, () => deps.engine(call, [])));
-        const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
-        if (!text) throw new StageError('empty-answer');
-        deps.forum.append(threadId, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
-        const issue = proposes ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
-        if (issue && deps.publisher) await deps.publisher.proposeIssue(runId, { key: `${message.seq}-${id}`, title: issue.title, body: issue.body, labels: issue.labels, by: id, stage });
-      } catch (e) {
-        const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
-        deps.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
-      } finally {
-        await session?.close().catch(() => undefined);
+    if (!run) {
+      // The run went away while the call waited: its line would wait forever.
+      for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
+        calls.get(callKey(runId, message.seq, id))?.activity.status('failed');
+        releaseCall(runId, message.seq, id);
       }
+      return;
     }
+    const place: MentionPlace = { thread: runThreadId(runId), kind: 'run', run, repos: [] };
+    await answerMentions(place, message, {
+      forum: deps.forum,
+      config: deps.config,
+      engine: deps.engine,
+      sandbox: exec.sandbox,
+      env: deps.env,
+      openSession: async (p, def, cwd, stage, signal, watch) => {
+        const r = p.run;
+        if (!r || !stage) return null;
+        const flowStage = flowFor(r).find((s) => s.id === stage);
+        if (!flowStage || !existsSync(r.worktree)) return null;
+        const clock: StageClock = { pause: watch.pause, allowed: new Set() };
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+      },
+      // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
+      callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
+      release: (id) => releaseCall(runId, message.seq, id),
+      // A mention on a provider whose key has no budget does not spend a call: the thread says why, and the mention is left for when the provider answers again.
+      held: (def) => {
+        const provider = deps.config().llm.roles[def.model.role ?? 'deep']?.provider ?? '';
+        return provider && budget.has(provider) ? { provider, reason: budget.get(provider)?.reason ?? '—' } : null;
+      },
+      proposeIssue: deps.publisher ? (id, e) => deps.publisher!.proposeIssue(id, { ...e, stage: e.stage ?? run.stage }) : undefined,
+    });
   }
 
   // ---- agents talk before they ask the person ----------------------------------------------------------------------------------------
@@ -1035,6 +1108,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
+      let partial = false;
       try {
         const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
         const abort = new AbortController();
@@ -1043,6 +1117,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         call.beat = watch.beat;
         const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
         answer = readChain(r.data);
+        partial = !!r.partial;
         if (!answer) failure = 'empty-answer';
       } catch (e) {
         failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -1051,6 +1126,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const now = deps.runs.get(id)?.question;
       if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
       if (!answer) return handUp(id, holder.id, 'failed', failure);
+      if (partial) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: holder.id }, stage: run.stage });
       if (answer.verdict === 'request') return handleRequest(id, holder, q, answer.request, !!liaison);
 
       if (answer.verdict === 'answer' && answer.text) {
@@ -1099,6 +1175,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
     let answer: RequestAnswer | null = null;
     let failure = '';
+    let partial = false;
     try {
       const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
       const abort = new AbortController();
@@ -1107,6 +1184,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         call.beat = watch.beat;
         const r = await watch.guard(withActivityContext(`run:${id}`, () => deps.engine(call, [])));
       answer = readRequestAnswer(r.data);
+      partial = !!r.partial;
       if (!answer) failure = 'empty-answer';
     } catch (e) {
       failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -1119,6 +1197,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       return handUp(id, holder.id, 'failed', t('main.runner.request.failedDetail', { squad: toName, reason: failure }));
     }
 
+    if (partial) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: target.id }, stage: run.stage });
     if (answer.verdict === 'answer') {
       reply({ text: answer.text });
       move(id, (r, _f, at) => answerByAgent(r, { by: holder.id, text: t('main.runner.request.answerText', { squad: toName, agent: target.id, text: answer.text }) }, at));
@@ -1214,12 +1293,48 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- what a waiting run waits for -------------------------------------------------------------------------------------------------
 
+  /**
+   * Asks each provider whose key ran out of budget, with one small call, whether it answers again. A provider that answers sends every run waiting on
+   * it on (`waitDone`), whatever their stage; a provider that refuses again, or that cannot be told (a 5xx, the network), leaves them waiting.
+   */
+  async function probeWaitingProviders(): Promise<Run[]> {
+    const probe = deps.probeBudget;
+    if (!probe || !budget.size) return [];
+    const sent: Run[] = [];
+    for (const [provider, state] of [...budget]) {
+      let result: Awaited<ReturnType<BudgetProbeFn>>;
+      try {
+        result = await probe(provider);
+      } catch (e) {
+        result = probeStateOf(e);
+      }
+      if (result.state === 'out') {
+        budget.set(provider, { ...state, reason: result.detail || state.reason });
+        continue;
+      }
+      if (result.state === 'unknown') {
+        console.error('[runner] could not tell whether the provider has budget', provider, result.detail);
+        continue;
+      }
+      budget.delete(provider);
+      for (const run of deps.runs.list()) {
+        if (run.status !== 'waiting' || run.wait?.kind !== 'budget' || run.wait.provider !== provider) continue;
+        try {
+          sent.push(move(run.id, (r, f, at) => waitDone(r, f, { reply: '', from: 'app' }, at)));
+        } catch (e) {
+          console.error('[runner] could not send on a run waiting for a provider', run.id, e instanceof Error ? e.message : e);
+        }
+      }
+    }
+    return sent;
+  }
+
   // Every waiting run is looked at once per tick: the code host says whether its event happened, and the run goes on from where it waits.
   async function lookForEvents(): Promise<Run[]> {
-    const sent: Run[] = [];
+    const sent: Run[] = await probeWaitingProviders();
     for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
       const w = run.wait;
-      if (!w) continue;
+      if (!w || w.kind === 'budget') continue;
       let over: { over: boolean; reply?: string } = { over: false };
       if (w.kind === 'linked-done') {
         // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).
@@ -1257,6 +1372,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function scanIssues(): Promise<Run[]> {
     const config = deps.config();
     if (!config.runner.enabled || !isFlowCycle(config.devCycle.stages) || !deps.issues.ready()) return [];
+    // A provider without budget holds the starts: without resolving each run's roles there is no way to tell whether it would use that provider, so nothing starts.
+    if (budget.size) return [];
     const room = config.runner.maxConcurrentRuns - deps.runs.list().filter((r) => r.status === 'working').length;
     if (room <= 0) return [];
     const found = (await deps.issues.triggered(config.runner.triggerLabel)).sort((a, b) => a.iid - b.iid);

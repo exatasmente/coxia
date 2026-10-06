@@ -68,7 +68,8 @@ export function chainCall(i: ChainInput): AgentCall {
     system,
     cwd: i.cwd,
     label: i.holder.id,
-    maxTurns: 20,
+    maxTurns: i.config.runner.turns.read,
+    wrapUp: true,
   };
 }
 

@@ -84,7 +84,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'memory-edited', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 export interface HistoryEntry {
@@ -303,6 +303,11 @@ export interface ReleaseActivity {
   state: 'open' | 'merged' | 'closed';
   /** The host's approval (and, when it has checks, their result) when it was read. */
   approved: boolean;
+  /**
+   * Not approved, but the workspace says the person is the repository's only maintainer and this open pull request is theirs (opened by the account the app uses on the
+   * host, no changes asked, not a draft, checks passing): ready to merge on their "sim" in Actions, which stands for the review. Absent: no.
+   */
+  selfReview?: boolean;
   /** The issue it closes, when the host says so. */
   issue: number | null;
 }
@@ -400,6 +405,10 @@ export interface WaitState {
   since: string;
   /** The agent that asked the reporter, when an agent's question (not a wait stage) is what the run waits on; the stage goes on with that agent when the reply comes. */
   by?: string;
+  /** For `budget`: the provider whose key ran out of budget, as the workspace names it in `llm.providers`. */
+  provider?: string;
+  /** For `budget`: the reason in words, with the provider's own (already masked) text. */
+  detail?: string;
 }
 
 /** A stage of the flow a run follows, resolved from the config: every default filled in. */

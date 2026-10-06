@@ -104,7 +104,7 @@ describe('an issue two squads claim', () => {
     const waiting = b.runner.get(started.id) as Run;
     expect(waiting).toMatchObject({ status: 'question', stage: 'triage', question: { kind: 'squad', by: 'support' } });
     expect(waiting.squad ?? null).toBeNull();
-    expect(waiting.routing).toMatchObject({ candidates: ['a', 'b'], why: 'several', proposal: { squad: 'b', by: 'support', reason: 'It is about the web.' }, result: { summary: 'Triaged.', artifacts: ['0_TRIAGE.md'] } });
+    expect(waiting.routing).toMatchObject({ candidates: ['a', 'b'], why: 'several', proposal: { squad: 'b', by: 'support', reason: 'It is about the web.' }, result: { summary: 'Triaged.', artifacts: ['MEMORY.md', '0_TRIAGE.md'] } });
     expect(agentsOf(b)).toEqual(['support']);
     // the agent was told which squads it may name, and its schema offers exactly those
     const call = b.engine.calls[0];
@@ -130,7 +130,7 @@ describe('an issue two squads claim', () => {
     const thread = b.thread(end);
     expect(thread.find((m) => m.code === 'run.squad.chosen')).toMatchObject({ kind: 'answer', author: { type: 'person' }, params: { squad: 'Squad B' }, replyTo: ask?.seq });
     // what the front door produced and said travelled on with the run
-    expect(end.stages.find((s) => s.stage === 'triage')).toMatchObject({ status: 'done', artifacts: ['0_TRIAGE.md'] });
+    expect(end.stages.find((s) => s.stage === 'triage')).toMatchObject({ status: 'done', artifacts: ['MEMORY.md', '0_TRIAGE.md'] });
     expect(thread.some((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === 'support' && m.text === 'Triaged.')).toBe(true);
     expect(thread.filter((m) => m.kind === 'post' && m.text === 'Triaged.')).toHaveLength(1);
   });

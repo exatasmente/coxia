@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, parseMentions } from '../shared/forum';
+import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, parseMentions, unknownMentions } from '../shared/forum';
 import { t } from '../shared/i18n';
 import { ATAS } from './env';
 import { redact } from './errorlog-core';
@@ -29,12 +29,14 @@ export function forumStore(): ForumStore {
   return store;
 }
 
-/** A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). */
+/** A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). A `@name` that is no agent of the team is said to be unknown. */
 export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown) {
   if (typeof thread !== 'string') throw new ForumError('bad-thread', { id: '' });
   if (typeof text !== 'string') throw new ForumError('empty');
   if (text.length > MAX_TEXT) throw new ForumError('too-long', { max: MAX_TEXT });
   const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: parseMentions(text, agentIds) });
+  const unknown = unknownMentions(text, agentIds);
+  if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }
 

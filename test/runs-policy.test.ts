@@ -8,10 +8,11 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 // What a paired browser may do to a run: all of it. Reading, answering, and every move that starts a stage, decides a gate, retries, cancels, picks a squad, moves a run to the
 // current flow, takes a comment back or switches an agent's autonomy. What a run may execute is still decided by the configuration, which a browser can only change in a scoped way.
 const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact'];
-const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:memory', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
 const OPEN = [...READS, ...MOVES];
-// Starting a release run is the window's: it ends in the repository's own scripts and merged code, run as the person (D19). A paired browser follows the run and answers its gates.
-const DESKTOP = ['runs:startRelease'];
+// Starting a release run ends in the repository's own scripts and merged code, run as the person, and allowing a host command runs one outside any sandbox: a paired browser
+// does either only when its external effects are on, as it approves a proposal.
+const EXTERNAL = ['runs:command', 'runs:startRelease'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
@@ -25,23 +26,20 @@ describe('web policy for the runs', () => {
     }
   });
 
-  it('lists as desktop-only the start of a release run and nothing else of the runs', () => {
-    expect([...DESKTOP_ONLY].filter((c) => c.startsWith('runs:'))).toEqual(DESKTOP);
-    for (const channel of DESKTOP) {
-      expect(webAccess(channel), channel).toBe('deny');
-      expect(webRefusal(channel, true), channel).not.toBeNull();
-      expect(webRefusal(channel, false), channel).not.toBeNull();
-    }
+  it('lists no channel of the runs as desktop-only', () => {
+    expect([...DESKTOP_ONLY].filter((c) => c.startsWith('runs:'))).toEqual([]);
   });
 
   it('puts none of them behind the external-effects switch: nothing in a run reaches the code host', () => {
     for (const channel of OPEN) expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
   });
 
-  it('puts allowing a host command behind the same switch as approving a proposal', () => {
-    expect(webAccess('runs:command')).toBe('external');
-    expect(webRefusal('runs:command', false)).not.toBeNull();
-    expect(webRefusal('runs:command', true)).toBeNull();
+  it('puts allowing a host command and starting a release behind the same switch as approving a proposal', () => {
+    for (const channel of EXTERNAL) {
+      expect(webAccess(channel), channel).toBe('external');
+      expect(webRefusal(channel, false), channel).not.toBeNull();
+      expect(webRefusal(channel, true), channel).toBeNull();
+    }
   });
 
   it('keeps the approval of a proposal under the existing web setting', () => {
@@ -52,7 +50,7 @@ describe('web policy for the runs', () => {
 
   it('are exactly the channels the module serves, each one classified here', () => {
     const served = [...source('module.ts').matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1]);
-    expect(served.sort()).toEqual([...OPEN, ...DESKTOP, 'runs:command'].sort());
+    expect(served.sort()).toEqual([...OPEN, ...EXTERNAL].sort());
   });
 });
 

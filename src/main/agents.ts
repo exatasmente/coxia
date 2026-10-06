@@ -11,7 +11,11 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
+import { ceremonyCommands } from './ceremonyCommands';
+import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
+import { budgetText, clipProviderText } from './engine/budget';
+import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
@@ -25,6 +29,7 @@ import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
@@ -86,13 +91,26 @@ function shellDenial(usage: string, plumbing: string): string {
   return hints ? cp('system.shellDenied', { hints }) : cp('system.shellDeniedNone');
 }
 
-export function shellAllowlist(patterns: RegExp[], usage: string): HookCallback {
+const decided = (decision: 'allow' | 'deny', reason: string) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision: decision, permissionDecisionReason: reason } });
+
+/**
+ * The shell of an agent that reads: the commands the code allows (the code host reads, plumbing git in a conflict call) run; a git command that names a secret
+ * path never does. With `ask` (a ceremony agent), anything else is not refused but asked of the person, and the call waits: the rules the person gave the agent
+ * let a command through without asking, except a write to the code host, which is asked every time.
+ */
+export function shellAllowlist(patterns: RegExp[], usage: string, ask?: CommandAsk): HookCallback {
   const plumbing = (): string => (patterns.some((re) => re.source.startsWith('^git -C')) ? cp('system.hintGitplumbing') : '');
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') return {};
-    const command = stripOutputSuffix(String((input.tool_input as { command?: unknown }).command ?? ''));
-    if (patterns.some((re) => re.test(command)) && !(command.startsWith('git ') && command.split(/[\s:"']+/).some((t) => SECRET_PATH.test(t)))) {
-      return {};
+    const raw = String((input.tool_input as { command?: unknown }).command ?? '').trim();
+    const command = stripOutputSuffix(raw);
+    const secret = command.startsWith('git ') && command.split(/[\s:"']+/).some((t) => SECRET_PATH.test(t));
+    if (patterns.some((re) => re.test(command)) && !secret) return {};
+    if (ask && !secret) {
+      if (!isHostWrite(raw) && rulesAllow(ask.rules, raw)) return decided('allow', cp('system.shellAllowedByRule'));
+      const answer = await ask.request(raw);
+      if (answer.ok) return decided('allow', cp('system.shellAllowedByPerson'));
+      return decided('deny', answer.note ? cp('system.shellRefusedByPersonNote', { note: answer.note }) : cp('system.shellRefusedByPerson'));
     }
     return {
       hookSpecificOutput: {
@@ -278,14 +296,14 @@ export const redactSecretResults: HookCallback = async (input) => {
   return { hookSpecificOutput: { hookEventName: 'PostToolUse', updatedToolOutput: clean } };
 };
 
-export function agentHooks(patterns: RegExp[] = [], host = true): NonNullable<Options['hooks']> {
+export function agentHooks(patterns: RegExp[] = [], host = true, ask?: CommandAsk): NonNullable<Options['hooks']> {
   // The shell allow-list follows the configured provider (glab for GitLab, gh for GitHub); a host with no CLI (Bitbucket, an API-only integration)
   // reads through the app's tool and has no shell command to allow, and it is not told about a CLI it does not have.
   const policy = vcsReadPolicy();
   const cli = host && policy.via === 'cli';
   return {
     PreToolUse: [
-      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage)] },
+      { matcher: 'Bash', hooks: [shellAllowlist([...(cli ? policy.patterns : []), ...patterns], policy.usage, ask)] },
       { matcher: 'Read|Grep|Glob', hooks: [noSecrets] },
       { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],
@@ -371,14 +389,16 @@ function sdkOptions(req: EngineRequest): Options {
   const confine = req.confine;
   // A call with no code host read has no CLI to allow either: its shell is whatever commands it was given.
   const host = (req.tracker ?? 'workspace') === 'workspace';
-  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host);
-  const shellOff = confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
+  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host, req.ask);
+  // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
+  const asks = !confine && !!req.ask;
+  const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
     permissionMode: 'dontAsk',
     systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
-    allowedTools: req.allowedTools,
+    allowedTools: asks ? [...req.allowedTools.filter((t) => !t.startsWith('Bash(')), 'Bash'] : req.allowedTools,
     disallowedTools: [
       ...(shellOff ? ['Bash'] : []),
       ...(confine ? [] : ['Edit', 'Write']),
@@ -448,7 +468,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const tool = wantsVcsTool(req);
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
-  return runOpenOnce<T>({
+  try {
+    return await runOpenOnce<T>({
     selection,
     prompt: req.prompt,
     options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
@@ -479,7 +500,12 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
-  });
+    });
+  } catch (e) {
+    // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
+    throw e;
+  }
 }
 
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
@@ -511,6 +537,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     },
   });
   const counted = new Set<string>();
+  // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
+  const assistantText: string[] = [];
   for await (const m of q) {
     req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
@@ -525,7 +553,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
       }
       for (const block of m.message.content) {
-        if (block.type === 'text') req.activity?.text(block.text);
+        if (block.type === 'text') {
+          assistantText.push(block.text);
+          req.activity?.text(block.text);
+        }
         if (block.type !== 'tool_use') continue;
         sources.push(source(block.name, block.input as Record<string, unknown>));
         if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
@@ -542,8 +573,14 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
       if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
-      // i18n-ignore: developer error from the SDK result
-      if (m.subtype !== 'success' || m.structured_output == null) throw new Error(`agent ended with ${m.subtype}`);
+      if (m.subtype !== 'success' || m.structured_output == null) {
+        // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
+        const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
+        // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
+        if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
+        // i18n-ignore: developer error from the SDK result
+        throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
+      }
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
@@ -553,6 +590,34 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
 
 registerEngine('claude-sdk', runClaudeSdk);
 registerEngine('open', runOpenEngine);
+
+/**
+ * One small call to a provider, for the sweep to find out whether its key has budget again: the cheapest call the engine has, a one-word answer with no
+ * tools. It goes through the same classification as a stage, so a refusal by budget is a refusal here too, and a 5xx or a network error is only "could not tell".
+ */
+export async function probeProviderBudget(providerId: string): Promise<{ ok: boolean; refusal: ProviderBudgetError | null; detail: string }> {
+  const provider = rc().provider(providerId);
+  if (!provider) return { ok: false, refusal: null, detail: '' };
+  const own = rc().agentModel({ role: null, provider: provider.id, model: provider.models[0] ?? '' });
+  try {
+    await runnerFor(own)({
+      role: own.role,
+      prompt: cp('system.budgetProbe'),
+      schema: { type: 'object', properties: { ok: { type: 'string' } }, required: ['ok'], additionalProperties: false },
+      target: own,
+      system: '',
+      cwd: rc().projectsRoot,
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: [] },
+      extra: { maxTurns: 1, tools: [] },
+    });
+    return { ok: true, refusal: null, detail: '' };
+  } catch (e) {
+    if (e instanceof ProviderBudgetError) return { ok: false, refusal: e, detail: e.detail };
+    return { ok: false, refusal: null, detail: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) };
+  }
+}
 
 // One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
 async function runOnce<T>(
@@ -566,7 +631,12 @@ async function runOnce<T>(
   // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
   const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
   const cwd = rc().projectsRoot;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity });
+  // The ceremony follows its system agent of the team: whether it reads the code host, and the commands the person allowed it always.
+  const agent = getConfig().agents.team.find((a) => a.id === role && a.system);
+  const reads = (agent?.tracker ?? 'read') === 'read';
+  const id = agent?.id ?? role;
+  const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', ask });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -663,6 +733,8 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
 }
 
 export async function reply(card: Card, turn: AgentTurn, text: string): Promise<ReplyResult> {
+  // A named agent answers first, in the ceremony: the system agent still leads and takes over after.
+  const mentions = await answerCeremonyMentions(text, { thread: card.ref, ref: card.ref, title: card.title, msgs: [] });
   const targets = [
     cycle().specLayout.decisionLog.heading && cycle().enrichment.specFolder ? cp('reply.targetSpec') : '',
     rc().cardSource?.noteArgs.length ? cp('reply.targetNote') : '',
@@ -702,10 +774,12 @@ export async function reply(card: Card, turn: AgentTurn, text: string): Promise<
     effect: r.data.efeito ? { ref: card.ref, text: r.data.efeito.texto, repo: r.data.efeito.repo } : null,
     needsDeepDive: r.data.desbloqueio,
     options: options(r.data.opcoes),
+    ...(mentions.length ? { mentions } : {}),
   };
 }
 
 export async function deepAsk(card: Card, question: string, sessionId: string | null): Promise<DeepAnswer> {
+  const mentions = await answerCeremonyMentions(question, { thread: card.ref, ref: card.ref, title: card.title, msgs: [] });
   const prompt = cp(
     'deep.main',
     {
@@ -719,7 +793,7 @@ export async function deepAsk(card: Card, question: string, sessionId: string | 
     maxTurns: 20,
     ...(sessionId ? { resume: sessionId } : {}),
   });
-  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}) };
+  return { sessionId: r.sessionId, speech: r.data.fala, text: r.data.texto || r.data.fala, sources: r.sources, ...(r.partial ? { partial: true } : {}), ...(mentions.length ? { mentions } : {}) };
 }
 
 export async function deepOptions(card: Card, sessionId: string): Promise<DeepOption[]> {
@@ -906,7 +980,14 @@ export interface AgentCall {
   exec?: SandboxSession;
   /** What the live activity calls it (the agent's id). */
   label: string;
+  /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
+  activity?: RunActivity;
   maxTurns: number;
+  /**
+   * A call that answers a message (a mention, a question of the chain, a request between squads) and may run out of turns: the same session is resumed once, with no
+   * tool at all, to answer with what it has read, and the answer comes back marked `partial`. A stage leaves it off: it must not be reported done from a half answer.
+   */
+  wrapUp?: boolean;
   abort?: AbortController;
   /** Called at every sign of life from the model (text, a tool call, a usage report): what keeps the idle limit of the stage from running out. */
   beat?: () => void;
@@ -956,13 +1037,14 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
 export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
   const resolved = rc().agentModel(call.agent.model);
   const target = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
-  const activity = beginActivity(call.label, (p) => secretPath(p, call.cwd));
-  activity.status('started');
+  const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
+  // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
+  if (!call.activity) activity.status('started');
   try {
     const { allowedTools, shell, tracker } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
-    const r = await runnerFor(target)<T>({
+    const request: EngineRequest = {
       role: target.role,
       prompt: call.prompt,
       schema: call.schema,
@@ -981,12 +1063,48 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
-    });
+    };
+    let r: Run<T>;
+    try {
+      r = await runnerFor(target)<T>(request);
+    } catch (e) {
+      if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
+      r = await wrapUpAnswer<T>(request, e, activity);
+    }
     activity.status('finished');
     return r;
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
+    // One seam for stages, mentions and the chain: the reason carries the provider the role is mapped to, whichever engine raised it.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(target.providerId, e.engine, e.detail);
     throw e;
+  }
+}
+
+// The resume of a call that ran out of turns: same session, same schema, 2 turns and no tool of any kind (no shell session, no code host read, no release step), so
+// it can only answer. Its transcript is the same session, so the cost panel counts it.
+async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activity: RunActivity): Promise<Run<T>> {
+  const stopped = cp('system.stopped', { noSession: e.sessionId ? '' : cp('system.noSession') });
+  if (!e.sessionId) throw new Error(stopped);
+  console.error('[agent] error_max_turns, resuming once for an answer', e.sessionId);
+  activity.status('resumed');
+  try {
+    const r = await runnerFor(request.target)<T>({
+      ...request,
+      prompt: cp('system.wrapUp'),
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: request.shell.patterns },
+      extra: { maxTurns: 2, resume: e.sessionId, tools: [], allowedTools: [] },
+      exec: undefined,
+      release: undefined,
+    });
+    return { ...r, sources: [...e.sources, ...r.sources], partial: true };
+  } catch (again) {
+    // A refusal by budget is a wait for the runner, not a failure to word here.
+    if (again instanceof ProviderBudgetError) throw again;
+    console.error('[agent] wrap-up answer failed', again instanceof Error ? again.message : again);
+    throw new Error(cp('system.partialFailed', { stopped, reason: again instanceof Error ? again.message : String(again) }));
   }
 }
 

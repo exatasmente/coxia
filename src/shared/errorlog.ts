@@ -60,6 +60,7 @@ const HINTS: { test: (text: string, source: string) => boolean; hint: string }[]
   { test: (t, s) => /not logged in|glab auth login|gh auth login|authentication required|no token|\b401\b|unauthorized|recusou a credencial|rejected the credential/i.test(t) && (GITLAB.test(t) || /gitlab|github|bitbucket|glab|vcs|cards|radar|watchers|feedback|worktrees|efeitos/i.test(s)), hint: 'main.errorlog.hint.accessRefused' },
   { test: (t, s) => NETWORK.test(t) && (GITLAB.test(t) || /gitlab|github|bitbucket|glab|vcs|cards|radar|watchers|feedback|worktrees/i.test(s)), hint: 'main.errorlog.hint.networkVpn' },
   { test: (t) => /\b402\b|insufficient (credits|funds)|payment required|out of credits/i.test(t), hint: 'main.errorlog.hint.orCredits' },
+  { test: (t) => /\b402\b|\b403\b.{0,80}\b(limit|credit|quota|billing|balance)\b|insufficient (quota|credits|funds)|payment required|out of credits|exceeded your current quota|key limit exceeded|monthly limit/i.test(t), hint: 'main.errorlog.hint.budget' },
   { test: (t) => /\b401\b|invalid (x-)?api[ -]?key|incorrect api key|user not found/i.test(t) && /openrouter|api error|anthropic|invalid|key|authentication/i.test(t), hint: 'main.errorlog.hint.orKeyRefused' },
   { test: (t) => /sem chave configurada/i.test(t) && /openrouter/i.test(t), hint: 'main.errorlog.hint.orKeyMissing' },
   { test: (t) => NETWORK.test(t) && /openrouter/i.test(t), hint: 'main.errorlog.hint.orNetwork' },

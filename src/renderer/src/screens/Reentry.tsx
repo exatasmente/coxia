@@ -163,7 +163,7 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
               <section className="panel" style={{ gap: 10 }}>
                 <h2 className="section-title">{t('ui.reentry.questions')}</h2>
                 {re.talk.map((m, i) => (
-                  <Bubble key={i} m={m} who={m.me ? t('ui.bubble.me') : t('ui.bubble.agent')} voice={voice} player={player} speaker="reentrada" />
+                  <Bubble key={i} m={m} who={m.me ? t('ui.bubble.me') : m.agent ? c.agentNameOf(m.agent) : t('ui.bubble.agent')} voice={m.agent ? c.voiceOfAgent(m.agent) : voice} player={player} speaker={m.agent ?? 'reentrada'} />
                 ))}
                 {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
                 {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}

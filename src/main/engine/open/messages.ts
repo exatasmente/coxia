@@ -13,6 +13,7 @@ export const MSG_KEYS = [
   'upstreamUnreachable',
   'auth',
   'forbidden',
+  'budget',
   'modelNotFound',
   'rateLimit',
   'quota',

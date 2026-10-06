@@ -6,7 +6,7 @@ import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
 import { SQUADS_CHANNEL, squadChannelId } from '../src/shared/forum';
 import type { Run } from '../src/shared/runs';
-import { doc, work } from './helpers/runner';
+import { PartialAnswer, doc, work } from './helpers/runner';
 import { type SquadBoot, asking, bootSquads, receiving, requesting } from './helpers/squadRunner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -113,6 +113,21 @@ describe('a question about another squad\'s area', () => {
     expect(b.thread(started.id).find((m) => m.code === 'runner.chain.failed')).toBeTruthy();
     expect(channel(s)).toEqual([]);
     expect(agentsOf(s)).not.toContain('lead-b');
+  });
+
+  it('gives the receiving liaison the read-turn limit of the runner settings, with the wrap-up on', async () => {
+    const s = await bootSquads((c) => void (c.runner.turns.read = 11));
+    await ask(s, receiving({ verdict: 'answer', text: 'Cents.' }));
+    const leadB = s.b.engine.calls.find((c) => c.agent.id === 'lead-b');
+    expect(leadB).toMatchObject({ maxTurns: 11, wrapUp: true });
+  });
+
+  it('uses the answer of a liaison that ran out of turns and answered from the wrap-up, and says so in the run thread', async () => {
+    const s = await bootSquads();
+    const started = await ask(s, () => new PartialAnswer({ text: 'Cents, as far as I read.', reason: '', title: '', verdict: 'answer' }));
+    expect(s.b.runner.get(started.id)?.status).toBe('done');
+    expect(s.b.thread(started.id).find((m) => m.code === 'runner.partial')).toMatchObject({ params: { agent: 'lead-b' } });
+    expect(channel(s)[1]).toMatchObject({ kind: 'answer', text: 'Cents, as far as I read.' });
   });
 
   it('a liaison that fails to answer closes the request with that and hands the question up', async () => {

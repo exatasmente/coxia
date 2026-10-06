@@ -42,6 +42,8 @@ export const runsApi = {
   setAutonomous: (agent: string, on: boolean) => api.invoke<boolean>('runs:setAutonomous', agent, on),
   setSquadAutonomous: (squad: string, on: boolean) => api.invoke<boolean>('runs:setSquadAutonomous', squad, on),
   artifact: (id: string, name: string) => api.invoke<ArtifactText | null>('runs:artifact', id, name),
+  // The cycle memory, which only the run screen may rewrite; the answer is what was really written (masked, capped).
+  editMemory: (id: string, text: string) => api.invoke<ArtifactText | null>('runs:memory', id, text),
 };
 
 const REFRESH_MS = 20_000;

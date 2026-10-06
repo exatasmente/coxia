@@ -69,7 +69,11 @@ export function Deep({
           ...d,
           sessionId: r.sessionId,
           sources: [...new Set([...d.sources, ...r.sources])],
-          msgs: [...d.msgs, { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) }],
+          msgs: [
+            ...d.msgs,
+            ...(r.mentions ?? []).map((m) => ({ me: false, agent: m.agent, text: m.text, speech: m.speech, at: now() })),
+            { me: false, text: r.text, speech: r.speech, at: now(), ...(r.partial ? { partial: true } : {}) },
+          ],
         }));
         return r;
       });
@@ -86,8 +90,16 @@ export function Deep({
 
   const running = useJobs<DeepAnswer>(`deep:${refName}:`, {
     done: (r, job, late) => {
-      const voice = c.voiceOf(refName);
-      if (!late && job.key.endsWith(':ask') && voice) void player.say(r.speech, voice, refName).catch(() => undefined);
+      if (late || !job.key.endsWith(':ask')) return;
+      // Each agent the person named answers in its own voice, then the system agent takes over.
+      void (async () => {
+        for (const m of r.mentions ?? []) {
+          const voice = c.voiceOfAgent(m.agent);
+          if (voice) await player.say(m.speech, voice, m.agent).catch(() => undefined);
+        }
+        const voice = c.voiceOf(refName);
+        if (voice) await player.say(r.speech, voice, refName).catch(() => undefined);
+      })();
     },
     failed: (message) => setError(message),
   });
@@ -210,7 +222,7 @@ export function Deep({
               <span className="faint">{t('ui.deep.liveTranscript')}</span>
             </div>
             {msgs.map((m, i) => (
-              <Bubble key={i} m={m} who={m.me ? t('ui.bubble.me') : t('ui.nowPlaying.who.agent', { iid: card.iid })} voice={c.voiceOf(card.ref)} player={player} speaker={card.ref} />
+              <Bubble key={i} m={m} who={m.me ? t('ui.bubble.me') : m.agent ? c.agentNameOf(m.agent) : t('ui.nowPlaying.who.agent', { iid: card.iid })} voice={m.agent ? c.voiceOfAgent(m.agent) : c.voiceOf(card.ref)} player={player} speaker={m.agent ?? card.ref} />
             ))}
             {busy && <div className="row faint"><span className="spinner" /> {busy}</div>}
             {busy && <AgentActivity jobId={running[0]?.key} since={running[0]?.startedAt} />}

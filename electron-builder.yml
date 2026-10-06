@@ -49,6 +49,9 @@ publish:
 win:
   target:
     - nsis
+# Named like the Linux files; the release workflow checks the draft for this name.
+nsis:
+  artifactName: coxia-setup-${version}.${ext}
 mac:
   category: public.app-category.productivity
   target:

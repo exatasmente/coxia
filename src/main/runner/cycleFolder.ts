@@ -1,10 +1,13 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTranslator, t } from '../../shared/i18n';
-import { ARTIFACT_NAME } from '../../shared/runs';
+import { ARTIFACT_NAME, MEMORY_FILE } from '../../shared/runs';
 import { checkPath } from '../engine/guard';
 import type { VcsComment, VcsIssue } from '../vcs/types';
 import { redact } from '../errorlog-core';
+import { memorySkeleton } from './memory';
+
+export { MEMORY_FILE };
 
 // The cycle folder of a run (`docs/cycles/<n>-<slug>` inside its worktree): the issue as the agents received it, and the documents each stage produces.
 // A flat folder: one flow for every kind of issue.
@@ -63,24 +66,34 @@ export interface FolderFile {
 const FILE_MAX = 30_000;
 const FOLDER_MAX = 120_000;
 
-/** The files of the cycle folder, the issue first, then the documents in name order: what a stage's agent is given to read. */
-export function readFolder(wt: string, folder: string): FolderFile[] {
+// The memory first, then the issue record, then the rest in name order. The name order matches the order of the stages, so the oldest documents are the first to be clipped.
+const folderOrder = (a: string, b: string): number => (a === MEMORY_FILE ? -1 : b === MEMORY_FILE ? 1 : a === ISSUE_FILE ? -1 : b === ISSUE_FILE ? 1 : a.localeCompare(b));
+
+/**
+ * The files of the cycle folder: the memory first, then the issue, then the documents in name order. The memory and the issue record are read whole, as are the
+ * documents the stage declared it reads (`keep`); the rest is read newest first until the budget runs out, so the oldest documents are clipped first, each marked.
+ */
+export function readFolder(wt: string, folder: string, keep: string[] | null = null): FolderFile[] {
   const dir = join(wt, folder);
   if (!existsSync(dir)) return [];
   // Only regular files that really are inside the worktree: a link planted by a command of a sandbox (to a key, to anything of the person's) is never followed.
-  const names = readdirSync(dir)
-    .filter((n) => ARTIFACT_NAME.test(n) && lstatSync(join(dir, n)).isFile() && checkPath(wt, join(folder, n), { read: true }).ok)
-    .sort((a, b) => (a === ISSUE_FILE ? -1 : b === ISSUE_FILE ? 1 : a.localeCompare(b)));
-  let left = FOLDER_MAX;
-  const files: FolderFile[] = [];
+  const names = readdirSync(dir).filter((n) => ARTIFACT_NAME.test(n) && lstatSync(join(dir, n)).isFile() && checkPath(wt, join(folder, n), { read: true }).ok);
+  const whole = new Set([MEMORY_FILE, ISSUE_FILE, ...(keep ?? [])]);
+  const files = new Map<string, FolderFile>();
+  const read = (name: string): string => readFileSync(join(dir, name), 'utf8');
   for (const name of names) {
+    if (whole.has(name)) files.set(name, { name, text: read(name), clipped: false });
+  }
+  let left = FOLDER_MAX;
+  const rest = names.filter((n) => !whole.has(n)).sort((a, b) => b.localeCompare(a));
+  for (const name of rest) {
     if (left <= 0) break;
-    const raw = readFileSync(join(dir, name), 'utf8');
+    const raw = read(name);
     const cap = Math.min(FILE_MAX, left);
-    files.push({ name, text: raw.slice(0, cap), clipped: raw.length > cap });
+    files.set(name, { name, text: raw.slice(0, cap), clipped: raw.length > cap });
     left -= Math.min(raw.length, cap);
   }
-  return files;
+  return names.sort(folderOrder).flatMap((n) => files.get(n) ?? []);
 }
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -125,6 +138,34 @@ export function writeArtifact(wt: string, folder: string, name: string, content:
   // i18n-ignore-next-line: developer error
   if (!check.ok) throw new Error(`document refused (${check.code}): ${name}`);
   writeFileSync(check.path, content.endsWith('\n') ? content : `${content}\n`);
+}
+
+/** The memory as it is on disk, whole and unmasked; null when it is not there. */
+export function readMemory(wt: string, folder: string): string | null {
+  const check = checkPath(wt, join(folder, MEMORY_FILE), { read: true });
+  if (!check.ok || !existsSync(check.path) || !statSync(check.path).isFile()) return null;
+  return readFileSync(check.path, 'utf8');
+}
+
+/**
+ * Writes the memory, whole and as it came: the app is the only writer, so its content is not tidied like a stage's document. The same guard as the other
+ * documents' writes; says whether the file changed, so a stage's commit only takes it when there is something new.
+ */
+export function writeMemory(wt: string, folder: string, text: string): boolean {
+  mkdirSync(join(wt, folder), { recursive: true });
+  const check = checkPath(wt, join(folder, MEMORY_FILE));
+  // i18n-ignore-next-line: developer error
+  if (!check.ok) throw new Error(`memory refused (${check.code})`);
+  const body = text.endsWith('\n') ? text : `${text}\n`;
+  if (existsSync(check.path) && readFileSync(check.path, 'utf8') === body) return false;
+  writeFileSync(check.path, body);
+  return true;
+}
+
+/** Gives a run that predates the memory its skeleton, before the stage's text is built; a run that already has one keeps it untouched. */
+export function ensureMemory(wt: string, folder: string): boolean {
+  if (readMemory(wt, folder) !== null) return false;
+  return writeMemory(wt, folder, memorySkeleton());
 }
 
 const VIEW_MAX = 200_000;

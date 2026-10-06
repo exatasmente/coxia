@@ -26,6 +26,9 @@ export interface PullRequestText extends StageComment {
   title: string;
 }
 
+/** The cycle memory: the fixed name of the file, in the run's cycle folder, that every stage reads first and each one rewrites. */
+export const MEMORY_FILE = 'MEMORY.md';
+
 export interface StageOutput {
   /** What the agent did, for the thread. */
   summary: string;
@@ -36,6 +39,11 @@ export interface StageOutput {
   handoff: string;
   /** Something the agent cannot go on without; non-empty pauses the stage. It goes to the agent the asker turns to, and from there up to the person. */
   question: string;
+  /**
+   * The whole cycle memory, rewritten with the same sections: the short record of what the run decided, so the next stage does not have to read the long documents.
+   * The app writes the file; an empty value leaves it as it is.
+   */
+  memory: string;
   /** The question is a decision only the person can take (scope, priority, a risk to accept): it goes to them at once, past the agents. */
   needsPerson: boolean;
   /** Something only the person who reported the issue can say; non-empty makes the stage wait for their reply on the issue. */
@@ -99,6 +107,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
     artifacts: { type: 'array', items: obj({ name: str, content: str }) },
     handoff: strOrNull,
     question: strOrNull,
+    memory: str,
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: wants.evidence ? scenarioWithEvidence : scenario } });
@@ -122,6 +131,9 @@ const lineOf = (v: unknown): number | null => (typeof v === 'number' && Number.i
 
 /** The file names a stage may write: plain names, no folder, nothing that starts with a dot. */
 export const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+// The memory is read whole even above its cap (the app has to see it to notice and warn): a wider ceiling here only keeps a runaway answer from being cut silently.
+const MEMORY_READ_MAX = 60_000;
 
 export function readFinding(raw: unknown): Finding | null {
   const f = record(raw);
@@ -226,6 +238,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     }),
     handoff: text(o.handoff),
     question,
+    memory: text(o.memory, MEMORY_READ_MAX),
     needsPerson: o.needsPerson === true,
     reporterQuestion: text(o.reporterQuestion),
     priority: text(o.priority, 200),

@@ -181,7 +181,7 @@
   "ui.webAccess.device.seen": "Paired on {created} · last seen on {seen}",
   "ui.webAccess.devices.none": "No paired devices.",
   "ui.webAccess.devices.title": "Paired devices",
-  "ui.webAccess.effects.hint": "Approve release and {vcsName} actions (writes to {vcsName}, push). When off, only the app window approves. Continue in Claude Code and the settings of this access never work from the browser.",
+  "ui.webAccess.effects.hint": "Start a release, and approve release and {vcsName} actions (writes to {vcsName}, push). When off, only the app window does. Continue in Claude Code and the settings of this access never work from the browser.",
   "ui.webAccess.effects.label": "Allow actions with external effects from the browser",
   "ui.webAccess.enable.hint": "When off, nothing listens on the network. When on, only a paired device gets in.",
   "ui.webAccess.enable.label": "Allow browser access",

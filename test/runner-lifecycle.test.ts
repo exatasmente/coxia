@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { applyTemplate, kanban } from '../src/shared/cycles';
 import { messageText } from '../src/shared/forum';
 import { RunError, type Run } from '../src/shared/runs';
+import { activityLog } from '../src/main/activity';
 import { RunnerError } from '../src/main/runner/service';
 import { git, withMachineIdentity } from './helpers/conflictRepos';
 import { type Boot, boot, doc, fakeCommands, fakeEngine, fakeIssues, issue, makeRepo, work } from './helpers/runner';
@@ -785,6 +786,34 @@ describe('the thread', () => {
     expect(b.thread(run).find((x) => x.code === 'runner.mentionFailed')?.params).toMatchObject({ agent: 'qa', reason: 'model unavailable' });
   });
 
+  it('opens a line for every agent named, and says the one that waits its turn', async () => {
+    const b = await boot();
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('refiner', () => ({ text: 'The scope is the X case.' }));
+    b.engine.script('qa', () => ({ text: 'Looks fine.' }));
+    const before = b.engine.calls.length;
+    const thread = `run-${run.id}`;
+    const [first] = b.forum.append(thread, { kind: 'post', author: { type: 'person' }, text: '@refiner what is the scope?', mentions: ['refiner'] });
+    b.runner.onMessage(first);
+    const [second] = b.forum.append(thread, { kind: 'post', author: { type: 'person' }, text: '@qa and you?', mentions: ['qa'] });
+    b.runner.onMessage(second);
+    // Both lines exist before the engine got to run: the second names the agent and says it waits.
+    const lines = activityLog.get(`run:${run.id}`).filter((e) => e.call);
+    expect(lines.map((e) => [e.call?.agent, e.call?.message, e.call?.thread, e.state])).toEqual([
+      ['refiner', first.seq, thread, 'started'],
+      ['qa', second.seq, thread, 'queued'],
+    ]);
+    await b.settle();
+    // The engine ran each call under the very activity the line belongs to, one after the other.
+    expect(b.engine.calls.slice(before).map((c) => [c.agent.id, c.activity?.id])).toEqual([
+      ['refiner', lines[0].runId],
+      ['qa', lines[1].runId],
+    ]);
+    expect(b.thread(run).some((m) => m.author.type === 'agent' && m.text === 'Looks fine.')).toBe(true);
+  });
+
   it('takes a post that answers the question of the run as the answer, but not one that names an agent, nor one when nothing is asked', async () => {
     const b = await boot();
     easy(b);
@@ -799,5 +828,135 @@ describe('the thread', () => {
     expect(b.runner.answerPost(thread, 'The first one.')).toMatchObject({ kind: 'answer' });
     await b.settle();
     expect(b.runner.answerPost(thread, 'late')).toBeNull();
+  });
+});
+
+describe('a run that hits the budget of the provider key', () => {
+  /** Issues carrying the trigger label, so `scan` finds work to start. */
+  const labeled = (n: number[]) => {
+    const issues = fakeIssues();
+    for (const iid of n) issues.add(issue(iid, { labels: ['bug', 'coxia'] }));
+    return issues;
+  };
+
+  /** What a stage's engine throws when the provider refuses the call for want of budget. */
+  const budgetRefusal = async (provider: string) => {
+    const { ProviderBudgetError } = await import('../src/main/engine/contract');
+    throw new ProviderBudgetError(provider, 'claude-sdk', 'API Error: 403 Key limit exceeded (monthly limit)');
+  };
+
+  it('waits with the reason instead of failing, offers no retry, and says so in the thread', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const waited = b.runner.get(run.id)!;
+    expect(waited.status).toBe('waiting');
+    expect(waited.error).toBeNull();
+    expect(waited.wait).toMatchObject({ kind: 'budget', provider: 'anthropic' });
+    expect(waited.wait?.detail).toContain('Key limit exceeded');
+    // the stage is waiting, so the person is offered "go on without waiting", never a retry
+    const { runActions } = await import('../src/shared/runs/view');
+    const ids = runActions(waited).map((a: { id: string }) => a.id);
+    expect(ids).toContain('skipWait');
+    expect(ids).not.toContain('retry');
+    expect(b.thread(run).some((m) => m.code === 'run.stage.wait.budget')).toBe(true);
+    expect(b.notices.some((n) => n.title.includes('falhou'))).toBe(false);
+    // the run goes on by hand from the wait, as from any other
+    b.runner.skipWait(run.id, 'Sigo assim mesmo.');
+    await b.settle();
+    expect(b.runner.get(run.id)!.status).toBe('working');
+  });
+
+  it('reads back from its file, unchanged, and is not turned into a stage to restart', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', () => budgetRefusal('anthropic'));
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const { parseRun } = await import('../src/shared/runs/schema');
+    const raw = JSON.parse(readFileSync(join(b.dir, 'runs', `${run.id}.json`), 'utf8'));
+    const parsed = parseRun(raw);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.run.wait).toMatchObject({ kind: 'budget', provider: 'anthropic' });
+    b.runner.resume();
+    await b.settle();
+    expect(b.runner.get(run.id)!.status).toBe('waiting');
+    expect(b.engine.calls).toHaveLength(1);
+  });
+
+  it('holds a new stage of the same run and a new run while a provider is out', async () => {
+    const b = await boot({ issues: labeled([1, 2]) });
+    easy(b);
+    b.engine.script('refiner', () => budgetRefusal('anthropic'));
+    b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, enabled: true } }));
+    const started = await b.runner.scan();
+    await b.settle();
+    expect(started.map((r) => r.issue.ref)).toEqual(['app#1']);
+    expect(b.runner.get(started[0].id)).toMatchObject({ status: 'waiting', wait: { kind: 'budget' } });
+    // the provider is out: no other run starts on it
+    expect(await b.runner.scan()).toEqual([]);
+    expect(b.runs.list()).toHaveLength(1);
+  });
+
+  it('holds a mention instead of spending a call on the provider that is out', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', () => budgetRefusal('anthropic'));
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const [m] = b.forum.append(`run-${run.id}`, { kind: 'post', author: { type: 'person' }, text: '@refiner e agora?', mentions: ['refiner'] });
+    b.runner.onMessage(m);
+    await b.settle();
+    expect(b.engine.calls.filter((c) => c.agent.id === 'refiner')).toHaveLength(1);
+    expect(b.thread(run).find((x) => x.code === 'runner.mention.budget')?.params).toMatchObject({ agent: 'refiner', provider: 'anthropic' });
+  });
+
+  it('probes the provider once and sends every run that waited on it on', async () => {
+    const probes: string[] = [];
+    const b = await boot({
+      issues: labeled([1, 2]),
+      probeBudget: async (provider) => {
+        probes.push(provider);
+        return { state: 'ok' as const, detail: '' };
+      },
+    });
+    easy(b);
+    // The first attempt hits the budget; once the provider answers again (the probe says so), the stage is retried and finishes.
+    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, enabled: true, maxConcurrentRuns: 5 } }));
+    const started = await b.runner.scan();
+    await b.settle();
+    // The first run waits on the provider; the second never spends a call on it (the hold stops it before its stage).
+    expect(started).toHaveLength(2);
+    const waiting = b.runs.list().filter((r) => r.status === 'waiting');
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].wait).toMatchObject({ kind: 'budget', provider: 'anthropic' });
+    expect(probes).toEqual([]);
+    // one sweep: one probe for the provider, and the run goes on
+    await b.runner.tick();
+    await b.settle();
+    expect(probes).toEqual(['anthropic']);
+    expect(b.runs.list().some((r) => r.wait?.kind === 'budget')).toBe(false);
+  });
+
+  it('keeps waiting when the probe still refuses, or when it cannot tell', async () => {
+    const probes: string[] = [];
+    const b = await boot({
+      probeBudget: async (provider) => {
+        probes.push(provider);
+        return { state: 'out' as const, detail: 'API Error: 403 Key limit exceeded (monthly limit)' };
+      },
+    });
+    easy(b);
+    b.engine.script('refiner', () => budgetRefusal('anthropic'));
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    await b.runner.tick();
+    await b.settle();
+    expect(probes).toHaveLength(1);
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'waiting', wait: { kind: 'budget' } });
+    expect(b.engine.calls).toHaveLength(1);
   });
 });

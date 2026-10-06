@@ -31,6 +31,22 @@ export class MaxTurnsError extends Error {
   }
 }
 
+/**
+ * Thrown by an engine when the provider refused the call because the key ran out of budget. It is not a failure of the stage: the runner turns it into a
+ * wait, names the provider in words the person reads, and does not spend an attempt on it. `detail` is the provider's own text, already redacted.
+ */
+export class ProviderBudgetError extends Error {
+  constructor(
+    readonly provider: string,
+    readonly engine: 'claude-sdk' | 'open',
+    readonly detail: string,
+  ) {
+    // i18n-ignore-next-line: error text the caller reads and the engines compare
+    super(`provider budget exhausted: ${provider}`);
+    this.name = 'ProviderBudgetError';
+  }
+}
+
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */
 export interface ShellPolicy {
   rules: string[];
@@ -43,6 +59,12 @@ export interface Confinement {
   root: string;
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
+}
+
+export interface CommandAsk {
+  /** The agent's own rules (`allowedCommands`). */
+  rules: string[];
+  request(command: string): Promise<{ ok: boolean; note?: string }>;
 }
 
 export interface EngineRequest {
@@ -75,6 +97,11 @@ export interface EngineRequest {
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
+  /**
+   * A ceremony agent: a command the code does not allow is asked of the person instead of refused (the call waits for the answer), and the rules the person
+   * gave the agent ("allow always") let a command through without asking. Never for a write to the code host, which is asked every time.
+   */
+  ask?: CommandAsk;
   /** Aborting it stops the call (a stage that ran past its limit, a cancelled run). */
   abort?: AbortController;
   /** Called once per model call with what it used (and what it cost, when the provider or the SDK said). */

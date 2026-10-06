@@ -126,6 +126,11 @@ export const toolsFor = (call: AgentCall): Tools => {
   };
 };
 
+/** What a responder returns for a call that ran out of turns and answered from the wrap-up: the engine reports it as `partial`. */
+export class PartialAnswer {
+  constructor(readonly data: unknown) {}
+}
+
 export type Responder = (call: AgentCall, tools: Tools, n: number) => unknown | Promise<unknown>;
 
 export interface FakeEngine extends StageEngine {
@@ -151,7 +156,8 @@ export function fakeEngine(): FakeEngine {
     const list = scripts.get(id) ?? [];
     const responder = list[Math.min(n, list.length) - 1];
     if (!responder) throw new Error(`the fake engine has no answer for ${id} (call ${n})`);
-    return { data: await responder(call, toolsFor(call), n) };
+    const said = await responder(call, toolsFor(call), n);
+    return said instanceof PartialAnswer ? { data: said.data, partial: true as const } : { data: said };
   }, { calls, jobs, script: (agent: string, ...responders: Responder[]) => void scripts.set(agent, responders) });
   return engine;
 }
@@ -272,6 +278,8 @@ export interface BootOptions {
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
+  /** The one small call the sweep makes to a provider whose key ran out of budget; without it the runs keep waiting. */
+  probeBudget?: RunnerDeps['probeBudget'];
   /** The clock the runner and its publisher read (a release run's waits are about how long ago something was published). */
   now?: () => Date;
   /** The tags a release run's wait for its beta reads. */
@@ -315,6 +323,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     sandbox: options.sandbox,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
+    probeBudget: options.probeBudget,
     now: options.now,
   };
   if (options.publish) {

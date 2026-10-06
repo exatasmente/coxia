@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 11;
+export const CONFIG_SCHEMA_VERSION = 12;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -185,8 +185,9 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * The four of a release run: `release-approved`: every pull request of the version that the run read is merged into the release branch, and none is open against it.
  * `beta-age`: the latest beta of the version has been published for `minutes`, and no open issue carries the blocking label (`label`, `beta-blocker` when left out).
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
+ * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
@@ -525,6 +526,12 @@ export interface AgentDef {
   /** Commands this agent's stages may run. Absent in a file written before the field existed: `allowlist` for an agent that writes, else `none`. */
   shell: AgentShell;
   /**
+   * Commands the person allowed this agent always, in a ceremony ("Allow always" on a command it asked for): `prefix:*` allows the prefix and anything after a
+   * space (`gh api:*`), anything else only that exact command. A command that writes to the code host is never allowed by a rule: it is asked every time.
+   * Absent: none.
+   */
+  allowedCommands?: string[];
+  /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
    * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
@@ -707,6 +714,17 @@ export interface RunnerSandbox {
   limits: SandboxLimits;
 }
 
+/** How a release run integrates its pull requests. */
+export interface RunnerRelease {
+  /**
+   * The person is the repository's only maintainer: nobody else can approve a pull request they opened (GitHub does not let the author approve their own). Then their
+   * explicit "yes" in Actions on a `merge-pr` stands for the host's approval, for a pull request opened by the account the app uses on the host and on which nobody asked
+   * for changes; every `merge-pr` waits for that "yes" whatever the agent's autonomy, and a pull request someone else opened still needs the host's approval. Only the
+   * computer changes it. A config stored without it reads as false.
+   */
+  soleMaintainer: boolean;
+}
+
 /** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
 export interface RunnerConfig {
   /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
@@ -737,6 +755,8 @@ export interface RunnerConfig {
    * commands the app runs there find their tools. A config stored without it reads as true.
    */
   linkDependencies: boolean;
+  /** Absent in a config stored before it: read it through `soleMaintainerOf`. */
+  release?: RunnerRelease;
 }
 
 export interface ScheduleConfig {

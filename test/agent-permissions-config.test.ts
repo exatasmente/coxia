@@ -33,7 +33,7 @@ describe('the migration to schema 10', () => {
   it('raises nothing: an agent that writes keeps the commands of the runner, one that only reads runs none', () => {
     const r = migrate(v9());
     expect(r.fromVersion).toBe(9);
-    expect(r.config.schemaVersion).toBe(11);
+    expect(r.config.schemaVersion).toBe(12);
     expect(agent(r.config, 'dev')).toMatchObject({ shell: 'allowlist', tracker: 'none' });
     expect(agent(r.config, 'po')).toMatchObject({ shell: 'none' });
     for (const a of r.config.agents.team) expect(a.shell).not.toBe('sandbox');
@@ -71,8 +71,8 @@ describe('the defaults of an agent', () => {
     expect(newAgent({ id: 'a' })).toMatchObject({ tracker: 'none', shell: 'none' });
   });
 
-  it('are none and none for the five built-in agents', () => {
-    for (const a of neutralConfig().agents.team) expect(a).toMatchObject({ tracker: 'none', shell: 'none' });
+  it('are a code host read and no command for the five built-in agents: the read the ceremonies always had, now on the agent', () => {
+    for (const a of neutralConfig().agents.team) expect(a).toMatchObject({ tracker: 'read', shell: 'none' });
   });
 
   it('are the table of the roles for the two shipped teams', () => {

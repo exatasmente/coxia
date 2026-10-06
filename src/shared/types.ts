@@ -168,6 +168,16 @@ export interface ReplyResult {
   effect: Effect | null;
   needsDeepDive: boolean;
   options?: string[];
+  /** The agents the person named in the text answered, before the system agent: each with its name, its text and the line spoken for it. */
+  mentions?: CeremonyMention[];
+}
+
+/** One answer an agent of the team gave inside a ceremony (the person named it with `@`). */
+export interface CeremonyMention {
+  agent: string;
+  name: string;
+  text: string;
+  speech: string;
 }
 
 export interface DeepAnswer {
@@ -177,6 +187,8 @@ export interface DeepAnswer {
   text: string;
   sources: string[];
   partial?: boolean;
+  /** The agents the person named in the question answered, before the system agent. */
+  mentions?: CeremonyMention[];
 }
 
 export interface DeepOption {
@@ -324,6 +336,8 @@ export interface Talk {
   at: string;
   // spoken version of an agent message; absent on old messages and on the user's own
   speech?: string;
+  // The agent of the team that answered here (an `@name`); absent for the person and for the ceremony's system agent.
+  agent?: string;
   // The agent ran out of turns and answered from what it had read: the bubble says so.
   partial?: boolean;
 }

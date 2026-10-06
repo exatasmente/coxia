@@ -1,8 +1,12 @@
 // An issue goes through the whole agent cycle: a temporary git repository, a code host that can only be read and a scripted engine that stands
 // for the models. Everything else is real: the worktree, the guard in front of the developer's tools, the commits, the run store and the thread.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { MEMORY_MAX, MEMORY_SECTIONS } from '../src/main/runner/memory';
+import { runThreadId } from '../src/shared/forum';
+import { t } from '../src/shared/i18n';
+import { MEMORY_FILE, type Run } from '../src/shared/runs';
 import { git } from './helpers/conflictRepos';
 import { boot, doc, work } from './helpers/runner';
 
@@ -197,5 +201,174 @@ describe('a run from refine to ready', () => {
     ]);
     // every call of an agent ran under the run's activity, so the live view follows it
     expect(new Set(engine.jobs)).toEqual(new Set([`run:${run.id}`]));
+  });
+});
+
+// The cycle memory: one file in the cycle folder that the stage reads whole, the stage that concludes rewrites, and the person may correct on the run screen. It is
+// what a long run keeps after the folder budget and the 40-message window of the thread have cut everything else. Scripted agents only; nothing reaches a model.
+describe('the cycle memory of a run', () => {
+  const memoryOf = (run: Run): string => readFileSync(join(run.worktree, run.cycleFolder, MEMORY_FILE), 'utf8');
+  const headingsOf = (text: string): string[] => text.split('\n').filter((l) => l.startsWith('## '));
+
+  it('is born with the run, takes what the conversation decided, and the stage that concludes commits it', async () => {
+    const b = await boot();
+    const { engine, runner } = b;
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan X and leave Z out.' }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('developer', async (_c, tools) => {
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    engine.script('reviewer', () => work('Approved.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'the thing works', result: 'pass', detail: 'seen working' }] }));
+
+    let run = await runner.start('app#101');
+    await b.settle();
+    run = runner.get(run.id)!;
+    // the skeleton is in the folder from the first stage, that stage's commit carries it like a document, and the run screen lists it
+    expect(memoryOf(run)).toContain(`# ${t('main.runner.memory.title')}`);
+    expect(git(run.worktree, 'show', '--name-only', '--format=', 'HEAD')).toContain(MEMORY_FILE);
+    expect(run.stages.find((s) => s.stage === 'refine')?.artifacts).toContain(MEMORY_FILE);
+
+    // gate 1: the refiner's handoff enters the memory at the next stage, marked with the number of the message it came from
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+    const afterPlan = memoryOf(run);
+    expect(afterPlan).toContain('Plan X and leave Z out.');
+    expect(afterPlan).toMatch(/<!-- handoff:\d+ -->/);
+    expect(headingsOf(afterPlan)).toEqual(MEMORY_SECTIONS.map((id) => `## ${t(`main.runner.memory.section.${id}`)}`));
+
+    // a run whose folder predates the memory (no MEMORY.md in it) gains the skeleton again at its next stage
+    rmSync(join(run.worktree, run.cycleFolder, MEMORY_FILE));
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+    expect(run.status).toBe('done');
+    expect(existsSync(join(run.worktree, run.cycleFolder, MEMORY_FILE))).toBe(true);
+    expect(memoryOf(run)).toContain('Plan X and leave Z out.');
+    // the memory is tracked like the documents, and the app left nothing of the run behind
+    expect(git(run.worktree, 'log', '--format=', '--name-only', 'main..HEAD')).toContain(MEMORY_FILE);
+    expect(git(run.worktree, 'status', '--porcelain')).toBe('');
+  });
+
+  it('records what a review sent back, and a stage reads it even after the conversation passes the window it is given', async () => {
+    const b = await boot();
+    const { engine, runner } = b;
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script(
+      'developer',
+      async (_c, tools) => {
+        await tools.write('src/feature.ts', 'export const feature = 1;\n');
+        return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+      },
+      async (_c, tools) => {
+        await tools.write('src/feature.ts', 'export const feature = 2;\n');
+        return work('Applied the review.', { commit: 'handle the review finding', artifacts: [doc('3_IMPLEMENTATION.md')] });
+      },
+    );
+    engine.script(
+      'reviewer',
+      () => work('One problem.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [{ path: 'src/feature.ts', line: 1, endLine: null, side: 'new', severity: 'blocking', body: 'The constant must be 2.', suggestion: 'export const feature = 2;' }] }),
+      () => work('Looks good.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }),
+    );
+    engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'the thing works', result: 'pass', detail: 'seen working' }] }));
+
+    let run = await runner.start('app#101');
+    await b.settle();
+    run = runner.get(run.id)!;
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+
+    // the person's answer and a handoff, then enough traffic to push them out of the 40 messages a stage receives
+    const thread = runThreadId(run.id);
+    b.forum.append(thread, [
+      { kind: 'answer', author: { type: 'person' }, text: 'Ship it behind a flag.' },
+      { kind: 'handoff', author: { type: 'agent', id: 'planner' }, to: 'reviewer', text: 'The plan is settled.' },
+      ...Array.from({ length: 45 }, (_, i) => ({ kind: 'post' as const, author: { type: 'agent' as const, id: 'planner' }, text: `filler ${i}` })),
+    ]);
+
+    // gate 2: the review sends the work back and the developer runs again with what the reviewer left
+    const before = engine.calls.length;
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+    const calls = engine.calls.slice(before);
+    const firstDev = calls.find((c) => c.agent.id === 'developer')!;
+    // the person's answer is out of the window the stage was handed — and the stage reads it all the same: it came from the memory
+    const messages = b.thread(run);
+    const at = messages.findIndex((m) => m.text === 'Ship it behind a flag.');
+    expect(messages.length - at).toBeGreaterThan(40);
+    expect(firstDev.prompt).not.toContain('filler 0');
+    expect(firstDev.prompt).toContain('Ship it behind a flag.');
+    expect(memoryOf(run)).toContain('Ship it behind a flag.');
+    expect(memoryOf(run)).toContain('The plan is settled.');
+    // the review's send-back is in the memory as the handoff the developer was given
+    expect(calls.filter((c) => c.agent.id === 'developer')).toHaveLength(2);
+    expect(memoryOf(run)).toContain('The constant must be 2.');
+    expect(memoryOf(run)).toMatch(/<!-- handoff:\d+ -->/);
+  });
+
+  it('lets the person correct it on the run screen: the next stage reads their version, recorded as theirs', async () => {
+    const b = await boot();
+    const { engine, runner } = b;
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('developer', async (_c, tools) => {
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    engine.script('reviewer', () => work('Approved.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'the thing works', result: 'pass', detail: 'seen working' }] }));
+
+    let run = await runner.start('app#101');
+    await b.settle();
+    run = runner.get(run.id)!;
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+    expect(run.status).toBe('gate');
+
+    const written = await runner.editMemory(run.id, `# ${t('main.runner.memory.title')}\n\n## ${t('main.runner.memory.section.decisions')}\n\n- Ship it behind a flag.\n`);
+    expect(written?.text).toContain('Ship it behind a flag.');
+    expect(engine.calls.some((c) => c.agent.id === 'developer')).toBe(false);
+    const edited = runner.get(run.id)!;
+    expect(edited.history.at(-1)).toMatchObject({ type: 'memory-edited', by: 'person' });
+    expect(git(run.worktree, 'log', '-1', '--format=%s')).toContain('update the cycle memory');
+
+    // the next stage reads the person's version and it is still there when the run moves on
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    run = runner.get(run.id)!;
+    const dev = engine.calls.find((c) => c.agent.id === 'developer')!;
+    expect(dev.prompt).toContain('Ship it behind a flag.');
+    expect(memoryOf(run)).toContain('Ship it behind a flag.');
+  });
+
+  it('hands the memory to the stage first and whole, and says so when it passed its cap', async () => {
+    const b = await boot();
+    const { engine, runner } = b;
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('developer', async (_c, tools) => {
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    engine.script('reviewer', () => work('Approved.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+    engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'the thing works', result: 'pass', detail: 'seen working' }] }));
+
+    const run = await runner.start('app#101');
+    await b.settle();
+    // a memory past its cap, with a marker of its own: it is read whole, warned about, and placed before the other documents
+    writeFileSync(join(run.worktree, run.cycleFolder, MEMORY_FILE), `# ${t('main.runner.memory.title')}\n\n## ${t('main.runner.memory.section.decisions')}\n\nMARKER-IN-THE-MEMORY\n${'x'.repeat(MEMORY_MAX)}\n`);
+    const before = engine.calls.length;
+    runner.gate(run.id, 'approve');
+    await b.settle();
+    const plan = engine.calls.slice(before).find((c) => c.agent.id === 'planner')!;
+    expect(plan.prompt).toContain(t('prompt.sdd.runner.section.memoryOver', { max: MEMORY_MAX }));
+    expect(plan.prompt).toContain('MARKER-IN-THE-MEMORY');
+    expect(plan.prompt.indexOf('MARKER-IN-THE-MEMORY')).toBeLessThan(plan.prompt.indexOf('0_ISSUE.md'));
   });
 });

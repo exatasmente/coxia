@@ -1,6 +1,17 @@
 // What an agent run is doing right now, as short redacted lines. Main emits them, the window and the browser show them.
 export type ActivityKind = 'tool' | 'text' | 'status';
-export type ActivityState = 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
+/** `queued` is a call that was accepted while another one of the same run still runs: it is alive, and it has not started. */
+export type ActivityState = 'queued' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
+
+/** The `@` call a run belongs to: which agent answers, in which thread, for which message. */
+export interface ActivityCall {
+  /** The id of the agent that answers. */
+  agent: string;
+  /** The thread the line belongs to (`run-<id>`), how a conversation picks its own lines. */
+  thread: string;
+  /** The sequence of the message that named the agent: two calls of the same agent are two calls. */
+  message: number;
+}
 
 export interface ActivityEntry {
   /** Grows with every entry of the process: the order, and what a backfill is merged by. */
@@ -15,6 +26,8 @@ export interface ActivityEntry {
   label: string;
   /** Status lines only. */
   state?: ActivityState;
+  /** Present on the lines of a run an `@` call asked for, and only on those. */
+  call?: ActivityCall;
 }
 
 export const ACTIVITY_EVENT = 'agent:activity';
@@ -42,7 +55,7 @@ export function takeContext(args: unknown[]): { args: unknown[]; jobId: string |
   return { args: args.slice(0, -1), jobId: typeof job === 'string' && JOB_ID.test(job) ? job : null };
 }
 
-/** Whether a run still has work going on, from its last status line. */
+/** Whether a run still has work going on, from its last status line: a queued call counts as alive, it is waiting its turn. */
 export function runActive(entries: ActivityEntry[], runId: string): boolean {
   const last = [...entries].reverse().find((e) => e.runId === runId && e.kind === 'status' && e.state !== 'blocked');
   return !!last && last.state !== 'finished' && last.state !== 'failed';

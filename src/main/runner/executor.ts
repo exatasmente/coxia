@@ -7,10 +7,11 @@ import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
-import { MaxTurnsError } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
-import { ISSUE_FILE, readFolder, tidyArtifact, writeArtifact } from './cycleFolder';
+import { MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
+import { MEMORY_MAX, applyFacts, factsOfThread, memoryOver, normalizeMemory } from './memory';
 import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitIdentity, commitMessage, commitSummary, declaredCommands, headSha } from './git';
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
@@ -27,7 +28,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -37,11 +38,15 @@ export class StageError extends Error {
   ) {
     super(t(`main.runner.error.${code}`, params));
     this.name = 'StageError';
+    this.params = params;
   }
+
+  /** What built the message: the runner reads the provider of a budget refusal out of here. */
+  readonly params: Record<string, string | number>;
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
-export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown }>;
+export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true }>;
 
 export interface ExecutorDeps {
   engine: StageEngine;
@@ -334,6 +339,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;
   const looked = await headSha(wt);
+  // The memory is born with the run, and a run that predates it gets the skeleton at its next stage, before the folder is read.
+  const born = ensureMemory(wt, run.cycleFolder);
+  // The conversation feeds the memory here, once per message (the marker makes it idempotent), so what the person answered and what a stage handed over survive the
+  // 40-message window of the prompt. Tracked by the run's own commits, like the documents.
+  const facts = factsOfThread(thread);
+  const kept = readMemory(wt, run.cycleFolder) ?? '';
+  const memory = applyFacts(kept, facts);
+  const memoryTouched = memory !== kept ? writeMemory(wt, run.cycleFolder, memory) : born;
 
   // The comment this stage leaves on the tracker, and the pull request description when this stage ends with the push: the agent is told the
   // sections of the cycle's templates and writes the text of each, so no second call is needed.
@@ -376,7 +389,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     kind,
     writes,
     commands,
-    files: readFolder(wt, run.cycleFolder).filter((f) => !stage.reads || f.name === ISSUE_FILE || stage.reads.includes(f.name)),
+    files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
+    memory: { over: memoryOver(memory), max: MEMORY_MAX },
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),
@@ -431,6 +445,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     data = (await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)))).data;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
+    if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
     throw e;
   } finally {
     // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.
@@ -446,6 +461,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];
+  if (memoryTouched) written.push(MEMORY_FILE);
   for (const a of output.artifacts) {
     if (!stage.artifacts.includes(a.name)) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });
@@ -455,6 +471,12 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     written.push(a.name);
   }
   if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
+
+  // A stage that concludes rewrites the memory: normalized to the file's shape, masked, and with the conversation's markers reapplied so nothing the person said is lost.
+  // A stage that pauses writes nothing: what it decided is not lost either, since the conversation carries it back in through `factsOfThread`.
+  if (output.memory) {
+    if (writeMemory(wt, run.cycleFolder, applyFacts(normalizeMemory(redact(output.memory)), facts)) && !written.includes(MEMORY_FILE)) written.push(MEMORY_FILE);
+  }
 
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });

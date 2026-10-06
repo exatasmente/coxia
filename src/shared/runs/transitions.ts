@@ -757,6 +757,20 @@ export function askReporter(run: Run, question: { by: string; text: string }, at
   return { run: out, messages: [{ kind: 'question', author: agent(question.by), text, to: 'reporter', stage: run.stage, public: true }] };
 }
 
+/**
+ * The stage hit a provider whose key ran out of budget. It is a wait, not a failure: nothing is spent and no retry is offered, and the run goes on by
+ * itself when the sweep finds the provider answering again. `detail` is the reason in words, already built from the provider's own (masked) text.
+ */
+export function stageWaitingOnBudget(run: Run, input: { provider: string; engine: string; detail: string }, at: string): Transition {
+  need(run, 'working');
+  const out = clone(run, at);
+  out.status = 'waiting';
+  out.wait = { kind: 'budget', since: at, provider: input.provider, detail: input.detail };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'wait-started', run.stage, 'app', `budget:${input.provider}`);
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.wait.budget', params: { stage: run.stage, provider: input.provider, engine: input.engine, detail: input.detail }, stage: run.stage }] };
+}
+
 // What goes on after the event: a wait stage is done and the run follows it; an agent's own stage goes back to work, with what came as its answer.
 function resume(out: Run, flow: FlowStage[], at: string, by: 'app' | 'person', answer: ForumDraft | null, messages: ForumDraft[]): void {
   const stage = stageOf(flow, out.stage);
@@ -785,7 +799,7 @@ export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string; f
     const text = (input.reply ?? '').trim();
     resume(out, flow, at, 'app', { kind: 'answer', author: input.from === 'app' ? app : person, text: text || undefined, code: text ? undefined : 'wait.noText', stage: run.stage, to: run.wait?.by ?? null, public: false }, messages);
   } else {
-    messages.push({ kind: 'system', author: app, code: `wait.done.${run.wait?.kind ?? 'time'}`, params: { stage: stage.label }, stage: run.stage });
+    messages.push({ kind: 'system', author: app, code: `wait.done.${run.wait?.kind ?? 'time'}`, params: { stage: stage.label, provider: run.wait?.provider ?? '' }, stage: run.stage });
     resume(out, flow, at, 'app', null, messages);
   }
   return { run: out, messages };
@@ -862,8 +876,18 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
 }
 
-// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
+/**
+ * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; the run's history and the
+ * thread record it as the person's, so the next stage reads it and the authorship of the edit is not the commit's.
+ */
+export function memoryEdited(run: Run, at: string): Transition {
+  if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
+  const out = clone(run, at);
+  log(out, at, 'memory-edited', out.stage, 'person');
+  return { run: out, messages: [{ kind: 'system', author: person, code: 'runner.memory.edited', stage: out.stage }] };
+}
 
+// ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
 /** What a release run learns about its subject: where its tracking issue is, and the activities of the version as last read. A run with no subject is refused. */
 export function recordSubject(run: Run, patch: Partial<Pick<RunSubject, 'tracking' | 'activities' | 'seen'>>, at: string): Transition {
   if (!run.subject) throw new RunError('invalid', { id: run.id, detail: 'not a release run' });

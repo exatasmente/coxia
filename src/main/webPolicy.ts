@@ -7,23 +7,25 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // the workspace test flag and deletion (a browser may create, rename and switch workspaces, not lower the guard),
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
-// screen: a token never travels through the browser channel), and the start of a release run (`runs:startRelease`, D19: it ends in scripts and merged code of the repository
-// run as the person, so only the window starts one; a paired browser follows the run and answers its gates).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'runs:startRelease', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited']);
+// screen: a token never travels through the browser channel).
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
 
 // Writes to GitLab or pushes branches. actions:approve is the only door: every proposal (gitlabQuick, feedback,
 // the release sync) waits there, so refusing it refuses all of them. runs:command lets an agent set to `shell: host` run a command on this
-// computer, outside any sandbox: allowing one from a phone is as far-reaching as approving a proposal, so it sits behind the same switch.
-export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command']);
+// computer, outside any sandbox: allowing one from a phone is as far-reaching as approving a proposal, so it sits behind the same switch. runs:startRelease
+// starts a run that ends in the repository's own scripts and merged code, run as the person: the same switch decides whether a phone may start one (each push
+// of the release still waits for its own "yes" in actions:approve).
+export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease']);
 
 // forum:* (list, read, post, create) read and write the workspace's own thread files and nothing else, so a paired browser may use them: the
 // phone is where a person answers a question. A mention calls on an agent that never writes to the run (its commands run over a copy, an issue it proposes waits in actions:approve), and a post is never mirrored to
-// the code host by itself. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
+// the code host by itself. An `@agent` calls that agent wherever a person may post, not only in a run's thread: that is the mention rule, and it changes no channel of this policy.
+// test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
-// runs:* are all open to a paired browser, except runs:startRelease and runs:command (above), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
+// runs:* are all open to a paired browser, except runs:startRelease and runs:command (above, behind the external-effects switch), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
 // undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
 // browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed
 // only on the computer, see configScope.ts), and its writes to the code host still wait in the proposals of actions:approve. The autonomy switches change how
