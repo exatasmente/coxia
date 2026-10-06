@@ -91,3 +91,12 @@ Ficam registradas, sem tratar nesta entrega: um token no caminho de uma URL de
 configuração aparece no destino da auditoria e do pedido (S3); a escrita anunciada não
 leva o plugin como autor na auditoria (S6); e a chave não está ligada ao espaço de
 trabalho (C4, parte).
+
+### Re-revisão
+
+Um bloqueante novo, tratado: responder "sempre" para a rede depois de a declaração mudar
+gravava junto a escrita "sempre" antiga, agora ligada à declaração nova. A gravação parte
+da permissão efetiva da leitura (já vazia para outra declaração), em `answerPluginAsk`,
+`revokePluginAllow` e `revokePluginWrite`. Junto: a permissão de sessão também fica presa
+à declaração; um redirecionamento libera a conexão na hora; e uma escrita aprovada "uma
+vez" confere a declaração inteira (`reach`), não só o destino.
