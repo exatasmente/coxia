@@ -306,11 +306,6 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
 /** Where the stage's output folder shows up inside the sandbox: the only place the agent saves images it wants to look at. */
 export const OUTPUT_DIR = OUT;
 
-/**
- * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside
- * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
- * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
- */
 /** A plain text file of the output folder, read without following a link; null when missing, not a file, or over `max` bytes. */
 export function readOutputText(outDir: string, name: string, max: number): string | null {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) return null;
@@ -334,6 +329,11 @@ export function readOutputText(outDir: string, name: string, max: number): strin
   }
 }
 
+/**
+ * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside
+ * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
+ * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
+ */
 export function readOutputImage(outDir: string, path: string): ImageRead {
   const rel = path.startsWith(`${OUT}/`) ? path.slice(OUT.length + 1) : path.startsWith('/') ? null : path;
   if (!rel || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };

@@ -47,6 +47,7 @@
   "ui.plugins.revoke": "Take back",
   "ui.plugins.save": "Save",
   "ui.plugins.saved": "Saved.",
+  "ui.plugins.setting.goesTo": "This key only goes to: {where}",
   "ui.plugins.setting.required": "(required)",
   "ui.plugins.setting.save": "Save",
   "ui.plugins.setting.secretEmpty": "not filled in",

@@ -117,6 +117,7 @@ const REASONS = {
   requestSecret: 'a request puts a secret that is not a secret setting, or in a place other than a header or a query parameter',
   needsJs: 'settings and requests need a JavaScript entry (.mjs)',
   agents: 'the note to the agents is not text, or is longer than 1000 characters',
+  readMethod: 'a request with a method other than GET has to be declared a write',
 } as const;
 
 const asObject = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
@@ -146,7 +147,10 @@ function requestUrlOk(url: string, settings: PluginSetting[]): boolean {
   if (fromSetting) return settings.some((x) => x.key === fromSetting[1] && x.kind === 'url');
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && HOST.test(u.hostname) && !u.username && !u.password && !u.search && !u.hash;
+    // A host name, never an address or a local name: what a declared request reaches is public (the address is checked again when it connects).
+    const literal = /^\d+(\.\d+){3}$/.test(u.hostname) || u.hostname.startsWith('[');
+    const local = u.hostname === 'localhost' || /\.(localhost|local|internal)$/.test(u.hostname) || !u.hostname.includes('.');
+    return u.protocol === 'https:' && HOST.test(u.hostname) && !literal && !local && !u.username && !u.password && !u.search && !u.hash;
   } catch {
     return false;
   }
@@ -244,6 +248,8 @@ export function readPluginDeclaration(text: string, folder: string): PluginReadi
       secret = { setting, in: where, name: paramName, format };
     }
     const isWrite = o?.write === true;
+    // Only a GET is a read: anything else changes something on the other side, so it has to be declared a write and go through the write's permission.
+    if (method !== 'GET' && !isWrite) return refuse(REASONS.readMethod);
     requests.push({ id: reqId, method: method as PluginRequestDecl['method'], url, secret, write: isWrite, reversible: isWrite && o?.reversible === true });
   }
   if ((settings.length || requests.length) && runtime !== 'js') return refuse(REASONS.needsJs);

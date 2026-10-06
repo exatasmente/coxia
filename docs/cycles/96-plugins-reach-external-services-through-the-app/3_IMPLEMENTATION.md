@@ -53,3 +53,41 @@ tempo sob carga (`release-git`, `release-script`, `runner-release`, `host-terms-
 
 A tela em uso; uma instância real de SearXNG (é a #97); Windows e macOS (a sandbox só
 existe no Linux).
+
+## Revisão e o que mudou por ela
+
+A revisão (sessão separada, só leitura) pediu mudanças. Tratados:
+
+- **B1, esquema.** A beta.7 saiu com o esquema 14 enquanto isto era feito. A branch
+  trouxe a `release/0.7.0` (beta.7), e as configurações entraram no degrau `v14ToV15`
+  (`settings` em cada plugin), com os testes da versão e `configuration.md`.
+- **B2, destino privado.** Uma requisição declarada com endereço fixo só aceita nome
+  público: nada de IP, `localhost` ou nome local, recusado já na declaração. O `fetch`
+  foi trocado por um transporte `http`/`https` com consulta de DNS própria, que recusa
+  endereço privado no endereço de fato conectado (cobre DNS rebinding e IP literal). Só
+  um destino vindo de uma configuração preenchida pela pessoa alcança endereço local.
+- **B3, método.** Só `GET` é leitura; outro método sem `"write": true` é recusado na
+  declaração, e a leitura recusa um método que não seja `GET`.
+- **C1:** uma escrita só sai para o destino que a pessoa viu; se a declaração ou a
+  configuração mudou, ela é recusada, e a auditoria grava o destino calculado.
+- **C2:** URL com usuário ou senha é recusada ao salvar.
+- **C3:** `%2f`, `%5c`, `%00` e `%25` são recusados no caminho.
+- **C4:** a permissão "sempre" agora vale só para o que o plugin declarava quando foi
+  dada (`allowedFor`, um resumo dos hosts, das requisições e da escrita); outra
+  declaração volta a pedir. A tela mostra para onde cada chave vai. A chave continua
+  por plugin, comum aos espaços de trabalho: fica registrado como limite.
+- **C5:** num espaço de trabalho de teste, nenhuma leitura de plugin sai.
+- **C6:** a chave é retirada da resposta crua, no formato declarado, codificada em URL
+  e escapada em JSON.
+- **C7:** duas escritas diferentes do mesmo id viram dois pedidos.
+- **C8:** exemplo em JavaScript no kit (`docs/plugins/example-notify/`).
+- **C9:** testes para cada um dos itens acima, mais um teste do transporte real contra
+  um servidor local (loopback recusado sem configuração, redirecionamento não seguido).
+- Sugestões tratadas: configuração obrigatória conferida antes de pedir permissão; o
+  guia explica o custo de `await` em sequência; o id que o plugin manda é cortado nas
+  mensagens; comentários fora do lugar.
+
+Ficam registradas, sem tratar nesta entrega: um token no caminho de uma URL de
+configuração aparece no destino da auditoria e do pedido (S3); a escrita anunciada não
+leva o plugin como autor na auditoria (S6); e a chave não está ligada ao espaço de
+trabalho (C4, parte).

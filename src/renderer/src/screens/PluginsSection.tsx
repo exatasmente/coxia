@@ -74,6 +74,7 @@ function SettingField({ p, s, web, onChange, onError }: { p: PluginView; s: Plug
           </button>
         )}
       </div>
+      {s.goesTo.length > 0 && <span className="small muted mono" style={{ overflowWrap: 'anywhere' }}>{t('ui.plugins.setting.goesTo', { where: s.goesTo.join(', ') })}</span>}
     </div>
   );
 }

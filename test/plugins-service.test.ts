@@ -9,6 +9,12 @@ import type { PluginRecord } from '../src/main/plugins/types';
 import type { PluginDoor, PluginNote, PluginsDeps } from '../src/main/plugins/module';
 import type { JsAnswer, JsCall } from '../src/main/plugins/runtime';
 
+const guard = vi.hoisted(() => ({ test: false }));
+vi.mock('../src/main/workspace', async (orig) => ({
+  ...(await orig<typeof import('../src/main/workspace')>()),
+  externalRefusal: (what: string) => (guard.test ? `test workspace: ${what}` : null),
+}));
+
 // The plugins service under the permission contract: a plugin that needs what it was not allowed opens a request instead of running; the person answers
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
@@ -42,6 +48,7 @@ const plugin = (over: Partial<PluginRecord> = {}): PluginRecord => ({
   values: {},
   requests: [],
   agents: null,
+  reach: 'r',
   refused: null,
   ...over,
 });
@@ -540,6 +547,55 @@ describe('the note a plugin gives the agents', () => {
     expect(pluginNotes(h.deps)).toEqual([{ name: 'Web search', note: 'search for you' }]);
     setPluginEnabled('web-search', false, h.deps);
     expect(pluginNotes(h.deps)).toEqual([]);
+  });
+});
+
+describe('what the review of the requests asked for', () => {
+  const settings = [{ key: 'url', label: 'Instance URL', kind: 'url' as const, required: true }];
+  const read = { id: 'search', method: 'GET' as const, url: '{settings.url}/search', secret: null, write: false, reversible: false };
+  const post = { id: 'post', method: 'POST' as const, url: 'https://hooks.example.com/notify', secret: null, write: true, reversible: true };
+  const js = (over: Partial<PluginRecord> = {}) => plugin({ entry: 'index.mjs', runtime: 'js', network: [], write: null, settings, requests: [read, post], values: { url: 'http://127.0.0.1:8888' }, ...over });
+
+  it('lets no read of a plugin out of a test workspace', async () => {
+    guard.test = true;
+    try {
+      let answer: JsAnswer | null = null;
+      const h = harness([js({ allow: { network: true, write: true } })], { js: async (r) => ((answer = await r({ id: 'search' })), {}) });
+      await firePluginEvent('stage-finished', ctx(), h.deps);
+      expect(h.fetched).toEqual([]);
+      expect(answer).toMatchObject({ refused: expect.stringContaining('test workspace') });
+    } finally {
+      guard.test = false;
+    }
+  });
+
+  it('does not send a write whose destination changed between the request and the answer', async () => {
+    const record = js({ allow: { network: true, write: false } });
+    const h = harness([record], { js: async () => ({ writes: [{ id: 'post', body: '{}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const asked = h.actions.find((a) => a.kind === 'plugin-ask') as ReleaseAction;
+    record.requests = [read, { ...post, url: 'https://elsewhere.example.com/notify' }];
+    await answerPluginAsk(asked.id, 'once', h.deps);
+    expect(h.fetched).toEqual([]);
+    expect(h.settled.at(-1)?.note?.code).toBe('run.plugin.failed');
+  });
+
+  it('asks for no permission while a required setting is empty', async () => {
+    const h = harness([js({ values: {} })]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.actions).toEqual([]);
+  });
+
+  it('refuses a URL setting that carries a user or a password', () => {
+    const h = harness([js()]);
+    expect(() => setPluginSetting('web-search', 'url', 'https://me:pw@searx.example.com', h.deps)).toThrow();
+    expect(h.list()[0].settings).toEqual({ url: 'http://127.0.0.1:8888' });
+  });
+
+  it('keeps two different write requests of the same id apart', async () => {
+    const h = harness([js({ allow: { network: true, write: false } })], { js: async () => ({ writes: [{ id: 'post', body: '{"a":1}' }, { id: 'post', body: '{"a":2}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.actions.filter((a) => a.kind === 'plugin-ask')).toHaveLength(2);
   });
 });
 

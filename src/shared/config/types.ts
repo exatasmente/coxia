@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 14;
+export const CONFIG_SCHEMA_VERSION = 15;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -815,6 +815,11 @@ export interface PluginConfig {
   /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
   enabled: boolean;
   allow: PluginAllow;
+  /**
+   * What the plugin declared it reaches when the person allowed it always (a digest of its hosts, requests and write). A declaration that changed since
+   * reaches somewhere else: the permission does not hold for it, and the plugin asks again.
+   */
+  allowedFor?: string;
   /** The values of the plugin's `text` and `url` settings, by key. A `secret` setting is never here: it lives in the secrets store (`plugin.<id>.<key>`). */
   settings: Record<string, string>;
 }

@@ -18,7 +18,7 @@ export interface PluginView {
   /** Allowed for this session of the app. */
   session: PluginAllow;
   /** Settings it declares, with the value of each plain one and whether each secret one is filled in (never its value). */
-  settings: (PluginSetting & { value: string | null; filled: boolean })[];
+  settings: (PluginSetting & { value: string | null; filled: boolean; goesTo: string[] })[];
   /** Requests it may ask the app to make. */
   requests: Pick<PluginRequestDecl, 'id' | 'method' | 'url' | 'write' | 'reversible'>[];
   /** What it tells the agents while it is on, or null. */

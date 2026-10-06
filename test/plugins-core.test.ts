@@ -146,9 +146,22 @@ describe('reading the plugins folder', () => {
 
   it('applies the person choices by identity: what is on, what was allowed always', () => {
     write('web-search', declaration());
-    const records = readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: false }, settings: {} }] });
+    const reach = readPlugins(dir, neutralPlugins())[0].reach;
+    const records = readPlugins(dir, { ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: false }, allowedFor: reach, settings: {} }] });
     expect(records[0].enabled).toBe(true);
     expect(records[0].allow).toEqual({ network: true, write: false });
+  });
+
+  it('holds an always only for what the plugin declared when it was given: another declaration asks again', async () => {
+    write('web-search', declaration());
+    const { reachOf } = await import('../src/main/plugins/read');
+    const reach = readPlugins(dir, neutralPlugins())[0].reach;
+    const choice = (allowedFor?: string) => ({ ...neutralPlugins(), list: [{ id: 'web-search', folder: null, enabled: true, allow: { network: true, write: true }, settings: {}, ...(allowedFor ? { allowedFor } : {}) }] });
+    expect(readPlugins(dir, choice(reach))[0].allow).toEqual({ network: true, write: true });
+    expect(readPlugins(dir, choice())[0].allow).toEqual({ network: false, write: false });
+    write('web-search', declaration({ offers: { events: ['stage-finished'], network: ['other.example.com'] } }));
+    expect(readPlugins(dir, choice(reach))[0].allow).toEqual({ network: false, write: false });
+    expect(reachOf({ network: ['b', 'a'], requests: [], write: null })).toBe(reachOf({ network: ['a', 'b'], requests: [], write: null }));
   });
 
   it('reads an allow that is not exactly true as not allowed', () => {

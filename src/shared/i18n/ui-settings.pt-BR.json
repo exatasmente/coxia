@@ -47,6 +47,7 @@
   "ui.plugins.revoke": "Retirar",
   "ui.plugins.save": "Salvar",
   "ui.plugins.saved": "Salvo.",
+  "ui.plugins.setting.goesTo": "Esta chave vai só para: {where}",
   "ui.plugins.setting.required": "(obrigatória)",
   "ui.plugins.setting.save": "Salvar",
   "ui.plugins.setting.secretEmpty": "não preenchida",
