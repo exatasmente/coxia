@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { redact, redactCode } from '../src/main/errorlog-core';
+import { redact, redactCode, redactDoc } from '../src/main/errorlog-core';
 import { STAMP_SUMMARY, finalizeHarness, stampHarness, stampText } from '../src/main/harness/finalize';
 import { messageText } from '../src/shared/forum';
 import { checkText, rewriteLocal } from '../src/shared/runs/comment';
@@ -62,7 +62,7 @@ describe('rewriteLocal, the part of checkText that only rewrites', () => {
 });
 
 describe('the text check of the documentation', () => {
-  const o = (dir: string) => ({ redact: (t: string) => redact(t, '/home/nobody'), redactCode: (t: string) => redactCode(t, '/home/nobody'), worktree: dir });
+  const o = (dir: string) => ({ redact: (t: string) => redactDoc(t, '/home/nobody'), redactCode: (t: string) => redactCode(t, '/home/nobody'), worktree: dir });
 
   it('rewrites the body and never the header, and counts what it found', async () => {
     const dir = repo();
@@ -150,6 +150,30 @@ describe('the text check of the documentation', () => {
       expect(text).not.toMatch(/hunter2\";|abc123|s3cr3t/);
       expect(text).toContain('let apiKey: string;\nconst token = next();\ntype T = { password: string | null; credential?: Credential };');
       expect(done.rewritten[0].secrets).toBe(4);
+    });
+
+    it('keeps a pinned version and an ssh remote, in code and in prose, and still masks a real address in prose', async () => {
+      const dir = repo();
+      const body = [
+        'Install with pnpm@9.0.0 and clone git@example.com:org/repo.git first; ask ana@example.com.',
+        '',
+        '```sh',
+        'npm i -g pnpm@9.0.0 && git clone git@example.com:org/repo.git',
+        '```',
+        '',
+        '    uses: actions/checkout@v4.1.1',
+        '',
+        'Use `actions/checkout@v4.1.1` here.',
+        '',
+      ].join('\n');
+      put(dir, '.coxia/rules/r.md', file(['evidence: [src/a.ts]'], body));
+      const done = await finalizeHarness(dir, o(dir));
+      const text = readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8');
+      expect(text).toContain('Install with pnpm@9.0.0 and clone git@example.com:org/repo.git first; ask [email].');
+      expect(text).toContain('npm i -g pnpm@9.0.0 && git clone git@example.com:org/repo.git');
+      expect(text).toContain('    uses: actions/checkout@v4.1.1');
+      expect(text).toContain('Use `actions/checkout@v4.1.1` here.');
+      expect(done.rewritten).toEqual([{ file: '.coxia/rules/r.md', paths: 0, secrets: 1 }]);
     });
 
     it('takes an unclosed fence for code to the end, a longer fence for one that closes only with as many marks, and a lone backtick for prose', async () => {
@@ -298,7 +322,7 @@ describe('in a run', () => {
   it('rewrites the text before the commit, stamps what the pass changed in a second commit, and says what it rewrote', async () => {
     const before = today();
     const { b, run } = await ran(async (tools) => {
-      await tools.write('.coxia/rules/feature.md', file(['evidence: [src/feature.ts]'], 'Lives in /var/lib/someone/app/src/feature.ts.'));
+      await tools.write('.coxia/rules/feature.md', file(['evidence: [src/feature.ts]'], 'Lives in /var/lib/someone/app/src/feature.ts. Needs pnpm@9.0.0.'));
       await tools.write('.coxia/README.md', 'Overview with no header.');
     });
     expect(run.status).toBe('done');
@@ -313,7 +337,7 @@ describe('in a run', () => {
 
     // the commit of the work already has the text rewritten, with the header the agent wrote
     const atWork = git(run.worktree, 'show', `${work?.[0]}:.coxia/rules/feature.md`);
-    expect(atWork).toContain('Lives in feature.ts.');
+    expect(atWork).toContain('Lives in feature.ts. Needs pnpm@9.0.0.');
     expect(atWork).toContain(`checked-commit: ${HASH}`);
     // the stamp says it was checked against that commit, today
     const head = git(run.worktree, 'show', 'HEAD:.coxia/rules/feature.md');
