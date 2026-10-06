@@ -13,13 +13,14 @@ import { copyTree } from '../sandbox/copy';
 import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
-import { mentionCall, readProposedIssue, type ProposedIssue } from './call';
+import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
+import { type ProposalOutcome } from './propose';
 import { reposOnDisk, type MentionPlace } from './place';
 
-// The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation). One owner per place: the runner
-// owns the run's thread (it has the worktree, the cycle folder and the publisher) and calls this; the mentions module owns the rest. The agent never writes:
-// the call has no confinement, whatever its permission; an agent set to run commands runs them over a throwaway copy of the code, and one that reads the code
-// host may propose an issue, which waits in Actions.
+// The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
+// One owner per place: the runner owns the run's thread (it has the worktree, the cycle folder and the publisher) and calls this; the mentions module owns the rest.
+// The agent never writes: the call has no confinement, whatever its permission; an agent set to run commands runs them over a throwaway copy of the code, and one that
+// reads the code host may propose writes, which wait in Actions (or, for a low-risk write and an autonomous agent, go out audited).
 
 /** What a mention answer needs; the place decides what the agent reads and where its commands run. */
 export interface MentionDeps {
@@ -41,8 +42,16 @@ export interface MentionDeps {
   release?: (agent: string) => void;
   /** Whether the agent's provider is held (its key ran out of budget, a run's thread): the answer spends no call, and the thread says why. */
   held?: (def: AgentDef) => { provider: string; reason: string } | null;
-  /** Only a run has one: where the issue the agent proposed waits. Without it, an issue the agent raises is not offered. */
-  proposeIssue?: (runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string | null }) => Promise<unknown>;
+  /**
+   * Where the writes a response raises are proposed, wherever the agent answers (a run's thread, a channel, a general conversation, the direct conversation of an
+   * agent): the mentions module's own path outside a run's thread (`proposeMention`), which plans each write by the host. Absent: the answer may not propose anything.
+   */
+  propose?: (e: { writes: ProposedWrite[]; place: MentionPlace; agent: AgentDef; autonomous: boolean; config: WorkspaceConfig; issue: number; seq: number; runId?: string | null }) => Promise<ProposalOutcome[]>;
+  /**
+   * The agents to answer, in order, already resolved by the caller: the names the message wrote, and, in the direct conversation of an agent, its owner first, even
+   * without an `@`. Absent: the mentions the message carries.
+   */
+  calls?: readonly string[];
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -71,9 +80,9 @@ function inputOf(place: MentionPlace): { files: FolderFile[]; ref?: string; titl
   return { files: [], ref: place.ref, title: place.title, mission: place.squad?.mission ?? null, repos: repoTitles(place) };
 }
 
-/** Whether the agent may propose an issue: it reads the code host (its own tracker setting, or the default of its permission), and the place has a publisher. */
-function proposesIssue(def: AgentDef, deps: MentionDeps, place: MentionPlace): boolean {
-  if (place.kind !== 'run' || !deps.proposeIssue) return false;
+/** Whether the agent may propose writes: it reads the code host (its own tracker setting, or the default of its permission), and the place has a propose path. */
+function mayPropose(def: AgentDef, deps: MentionDeps, place: MentionPlace): boolean {
+  if (!deps.propose) return false;
   return (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
 }
 
@@ -85,7 +94,8 @@ function proposesIssue(def: AgentDef, deps: MentionDeps, place: MentionPlace): b
 export async function answerMentions(place: MentionPlace, message: ForumMessage, deps: MentionDeps): Promise<MentionAnswer[]> {
   const config = deps.config();
   const out: MentionAnswer[] = [];
-  for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
+  const calls = (deps.calls ?? message.mentions).slice(0, MAX_MENTIONS);
+  for (const id of calls) {
     const def = config.agents.team.find((a) => a.id === id);
     if (!def) {
       deps.release?.(id);
@@ -135,7 +145,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         repos: info.repos,
         place: place.kind === 'run' ? 'run' : place.kind,
         shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined,
-        issue: proposesIssue(def, deps, place),
+        proposals: mayPropose(def, deps, place),
       });
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
@@ -147,11 +157,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      if (mayPropose(def, deps, place)) await raiseWrites(deps, place, def, message.seq, id, readProposedWrites((r.data as { proposals?: unknown }).proposals));
       if (r.partial) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: id }, stage });
-      if (place.kind === 'run' && place.run) {
-        const issue = proposesIssue(def, deps, place) ? readProposedIssue((r.data as { issue?: unknown }).issue) : null;
-        if (issue) await proposeIssue(deps, place.run, message.seq, id, issue);
-      }
       out.push({ agent: id, text });
     } catch (e) {
       const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -167,9 +174,29 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
   return out;
 }
 
-/** The proposal of an issue that waited in Actions, offered by the place's publisher (only a run has one). */
-async function proposeIssue(deps: MentionDeps, run: Run, seq: number, agent: string, issue: ProposedIssue): Promise<void> {
-  await deps.proposeIssue?.(run.id, { key: `${seq}-${agent}`, title: issue.title, body: issue.body, labels: issue.labels, by: agent, stage: run.stage });
+/**
+ * The writes an answer raised, offered wherever the place proposes them: every place plans each write with the provider and puts it in Actions (or lets a low-risk one
+ * out when the agent is autonomous), a run's thread included, whose target is its issue. A host with no such operation and a write that could not be planned are said in
+ * the thread, and nothing is written.
+ */
+async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef, seq: number, agent: string, writes: ProposedWrite[]): Promise<void> {
+  if (!writes.length || !deps.propose) return;
+  const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
+  const config = deps.config();
+  const autonomous = config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+  // A run's thread registers its proposals on the run's issue and names the run, so the runner keeps reporting what became of them; any other place registers on
+  // the workspace's issue project, which every write of the app registers under.
+  const run = place.kind === 'run' ? place.run : null;
+  const outcomes = await deps.propose({ writes, place, agent: def, autonomous, config, issue: run ? run.issue.iid : 0, runId: run?.id ?? null, seq });
+  const line = (code: string, params: Record<string, string | number>): void => {
+    deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
+  };
+  for (const o of outcomes) {
+    if (o.status === 'unsupported') line('runner.mention.unsupported', { agent, op: o.op, reason: o.reason });
+    else if (o.status === 'failed') line('runner.mention.proposalFailed', { agent, reason: o.reason });
+    else if (o.status === 'auto') line('runner.mention.autoWrote', { agent });
+    else line('runner.mention.proposed', { agent, count: o.count });
+  }
 }
 
 /**

@@ -403,7 +403,8 @@ export type GitlabCommand = VcsCommand;
 // 'run-push' is the push of a run's branch (the runner proposes it; it always waits for its own "sim").
 // 'release-git' is one step of a release (open the branch, merge a pull request into it, cut a beta or the stable, push the branch or a tag): its `unit` is a
 // `ReleaseUnit` (shared/release.ts) and nothing else.
-export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push' | 'release-git';
+// 'suggest-agent' is a new agent the cycle proposed: accepting it creates an ordinary agent, editing opens the editor, rejecting keeps the reason. It writes nothing external.
+export type ActionKind = 'sync' | 'qa-comment' | 'conflict' | 'conflict-push' | 'gitlab' | 'vcs' | 'run-push' | 'release-git' | 'suggest-agent';
 export type ActionState = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
 
 export interface ReleaseAction {

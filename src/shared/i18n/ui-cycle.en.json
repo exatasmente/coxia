@@ -234,6 +234,8 @@
   "ui.cycle.wait.stableOut": "Waiting for the stable to be on the host: its tag on the remote, on main.",
   "ui.cycle.wait.time": "Waiting {minutes} minutes.",
   "ui.forum.addressed": "To {who}",
+  "ui.forum.agentChat": "Chat with {agent}",
+  "ui.forum.agents": "Chat with an agent",
   "ui.forum.backToList": "All threads",
   "ui.forum.chain.answered": "answered by {who}",
   "ui.forum.chain.hops": "passed on {count} times",

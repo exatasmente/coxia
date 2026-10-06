@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { ID } from './schema';
-import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type AgentShell, type AgentTracker, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
+import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type AgentShell, type AgentToolsConfig, type AgentTracker, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
 
 // The agent team: the five built-in (system) agents, the helpers that keep them in place, and the pure edits Settings makes.
 // Everything here takes a config and returns a new one; validation is the caller's (saveConfig).
@@ -49,6 +49,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     tracker: partial.tracker ?? 'none',
     shell: partial.shell ?? ((partial.permission ?? 'read') === 'worktree' ? 'allowlist' : 'none'),
     ...(partial.allowedCommands?.length ? { allowedCommands: [...partial.allowedCommands] } : {}),
+    ...(partial.tools ? { tools: { ...partial.tools } } : {}),
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
@@ -135,6 +136,14 @@ export function pruneAgentStages(team: AgentDef[], cycle: Pick<DevCycleConfig, '
 /** How far each permission reaches, lowest first: a change to a higher value gives an agent more than it had. */
 const SHELL_RANK: Record<AgentShell, number> = { none: 0, allowlist: 1, sandbox: 2, host: 3 };
 const TRACKER_RANK: Record<AgentTracker, number> = { none: 0, read: 1 };
+
+/**
+ * The tools an agent uses: its own when the person set them for that agent, otherwise the workspace's. Field by field, so an agent can have a tool the workspace
+ * turned off (`files: true` on the agent even when `agents.tools.files` is false).
+ */
+export function toolsForAgent(config: WorkspaceConfig, agent: Pick<AgentDef, 'tools'>): AgentToolsConfig {
+  return agent.tools ? { ...config.agents.tools, ...agent.tools } : config.agents.tools;
+}
 
 /** Whether `to` lets an agent run more than `from` did. */
 export const shellRaised = (from: AgentShell, to: AgentShell): boolean => SHELL_RANK[to] > SHELL_RANK[from];

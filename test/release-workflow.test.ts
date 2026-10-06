@@ -80,9 +80,10 @@ const CHECK = 'Check what the draft release holds';
 describe('release.yml finds the draft of a pre-release', () => {
   const programs = [...text('.github/workflows/release.yml').matchAll(/--jq '(\.\[\] \| select\(\.draft[^']*)'/g)].map((m) => m[1]);
 
-  it('looks it up in both steps by name or tag, and not by an interpolated tag', () => {
-    expect(programs).toHaveLength(2);
-    expect(programs[0]).toBe(programs[1]);
+  it('looks it up in every step by name or tag, and not by an interpolated tag', () => {
+    // The link and the check of the Linux job, and the check of the Windows job.
+    expect(programs).toHaveLength(3);
+    for (const p of programs) expect(p).toBe(programs[0]);
     expect(text('.github/workflows/release.yml')).not.toMatch(/select\(\.draft and \.tag_name == /);
   });
 
@@ -148,6 +149,61 @@ describe('release.yml links the draft to its tag', () => {
     const r = runStep(CHECK, linked, { TAG: 'v0.6.0-beta.1', VERSION: '0.6.0-beta.1', CHANNEL: 'beta' });
     expect(r.code).toBe(0);
     expect(r.out).toContain('beta-linux.yml');
+  });
+});
+
+const WINDOWS_CHECK = 'Check the Windows files in the draft release';
+const WINDOWS_BETA = ['coxia-setup-0.6.0-beta.1.exe', 'coxia-setup-0.6.0-beta.1.exe.blockmap', 'beta.yml'].map((name) => ({ name }));
+// The beta's draft once the Linux job linked it, with no leftover draft of the same version around.
+const linkedBeta = (assets: { name: string }[]): unknown[] => [{ ...RELEASES[0], tag_name: 'v0.6.0-beta.1', assets: [...BETA_ASSETS, ...assets] }, RELEASES[1], RELEASES[2]];
+const BETA_ENV = { TAG: 'v0.6.0-beta.1', VERSION: '0.6.0-beta.1', CHANNEL: 'beta' };
+
+describe('release.yml builds Windows for every tag', () => {
+  const windowsJob = (): string => {
+    const yml = text('.github/workflows/release.yml');
+    return yml.slice(yml.indexOf('  windows:\n'), yml.indexOf('  macos:\n'));
+  };
+
+  it('runs the Windows job on every run, after the Linux job made the draft, and keeps macOS behind the switch', () => {
+    const job = windowsJob();
+    expect(job).toMatch(/needs: \[prepare, linux\]/);
+    expect(job).not.toMatch(/^    if:/m);
+    const yml = text('.github/workflows/release.yml');
+    expect(yml.slice(yml.indexOf('  macos:\n'))).toMatch(/^    if: inputs\.experimental_platforms == true$/m);
+  });
+
+  it('uploads into the draft named after the tag, with the feed of the channel', () => {
+    const job = windowsJob();
+    expect(job).toContain('-c.publish.channel="$CHANNEL"');
+    expect(job).toContain('-c.releaseInfo.releaseName="$TAG"');
+  });
+
+  it('names the installer the way the check looks for it', () => {
+    expect(text('electron-builder.yml')).toMatch(/^nsis:\n  artifactName: coxia-setup-\$\{version\}\.\$\{ext\}$/m);
+  });
+
+  it.skipIf(!hasJq)('accepts the draft that holds the installer, its block map and the feed of the channel', () => {
+    const r = runStep(WINDOWS_CHECK, linkedBeta(WINDOWS_BETA), BETA_ENV);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('coxia-setup-0.6.0-beta.1.exe');
+  });
+
+  it.skipIf(!hasJq)('refuses a beta that carries latest.yml: it would move the Windows installs on the stable channel', () => {
+    const r = runStep(WINDOWS_CHECK, linkedBeta([...WINDOWS_BETA, { name: 'latest.yml' }]), BETA_ENV);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('::error::the draft release carries a Windows feed of another channel: latest.yml');
+  });
+
+  it.skipIf(!hasJq)('refuses a draft without the installer', () => {
+    const r = runStep(WINDOWS_CHECK, linkedBeta([{ name: 'beta.yml' }]), BETA_ENV);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('::error::the draft release is missing coxia-setup-0.6.0-beta.1.exe');
+  });
+
+  it.skipIf(!hasJq)('refuses when a second draft of the version exists: the files may have gone to the other one', () => {
+    const r = runStep(WINDOWS_CHECK, [...linkedBeta(WINDOWS_BETA), RELEASES[3]], BETA_ENV);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('::error::expected one draft release named v0.6.0-beta.1');
   });
 });
 

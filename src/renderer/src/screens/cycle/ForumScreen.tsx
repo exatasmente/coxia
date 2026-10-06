@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { type ThreadSummary } from '../../../../shared/forum';
+import { type ThreadSummary, agentThreadId } from '../../../../shared/forum';
 import { forumLists, totalUnread, unreadOf } from '../../../../shared/forumView';
 import { isActive } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
@@ -59,6 +59,8 @@ export function ForumScreen({ go, thread }: { go: (s: Screen) => void; thread?: 
   const squads = config?.squads ?? [];
   const open = (id: string) => go({ name: 'forum', thread: id });
   const unread = totalUnread(all ?? [], seen);
+  // The direct conversation of an agent is a thread of the forum with an id of its own, made when the forum is listed: the team list only offers the way in.
+  const team = config?.agents.team ?? [];
 
   const create = () => {
     const name = title.trim();
@@ -100,6 +102,14 @@ export function ForumScreen({ go, thread }: { go: (s: Screen) => void; thread?: 
       <ul className="cy-thread-list">
         {lists.threads.map((s) => <Item key={s.id} s={s} selected={s.id === thread} unread={unreadOf(s, seen)} onOpen={() => open(s.id)} />)}
       </ul>
+      {team.length > 0 && (
+        <details className="cy-new-thread">
+          <summary className="small muted" style={{ cursor: 'pointer' }}>{t('ui.forum.agents')}</summary>
+          <ul className="cy-thread-list" aria-label={t('ui.forum.agents')}>
+            {team.map((a) => <li key={a.id}><button type="button" className="btn cy-mini" onClick={() => open(agentThreadId(a.id))}>{t('ui.forum.agentChat', { agent: a.name || a.id })}</button></li>)}
+          </ul>
+        </details>
+      )}
       <form
         className="cy-new-thread"
         onSubmit={(e) => {

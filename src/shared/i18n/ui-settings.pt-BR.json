@@ -181,7 +181,7 @@
   "ui.webAccess.device.seen": "Pareado em {created} · visto por último em {seen}",
   "ui.webAccess.devices.none": "Nenhum aparelho pareado.",
   "ui.webAccess.devices.title": "Aparelhos pareados",
-  "ui.webAccess.effects.hint": "Aprovar ações de release e de {vcsName} (escrita no {vcsName}, push). Desligado, só a janela do app aprova. Continuar no Claude Code e as configurações deste acesso nunca funcionam pelo navegador.",
+  "ui.webAccess.effects.hint": "Iniciar uma release e aprovar ações de release e de {vcsName} (escrita no {vcsName}, push). Desligado, só a janela do app faz isso. Continuar no Claude Code e as configurações deste acesso nunca funcionam pelo navegador.",
   "ui.webAccess.effects.label": "Permitir ações com efeito externo pelo navegador",
   "ui.webAccess.enable.hint": "Desligado, nada escuta na rede. Ligado, só entra quem tem um aparelho pareado.",
   "ui.webAccess.enable.label": "Permitir acesso pelo navegador",

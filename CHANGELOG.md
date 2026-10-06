@@ -8,19 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- **An agent called with `@` outside a run finds the workspace's code.** In the general conversation, the squads' channels and the conversations you open, an agent set to run commands always said there was no repository at hand: a repository path written as `~/…` in the config was looked for as is, and a squad's channel only counted the repositories its scope names, not the ones its paths are in. Both now count, and a squad that goes by labels only reads every repository of the workspace. An agent set to run commands on this computer (`host`) still has each command refused there, since that place has no screen to ask on.
+- **An agent called with `@` outside a run finds the workspace's code.** In the general conversation, the squads' channels, an agent's direct conversation and the conversations you open, an agent set to run commands always said there was no repository at hand: a repository path written as `~/…` in the config was looked for as is, and a squad's channel only counted the repositories its scope names, not the ones its paths are in. Both now count, and a squad that goes by labels only reads every repository of the workspace. An agent set to run commands on this computer (`host`) still has each command refused there, since that place has no screen to ask on.
 
-## [0.6.1-beta.2] - 2026-10-05
+## [0.7.0-beta.2] - 2026-10-05
+
+### Added
+
+- **A direct conversation with an agent.** An agent of the team can be talked to in a conversation of its own: every message there goes to it without an `@`, and it answers with the conversation as context. It is listed with the forum's conversations and works from a paired phone.
+- **An agent proposes tracker writes wherever it answers.** In its direct conversation, a squad channel, the general conversation or a run's thread, an answer may propose comments, label changes, a state change, closing an issue or opening a new one. Each waits in Actions with the exact command, and the proposals of one answer can be decided together; closing an issue or changing its state always waits for you. When a write proposed in a run's thread is approved, the thread says it went out.
+- **Per-agent permissions.** The tracker access, the commands and the tools an agent may use can be set on that agent alone, starting from the workspace's defaults. An agent stays read only on the code in a conversation.
+- **Agent suggestions from the cycle's history.** *Suggest agents* in Settings › Team, and the end of a retro, read what the app already records (runs, commands you keep allowing, ceremonies) and, when a pattern repeats, propose a new agent with its evidence. Each suggestion waits in Actions to be accepted, edited or rejected; a rejected one only comes back with new evidence. From a paired browser only *Accept* is offered.
+
+## [0.7.0-beta.1] - 2026-10-05
+
+### Added
+
+- **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
 ### Fixed
 
-- **`@agent` gets an answer outside a run's thread.** 0.6.0 promised that naming an agent with `@` in the general conversation, a squad's channel, the channel the squads share or a conversation you opened would get its answer there, but the part of the app that answers those mentions was never switched on: the message showed who it called and nothing came back, not even a failure. It now answers there, read only, as in a run's thread.
+- **Blank or black repaints on Windows.** The app now draws without hardware acceleration on Windows, a mitigation for the blank windows reported there; it has not been checked on a Windows desktop yet.
 
-## [0.6.1-beta.1] - 2026-10-04
+## [0.6.1] - 2026-10-05
+
+### Changed
+
+- **A release can be started from the paired phone.** *Start a release* was left out of the phone's runs screen, and the phone was refused even when it asked. It now shows there whenever the workspace has the release flow, and the phone may start a release when *Allow actions with external effects from the browser* is on (Settings › Browser access), the same switch that lets it approve a proposal; with the switch off, the field says why it was refused. Each push of the release still waits for a "yes" in Actions.
 
 ### Fixed
 
 - **An agent called with `@`, asked in the chain or asked by another squad no longer fails when it runs out of steps.** These calls used a fixed limit of 20 steps and, when an agent spent them all reading (a shell exploring the code, say), the thread only said it could not answer. They now use the same limit as the runner's read-only stages (*steps of an agent that only reads*, Settings › Runner), and when it runs out the agent is resumed once, with no tool, to answer with what it has read; the thread says the answer may be incomplete. If that also fails, the failure message stays, with the reason. A stage that runs out of steps still fails.
+- **`@agent` gets an answer outside a run's thread.** 0.6.0 promised that naming an agent with `@` in the general conversation, a squad's channel, the channel the squads share or a conversation you opened would get its answer there, but the part of the app that answers those mentions was never switched on: the message showed who it called and nothing came back, not even a failure. It now answers there, read only, as in a run's thread.
 
 ## [0.6.0] - 2026-10-04
 
@@ -208,9 +226,10 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.6.1-beta.2...HEAD
-[0.6.1-beta.2]: https://github.com/exatasmente/coxia/compare/v0.6.1-beta.1...v0.6.1-beta.2
-[0.6.1-beta.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1-beta.1
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.2...HEAD
+[0.7.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.1...v0.7.0-beta.2
+[0.7.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0-beta.1
+[0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/exatasmente/coxia/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/exatasmente/coxia/compare/v0.4.1...v0.4.2
