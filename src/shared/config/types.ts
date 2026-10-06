@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 13): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 12;
+export const CONFIG_SCHEMA_VERSION = 13;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -781,6 +781,34 @@ export interface ClaudeSdkConfig {
 export const USER_ARTICLES = ['', 'o', 'a'] as const;
 export type UserArticle = (typeof USER_ARTICLES)[number];
 
+/** What a plugin may reach, beyond the workspace's own sandbox: nothing else, or a destination it declares. Nothing here widens what the app already allows. */
+export const PLUGIN_GRANTS = ['none', 'network'] as const;
+export type PluginGrant = (typeof PLUGIN_GRANTS)[number];
+
+/** A plugin of the workspace, as the app read it: the declaration and the reason when it was refused. */
+export interface PluginConfig {
+  /** Stable identity the declaration announces. */
+  id: string;
+  /** Folder of the plugin, relative to plugins.dir; null when the plugin is declared but not installed. */
+  folder: string | null;
+  /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
+  enabled: boolean;
+  /** What the plugin declares it needs from the network: the hosts it reads. Empty reads as nothing. */
+  network: string[];
+  /** What the person granted it. Lower than what it declares means the app refuses the part it did not grant, with the reason. */
+  granted: PluginGrant;
+  /** Why the declaration was refused, in words; null when the plugin is usable. */
+  refused: string | null;
+}
+
+/** The plugins of the workspace: where they live and which ones are on. They are the team's own code; nothing is downloaded. */
+export interface PluginsConfig {
+  /** Folder that holds one folder per plugin ("~/" expands). null: the `plugins` folder of the workspace's data folder. */
+  dir: string | null;
+  /** The plugins the app read from `dir` and what the person decided about each. */
+  list: PluginConfig[];
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -807,6 +835,7 @@ export interface WorkspaceConfig {
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
   runner: RunnerConfig;
+  plugins: PluginsConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

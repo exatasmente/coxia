@@ -99,13 +99,27 @@ function view(g: Gate): GateView {
   };
 }
 
+/**
+ * Documents that plugins add to the cycle folder, as `[file, label]` at the spec folder's root: the types the plugins that are on offer.
+ * Set once by the plugins module; empty when none is registered, so a workspace with no plugins behaves exactly as before.
+ */
+export const gatePluginDocuments: { files: () => [string, string][] } = {
+  files: () => [],
+};
+
 export function gateOptions(card: Card): GateOption[] {
   if (!card.spec) return [];
   const folder = card.spec.folder;
-  return rc().specLayout.gateFiles.flatMap((c) => {
+  const fromCycle = rc().specLayout.gateFiles.flatMap((c) => {
     const hit = c.files.find(([f]) => existsSync(join(folder, c.sub, f)));
     return hit ? [{ gate: c.gate, label: cycleWord(hit[1]), file: join(folder, c.sub, hit[0]) }] : [];
   });
+  // The document types the plugins that are on add: a second source summed to the cycle's own, never a change to the reader of today's types.
+  const fromPlugins = gatePluginDocuments
+    .files()
+    .filter(([f]) => existsSync(join(folder, f)))
+    .map(([f, label]) => ({ gate: 2 as const, label: cycleWord(label), file: join(folder, f) }));
+  return [...fromCycle, ...fromPlugins];
 }
 
 // The quiz as the cycle defines it: how many questions a round has and the kinds of consequence question it may use.

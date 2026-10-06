@@ -5,6 +5,7 @@
   "ui.audit.kind.exec": "Sandbox command",
   "ui.audit.kind.minutes": "Minutes",
   "ui.audit.kind.noteEdit": "Note edit",
+  "ui.audit.kind.pluginWrite": "Plugin write",
   "ui.audit.kind.publish": "Publishing",
   "ui.audit.kind.push": "Branch push",
   "ui.audit.kind.release": "Release step",

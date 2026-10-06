@@ -383,6 +383,7 @@ export async function previewAction(id: string): Promise<string> {
   if (isVcsAction(a)) return describe(a.command as VcsCommand);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
+  if (a.kind === 'plugin-write') return a.output ?? '';
   if (a.kind === 'conflict-push') return a.output ?? '';
   if (a.kind === 'run-push') return a.output ?? '';
   if (a.kind === 'release-git') return previewReleaseAction(a);
@@ -522,6 +523,11 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
         if (all.length > 1) update(id, (x) => ({ ...x, done: i + 1 }));
       }
       output = outputs.join('\n');
+    } else if (a.kind === 'plugin-write') {
+      // A plugin never writes by itself: the "sim" here approves the request the plugin described, and what was approved goes to the audit log.
+      const destination = String((a.unit ?? {}).destination ?? '');
+      const plugin = String((a.unit ?? {}).plugin ?? '');
+      output = await audited(originOf(a), { kind: 'plugin-write', target: destination, via: 'plugin', fields: { plugin, destination } }, async () => t('main.actions.pluginWriteDone', { destination, plugin }));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
       output = await audited(originOf(a), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
@@ -1125,6 +1131,30 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
     output: t('main.actions.handResolved', { count: r?.files.length ?? 0, branch: r?.branch ?? '', files: a.files.join(', ') }),
   });
   return notes.length ? update(push.id, (x) => ({ ...x, output: [x.output, ...notes].join('\n') })) : read().actions.find((x) => x.id === push.id) ?? push;
+}
+
+// ---- the external write a plugin asks for --------------------------------------------------------------------------------------------------
+// A plugin never writes by itself. It describes a request and the request comes in through the same door as everything else: it waits for the
+// person's "sim" in Actions, is refused in a test workspace by the guard the door already runs, and lands in the audit log. The destination is
+// the neutral one the plugin declares: an example of the kit, never a named third-party service. Nothing here gives a plugin a write of its own.
+
+/** Proposes the external write a plugin asked for (its declared neutral destination and a text). Refused in a test workspace by `assertExternalWrite`. */
+export function proposePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; plugin: string; destination: string; detail: string; notify?: { title: string; body: string } }): ReleaseAction | null {
+  assertExternalWrite(t('main.actions.pluginWriteTitle'));
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running' || a.state === 'done'))) return null;
+  const action = blank({
+    key: input.key,
+    kind: 'plugin-write',
+    issue: input.issue,
+    issueTitle: input.issueTitle ?? '',
+    summary: input.summary,
+    unit: { plugin: input.plugin, destination: input.destination },
+    output: [`${t('main.actions.pluginWriteTo', { destination: input.destination })}`, '', input.detail].filter(Boolean).join('\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
 }
 
 export function startActions(d: { notify(n: Notice): void; emit(ev: AppEvent): void }): void {

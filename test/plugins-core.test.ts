@@ -1,0 +1,169 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PLUGIN_CONTRACT, readPluginDeclaration } from '../src/shared/plugins/declaration';
+import { PLUGIN_EVENTS } from '../src/shared/plugins/events';
+import { choicesFor, pluginsDirOf, pluginViews, readPlugins } from '../src/main/plugins/read';
+import { neutralPlugins } from '../src/shared/config/defaults';
+
+// The plugin core is pure: it reads the text of a declaration and the folder a plugin lives in, and judges it. The folder read is
+// exercised against a throwaway directory, never the person's workspace.
+
+const declaration = (over: Record<string, unknown> = {}): string =>
+  JSON.stringify({
+    id: 'web-search',
+    name: 'Web search',
+    contract: PLUGIN_CONTRACT,
+    offers: {
+      events: ['stage-finished'],
+      documents: [{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }],
+      network: ['search.example.com'],
+      write: 'plugin://web-search/results',
+      entry: 'search.sh',
+    },
+    ...over,
+  });
+
+describe('the plugin declaration', () => {
+  it('reads a valid declaration into what the plugin offers', () => {
+    const r = readPluginDeclaration(declaration(), '/plugins/web-search');
+    expect(r.refused).toBeNull();
+    expect(r.declaration).toMatchObject({
+      id: 'web-search',
+      name: 'Web search',
+      contract: PLUGIN_CONTRACT,
+      offers: { events: ['stage-finished'], network: ['search.example.com'], write: 'plugin://web-search/results', entry: 'search.sh' },
+    });
+    expect(r.declaration?.offers.documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }]);
+  });
+
+  it('refuses a declaration with no name, with no identity, and one that is not a plugin id', () => {
+    expect(readPluginDeclaration(declaration({ name: '' }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ id: '' }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ id: 'Bad Id' }), '/p').refused).toBeTruthy();
+  });
+
+  it('refuses an empty, non-JSON or non-object declaration', () => {
+    expect(readPluginDeclaration('', '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration('not json', '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration('[]', '/p').refused).toBeTruthy();
+  });
+
+  it('refuses a contract version this app does not understand', () => {
+    const r = readPluginDeclaration(declaration({ contract: 99 }), '/p');
+    expect(r.declaration).toBeNull();
+    expect(r.refused).toBeTruthy();
+  });
+
+  it('refuses an event outside the fixed catalog', () => {
+    const r = readPluginDeclaration(declaration({ offers: { events: ['stage-exploded'] } }), '/p');
+    expect(r.declaration).toBeNull();
+    expect(r.refused).toBeTruthy();
+  });
+
+  it('accepts every event of the catalog', () => {
+    const r = readPluginDeclaration(declaration({ offers: { events: [...PLUGIN_EVENTS] } }), '/p');
+    expect(r.declaration?.offers.events).toEqual([...PLUGIN_EVENTS]);
+  });
+
+  it('refuses a document name the cycle folder would not take', () => {
+    for (const name of ['.hidden', 'a/b.md', '', 'x'.repeat(101)]) {
+      expect(readPluginDeclaration(declaration({ offers: { documents: [{ name, label: 'x' }] } }), '/p').refused, name).toBeTruthy();
+    }
+  });
+
+  it('refuses a write destination and an entry script that escape the plugin folder', () => {
+    expect(readPluginDeclaration(declaration({ offers: { write: '../out' } }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ offers: { write: '/etc/passwd' } }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ offers: { entry: '../../bin/sh' } }), '/p').refused).toBeTruthy();
+    expect(readPluginDeclaration(declaration({ offers: { entry: '/bin/sh' } }), '/p').refused).toBeTruthy();
+  });
+
+  it('refuses a network destination that is not a host name', () => {
+    for (const host of ['https://example.com', 'a b', '-x', 'x-']) {
+      expect(readPluginDeclaration(declaration({ offers: { network: [host] } }), '/p').refused, host).toBeTruthy();
+    }
+  });
+
+  it('reads a declaration that offers nothing else', () => {
+    const r = readPluginDeclaration(JSON.stringify({ id: 'plain', name: 'Plain' }), '/p');
+    expect(r.refused).toBeNull();
+    expect(r.declaration?.offers).toEqual({ events: [], documents: [], network: [], write: null, entry: null });
+  });
+});
+
+describe('reading the plugins folder', () => {
+  let dir: string;
+  const write = (name: string, text: string): void => {
+    const folder = join(dir, name);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, 'plugin.json'), text);
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'coxia-plugins-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('reads one record per plugin folder, and ignores a folder without a declaration', () => {
+    write('web-search', declaration());
+    mkdirSync(join(dir, 'empty'), { recursive: true });
+    const records = readPlugins(dir, neutralPlugins());
+    expect(records.map((r) => r.id)).toEqual(['web-search']);
+    expect(records[0].enabled).toBe(false);
+    expect(records[0].refused).toBeNull();
+  });
+
+  it('returns nothing for a folder that does not exist', () => {
+    expect(readPlugins(join(dir, 'nope'), neutralPlugins())).toEqual([]);
+  });
+
+  it('keeps a refused declaration in the list with its reason, without throwing', () => {
+    write('bad', declaration({ offers: { events: ['nope'] } }));
+    const records = readPlugins(dir, neutralPlugins());
+    expect(records).toHaveLength(1);
+    expect(records[0].refused).toBeTruthy();
+    expect(records[0].enabled).toBe(false);
+  });
+
+  it('refuses a repeated identity, keeping the first', () => {
+    write('a', declaration());
+    write('b', declaration());
+    const records = readPlugins(dir, neutralPlugins());
+    expect(records).toHaveLength(2);
+    expect(records[0].refused).toBeNull();
+    expect(records[1].refused).toContain('duplicate');
+  });
+
+  it('applies the person choices by identity: what is on, what is granted', () => {
+    write('web-search', declaration());
+    const records = readPlugins(dir, { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'network', refused: null }] });
+    expect(records[0].enabled).toBe(true);
+    expect(records[0].granted).toBe('network');
+  });
+
+  it('offers nothing for a plugin that is off, and everything for one that is on', () => {
+    write('web-search', declaration());
+    const off = pluginViews(readPlugins(dir, neutralPlugins()));
+    expect(off[0].enabled).toBe(false);
+    const on = pluginViews(readPlugins(dir, { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'none', refused: null }] }));
+    expect(on[0]).toMatchObject({ enabled: true, events: ['stage-finished'] });
+    expect(on[0].documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'plugins.webSearch.document' }]);
+  });
+
+  it('turns the read records back into the config list, keeping the person choices', () => {
+    write('web-search', declaration());
+    const before = { dir: null, list: [{ id: 'web-search', folder: null, enabled: true, network: [], granted: 'network' as const, refused: null }] };
+    const chosen = choicesFor(readPlugins(dir, before), before);
+    expect(chosen).toEqual([{ id: 'web-search', folder: join(dir, 'web-search'), enabled: true, network: ['search.example.com'], granted: 'network', refused: null }]);
+  });
+});
+
+describe('the plugins folder of a workspace', () => {
+  it('is what the config lists, expanded, or the plugins folder of the data folder', () => {
+    expect(pluginsDirOf(neutralPlugins(), '/home/ana', '/data/ws')).toBe('/data/ws/plugins');
+    expect(pluginsDirOf({ dir: '~/my-plugins', list: [] }, '/home/ana', '/data/ws')).toBe('/home/ana/my-plugins');
+    expect(pluginsDirOf({ dir: '/opt/plugins', list: [] }, '/home/ana', '/data/ws')).toBe('/opt/plugins');
+  });
+});

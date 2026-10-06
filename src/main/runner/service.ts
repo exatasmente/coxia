@@ -77,6 +77,7 @@ import {
   type PendingCommand,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
+import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
@@ -178,6 +179,12 @@ export interface RunnerDeps {
   timeoutMs?: number;
   /** Replaces one limit or the other (tests). */
   limits?: Partial<{ idleMs: number; maxMs: number }>;
+  /**
+   * Told when an event of the fixed catalog happens (a stage was entered or finished, a gate was decided, a run finished), so the plugins that
+   * observe it are called. Optional: without it the runner runs exactly as before. The runner never fires and forgets nothing: what it hands over
+   * is material for the plugins, and a plugin that fails is not the runner's to know.
+   */
+  pluginEvent?(event: PluginEvent, context: { run: Run }): void;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -337,6 +344,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   };
 
+  // An event of the fixed catalog happened: the plugins that observe it are called through the same door the app already uses for everything else.
+  // A plugin that fails, that is off or whose declaration was refused is the plugin service's to leave out; nothing here waits for a plugin, and
+  // nothing a plugin does reaches back into the run.
+  function pluginDone(event: PluginEvent, run: Run): void {
+    if (!deps.pluginEvent) return;
+    try {
+      deps.pluginEvent(event, { run });
+    } catch (e) {
+      console.error('[runner] could not tell the plugins', run.id, e instanceof Error ? e.message : e);
+    }
+  }
+
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
   function tell(prior: Run | null, run: Run): void {
@@ -353,6 +372,9 @@ export function createRunner(deps: RunnerDeps): Runner {
         publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
       }
     }
+    // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
+    if (!prior || prior.stage !== run.stage) pluginDone('stage-entered', run);
+    if (isTerminal(run) && (!prior || !isTerminal(prior))) pluginDone('run-finished', run);
     // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
     if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;
@@ -484,6 +506,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!holder) publish(run.id, (p) => p.asked(run.id, { stage: flowStage, agent, question: out.question, autonomous }));
       return;
     }
+    // The stage concluded (it did not pause with a question): the plugins that observe `stage-finished` are called before the run moves on, so one
+    // that adds a document finds the cycle folder as the stage left it.
+    pluginDone('stage-finished', run);
     if (run.routing && flow[0]?.id === stage) {
       routeFrontDoor(run, { agent, out, written: r.written, autonomous });
       ended();
@@ -781,6 +806,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
       const decided = (run: Run): Run => {
         if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+        // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
+        if (gateStage?.type === 'gate') pluginDone('gate-decided', run);
         return run;
       };
       // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).

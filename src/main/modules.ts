@@ -15,6 +15,7 @@ import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
+import { pluginsModule } from './plugins/module';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
@@ -47,6 +48,7 @@ const ALL: Module[] = [
   glossary,
   mentionsModule,
   minutes,
+  pluginsModule,
   radar,
   retention,
   runsModule,
