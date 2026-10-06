@@ -1219,7 +1219,7 @@ export interface PluginAskUnit {
   to: string | null;
   text: string;
   /** For a JavaScript plugin's write: the request it asked the app to make, carried out once the person allows it. */
-  request?: { id: string; path?: string; query?: Record<string, string>; body?: string; contentType?: string; target: string };
+  request?: { id: string; path?: string; query?: Record<string, string>; body?: string; contentType?: string; target: string; reach?: string };
 }
 
 /** Opens the request of a plugin. Refused in a test workspace (it widens nothing); null when the same request already waits. */

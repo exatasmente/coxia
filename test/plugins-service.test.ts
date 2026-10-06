@@ -109,7 +109,7 @@ function memoryDoor(refuse: boolean, armed: boolean) {
 
 /** Deps over an in-memory configuration: saving changes what the next read sees, as the real read of the folder would. */
 function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean; js?: (read: (call: JsCall) => Promise<JsAnswer>) => Promise<{ document?: string; writes?: JsCall[] }>; status?: number } = {}) {
-  let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow, settings: r.values })) };
+  let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow, allowedFor: r.reach, settings: r.values })) };
   const runs: { plugin: string; event: string; sandbox: RunnerSandbox }[] = [];
   const settled: { runId: string; note: PluginNote | null }[] = [];
   const memory = memoryDoor(opts.refuse === true, opts.armed === true);
@@ -121,7 +121,8 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
     read: () =>
       initial.map((r) => {
         const c = config.list.find((x) => x.id === r.id);
-        return c ? { ...r, enabled: c.enabled, allow: c.allow, values: c.settings ?? {} } : r;
+        // As the real read does: an "always" holds only for the declaration it was given for.
+        return c ? { ...r, enabled: c.enabled, allow: c.allowedFor === r.reach ? c.allow : { network: false, write: false }, values: c.settings ?? {} } : r;
       }),
     save: (change) => {
       config = { ...config, list: change(config.list) };
@@ -586,6 +587,31 @@ describe('what the review of the requests asked for', () => {
     const h = harness([js({ allow: { network: true, write: false } })], { js: async () => ({ writes: [{ id: 'post', body: '{"a":1}' }, { id: 'post', body: '{"a":2}' }] }) });
     await firePluginEvent('stage-finished', ctx(), h.deps);
     expect(h.actions.filter((a) => a.kind === 'plugin-ask')).toHaveLength(2);
+  });
+});
+
+describe('a declaration that changed', () => {
+  it('does not bring an old always of the write back when the network is allowed always for the new one', async () => {
+    const record = plugin({ write: null, allow: { network: true, write: true }, entry: 'index.mjs', runtime: 'js', network: [], requests: [{ id: 'search', method: 'GET', url: 'https://search.example.com/q', secret: null, write: false, reversible: false }] });
+    const h = harness([record]);
+    record.reach = 'r2';
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const asked = h.actions.find((a) => a.kind === 'plugin-ask') as ReleaseAction;
+    expect(asked.unit).toMatchObject({ need: 'network' });
+    await answerPluginAsk(asked.id, 'always', h.deps);
+    expect(h.list()[0]).toMatchObject({ allow: { network: true, write: false }, allowedFor: 'r2' });
+  });
+
+  it('does not keep a session permission given for another declaration', async () => {
+    const record = plugin({ write: null });
+    const h = harness([record]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    await answerPluginAsk(h.actions[0].id, 'session', h.deps);
+    expect(h.runs).toHaveLength(1);
+    record.reach = 'r2';
+    await firePluginEvent('stage-finished', ctx('r2'), h.deps);
+    expect(h.runs).toHaveLength(1);
+    expect(h.actions).toHaveLength(2);
   });
 });
 

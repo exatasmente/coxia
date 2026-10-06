@@ -136,7 +136,7 @@ export function pluginsDirOf(config: PluginsConfig, home: string, dataDir: strin
 }
 
 /** The list the person sees: name, what it offers, what it asks for, what it was allowed and whether it is on. */
-export function pluginViews(records: PluginRecord[], session: (id: string) => PluginAllow, waiting: (id: string) => number, secretFilled: (id: string, key: string) => boolean = () => false): PluginView[] {
+export function pluginViews(records: PluginRecord[], session: (id: string, reach: string) => PluginAllow, waiting: (id: string) => number, secretFilled: (id: string, key: string) => boolean = () => false): PluginView[] {
   return records.map((r) => ({
     id: r.id,
     name: r.name,
@@ -147,7 +147,7 @@ export function pluginViews(records: PluginRecord[], session: (id: string) => Pl
     network: r.network,
     write: r.write,
     allow: r.allow,
-    session: session(r.id),
+    session: session(r.id, r.reach),
     settings: r.settings.map((x) => ({ ...x, value: x.kind === 'secret' ? null : (r.values[x.key] ?? ''), filled: x.kind === 'secret' ? secretFilled(r.id, x.key) : !!r.values[x.key]?.trim(), goesTo: x.kind === 'secret' ? r.requests.filter((q) => q.secret?.setting === x.key).map((q) => `${q.method} ${q.url}`) : [] })),
     requests: r.requests.map(({ id, method, url, write, reversible }) => ({ id, method, url, write, reversible })),
     waiting: waiting(r.id),
