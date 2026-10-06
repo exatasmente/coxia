@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The command notices fit their box.** The notice that asks to run a command (in a ceremony, or in a run on this computer) carried the whole rule in its *Always allow* button, and a button never wrapped: a long command pushed the button, the command and the note field past the notice's edge. The buttons and the agent's name now wrap inside the notice, the command scrolls on its own, and on a narrow screen each button takes the whole width.
+
 ## [0.7.0-beta.3] - 2026-10-06
 
 ### Fixed
