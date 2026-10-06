@@ -15,8 +15,7 @@
       "id": "search",
       "method": "GET",
       "url": "{settings.url}/search",
-      "secret": { "setting": "token", "in": "header", "name": "Authorization", "format": "Bearer {secret}" },
-      "pick": { "items": "results", "fields": ["title", "url", "content"] }
+      "secret": { "setting": "token", "in": "header", "name": "Authorization", "format": "Bearer {secret}" }
     },
     { "id": "post", "method": "POST", "url": "https://hooks.example.com/notify", "write": true, "reversible": false }
   ]
@@ -33,10 +32,8 @@
   e formato, ou `query` com nome).
 - `requests[].write`/`reversible`: escrita (com o mesmo sentido de hoje; sem
   `reversible` é irreversível). Sem `write`, é leitura.
-- `requests[].pick` (opcional): o aplicativo também entrega a resposta JSON reduzida a
-  linhas separadas por tabulação com os campos pedidos de cada item. Assim um plugin em
-  shell lê o resultado sem depender de `jq` na máquina da pessoa. A resposta inteira
-  continua disponível.
+- `offers.entry` terminado em `.mjs` é um **plugin em JavaScript** (abaixo); um script
+  de shell continua valendo como hoje, sem `settings` nem `requests`.
 
 ### 2. Onde ficam os valores
 
@@ -51,25 +48,43 @@
 - Canais novos: `plugins:set-setting(id, key, value)` e `plugins:set-secret(id, key,
   value)`, ambos em `DESKTOP_ONLY`.
 
-### 3. O protocolo de rodadas
+### 3. Plugin em JavaScript (decisão da pessoa no gate)
 
-A sessão da sandbox já roda vários comandos em fila (`session.exec`). A execução de um
-plugin vira até **3 rodadas** na mesma sessão:
+Um plugin pode ser um módulo JavaScript (`index.mjs`) com uma função padrão que recebe o
+contexto e devolve o resultado. O kit publica os tipos (`docs/plugins/kit/coxia-plugin.d.ts`),
+e o exemplo é escrito contra eles.
 
-1. O aplicativo roda o script com o acontecimento em `$1` e a rodada em `COXIA_ROUND=1`.
-2. Cada linha da saída que comece por `::coxia-request ` seguida de um JSON
-   (`{"id": "search", "path": "...", "query": {...}, "body": "..."}`) é um pedido; o
-   resto da saída é o resultado, como hoje.
-3. Os pedidos de leitura são feitos pelo aplicativo (até 5 por rodada). As respostas vão
-   para `/tmp/coxia/responses.json` (e `/tmp/coxia/<id>.tsv` quando há `pick`) dentro da
-   sessão, por um comando que só escreve o arquivo, e o script roda de novo com
-   `COXIA_ROUND=2`.
-4. Uma rodada sem pedido de leitura encerra; o resultado dela é o resultado do plugin.
+```js
+/** @param {import('./coxia-plugin').PluginContext} ctx */
+export default async function (ctx) {
+  const asked = await ctx.readCycleFile('SEARCH_REQUESTS.md');
+  const res = await ctx.request('search', { query: { q: 'example', format: 'json' } });
+  return { document: `# Results\n\n${res.body}` };
+}
+```
 
-Os pedidos de escrita não voltam ao plugin: são juntados e, depois da execução, seguem o
-caminho da escrita de hoje (`pluginWriteStep`): saem, são anunciados ou viram pedido. Num
-pedido `plugin-ask` de escrita, a requisição inteira vai na `unit`, e a resposta da
-pessoa a executa.
+- **Onde roda.** Na mesma sandbox da etapa, pelo próprio executável do aplicativo em
+  modo Node (`ELECTRON_RUN_AS_NODE=1`), com a pasta do executável montada só para
+  leitura. Não depende de Node instalado na máquina. Conferido nesta etapa: o Electron
+  do app roda como Node dentro da sandbox real e importa um módulo de `/tmp`; o
+  empacotamento não desliga o modo Node (sem fuses no `electron-builder.yml`).
+- **Como o código entra.** A pasta do plugin não é montada (fica nos dados do app). O
+  aplicativo lê os arquivos `.mjs`, `.js` e `.json` dela (sem link, sem subir pasta, até
+  256 KiB no total) e os entrega à sessão, junto com um arnês do aplicativo que monta o
+  contexto e chama a função.
+- **O contexto.** `event`, `issue`, `stage`; `settings` (só as que não são chave);
+  `readCycleFile(nome)` (os documentos da pasta do ciclo, lidos da worktree montada
+  só para leitura); `request(id, { path, query, body })` (leitura feita pelo aplicativo);
+  `write(id, { path, query, body })` (escrita que segue o contrato de permissão);
+  `log(texto)`.
+- **Rodadas por repetição.** A sessão não conversa com o plugin enquanto ele roda, então
+  `request` funciona por repetição: na primeira rodada, a primeira chamada sem resposta
+  encerra a execução e devolve os pedidos; o aplicativo os faz e roda o plugin de novo
+  com as respostas guardadas, que `request` devolve na ordem. Até 3 rodadas e 5 pedidos
+  por rodada. O plugin precisa pedir as mesmas coisas na mesma ordem a cada rodada (o
+  kit diz isso).
+- **O resultado.** O arnês imprime uma linha `::coxia-result` com o JSON (`document`,
+  `writes`, pedidos pendentes); o resto da saída é log.
 
 ### 4. Quem faz a chamada
 
@@ -108,10 +123,10 @@ Chaves novas nos dois catálogos, só tokens de tema.
 2. Configuração (`settings` por plugin) e esquema.
 3. `requests.ts` (conferência, chamada, chave, máscara, limites, auditoria) com `fetch`
    injetado nos testes.
-4. Rodadas no `runtime.ts`.
+4. Runtime JS: arnês, entrega do código, rodadas por repetição, no `runtime.ts`.
 5. Permissão e escrita por requisição no serviço.
 6. Canais, política do navegador, tela.
-7. Kit: o README e um exemplo.
+7. Kit: o README, os tipos (`coxia-plugin.d.ts`) e um exemplo em JavaScript.
 
 ## Riscos
 
@@ -124,8 +139,9 @@ Chaves novas nos dois catálogos, só tokens de tema.
 
 ## Testes
 
-Declaração: configurações e requisições válidas e recusadas. Serviço: rodadas com sandbox
-falsa; leitura com e sem permissão; escrita por requisição em cada caminho (sai,
+Declaração: configurações e requisições válidas e recusadas. Arnês: rodado em Node de
+verdade num teste (sem sandbox), com repetição e respostas. Uma prova na sandbox real
+quando ela existe na máquina. Serviço: rodadas com sandbox falsa; leitura com e sem permissão; escrita por requisição em cada caminho (sai,
 anuncia, pede); teste do espaço de teste. `requests.ts`: `fetch` falso, conferência,
 chave no cabeçalho, chave retirada da resposta, limites, redirecionamento, auditoria.
 Configuração: esquema e espelhos. Política: canais novos negados ao navegador.

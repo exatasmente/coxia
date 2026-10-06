@@ -13,6 +13,8 @@ Decisões da pessoa já tomadas na conversa que abriu a issue:
 
 - **O aplicativo faz a chamada pelo plugin**; o plugin não recebe a chave nem como
   variável de ambiente.
+- **Plugins em JavaScript** (decisão no gate): o plugin que usa configurações e
+  requisições é um módulo JavaScript escrito contra os tipos do kit.
 - O primeiro uso é a busca na web dos agentes numa **instância própria de SearXNG**
   (issue da busca), que costuma morar em `localhost` ou na rede local — onde a sandbox
   do plugin não chega (o proxy recusa endereço privado).
@@ -57,8 +59,6 @@ Decisões da pessoa já tomadas na conversa que abriu a issue:
 
 ## Fora do escopo
 
-- Um plugin em JavaScript ou outra linguagem com runtime próprio (o plugin continua um
-  script de shell; veja o plano para como ele lê uma resposta JSON).
 - Um catálogo de integrações prontas: esta issue entrega o canal, não os plugins de
   horas, de issues ou de chat.
 - OAuth ou qualquer fluxo de login interativo: a chave é um valor que a pessoa cola.
