@@ -228,6 +228,8 @@ const subject = object(
   ['kind', 'version', 'from', 'tracking', 'activities'],
 );
 
+const docsRun = object('What the run is about when it drafts the documentation of its repository.', { mode: enumOf('Whether the documentation is made or brought up to date.', ['create', 'update']) }, ['mode']);
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -266,6 +268,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
     base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
     subject,
+    docs: docsRun,
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },

@@ -365,7 +365,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
         ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
-        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
+        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages. The keys release and docs are no squad\'s: they hold the flow of a release run and the flow of a documentation run.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
         stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
         meanings,
         enrichment: object('What the agent is given about each card.', {

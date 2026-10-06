@@ -1,4 +1,4 @@
-import { RELEASE_FLOW_KEY, isShared, liaisonFor, scopedTeam, turnTarget } from '../config/squads';
+import { isRunKindFlowKey, isShared, liaisonFor, scopedTeam, turnTarget } from '../config/squads';
 import type { AgentDef, SquadDef, StageDef } from '../config/types';
 import { t as translate, type Translate } from '../i18n';
 import { checkFlow, flowIssueText, FLOW_ERRORS, FLOW_WARNINGS, type FlowIssue, type FlowIssueCode, type FlowIssueField } from './flowCheck';
@@ -158,8 +158,8 @@ function modelIssues(input: SquadCheckInput, out: SquadIssue[]): void {
 function flowIssues(input: SquadCheckInput, out: SquadIssue[], checkSharedFlow: boolean): void {
   const ids = new Set(input.squads.map((s) => s.id));
   for (const key of Object.keys(input.flows ?? {})) {
-    // The flow of a release run is a flow per run kind: it is no squad's.
-    if (key !== RELEASE_FLOW_KEY && !ids.has(key)) out.push({ severity: 'error', code: 'flow-unknown-squad', squad: null, agent: null, stage: null, field: 'flows', flow: false, params: { squad: key } });
+    // The flow of a release run and the one of a documentation run are flows per run kind: they are no squad's.
+    if (!isRunKindFlowKey(key) && !ids.has(key)) out.push({ severity: 'error', code: 'flow-unknown-squad', squad: null, agent: null, stage: null, field: 'flows', flow: false, params: { squad: key } });
   }
   for (const s of input.squads) {
     const own = input.flows?.[s.id];

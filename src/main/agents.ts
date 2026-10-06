@@ -487,7 +487,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
     shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
-    writeRoot: req.confine?.root,
+    writeRoot: req.confine?.writeRoot ?? req.confine?.root,
     signal: req.abort?.signal,
     describeTool: source,
     events: {

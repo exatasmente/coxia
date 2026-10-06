@@ -55,8 +55,10 @@ export interface ShellPolicy {
 
 /** What an agent that writes is confined to: only a stage of a run whose agent has the `worktree` permission carries one. */
 export interface Confinement {
-  /** The run's worktree: the only folder the agent may change, and its working directory. */
+  /** The run's worktree: its working directory, which it may read whole, and the only folder it may change unless `writeRoot` narrows that. */
   root: string;
+  /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
+  writeRoot?: string;
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }

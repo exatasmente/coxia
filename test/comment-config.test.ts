@@ -49,10 +49,10 @@ describe('the templates the agent cycle brings', () => {
     }
   });
 
-  it('are only in the two agent cycles and the release flow: the others post nothing', () => {
+  it('are only in the two agent cycles, the release flow and the docs flow: the others post nothing', () => {
     for (const t of BUILT_IN_TEMPLATES) {
       const c = applyTemplate(neutralConfig(), t);
-      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id.startsWith('agent-flow') || t.id === 'release-flow');
+      expect(Object.keys(c.devCycle.comments).length > 0, t.id).toBe(t.id.startsWith('agent-flow') || t.id === 'release-flow' || t.id === 'docs-flow');
     }
   });
 

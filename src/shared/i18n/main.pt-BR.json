@@ -1386,5 +1386,20 @@
   "main.release.branchExists": "A branch {branch} já existe (aqui ou no remoto): ela não é aberta de novo, e nada foi rodado. As integrações e os cortes seguem na branch que está lá.",
   "main.release.tagNotOnMain": "A tag {tag} não está em cima do que o remoto tem da main, então não é para ela que a main anda: nada foi enviado.",
   "main.forum.code.runner.release.movedSincePlan": "O {crLong} #{pr} estava em {was} quando você aceitou o plano e agora está em {now} no host. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo.",
-  "main.forum.code.runner.release.notInPlan": "O {crLong} #{pr} (em {now}) não estava no plano que você aceitou. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo."
+  "main.forum.code.runner.release.notInPlan": "O {crLong} #{pr} (em {now}) não estava no plano que você aceitou. O agente não vai integrá-lo: devolva a execução ao plano para ele ser planejado de novo.",
+  "main.runner.error.no-docs-flow": "Este workspace não tem o fluxo de documentação: aplique o template de documentação para adicioná-lo.",
+  "main.runner.error.bad-docs-mode": "\"{mode}\" não é um modo de execução de documentação: é create ou update.",
+  "main.runner.docs.record.create": "Tarefa: criar a documentação deste repositório na pasta .coxia dele. Leia o código e os arquivos do Claude Code listados abaixo, e escreva a visão geral, as regras com a evidência e, onde valer a pena, procedimentos (skills) e notas para os papéis do time.",
+  "main.runner.docs.record.update": "Tarefa: atualizar a documentação deste repositório. Confira no código cada arquivo não conferido, listado abaixo, corrija o que deixou de ser verdade e acrescente o que falta.",
+  "main.runner.docs.record.existing": "O que a .coxia tem agora",
+  "main.runner.docs.record.existing.none": "A pasta ainda não existe.",
+  "main.runner.docs.record.existing.empty": "A pasta não tem nenhum arquivo do layout.",
+  "main.runner.docs.record.state.checked": "conferido",
+  "main.runner.docs.record.state.stale": "não conferido: {count} arquivo(s) que ele cita mudaram desde {commit} ({names})",
+  "main.runner.docs.record.state.unverified": "não conferido: não deu para verificar no repositório",
+  "main.runner.docs.record.state.invalid": "não conferido: sem cabeçalho válido ({reason})",
+  "main.runner.docs.record.ignored": "Arquivos que o app não lê: {names}",
+  "main.runner.docs.record.candidates": "Arquivos do Claude Code deste repositório (para ler e importar, nunca para alterar)",
+  "main.runner.docs.record.candidates.none": "Não há nenhum.",
+  "main.runner.docs.record.candidates.more": "e mais {count}"
 }

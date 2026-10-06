@@ -393,8 +393,19 @@ export interface Run {
   base: string | null;
   /** What the run is about when it is not an issue: a release. Absent for an issue run. */
   subject?: RunSubject;
+  /** The run drafts the documentation of its repository. Absent for an issue run. */
+  docs?: RunDocs;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A run that drafts or updates the documentation of a repository (`.coxia/`): it starts from a repository and not from an issue (its `issue` is the synthesized
+ * `docs:<repo>`, number 0, which keeps "one at a time" per repository), writes only inside `.coxia/` and ends in a pull request that closes nothing. A run with no
+ * `docs` is an issue run (or a release run: see `subject`).
+ */
+export interface RunDocs {
+  mode: 'create' | 'update';
 }
 
 /** What a run in status `waiting` waits for, and since when. */

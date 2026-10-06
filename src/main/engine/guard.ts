@@ -97,6 +97,18 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   return { ok: true, path: place, rel };
 }
 
+/**
+ * A relative path as the file tools resolve it: against the working directory. The guard of a folder below the working directory (`Confinement.writeRoot`) would
+ * resolve it against that folder instead, and `src/a.ts` would pass for `<folder>/src/a.ts` while the tool wrote it at the working directory. Absolute, `~` and
+ * `..` paths are left to `checkPath` as they are.
+ */
+export function anchored(cwd: string, input: unknown): unknown {
+  if (typeof input !== 'string') return input;
+  const raw = input.trim();
+  if (!raw || raw.startsWith('/') || raw.startsWith('~') || raw.split(/[\\/]+/).includes('..')) return input;
+  return join(cwd, raw);
+}
+
 /** The write tools of the Claude SDK and of the open engine, and the field each one carries its path in. */
 export const WRITE_TOOLS: Record<string, string> = { Write: 'file_path', Edit: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' };
 

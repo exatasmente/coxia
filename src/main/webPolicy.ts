@@ -49,8 +49,12 @@ const CONFIG_ADMIN = /^(config:(save|secret|secrets|export|import)|cycle:(apply|
 // that finds the setup unfinished is told to finish it on the computer (secrets are never entered from the PWA).
 const WIZARD = /^wizard:/;
 
+// The documentation of the repositories (Settings › Documentation): creating or updating it starts a run that writes in a worktree and proposes a push, and reading
+// its state reads the repositories' folders. It is the desktop window's, like the settings it lives in.
+const DOCS = /^docs:/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

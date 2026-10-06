@@ -1386,5 +1386,20 @@
   "main.release.branchExists": "The branch {branch} already exists (here or on the remote): it is not opened again, and nothing was run. Merges and cuts go on in the branch that is there.",
   "main.release.tagNotOnMain": "The tag {tag} is not on top of what the remote has of main, so it is not what main is moved to: nothing was pushed.",
   "main.forum.code.runner.release.movedSincePlan": "{CrLong} #{pr} was at {was} when you accepted the plan and is at {now} on the host now. It will not be merged by the agent: send the run back to the plan so that it is planned again.",
-  "main.forum.code.runner.release.notInPlan": "{CrLong} #{pr} (at {now}) was not in the plan you accepted. It will not be merged by the agent: send the run back to the plan so that it is planned again."
+  "main.forum.code.runner.release.notInPlan": "{CrLong} #{pr} (at {now}) was not in the plan you accepted. It will not be merged by the agent: send the run back to the plan so that it is planned again.",
+  "main.runner.error.no-docs-flow": "This workspace has no documentation flow: apply the documentation template to add it.",
+  "main.runner.error.bad-docs-mode": "\"{mode}\" is not a mode of a documentation run: it is create or update.",
+  "main.runner.docs.record.create": "Task: create the documentation of this repository in its .coxia folder. Read the code and the Claude Code files listed below, and write the overview, the rules with their evidence and, where it is worth it, procedures (skills) and notes for the roles of the team.",
+  "main.runner.docs.record.update": "Task: bring the documentation of this repository up to date. Check against the code each file that is not checked, listed below, correct what is no longer true and add what is missing.",
+  "main.runner.docs.record.existing": "What .coxia has now",
+  "main.runner.docs.record.existing.none": "The folder does not exist yet.",
+  "main.runner.docs.record.existing.empty": "The folder has no file of the layout.",
+  "main.runner.docs.record.state.checked": "checked",
+  "main.runner.docs.record.state.stale": "not checked: {count} file(s) it cites changed since {commit} ({names})",
+  "main.runner.docs.record.state.unverified": "not checked: it could not be verified in the repository",
+  "main.runner.docs.record.state.invalid": "not checked: no valid header ({reason})",
+  "main.runner.docs.record.ignored": "Files the app does not read: {names}",
+  "main.runner.docs.record.candidates": "Claude Code files of this repository (to read and import from, never to change)",
+  "main.runner.docs.record.candidates.none": "There is none.",
+  "main.runner.docs.record.candidates.more": "and {count} more"
 }
