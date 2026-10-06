@@ -328,7 +328,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   if ((writes || kind === 'qa') && !run.docs) await ensureDependencies(d, run, stage.id);
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), allowed: new Set() };
-  const session = agent.shell === 'sandbox' || agent.shell === 'host' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
+  // A documentation run's agent gets no command door at all, whatever its `shell` says: the shell tool does not pass the guard that keeps its writes inside `.coxia/`.
+  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
     return await runStage(d, run, flow, abort, usage, session, clock);
   } finally {
@@ -343,7 +344,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
   // The commands of the workspace's list, exactly as written: only for an agent that writes and is set to them (an agent saved before `shell` existed is).
-  // A documentation run's agent runs none, whatever its `shell` says: it reads with Read, Glob and Grep and writes only `.coxia/`.
+  // A documentation run's agent runs none, whatever its `shell` says (no sandbox or host session is opened for it either): it reads with Read, Glob and Grep and writes only `.coxia/`.
   const commands = writes && !run.docs && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];

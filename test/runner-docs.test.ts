@@ -11,7 +11,7 @@ import type { Run } from '../src/shared/runs';
 import { git } from './helpers/conflictRepos';
 import { type Forge, makeForge } from './helpers/fakeForge';
 import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
-import { type Boot, type Repo, boot, doc, makeRepo, work } from './helpers/runner';
+import { type Boot, type FakeSandbox, type Repo, boot, doc, fakeSandbox, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -100,8 +100,13 @@ const withDocs = (c: Config) => {
   c.agents = applied.agents;
 };
 
-async function bootDocs(o: { repo?: Repo; flow?: boolean } = {}): Promise<Boot> {
-  const b = await boot({ dir: ATAS, publish: true, repo: o.repo ?? repoWithClaude(), now: () => clock, configure: o.flow === false ? (c) => (c.language = 'en') : withDocs });
+async function bootDocs(o: { repo?: Repo; flow?: boolean; shell?: 'sandbox' | 'host'; sandbox?: FakeSandbox } = {}): Promise<Boot> {
+  const configure = (c: Config) => {
+    withDocs(c);
+    // The agent of the docs flow is an ordinary one of the team: the person may set its shell.
+    if (o.shell) (c.agents.team.find((a) => a.id === 'docs-writer') as { shell: string }).shell = o.shell;
+  };
+  const b = await boot({ dir: ATAS, publish: true, repo: o.repo ?? repoWithClaude(), now: () => clock, sandbox: o.sandbox, configure: o.flow === false ? (c) => (c.language = 'en') : configure });
   stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
   return b;
 }
@@ -349,6 +354,17 @@ describe('the draft', () => {
     expect(failed.error?.detail).toMatch(/symbolic link/);
     expect(b.engine.calls).toHaveLength(1);
     expect(readdirSync(outside)).toEqual([]);
+  });
+
+  it.each(['sandbox', 'host'] as const)('opens no session and gives the agent no command door when its shell is %s: the shell tool is not behind the guard of .coxia', async (shell) => {
+    const sandbox = fakeSandbox();
+    const b = await bootDocs({ shell, sandbox });
+    script(b);
+    const run = await toGate(b);
+    expect(run).toMatchObject({ status: 'gate', stage: 'docs-gate' });
+    expect(b.engine.calls[0].agent).toMatchObject({ id: 'docs-writer', shell });
+    expect(b.engine.calls[0].exec).toBeUndefined();
+    expect(sandbox.opened).toEqual([]);
   });
 
   it('goes back to the draft when the gate is rejected, with the reason for the agent, and stops at the gate again', async () => {
