@@ -210,3 +210,64 @@ Também conferi à mão `git log --format='%h %ae %ce %s'` (identidade e assunto
 - **Achado 3:** "Salvar as fontes" apaga edições feitas antes na mesma tela.
 
 Os achados 1 e 2 são correções de poucas linhas e cada um merece um teste. O achado 3 pede uma releitura da configuração antes de salvar. Depois disso a entrega fica de acordo com a spec; as sugestões 4 a 10 podem ir em seguida ou virar issues.
+
+## Rodada 2
+
+Revisei os nove commits de correção (`ebb26f9` a `2714c42`) contra o código e os testes de cada um. Refiz os gates e as duas reproduções da rodada 1, a do achado 1 (link simbólico) e a do achado 5 (reescrita de texto), com as correções aplicadas. Os três achados bloqueantes estão resolvidos e não achei bloqueante novo.
+
+### Estado dos achados da rodada 1
+
+| # | Achado | Estado | Verificação |
+|---|---|---|---|
+| 1 | `.coxia` como link burla a confinação | **Resolvido** | `checkPath` ganhou `fence` e `realFolderIn`: a raiz estreita precisa ser pasta real (`lstat`, não link) e estar dentro do worktree. O mesmo guard vale nos hooks do SDK e nas ferramentas `Write` e `Edit` do motor aberto. A execução recusa a etapa com `docs-folder-unsafe` antes de chamar o agente. A partida recusa o repositório (`ensureRunIgnore` e `prepareDocsFolder` com `lstat`; `writeIssueRecord` passa pelo guard; `harnessDirs` e `runDocsAsk` com `lstat`). Refiz a reprodução: com `.coxia` link, `.coxia/x.md` e o caminho absoluto dão `outside`; com pasta real, o mesmo caminho é aceito. Há testes de partida, de etapa, dos hooks e do motor aberto (`runner-docs`). |
+| 2 | Shell do agente de documentação não zerado | **Resolvido** | `executeStage` não abre sandbox nem sessão de host quando `run.docs`. Com `call.confine` o `allowedTools` é fixo (`Read`, `Grep`, `Glob`, `Edit`, `Write`), sem `Bash`. Teste parametrizado para `sandbox` e `host`. |
+| 3 | Salvar fontes sobrescreve a configuração | **Resolvido** | `DocsSection` não guarda mais o retrato. O salvar lê a configuração atual e troca só as listas, por `withDocsSources`, extraída para função pura e testada (`docs-sources.test.ts`). Resta uma janela mínima entre a leitura e o `config:save`, que é o limite do desenho de substituição total, não deste código. |
+| 4 | Listas explícitas levam arquivos do Claude Code | **Mantido de propósito** | Segue o critério 7 da spec aprovada. Continua valendo a nota de que M7 falha no workspace do caso original até a pessoa remover as entradas marcadas. Aceito como decisão do mantenedor. |
+| 5 | A reescrita estraga documentação legítima | **Em parte** | Resolvido para o que apontei: `apiKey: string;` e `/var/log/app/app.log` em cerca ou trecho de código ficam intactos, e a prosa continua reescrita. Credencial por forma (`ghp_…` virou `[key]`) e caminho do próprio worktree continuam reescritos no código. O fechamento de cerca, a cerca sem fim e a crase solta têm teste, e uma entrada adversária de 20 mil repetições processou em cerca de 280 ms. Ficam duas ressalvas, nos achados 11 e 12 abaixo. |
+| 6 | Modelo aplicado antes de validar a partida | **Resolvido, com ressalva** | `checkDocs` valida modo, duplicata, repositório e identidade antes de `applyFlow`, e `createDocs` reusa as mesmas perguntas (`docsPrecheck`). Quatro testes confirmam que a configuração não muda quando a partida não pode acontecer. Ressalva: ver a avaliação (b). |
+| 7 | Endurecer arquivos dentro de `.coxia/` | **Resolvido** | Novo código de recusa `reserved`: o guard recusa `.gitignore` e `.run` (e o que está sob eles, em qualquer caixa) nos dois motores, com chaves nos dois catálogos. `finalizeHarness` e `stampHarness` usam `lstat` e pulam o que não é arquivo comum; a linha de fórum `runner.docs.notAFile` avisa. Há testes dos hooks, do motor aberto e dos dois. |
+| 8 | O orçamento não é o total entregue | **Resolvido** | `harnessSection` mede o texto real, incluindo cabeçalho, marcas e a linha "não coube", e reduz a parte dos arquivos em até 12 rodadas até caber. Os testes cobrem o corte de arquivo longo e o piso do orçamento com muitos nomes. Se as 12 rodadas não bastarem, devolve o texto acima do limite; só o teste de piso exerce esse extremo. |
+| 9 | Caminhos que usariam a issue 0 | **Resolvido** | `proposePriority`, `stageEntered`, `squadRouted`, `requestIssue` e as esperas lidas da issue retornam cedo para `run.docs`. Os testes cobrem um fluxo `docs` editado para ter `trackerStatus`. |
+| 10 | Arquivo novo não rastreado | **Resolvido** | A limitação foi escrita nos dois idiomas de `docs/harness.md`, na seção da conferência. |
+
+### Avaliação das três escolhas apontadas
+
+**(a) `redactCode` e `password = "…"` em código: aceito, com uma sugestão.** A troca é razoável: o que é credencial pela forma (prefixos conhecidos, JWT, cadeia opaca longa, URL com senha) continua mascarado em código, e é justamente a atribuição a um nome que "parece" segredo que gerava o estrago. Mas `const password = "hunter2"` numa cerca sai no pull request, e esse arquivo vai para um repositório possivelmente público. Veja o achado 11.
+
+**(b) Falha depois de aplicar o modelo, sem desfazer: aceito.** O que sobra depois do pré-voo são condições previsíveis do repositório ou do dia: `branch-exists`, `dest-exists`, `docs-folder-unsafe` na ponta do remoto e fluxo inválido por id de agente já existente. A mudança é só acrescentar um agente e um fluxo, depois de um "sim" explícito, e uma nova tentativa não pergunta de novo. Desfazer em falha pode apagar o que a pessoa editou entre uma coisa e outra, e é pior que deixar. Uma sugestão pequena: o texto de erro dizer que o fluxo ficou adicionado.
+
+**(c) A partida também recusa repositório com `.coxia` link: acertado.** Sem isso a execução nasceria e falharia na primeira etapa. A recusa deixa tudo como estava, com mensagem nos dois catálogos e teste. Também cobre `.coxia/.gitignore` e `.coxia/.run` como link.
+
+### Achados novos
+
+**11. [sugestão] Atribuição quotada a nome de segredo em código segue sem máscara.**
+`src/main/errorlog-core.ts` (`redactCode` ignora `ASSIGNMENT`). Rodei a reescrita: `const password = "hunter2";` numa cerca de código permaneceu como está. Um valor entre aspas é quase sempre um literal que alguém digitou, e `apiKey: string` (o que causou o achado 5) não tem aspas.
+O que fazer: em `redactCode`, mascarar só a atribuição cujo valor é literal entre aspas não vazio (`password = "…"`, `token: '…'`), e deixar passar identificador ou tipo (`: string`, `= next()`). Acrescentar o caso ao teste "still masks a credential by its shape inside code".
+
+**12. [sugestão] A regra de e-mail ainda estraga versão fixada, até em código.**
+`src/main/errorlog-core.ts:25` (`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`, que `redactCode` também aplica). Rodei `redactCode('npm i -g pnpm@9.0.0 && git clone git@example.com:org/repo.git && uses actions/checkout@v4.1.1')`: saiu `npm i -g [email] && git clone [email]:org/repo.git && uses actions/[email]`. Instruções de instalação com versão fixada, URLs SSH e `uses: x@v1.2.3` são comuns numa documentação de projeto, são mascaradas como credenciais e entram na contagem da linha do fórum. Não vem das correções, mas é a mesma classe do achado 5 e a correção não a fecha.
+O que fazer: em `redactCode`, não aplicar a regra de e-mail, ou exigir que o domínio tenha um TLD alfabético e a parte antes do `@` não termine em nome de pacote. Em prosa, o mesmo cuidado com `nome@x.y.z` (ao menos tratar `@` seguido de dígito como versão). Acrescentar o caso a `harness-finalize`.
+
+**13. [sugestão] A mensagem de falha depois de aplicar o modelo.**
+Ver (b): quando a partida falha depois do `applyFlow`, o erro mostrado não diz que o agente "Redator da documentação" e o fluxo já ficaram na configuração. Acrescentar uma frase ao erro da janela, ou uma linha no fórum.
+
+### Gates (`source ~/.nvm/nvm.sh && nvm use`, com `CERIMONIAS_DATA_DIR` e `CERIMONIAS_SPECS_DIR` em pastas vazias; logs em `.runlogs-review2-*.log`)
+
+| Gate | Resultado |
+|---|---|
+| `npx tsc --noEmit` | exit 0, sem saída |
+| `npx vitest run` | exit 0, 240 arquivos, 3930 testes passando (124 s) |
+| `node scripts/theme-audit.mjs` | exit 0 |
+| `npm run i18n:lint` | exit 0, 4192 chaves nos dois idiomas |
+| `node scripts/public-audit.mjs` | exit 0, 965 arquivos |
+| `npx electron-vite build` | exit 0 |
+
+As reproduções dos achados 1 e 5 foram rodadas fora do repositório (scripts descartáveis). Os nove commits têm autor e committer com a identidade noreply, assunto `fix:` em minúsculas e no imperativo, e nenhum trailer de atribuição.
+
+### Ainda não verificado
+
+O mesmo que na rodada 1: o comportamento do Claude Code real com `settingSources: []` (M1), a tela de Configurações e o navegador pareado (M3, M4, M6), Ações com push e pull request sem issue (M5), a pergunta do caso real (M7) e o rascunho de um modelo real. Também não exercitei uma partida real contra um repositório cujo `.coxia` é link, só os testes.
+
+### Veredito
+
+**Aprova.** Os três achados bloqueantes da rodada 1 estão corrigidos, cada um com teste, e confirmei os dois reproduzíveis por script. Os gates passam. O achado 4 foi mantido por decisão da spec. As sugestões 11 a 13 e a ressalva de (b) não impedem a entrega; as 11 e 12 valem uma correção antes do release, porque mexem no que sai num repositório possivelmente público.
