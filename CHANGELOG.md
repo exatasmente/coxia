@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 13 adds the `plugins` section; a workspace without plugins behaves as before.
+
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
 
 ## [0.6.1] - 2026-10-05

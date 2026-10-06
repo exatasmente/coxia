@@ -257,3 +257,45 @@ repositório; agora usa uma pasta temporária), `test/plugins-core.test.ts`,
   sandbox falsa. Windows e macOS.
 - Uma execução de ponta a ponta com um plugin ligado no runner real (o runner é
   exercitado com `pluginHold` falso; o serviço, com dependências injetadas).
+
+### Revisão da rodada 2 e o que mudou por ela
+
+A revisão (sessão separada, só leitura) confirmou os oito bloqueantes fechados e pediu
+mudanças em três pontos novos, mais quatro correções. Tratados:
+
+- **B1, o varredor do runner.** Uma espera `plugin` não é mais perguntada ao host (um
+  comentário na issue soltava o run como se fosse a resposta). O varredor só a solta
+  quando não sobra pedido da execução, o que também recupera o caso em que o
+  aplicativo fecha entre a resposta e a soltura (`service.ts`, `lookForEvents`).
+- **B2, a escrita anunciada depois de retirar ou desligar.** No fim do prazo o serviço
+  relê o plugin e só envia se ele estiver ligado, sem recusa e com `allow.write`.
+  Retirar a escrita na lista ou desligar o plugin tira os avisos pendentes dele.
+  Desligar também recusa os pedidos pendentes dele, e os runs que eles seguravam
+  seguem. `actions:approve` não envia mais um aviso antes do prazo.
+- **B3:** linha no `CHANGELOG.md`.
+- **C1, `runs:skipWait`.** Seguir sem responder solta os pedidos daquela execução
+  (`holdsRun: false`): eles ficam em Ações para serem respondidos e não seguram mais a
+  execução. Um pedido novo volta a segurar.
+- **C2:** `actions:skip` só vale para pedido e aviso de plugin ainda pendentes.
+- **C3:** testes do revogar pelo cartão, do prazo com temporizador falso, de retirar e
+  desligar durante a contagem, e de seguir sem responder.
+- **C4:** o kit diz que o script é lido e entregue como comando, não rodado na pasta.
+- Das sugestões: **S2** (desligar recusa os pedidos), **S3** (a importação mantém
+  também `plugins.dir` e `confirmSeconds` do destino, e um espaço de trabalho novo
+  nasce com a seção vazia), **S4** (o seletor de espera de etapa não oferece `plugin`
+  nem `budget`), **S6** (a resposta relê a declaração da escrita) e **S10** (o texto da
+  aceitação 14 alinhado ao que foi decidido).
+
+Ficam para issues próprias, registradas aqui:
+
+- **S1:** a chave do pedido inclui acontecimento e etapa, então "uma vez" pode precisar
+  de duas respostas no mesmo run.
+- **S5:** `stage-entered` não é esperado, e o pedido aberto ali só segura a etapa seguinte.
+- **S7:** o motivo de um hook que falha não aparece na lista de plugins.
+- **S8:** um "sempre" de plugin recusado ou que sumiu da pasta não tem "Retirar".
+- **S9:** um ancestral da pasta que é link faz o plugin sumir sem motivo.
+- **S11:** o aviso com prazo não notifica.
+- **S12:** `config:save` da janela pode regravar `plugins.list` a partir de um rascunho
+  velho.
+- **S13:** a sandbox do plugin herda os `readOnlyPaths` do espaço de trabalho, e a lista
+  de plugins não diz isso.

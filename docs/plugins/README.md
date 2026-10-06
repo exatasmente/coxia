@@ -31,7 +31,7 @@ Um plugin publica `plugin.json`:
 | `offers.documents` | tipos de documento novos do ciclo (`name`, `label`) |
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
 | `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
-| `offers.entry` | script de shell rodado quando um acontecimento observado acontece, dentro da pasta do plugin; recebe o acontecimento em `$1` e o que ele imprime é o resultado |
+| `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`; o que ele imprime é o resultado |
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -112,7 +112,7 @@ A plugin publishes `plugin.json`:
 | `offers.documents` | new cycle document types (`name`, `label`) |
 | `offers.network` | destinations the plugin declares it needs, by host name |
 | `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
-| `offers.entry` | shell script run when an observed event happens, inside the plugin folder; it gets the event as `$1`, and what it prints is its result |
+| `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1`; what it prints is its result |
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.

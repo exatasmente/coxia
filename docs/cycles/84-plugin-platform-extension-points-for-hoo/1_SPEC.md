@@ -128,7 +128,7 @@ Cada item é algo que uma pessoa consegue conferir no aplicativo.
 11. `node scripts/public-audit.mjs` passa com o kit e o exemplo; nenhum teste do kit alcança um modelo, um host real ou a rede.
 12. "Sempre" sobrevive a desligar e religar o plugin, a fechar e abrir o aplicativo e a uma importação de configuração; "na sessão" não sobrevive a fechar o aplicativo; retirar na lista de plugins faz o plugin voltar a pedir.
 13. Uma escrita declarada irreversível (ou que não diz) só oferece "acrescentar à lista" e "recusar"; já permitida, ela aparece em Ações com a contagem do prazo do espaço de trabalho (30 s por padrão), e bloquear ou revogar dentro do prazo impede a escrita; revogar também retira a permissão.
-14. Responder a um pedido de plugin, conceder ou retirar permissão não é possível de um navegador pareado; bloquear uma escrita no aviso é.
+14. Permitir um pedido de plugin (uma vez, na sessão ou sempre), ligar ou desligar um plugin e retirar permissão não é possível de um navegador pareado; recusar um pedido e bloquear uma escrita no aviso, que só reduzem, são.
 
 ## Verificação
 
