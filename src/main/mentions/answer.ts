@@ -134,7 +134,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         message,
         thread: deps.forum.read(place.thread, 0, 2000)?.messages ?? [],
         files: info.files,
-        cwd: source?.cwd ?? deps.env().fallbackCwd,
+        cwd: source?.cwd ?? (place.run && existsSync(place.run.worktree) ? place.run.worktree : deps.env().fallbackCwd),
         ref: info.ref,
         title: info.title,
         mission: info.mission,
@@ -146,6 +146,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
       // An agent named in a run's thread reads only inside that run's worktree, like a reading stage of it; elsewhere the caller gives none.
+      // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
       call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
       // The call waited its turn: it says it is working now, when it really begins.

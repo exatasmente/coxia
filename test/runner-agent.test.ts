@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { activityLog, withActivityContext } from '../src/main/activity';
 import { runAgent, obj, str } from '../src/main/agents';
+import { readConfinement } from '../src/main/runner/executor';
 import { confinedHooks } from '../src/main/runner/hooks';
 import { newAgent } from '../src/shared/config/team';
 import { installEnvSecret } from './helpers/config';
@@ -80,6 +81,34 @@ describe('runAgent on the Claude SDK', () => {
     expect(o.disallowedTools).toEqual(expect.arrayContaining(['Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch']));
     expect(o.allowedTools).not.toContain('Edit');
     expect(o.systemPrompt.append).toBe('sys');
+  });
+
+  it('confines the file tools of a reading agent of a run on the SDK, and never opens Edit, Write or the shell', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'agent-read-confined-'));
+    const root = join(base, 'wt');
+    const docs = join(base, 'docs');
+    mkdirSync(join(root, 'src'), { recursive: true });
+    mkdirSync(docs);
+    const denied: { tool: string; target: string; code: string }[] = [];
+    const read = readConfinement(root, 'deep', (d) => denied.push({ tool: d.tool, target: d.target, code: d.code }))!;
+    read.roots = [docs];
+    await runAgent({ agent: reader, prompt: 'p', schema, system: 's', cwd: root, label: 'refiner', maxTurns: 7, readRoot: read });
+    const o = calls[0].options;
+    // The reader pulls its hooks from the read confinement, so the path guard is the one that runs on the SDK.
+    const matchers = (o.hooks.PreToolUse as { matcher: string }[]).map((g) => g.matcher);
+    expect(matchers).toEqual(['Read|Grep|Glob', 'Grep|Glob']);
+    expect((o.hooks.PostToolUse as { matcher: string }[]).map((g) => g.matcher)).toEqual(['Grep|Glob']);
+    // A reader gains no tool: Edit, Write, the shell and the network stay denied.
+    expect(o.disallowedTools).toEqual(expect.arrayContaining(['Edit', 'Write', 'Bash', 'NotebookEdit', 'WebFetch', 'WebSearch']));
+    expect(o.allowedTools).not.toContain('Edit');
+    expect(o.allowedTools).not.toContain('Bash');
+    // The documentation folder the confinement allows reaches the engine too, so what it sees and what the guard allows cannot diverge.
+    expect(o.additionalDirectories).toContain(docs);
+    // A refused read on the SDK path is told to the runner, not silently denied.
+    const guard = (o.hooks.PreToolUse as { matcher: string; hooks: ((i: unknown, id: undefined, options: { signal: AbortSignal }) => Promise<unknown>)[] }[])[0].hooks[1];
+    await guard({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/etc/hostname' }, cwd: root }, undefined, { signal: new AbortController().signal });
+    await guard({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'src/a.ts' }, cwd: root }, undefined, { signal: new AbortController().signal });
+    expect(denied).toEqual([{ tool: 'Read', target: '/etc/hostname', code: 'outside' }]);
   });
 
   it('gives an agent that writes Edit and Write, its own hooks and only the commands it was given', async () => {

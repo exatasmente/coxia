@@ -810,6 +810,23 @@ describe('the thread', () => {
     expect(b.thread(run).some((m) => m.text === 'The scope is the Y case only.')).toBe(true);
   });
 
+  it('gives an agent named in a run\'s thread no place to read from but the worktree, even when it runs no commands', async () => {
+    const b = await boot();
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('refiner', () => ({ text: 'Only in the worktree.' }));
+    const [m] = b.forum.append(`run-${run.id}`, { kind: 'post', author: { type: 'person' }, text: '@refiner where?', mentions: ['refiner'] });
+    b.runner.onMessage(m);
+    await b.settle();
+    const call = b.engine.calls.find((c) => c.agent.id === 'refiner' && !c.confine)!;
+    // A relative path the model writes is judged against the guard's root and read from the working folder: one folder, never two, or the read
+    // resolves outside the worktree while the guard approves it.
+    expect(call.readRoot?.root).toBe(run.worktree);
+    expect(call.cwd).toBe(run.worktree);
+    expect(call.cwd).not.toBe(b.deps.env().fallbackCwd);
+  });
+
   it('says in the thread when the agent could not answer', async () => {
     const b = await boot();
     easy(b);

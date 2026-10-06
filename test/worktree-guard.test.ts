@@ -238,6 +238,17 @@ describe('the hooks of the confinement', () => {
     expect(await pre('Glob', { pattern: '/etc/*' })).not.toBeNull();
     expect(await pre('Glob', { pattern: '../**/*' })).not.toBeNull();
   });
+
+  it('tells the run about a refused read of an agent that writes too, as it does for a write', async () => {
+    expect(await pre('Read', { file_path: 'src/a.ts' })).toBeNull();
+    expect(await pre('Read', { file_path: '/etc/hostname' })).not.toBeNull();
+    expect(await pre('Glob', { pattern: '../**/*' })).not.toBeNull();
+    // the same callback the runner posts its thread line through: a reader's refusal must not be silent to the runner
+    expect(denials.map((d) => [d.tool, d.code])).toEqual([
+      ['Read', 'outside'],
+      ['Glob', 'traversal'],
+    ]);
+  });
 });
 
 describe('Write and Edit of the open engine', () => {

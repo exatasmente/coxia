@@ -75,7 +75,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   return {
     PreToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [writeGuard] },
-      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root })] },
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied })] },
       { matcher: 'Bash', hooks: [bashGuard] }, // i18n-ignore: the tool's name
       { matcher: 'WebFetch|WebSearch', hooks: [networkGuard] },
     ],
