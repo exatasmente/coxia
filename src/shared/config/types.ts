@@ -718,6 +718,13 @@ export interface RunnerSandbox {
   registryHosts: string[];
   /** Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands): a toolchain installed in the home, say. */
   readOnlyPaths: string[];
+  /**
+   * The folder Playwright keeps its browsers in ("~/" expands): every sandbox gets it read-only at its own path, with `PLAYWRIGHT_BROWSERS_PATH` pointing at it. It goes
+   * through the guards of `readOnlyPaths`. null: none. A config stored without it reads as null.
+   */
+  browsersPath: string | null;
+  /** The sandbox of a QA stage starts a virtual display (Xvfb, from the sandbox's own PATH) and sets `DISPLAY`. A config stored without it reads as false. */
+  display: boolean;
   limits: SandboxLimits;
 }
 

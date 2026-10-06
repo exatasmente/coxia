@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve, sep } from 'node:path';
 import { type ToolContext, type ToolImpl, type ToolResult, ToolError, clip } from './types';
 import { t } from '../../../../shared/i18n';
+import { MAX_IMAGE_BYTES, imageMediaType } from '../../../imageType';
 
 function real(p: string): string {
   try {
@@ -49,8 +50,6 @@ export function isBinary(path: string): boolean {
 
 const MAX_FILE = 8 * 1024 * 1024;
 const LINE_MAX = 2000;
-// What a provider takes for one image, with room to spare: the base64 of 4 MB is about 5.3 MB.
-const MAX_IMAGE = 4 * 1024 * 1024;
 
 /** The image type of a file, from its first bytes (never its name): PNG, JPEG, GIF or WebP, the ones the providers take; null for anything else. */
 export function imageType(path: string): string | null {
@@ -58,11 +57,7 @@ export function imageType(path: string): string | null {
   try {
     const b = Buffer.alloc(12);
     const n = readSync(fd, b, 0, 12, 0);
-    if (n >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
-    if (n >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-    if (n >= 6 && /^GIF8[79]a$/.test(b.subarray(0, 6).toString('latin1'))) return 'image/gif';
-    if (n >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
-    return null;
+    return imageMediaType(b.subarray(0, n));
   } finally {
     closeSync(fd);
   }
@@ -120,7 +115,7 @@ function renderRead(response: unknown, max: number, more: string): string {
 /** A picture: the model gets it to see when it can, and a line that says what it is either way. The same path and secret checks as a text file came first. */
 async function readImage(path: string, mediaType: string, size: number, ctx: ToolContext): Promise<ToolResult> {
   if (!ctx.seesImages?.()) throw new ToolError(t('main.engine.text.read.noImages', { path }));
-  if (size > MAX_IMAGE) throw new ToolError(t('main.engine.text.read.imageTooBig', { size, max: MAX_IMAGE }));
+  if (size > MAX_IMAGE_BYTES) throw new ToolError(t('main.engine.text.read.imageTooBig', { size, max: MAX_IMAGE_BYTES }));
   const data = (await readFile(path)).toString('base64');
   return {
     response: { type: 'image', file: { filePath: path, type: mediaType, originalSize: size } },

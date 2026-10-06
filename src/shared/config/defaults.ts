@@ -22,6 +22,8 @@ export function neutralSandbox(): RunnerSandbox {
     network: 'off',
     registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'],
     readOnlyPaths: [],
+    browsersPath: null,
+    display: false,
     limits: { commandMs: 5 * 60_000, stageMs: 30 * 60_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 },
   };
 }

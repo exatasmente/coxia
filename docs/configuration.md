@@ -39,7 +39,7 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled` e os ajustes que já existiam |
 | `claudeSdk` | `{ installed, version, path }`: de onde sai o Claude Agent SDK |
 | `externalTools` | integrações **opcionais**, todas desligadas até serem configuradas: `cardSource` (comando que lista os cartões do dia), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
-| `runner` | o que leva uma issue pelo ciclo de agentes sozinho: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `linkDependencies`, `release` (veja abaixo) |
+| `runner` | o que leva uma issue pelo ciclo de agentes sozinho: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox` (inclui `browsersPath` e `display`, para testar interfaces: veja `runner.md`), `commitMessage`, `linkDependencies`, `release` (veja abaixo) |
 
 Caminhos usam `~/` quando estão sob a home, para a configuração ser portátil. O acesso pelo navegador (host, porta, URL pública) é da máquina e fica em `web.json`.
 
@@ -187,7 +187,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled`, plus the settings that already existed |
 | `claudeSdk` | `{ installed, version, path }`: where the Claude Agent SDK comes from |
 | `externalTools` | **optional** integrations, all off until configured: `cardSource` (command that lists the day's cards), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
-| `runner` | what takes an issue through the agent cycle by itself: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `linkDependencies`, `release` (below) |
+| `runner` | what takes an issue through the agent cycle by itself: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox` (including `browsersPath` and `display`, for testing interfaces: see `runner.md`), `commitMessage`, `linkDependencies`, `release` (below) |
 
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 
