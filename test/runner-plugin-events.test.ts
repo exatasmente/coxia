@@ -135,4 +135,37 @@ describe('a run held by a plugin request', () => {
     b.runner.pluginSettled(run.id, null);
     expect(b.runner.get(run.id)!.status).not.toBe('waiting');
   });
+
+  it('is not let go by the host: a comment on the issue is not the answer, and the sweep only lets it go when no request is left', async () => {
+    let open = true;
+    const b = await boot({ pluginEvent: () => undefined, pluginHold: () => (open ? { plugin: 'Web search', need: 'network' } : null) });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(b.runner.get(run.id)!.wait?.kind).toBe('plugin');
+    // A host that would say "someone commented" must not be asked about this wait.
+    const waitOver = vi.fn(async () => ({ over: true, reply: 'Any news?' }));
+    b.deps.publisher = { waitOver } as never;
+    expect(await b.runner.tick()).toEqual([]);
+    expect(waitOver).not.toHaveBeenCalled();
+    expect(b.runner.get(run.id)!.status).toBe('waiting');
+    // The answer was given but the release never reached the runner (the app closed in between): the sweep lets the run go.
+    open = false;
+    b.deps.publisher = undefined;
+    expect(await b.runner.tick()).toHaveLength(1);
+    expect(b.runner.get(run.id)!.wait).toBeNull();
+  });
+
+  it('goes on without answering: the requests are released and no longer hold the run', async () => {
+    const released = new Set<string>();
+    const b = await boot({ pluginEvent: () => undefined, pluginHold: (id) => (released.has(id) ? null : { plugin: 'Web search', need: 'write' }), pluginRelease: (id) => void released.add(id) });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(b.runner.get(run.id)!.wait?.kind).toBe('plugin');
+    b.runner.skipWait(run.id, 'The search can wait.');
+    await b.settle();
+    expect(released.has(run.id)).toBe(true);
+    expect(b.runner.get(run.id)!.wait?.kind).not.toBe('plugin');
+  });
 });

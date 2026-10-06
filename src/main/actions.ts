@@ -485,8 +485,10 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   if (!a) throw new Error(t('main.actions.missing', { id }));
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
   if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
-  // A plugin's request is answered with how far the "yes" reaches, on the computer (plugins:answer); it is not a write to approve.
+  // A plugin's request is answered with how far the "yes" reaches, on the computer (plugins:answer); it is not a write to approve. An announced write goes
+  // out at its deadline, after the service checked the plugin is still on and still allowed: there is no way to send it earlier.
   if (a.kind === 'plugin-ask') throw new Error(t('main.plugins.ask.answerHere'));
+  if (a.kind === 'plugin-write') throw new Error(t('main.plugins.write.atDeadline'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   if (a.kind === 'release-git') {
@@ -525,9 +527,6 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
         if (all.length > 1) update(id, (x) => ({ ...x, done: i + 1 }));
       }
       output = outputs.join('\n');
-    } else if (a.kind === 'plugin-write') {
-      // The announced write of a plugin, sent before its deadline: the same executor the deadline uses, and the line in the audit log is about what was written.
-      output = await writePluginOutbox(originOf(a), pluginWriteOf(a));
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
       output = await audited(originOf(a), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
@@ -565,6 +564,8 @@ export function onActionSkipped(fn: SkipListener): () => void {
 export async function skipAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (a?.kind === 'conflict-push') throw new Error(t('main.actions.pushGoes'));
+  // A plugin's request or announced write is set aside only while it waits: one already answered, sent or blocked stays what it was.
+  if ((a?.kind === 'plugin-ask' || a?.kind === 'plugin-write') && a.state !== 'pending') throw new Error(t('main.actions.handled'));
   // Treated outside: the worktree this app made for it goes away too.
   if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
   // A plugin's write set aside before its deadline is blocked: it never goes out, and the list says so.
@@ -1245,6 +1246,25 @@ export function announcePluginWrite(input: { key: string; issue: number; issueTi
   const action = blank({ key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...input.write, runId: input.runId, due }, output: [t('main.plugins.write.to', { to: input.write.to }), '', input.write.text].join('\n') });
   write({ ...store, actions: [action, ...store.actions] });
   return action;
+}
+
+/** Sets an announced write aside without telling anyone: the plugin was switched off or its permission taken back, and `words` say so in the list. */
+export function withdrawPluginWrite(id: string, words: string): ReleaseAction | null {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-write' || a.state !== 'pending') return null;
+  return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: words }));
+}
+
+/** The person goes on without answering: the requests of `runId` stay in Actions and no longer hold the run. */
+export function releasePluginAsks(runId: string): void {
+  const store = read();
+  let changed = false;
+  const actions = store.actions.map((a) => {
+    if (a.kind !== 'plugin-ask' || a.state !== 'pending' || (a.unit ?? {}).runId !== runId) return a;
+    changed = true;
+    return { ...a, unit: { ...(a.unit ?? {}), holdsRun: false } };
+  });
+  if (changed) write({ ...store, actions });
 }
 
 /** The announced writes still waiting for their deadline. */

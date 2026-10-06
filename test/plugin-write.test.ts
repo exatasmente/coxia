@@ -62,6 +62,21 @@ describe("a plugin's request", () => {
     expect(actions.listActions()).toEqual([]);
   });
 
+  it('cannot be set aside once answered: the conversation of the run never gets a refusal that did not happen', async () => {
+    const a = ask('plugin-ask:7') as { id: string };
+    actions.settlePluginAsk(a.id, true, 'allowed');
+    await expect(actions.skipAction(a.id)).rejects.toThrow();
+  });
+
+  it('released by going on without answering, stays to be answered and says it no longer holds the run', () => {
+    const a = ask('plugin-ask:8') as { id: string };
+    ask('plugin-ask:9', { runId: 'r2' });
+    actions.releasePluginAsks('r1');
+    const pending = actions.pendingPluginAsks();
+    expect(pending.find((x) => x.id === a.id)?.unit).toMatchObject({ holdsRun: false });
+    expect(pending.find((x) => x.id !== a.id)?.unit?.holdsRun).toBeUndefined();
+  });
+
   it('tells who listens when it is set aside from the list (a paired browser may refuse)', async () => {
     const seen: string[] = [];
     const stop = actions.onActionSkipped((x) => seen.push(`${x.kind}:${x.state}`));
@@ -121,6 +136,21 @@ describe('an announced irreversible write', () => {
     expect(blocked.output).toBeTruthy();
     expect(await actions.sendDuePluginWrite(a.id)).toBeNull();
     expect(existsSync(outbox())).toBe(false);
+  });
+
+  it('cannot be sent before its deadline through the approval of a write', async () => {
+    const a = announce(34) as { id: string };
+    await expect(actions.approveAction(a.id)).rejects.toThrow();
+    expect(existsSync(outbox())).toBe(false);
+  });
+
+  it('withdrawn (plugin switched off, permission taken back) never goes out, and a sent one cannot be blocked afterwards', async () => {
+    const a = announce(35) as { id: string };
+    expect(actions.withdrawPluginWrite(a.id, 'taken back')?.output).toBe('taken back');
+    expect(await actions.sendDuePluginWrite(a.id)).toBeNull();
+    const b = announce(36) as { id: string };
+    await actions.sendDuePluginWrite(b.id);
+    await expect(actions.skipAction(b.id)).rejects.toThrow();
   });
 
   it('gets its whole deadline again when the app opens', () => {

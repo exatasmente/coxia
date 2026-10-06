@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PluginConfig, PluginsConfig, RunnerSandbox } from '../src/shared/config/types';
 import { neutralPlugins, neutralSandbox } from '../src/shared/config/defaults';
 import type { ReleaseAction } from '../src/shared/types';
@@ -12,7 +12,7 @@ import type { PluginDoor, PluginNote, PluginsDeps } from '../src/main/plugins/mo
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
 
-const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, setPluginEnabled, setPluginSettings } = await import('../src/main/plugins/module');
+const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSettings } = await import('../src/main/plugins/module');
 
 // The script of a plugin is read from its folder: each record points at a throwaway folder that holds one.
 const root = mkdtempSync(join(tmpdir(), 'coxia-plugins-service-'));
@@ -40,9 +40,10 @@ const plugin = (over: Partial<PluginRecord> = {}): PluginRecord => ({
 });
 
 /** The door of Actions in memory: requests deduplicated by key, answers recorded, writes and announcements counted. */
-function memoryDoor(refuse: boolean) {
+function memoryDoor(refuse: boolean, armed: boolean) {
   const actions: ReleaseAction[] = [];
   const written: { to: string; text: string }[] = [];
+  const sent: string[] = [];
   const announced: { seconds: number; write: { plugin: string; to: string; text: string } }[] = [];
   let n = 0;
   const door: PluginDoor = {
@@ -66,18 +67,33 @@ function memoryDoor(refuse: boolean) {
     },
     announce: (input) => {
       announced.push({ seconds: input.seconds, write: input.write });
-      return null;
+      const a = { id: `w${++n}`, key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: '', state: 'pending', unit: { ...input.write, runId: input.runId, due: new Date(Date.now() + input.seconds * 1000).toISOString() }, summary: input.summary, output: null } as unknown as ReleaseAction;
+      actions.push(a);
+      // Returned only when the test drives the deadline: the service arms a timer for what it gets back.
+      return armed ? a : null;
+    },
+    writes: () => actions.filter((a) => a.kind === 'plugin-write' && a.state === 'pending'),
+    withdraw: (id, words) => {
+      const a = actions.find((x) => x.id === id) as ReleaseAction;
+      a.state = 'skipped';
+      a.output = words;
+    },
+    send: async (id) => {
+      const a = actions.find((x) => x.id === id) as ReleaseAction;
+      if (a.state !== 'pending') return;
+      a.state = 'done';
+      sent.push(id);
     },
   };
-  return { actions, written, announced, door };
+  return { actions, written, announced, sent, door };
 }
 
 /** Deps over an in-memory configuration: saving changes what the next read sees, as the real read of the folder would. */
-function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string } = {}) {
+function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean } = {}) {
   let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow })) };
   const runs: { plugin: string; event: string; sandbox: RunnerSandbox }[] = [];
   const settled: { runId: string; note: PluginNote | null }[] = [];
-  const memory = memoryDoor(opts.refuse === true);
+  const memory = memoryDoor(opts.refuse === true, opts.armed === true);
   const deps: PluginsDeps = {
     dir: () => '/plugins',
     config: () => config,
@@ -208,6 +224,16 @@ describe('calling the plugins', () => {
     expect(h.announced).toEqual([{ seconds: 45, write: { plugin: 'web-search', to: 'results', text: 'result from the sandbox' } }]);
   });
 
+  it('a write that became irreversible between the request and the answer is not sent at once', async () => {
+    const declared = plugin({ allow: { network: true, write: false } });
+    const h = harness([declared]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    declared.write = { to: 'results', reversible: false };
+    await answerPluginAsk(h.actions[0].id, 'once', h.deps);
+    expect(h.written).toEqual([]);
+    expect(h.settled.at(-1)?.note?.code).toBe('run.plugin.failed');
+  });
+
   it('an irreversible write takes neither "once" nor "session"', async () => {
     const h = harness([plugin({ allow: { network: true, write: false }, write: { to: 'results', reversible: false } })]);
     await firePluginEvent('stage-finished', ctx(), h.deps);
@@ -332,5 +358,62 @@ describe('the person answers', () => {
     await firePluginEvent('stage-finished', ctx('r2'), h.deps);
     expect(h.runs).toHaveLength(1);
     expect(h.actions).toHaveLength(1);
+  });
+});
+
+describe('an announced write and its deadline', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const irreversible = () => plugin({ allow: { network: true, write: true }, write: { to: 'results', reversible: false } });
+
+  it('goes out at the deadline while the plugin is on and allowed', async () => {
+    const h = harness([irreversible()], { armed: true });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(h.sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('does not go out when the permission is taken back in the list during the countdown', async () => {
+    const h = harness([irreversible()], { armed: true });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    revokePluginAllow('web-search', 'write', h.deps);
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(h.sent).toEqual([]);
+    expect(h.actions.find((a) => a.kind === 'plugin-write')?.state).toBe('skipped');
+  });
+
+  it('does not go out when the plugin is switched off during the countdown, and its waiting requests are refused', async () => {
+    const h = harness([irreversible(), plugin({ id: 'asker' })], { armed: true });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    setPluginEnabled('web-search', false, h.deps);
+    setPluginEnabled('asker', false, h.deps);
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(h.sent).toEqual([]);
+    expect(h.actions.find((a) => a.kind === 'plugin-ask')?.state).toBe('skipped');
+    expect(h.settled).toContainEqual({ runId: 'r1', note: { code: 'run.plugin.refused.network', params: { plugin: 'Web search' } } });
+  });
+
+  it('is stopped by revoking it from the card, which also takes the permission back', async () => {
+    const h = harness([irreversible()], { armed: true });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const announced = h.actions.find((a) => a.kind === 'plugin-write') as ReleaseAction;
+    await revokePluginWrite(announced.id, h.deps);
+    expect(announced.state).toBe('skipped');
+    expect(h.list()[0].allow.write).toBe(false);
+    await expect(revokePluginWrite(announced.id, h.deps)).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(h.sent).toEqual([]);
+  });
+});
+
+describe('going on without answering', () => {
+  it('a released request no longer holds the run, and stays to be answered', async () => {
+    const h = harness([plugin({ write: null })]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    (h.actions[0].unit as Record<string, unknown>).holdsRun = false;
+    expect(pluginHold('r1', h.deps)).toBeNull();
+    expect(h.deps.door.pending()).toHaveLength(1);
   });
 });

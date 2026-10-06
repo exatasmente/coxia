@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { neutralConfig } from '../shared/config/defaults';
+import { neutralConfig, neutralPlugins } from '../shared/config/defaults';
 import { expandHome } from '../shared/config/paths';
 import { buildExport, collectCommands, collectPaths, diffConfig, parseImport } from '../shared/config/transfer';
 import type { WorkspaceConfig } from '../shared/config/types';
@@ -91,17 +91,19 @@ export function applyImport(deps: TransferDeps, req: ImportApply, running: strin
     const dir = workspaceDir(deps.root, id);
     if (existsSync(join(dir, CONFIG_FILE))) copyFileSync(join(dir, CONFIG_FILE), join(dir, 'config.pre-import.json'));
   }
-  // What a workspace's plugins were allowed is the person's, on that workspace: a file never brings permissions in, and replacing a workspace keeps its own.
-  writeConfigFile(workspaceDir(deps.root, id), { ...config, plugins: { ...config.plugins, list: created ? [] : pluginChoicesOf(workspaceDir(deps.root, id)) } });
+  // What a workspace's plugins are and were allowed is the person's, on that workspace: a file never brings permissions in, nor the folder the code is
+  // read from, nor a shorter warning. Replacing a workspace keeps its own; a new one starts with none.
+  writeConfigFile(workspaceDir(deps.root, id), { ...config, plugins: created ? neutralPlugins() : pluginsOf(workspaceDir(deps.root, id)) });
   return { workspaceId: id, created, appliedToRunning: id === running, missingSecrets: [...needed].filter((ref) => !deps.secrets.has(ref)) };
 }
 
-/** The plugin list a workspace's configuration file holds now, or none when it cannot be read. */
-function pluginChoicesOf(dir: string): WorkspaceConfig['plugins']['list'] {
+/** The plugins section a workspace's configuration file holds now, or the empty one when it cannot be read. */
+function pluginsOf(dir: string): WorkspaceConfig['plugins'] {
   try {
-    const raw = JSON.parse(readFileSync(join(dir, CONFIG_FILE), 'utf8')) as { plugins?: { list?: unknown } };
-    return Array.isArray(raw.plugins?.list) ? (raw.plugins.list as WorkspaceConfig['plugins']['list']) : [];
+    const raw = JSON.parse(readFileSync(join(dir, CONFIG_FILE), 'utf8')) as { plugins?: Partial<WorkspaceConfig['plugins']> };
+    const p = raw.plugins ?? {};
+    return { ...neutralPlugins(), ...(typeof p.dir === 'string' ? { dir: p.dir } : {}), ...(typeof p.confirmSeconds === 'number' ? { confirmSeconds: p.confirmSeconds } : {}), list: Array.isArray(p.list) ? p.list : [] };
   } catch {
-    return [];
+    return neutralPlugins();
   }
 }

@@ -1388,5 +1388,10 @@
   "main.forum.code.run.plugin.refused.network": "The network of the plugin {plugin} was refused: it did not run this time.",
   "main.forum.code.run.plugin.refused.write": "The write of the plugin {plugin} was refused: nothing went out.",
   "main.forum.code.run.plugin.unavailable": "The plugin {plugin} is off or was refused: the permission was recorded, but it did not run.",
-  "main.forum.code.run.plugin.failed": "The plugin {plugin} did not finish: {reason}"
+  "main.forum.code.run.plugin.failed": "The plugin {plugin} did not finish: {reason}",
+  "main.plugins.write.atDeadline": "An announced write goes out by itself at the end of its deadline, if the plugin is still on and allowed; from here it can only be blocked or revoked.",
+  "main.plugins.write.pluginOff": "Did not go out: the plugin was switched off before the deadline.",
+  "main.plugins.write.revoked": "Did not go out: the plugin's permission to write was taken back.",
+  "main.plugins.write.changed": "the declared write changed since the request; nothing went out and the plugin asks again",
+  "main.plugins.ask.pluginOff": "Refused: the plugin was switched off."
 }

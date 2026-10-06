@@ -13,7 +13,7 @@ import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
 import { recordWrite } from '../auditoria';
 import { getConfig, updateConfig } from '../workspaceConfig';
-import { announcePluginWrite, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, sendDuePluginWrite, settlePluginAsk, skipAction, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
+import { announcePluginWrite, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
 import { gatePluginDocuments } from '../gate';
 import { workspaceDir } from '../workspaces-core';
 import { allowOf, pluginsDirOf, pluginViews, readPlugins, withChoice } from './read';
@@ -48,6 +48,12 @@ export interface PluginDoor {
   settle(id: string, allowed: boolean, words: string): ReleaseAction;
   now(w: { issue: number; key: string; summary: string; plugin: string }, input: PluginWriteInput): Promise<string>;
   announce(input: Parameters<typeof announcePluginWrite>[0]): ReleaseAction | null;
+  /** The announced writes still waiting for their deadline. */
+  writes(): ReleaseAction[];
+  /** Sets an announced write aside: it never goes out, and `words` say why. */
+  withdraw(id: string, words: string): void;
+  /** Sends an announced write whose deadline passed. */
+  send(id: string): Promise<unknown>;
 }
 
 export interface PluginsDeps {
@@ -121,7 +127,7 @@ export const pluginsDeps: PluginsDeps = {
   target: targetOf,
   sandbox: () => getConfig().runner.sandbox,
   run: (plugin, event, target, config, onProxy) => runPlugin({ sandbox, config, onProxy }, plugin, event, target),
-  door: { ask: proposePluginAsk, pending: pendingPluginAsks, settle: settlePluginAsk, now: writePluginNow, announce: announcePluginWrite },
+  door: { ask: proposePluginAsk, pending: pendingPluginAsks, settle: settlePluginAsk, now: writePluginNow, announce: announcePluginWrite, writes: pendingPluginWrites, withdraw: (id, words) => void withdrawPluginWrite(id, words), send: sendDuePluginWrite },
   settled: (runId, note) => pluginRunHooks.settled(runId, note),
 };
 
@@ -142,11 +148,29 @@ const recordOf = (id: string, d: PluginsDeps): PluginRecord => {
   return record;
 };
 
-/** Turns a plugin on or off. The choice is the person's, on the computer; only that plugin's entry of the workspace's list changes. */
+/**
+ * Turns a plugin on or off. The choice is the person's, on the computer; only that plugin's entry of the workspace's list changes. Off is off: its
+ * waiting requests are refused (the runs they held go on) and its announced writes never go out.
+ */
 export function setPluginEnabled(id: string, enabled: boolean, d: PluginsDeps = pluginsDeps): PluginsView {
   const record = recordOf(id, d);
   d.save((list) => withChoice(list, record, (c) => ({ ...c, enabled })));
+  if (!enabled) {
+    withdrawWrites(id, t('main.plugins.write.pluginOff'), d);
+    for (const a of d.door.pending().filter((x) => unitOf(x).plugin === id)) {
+      d.door.settle(a.id, false, t('main.plugins.ask.pluginOff'));
+      if (unitOf(a).runId) d.settled(unitOf(a).runId as string, { code: `run.plugin.refused.${unitOf(a).need}`, params: { plugin: unitOf(a).name } });
+    }
+  }
   return listPlugins(d);
+}
+
+/** Sets aside every announced write of a plugin that is not allowed to go out any more. */
+function withdrawWrites(plugin: string, words: string, d: PluginsDeps): void {
+  for (const a of d.door.writes().filter((x) => String((x.unit ?? {}).plugin ?? '') === plugin)) {
+    disarm(a.id);
+    d.door.withdraw(a.id, words);
+  }
 }
 
 /**
@@ -165,6 +189,8 @@ export function revokePluginAllow(id: string, need: PluginNeed, d: PluginsDeps =
   const record = recordOf(id, d);
   d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [need]: false } })));
   session.set(id, { ...sessionOf(id), [need]: false });
+  // A write already announced went out on this permission: taking it back stops it too.
+  if (need === 'write') withdrawWrites(id, t('main.plugins.write.revoked'), d);
   return listPlugins(d);
 }
 
@@ -253,7 +279,7 @@ function ask(record: PluginRecord, need: PluginNeed, event: string, context: Plu
 function announce(record: PluginRecord, context: PluginContext, write: PluginWriteInput, d: PluginsDeps): void {
   try {
     const a = d.door.announce({ key: `plugin-write:${record.id}:${context.runId ?? '-'}:${Date.now()}`, issue: context.issue, issueTitle: context.issueTitle, summary: t('main.plugins.write.summary', { plugin: record.name, to: write.to }), runId: context.runId ?? null, seconds: d.config().confirmSeconds, write });
-    if (a) arm(a);
+    if (a) arm(a, d);
   } catch (e) {
     console.error('[plugins] could not announce a write', e instanceof Error ? e.message : e);
   }
@@ -299,10 +325,14 @@ async function carryOut(a: ReleaseAction, record: PluginRecord | null, d: Plugin
       if (unit.need === 'network') {
         const done = await callPlugin(d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record, unit.event, context, d, { network: true });
         if (!done.ok && done.refused) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: done.refused } };
-      } else if (unit.reversible) {
-        await d.door.now({ issue: a.issue, key: `${a.key}:go`, summary: a.summary ?? '', plugin: unit.plugin }, { plugin: unit.plugin, to: unit.to ?? '', text: unit.text });
       } else {
-        announce(record, context, { plugin: unit.plugin, to: unit.to ?? '', text: unit.text }, d);
+        // The declaration is read again: a write that became irreversible since it asked never goes out at once, and one that is gone goes nowhere.
+        const fresh = d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record;
+        const write = { plugin: unit.plugin, to: unit.to ?? '', text: unit.text };
+        if (!fresh.write || fresh.write.to !== unit.to) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: t('main.plugins.write.changed') } };
+        else if (fresh.write.reversible) await d.door.now({ issue: a.issue, key: `${a.key}:go`, summary: a.summary ?? '', plugin: unit.plugin }, write);
+        else if (fresh.allow.write) announce(fresh, context, write, d);
+        else note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: t('main.plugins.write.changed') } };
       }
     }
   } catch (e) {
@@ -313,7 +343,7 @@ async function carryOut(a: ReleaseAction, record: PluginRecord | null, d: Plugin
 
 /** Whether a run has a plugin request waiting for the person, and which: the runner does not start another stage of it meanwhile. */
 export function pluginHold(runId: string, d: PluginsDeps = pluginsDeps): { plugin: string; need: PluginNeed } | null {
-  const a = d.door.pending().find((x) => unitOf(x).runId === runId);
+  const a = d.door.pending().find((x) => unitOf(x).runId === runId && (x.unit ?? {}).holdsRun !== false);
   return a ? { plugin: unitOf(a).name, need: unitOf(a).need } : null;
 }
 
@@ -321,8 +351,26 @@ export function pluginHold(runId: string, d: PluginsDeps = pluginsDeps): { plugi
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** The person went on without answering: the requests of the run stay in Actions and no longer hold it. */
+export const releasePluginAsks = (runId: string): void => releaseAsks(runId);
+
+/**
+ * At the deadline the write goes out only if the plugin is still on, not refused and still allowed always: a permission taken back, or the plugin
+ * switched off, while the warning counted down stops it. Blocked meanwhile, there is nothing to send.
+ */
+async function sendIfAllowed(id: string, d: PluginsDeps): Promise<void> {
+  const a = d.door.writes().find((x) => x.id === id);
+  if (!a) return;
+  const record = d.read(d.dir(), d.config()).find((r) => r.id === String((a.unit ?? {}).plugin ?? ''));
+  if (!record || !record.enabled || record.refused || !record.allow.write) {
+    d.door.withdraw(id, t(record && record.enabled && !record.refused ? 'main.plugins.write.revoked' : 'main.plugins.write.pluginOff'));
+    return;
+  }
+  await d.door.send(id);
+}
+
 /** Arms the moment an announced write goes out: at its deadline, unless the person blocked it meanwhile. */
-function arm(a: ReleaseAction): void {
+function arm(a: ReleaseAction, d: PluginsDeps = pluginsDeps): void {
   disarm(a.id);
   const due = Date.parse(String((a.unit ?? {}).due ?? ''));
   const wait = Number.isFinite(due) ? Math.max(0, due - Date.now()) : 0;
@@ -330,7 +378,7 @@ function arm(a: ReleaseAction): void {
     a.id,
     setTimeout(() => {
       timers.delete(a.id);
-      void sendDuePluginWrite(a.id).catch((e) => console.error('[plugins] announced write', e instanceof Error ? e.message : e));
+      void sendIfAllowed(a.id, d).catch((e) => console.error('[plugins] announced write', e instanceof Error ? e.message : e));
     }, wait),
   );
 }
@@ -343,10 +391,10 @@ function disarm(id: string): void {
 
 /** Blocks an announced write and takes back the permission that let it go: the write never goes out and the plugin asks again next time. */
 export async function revokePluginWrite(actionId: string, d: PluginsDeps = pluginsDeps): Promise<PluginsView> {
-  const a = pendingPluginWrites().find((x) => x.id === actionId);
+  const a = d.door.writes().find((x) => x.id === actionId);
   if (!a) throw new Error(t('main.actions.handled'));
   disarm(actionId);
-  await skipAction(actionId);
+  d.door.withdraw(actionId, t('main.plugins.write.revoked'));
   const plugin = String((a.unit ?? {}).plugin ?? '');
   const record = d.read(d.dir(), d.config()).find((r) => r.id === plugin);
   if (record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), write: false } })));
@@ -401,7 +449,7 @@ export const pluginsModule: Module = (ctx: ModuleContext) => {
     if (a.kind === 'plugin-ask' && unitOf(a).runId) pluginsDeps.settled(unitOf(a).runId as string, { code: `run.plugin.refused.${unitOf(a).need}`, params: { plugin: unitOf(a).name } });
   });
   // A write announced before the app closed gets its whole deadline again: nothing goes out without the person having had the interval.
-  for (const a of pendingPluginWrites()) arm(rearmPluginWrite(a.id, pluginConfig().confirmSeconds));
+  for (const a of pluginsDeps.door.writes()) arm(rearmPluginWrite(a.id, pluginConfig().confirmSeconds));
 };
 
 export type { PluginsView };

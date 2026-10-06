@@ -118,15 +118,16 @@ describe('import into an existing workspace', () => {
 
   it('keeps what the plugins of the workspace were allowed, and brings in none from the file', () => {
     const dir = workspaceDir(root, 'principal');
-    const mine = { ...neutralConfig(), plugins: { dir: null, confirmSeconds: 30, list: [{ id: 'web-search', folder: '/p/web-search', enabled: true, allow: { network: true, write: false } }] } };
+    const mine = { ...neutralConfig(), plugins: { dir: '/p', confirmSeconds: 60, list: [{ id: 'web-search', folder: '/p/web-search', enabled: true, allow: { network: true, write: false } }] } };
     writeConfigFile(dir, mine);
     const theirs = sample();
-    theirs.plugins.list = [{ id: 'other', folder: '/x', enabled: true, allow: { network: true, write: true } }];
+    theirs.plugins = { dir: '/elsewhere', confirmSeconds: 5, list: [{ id: 'other', folder: '/x', enabled: true, allow: { network: true, write: true } }] };
     const text = JSON.stringify({ ...JSON.parse(exportText(sample(), { workspaceName: 'Acme', appVersion: '1', now: new Date(0) })), config: theirs });
     applyImport(deps, { source: { text }, target: { mode: 'existing', id: 'principal' }, secrets: [] }, 'principal');
-    expect((readConfigFile(dir) as WorkspaceConfig).plugins.list).toEqual(mine.plugins.list);
+    // Neither the permissions, nor the folder the code is read from, nor a shorter warning come from the file.
+    expect((readConfigFile(dir) as WorkspaceConfig).plugins).toEqual(mine.plugins);
     const created = applyImport(deps, { source: { text }, target: { mode: 'new', name: 'Fresh' }, secrets: [] }, 'principal');
-    expect((readConfigFile(workspaceDir(root, created.workspaceId)) as WorkspaceConfig).plugins.list).toEqual([]);
+    expect((readConfigFile(workspaceDir(root, created.workspaceId)) as WorkspaceConfig).plugins).toEqual({ dir: null, list: [], confirmSeconds: 30 });
   });
 
   it('applying to another workspace than the running one does not touch the running config', () => {

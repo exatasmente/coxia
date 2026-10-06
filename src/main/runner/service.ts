@@ -192,6 +192,8 @@ export interface RunnerDeps {
    * meanwhile, and the run waits with the reason. Optional: without it nothing is held.
    */
   pluginHold?(runId: string): { plugin: string; need: string } | null;
+  /** The person goes on without answering the plugin requests that hold the run: they stay in Actions, and no longer hold it. */
+  pluginRelease?(runId: string): void;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -871,7 +873,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
-    skipWait: (id, reason) => move(id, (r, f, at) => waitSkip(r, f, reason, at)),
+    skipWait: (id, reason) => {
+      // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would).
+      if (deps.runs.get(id)?.wait?.kind === 'plugin') deps.pluginRelease?.(id);
+      return move(id, (r, f, at) => waitSkip(r, f, reason, at));
+    },
     pluginSettled(id, note) {
       const run = deps.runs.get(id);
       if (!run) return;
@@ -1386,6 +1392,18 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const run of deps.runs.list().filter((r) => r.status === 'waiting')) {
       const w = run.wait;
       if (!w || w.kind === 'budget') continue;
+      // A run held by a plugin request waits for the person's answer in Actions, never for the host: a comment on the issue is not that answer. When no
+      // request of it is left (the app closed between the answer and the release, say), it goes on here.
+      if (w.kind === 'plugin') {
+        if (!deps.pluginHold?.(run.id)) {
+          try {
+            sent.push(move(run.id, (r, _f, at) => pluginWaitDone(r, at)));
+          } catch (e) {
+            console.error('[runner] could not let a run held by a plugin go', run.id, e instanceof Error ? e.message : e);
+          }
+        }
+        continue;
+      }
       let over: { over: boolean; reply?: string } = { over: false };
       if (w.kind === 'linked-done') {
         // The runner knows its own runs: the stage goes on when the runs it asked for have ended (or their issues were closed).

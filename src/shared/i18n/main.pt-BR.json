@@ -1388,5 +1388,10 @@
   "main.forum.code.run.plugin.refused.network": "A rede do plugin {plugin} foi recusada: ele não rodou desta vez.",
   "main.forum.code.run.plugin.refused.write": "A escrita do plugin {plugin} foi recusada: nada saiu.",
   "main.forum.code.run.plugin.unavailable": "O plugin {plugin} está desligado ou foi recusado: a permissão ficou registrada, mas ele não rodou.",
-  "main.forum.code.run.plugin.failed": "O plugin {plugin} não terminou: {reason}"
+  "main.forum.code.run.plugin.failed": "O plugin {plugin} não terminou: {reason}",
+  "main.plugins.write.atDeadline": "Uma escrita anunciada sai sozinha no fim do prazo, se o plugin ainda estiver ligado e permitido; daqui só dá para bloquear ou revogar.",
+  "main.plugins.write.pluginOff": "Não saiu: o plugin foi desligado antes do prazo.",
+  "main.plugins.write.revoked": "Não saiu: a permissão de escrita do plugin foi retirada.",
+  "main.plugins.write.changed": "a declaração da escrita mudou desde o pedido; nada saiu e o plugin volta a pedir",
+  "main.plugins.ask.pluginOff": "Recusado: o plugin foi desligado."
 }
