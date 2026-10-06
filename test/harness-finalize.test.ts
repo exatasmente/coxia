@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { redact } from '../src/main/errorlog-core';
+import { redact, redactCode } from '../src/main/errorlog-core';
 import { STAMP_SUMMARY, finalizeHarness, stampHarness, stampText } from '../src/main/harness/finalize';
 import { messageText } from '../src/shared/forum';
 import { checkText, rewriteLocal } from '../src/shared/runs/comment';
@@ -62,7 +62,7 @@ describe('rewriteLocal, the part of checkText that only rewrites', () => {
 });
 
 describe('the text check of the documentation', () => {
-  const o = (dir: string) => ({ redact: (t: string) => redact(t, '/home/nobody'), worktree: dir });
+  const o = (dir: string) => ({ redact: (t: string) => redact(t, '/home/nobody'), redactCode: (t: string) => redactCode(t, '/home/nobody'), worktree: dir });
 
   it('rewrites the body and never the header, and counts what it found', async () => {
     const dir = repo();
@@ -78,6 +78,80 @@ describe('the text check of the documentation', () => {
     expect(text).toContain(`checked-commit: ${HASH}`);
     expect(text).toContain('evidence: [src/a.ts:1-3]');
     expect(done.stamp).toEqual(['.coxia/rules/r.md']);
+  });
+
+  describe('code is left as the author wrote it, and only prose is rewritten', () => {
+    const KEY = 'sk-abcdefgh12345678';
+
+    it('keeps `apiKey: string;` in a code span and in a fence, and /var/log/app/app.log in a fence, while the prose around them is rewritten', async () => {
+      const dir = repo();
+      const body = [
+        'The type has `apiKey: string;` and `token: string | null` in it.',
+        'Logs go to /var/log/app/app.log in prose.',
+        '',
+        '```ts',
+        'interface Options {',
+        '  apiKey: string;',
+        '  token: string | null;',
+        '}',
+        '// log: /var/log/app/app.log',
+        '```',
+        '',
+        '~~~',
+        'password: string',
+        '~~~',
+        '',
+        'After the code: apiKey: hunter2hunter2 and /tmp/cache stay prose.',
+        '',
+      ].join('\n');
+      put(dir, '.coxia/rules/r.md', file(['evidence: [src/a.ts]'], body));
+      const done = await finalizeHarness(dir, o(dir));
+      const text = readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8');
+      expect(text).toContain('The type has `apiKey: string;` and `token: string | null` in it.');
+      expect(text).toContain('Logs go to app.log in prose.');
+      expect(text).toContain('```ts\ninterface Options {\n  apiKey: string;\n  token: string | null;\n}\n// log: /var/log/app/app.log\n```');
+      expect(text).toContain('~~~\npassword: string\n~~~');
+      expect(text).toContain('After the code: apiKey: [redacted] and cache stay prose.');
+      expect(done.rewritten).toEqual([{ file: '.coxia/rules/r.md', paths: 2, secrets: 1 }]);
+    });
+
+    it('still masks a credential by its shape inside code, and a path of this very worktree, which are local wherever they stand', async () => {
+      const dir = repo();
+      const body = ['Run `curl -H "X: ' + KEY + '"` or:', '', '```sh', `export K=${KEY}`, `cat ${dir}/src/a.ts`, '```', ''].join('\n');
+      put(dir, '.coxia/rules/r.md', file(['evidence: [src/a.ts]'], body));
+      const done = await finalizeHarness(dir, o(dir));
+      const text = readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8');
+      expect(text).not.toContain(KEY);
+      expect(text).toContain('export K=[key]');
+      expect(text).toContain('cat src/a.ts');
+      expect(done.rewritten).toEqual([{ file: '.coxia/rules/r.md', paths: 1, secrets: 2 }]);
+    });
+
+    it('takes an unclosed fence for code to the end, a longer fence for one that closes only with as many marks, and a lone backtick for prose', async () => {
+      const dir = repo();
+      const body = ['A lone ` tick and /var/log/a.log here.', '', 'Another ` tick and /var/log/z.log here.', '', '````', '```', 'apiKey: string', '````', '', 'Back to prose /var/log/b.log.', '', '```', 'apiKey: string /var/log/c.log', ''].join('\n');
+      put(dir, '.coxia/rules/r.md', file(['evidence: [src/a.ts]'], body));
+      await finalizeHarness(dir, o(dir));
+      const text = readFileSync(join(dir, '.coxia/rules/r.md'), 'utf8');
+      expect(text).toContain('A lone ` tick and a.log here.');
+      expect(text).toContain('Another ` tick and z.log here.');
+      expect(text).toContain('````\n```\napiKey: string\n````');
+      expect(text).toContain('Back to prose b.log.');
+      expect(text).toContain('```\napiKey: string /var/log/c.log\n');
+    });
+
+    it('reports, file by file, how many paths and credentials each one had', async () => {
+      const dir = repo();
+      put(dir, '.coxia/rules/a.md', file(['evidence: [src/a.ts]'], 'One /var/log/x.log and two /var/log/y.log.'));
+      put(dir, '.coxia/rules/b.md', file(['evidence: [src/a.ts]'], `A key ${KEY}.`));
+      put(dir, '.coxia/rules/c.md', file(['evidence: [src/a.ts]'], 'Nothing.'));
+      const done = await finalizeHarness(dir, o(dir));
+      expect(done.rewritten).toEqual([
+        { file: '.coxia/rules/a.md', paths: 2, secrets: 0 },
+        { file: '.coxia/rules/b.md', paths: 0, secrets: 1 },
+      ]);
+      expect([done.paths, done.secrets]).toEqual([2, 1]);
+    });
   });
 
   it('does not touch a header with a local path in it: the file is reported as invalid and not stamped', async () => {
@@ -228,7 +302,7 @@ describe('in a run', () => {
 
     const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.docs.'));
     expect(lines.map((m) => m.code)).toEqual(['runner.docs.checked', 'runner.docs.invalidHeader']);
-    expect(lines[0].params).toMatchObject({ paths: 1, secrets: 0, files: '.coxia/rules/feature.md' });
+    expect(lines[0].params).toMatchObject({ paths: 1, secrets: 0, files: '.coxia/rules/feature.md: 1 caminho(s), 0 credencial(is)' });
     expect(messageText(lines[0])).toContain('1 caminho(s) local(is) reescrito(s)');
     expect(lines[1].params).toMatchObject({ file: '.coxia/README.md', reason: 'no-header' });
   });

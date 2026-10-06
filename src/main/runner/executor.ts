@@ -17,7 +17,7 @@ import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCo
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
-import { redact } from '../errorlog-core';
+import { redact, redactCode } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
@@ -516,8 +516,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // i18n-ignore-next-line: the subject of a commit in the repository's history; a stage of the documentation flow is not "the draft the documentation changes"
   const fallback = run.docs && code ? 'update the project documentation' : commitFallback(stage.label, code);
   // The documentation the pass wrote (`.coxia/`) is checked before it is committed, so a local path or a credential never gets into the history; what was rewritten is told.
-  const docs = writes ? await finalizeHarness(wt, { redact }) : null;
-  if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => f.file).join(', ') }, stage: stage.id });
+  const docs = writes ? await finalizeHarness(wt, { redact, redactCode }) : null;
+  if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => t('main.runner.docs.checked.file', { file: f.file, paths: f.paths, secrets: f.secrets })).join('; ') }, stage: stage.id });
   if (docs?.skipped.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.notAFile', params: { files: docs.skipped.join(', ') }, stage: stage.id });
   for (const bad of docs?.invalid ?? []) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.invalidHeader', params: { file: bad.file, reason: bad.reason }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);

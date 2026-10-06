@@ -11,6 +11,9 @@ const MAX_STACK_LINES = 10;
 const MAX_STACK = 1800;
 const DAY_MS = 24 * 3600_000;
 
+// `name: value` where the name looks like a secret's (`apiKey: string;` in a type, `token = next()` in code): right in a message, wrong in a quoted piece of code.
+const ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi;
+
 // Ordered: specific shapes first, the generic opaque-string rule last.
 const SECRETS: [RegExp, string][] = [
   [/\b(Authorization|Proxy-Authorization|PRIVATE-TOKEN|Job-Token|X-Api-Key|X-Auth-Token|Set-Cookie|Cookie)\s*[:=]\s*[^\n]+/gi, '$1: [redacted]'],
@@ -19,7 +22,7 @@ const SECRETS: [RegExp, string][] = [
   [/\b(glpat|sk-or-v1|sk-or|sk-ant|sk|ghp|gho|github_pat|xox[abprs]|AKIA|AIza)[-_][\w-]{8,}/g, '[key]'],
   [/\bAKIA[0-9A-Z]{12,}\b/g, '[key]'],
   [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g, '[jwt]'],
-  [/(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key|apikey|access[_-]?key|credential|cookie)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi, '$1[redacted]'],
+  [ASSIGNMENT, '$1[redacted]'],
   [/(\/\/)[^\s/@:]+:[^\s/@]+@/g, '$1[redacted]@'],
   [/(https?:\/\/[^\s?#"')]+)\?[^\s"')]+/g, '$1?[redacted]'],
   [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]'],
@@ -30,6 +33,18 @@ export function redact(text: string, home = homedir()): string {
   let out = text;
   if (home && home !== '/') out = out.split(home).join('~');
   for (const [pattern, replacement] of SECRETS) out = out.replace(pattern, replacement);
+  return out;
+}
+
+/**
+ * `redact` for text that is quoted code (a fenced block, a code span of a document): the same masking of what is a credential by its shape (a key with a known prefix, a
+ * token, a header, an address with a password, an email, a long opaque string) and of the home folder, but not of an assignment to a name that merely looks like a secret's
+ * (`apiKey: string;`), which in code is what the code says.
+ */
+export function redactCode(text: string, home = homedir()): string {
+  let out = text;
+  if (home && home !== '/') out = out.split(home).join('~');
+  for (const [pattern, replacement] of SECRETS) if (pattern !== ASSIGNMENT) out = out.replace(pattern, replacement);
   return out;
 }
 

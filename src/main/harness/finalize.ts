@@ -36,6 +36,89 @@ export interface Finalized {
 const MASK = /\[(?:redacted|key|jwt|email)\]/g;
 const masks = (text: string): number => (text.match(MASK) ?? []).length;
 
+interface Piece {
+  code: boolean;
+  text: string;
+}
+
+// A span of code in a line of prose: a run of backticks, what is inside, the same run again.
+// It does not cross a blank line: a lone backtick does not turn the paragraphs after it into code.
+const SPAN = /(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n)[\s\S])*?(?<!`)\1(?!`)/g;
+
+/** The text cut into what is code (fenced blocks and code spans) and what is prose, in order, so that putting the pieces back together gives the text. */
+function pieces(text: string): Piece[] {
+  const out: Piece[] = [];
+  let prose = '';
+  const flush = (): void => {
+    let at = 0;
+    for (const m of prose.matchAll(SPAN)) {
+      const i = m.index ?? 0;
+      if (i > at) out.push({ code: false, text: prose.slice(at, i) });
+      out.push({ code: true, text: m[0] });
+      at = i + m[0].length;
+    }
+    if (at < prose.length) out.push({ code: false, text: prose.slice(at) });
+    prose = '';
+  };
+  let fence: { char: string; size: number } | null = null;
+  let block = '';
+  for (const line of text.match(/[^\n]*\n|[^\n]+/g) ?? []) {
+    const edge = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line.replace(/\r?\n$/, ''));
+    if (!fence) {
+      if (edge && !(edge[1][0] === '`' && edge[2].includes('`'))) {
+        flush();
+        fence = { char: edge[1][0], size: edge[1].length };
+        block = line;
+      } else prose += line;
+    } else {
+      block += line;
+      if (edge && edge[1][0] === fence.char && edge[1].length >= fence.size && !edge[2].trim()) {
+        out.push({ code: true, text: block });
+        fence = null;
+        block = '';
+      }
+    }
+  }
+  // A fence that is never closed runs to the end of the text.
+  if (fence) out.push({ code: true, text: block });
+  flush();
+  return out;
+}
+
+export interface FinalizeOptions {
+  /** Masks what looks like a credential in prose. */
+  redact: (text: string) => string;
+  /** The same for quoted code: it must leave an assignment such as `apiKey: string;` alone. */
+  redactCode: (text: string) => string;
+}
+
+/**
+ * The body with its prose rewritten (a local path becomes a path of the repository, what looks like a credential is masked) and its code left as the author wrote it,
+ * except for what is a credential by its shape and for the paths of this very worktree, which are local wherever they stand.
+ */
+function rewriteBody(body: string, wt: string, o: FinalizeOptions): { body: string; paths: number; secrets: number } {
+  let paths = 0;
+  let secrets = 0;
+  const root = wt.replace(/\/+$/, '');
+  const text = pieces(body)
+    .map((p) => {
+      if (!p.text) return p.text;
+      if (!p.code) {
+        const done = rewriteLocal(p.text, { worktree: wt, redact: o.redact });
+        paths += done.paths;
+        secrets += Math.max(0, masks(done.body) - masks(p.text));
+        return done.body;
+      }
+      const inside = root ? p.text.split(`${root}/`) : [p.text];
+      paths += inside.length - 1;
+      const masked = o.redactCode(inside.join(''));
+      secrets += Math.max(0, masks(masked) - masks(p.text));
+      return masked;
+    })
+    .join('');
+  return { body: text, paths, secrets };
+}
+
 /** The header block of a file (both fences, with the line break after) and the text that follows; no header: the whole text is the body. */
 function splitFile(text: string): { head: string; body: string } {
   const lines = text.split('\n');
@@ -61,10 +144,10 @@ async function changedLayoutFiles(wt: string): Promise<string[]> {
 }
 
 /**
- * Checks the documentation the pass changed: the body of each file is rewritten (a local path becomes a path of the repository, what looks like a credential is
- * masked) and never the header, whose commit would be taken for an opaque string; a header that does not parse is reported. Writes only the files it rewrites.
+ * Checks the documentation the pass changed: the prose of the body of each file is rewritten (a local path becomes a path of the repository, what looks like a credential is
+ * masked; code blocks and code spans are left alone, see `rewriteBody`) and never the header, whose commit would be taken for an opaque string; a header that does not parse is reported. Writes only the files it rewrites.
  */
-export async function finalizeHarness(wt: string, o: { redact: (text: string) => string }): Promise<Finalized> {
+export async function finalizeHarness(wt: string, o: FinalizeOptions): Promise<Finalized> {
   const out: Finalized = { rewritten: [], paths: 0, secrets: 0, invalid: [], skipped: [], stamp: [] };
   for (const rel of await changedLayoutFiles(wt)) {
     const file = `${HARNESS_DIR}/${rel}`;
@@ -78,15 +161,14 @@ export async function finalizeHarness(wt: string, o: { redact: (text: string) =>
     const text = await readFile(join(wt, file), 'utf8').catch(() => null);
     if (text === null) continue;
     const { head, body } = splitFile(text);
-    const done = rewriteLocal(body, { worktree: wt, redact: o.redact });
+    const done = rewriteBody(body, wt, o);
     let next = text;
     if (done.body !== body) {
       next = head + done.body;
       await writeFile(join(wt, file), next);
-      const secrets = Math.max(0, masks(done.body) - masks(body));
-      out.rewritten.push({ file, paths: done.paths, secrets });
+      out.rewritten.push({ file, paths: done.paths, secrets: done.secrets });
       out.paths += done.paths;
-      out.secrets += secrets;
+      out.secrets += done.secrets;
     }
     const parsed = parseHarnessFile(rel, next);
     if (!parsed) continue;
