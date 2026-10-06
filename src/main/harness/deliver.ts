@@ -5,7 +5,7 @@ import type { StageKind } from '../../shared/config/types';
 import type { CycleView } from '../../shared/config/squads';
 import { flowOfRun } from '../../shared/runs/flow';
 import type { Run } from '../../shared/runs/types';
-import { HARNESS_DIR } from '../../shared/harness/format';
+import { HARNESS_DIR, type HarnessState } from '../../shared/harness/format';
 import { type Item, type Mark, type SelectInput, budgetFor, selectDocs, wantsInvalid } from '../../shared/harness/select';
 import { git } from '../conflictGit';
 import { prompt as cp } from '../cyclePrompts';
@@ -92,23 +92,15 @@ function markText(mark: Mark | null): string {
 
 /**
  * The section of the system text for one call, or '' when none of the repositories has documentation. The budget is the call's: it comes from the context window of
- * the model when the provider declares it, and it is divided among the repositories that have a folder.
+ * the model when the provider declares it, and it is divided among the repositories that have a folder. It is the budget of the text that is delivered, the head, the
+ * marks and the line of what did not fit included: the selection counts its parts with estimates, and the real length decides, so the share given to the files is
+ * lowered until the whole is no longer than the number the screen states.
  */
 export async function harnessSection(ask: DocsAsk, agent: { id: string }, opts: { cwd: string; contextWindow?: number | null }): Promise<string> {
-  const states = [];
+  const prepared: { state: HarnessState; marks: Record<string, Mark>; texts: SelectInput['texts'] }[] = [];
   for (const repo of new Set(ask.repos)) {
     const state = await scanHarness(repo).catch(() => null);
-    if (state?.exists && state.entries.length) states.push(state);
-  }
-  if (!states.length) return '';
-  const budget = Math.floor(budgetFor(opts.contextWindow) / states.length);
-  const shown = (repo: string, path: string): string => {
-    const abs = join(repo, HARNESS_DIR, path);
-    const rel = relative(opts.cwd, abs);
-    return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : abs;
-  };
-  const parts: string[] = [cp('runner.docs.head')];
-  for (const state of states) {
+    if (!state?.exists || !state.entries.length) continue;
     const check = await checkHarness(state).catch(() => null);
     const texts: SelectInput['texts'] = {};
     for (const e of state.entries) {
@@ -116,20 +108,41 @@ export async function harnessSection(ask: DocsAsk, agent: { id: string }, opts: 
       const text = await readFile(join(state.repo, HARNESS_DIR, e.path), 'utf8').catch(() => null);
       if (text !== null) texts[e.path] = text;
     }
-    const sel = selectDocs({ entries: state.entries, marks: check?.files ?? {}, texts, stage: ask.stage, paths: ask.paths, agent: agent.id, budget });
-    const render = (id: 'overview' | 'item', item: Item): string => {
-      const path = shown(state.repo, item.path);
-      const body = wrap(item.text) + (item.clipped ? `\n${cp('runner.docs.clipped', { path })}` : '');
-      return id === 'overview' ? cp('runner.docs.overview', { path, mark: markText(item.mark), text: body }) : cp('runner.docs.item', { path, mark: markText(item.mark), text: body });
-    };
-    if (sel.overview) parts.push(render('overview', sel.overview));
-    for (const item of sel.picked) parts.push(render('item', item));
-    if (sel.indexed.length) parts.push(cp('runner.docs.index', { lines: sel.indexed.map((l) => `- ${shown(state.repo, l.path)}${l.summary ? `: ${l.summary}` : ''}${markText(l.mark)}`).join('\n') }));
-    if (sel.notIncluded.length) {
-      const names = sel.notIncluded.slice(0, NAMES_MAX).map((n) => shown(state.repo, n));
-      const more = sel.notIncluded.length - names.length;
-      parts.push(cp('runner.docs.notIncluded', { names: more > 0 ? `${names.join(', ')}, +${more}` : names.join(', ') }));
-    }
+    prepared.push({ state, marks: check?.files ?? {}, texts });
   }
-  return parts.join('\n\n');
+  if (!prepared.length) return '';
+  const total = budgetFor(opts.contextWindow);
+  const shown = (repo: string, path: string): string => {
+    const abs = join(repo, HARNESS_DIR, path);
+    const rel = relative(opts.cwd, abs);
+    return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : abs;
+  };
+  const build = (share: number): string => {
+    const parts: string[] = [cp('runner.docs.head')];
+    for (const { state, marks, texts } of prepared) {
+      const sel = selectDocs({ entries: state.entries, marks, texts, stage: ask.stage, paths: ask.paths, agent: agent.id, budget: share });
+      const render = (id: 'overview' | 'item', item: Item): string => {
+        const path = shown(state.repo, item.path);
+        const body = wrap(item.text) + (item.clipped ? `\n${cp('runner.docs.clipped', { path })}` : '');
+        return id === 'overview' ? cp('runner.docs.overview', { path, mark: markText(item.mark), text: body }) : cp('runner.docs.item', { path, mark: markText(item.mark), text: body });
+      };
+      if (sel.overview) parts.push(render('overview', sel.overview));
+      for (const item of sel.picked) parts.push(render('item', item));
+      if (sel.indexed.length) parts.push(cp('runner.docs.index', { lines: sel.indexed.map((l) => `- ${shown(state.repo, l.path)}${l.summary ? `: ${l.summary}` : ''}${markText(l.mark)}`).join('\n') }));
+      if (sel.notIncluded.length) {
+        const names = sel.notIncluded.slice(0, NAMES_MAX).map((n) => shown(state.repo, n));
+        const more = sel.notIncluded.length - names.length;
+        parts.push(cp('runner.docs.notIncluded', { names: more > 0 ? `${names.join(', ')}, +${more}` : names.join(', ') }));
+      }
+    }
+    return parts.join('\n\n');
+  };
+  let share = Math.floor(total / prepared.length);
+  let text = build(share);
+  // Each round takes away what the text is over by, split among the repositories; the files that no longer fit are named instead.
+  for (let round = 0; round < 12 && text.length > total && share > 0; round++) {
+    share = Math.max(0, share - Math.ceil((text.length - total) / prepared.length) - 20);
+    text = build(share);
+  }
+  return text;
 }

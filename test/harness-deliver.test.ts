@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearHarnessCache } from '../src/main/harness/stale';
 import { citedPaths, harnessDirs, harnessSection, runDocsAsk, workPaths } from '../src/main/harness/deliver';
+import { budgetFor } from '../src/shared/harness/select';
 import { installHostConfig } from './helpers/config';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -138,9 +139,40 @@ describe('the section of a repository with documentation', () => {
     for (const n of ['a', 'b', 'c', 'd', 'e']) r.doc(`rules/${n}.md`, c, `${n.repeat(1)}\n${'rule line\n'.repeat(250)}`, 'evidence: [src/a.ts]', 'stages: [development]');
     // a model of 8 thousand tokens: 3600 characters for the whole section
     const text = await harnessSection({ repos: [r.dir], stage, paths: [] }, dev, { cwd: r.dir, contextWindow: 8000 });
-    expect(text).toContain('(cut here: read the rest in .coxia/rules/');
     expect(text).toMatch(/These files did not fit in this message; they are in the documentation folder and can be read: .*\.coxia\/rules\/e\.md/);
-    expect(text.length).toBeLessThan(3600 + 1500);
+    // the whole text, the head and the line of what was left out included, is no longer than the number the screen states
+    expect(text.length).toBeLessThanOrEqual(3600);
+  });
+
+  it('cuts a file that is too long with a note that says where to read the rest, inside the number stated', async () => {
+    const r = new Repo();
+    r.write('src/a.ts', 'one\n');
+    const c = r.commit('code');
+    r.doc('README.md', c, 'Overview.');
+    r.doc('rules/long.md', c, 'rule line\n'.repeat(500), 'evidence: [src/a.ts]', 'stages: [development]');
+    const text = await harnessSection({ repos: [r.dir], stage, paths: [] }, dev, { cwd: r.dir, contextWindow: 8000 });
+    expect(text).toContain('(cut here: read the rest in .coxia/rules/long.md)');
+    expect(text.length).toBeLessThanOrEqual(3600);
+    expect(text.length).toBeGreaterThan(3000);
+  });
+
+  it('counts the head, the marks and the list of names that did not fit: even the floor of the budget is not passed, with many files and long names', async () => {
+    const r = new Repo();
+    const long = (i: number) => `a-rather-long-name-of-a-file-the-rules-cite-number-${i}`;
+    for (let i = 0; i < 30; i++) r.write(`src/${long(i)}.ts`, 'one\n');
+    const c = r.commit('code');
+    r.doc('README.md', c, 'Overview line\n'.repeat(300));
+    // eight small rules, each over three files with long names (their mark names three of them), and forty big ones that cannot fit
+    for (let i = 0; i < 8; i++) r.doc(`rules/small-${i}.md`, c, 'A short rule.', `evidence: [${[0, 1, 2].map((k) => `src/${long(i * 3 + k)}.ts`).join(', ')}]`, 'stages: [development]');
+    for (let i = 0; i < 40; i++) r.doc(`rules/big-rule-with-a-long-name-${i}.md`, c, 'Rule line\n'.repeat(120), `evidence: [src/${long(i % 30)}.ts]`, `summary: ${'what it says '.repeat(6)}`, 'stages: [development]');
+    for (let i = 0; i < 30; i++) r.write(`src/${long(i)}.ts`, 'two\n');
+    r.commit('change them all');
+    const text = await harnessSection({ repos: [r.dir], stage, paths: [] }, dev, { cwd: r.dir, contextWindow: 1000 });
+    expect(budgetFor(1000)).toBe(3000);
+    expect(text).toContain('[not checked: 3 file(s) it cites changed since');
+    expect(text).toMatch(/These files did not fit in this message/);
+    expect(text).toMatch(/, \+\d+\./);
+    expect(text.length).toBeLessThanOrEqual(3000);
   });
 
   it('divides the budget among the repositories and names the files by their place under the working directory', async () => {
@@ -158,7 +190,7 @@ describe('the section of a repository with documentation', () => {
     expect(parts[0]).toContain(`${basename(one.dir)}/.coxia/README.md`);
     expect(parts[1]).toContain(`${basename(two.dir)}/.coxia/README.md`);
     for (const p of parts) expect(p.length).toBeLessThan(0.4 * 12_000 + 300);
-    expect(text.length).toBeLessThan(24_000 + 1500);
+    expect(text.length).toBeLessThanOrEqual(24_000);
   });
 });
 
