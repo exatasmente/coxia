@@ -1,6 +1,7 @@
 import { coversPath, evidencePaths } from '../../shared/harness/evidence';
 import { HARNESS_DIR, type HarnessFile, type HarnessState } from '../../shared/harness/format';
 import { git } from '../conflictGit';
+import { scanHarness } from './scan';
 
 // Whether a rule of `.coxia/` is still true cannot be known; what can be known is whether a file it cites changed since the commit it was checked against.
 // Read-only git, one repository at a time, within a limit of time: what cannot be compared is `unverified`, never "checked".
@@ -135,4 +136,45 @@ async function referenceOf(f: HarnessFile, run: Run): Promise<string | null> {
   // that holds the rule and the change it describes together, so what came after it is what counts.
   const first = await run(['log', `-S${commit}`, '--reverse', '--format=%H', '--', `${HARNESS_DIR}/${f.path}`]);
   return first.code === 0 ? first.stdout.split('\n').find(Boolean) ?? null : null;
+}
+
+/** A rule the branch left behind: its file (relative to the repository) and the code the branch changed that it cites. */
+export interface BehindRule {
+  file: string;
+  /** Up to three files of the code the branch changed that the rule cites and that moved after the rule was checked. */
+  changed: string[];
+}
+
+const BEHIND_FILES_KEPT = 3;
+
+/**
+ * The rules of `.coxia/` that a run's branch left behind, for its review to point at: those that are `stale` and cite a file of the code the branch changed (what it
+ * committed since `base` and what is not committed yet, outside the cycle folder), and that the branch did not bring up to date. A rule the branch did bring up to date
+ * was stamped with a commit that holds its change, so it is not stale, unless the code changed again after that. A rule that was already out of date before the branch,
+ * and cites nothing the branch touched, is not this run's to answer for. Empty when the repository has no `.coxia/`.
+ */
+export async function behindOf(wt: string, base: string | null, cycleFolder: string | null = null): Promise<BehindRule[]> {
+  if (!base) return [];
+  const state = await scanHarness(wt);
+  if (!state.exists || !state.entries.length) return [];
+  const diff = await git(wt, ['diff', '--name-only', '--no-renames', '-z', base], { fail: false, timeout: CHECK_LIMIT_MS });
+  if (diff.code !== 0) return [];
+  const code = diff.stdout.split('\0').filter((p) => p && p !== HARNESS_DIR && !p.startsWith(`${HARNESS_DIR}/`) && !(cycleFolder && (p === cycleFolder || p.startsWith(`${cycleFolder}/`))));
+  if (!code.length) return [];
+  const check = await checkHarness(state);
+  const out: BehindRule[] = [];
+  for (const entry of state.entries) {
+    if (!entry.parse.ok) continue;
+    const file = entry.parse.file;
+    const at = check.files[file.path];
+    if (at?.state !== 'stale') continue;
+    const cited = code.filter((p) => file.header.evidence.some((e) => coversPath(e, p)));
+    if (!cited.length) continue;
+    // Of the files the branch changed that the rule cites, the ones that moved since the rule was checked: the rule is behind for those.
+    const moved = await git(wt, ['diff', '--name-only', '--no-renames', '-z', at.ref, '--', ...cited.map((p) => `:(top,literal)${p}`)], { fail: false, timeout: CHECK_LIMIT_MS });
+    const names = moved.code === 0 ? moved.stdout.split('\0').filter(Boolean) : cited;
+    if (!names.length) continue;
+    out.push({ file: `${HARNESS_DIR}/${file.path}`, changed: unique(names).slice(0, BEHIND_FILES_KEPT) });
+  }
+  return out.sort((a, b) => (a.file < b.file ? -1 : 1));
 }

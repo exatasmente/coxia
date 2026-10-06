@@ -22,6 +22,8 @@ import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { releaseSection, releaseStateOf } from './release';
 import { runDocsAsk } from '../harness/deliver';
+import { scanHarness } from '../harness/scan';
+import { behindOf } from '../harness/stale';
 import { STAMP_SUMMARY, finalizeHarness, stampHarness } from '../harness/finalize';
 import { HARNESS_DIR } from '../../shared/harness/format';
 import { crMarkOf } from '../../shared/i18n/terms';
@@ -388,6 +390,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (missed) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.notRun', params: { list: missed.list }, stage: stage.id });
   }
 
+  // What a repository with documentation asks of a run that changes code (keep it true in the same change) and of its review (point at the rule the branch left behind).
+  // A repository with no `.coxia/` asks nothing, and a documentation run is the one that writes it.
+  const documented = (await scanHarness(wt).catch(() => null))?.entries.length ? !run.docs : false;
+  const behind = documented && kind === 'review' ? await behindOf(wt, run.base, run.cycleFolder).catch(() => []) : [];
+
   const input: StageInput = {
     run,
     stage,
@@ -398,6 +405,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commands,
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
+    docsKeep: documented && writes,
+    behind,
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),
