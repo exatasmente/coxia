@@ -64,7 +64,7 @@ const NOTES = '# Import notes\n\n## Imported\n- how to build and test\n\n## Left
 const section = (heading: string, body: string) => ({ heading, body });
 const PR = {
   title: 'Document the project',
-  sections: [section('What this adds', 'The overview and one rule.'), section('What was imported from Claude Code', 'How to build and test.'), section('What was left out of the import', 'A rule of a session: who pushes.'), section('What to check', 'The evidence of the rule.')],
+  sections: [section('What this adds', 'The overview and one rule.'), section('What was imported from Claude Code', 'How to build and test.'), section('What the import left out', 'A rule of a session: who pushes.'), section('What to check', 'The evidence of the rule.')],
   technical: '',
 };
 
@@ -356,7 +356,7 @@ describe('the push and the pull request', () => {
     const body = JSON.parse(proposal.command?.json as string) as { title: string; head: string; base: string; body: string };
     expect(body).toMatchObject({ title: 'Document the project', head: BRANCH, base: 'main' });
     expect(body.body.startsWith('**Documentation ready for review**')).toBe(true);
-    expect(body.body).toContain('### What was left out of the import');
+    expect(body.body).toContain('### What the import left out');
     expect(body.body).toContain('A rule of a session: who pushes.');
     expect(body.body).not.toMatch(/closes/i);
     expect(body.body).not.toMatch(/#0\b/);

@@ -795,7 +795,7 @@
   "cycle.docsFlow.comment.docs-pr.s1.guidance": "The files of .coxia that are new or changed, and what each one covers, in a line each.",
   "cycle.docsFlow.comment.docs-pr.s2.heading": "What was imported from Claude Code",
   "cycle.docsFlow.comment.docs-pr.s2.guidance": "What came from the CLAUDE.md and the .claude folder of the repository and where each part went; leave empty when nothing was imported.",
-  "cycle.docsFlow.comment.docs-pr.s3.heading": "What was left out of the import",
+  "cycle.docsFlow.comment.docs-pr.s3.heading": "What the import left out",
   "cycle.docsFlow.comment.docs-pr.s3.guidance": "Each item that was not imported and why it is a rule of a session or of another tool and not a fact of the project (from IMPORT_NOTES.md), so that it can be disputed here; leave empty when nothing was left out.",
   "cycle.docsFlow.comment.docs-pr.s4.heading": "What to check",
   "cycle.docsFlow.comment.docs-pr.s4.guidance": "What the person who reviews should confirm: rules whose evidence is thin, claims that could not be checked in the code, and anything that looks like a secret or a local path."
