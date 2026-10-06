@@ -7,12 +7,19 @@ import { neutralPlugins, neutralSandbox } from '../src/shared/config/defaults';
 import type { ReleaseAction } from '../src/shared/types';
 import type { PluginRecord } from '../src/main/plugins/types';
 import type { PluginDoor, PluginNote, PluginsDeps } from '../src/main/plugins/module';
+import type { JsAnswer, JsCall } from '../src/main/plugins/runtime';
+
+const guard = vi.hoisted(() => ({ test: false }));
+vi.mock('../src/main/workspace', async (orig) => ({
+  ...(await orig<typeof import('../src/main/workspace')>()),
+  externalRefusal: (what: string) => (guard.test ? `test workspace: ${what}` : null),
+}));
 
 // The plugins service under the permission contract: a plugin that needs what it was not allowed opens a request instead of running; the person answers
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
 
-const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSettings } = await import('../src/main/plugins/module');
+const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
 
 // The script of a plugin is read from its folder: each record points at a throwaway folder that holds one.
 const root = mkdtempSync(join(tmpdir(), 'coxia-plugins-service-'));
@@ -21,6 +28,7 @@ const folder = (id: string): string => {
   const dir = join(root, id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'search.sh'), 'echo "$1"\n');
+  writeFileSync(join(dir, 'index.mjs'), 'export default async () => ({});\n');
   return dir;
 };
 
@@ -35,6 +43,11 @@ const plugin = (over: Partial<PluginRecord> = {}): PluginRecord => ({
   network: ['search.example.com'],
   write: { to: 'results', reversible: true },
   entry: 'search.sh',
+  runtime: 'shell',
+  settings: [],
+  values: {},
+  requests: [],
+  reach: 'r',
   refused: null,
   ...over,
 });
@@ -44,6 +57,7 @@ function memoryDoor(refuse: boolean, armed: boolean) {
   const actions: ReleaseAction[] = [];
   const written: { to: string; text: string }[] = [];
   const sent: string[] = [];
+  const requested: { target: string; fields: Record<string, string> }[] = [];
   const announced: { seconds: number; write: { plugin: string; to: string; text: string } }[] = [];
   let n = 0;
   const door: PluginDoor = {
@@ -67,7 +81,7 @@ function memoryDoor(refuse: boolean, armed: boolean) {
     },
     announce: (input) => {
       announced.push({ seconds: input.seconds, write: input.write });
-      const a = { id: `w${++n}`, key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: '', state: 'pending', unit: { ...input.write, runId: input.runId, due: new Date(Date.now() + input.seconds * 1000).toISOString() }, summary: input.summary, output: null } as unknown as ReleaseAction;
+      const a = { id: `w${++n}`, key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: '', state: 'pending', unit: { ...input.write, runId: input.runId, due: new Date(Date.now() + input.seconds * 1000).toISOString(), ...(input.request ? { request: input.request } : {}) }, summary: input.summary, output: null } as unknown as ReleaseAction;
       actions.push(a);
       // Returned only when the test drives the deadline: the service arms a timer for what it gets back.
       return armed ? a : null;
@@ -78,29 +92,37 @@ function memoryDoor(refuse: boolean, armed: boolean) {
       a.state = 'skipped';
       a.output = words;
     },
-    send: async (id) => {
+    send: async (id, execute) => {
       const a = actions.find((x) => x.id === id) as ReleaseAction;
       if (a.state !== 'pending') return;
+      if (execute) await execute(a, { issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary });
       a.state = 'done';
       sent.push(id);
     },
+    sendRequest: async (_origin, target, fields, send) => {
+      requested.push({ target, fields });
+      return send();
+    },
   };
-  return { actions, written, announced, sent, door };
+  return { actions, written, announced, sent, requested, door };
 }
 
 /** Deps over an in-memory configuration: saving changes what the next read sees, as the real read of the folder would. */
-function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean } = {}) {
-  let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow })) };
+function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean; js?: (read: (call: JsCall) => Promise<JsAnswer>) => Promise<{ document?: string; writes?: JsCall[] }>; status?: number } = {}) {
+  let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow, allowedFor: r.reach, settings: r.values })) };
   const runs: { plugin: string; event: string; sandbox: RunnerSandbox }[] = [];
   const settled: { runId: string; note: PluginNote | null }[] = [];
   const memory = memoryDoor(opts.refuse === true, opts.armed === true);
+  const fetched: { url: string; method: string }[] = [];
+  const secretsStore = new Map<string, string>();
   const deps: PluginsDeps = {
     dir: () => '/plugins',
     config: () => config,
     read: () =>
       initial.map((r) => {
         const c = config.list.find((x) => x.id === r.id);
-        return c ? { ...r, enabled: c.enabled, allow: c.allow } : r;
+        // As the real read does: an "always" holds only for the declaration it was given for.
+        return c ? { ...r, enabled: c.enabled, allow: c.allowedFor === r.reach ? c.allow : { network: false, write: false }, values: c.settings ?? {} } : r;
       }),
     save: (change) => {
       config = { ...config, list: change(config.list) };
@@ -114,10 +136,21 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
       runs.push({ plugin: p.id, event, sandbox });
       return { plugin: p.id, ok: true, text: opts.output ?? 'result from the sandbox', refused: null, document: null };
     },
+    runJs: async (p, event, _context, _target, sandbox, read) => {
+      runs.push({ plugin: p.id, event, sandbox });
+      const out = opts.js ? await opts.js(read) : {};
+      return { plugin: p.id, ok: true, text: out.document ?? '', refused: null, document: null, writes: out.writes ?? [] };
+    },
+    fetchRequest: async (p, resolved) => {
+      fetched.push({ url: resolved.url.href, method: resolved.method });
+      return { ok: true, status: opts.status ?? 200, contentType: 'application/json', body: '{"ok":true}', truncated: false };
+    },
+    secretFilled: (p, key) => secretsStore.has(`${p}.${key}`),
+    setSecret: (p, key, value) => void (value ? secretsStore.set(`${p}.${key}`, value) : secretsStore.delete(`${p}.${key}`)),
     door: memory.door,
     settled: (runId, note) => void settled.push({ runId, note }),
   };
-  return { deps, runs, settled, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
+  return { deps, runs, settled, fetched, secretsStore, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
 }
 
 const ctx = (runId = 'r1') => ({ issue: 123, issueTitle: 'Plugin platform', stage: 'implement', runId });
@@ -143,7 +176,7 @@ describe('the list and the switches', () => {
 
   it('keeps the entry of a plugin the folder no longer has when another one is switched', () => {
     const h = harness([plugin()]);
-    h.deps.save((list) => [...list, { id: 'gone', folder: '/old', enabled: true, allow: { network: true, write: true } }]);
+    h.deps.save((list) => [...list, { id: 'gone', folder: '/old', enabled: true, allow: { network: true, write: true }, settings: {} }]);
     setPluginEnabled('web-search', false, h.deps);
     expect(h.list().map((c) => c.id)).toEqual(['web-search', 'gone']);
     expect(h.list()[1].allow).toEqual({ network: true, write: true });
@@ -417,3 +450,168 @@ describe('going on without answering', () => {
     expect(h.deps.door.pending()).toHaveLength(1);
   });
 });
+
+describe('a JavaScript plugin and the requests the app makes for it', () => {
+  const settings = [
+    { key: 'url', label: 'Instance URL', kind: 'url' as const, required: true },
+    { key: 'token', label: 'API key', kind: 'secret' as const, required: false },
+  ];
+  const search = { id: 'search', method: 'GET' as const, url: '{settings.url}/search', secret: { setting: 'token', in: 'header' as const, name: 'Authorization', format: 'Bearer {secret}' }, write: false, reversible: false };
+  const post = (reversible: boolean) => ({ id: 'post', method: 'POST' as const, url: 'https://hooks.example.com/notify', secret: null, write: true, reversible });
+  const js = (over: Partial<PluginRecord> = {}) => plugin({ entry: 'index.mjs', runtime: 'js', network: [], write: null, settings, requests: [search, post(true)], values: { url: 'http://127.0.0.1:8888' }, ...over });
+
+  it('asks for the network before a plugin with declared reads runs, naming what it reaches', async () => {
+    const h = harness([js()]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.actions[0].unit).toMatchObject({ need: 'network', hosts: ['GET {settings.url}/search'] });
+  });
+
+  it('is not run while a required setting is empty, and says which', async () => {
+    const h = harness([js({ values: {}, allow: { network: true, write: true } })]);
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(out[0].refused).toContain('Instance URL');
+  });
+
+  it('makes a declared read at the address the person set, and hands back the answer', async () => {
+    let answer: JsAnswer | null = null;
+    const h = harness([js({ allow: { network: true, write: true } })], { js: async (read) => ((answer = await read({ id: 'search', path: '/x', query: { q: 'plugins' } })), {}) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.fetched).toEqual([{ url: 'http://127.0.0.1:8888/search/x?q=plugins', method: 'GET' }]);
+    expect(answer).toMatchObject({ id: 'search', status: 200, body: '{"ok":true}' });
+  });
+
+  it('refuses a read the plugin did not declare, or one that is a write, without calling anything', async () => {
+    const answers: JsAnswer[] = [];
+    const h = harness([js({ allow: { network: true, write: true } })], { js: async (read) => (answers.push(await read({ id: 'ghost' }), await read({ id: 'post' })), {}) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.fetched).toEqual([]);
+    expect(answers.every((a) => 'refused' in a)).toBe(true);
+  });
+
+  it('sends an allowed reversible write request through the audited door', async () => {
+    const h = harness([js({ allow: { network: true, write: true } })], { js: async () => ({ writes: [{ id: 'post', body: '{"text":"done"}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.requested).toEqual([{ target: 'POST https://hooks.example.com/notify', fields: { plugin: 'web-search', request: 'post', method: 'POST' } }]);
+    expect(h.fetched).toEqual([{ url: 'https://hooks.example.com/notify', method: 'POST' }]);
+  });
+
+  it('asks for a write request it was not allowed, and sends it once the person allows it', async () => {
+    const h = harness([js({ allow: { network: true, write: false } })], { js: async () => ({ writes: [{ id: 'post', body: '{"text":"done"}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.fetched).toEqual([]);
+    const asked = h.actions.find((a) => a.kind === 'plugin-ask') as ReleaseAction;
+    expect(asked.unit).toMatchObject({ need: 'write', reversible: true, to: 'post', request: { id: 'post', target: 'POST https://hooks.example.com/notify' } });
+    await answerPluginAsk(asked.id, 'once', h.deps);
+    expect(h.requested).toHaveLength(1);
+  });
+
+  it('announces an irreversible write request, and sends it at the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness([js({ allow: { network: true, write: true }, requests: [search, post(false)] })], { armed: true, js: async () => ({ writes: [{ id: 'post', body: '{}' }] }) });
+      await firePluginEvent('stage-finished', ctx(), h.deps);
+      expect(h.requested).toEqual([]);
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(h.requested).toHaveLength(1);
+      expect(h.sent).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a write request that answers an error status is a failure the audit keeps', async () => {
+    const h = harness([js({ allow: { network: true, write: true } })], { status: 500, js: async () => ({ writes: [{ id: 'post', body: '{}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.requested).toHaveLength(1);
+  });
+
+  it('keeps plain settings in the workspace list and secrets out of it', () => {
+    const h = harness([js()]);
+    setPluginSetting('web-search', 'url', 'http://searx.local:8080', h.deps);
+    expect(h.list()[0].settings).toEqual({ url: 'http://searx.local:8080' });
+    expect(() => setPluginSetting('web-search', 'url', 'ftp://x', h.deps)).toThrow();
+    expect(() => setPluginSetting('web-search', 'token', 'x', h.deps)).toThrow();
+    const view = setPluginSecret('web-search', 'token', 'sk-test-123', h.deps);
+    expect(JSON.stringify(h.config())).not.toContain('sk-test-123');
+    expect(view.plugins[0].settings.find((x) => x.key === 'token')).toMatchObject({ value: null, filled: true });
+    setPluginSecret('web-search', 'token', '', h.deps);
+    expect(listPlugins(h.deps).plugins[0].settings.find((x) => x.key === 'token')?.filled).toBe(false);
+  });
+});
+
+describe('what the review of the requests asked for', () => {
+  const settings = [{ key: 'url', label: 'Instance URL', kind: 'url' as const, required: true }];
+  const read = { id: 'search', method: 'GET' as const, url: '{settings.url}/search', secret: null, write: false, reversible: false };
+  const post = { id: 'post', method: 'POST' as const, url: 'https://hooks.example.com/notify', secret: null, write: true, reversible: true };
+  const js = (over: Partial<PluginRecord> = {}) => plugin({ entry: 'index.mjs', runtime: 'js', network: [], write: null, settings, requests: [read, post], values: { url: 'http://127.0.0.1:8888' }, ...over });
+
+  it('lets no read of a plugin out of a test workspace', async () => {
+    guard.test = true;
+    try {
+      let answer: JsAnswer | null = null;
+      const h = harness([js({ allow: { network: true, write: true } })], { js: async (r) => ((answer = await r({ id: 'search' })), {}) });
+      await firePluginEvent('stage-finished', ctx(), h.deps);
+      expect(h.fetched).toEqual([]);
+      expect(answer).toMatchObject({ refused: expect.stringContaining('test workspace') });
+    } finally {
+      guard.test = false;
+    }
+  });
+
+  it('does not send a write whose destination changed between the request and the answer', async () => {
+    const record = js({ allow: { network: true, write: false } });
+    const h = harness([record], { js: async () => ({ writes: [{ id: 'post', body: '{}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const asked = h.actions.find((a) => a.kind === 'plugin-ask') as ReleaseAction;
+    record.requests = [read, { ...post, url: 'https://elsewhere.example.com/notify' }];
+    await answerPluginAsk(asked.id, 'once', h.deps);
+    expect(h.fetched).toEqual([]);
+    expect(h.settled.at(-1)?.note?.code).toBe('run.plugin.failed');
+  });
+
+  it('asks for no permission while a required setting is empty', async () => {
+    const h = harness([js({ values: {} })]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.actions).toEqual([]);
+  });
+
+  it('refuses a URL setting that carries a user or a password', () => {
+    const h = harness([js()]);
+    expect(() => setPluginSetting('web-search', 'url', 'https://me:pw@searx.example.com', h.deps)).toThrow();
+    expect(h.list()[0].settings).toEqual({ url: 'http://127.0.0.1:8888' });
+  });
+
+  it('keeps two different write requests of the same id apart', async () => {
+    const h = harness([js({ allow: { network: true, write: false } })], { js: async () => ({ writes: [{ id: 'post', body: '{"a":1}' }, { id: 'post', body: '{"a":2}' }] }) });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.actions.filter((a) => a.kind === 'plugin-ask')).toHaveLength(2);
+  });
+});
+
+describe('a declaration that changed', () => {
+  it('does not bring an old always of the write back when the network is allowed always for the new one', async () => {
+    const record = plugin({ write: null, allow: { network: true, write: true }, entry: 'index.mjs', runtime: 'js', network: [], requests: [{ id: 'search', method: 'GET', url: 'https://search.example.com/q', secret: null, write: false, reversible: false }] });
+    const h = harness([record]);
+    record.reach = 'r2';
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const asked = h.actions.find((a) => a.kind === 'plugin-ask') as ReleaseAction;
+    expect(asked.unit).toMatchObject({ need: 'network' });
+    await answerPluginAsk(asked.id, 'always', h.deps);
+    expect(h.list()[0]).toMatchObject({ allow: { network: true, write: false }, allowedFor: 'r2' });
+  });
+
+  it('does not keep a session permission given for another declaration', async () => {
+    const record = plugin({ write: null });
+    const h = harness([record]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    await answerPluginAsk(h.actions[0].id, 'session', h.deps);
+    expect(h.runs).toHaveLength(1);
+    record.reach = 'r2';
+    await firePluginEvent('stage-finished', ctx('r2'), h.deps);
+    expect(h.runs).toHaveLength(1);
+    expect(h.actions).toHaveLength(2);
+  });
+});
+

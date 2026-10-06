@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import type { PluginAllow, PluginConfig, PluginsConfig, RunnerSandbox } from '../../shared/config/types';
 import { neutralPlugins } from '../../shared/config/defaults';
 import { t } from '../../shared/i18n';
@@ -11,13 +12,16 @@ import { DATA_ROOT, HOME, WORKSPACE_ID } from '../env';
 import type { Module, ModuleContext } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
+import { externalRefusal } from '../workspace';
 import { recordWrite } from '../auditoria';
 import { getConfig, updateConfig } from '../workspaceConfig';
-import { announcePluginWrite, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
+import { announcePluginWrite, auditPluginRequest, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
 import { gatePluginDocuments } from '../gate';
 import { workspaceDir } from '../workspaces-core';
 import { allowOf, pluginsDirOf, pluginViews, readPlugins, withChoice } from './read';
-import { runPlugin, type PluginRun, type PluginTarget, type RunnablePlugin } from './runtime';
+import { JS_FILES_MAX_BYTES, runJsPlugin, runPlugin, type JsAnswer, type JsCall, type JsPlugin, type JsPluginRun, type PluginRun, type PluginTarget, type RunnablePlugin } from './runtime';
+import { performPluginRequest, pluginSecretRef, realTransport, requestTarget, resolvePluginRequest, type PerformedRequest, type RequestingPlugin, type ResolvedRequest } from './requests';
+import { secrets } from '../secrets';
 import type { PluginRecord, PluginsView } from './types';
 
 // The plugins of the running workspace: the folder is read at the moment of use, the list is published for the interface, and the person switches a
@@ -52,8 +56,10 @@ export interface PluginDoor {
   writes(): ReleaseAction[];
   /** Sets an announced write aside: it never goes out, and `words` say why. */
   withdraw(id: string, words: string): void;
-  /** Sends an announced write whose deadline passed. */
-  send(id: string): Promise<unknown>;
+  /** Sends an announced write whose deadline passed; `execute` makes a plugin's request instead of writing its outbox. */
+  send(id: string, execute?: (a: ReleaseAction, origin: Parameters<typeof auditPluginRequest>[0]) => Promise<string>): Promise<unknown>;
+  /** A plugin's write request through the audited door. */
+  sendRequest: typeof auditPluginRequest;
 }
 
 export interface PluginsDeps {
@@ -73,6 +79,14 @@ export interface PluginsDeps {
   sandbox(): RunnerSandbox;
   /** Runs one plugin's entry script inside the stage sandbox, with the settings the person's permission produced. */
   run(plugin: RunnablePlugin, event: PluginEvent | string, target: PluginTarget, config: RunnerSandbox, onProxy: (d: { host: string; port: number; allowed: boolean; why?: string }) => void): Promise<PluginRun>;
+  /** Runs a JavaScript plugin, with the reads it asks made through `read`. */
+  runJs(plugin: JsPlugin, event: string, context: { issue: number; stage?: string }, target: PluginTarget, config: RunnerSandbox, read: (call: JsCall) => Promise<JsAnswer>, onProxy: (d: { host: string; port: number; allowed: boolean; why?: string }) => void): Promise<JsPluginRun>;
+  /** Makes a request the app resolved for a plugin, with its secret. */
+  fetchRequest(plugin: RequestingPlugin, resolved: Extract<ResolvedRequest, { ok: true }>): Promise<PerformedRequest>;
+  /** Whether a secret setting of a plugin is filled in (never its value). */
+  secretFilled(plugin: string, key: string): boolean;
+  /** Stores (or, empty, removes) the value of a secret setting. */
+  setSecret(plugin: string, key: string, value: string): void;
   door: PluginDoor;
   /** Tells the runner a request of `runId` was answered: it goes on when none is left, and `note` goes to its conversation. */
   settled(runId: string, note: PluginNote | null): void;
@@ -92,10 +106,15 @@ export const pluginRunHooks: { settled(runId: string, note: PluginNote | null): 
 // ---- the session ---------------------------------------------------------------------------------------------------------------------------
 
 const NONE: PluginAllow = { network: false, write: false };
-const session = new Map<string, PluginAllow>();
+const session = new Map<string, { reach: string; allow: PluginAllow }>();
 
-/** What the person allowed a plugin for this session of the app. */
-export const sessionOf = (id: string): PluginAllow => session.get(id) ?? NONE;
+/** What the person allowed a plugin for this session of the app — for the declaration it had then: another one asks again, like "always". */
+export const sessionOf = (id: string, reach: string): PluginAllow => {
+  const entry = session.get(id);
+  return entry && entry.reach === reach ? entry.allow : NONE;
+};
+
+const setSession = (id: string, reach: string, change: Partial<PluginAllow>): void => void session.set(id, { reach, allow: { ...sessionOf(id, reach), ...change } });
 
 /** Forgets every session permission (the app closing does it for real; a test does it here). */
 export function clearPluginSession(): void {
@@ -127,7 +146,15 @@ export const pluginsDeps: PluginsDeps = {
   target: targetOf,
   sandbox: () => getConfig().runner.sandbox,
   run: (plugin, event, target, config, onProxy) => runPlugin({ sandbox, config, onProxy }, plugin, event, target),
-  door: { ask: proposePluginAsk, pending: pendingPluginAsks, settle: settlePluginAsk, now: writePluginNow, announce: announcePluginWrite, writes: pendingPluginWrites, withdraw: (id, words) => void withdrawPluginWrite(id, words), send: sendDuePluginWrite },
+  runJs: (plugin, event, context, target, config, read, onProxy) => runJsPlugin({ sandbox, config, executable: process.execPath, onProxy, read }, plugin, event, context, target),
+  fetchRequest: (plugin, resolved) => performPluginRequest({ transport: realTransport, secret: (ref) => (secrets().has(ref) ? secrets().resolve(ref) : null) }, plugin, resolved),
+  secretFilled: (plugin, key) => secrets().has(pluginSecretRef(plugin, key)),
+  setSecret: (plugin, key, value) => {
+    const ref = pluginSecretRef(plugin, key);
+    if (value) secrets().set({ ref, source: 'stored', value });
+    else if (secrets().has(ref)) secrets().remove(ref);
+  },
+  door: { ask: proposePluginAsk, pending: pendingPluginAsks, settle: settlePluginAsk, now: writePluginNow, announce: announcePluginWrite, writes: pendingPluginWrites, withdraw: (id, words) => void withdrawPluginWrite(id, words), send: sendDuePluginWrite, sendRequest: auditPluginRequest },
   settled: (runId, note) => pluginRunHooks.settled(runId, note),
 };
 
@@ -139,7 +166,7 @@ const waitingOf = (d: PluginsDeps) => (id: string): number => d.door.pending().f
 /** The list the interface shows: the folder, the deadline of the warning, and per plugin what it offers, asks for and was allowed. */
 export function listPlugins(d: PluginsDeps = pluginsDeps): PluginsView {
   const config = d.config();
-  return { dir: d.dir(), confirmSeconds: config.confirmSeconds, plugins: pluginViews(d.read(d.dir(), config), sessionOf, waitingOf(d)) };
+  return { dir: d.dir(), confirmSeconds: config.confirmSeconds, plugins: pluginViews(d.read(d.dir(), config), sessionOf, waitingOf(d), d.secretFilled) };
 }
 
 const recordOf = (id: string, d: PluginsDeps): PluginRecord => {
@@ -174,6 +201,43 @@ function withdrawWrites(plugin: string, words: string, d: PluginsDeps): void {
 }
 
 /**
+ * The value of one of a plugin's plain settings (text or url), on the computer. Only a declared key is taken; an empty value clears it. A url must be
+ * http(s): it is where the app will make the plugin's requests.
+ */
+export function setPluginSetting(id: string, key: string, value: string, d: PluginsDeps = pluginsDeps): PluginsView {
+  const record = recordOf(id, d);
+  const setting = record.settings.find((s) => s.key === key && s.kind !== 'secret');
+  if (!setting) throw new Error(t('main.plugins.settings.unknown', { key }));
+  const v = String(value ?? '').trim().slice(0, 2000);
+  if (v && setting.kind === 'url' && !plainUrl(v)) throw new Error(t('main.plugins.settings.badUrl', { setting: setting.label }));
+  d.save((list) => withChoice(list, record, (c) => {
+    const settings = { ...c.settings };
+    if (v) settings[key] = v;
+    else delete settings[key];
+    return { ...c, settings };
+  }));
+  return listPlugins(d);
+}
+
+/** An http(s) address with no user or password in it: a credential belongs in a secret setting, never in plain text. */
+function plainUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+/** The value of one of a plugin's secret settings, on the computer: it goes to the secrets store by reference; empty, it is removed. */
+export function setPluginSecret(id: string, key: string, value: string, d: PluginsDeps = pluginsDeps): PluginsView {
+  const record = recordOf(id, d);
+  if (!record.settings.some((s) => s.key === key && s.kind === 'secret')) throw new Error(t('main.plugins.settings.unknown', { key }));
+  d.setSecret(record.id, key, String(value ?? '').trim());
+  return listPlugins(d);
+}
+
+/**
  * Where the plugins are read from and how long an allowed irreversible write is announced. The folder decides what code the app runs, so this is the
  * computer's only, like the switch. An empty folder goes back to the plugins folder of the workspace's data.
  */
@@ -187,8 +251,8 @@ export function setPluginSettings(dir: string, confirmSeconds: number, d: Plugin
 /** Takes back what a plugin was allowed (always and for the session): it asks again the next time it needs it. Only the computer does this. */
 export function revokePluginAllow(id: string, need: PluginNeed, d: PluginsDeps = pluginsDeps): PluginsView {
   const record = recordOf(id, d);
-  d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [need]: false } })));
-  session.set(id, { ...sessionOf(id), [need]: false });
+  d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, [need]: false }, allowedFor: record.reach })));
+  setSession(id, record.reach, { [need]: false });
   // A write already announced went out on this permission: taking it back stops it too.
   if (need === 'write') withdrawWrites(id, t('main.plugins.write.revoked'), d);
   return listPlugins(d);
@@ -219,13 +283,20 @@ export async function firePluginEvent(event: PluginEvent, context: PluginContext
 
 /** One call of one plugin, with what the person allowed it now and, when an answer is being carried out, what that answer allowed for this call. */
 async function callPlugin(record: PluginRecord, event: string, context: PluginContext, d: PluginsDeps, once: Partial<PluginAllow>): Promise<PluginRun> {
-  const permission: PluginPermission = { allow: record.allow, session: sessionOf(record.id), once };
+  const permission: PluginPermission = { allow: record.allow, session: sessionOf(record.id, record.reach), once };
   const target = context.runId ? d.target(context.runId) : null;
   if (!target) return fail(record.id, t('main.plugins.refusal.noRun', { plugin: record.name }));
-  if (!mayReachNetwork(record.network, permission)) {
-    const refused = ask(record, 'network', event, context, d, { hosts: record.network });
+  // A plugin that cannot run (a required setting is empty) is not asked a permission for.
+  const missing = record.settings.find((s) => s.required && (s.kind === 'secret' ? !d.secretFilled(record.id, s.key) : !(record.values[s.key] ?? '').trim()));
+  if (missing) return fail(record.id, t('main.plugins.refusal.setting', { plugin: record.name, setting: missing.label }));
+  // What the plugin reaches: the hosts its sandbox goes to and the reads it asks the app to make. Either needs the network permission.
+  const reads = record.requests.filter((r) => !r.write);
+  const reached = [...record.network, ...reads.map((r) => `${r.method} ${r.url}`)];
+  if (!mayReachNetwork(reached, permission)) {
+    const refused = ask(record, 'network', event, context, d, { hosts: reached });
     return fail(record.id, refused ?? t('main.plugins.waiting.network', { plugin: record.name }));
   }
+  if (record.runtime === 'js') return callJs(record, event, context, target, permission, d);
   const script = scriptOf(record);
   if (script === null) return fail(record.id, t('main.plugins.refusal.entry', { plugin: record.name }));
   const config = pluginNetworkSandbox(d.sandbox(), record.network, permission);
@@ -243,6 +314,116 @@ async function callPlugin(record: PluginRecord, event: string, context: PluginCo
   return result;
 }
 
+/** A JavaScript plugin's call: it runs with the reads made by the app, and what it asked to write follows the permission contract. */
+async function callJs(record: PluginRecord, event: string, context: PluginContext, target: PluginTarget, permission: PluginPermission, d: PluginsDeps): Promise<PluginRun> {
+  const files = jsFilesOf(record);
+  if (!files || !record.entry) return fail(record.id, t('main.plugins.refusal.entry', { plugin: record.name }));
+  const plain = Object.fromEntries(record.settings.filter((s) => s.kind !== 'secret').map((s) => [s.key, record.values[s.key] ?? '']));
+  const config = pluginNetworkSandbox(d.sandbox(), record.network, permission);
+  const result = await d.runJs({ id: record.id, files, entry: record.entry, settings: plain, documents: record.documents.map((x) => ({ ...x, title: x.label })) }, event, { issue: context.issue, stage: context.stage }, target, config, (call) => readFor(record, call, context, d), (decision) => auditProxy(record, context, decision));
+  if (!result.ok) return result;
+  for (const call of result.writes) {
+    const refused = await writeFor(record, call, event, context, permission, d);
+    if (refused) return { ...result, refused };
+  }
+  return result;
+}
+
+/** A read a JavaScript plugin asked for: checked against its declaration, made by the app with its secret, and written in the audit log. */
+async function readFor(record: PluginRecord, call: JsCall, context: PluginContext, d: PluginsDeps): Promise<JsAnswer> {
+  const resolved = resolvePluginRequest(record, call);
+  if (!resolved.ok) return { id: call.id, refused: resolved.refused };
+  if (resolved.decl.write || resolved.method !== 'GET') return { id: call.id, refused: t('main.plugins.request.isWrite', { id: call.id.slice(0, 40) }) };
+  // A test workspace widens nothing: no request of a plugin goes out of it, a read included.
+  const test = externalRefusal(t('main.plugins.request.title'));
+  if (test) return { id: call.id, refused: test };
+  const done = await d.fetchRequest(record, resolved);
+  auditRequest(record, context, requestTarget(resolved), done.ok ? done.status < 400 : false, done.ok ? `HTTP ${done.status}` : done.refused);
+  return done.ok ? { id: call.id, status: done.status, contentType: done.contentType, body: done.body, truncated: done.truncated } : { id: call.id, refused: done.refused };
+}
+
+/** The words a write request is shown with: where it goes and what it sends. */
+const describeCall = (target: string, call: JsCall): string => [target, call.body ?? ''].filter(Boolean).join('\n\n');
+
+/** A write a JavaScript plugin asked for: it goes out, is announced, or becomes a request, exactly like the write of a plugin's outbox. */
+async function writeFor(record: PluginRecord, call: JsCall, event: string, context: PluginContext, permission: PluginPermission, d: PluginsDeps): Promise<string | null> {
+  const resolved = resolvePluginRequest(record, call);
+  if (!resolved.ok) return resolved.refused;
+  if (!resolved.decl.write) return t('main.plugins.request.isRead', { id: call.id });
+  const target = requestTarget(resolved);
+  const request = { ...call, target, reach: record.reach };
+  const step = pluginWriteStep({ to: resolved.decl.id, reversible: resolved.decl.reversible }, 'x', permission);
+  const summary = t('main.plugins.request.summary', { plugin: record.name, target });
+  if (step === 'go') {
+    await sendRequestWrite(record, request, { issue: context.issue, key: `plugin-request:${record.id}:${Date.now()}`, summary, plugin: record.id }, d).catch((e) => console.error('[plugins] a write request', e instanceof Error ? e.message : e));
+    return null;
+  }
+  const write = { plugin: record.id, to: resolved.decl.id, text: describeCall(target, call) };
+  if (step === 'announce') {
+    try {
+      const a = d.door.announce({ key: `plugin-write:${record.id}:${context.runId ?? '-'}:${Date.now()}`, issue: context.issue, issueTitle: context.issueTitle, summary, runId: context.runId ?? null, seconds: d.config().confirmSeconds, write, request });
+      if (a) arm(a, d);
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    return null;
+  }
+  return ask(record, 'write', event, context, d, { text: write.text, reversible: resolved.decl.reversible, request, to: resolved.decl.id });
+}
+
+/** Makes a plugin's write request through the audited door; a refusal or an error status is a failure the audit log keeps. */
+async function sendRequestWrite(record: PluginRecord, request: JsCall & { target: string; reach?: string }, origin: Parameters<typeof auditPluginRequest>[0], d: PluginsDeps): Promise<string> {
+  const resolved = resolvePluginRequest(record, request);
+  if (!resolved.ok) throw new Error(resolved.refused);
+  // What goes out is what the person saw: a declaration or a setting that changed since leads the call elsewhere, and it does not go.
+  const target = requestTarget(resolved);
+  // The whole declaration counts, not only the address: where the key goes or how it is written changed is another request too.
+  if (target !== request.target || (request.reach !== undefined && request.reach !== record.reach)) throw new Error(t('main.plugins.write.changed'));
+  return d.door.sendRequest(origin, target, { plugin: record.id, request: resolved.decl.id, method: resolved.method }, async () => {
+    const done = await d.fetchRequest(record, resolved);
+    if (!done.ok) throw new Error(done.refused);
+    if (done.status >= 400) throw new Error(t('main.plugins.request.status', { id: resolved.decl.id, status: done.status }));
+    return t('main.plugins.request.sent', { target: request.target, status: done.status });
+  });
+}
+
+/** The files of a JavaScript plugin's folder the app hands over (`.mjs`, `.js`, `.json`), or null when the folder cannot be read or is too big. */
+function jsFilesOf(record: PluginRecord): Record<string, string> | null {
+  try {
+    const root = realpathSync(record.dir);
+    const out: Record<string, string> = {};
+    let total = 0;
+    const walk = (dir: string, depth: number): void => {
+      if (depth > 4) return;
+      for (const name of readdirSync(dir)) {
+        if (name.startsWith('.') || name === 'node_modules') continue;
+        const path = join(dir, name);
+        const st = lstatSync(path);
+        if (st.isSymbolicLink()) continue;
+        if (st.isDirectory()) walk(path, depth + 1);
+        else if (st.isFile() && /\.(mjs|js|json)$/.test(name)) {
+          total += st.size;
+          if (total > JS_FILES_MAX_BYTES) throw new Error('too big');
+          out[relative(root, path).split(sep).join('/')] = readFileSync(path, 'utf8');
+        }
+      }
+    };
+    walk(root, 0);
+    return record.entry && out[record.entry] !== undefined ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A read a plugin asked the app to make is a fact of the audit log: what a plugin reached is never invisible. Never the query, the body or the secret. */
+function auditRequest(record: PluginRecord, context: PluginContext, target: string, ok: boolean, result: string): void {
+  try {
+    recordWrite({ kind: 'plugin-request', issue: context.issue, target, via: 'plugin', fields: { plugin: record.id }, ok, code: null, result, origin: { actionId: '', kind: 'plugin', key: record.id, summary: null }, by: record.id });
+  } catch (e) {
+    console.error('[plugins] could not record a request', e instanceof Error ? e.message : e);
+  }
+}
+
 /** The entry script's text, read from inside the plugin folder (no link out of it), or null when it cannot be read. */
 function scriptOf(record: PluginRecord): string | null {
   if (!record.entry) return null;
@@ -257,12 +438,12 @@ function scriptOf(record: PluginRecord): string | null {
 }
 
 /** Opens the request of a plugin, or returns why it could not be opened (a test workspace widens nothing). */
-function ask(record: PluginRecord, need: PluginNeed, event: string, context: PluginContext, d: PluginsDeps, extra: { hosts?: string[]; text?: string }): string | null {
-  const reversible = need === 'write' ? record.write?.reversible === true : true;
-  const unit: PluginAskUnit = { plugin: record.id, name: record.name, need, reversible, runId: context.runId ?? null, event, stage: context.stage ?? null, hosts: extra.hosts ?? [], to: record.write?.to ?? null, text: extra.text ?? '' };
+function ask(record: PluginRecord, need: PluginNeed, event: string, context: PluginContext, d: PluginsDeps, extra: { hosts?: string[]; text?: string; reversible?: boolean; to?: string; request?: PluginAskUnit['request'] }): string | null {
+  const reversible = need === 'write' ? (extra.reversible ?? record.write?.reversible === true) : true;
+  const unit: PluginAskUnit = { plugin: record.id, name: record.name, need, reversible, runId: context.runId ?? null, event, stage: context.stage ?? null, hosts: extra.hosts ?? [], to: extra.to ?? record.write?.to ?? null, text: extra.text ?? '', ...(extra.request ? { request: extra.request } : {}) };
   try {
     d.door.ask({
-      key: askKey(record.id, need, event, context),
+      key: `${askKey(record.id, need, event, context)}${extra.request ? `:${extra.request.id}:${createHash('sha256').update(JSON.stringify([extra.request.path, extra.request.query, extra.request.body])).digest('hex').slice(0, 12)}` : ''}`,
       issue: context.issue,
       issueTitle: context.issueTitle,
       summary: t(`main.plugins.ask.summary.${need}`, { plugin: record.name }),
@@ -304,8 +485,10 @@ export async function answerPluginAsk(id: string, answer: PluginAnswer, d: Plugi
     return listPlugins(d);
   }
   const record = d.read(d.dir(), d.config()).find((r) => r.id === unit.plugin && !r.refused) ?? null;
-  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), [unit.need]: true } })));
-  if (answer === 'session') session.set(unit.plugin, { ...sessionOf(unit.plugin), [unit.need]: true });
+  // Built on what holds now (`record.allow`, already empty for a declaration that changed), never on what was stored: allowing the network for a new
+  // declaration must not bring an old "always" of its write back to life.
+  if (answer === 'always' && record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, [unit.need]: true }, allowedFor: record.reach })));
+  if (answer === 'session' && record) setSession(unit.plugin, record.reach, { [unit.need]: true });
   // "Session" and "always" answer every request of the plugin for the same thing; "once" answers this one.
   const answered = answer === 'once' ? [action] : d.door.pending().filter((a) => unitOf(a).plugin === unit.plugin && unitOf(a).need === unit.need);
   for (const a of answered) d.door.settle(a.id, true, t(`main.plugins.ask.allowed.${answer}`));
@@ -325,6 +508,18 @@ async function carryOut(a: ReleaseAction, record: PluginRecord | null, d: Plugin
       if (unit.need === 'network') {
         const done = await callPlugin(d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record, unit.event, context, d, { network: true });
         if (!done.ok && done.refused) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: done.refused } };
+      } else if (unit.request) {
+        // A JavaScript plugin's write request, carried out on the declaration as it is now: a request that is gone, or became irreversible without the
+        // permission to go always, does not go out.
+        const fresh = d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record;
+        const decl = fresh.requests.find((r) => r.id === unit.request?.id && r.write);
+        const origin = { issue: a.issue, key: `${a.key}:go`, summary: a.summary ?? '', plugin: unit.plugin };
+        if (!decl) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: t('main.plugins.write.changed') } };
+        else if (decl.reversible) await sendRequestWrite(fresh, unit.request, origin, d);
+        else if (fresh.allow.write) {
+          const announced = d.door.announce({ key: `plugin-write:${fresh.id}:${runId ?? '-'}:${Date.now()}`, issue: a.issue, issueTitle: a.issueTitle, summary: a.summary ?? '', runId: runId ?? null, seconds: d.config().confirmSeconds, write: { plugin: unit.plugin, to: decl.id, text: unit.text }, request: unit.request });
+          if (announced) arm(announced, d);
+        } else note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: t('main.plugins.write.changed') } };
       } else {
         // The declaration is read again: a write that became irreversible since it asked never goes out at once, and one that is gone goes nowhere.
         const fresh = d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record;
@@ -366,7 +561,8 @@ async function sendIfAllowed(id: string, d: PluginsDeps): Promise<void> {
     d.door.withdraw(id, t(record && record.enabled && !record.refused ? 'main.plugins.write.revoked' : 'main.plugins.write.pluginOff'));
     return;
   }
-  await d.door.send(id);
+  const request = (a.unit ?? {}).request as PluginAskUnit['request'] | undefined;
+  await d.door.send(id, request ? () => sendRequestWrite(record, request, { issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary }, d) : undefined);
 }
 
 /** Arms the moment an announced write goes out: at its deadline, unless the person blocked it meanwhile. */
@@ -397,8 +593,10 @@ export async function revokePluginWrite(actionId: string, d: PluginsDeps = plugi
   d.door.withdraw(actionId, t('main.plugins.write.revoked'));
   const plugin = String((a.unit ?? {}).plugin ?? '');
   const record = d.read(d.dir(), d.config()).find((r) => r.id === plugin);
-  if (record) d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...allowOf(c.allow), write: false } })));
-  session.set(plugin, { ...sessionOf(plugin), write: false });
+  if (record) {
+    d.save((list) => withChoice(list, record, (c) => ({ ...c, allow: { ...record.allow, write: false }, allowedFor: record.reach })));
+    setSession(plugin, record.reach, { write: false });
+  }
   return listPlugins(d);
 }
 
@@ -435,6 +633,8 @@ export const pluginsModule: Module = (ctx: ModuleContext) => {
   // Blocking an announced write is `actions:skip`, which a paired browser may do: it only ever takes something away.
   ctx.handle('plugins:set-enabled', (id: string, enabled: boolean) => setPluginEnabled(String(id), enabled === true));
   ctx.handle('plugins:settings', (dir: string, confirmSeconds: number) => setPluginSettings(String(dir ?? ''), Number(confirmSeconds)));
+  ctx.handle('plugins:set-setting', (id: string, key: string, value: string) => setPluginSetting(String(id), String(key), String(value ?? '')));
+  ctx.handle('plugins:set-secret', (id: string, key: string, value: string) => setPluginSecret(String(id), String(key), String(value ?? '')));
   ctx.handle('plugins:answer', (id: string, answer: PluginAnswer) => answerPluginAsk(String(id), answer));
   ctx.handle('plugins:revoke', (id: string, need: PluginNeed) => {
     if (!isPluginNeed(need)) throw new Error(t('main.plugins.ask.badAnswer'));

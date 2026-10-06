@@ -1,5 +1,5 @@
 import type { PluginAllow } from '../config/types';
-import type { PluginWrite } from './declaration';
+import type { PluginRequestDecl, PluginSetting, PluginWrite } from './declaration';
 
 // What the interface is told about the plugins of the workspace: shared by the main process, which builds it, and the window, which shows it.
 
@@ -17,6 +17,10 @@ export interface PluginView {
   allow: PluginAllow;
   /** Allowed for this session of the app. */
   session: PluginAllow;
+  /** Settings it declares, with the value of each plain one and whether each secret one is filled in (never its value). */
+  settings: (PluginSetting & { value: string | null; filled: boolean; goesTo: string[] })[];
+  /** Requests it may ask the app to make. */
+  requests: Pick<PluginRequestDecl, 'id' | 'method' | 'url' | 'write' | 'reversible'>[];
   /** Requests of this plugin waiting for the person in Actions. */
   waiting: number;
   refused: string | null;

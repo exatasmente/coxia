@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins in JavaScript, with settings and requests the app makes for them.** A plugin whose entry is an `.mjs` module runs in the stage sandbox through the app's own runtime (nothing to install) and gets a typed context (`docs/plugins/kit/coxia-plugin.d.ts`). It may declare settings the person fills in the plugin list — a URL, a text or a key; a key goes to the secrets store and never reaches the plugin — and requests the app makes for it, outside the sandbox, to a declared address or to one the person set (a local instance included), with the key put in by the app. Reads need the plugin's network permission; writes follow the same permission contract as a plugin's write. Every call is in the audit log, without the key and without the body. A declared address only reaches a public host name, checked on the address connected to; only an address you set reaches a local one; only a GET is a read. An "always" now holds for what the plugin declared when it was given: if the declaration changes, the plugin asks again (one given in an earlier beta asks once more). Configuration schema 15.
+
 ## [0.7.0-beta.7] - 2026-10-06
 
 ### Added

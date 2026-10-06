@@ -5,6 +5,7 @@
   "ui.audit.kind.exec": "Comando na sandbox",
   "ui.audit.kind.minutes": "Atas",
   "ui.audit.kind.noteEdit": "Edição de nota",
+  "ui.audit.kind.pluginRequest": "Requisição de plugin",
   "ui.audit.kind.pluginWrite": "Escrita de plugin",
   "ui.audit.kind.publish": "Publicação",
   "ui.audit.kind.push": "Push de branch",

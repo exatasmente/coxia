@@ -7,7 +7,7 @@ import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { tail } from '../runner/commands';
 import { MAX_IMAGE_BYTES, imageMediaType } from '../imageType';
-import { FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
+import { CTL, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
 import { SandboxError } from './errors';
 import { removeTree } from './remove';
 
@@ -51,6 +51,17 @@ export interface SandboxSession {
   readonly gui?: SandboxGui;
   /** Reads an image the stage saved in its output folder (`/coxia/out` inside); absent where there is no such folder (a host session). */
   readImage?(path: string): ImageRead;
+  /**
+   * Hands a file to the inside, read-only, without a command: the app writes it into the stage's control folder, which the sandbox sees at `/coxia/ctl`.
+   * Returns the path inside. For what is too big for a command (a plugin's code, the responses the app fetched for it). Absent where there is no such
+   * folder (a host session).
+   */
+  put?(name: string, content: string): string;
+  /**
+   * Reads a text file a command left in the stage's output folder (`/coxia/out` inside), whole, never through a link and up to `max` bytes; null when it
+   * is not there, is not a plain file or is bigger. For a result too long for a command's output (a plugin's). Absent where there is no such folder.
+   */
+  take?(name: string, max: number): string | null;
   /** Runs one command; one at a time per stage (calls queue). Never throws for a command that fails. */
   exec(command: string): Promise<ExecResult>;
   /** Every command of the stage, in order, with what it did. */
@@ -273,6 +284,13 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   return {
     ...(gui ? { gui } : {}),
     readImage: (path) => readOutputImage(out, path),
+    take: (name, max) => readOutputText(out, name, max),
+    put: (name, content) => {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) throw new SandboxError('path-refused', { path: name });
+      mkdirSync(join(ctl, 'files'), { recursive: true, mode: 0o700 });
+      writeFileSync(join(ctl, 'files', name), content, { mode: 0o600 });
+      return `${CTL}/files/${name}`;
+    },
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
@@ -287,6 +305,29 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
 
 /** Where the stage's output folder shows up inside the sandbox: the only place the agent saves images it wants to look at. */
 export const OUTPUT_DIR = OUT;
+
+/** A plain text file of the output folder, read without following a link; null when missing, not a file, or over `max` bytes. */
+export function readOutputText(outDir: string, name: string, max: number): string | null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) return null;
+  let fd: number | null = null;
+  try {
+    fd = openSync(join(outDir, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > max) return null;
+    const buf = Buffer.alloc(st.size);
+    let got = 0;
+    while (got < st.size) {
+      const n = readSync(fd, buf, got, st.size - got, got);
+      if (n <= 0) break;
+      got += n;
+    }
+    return buf.subarray(0, got).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
 
 /**
  * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside

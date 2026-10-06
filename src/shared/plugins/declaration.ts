@@ -30,6 +30,39 @@ export interface PluginWrite {
   reversible: boolean;
 }
 
+/** A value the person fills in for the plugin, on the computer. A `secret` goes to the secrets store by reference and never reaches the plugin. */
+export interface PluginSetting {
+  key: string;
+  label: string;
+  kind: 'text' | 'url' | 'secret';
+  required: boolean;
+}
+
+/** Where the app puts a secret in a request it makes for the plugin. */
+export interface PluginRequestSecret {
+  /** The `secret` setting whose value goes in. */
+  setting: string;
+  in: 'header' | 'query';
+  /** The header or query parameter name. */
+  name: string;
+  /** How the value is written, with `{secret}` where it goes ("Bearer {secret}"). */
+  format: string;
+}
+
+/**
+ * A request a JavaScript plugin may ask the app to make. `url` is absolute (`https://host/path`) or starts with `{settings.<key>}` of a `url` setting
+ * (then the person's own address, local ones included). The path declared is the prefix the plugin may extend. Without `write`, it is a read.
+ */
+export interface PluginRequestDecl {
+  id: string;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  url: string;
+  secret: PluginRequestSecret | null;
+  write: boolean;
+  /** For a write: whether it can be undone; silence is irreversible. */
+  reversible: boolean;
+}
+
 /** What the plugin says it offers. */
 export interface PluginOffers {
   /** Events of the fixed catalog it observes. */
@@ -42,6 +75,12 @@ export interface PluginOffers {
   write: PluginWrite | null;
   /** Script the app runs when an observed event happens, relative to the plugin folder. null: the plugin only offers documents. */
   entry: string | null;
+  /** How the entry runs: a shell script, or a JavaScript module (`.mjs`) the app runs with its own runtime. */
+  runtime: 'shell' | 'js';
+  /** Values the person fills in (JavaScript plugins only). */
+  settings: PluginSetting[];
+  /** Requests the plugin may ask the app to make (JavaScript plugins only). */
+  requests: PluginRequestDecl[];
 }
 
 export interface PluginDeclaration {
@@ -71,6 +110,11 @@ const REASONS = {
   write: 'the write destination is not a plain name',
   entry: 'the entry script is not a plain file name inside the plugin folder',
   network: 'a network destination is not a host name',
+  setting: 'a setting has no plain key, a repeated key or a kind other than text, url or secret',
+  request: 'a request has no plain id, a repeated id, a method other than GET, POST, PUT, PATCH or DELETE, or an address that is not https:// or a url setting',
+  requestSecret: 'a request puts a secret that is not a secret setting, or in a place other than a header or a query parameter',
+  needsJs: 'settings and requests need a JavaScript entry (.mjs)',
+  readMethod: 'a request with a method other than GET has to be declared a write',
 } as const;
 
 const asObject = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
@@ -86,6 +130,28 @@ function escapes(folder: string): boolean {
 
 /** A plain file name: what an entry script and a write destination are, so neither can lead out of where the app puts them. */
 const PLAIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+const SETTING_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+const REQUEST_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const METHODS: PluginRequestDecl['method'][] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+/**
+ * A declared request address: `https://` with a host name (no credentials, query or fragment), or `{settings.<key>}` of a declared `url` setting
+ * followed by nothing or a path.
+ */
+function requestUrlOk(url: string, settings: PluginSetting[]): boolean {
+  const fromSetting = /^\{settings\.([A-Za-z][A-Za-z0-9_]{0,39})\}(\/[^?#\s]*)?$/.exec(url);
+  if (fromSetting) return settings.some((x) => x.key === fromSetting[1] && x.kind === 'url');
+  try {
+    const u = new URL(url);
+    // A host name, never an address or a local name: what a declared request reaches is public (the address is checked again when it connects).
+    const literal = /^\d+(\.\d+){3}$/.test(u.hostname) || u.hostname.startsWith('[');
+    const local = u.hostname === 'localhost' || /\.(localhost|local|internal)$/.test(u.hostname) || !u.hostname.includes('.');
+    return u.protocol === 'https:' && HOST.test(u.hostname) && !literal && !local && !u.username && !u.password && !u.search && !u.hash;
+  } catch {
+    return false;
+  }
+}
 
 /** A host name the app would accept for the network, or null. */
 const HOST = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
@@ -148,6 +214,42 @@ export function readPluginDeclaration(text: string, folder: string): PluginReadi
 
   const entry = str(offers.entry);
   if (entry && (escapes(entry) || !PLAIN_NAME.test(entry))) return refuse(REASONS.entry);
+  const runtime: 'shell' | 'js' = entry.endsWith('.mjs') ? 'js' : 'shell';
 
-  return { declaration: { id, name, contract, offers: { events, documents, network, write, entry: entry || null } }, refused: null };
+  const settings: PluginSetting[] = [];
+  for (const raw of list(offers.settings)) {
+    const o = asObject(raw);
+    const key = o ? str(o.key) : '';
+    const kind = o ? str(o.kind) : '';
+    if (!SETTING_KEY.test(key) || settings.some((x) => x.key === key) || (kind !== 'text' && kind !== 'url' && kind !== 'secret')) return refuse(REASONS.setting);
+    // A secret is stored as `plugin.<id>.<key>`, and a reference has at most 64 characters.
+    if (kind === 'secret' && `plugin.${id}.${key}`.length > 64) return refuse(REASONS.setting);
+    settings.push({ key, label: str(o?.label) || key, kind, required: o?.required === true });
+  }
+
+  const requests: PluginRequestDecl[] = [];
+  for (const raw of list(offers.requests)) {
+    const o = asObject(raw);
+    const reqId = o ? str(o.id) : '';
+    const method = (o ? str(o.method) : '').toUpperCase() || 'GET';
+    const url = o ? str(o.url) : '';
+    if (!REQUEST_ID.test(reqId) || requests.some((x) => x.id === reqId) || !METHODS.includes(method as PluginRequestDecl['method']) || !requestUrlOk(url, settings)) return refuse(REASONS.request);
+    const rawSecret = asObject(o?.secret);
+    let secret: PluginRequestSecret | null = null;
+    if (rawSecret) {
+      const setting = str(rawSecret.setting);
+      const where = str(rawSecret.in) || 'header';
+      const paramName = str(rawSecret.name);
+      const format = str(rawSecret.format) || '{secret}';
+      if (!settings.some((x) => x.key === setting && x.kind === 'secret') || (where !== 'header' && where !== 'query') || !/^[A-Za-z0-9_-]{1,64}$/.test(paramName) || !format.includes('{secret}')) return refuse(REASONS.requestSecret);
+      secret = { setting, in: where, name: paramName, format };
+    }
+    const isWrite = o?.write === true;
+    // Only a GET is a read: anything else changes something on the other side, so it has to be declared a write and go through the write's permission.
+    if (method !== 'GET' && !isWrite) return refuse(REASONS.readMethod);
+    requests.push({ id: reqId, method: method as PluginRequestDecl['method'], url, secret, write: isWrite, reversible: isWrite && o?.reversible === true });
+  }
+  if ((settings.length || requests.length) && runtime !== 'js') return refuse(REASONS.needsJs);
+
+  return { declaration: { id, name, contract, offers: { events, documents, network, write, entry: entry || null, runtime, settings, requests } }, refused: null };
 }

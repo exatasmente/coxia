@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import type { PluginAllow, PluginConfig, PluginsConfig } from '../../shared/config/types';
 import { readPluginDeclaration } from '../../shared/plugins/declaration';
@@ -34,18 +35,30 @@ export const allowOf = (raw: unknown): PluginAllow => {
   return { network: o?.network === true, write: o?.write === true };
 };
 
+/** The values of the plain settings, read leniently: only string values. */
+export const settingsOf = (raw: unknown): Record<string, string> => {
+  const o = asObject(raw);
+  return o ? Object.fromEntries(Object.entries(o).filter((e): e is [string, string] => typeof e[1] === 'string')) : {};
+};
+
+/** A digest of everything a declaration says it reaches: its hosts, its requests (method, address, where a secret goes, read or write) and its write. */
+export function reachOf(offers: { network: string[]; requests: PluginRecord['requests']; write: PluginRecord['write'] }): string {
+  const requests = offers.requests.map((r) => [r.id, r.method, r.url, r.secret ? [r.secret.setting, r.secret.in, r.secret.name, r.secret.format] : null, r.write, r.reversible]);
+  return createHash('sha256').update(JSON.stringify([[...offers.network].sort(), requests, offers.write])).digest('hex').slice(0, 32);
+}
+
 /** The choices as the config stored them, keyed by identity. The config keeps only the person's decision: everything else is read again from the folder. */
 function choicesOf(config: PluginsConfig): Map<string, PluginConfig> {
   const out = new Map<string, PluginConfig>();
   for (const p of config.list ?? []) {
-    if (p && typeof p.id === 'string') out.set(p.id, { id: p.id, folder: p.folder ?? null, enabled: p.enabled === true, allow: allowOf(p.allow) });
+    if (p && typeof p.id === 'string') out.set(p.id, { id: p.id, folder: p.folder ?? null, enabled: p.enabled === true, allow: allowOf(p.allow), ...(typeof p.allowedFor === 'string' ? { allowedFor: p.allowedFor } : {}), settings: settingsOf(p.settings) });
   }
   return out;
 }
 
 /** Refuses a folder-wide read with a reason the person reads. */
 function refusedRecord(folder: string, reason: string): PluginRecord {
-  return { id: '', name: folder, dir: folder, enabled: false, allow: NONE, documents: [], events: [], network: [], write: null, entry: null, refused: reason };
+  return { id: '', name: folder, dir: folder, enabled: false, allow: NONE, documents: [], events: [], network: [], write: null, entry: null, runtime: 'shell', settings: [], values: {}, requests: [], reach: '', refused: reason };
 }
 
 /**
@@ -90,17 +103,24 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
     }
     seen.add(d.id);
     const choice = choices.get(d.id);
+    const reach = reachOf(d.offers);
     out.push({
       id: d.id,
       name: d.name,
       dir: folder,
       enabled: choice?.enabled ?? false,
-      allow: choice?.allow ?? NONE,
+      // "Always" was given for what the plugin declared then; a declaration that reaches somewhere else is asked again.
+      allow: choice && choice.allowedFor === reach ? choice.allow : NONE,
       documents: d.offers.documents,
       events: [...d.offers.events],
       network: d.offers.network,
       write: d.offers.write,
       entry: d.offers.entry,
+      runtime: d.offers.runtime,
+      settings: d.offers.settings,
+      values: choice?.settings ?? {},
+      requests: d.offers.requests,
+      reach,
       refused: null,
     });
   }
@@ -116,7 +136,7 @@ export function pluginsDirOf(config: PluginsConfig, home: string, dataDir: strin
 }
 
 /** The list the person sees: name, what it offers, what it asks for, what it was allowed and whether it is on. */
-export function pluginViews(records: PluginRecord[], session: (id: string) => PluginAllow, waiting: (id: string) => number): PluginView[] {
+export function pluginViews(records: PluginRecord[], session: (id: string, reach: string) => PluginAllow, waiting: (id: string) => number, secretFilled: (id: string, key: string) => boolean = () => false): PluginView[] {
   return records.map((r) => ({
     id: r.id,
     name: r.name,
@@ -127,7 +147,9 @@ export function pluginViews(records: PluginRecord[], session: (id: string) => Pl
     network: r.network,
     write: r.write,
     allow: r.allow,
-    session: session(r.id),
+    session: session(r.id, r.reach),
+    settings: r.settings.map((x) => ({ ...x, value: x.kind === 'secret' ? null : (r.values[x.key] ?? ''), filled: x.kind === 'secret' ? secretFilled(r.id, x.key) : !!r.values[x.key]?.trim(), goesTo: x.kind === 'secret' ? r.requests.filter((q) => q.secret?.setting === x.key).map((q) => `${q.method} ${q.url}`) : [] })),
+    requests: r.requests.map(({ id, method, url, write, reversible }) => ({ id, method, url, write, reversible })),
     waiting: waiting(r.id),
     refused: r.refused,
   }));
@@ -138,8 +160,8 @@ export function pluginViews(records: PluginRecord[], session: (id: string) => Pl
  * entry (and what it was allowed), and the list is never rebuilt from what is on disk at that moment.
  */
 export function withChoice(list: PluginConfig[], record: Pick<PluginRecord, 'id' | 'dir'>, change: (c: PluginConfig) => PluginConfig): PluginConfig[] {
-  const before = list.find((c) => c.id === record.id) ?? { id: record.id, folder: record.dir, enabled: false, allow: NONE };
-  const next = change({ ...before, folder: record.dir, allow: allowOf(before.allow) });
+  const before = list.find((c) => c.id === record.id) ?? { id: record.id, folder: record.dir, enabled: false, allow: NONE, settings: {} };
+  const next = change({ ...before, folder: record.dir, allow: allowOf(before.allow), settings: settingsOf(before.settings) });
   return list.some((c) => c.id === record.id) ? list.map((c) => (c.id === record.id ? next : c)) : [...list, next];
 }
 
