@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The push a run proposes after the implementation goes out while the review works.** Since the push moved to the end of the implementation, saying yes to it while the next stage (the review) was still working failed with *the worktree has changes that are not committed*: that stage writes the conversation's handovers into the cycle memory as it starts and commits them when it ends. The push now sends what is committed and leaves the memory for that stage's commit; any other change that is not committed still stops it.
+
 ### Added
 
 - **The project documentation: a `.coxia/` folder in each repository, which the agents of the app read.** It holds the overview (`README.md`), the rules of each domain (`rules/`), the procedures an agent follows (`skills/`) and notes per role of the team (`roles/`), versioned with the code and reviewed in a pull request. Each file opens with a short header: the commit and the day it was checked against, the files that are its evidence (`file:line`) and, if you want, the stages or agents it is for. A rule whose cited code changed since the commit it was checked against is marked **not checked**, and stays so until an approved change updates its header; there is no button to mark it by hand. Each call hands an agent the overview, the files for its stage, its role and the paths the work touches, and an index of the rest, within a budget per call (24,000 characters, less for a model that declares a small context window); what does not fit is said, never cut in silence, and a file not checked reaches the agent marked. A repository with no `.coxia/` adds no text. See `docs/harness.md`.

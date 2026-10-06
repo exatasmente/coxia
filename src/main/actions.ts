@@ -9,6 +9,7 @@ import { crRef } from '../shared/vcs';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
+import { MEMORY_FILE } from '../shared/runs/output';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { runStore } from './runs';
@@ -1036,8 +1037,11 @@ async function publishRunBranch(a: ReleaseAction): Promise<string> {
   if (!existsSync(run.worktree)) throw new Error(t('main.conflictGit.worktreeGone'));
   const here = (await git(run.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
   if (here !== run.branch) throw new Error(t('main.actions.pushWrongBranch', { branch: run.branch, here }));
-  // What the agents did is committed by the app after each stage: a change that is not committed would silently stay behind.
-  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
+  // What the agents did is committed by the app after each stage: a change that is not committed would silently stay behind. The cycle memory is the exception:
+  // the app writes the thread's handovers into it as the next stage starts, and that stage's commit carries them, so a push asked for while it works sends what
+  // is committed and leaves the memory for that commit.
+  const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
+  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
   // i18n-ignore: a git command line shown as it runs
   return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
