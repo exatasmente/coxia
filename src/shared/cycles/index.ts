@@ -1,4 +1,5 @@
 import { agentFlow, agentFlowEngineering } from './templates/agentFlow';
+import { docsFlow } from './templates/docsFlow';
 import { githubFlow } from './templates/githubFlow';
 import { kanban } from './templates/kanban';
 import { minimal } from './templates/minimal';
@@ -17,12 +18,13 @@ export * from './terms';
 export * from './text';
 export * from './types';
 export * from './view';
-export { agentFlow, agentFlowEngineering, githubFlow, kanban, minimal, releaseFlow, scrum, sdd };
+export { agentFlow, agentFlowEngineering, docsFlow, githubFlow, kanban, minimal, releaseFlow, scrum, sdd };
 export { AGENT_FLOW_STAGES, ENGINEERING_FLOW_STAGES, agentFlowTeam, engineeringTeam } from './templates/agentFlow';
+export { DOCS_FLOW_STAGES, DOCS_WRITER, IMPORT_NOTES, docsWriter } from './templates/docsFlow';
 export { RELEASE_FLOW_STAGES, RELEASE_MANAGER, releaseManager } from './templates/releaseFlow';
 
 /** The templates that ship with the app, in the order the wizard lists them. */
-export const BUILT_IN_TEMPLATES: CycleTemplate[] = [sdd, scrum, kanban, githubFlow, minimal, agentFlow, agentFlowEngineering, releaseFlow];
+export const BUILT_IN_TEMPLATES: CycleTemplate[] = [sdd, scrum, kanban, githubFlow, minimal, agentFlow, agentFlowEngineering, releaseFlow, docsFlow];
 
 export function builtInTemplate(id: string): CycleTemplate | undefined {
   return BUILT_IN_TEMPLATES.find((t) => t.id === id);

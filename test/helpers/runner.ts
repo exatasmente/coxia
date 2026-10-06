@@ -14,6 +14,7 @@ import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '..
 import type { RemoteRelease } from '../../src/main/runner/release';
 import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
 import { SandboxError, type ExecResult, type HostOpenOptions, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
+import type { ImageRead, SandboxGui } from '../../src/main/sandbox/session';
 import type { SandboxStatus } from '../../src/shared/sandbox';
 import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
@@ -112,7 +113,7 @@ export interface Tools {
 
 export const toolsFor = (call: AgentCall): Tools => {
   const policy = policyFromHooks(call.confine?.hooks, 'fake');
-  const ctx: ToolContext = { cwd: call.cwd, roots: [call.cwd], isSecret: (p) => secretPath(p, call.cwd), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: call.confine?.root ?? null };
+  const ctx: ToolContext = { cwd: call.cwd, roots: [call.cwd], isSecret: (p) => secretPath(p, call.cwd), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: call.confine?.writeRoot ?? call.confine?.root ?? null };
   return {
     async write(path, content) {
       const denied = await policy.pre('Write', { file_path: path, content }, call.cwd);
@@ -190,13 +191,14 @@ export interface FakeSession extends SandboxSession {
  * A sandbox that runs nothing: it answers every command from a table (exit 0 and "ok" otherwise), reports each one the way the real session does, and records when it was
  * closed. `available: false` makes it refuse like a machine without one. `onClose` runs when a session closes (to look at what the world was like then).
  */
-export function fakeSandbox(o: { onOpen?: (options: OpenOptions) => void; repoFolders?: string[]; depsOutside?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
+export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, ImageRead>; onOpen?: (options: OpenOptions) => void; repoFolders?: string[]; depsOutside?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
   const opened: FakeSandbox['opened'] = [];
   const status: SandboxStatus = o.available === false ? { available: false, backend: null, version: null, reason: 'no-bwrap', detail: '' } : { available: true, backend: 'bwrap', version: '0.9.0', reason: null, detail: '' };
   return {
     opened,
     status: async () => status,
     purge: () => undefined,
+    guiStatus: () => ({ browsers: 'unset', display: 'off' }),
     async open(options) {
       if (!status.available) throw new SandboxError('unavailable', { reason: 'bubblewrap is not installed' });
       o.onOpen?.(options);
@@ -216,6 +218,9 @@ export function fakeSandbox(o: { onOpen?: (options: OpenOptions) => void; repoFo
     const asked: string[] = [];
     const made: FakeSession = {
       ...(host ? { description: 'host' } : {}),
+      // A sandbox (never a host session) carries what it offers to test an interface, and reads images from its output folder.
+      ...(!host && o.gui ? { gui: o.gui } : {}),
+      ...(!host ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
       closed: false,
       asked,
       log,
@@ -286,6 +291,11 @@ export interface BootOptions {
   localTags?: (run: Run) => Promise<string[]>;
   /** What the remote has of a release run's version: what its waits for the host read. */
   remoteRelease?: (run: Run) => Promise<RemoteRelease | null>;
+  /** Told when an event of the fixed catalog happens in a run (a plugin is called through it). */
+  pluginEvent?: RunnerDeps['pluginEvent'];
+  pluginHold?: RunnerDeps['pluginHold'];
+  pluginRelease?: RunnerDeps['pluginRelease'];
+  pluginNotes?: RunnerDeps['pluginNotes'];
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -325,6 +335,10 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     limits: options.limits,
     probeBudget: options.probeBudget,
     now: options.now,
+    pluginEvent: options.pluginEvent,
+    pluginHold: options.pluginHold,
+    pluginRelease: options.pluginRelease,
+    pluginNotes: options.pluginNotes,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

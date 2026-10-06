@@ -393,8 +393,19 @@ export interface Run {
   base: string | null;
   /** What the run is about when it is not an issue: a release. Absent for an issue run. */
   subject?: RunSubject;
+  /** The run drafts the documentation of its repository. Absent for an issue run. */
+  docs?: RunDocs;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A run that drafts or updates the documentation of a repository (`.coxia/`): it starts from a repository and not from an issue (its `issue` is the synthesized
+ * `docs:<repo>`, number 0, which keeps "one at a time" per repository), writes only inside `.coxia/` and ends in a pull request that closes nothing. A run with no
+ * `docs` is an issue run (or a release run: see `subject`).
+ */
+export interface RunDocs {
+  mode: 'create' | 'update';
 }
 
 /** What a run in status `waiting` waits for, and since when. */
@@ -407,8 +418,10 @@ export interface WaitState {
   by?: string;
   /** For `budget`: the provider whose key ran out of budget, as the workspace names it in `llm.providers`. */
   provider?: string;
-  /** For `budget`: the reason in words, with the provider's own (already masked) text. */
+  /** For `budget`: the reason in words, with the provider's own (already masked) text. For `plugin`: what the plugin asks for (network, write). */
   detail?: string;
+  /** For `plugin`: the plugin whose request the person has not answered yet. */
+  plugin?: string;
 }
 
 /** A stage of the flow a run follows, resolved from the config: every default filled in. */

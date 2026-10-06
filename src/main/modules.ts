@@ -15,10 +15,12 @@ import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
+import { pluginsModule } from './plugins/module';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { runsModule } from './runner/module';
+import { suggestionsModule } from './suggestionsModule';
 import { saude } from './saude';
 import { update } from './update';
 import { updates } from './updates';
@@ -47,10 +49,12 @@ const ALL: Module[] = [
   glossary,
   mentionsModule,
   minutes,
+  pluginsModule,
   radar,
   retention,
   runsModule,
   saude,
+  suggestionsModule,
   update,
   updates,
   vcsModule,
