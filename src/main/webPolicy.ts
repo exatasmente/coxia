@@ -7,8 +7,9 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // the workspace test flag and deletion (a browser may create, rename and switch workspaces, not lower the guard),
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
-// screen: a token never travels through the browser channel).
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited']);
+// screen: a token never travels through the browser channel), and the decisions about a plugin: switching it, answering its requests and
+// taking a permission back are the person's on the computer (spec rule 10); blocking an announced write is actions:skip, which only takes away.
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;

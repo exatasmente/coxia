@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { neutralConfig } from '../shared/config/defaults';
+import { neutralConfig, neutralPlugins } from '../shared/config/defaults';
 import { expandHome } from '../shared/config/paths';
 import { buildExport, collectCommands, collectPaths, diffConfig, parseImport } from '../shared/config/transfer';
 import type { WorkspaceConfig } from '../shared/config/types';
@@ -91,6 +91,19 @@ export function applyImport(deps: TransferDeps, req: ImportApply, running: strin
     const dir = workspaceDir(deps.root, id);
     if (existsSync(join(dir, CONFIG_FILE))) copyFileSync(join(dir, CONFIG_FILE), join(dir, 'config.pre-import.json'));
   }
-  writeConfigFile(workspaceDir(deps.root, id), config);
+  // What a workspace's plugins are and were allowed is the person's, on that workspace: a file never brings permissions in, nor the folder the code is
+  // read from, nor a shorter warning. Replacing a workspace keeps its own; a new one starts with none.
+  writeConfigFile(workspaceDir(deps.root, id), { ...config, plugins: created ? neutralPlugins() : pluginsOf(workspaceDir(deps.root, id)) });
   return { workspaceId: id, created, appliedToRunning: id === running, missingSecrets: [...needed].filter((ref) => !deps.secrets.has(ref)) };
+}
+
+/** The plugins section a workspace's configuration file holds now, or the empty one when it cannot be read. */
+function pluginsOf(dir: string): WorkspaceConfig['plugins'] {
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, CONFIG_FILE), 'utf8')) as { plugins?: Partial<WorkspaceConfig['plugins']> };
+    const p = raw.plugins ?? {};
+    return { ...neutralPlugins(), ...(typeof p.dir === 'string' ? { dir: p.dir } : {}), ...(typeof p.confirmSeconds === 'number' ? { confirmSeconds: p.confirmSeconds } : {}), list: Array.isArray(p.list) ? p.list : [] };
+  } catch {
+    return neutralPlugins();
+  }
 }

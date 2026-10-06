@@ -40,7 +40,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 8)', () => {
   it('turns what the runner did by itself into fields, so a run behaves as it did', () => {
     const r = migrateConfig(v7Doc(customized()), { legacyInstall: false });
     expect(r.fromVersion).toBe(7);
-    expect(r.config.schemaVersion).toBe(13);
+    expect(r.config.schemaVersion).toBe(14);
     expect(validateConfig(r.config).ok).toBe(true);
     // the same stages the engineering cycle template has now: gates are typed, the review and QA return to the developer's stage after two rounds
     // (the labels a stored file has are literals and stay as they were written: only the template's own are catalog keys)

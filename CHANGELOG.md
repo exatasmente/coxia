@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 14 adds the `plugins` section; a workspace without plugins behaves as before.
+
 ## [0.7.0-beta.6] - 2026-10-06
 
 ### Fixed

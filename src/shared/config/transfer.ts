@@ -28,7 +28,9 @@ export function buildExport(config: WorkspaceConfig, meta: { workspaceName: stri
     app: { name: 'coxia', version: meta.appVersion },
     workspace: { name: meta.workspaceName },
     requiredSecrets: collectSecretRequirements(config),
-    config,
+    // The plugin folder travels with the config; the list of what is on and what the person granted does not: it names plugins of this machine, and a
+    // file must never decide what a workspace reaches. The folder of a plugin comes from `dir`, and the list is read again from it.
+    config: { ...config, plugins: { ...config.plugins, list: [] } },
   };
 }
 

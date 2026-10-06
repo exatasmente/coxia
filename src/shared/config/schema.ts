@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 11). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 13). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -307,6 +307,36 @@ const promptOverride = {
 
 const command = { enabled: boolean('The integration is on.'), command: string('Executable ("~/" expands); never run through a shell.') };
 
+const pluginAllow = object(
+  'What the person allowed the plugin "always": kept until taken back, and kept when the plugin is switched off and on.',
+  {
+    network: boolean('The plugin may reach the destinations it declared.'),
+    write: boolean('The plugin\'s declared external write may go out; an irreversible one is still announced with a deadline first.'),
+  },
+  ['network', 'write'],
+);
+
+const plugin = object(
+  'A plugin of the workspace and what the person decided about it; everything else is read again from its folder.',
+  {
+    id: string('Stable identity the plugin announces.', { pattern: ID }),
+    folder: nullableString('Folder of the plugin as it was last read; null: listed but not read.'),
+    enabled: boolean('The person switched it on. Off: nothing of it is offered and no hook of it runs.'),
+    allow: pluginAllow,
+  },
+  ['id', 'enabled', 'allow'],
+);
+
+const plugins = object(
+  'The plugins of the workspace: the team\'s own code, read from a folder. Nothing is downloaded or installed.',
+  {
+    dir: nullableString('Folder that holds one folder per plugin ("~/" expands); null: the plugins folder of the workspace data folder.'),
+    list: list('What the person decided about each plugin, by identity.', plugin, { maxItems: 100 }),
+    confirmSeconds: integer('Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile.', 5, 3600),
+  },
+  ['list', 'confirmSeconds'],
+);
+
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   $id: 'urn:coxia:schema:workspace-config:6',
@@ -461,6 +491,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           soleMaintainer: boolean('The person is the repository\'s only maintainer: their "yes" in Actions on a merge-pr stands for the host\'s approval of a pull request opened by the account the app uses on the host, with no changes asked; every merge-pr then waits for that "yes". Optional: absent reads as false.'),
         }),
       }),
+      plugins,
     },
     ['schemaVersion'],
   ),

@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 13): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 13;
+export const CONFIG_SCHEMA_VERSION = 14;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -189,7 +189,7 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
  * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget', 'plugin'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
@@ -795,6 +795,38 @@ export interface ClaudeSdkConfig {
 export const USER_ARTICLES = ['', 'o', 'a'] as const;
 export type UserArticle = (typeof USER_ARTICLES)[number];
 
+/**
+ * What the person allowed a plugin "always": durable, kept in the workspace until the person takes it back, and kept when the plugin is switched off
+ * and on again. "Once" and "for the session" never reach the configuration: they live with the request and with the running app.
+ */
+export interface PluginAllow {
+  /** The plugin may reach the destinations it declared. */
+  network: boolean;
+  /** The plugin's declared external write may go out (an irreversible one still waits for the warning with a deadline). */
+  write: boolean;
+}
+
+/** A plugin of the workspace and what the person decided about it. Everything else is read again from its folder. */
+export interface PluginConfig {
+  /** Stable identity the declaration announces. */
+  id: string;
+  /** Folder of the plugin as it was last read; null when the plugin is listed but was not read. */
+  folder: string | null;
+  /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
+  enabled: boolean;
+  allow: PluginAllow;
+}
+
+/** The plugins of the workspace: where they live, which ones are on and what each was allowed. They are the team's own code; nothing is downloaded. */
+export interface PluginsConfig {
+  /** Folder that holds one folder per plugin ("~/" expands). null: the `plugins` folder of the workspace's data folder. */
+  dir: string | null;
+  /** What the person decided about each plugin, by identity. */
+  list: PluginConfig[];
+  /** Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile. */
+  confirmSeconds: number;
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -821,6 +853,7 @@ export interface WorkspaceConfig {
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
   runner: RunnerConfig;
+  plugins: PluginsConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

@@ -111,7 +111,7 @@ describe('userName', () => {
     const { legacyConfigFixture } = await import('./helpers/config');
     expect(neutralConfig().userName).toBe('');
     expect(legacyConfigFixture().userName).toBe('Bruno');
-    expect(validateConfig({ schemaVersion: 13, userName: 'Ana' }).config?.userName).toBe('Ana');
+    expect(validateConfig({ schemaVersion: 14, userName: 'Ana' }).config?.userName).toBe('Ana');
   });
 });
 
