@@ -14,7 +14,7 @@ on:
         type: boolean
         default: true
       experimental_platforms:
-        description: 'Also build Windows (NSIS) and macOS (dmg, zip). UNSIGNED and untested: automatic updates there need code signing'
+        description: 'Also build macOS (dmg, zip). UNSIGNED and untested: automatic updates there need code signing. Windows is built on every run'
         type: boolean
         default: false
 
@@ -218,12 +218,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ---- optional, off by default --------------------------------------------------------------------------------------------------------
-  # Windows and macOS builds are UNSIGNED and untested. electron-updater on macOS refuses unsigned builds, and Windows warns about them:
-  # automatic updates there only work once code signing is configured (docs/updates.md). They are attached to the same draft release.
+  # ---- Windows: on every tag, unsigned -----------------------------------------------------------------------------------------------
+  # The NSIS installer is built for every tag and attached to the same draft as the Linux files, after the Linux job made and linked it. It is UNSIGNED:
+  # Windows shows a SmartScreen warning and automatic updates may be blocked until code signing is configured (docs/updates.md). The feed is the
+  # channel's own (latest.yml, or beta.yml for a beta), so a beta never moves the Windows installs on the stable channel.
   windows:
-    name: Windows NSIS (experimental, unsigned)
-    if: inputs.experimental_platforms == true
+    name: Windows NSIS (unsigned)
     needs: [prepare, linux]
     runs-on: windows-latest
     timeout-minutes: 45
@@ -232,6 +232,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -251,9 +255,28 @@ jobs:
           PUBLISH: ${{ needs.prepare.outputs.dry_run == 'true' && 'never' || 'always' }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
+        # The release name is the tag, as in the Linux job: electron-builder then uploads into the draft that job linked to the tag instead of making another.
         run: |
           npx electron-vite build
-          npx electron-builder --config electron-builder.public.yml --win nsis --publish "$PUBLISH" -c.publish.owner="$OWNER" -c.publish.repo="$REPO"
+          npx electron-builder --config electron-builder.public.yml --win nsis --publish "$PUBLISH" -c.publish.channel="$CHANNEL" -c.publish.owner="$OWNER" -c.publish.repo="$REPO" -c.releaseInfo.releaseName="$TAG"
+
+      - name: Check the Windows files in the draft release
+        if: needs.prepare.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          drafts="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id')"
+          [ "$(echo "$drafts" | grep -c .)" = 1 ] || { echo "::error::expected one draft release named $TAG, found: $drafts"; exit 1; }
+          assets="$(gh api "repos/$REPOSITORY/releases/$drafts" --jq '.assets[].name')"
+          echo "$assets"
+          for want in "coxia-setup-$VERSION.exe" "coxia-setup-$VERSION.exe.blockmap" "$CHANNEL.yml"; do
+            echo "$assets" | grep -qxF "$want" || { echo "::error::the draft release is missing $want"; exit 1; }
+          done
+          # Like the Linux feeds: a pre-release must not carry latest.yml (it would move every Windows install on the stable channel).
+          other="$(echo "$assets" | grep -E '^[a-z]+\.yml$' | grep -vxF "$CHANNEL.yml" || true)"
+          [ -z "$other" ] || { echo "::error::the draft release carries a Windows feed of another channel: $other"; exit 1; }
 
       - name: Keep the files as a workflow artifact (dry run)
         if: needs.prepare.outputs.dry_run == 'true'
@@ -268,6 +291,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # ---- macOS: optional, off by default -------------------------------------------------------------------------------------------------
+  # UNSIGNED and untested: electron-updater on macOS refuses unsigned builds, so automatic updates there only work once code signing is configured
+  # (docs/updates.md). Attached to the same draft release when asked for.
   macos:
     name: macOS dmg and zip (experimental, unsigned)
     if: inputs.experimental_platforms == true
