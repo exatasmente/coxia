@@ -175,6 +175,7 @@ export function collectPaths(c: WorkspaceConfig): { field: string; path: string 
   add('externalTools.claudeCli.cwd', c.externalTools.claudeCli.cwd);
   add('runner.worktreesDir', c.runner.worktreesDir);
   c.runner.sandbox.readOnlyPaths.forEach((p, i) => add(`runner.sandbox.readOnlyPaths[${i}]`, p));
+  if (c.runner.sandbox.browsersPath) add('runner.sandbox.browsersPath', c.runner.sandbox.browsersPath);
   c.llm.providers.forEach((p) => add(`llm.providers.${p.id}.envFile`, p.envFile));
   return found;
 }

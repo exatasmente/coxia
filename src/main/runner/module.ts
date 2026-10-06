@@ -116,8 +116,9 @@ export const runsModule: Module = (ctx) => {
   forumStore().subscribe((m) => r.onMessage(m));
 
   // Whether this computer can make a sandbox, for the team editor to offer the option; `probe` asks again. Neither changes anything.
-  ctx.handle('sandbox:status', () => sandbox.status());
-  ctx.handle('sandbox:probe', () => sandbox.status(true));
+  // The pieces for testing an interface come with it, read from the saved settings: they never make the sandbox unavailable.
+  ctx.handle('sandbox:status', async () => ({ ...(await sandbox.status()), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
+  ctx.handle('sandbox:probe', async () => ({ ...(await sandbox.status(true)), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
   // A document a stage produced, for the run screen to show: read only, from the run's own cycle folder, and open to a paired browser like the thread beside it.

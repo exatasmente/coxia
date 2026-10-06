@@ -36,8 +36,8 @@ import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
-import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
-import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME } from './sandbox/tool';
+import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engineTool';
+import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
@@ -468,8 +468,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(offersViewImage(req.exec) && req.exec ? [viewImageToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(offersViewImage(req.exec) ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -531,7 +531,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,

@@ -443,6 +443,8 @@ export const CONFIG_SCHEMA: JsonSchema = {
           network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy. "Localhost" inside the sandbox is the sandbox\'s own.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
           readOnlyPaths: list('Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands). Nothing that looks like a secret location is accepted.', string('A folder.', { minLength: 2, maxLength: 1000, pattern: NO_NUL }), { maxItems: 20 }),
+          browsersPath: { type: ['string', 'null'], description: 'The folder Playwright keeps its browsers in ("~/" expands), bound read-only in every sandbox with PLAYWRIGHT_BROWSERS_PATH; the guards of readOnlyPaths apply. null: none.', minLength: 2, maxLength: 1000, pattern: NO_NUL },
+          display: boolean('The sandbox of a QA stage starts a virtual display (Xvfb, from the sandbox\'s PATH) and sets DISPLAY.'),
           limits: object('What one command and one stage may use.', {
             commandMs: integer('Longest one command may run (ms).', 5_000, 3_600_000),
             stageMs: integer('Total command time of one stage (ms).', 60_000, 28_800_000),

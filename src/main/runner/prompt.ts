@@ -1,3 +1,4 @@
+import type { SandboxGui } from '../sandbox/session';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, messageText } from '../../shared/forum';
 import type { OutputKind, RoutingWhy } from '../../shared/runs';
@@ -37,7 +38,7 @@ export interface StageInput {
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
-  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean };
+  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
@@ -86,6 +87,21 @@ export function threadText(messages: ForumMessage[]): string {
 
 export const DIFF_LIMIT = DIFF_MAX;
 
+/**
+ * How to test an interface in this stage's sandbox: the general way, then one line for each piece the person switched on, saying whether the stage has it. Absent when
+ * the person switched neither on, so such a stage's prompt is what it was.
+ */
+function guiRules(gui: SandboxGui, look: boolean): string {
+  return [
+    cp('runner.rules.gui'),
+    gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
+    gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
+    look ? cp('runner.rules.gui.look') : cp('runner.rules.gui.noLook'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function systemText(i: StageInput): string {
   const folder = i.run.cycleFolder;
   const rules = i.writes
@@ -98,6 +114,7 @@ export function systemText(i: StageInput): string {
     rules,
     i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true) : '',
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
