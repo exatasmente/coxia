@@ -2,25 +2,24 @@
 
 ## Decisões
 
-- A issue 18 é um pedido de funcionalidade (enhancement), não um bug: pede a retirada do painel de conflito da tela de desbloqueio e que o bloqueio aponte para o botão que já existe na tela de Hoje.
-- Escopo fixado no comentário de quem abriu: só a retirada do painel, o apontamento do bloqueio e a limpeza do que ficar órfão (os textos do painel e a marca de lugar da tela de desbloqueio). Sem migração de configuração.
-- A especificação funcional está em 1_SPEC.md, nas palavras do produto, com sete critérios de aceite. Nada falta na issue; não há pergunta para quem abriu.
-- Prioridade: manter low. Marco: nenhum.
-- Plano técnico fechado em 2_PLAN.md: saem a seção do painel, os dois imports que ficam sem uso, o valor `'deep'` de `ConflictPlace` e as duas chaves de texto nos dois catálogos e nas cópias dos testes (quatro arquivos ao todo). Nada mais muda; nenhum teste novo é necessário.
+- A issue 18 é um pedido de funcionalidade (enhancement), não um bug: retirar o painel de conflito da tela de desbloqueio e deixar o bloqueio apontar para o botão que já existe na tela de Hoje.
+- Escopo fixado no comentário de quem abriu: só a retirada do painel, o apontamento do bloqueio e a limpeza do que fica órfão (os dois textos do painel e a marca de lugar `'deep'`). Sem migração de configuração.
+- Prioridade mantida em low; marco nenhum. Especificação em 1_SPEC.md (sete critérios de aceite) e plano em 2_PLAN.md; implementação feita como planejado, sem desvio.
+- Nada de novo foi decidido na implementação: o plano estava fechado e foi seguido ponto a ponto.
 
 ## Restrições
 
-- A detecção de conflito (`conflictMrs`) e a forma de resolver conflito não mudam; os dois pontos do botão na tela de Hoje (linha do que precisa de atenção, `TodayParts.tsx:114`; linha de atividade, `:224`) não são tocados.
-- A linha do bloqueio (`dashboard.ts:208-221`) já carrega `conflictCard` e, quando o conflito é o próprio bloqueio, `conflictRef`; o apontamento já existe e não muda.
-- A guarda de escrita externa vive no processo principal (`approveAction` chama `assertExternalWrite`; o push da resolução é um `conflict-push` que passa por `actions:approve`); o botão de conflito só cria a ação e abre a tela do conflito. Nada preso ao painel sai com ele.
-- Os textos saem ou não saem por inteiro: os dois catálogos (`ui-call.*.json`) e as duas cópias em `test/fixtures/catalogs-main/` andam juntos, senão os portões de i18n e de catálogo quebram.
-- A tela de desbloqueio continua sendo destino válido de outros caminhos (linha do bloqueio e pergunta aberta); não é para removê-la, só o painel.
+- A detecção de conflito (`conflictMrs`) e a forma de resolver conflito não mudaram; os dois pontos do botão na tela de Hoje (`TodayParts.tsx:114` e `:224`) não foram tocados.
+- A linha do bloqueio (`dashboard.ts:208-221`) já carrega `conflictCard`/`conflictRef`; não foi mexida.
+- A guarda de escrita externa vive no processo principal (`approveAction` → `assertExternalWrite`; o push da resolução passa por ela). O botão de conflito só cria a ação e abre a tela do conflito; nada preso ao painel saiu com ele.
+- Os textos saem por inteiro: os dois catálogos (`ui-call.*.json`) e as duas cópias em `test/fixtures/catalogs-main/` andam juntos.
+- A tela de desbloqueio continua sendo destino válido de outros caminhos (linha do bloqueio e pergunta aberta); só o painel saiu.
 
 ## Tentado e descartado
 
 - Perguntar a quem abriu: descartado; a issue e o comentário respondem o que faltaria.
-- Decidir prioridade ou propor solução no refinamento: fora do escopo daquela etapa.
-- Mudar a linha de bloqueio para apontar para outro lugar: descartado; o apontamento já funciona como pedido e mexer nele seria mudança fora do escopo.
+- Mudar a linha de bloqueio para apontar para outro lugar: descartado; o apontamento já funciona.
+- Ajustar o roteiro de teste do ciclo 20 (`3_TEST_PLAN.md`, checagem 2): não feito.
 
 ## Perguntas abertas
 
@@ -28,10 +27,12 @@
 
 ## Onde o trabalho está
 
-- Refinamento e plano feitos: 1_SPEC.md e 2_PLAN.md escritos nesta pasta. Nada foi executado nem alterado no repositório além dos documentos: a remoção do painel ainda não existe no código.
-- Nenhum portão rodado até agora (só leitura de código, catálogos e testes). O `node scripts/public-audit.mjs` ainda não detectou o padrão literal `deep` em `ResolveConflict.tsx:30` como violação (`deep` está na lista de termos que ele procura e também é o papel de modelo em `ui.settings.role.deep.*`); a implementação deve rodar os portões e confirmar.
-- A implementação deve: apagar a seção do painel em `Deep.tsx:245-251` e os imports das linhas 15 e 16; tirar `'deep'` de `ConflictPlace` (`ResolveConflict.tsx:10`); remover `ui.deep.conflict` e `ui.deep.conflictNote` de `src/shared/i18n/ui-call.en.json` e `ui-call.pt-BR.json` e das cópias em `test/fixtures/catalogs-main/` (linhas 105-106 nos quatro); rodar `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint` e `node scripts/public-audit.mjs`.
-- Ao alcance da implementação: o roteiro de teste de um ciclo anterior (`docs/cycles/20-resolve-conflict-button/3_TEST_PLAN.md`, checagem 2) descreve a tela de desbloqueio mostrando o painel e precisa de ajuste; nenhum teste automatizado afirma isso.
-- Nada verificado em execução: a retirada em si só estará confirmada quando a implementação rodar os portões.
+- Implementação feita e não commitada (o app commita): a seção do painel saiu de `Deep.tsx` com os imports das linhas 15 e 16; `ConflictPlace` em `ResolveConflict.tsx:10` passou a `'need' | 'act'`; `ui.deep.conflict` e `ui.deep.conflictNote` saíram dos dois catálogos e das duas cópias de teste. Nada mais mudou.
+- Portões: `npx tsc --noEmit` passou (0); `node scripts/theme-audit.mjs` passou; `npm run i18n:lint` passou (4052 chaves nos dois idiomas, 0 soltas); `node scripts/public-audit.mjs` passou (909 arquivos) e o literal `deep` de `ResolveConflict.tsx` não é mais acusado (segue legítimo em `custo.ts` e em `ui.settings.role.deep.*`).
+- `npx vitest run`: não ficou verde. Na primeira execução (o log foi nomeado `.runlogs-vitest.log`) falharam 14 testes em três arquivos — `test/conflict-resolve.test.ts` (tempo limite de teste em execução pesada e a trava "este conflito já tem um passo em andamento" vinda de uma execução anterior), `test/release-git.test.ts` (hook de 10 s estourando e uma asserção de trava órfã) e `test/runner-chain.test.ts` (1 teste). São áreas que esta mudança não toca. Os vizinhos da mudança passaram: `test/resolve-conflict-button.test.ts` (10), `test/dashboard.test.ts` (25) e `test/main-catalogs.test.ts` (5).
+- A segunda execução da suíte (`.runlogs-vitest2.log`) terminou o estágio ainda em andamento; o pedaço lido mostra que o log termina no meio (1420 linhas, sem o resumo final), então a repetição não pode ser dada como concluída. É o item que fica aberto para quem vier depois.
+- Nada verificado em execução além dos portões: nenhuma tela foi aberta.
+- Pendência ao alcance da próxima etapa: `docs/cycles/20-resolve-conflict-button/3_TEST_PLAN.md`, checagem 2, ainda diz que a tela de desbloqueio mostra o painel. Ajustar quando o arquivo estiver no caminho da issue.
 - Passagem support → product-owner: Retirar o painel de conflito da tela de desbloqueio: apagar o bloco da seção que hospeda o botão, remover a marca de lugar 'deep' do componente do botão e os textos ui.deep.conflict / ui.deep.conflictNote dos dois catálogos e das cópias nos fixtures de teste. Deixar a linha do bloqueio apontando para o botão que já existe na tela de Hoje. Confirmar que nenhum controle de escrita externa fica órfão com a remoção e que nenhum teste afirma que a tela de desbloqueio mostra o painel. Não alterar a detecção de conflito nem os pontos onde o botão já aparece em Hoje. <!-- handoff:6 -->
 - Passagem product-owner → pessoa: Planejar e implementar a retirada. 1) Apagar a seção inteira do painel de conflito no terceiro painel da tela de desbloqueio (Deep.tsx:245-251), junto com o import do botão (Deep.tsx:15) e o de conflictMrs (Deep.tsx:16) se ficarem sem uso. 2) Tirar 'deep' de ConflictPlace (ResolveConflict.tsx:10); conferir que place="need" e place="act" seguem intactos e que a chave de jobs (prefixo conflictmr:place:ref:) não quebra. 3) Remover as chaves ui.deep.conflict e ui.deep.conflictNote de src/shared/i18n/ui-call.en.json e ui-call.pt-BR.json (linhas 105-106) e das cópias espelhadas em test/fixtures/cata… <!-- handoff:11 -->
+- Passagem tl-experiencia → pessoa: Implementar conforme 2_PLAN.md: apagar a seção do painel em Deep.tsx:245-251 e os imports das linhas 15 e 16; tirar 'deep' de ConflictPlace (ResolveConflict.tsx:10) mantendo place="need" (TodayParts.tsx:114) e place="act" (:224) intactos; remover ui.deep.conflict e ui.deep.conflictNote de src/shared/i18n/ui-call.en.json e ui-call.pt-BR.json e de test/fixtures/catalogs-main/ui-call.en.json e ui-call.pt-BR.json (linhas 105-106 nos quatro). Não tocar em conflictMrs, na linha do bloqueio (dashboard.ts:208-221) nem nos pontos da tela de Hoje. Rodar npx tsc --noEmit, npx vitest run, node scripts/the… <!-- handoff:37 -->
