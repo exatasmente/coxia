@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0-beta.7] - 2026-10-06
+
 ### Added
 
 - **Plugins.** A workspace can read plugins — the team's own code, one folder per plugin with a `plugin.json` — from a folder of its own (Settings › Plugins). A plugin observes events of the cycle (a stage entered or finished, a gate decided, a run finished), runs inside the same sandbox as a stage, and may add a document type to the run's cycle folder. What it reaches is asked, never assumed: a plugin that needs the network it declared, or its write, opens a request in Actions, the run waits for the answer, and the person allows it once, for the session or always, or refuses. A write that cannot be undone may only be allowed always and is announced in Actions with a countdown (30 s by default, `plugins.confirmSeconds`) during which it can be blocked or revoked. A paired browser may refuse or block, never allow. The kit and an example live in `docs/plugins/`. Configuration schema 14 adds the `plugins` section; a workspace without plugins behaves as before.
@@ -263,7 +265,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.7...HEAD
+[0.7.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.6...v0.7.0-beta.7
 [0.7.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.5...v0.7.0-beta.6
 [0.7.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.4...v0.7.0-beta.5
 [0.7.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.7.0-beta.3...v0.7.0-beta.4
