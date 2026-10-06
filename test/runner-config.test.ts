@@ -52,9 +52,28 @@ describe('the runner section', () => {
   });
 
   it('needs {summary} in the commit message, on one line', () => {
-    expect(errorsOf(withRunner({ commitMessage: 'feat: something' }))).toEqual(['runner.commitMessage: must contain {summary}']);
-    expect(errorsOf(withRunner({ commitMessage: 'feat: {summary}\n\nmore' }))).toEqual(['runner.commitMessage: must be one line']);
+    expect(errorsOf(withRunner({ commitMessage: 'feat: something' }))).toEqual(['runner.commitMessage: must contain {summary}', 'runner.commitMessage: must contain {iid}: every commit of a run carries the issue number']);
+    expect(errorsOf(withRunner({ commitMessage: 'feat: {summary}\n\nmore' }))).toEqual(['runner.commitMessage: must contain {iid}: every commit of a run carries the issue number', 'runner.commitMessage: must be one line']);
     expect(validateConfig(withRunner({ commitMessage: 'fix: {summary} (#{iid})' })).ok).toBe(true);
+  });
+
+  it('refuses a template that would leave the issue number out, in either of the two', () => {
+    expect(errorsOf(withRunner({ commitMessage: 'fix: {summary}' }))).toContain('runner.commitMessage: must contain {iid}: every commit of a run carries the issue number');
+    expect(errorsOf(withRunner({ commitMessage: 'feat: {summary} {iid}' })).join(' ')).not.toContain('runner.commitMessage');
+    const noTitle = errorsOf(withRunner({ prTitle: 'release {iid}' }));
+    expect(noTitle).toContain('runner.prTitle: must contain {title}');
+    expect(noTitle.join(' ')).not.toContain('runner.prTitle: must contain {iid}');
+    expect(errorsOf(withRunner({ prTitle: 'the whole title' }))).toEqual(['runner.prTitle: must contain {title}', 'runner.prTitle: must contain {iid}: every pull request of a run carries the issue number']);
+    expect(errorsOf(withRunner({ prTitle: '{title}\nmore' }))).toContain('runner.prTitle: must be one line');
+    expect(validateConfig(withRunner({ prTitle: '#{iid} {title}' })).ok).toBe(true);
+    expect(errorsOf(withRunner({ prTitle: '' })).join(' ')).toContain('runner.prTitle');
+  });
+
+  it('fills the title template of a stored file that has none, before checking it', () => {
+    const { prTitle: _gone, ...stored } = neutralRunner();
+    const c = withConfigDefaults({ runner: stored as RunnerConfig } as unknown as Doc);
+    expect(c.runner.prTitle).toBe('{title} #{iid}');
+    expect(validateConfig({ ...neutralConfig(), runner: stored as RunnerConfig }).ok).toBe(true);
   });
 
   it('needs both halves of the identity, or neither, and an email that looks like one', () => {
@@ -101,7 +120,7 @@ describe('the migration to schema 6', () => {
     const r = migrateConfig(before, { legacyInstall: false });
     expect(r.fromVersion).toBe(5);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(13);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -115,12 +134,12 @@ describe('the migration to schema 6', () => {
 
   it('carries a v3 file through every step', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(13);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 13 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 14 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

@@ -134,6 +134,10 @@ export function RunnerSection({ config, save }: SectionProps) {
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
       </Labeled>
 
+      <Labeled label={t('ui.runner.prTitle')} hint={t('ui.runner.prTitleHint')} error={at('prTitle')}>
+        {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.prTitle} onChange={(e) => set({ prTitle: e.target.value })} />}
+      </Labeled>
+
       <Toggle checked={draft.linkDependencies} onChange={(linkDependencies) => set({ linkDependencies })} label={t('ui.runner.linkDeps')} />
       <p className="small muted">{t('ui.runner.linkDepsHint')}</p>
 

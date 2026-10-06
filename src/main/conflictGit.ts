@@ -328,16 +328,18 @@ export function runVerify(p: { wt: string; clone: string; command: string; logFi
   });
 }
 
+/** The message of the merge commit when the conflict names no issue run: as git writes it. */
 export function mergeMessage(branch: string): string {
   // i18n-ignore: the message of the git merge commit, as git writes it
   return `Merge branch 'main' into '${branch}'`;
 }
 
-// Commits the merge as `identity`. Nothing is written to any git config.
-export async function commitMerge(wt: string, branch: string, mainSha: string, identity: Identity): Promise<string> {
+// Commits the merge as `identity`, with the message it is given (the message of the app's commits, `mergeMessage` when there is no issue run).
+// Nothing is written to any git config.
+export async function commitMerge(wt: string, branch: string, mainSha: string, identity: Identity, message: string = mergeMessage(branch)): Promise<string> {
   const as = identityArgs(identity);
   if ((await unmergedPaths(wt)).length) throw new Error(t('main.conflictGit.unresolved'));
-  await git(wt, [...as, 'commit', '--no-verify', '-m', mergeMessage(branch)]);
+  await git(wt, [...as, 'commit', '--no-verify', '-m', message]);
   const sha = (await git(wt, ['rev-parse', 'HEAD'])).stdout.trim();
   const parents = (await git(wt, ['rev-list', '--parents', '-n', '1', 'HEAD'])).stdout.trim().split(' ').slice(1);
   if (parents.length !== 2 || parents[1] !== mainSha) throw new Error(t('main.conflictGit.notMerge'));

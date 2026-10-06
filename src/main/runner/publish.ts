@@ -43,6 +43,7 @@ import { moveRun } from '../runs-forum';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
 import { type BranchState, type MilestoneIssue, type ReleaseBrief, type RemoteRelease, activitiesText, releaseRecord, releaseTitle } from './release';
 import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
+import { pullRequestTitle } from './git';
 
 // What the runner leaves on the code host: the comment of each stage on the issue, the decision of each gate, the questions of the agents, the review of
 // the pull request on its lines, and the proposals of the push and the pull request. It decides what goes out by itself (the agent is autonomous and the
@@ -670,7 +671,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const closes = closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
-      const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
+      const title = pullRequestTitle(config.runner.prTitle, end.output.pr?.title || run.issue.title, run.issue.iid);
       moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.

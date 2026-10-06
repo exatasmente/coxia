@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 13): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 12;
+export const CONFIG_SCHEMA_VERSION = 13;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -750,6 +750,8 @@ export interface RunnerConfig {
   sandbox: RunnerSandbox;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
+  /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */
+  prTitle: string;
   /**
    * A run's worktree gets a symbolic link to each dependency folder (`node_modules`, `.venv`) the repository's own clone has and the worktree lacks, so the
    * commands the app runs there find their tools. A config stored without it reads as true.

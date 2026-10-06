@@ -529,12 +529,12 @@ describe('the push and the pull request', () => {
     const prProposal = actions.listActions().find((a) => a.state === 'pending')!;
     expect(prProposal.command).toMatchObject({ method: 'POST', endpoint: 'repos/group/project/pulls' });
     const prBody = JSON.parse(prProposal.command!.json!) as { title: string; head: string; base: string; body: string };
-    expect(prBody).toMatchObject({ title: 'Add the thing', head: end.branch, base: 'main' });
+    expect(prBody).toMatchObject({ title: 'Add the thing #101', head: end.branch, base: 'main' });
     expect(prBody.body.startsWith('**Ready for review**')).toBe(true);
     expect(prBody.body).toContain('Closes #101');
     expect(prBody.body.indexOf('Closes #101')).toBeLessThan(prBody.body.indexOf('<details>'));
     expect(prBody.body.endsWith(`${marker(end, 'pr')}\n`)).toBe(true);
-    expect(b.runner.get(run.id)!.comments.pr).toMatchObject({ status: 'proposed', title: 'Add the thing' });
+    expect(b.runner.get(run.id)!.comments.pr).toMatchObject({ status: 'proposed', title: 'Add the thing #101' });
 
     // the "sim" opens it: the run records it, and the review of the last round (the earlier one was answered by the work that followed it) goes out on it
     await actions.approveAction(prProposal.id);
@@ -632,6 +632,10 @@ describe('an agent whose autonomy is switched in the middle of its stage', () =>
     expect(waiting).toHaveLength(1);
     expect(waiting[0].command).toMatchObject({ method: 'PATCH' });
     // the person's decision at gate 2 was made while that agent was autonomous: its comment went out by itself
+    expect(issueNotes().some(([, body]) => body.startsWith('**Gate 2: sent back**'))).toBe(true);
+  });
+});
+ent went out by itself
     expect(issueNotes().some(([, body]) => body.startsWith('**Gate 2: sent back**'))).toBe(true);
   });
 });

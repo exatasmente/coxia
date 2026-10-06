@@ -26,6 +26,9 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v11 projects.verifyCommands: the conflict verification command of each project, which used to live in one file shared by every workspace.
 //       The step only adds the empty map; the commands of the old file are moved by a startup step in the main process (verify-move.ts), because
 //       a migration never reads the disk. The bump makes an older app refuse the file instead of resetting the whole `projects` block.
+//   v12 `agents.team[].allowedCommands` and the ceremonies following the `tracker` of their system agent.
+//   v13 `runner.prTitle` (the template of the pull request title, `{title}` and `{iid}`) and `{iid}` in `runner.commitMessage`, which is
+//       appended when a stored message leaves the number out. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -260,7 +263,17 @@ function v11ToV12(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 12, agents: { ...agents, team } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12 };
+// A v12 file has no pull request title template, and its commit message may leave the issue number out. The stored commit message gets ` #{iid}`
+// appended when it has none, and the title template takes the default. Nothing else of the file moves.
+function v12ToV13(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  if (!Object.keys(runner).length) return { ...old, schemaVersion: 13 };
+  const commitMessage = typeof runner.commitMessage === 'string' && !runner.commitMessage.includes('{iid}') ? `${runner.commitMessage.trimEnd()} #{iid}` : runner.commitMessage;
+  notes.push('runner.prTitle is the template of the pull request title ({title} and {iid}); a runner.commitMessage without {iid} got the number appended');
+  return { ...old, schemaVersion: 13, runner: { ...runner, commitMessage, prTitle: runner.prTitle ?? neutralRunner().prTitle } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

@@ -24,6 +24,8 @@ export interface RunnerDraft {
   identityName: string;
   identityEmail: string;
   commitMessage: string;
+  /** The template of the pull request title the run opens. */
+  prTitle: string;
   /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
   sandbox: RunnerSandbox;
   linkDependencies: boolean;
@@ -46,6 +48,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     identityName: r.identity.name,
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
+    prTitle: r.prTitle,
     sandbox: structuredClone(r.sandbox),
     linkDependencies: r.linkDependencies !== false,
     soleMaintainer: soleMaintainerOf(r),
@@ -65,6 +68,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()) },
     commitMessage: d.commitMessage,
+    prTitle: d.prTitle,
     linkDependencies: d.linkDependencies,
     release: { soleMaintainer: d.soleMaintainer },
   };
@@ -78,7 +82,7 @@ export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig 
   return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), release: stored.release && { ...stored.release } };
 }
 
-export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxLimits';
+export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxLimits';
 
 export interface RunnerProblem {
   severity: 'error' | 'warning';
@@ -126,8 +130,13 @@ export function runnerProblems(d: RunnerDraft, cycleIsFlow: boolean): RunnerProb
   if (!!name !== !!email) error('identity', 'ui.runner.err.identityPair');
   else if (email && !EMAIL.test(email)) error('identity', 'ui.runner.err.email');
   if (!d.commitMessage.includes('{summary}')) error('commitMessage', 'ui.runner.err.commitSummary');
+  if (!d.commitMessage.includes('{iid}')) error('commitMessage', 'ui.runner.err.commitIssue');
   if (/[\n\r]/.test(d.commitMessage)) error('commitMessage', 'ui.runner.err.commitLine');
   if (d.commitMessage.length > 200) error('commitMessage', 'ui.runner.err.commitLong');
+  if (!d.prTitle.includes('{title}')) error('prTitle', 'ui.runner.err.prTitleTitle');
+  if (!d.prTitle.includes('{iid}')) error('prTitle', 'ui.runner.err.prTitleIssue');
+  if (/[\n\r]/.test(d.prTitle)) error('prTitle', 'ui.runner.err.commitLine');
+  if (d.prTitle.length > 200) error('prTitle', 'ui.runner.err.commitLong');
   for (const h of d.sandbox.registryHosts) if (!isRegistryHost(h.trim().toLowerCase())) error('sandboxHosts', 'ui.runner.err.sandboxHost', { host: h });
   if (d.sandbox.registryHosts.length > MAX_REGISTRY_HOSTS) error('sandboxHosts', 'ui.runner.err.sandboxHostCount', { max: String(MAX_REGISTRY_HOSTS) });
   for (const p of d.sandbox.readOnlyPaths) {

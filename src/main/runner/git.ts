@@ -143,6 +143,22 @@ export function commitFallback(stageLabel: string, writes: boolean): string {
 /** The message from the repository's template; `{summary}` and `{iid}` are replaced. */
 export const commitMessage = (template: string, summary: string, iid: number): string => (iid > 0 ? template : template.replace(/\s*#?\{iid\}/g, '')).replace(/\{summary\}/g, summary).replace(/\{iid\}/g, String(iid));
 
+const PR_TITLE_MAX = 120;
+// An issue reference of the title the agent wrote (`#123`, `group/project#123`).
+const REFERENCE = /#\d+/;
+
+/**
+ * The title of the pull request from the repository's template; `{title}` and `{iid}` are replaced. The 120-character cap applies to `{title}` alone, so the
+ * number is never cut. A title that already carries an issue reference keeps it and the template adds no second one, and a run with no issue (iid 0) drops the
+ * `#` and the number with it, as `commitMessage` does.
+ */
+export function pullRequestTitle(template: string, title: string, iid: number): string {
+  const capped = title.slice(0, PR_TITLE_MAX).trim().replace(/\s+/g, ' ');
+  const already = REFERENCE.test(capped);
+  const withNumber = already || iid <= 0 ? template.replace(/\s*#?\{iid\}/g, '').replace(/\(\s*\)/g, '').replace(/\s+/g, ' ') : template;
+  return withNumber.replace(/\{title\}/g, capped).replace(/\{iid\}/g, String(iid)).trim();
+}
+
 /**
  * Commits everything changed in the worktree as `identity` and nothing else (`identityArgs`), with the repository's hooks, signing and file-system
  * monitor switched off for this one command. Returns the new commit, or null when there was nothing to commit.

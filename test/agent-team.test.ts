@@ -152,7 +152,7 @@ describe('the migration to schema 5', () => {
     );
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(13);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -173,7 +173,7 @@ describe('the migration to schema 5', () => {
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(13);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });

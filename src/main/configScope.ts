@@ -22,6 +22,7 @@ export const WEB_EDITABLE = [
   'runner.stageIdleMs',
   'runner.stageMaxMs',
   'runner.commitMessage',
+  'runner.prTitle',
   'runner.linkDependencies',
 ] as const;
 

@@ -8,7 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The issue number in the title of every pull request a run opens.** Settings › Runner has a new field, *Pull request title*, next to the commit message, with `{title}` (what the agent wrote, or the issue's title) and `{iid}`, and the default `{title} #{iid}`. The title is built from it when the run proposes the pull request, so the proposal in Actions, the run screen and the code host show the same text, and a title that already carries the number does not get it twice. The 120-character cap applies to what the agent wrote, never to the number.
 - **A Windows installer in every release.** Each release now carries `coxia-setup-<version>.exe` and its update feed (`latest.yml`, or `beta.yml` for a beta), built and attached by the same run as the Linux files. It is unsigned: Windows shows a SmartScreen warning and automatic updates may be blocked, and the app's behavior on Windows is not verified yet.
+
+### Changed
+
+- **The runner's two templates cannot leave the issue number out.** A commit message or a pull request title without `{iid}` is refused when saved in Settings › Runner or imported from a file, saying what is missing. A stored commit message without it is read with ` #{iid}` appended, and the new title template starts at its default. A release or documentation run has no issue, so it drops the `#` and the number from both.
+- **The commit that resolves a conflict of a run's branch carries the issue number too.** It used to be the plain `Merge branch 'main' into '<branch>'`; it now follows the same commit message template as every other commit of that run. The merge commits of a release keep their own messages.
 
 ## [0.6.1] - 2026-10-05
 

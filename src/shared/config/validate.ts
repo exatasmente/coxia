@@ -141,7 +141,11 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   for (const id of duplicates(r.commands ?? [])) warnings.push({ path: 'runner.commands', message: `"${id}" is listed twice` });
   if (r.stageIdleMs > r.stageMaxMs) warnings.push({ path: 'runner.stageIdleMs', message: 'is longer than runner.stageMaxMs: the cap ends the stage first' });
   if (!r.commitMessage.includes('{summary}')) errors.push({ path: 'runner.commitMessage', message: 'must contain {summary}' });
+  if (!r.commitMessage.includes('{iid}')) errors.push({ path: 'runner.commitMessage', message: 'must contain {iid}: every commit of a run carries the issue number' });
   if (/[\n\r]/.test(r.commitMessage)) errors.push({ path: 'runner.commitMessage', message: 'must be one line' });
+  if (!r.prTitle.includes('{title}')) errors.push({ path: 'runner.prTitle', message: 'must contain {title}' });
+  if (!r.prTitle.includes('{iid}')) errors.push({ path: 'runner.prTitle', message: 'must contain {iid}: every pull request of a run carries the issue number' });
+  if (/[\n\r]/.test(r.prTitle)) errors.push({ path: 'runner.prTitle', message: 'must be one line' });
   const { name, email } = r.identity;
   if (!!name.trim() !== !!email.trim()) errors.push({ path: 'runner.identity', message: 'needs both a name and an email, or neither' });
   else if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+$/.test(email.trim())) errors.push({ path: 'runner.identity.email', message: 'is not an email address' });
