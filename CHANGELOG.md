@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0-beta.2] - 2026-10-07
+
 ### Fixed
 
 - **A stage on the open engine no longer keeps posting that it is done instead of ending.** A model that finished its work and kept announcing it with *SendMessage*, step after step, never closed its stage. The message tool now tells the model that it does not end the stage, and three steps in a row of nothing but messages end the step: the app asks for the final answer, as after a plain reply.
@@ -270,7 +272,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.2...HEAD
+[0.8.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.1...v0.8.0-beta.2
 [0.8.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0-beta.1
 [0.7.0]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
