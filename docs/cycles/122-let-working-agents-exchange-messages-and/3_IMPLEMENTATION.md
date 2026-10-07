@@ -1,34 +1,48 @@
-# Trocar mensagens durante a etapa: o que foi implementado
+# Trocar mensagens durante a etapa: a entrega volta ao dev com o que já está de pé
 
-> Nota de implementação **parcial**. Uma parte do plano está no worktree e foi exercitada; o resto não foi escrito. Tudo o que não foi exercitado está dito como **não verificado**.
+> Nota de implementação. A **maior parte do plano ainda não foi escrita**: a árvore tem os commits 1 e 2 (`EngineRequest.incoming`, a fase de coleta nos dois motores, a caixa da etapa, a fiação da mensagem à etapa). Os commits 3 a 6 — as três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado e o bloco `runner.conversations` — **não existem no código**. Os três critérios de aceite principais da issue, portanto, **não podem ser satisfeitos** por esta árvore. Tudo o que não foi exercitado está dito como **não verificado**.
 
-## O que mudou
+## O que esta passada mudou
 
-### A porta de entrada do motor (commit 1 do plano)
+Esta tentativa fechou a verificação de tipos e os dois achados de leitura que a revisão anterior marcou como bloqueio, mais uma correção de comportamento da fiação.
 
-O contrato do motor ganhou uma porta de entrada nova. Uma etapa que conversa chama o motor passando uma função que, quando o modelo termina um passo, devolve a próxima mensagem a entregar ou nada. A mensagem entra na sessão como material de fora (entre as marcas `data`), com o lembrete de que o resultado pedido no início continua sendo o da etapa.
+### A verificação de tipos fecha
 
-Nos dois motores:
+O gate `npx tsc --noEmit` estava vermelho com 7 erros, todos no arquivo de teste novo `test/engine-incoming.test.ts`: o dublê de turnos do pacote estava declarado com um tipo que não servia para lista de turnos de uma chamada, e o alvo passado ao motor não era um `ResolvedRole` completo (faltavam `modelRole`, `envFile`, `options` e `legacyCustomEndpoint`). Os dois foram corrigidos no próprio arquivo de teste; **nenhum erro era do código de produção**. O gate passa agora (saída 0).
 
-- No motor aberto, quando o modelo termina um passo sem resposta final, a mensagem é escrita no diálogo como mensagem de usuário e o laço faz mais uma chamada. Quando a porta não tem mais nada, uma chamada final é pedida **sem nenhuma ferramenta**, com o formato do esquema: é essa resposta que vira o resultado da etapa. Sem a porta, a chamada é exatamente a de hoje, uma passada só.
-- No Claude Agent SDK, a sessão passa a ficar aberta (entrada em fluxo) e a mensagem entra como turno de usuário da mesma sessão; a coleta acontece no mesmo id de sessão.
+### A resposta final da etapa volta a ser pedida ao modelo
 
-### A caixa da etapa (commit 1)
+O bloqueio real que a revisão encontrou: no motor aberto, quando o modelo terminava um passo sem responder ao formato e a porta de entrada não tinha mais mensagem, o laço **não pedia nada** — marcava `collecting`, escrevia um pedido de resposta final no diálogo e fazia `continue` sem chamada nenhuma; o laço voltava ao topo, chamava o modelo com as mesmas mensagens (só as ferramentas vazias) e era **aquele texto** que passava a valer como resultado da etapa. Como a mensagem entregue descreve o que quem escreveu quer ("use o helper existente"), a resposta que o modelo deu ao pedido da mensagem virava o resultado da etapa — exatamente o que o plano diz que a coleta existe para impedir.
 
-Um módulo novo guarda a fila de mensagens de cada etapa que trabalha: a próxima mensagem a entregar, a entrega, o interruptor de fecho e o registro no fórum. A entrega escreve na conversa da execução uma linha com o agente e a hora; uma mensagem que chega quando a etapa já está fechando não é entregue e volta na conversa com o motivo. O executor abre a caixa com a tentativa, pendura-a na chamada do motor e fecha-a antes do sandbox, sempre.
+O que o código faz agora, na coleta: pede o final de verdade, numa chamada **sem nenhuma ferramenta** (`tools: []`) com o formato do esquema, e só o que sai **dessa** chamada é o resultado da etapa; um texto fora do esquema ali vira erro de formato, não resultado. A chamada de coleta acontece aqui, e não num passo seguinte do laço, porque responder é o ponto dela: um texto solto que descreve a mensagem nunca vira o resultado da etapa.
 
-### A fiação da mensagem à etapa (commit 2, em parte)
+### A mensagem repetida ao mesmo agente não perde mais a segunda chamada
 
-Quando uma pessoa escreve na conversa da execução citando o agente que **está** trabalhando a etapa, a mensagem entra na fila daquela etapa, e a mensagem ganha a linha de que espera o próximo passo. Todo o resto mantém o comportamento de hoje: uma citação a um agente que não está trabalhando (ou a uma execução que não está trabalhando) continua chamando o agente em paralelo.
+A fiação guardava em `toStage` todas as ocorrências do agente que trabalha e removia **todas** elas da chamada paralela. Como hoje `@developer @developer` abre uma chamada por ocorrência (o `calls` é chaveado por mensagem e agente), a segunda ocorrência sumia em silêncio — e a issue diz que só a mensagem a um agente que **não** trabalha mantém o comportamento de hoje, não pede mudança para a repetida.
 
-## O que foi conferido
+A fiação agora manda **uma** ocorrência para a fila da etapa e passa o **resto da lista como está** para o caminho paralelo: a segunda menção ao mesmo agente abre a chamada de hoje, como sempre abriu. A menção a um agente que **não** trabalha continua intocada.
 
-- **Por execução**: o teste novo do motor cobre os dois motores com um modelo roteirizado — a mensagem entregue entre dois passos vira uma chamada a mais no mesmo diálogo, a coleta pede a resposta final sem ferramentas, e sem a porta a chamada é a de hoje. Rodou e passou (6 de 6) com o código de produção desta árvore.
-- **Por leitura**: o SDK em `node_modules` oferece entrada em fluxo (um fluxo de mensagens de usuário) e mantém a sessão entre turnos; a implementação usa esse caminho e cai no comportamento de hoje quando a porta está ausente.
-- `npx tsc --noEmit` passou antes das últimas edições feitas no arquivo de teste.
+## O que foi conferido, e como
+
+Por execução, nesta árvore de trabalho:
+
+| O que | Resultado |
+|---|---|
+| `npx tsc --noEmit` | **passa**, saída 0 (era vermelho, 7 erros) |
+| `test/engine-incoming.test.ts` | **7 de 7**, incluindo o caso novo da coleta |
+| `test/engine-open-loop.test.ts`, `test/engine-open-tools.test.ts`, `test/engine-open-e2e.test.ts`, `test/agent-sdk.test.ts` (como `runner-agent.test.ts`), `test/runner-agent.test.ts` | **77 de 77** |
+| `test/runner-mention-actions.test.ts`, `test/runner-golden.test.ts`, `test/runner-sandbox.test.ts` | **27 de 27** (o `runner-golden` não moveu) |
+| `node scripts/theme-audit.mjs` | passa |
+| `npm run i18n:lint` | passa (4061 chaves nas duas línguas) |
+| `node scripts/public-audit.mjs` | passa (913 arquivos) |
+
+**O caso de teste novo.** O roteiro do modelo devolve primeiro o texto que responde à mensagem ("vou usar o helper existente"), que **não** é o esquema, e depois a resposta boa. O teste confere que o resultado da etapa é a resposta boa, e que a chamada de coleta — a terceira — **não oferece ferramenta alguma** e carrega a instrução de resposta final. Sem a correção, esse caso era o que o bloqueio descrevia.
+
+**A suíte inteira foi tentada e é instável nesta árvore.** Uma execução completa terminou com 16 falhas em 4 arquivos que a branch **não toca** (`conflict-resolve`, `update-script`, `release-actions`, `runner-release`), sob carga de 223 arquivos em paralelo; rodando só esses quatro arquivos na mesma árvore, **80 de 80 passam**. É a mesma instabilidade que as duas revisões anteriores viram, e não há confirmação de que ela venha desta branch — o resultado da suíte completa continua **inconclusivo** e isso não foi conferido contra a base.
 
 ## O que não foi verificado
 
-- O SDK real aceitar uma mensagem no meio de uma sessão em andamento: a conferência foi pelos tipos, pelo código do SDK e por um dublê no teste. **Nenhum modelo real foi chamado.**
-- Os gates completos do repositório (a suíte inteira, o tema, o i18n, o audit público, o build): não foram rodados.
-- As ferramentas `SendMessage`, `CallAgent` e `askConversation`, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa e o bloco de configuração dos limites: **não foram implementados** (os commits 3 a 6 do plano). Nada do comportamento de ponta a ponta que a issue pede foi visto funcionando.
+- **O motor com o SDK real.** Se o pacote aceita uma mensagem de usuário numa sessão em andamento e se a saída estruturada sobrevive a isso: conferido pelos tipos, pelo código do pacote e por um dublê no teste — **nenhum modelo real foi chamado**. O dublê do teste entrega o turno antes de o código de produção pedir a entrega, então o verde dele cobre a mecânica do teste, não o encaixe real.
+- **A suíte completa**, como dito acima: instável, resultado inconclusivo.
+- **As três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa e o bloco de configuração dos limites**: não implementados (commits 3 a 6). Nada do comportamento de ponta a ponta da issue foi visto funcionando.
+- **Os achados de leitura do plano** que a revisão apontou nos caminhos de hoje (a sessão de uma menção sobre o worktree não é só leitura, o commit ignora pastas ligadas por nome sigiloso e a auditoria da limpeza do arquivo de configuração do host): ficam registrados para quem implementar os commits 4 e 5; **não foram mexidos nesta passada**.

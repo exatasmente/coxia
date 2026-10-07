@@ -902,14 +902,18 @@ export function createRunner(deps: RunnerDeps): Runner {
       const text = (message.text ?? '').trim();
       const working = workingAgent(run);
       const inbox = working ? inboxOf(runId) : null;
-      const toStage = inbox && working ? message.mentions.slice(0, MAX_MENTIONS).filter((id) => id === working) : [];
-      if (inbox && toStage.length && text) {
-        for (const id of toStage) {
+      // Naming the agent that works queues one message for it; the other mentions of the same message keep today's call. A mention repeated for the same agent
+      // keeps one call per mention, as today: only the occurrences that went to the queue are left out of the parallel call.
+      let toStage = 0;
+      if (inbox && working && text) {
+        for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
+          if (id !== working || toStage >= 1) continue;
           const queued = inbox.post(text);
+          toStage++;
           deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: queued ? 'runner.message.waiting' : 'runner.message.afterClose', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
         }
       }
-      const call = message.mentions.slice(0, MAX_MENTIONS).filter((id) => !toStage.includes(id));
+      const call = toStage ? message.mentions.slice(toStage, MAX_MENTIONS) : message.mentions.slice(0, MAX_MENTIONS);
       if (!call.length) return;
       const rest = { ...message, mentions: call };
       // Each agent named gets its call line at once, before the queue: the person sees who was called and who waits its turn.

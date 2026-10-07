@@ -444,15 +444,18 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     // restart; the work it did so far and its tool results are still here.
     if (p.incoming && !collecting) {
       const message = await p.incoming(deliver);
+      turns--;
       if (message !== null) {
-        turns--;
-        write({ role: 'user', content: `# ${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
+        write({ role: 'user', content: `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
         continue;
       }
-      collecting = true;
-      turns--;
+      // No message left: ask for the final answer now, with no tool at all, and take it as the result of the stage. Answering is the point of this call, so it
+      // happens here and not in a later turn of the loop: a text that only described the message never becomes the result of the stage.
       write({ role: 'user', content: t('main.engine.text.collect') });
-      continue;
+      const last = await call({ tools: [], responseFormat });
+      const got = extractAnswer(last.text, p.schema);
+      if (got.ok) return done(got.value, turns);
+      throw new StructuredOutputError(describeErrors(got.errors));
     }
 
     if (strategy === 'tool' && nudges < 2 && !collecting) {

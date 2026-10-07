@@ -11,10 +11,10 @@ import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
 import { installLegacyConfig } from './helpers/config';
 import { type Fake, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
-type Msg = Record<string, unknown>;
+type Turn = object[];
 const sdkCalls: { prompt: unknown; options: Record<string, unknown> }[] = [];
 const sdkSeen: string[] = [];
-let sdkTurns: Msg[][] = [];
+let sdkTurns: Turn[][] = [];
 
 // The SDK mock hands the prompt as the call made it (a string, or the stream of a call that talks while it works). A string prompt yields one turn; a stream
 // yields one turn per user message it carries, like the SDK's streaming input keeps the session alive between turns.
@@ -24,13 +24,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
     const turns = sdkTurns.shift() ?? [];
     return (async function* () {
       if (typeof prompt === 'string') {
-        yield* turns[0] ?? [];
+        yield* ((turns[0] ?? []) as object[]);
         return;
       }
       let i = 0;
       for await (const message of prompt as AsyncIterable<{ message: { content: string } }>) {
         sdkSeen.push(message.message.content);
-        yield* (turns[i] ?? []) as object[];
+        yield* ((turns[i] ?? []) as object[]);
         i++;
       }
     })();
@@ -138,6 +138,27 @@ describe('the open engine, a stage that talks while it works', () => {
     expect((fake.chats()[0].body as Record<string, any>).tools).toBeDefined();
   });
 
+  it('does not take the text of a step as the answer: the collection asks for it again, with no tool', async () => {
+    // The model answers the message ("use the existing helper") with a text that is not the schema, and the stage must not end with that text: the collection
+    // asks for the answer once more, without a tool, and only what comes out of that call is the result of the stage.
+    fake = await fakeOpenAI([textStep('vou usar o helper existente'), textStep('isto não é a resposta'), textStep(JSON.stringify(answer))]);
+    const queue = ['use o helper existente'];
+    const r = await runOpen<typeof answer>(
+      params(fake, {
+        incoming: async (onDelivered) => {
+          const next = queue.shift() ?? null;
+          if (next !== null) onDelivered(next);
+          return next;
+        },
+      }),
+    );
+    expect(r.data).toEqual(answer);
+    // The third call is the collection: no tool offered, and it carries the final-answer instruction.
+    const collect = fake.chats()[2].body as Record<string, any>;
+    expect(collect.tools).toBeUndefined();
+    expect((collect.messages as { role: string; content: string }[]).at(-1)!.content).toMatch(/resposta final/i);
+  });
+
   it('delivers a message in the middle of a plain JSON flow and keeps the schema', async () => {
     fake = await fakeOpenAI([textStep('texto solto'), textStep(JSON.stringify(answer))]);
     const queue = ['olha isto'];
@@ -162,7 +183,7 @@ describe('the Claude SDK engine, a stage that talks while it works', () => {
     role: 'deep' as const,
     prompt: 'Trabalhe a etapa.',
     schema,
-    target: { role: 'deep' as const, providerId: 'anthropic', engine: 'claude-sdk' as const, model: 'sonnet', kind: 'anthropic' as const, baseUrl: '', headers: {}, secretRef: null, capabilities: null, structured: 'auto' as const, maxOutputTokens: null, temperature: null, timeoutMs: null },
+    target: { role: 'deep' as const, providerId: 'anthropic', engine: 'claude-sdk' as const, model: 'sonnet', kind: 'anthropic' as const, baseUrl: '', headers: {}, secretRef: null, capabilities: null, structured: 'auto' as const, maxOutputTokens: null, temperature: null, timeoutMs: null, modelRole: 'deep' as const, envFile: null, options: {}, legacyCustomEndpoint: false },
     system: 'Você é o agente.',
     cwd: dir,
     allowedTools: ['Read'],
