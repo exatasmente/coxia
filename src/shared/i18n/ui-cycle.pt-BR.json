@@ -380,5 +380,7 @@
   "ui.runs.squad": "Squad",
   "ui.runs.squad.all": "Todos os squads",
   "ui.runs.squad.none": "Sem squad",
-  "ui.runs.title": "Execuções do ciclo"
+  "ui.runs.title": "Execuções do ciclo",
+  "ui.runs.unassigned.start": "Iniciar",
+  "ui.runs.unassigned.title": "Issues com rótulo e sem responsável"
 }

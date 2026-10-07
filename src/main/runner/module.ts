@@ -42,6 +42,15 @@ const source: IssueSource = {
     const want = label.trim().toLowerCase();
     return (await provider.listMyIssues({ project: rc().issues.project, limit: 100 })).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === want));
   },
+  async unassigned(label) {
+    const provider = vcsProvider();
+    if (!provider.caps.issues) return [];
+    // The read needs a project of issues, and the list of `listIssues` is a project's own; without one there is nothing to offer.
+    const project = rc().issues.project;
+    if (!project) return [];
+    const want = label.trim().toLowerCase();
+    return (await provider.listIssues({ project, scope: 'labels', labels: [label], limit: 100 })).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === want) && i.assignees.length === 0);
+  },
 };
 
 let current: Runner | null = null;
@@ -141,6 +150,16 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('sandbox:probe', async () => ({ ...(await sandbox.status(true)), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
+  // The open issues of the project that carry the trigger label and have no assignee: the manual-start list of the runs screen. Read only, open to a
+  // paired browser like the list beside it; nothing here starts a run (the person's start goes through runs:start).
+  ctx.handle('runs:unassigned', async () => {
+    const { refPrefix } = rc().issues;
+    const label = getConfig().runner.triggerLabel;
+    const issues = await source.unassigned(label);
+    return issues
+      .map((i) => ({ iid: i.iid, ref: `${refPrefix}${i.iid}`, title: i.title, url: i.webUrl }))
+      .sort((a, b) => a.iid - b.iid);
+  });
   // A document a stage produced, for the run screen to show: read only, from the run's own cycle folder, and open to a paired browser like the thread beside it.
   ctx.handle('runs:artifact', (run: unknown, name: unknown) => {
     const found = typeof run === 'string' ? r.get(run) : null;

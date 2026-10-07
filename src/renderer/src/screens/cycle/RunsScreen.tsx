@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RUN_FILTERS, type RunFilter, currentAgent, filterCounts, listRuns, needsPerson, stageLabelOf } from '../../../../shared/runs/view';
-import type { Run } from '../../../../shared/runs';
+import type { Run, RunIssue } from '../../../../shared/runs';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
@@ -88,6 +88,56 @@ function StartRelease({ go }: { go: (s: Screen) => void }) {
   );
 }
 
+/** The open issues of the project with the trigger label and no assignee: a manual start for each, disabled once it has a run. */
+function UnassignedList({ go }: { go: (s: Screen) => void }) {
+  const t = useT();
+  const runs = useRuns();
+  const [candidates, setCandidates] = useState<RunIssue[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void runsApi.unassigned().then(
+      (list) => { if (live) setCandidates(list); },
+      () => undefined,
+    );
+    return () => { live = false; };
+  }, []);
+  // A ref that already has a run cannot be started again here; the duplicate refusal would follow, the button only spares it.
+  const started = new Set((runs ?? []).map((r) => r.issue.ref));
+  const start = async (ref: string) => {
+    setError(null);
+    try {
+      const run = await runsApi.start(ref);
+      patchRun(run);
+      go({ name: 'run', id: run.id, from: 'runs' });
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  // The list only appears while there is something to offer: an empty read or no project of issues hides the section, without an error.
+  if (!candidates || !candidates.length) return null;
+  return (
+    <section className="panel" aria-label={t('ui.runs.unassigned.title')}>
+      <h2 className="cy-release-title">{t('ui.runs.unassigned.title')}</h2>
+      <ul className="cy-run-list">
+        {candidates.map((c) => (
+          <li key={c.ref}>
+            <div className="row spread">
+              <span className="cy-run-main">
+                <span className="cy-run-title"><span className="mono">{c.ref}</span> {c.title}</span>
+              </span>
+              <button type="button" className="btn" disabled={started.has(c.ref)} onClick={() => void start(c.ref)}>
+                {t('ui.runs.unassigned.start')}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {error && <span className="error cy-inline-error" role="alert">{error}</span>}
+    </section>
+  );
+}
+
 /** Every run of the workspace, filtered by what it waits for and by squad: what waits for the person first. */
 export function RunsScreen({ go }: { go: (s: Screen) => void }) {
   const t = useT();
@@ -110,6 +160,7 @@ export function RunsScreen({ go }: { go: (s: Screen) => void }) {
         </header>
         {/* A paired browser is offered the field too: the server refuses the start when its external effects are off, and the error says so here. */}
         {config?.devCycle.flows?.release && <StartRelease go={go} />}
+        <UnassignedList go={go} />
         <div className="filters cy-filters" role="group" aria-label={t('ui.runs.filter.label')}>
           {RUN_FILTERS.map((f) => (
             <button key={f} type="button" className={`filter ${filter === f ? 'on' : ''}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>
