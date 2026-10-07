@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 12;
+export const CONFIG_SCHEMA_VERSION = 13;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -725,6 +725,10 @@ export interface RunnerRelease {
   soleMaintainer: boolean;
 }
 
+/** Where the evidence a stage keeps is stored. Only the computer changes it: the choice decides what goes into a commit. */
+export const EVIDENCE_PLACEMENTS = ['app', 'cycle'] as const;
+export type RunnerEvidence = (typeof EVIDENCE_PLACEMENTS)[number];
+
 /** The runner: what takes an issue through the agent cycle by itself. Nothing here widens what an agent may do beyond the run's worktree. */
 export interface RunnerConfig {
   /** The app starts runs by itself for the issues that carry `triggerLabel`. Starting a run by hand does not need it. */
@@ -748,6 +752,12 @@ export interface RunnerConfig {
   turns: RunnerTurns;
   identity: RunnerIdentity;
   sandbox: RunnerSandbox;
+  /**
+   * Where a stage's evidence is kept: only with the run, in the workspace's data (the default, so nothing goes into a commit), or also copied into the cycle
+   * folder and committed with the stage, which is how it reaches the pull request. Only the computer changes it, because it decides what enters a commit.
+   * Optional: absent in a config stored before it reads as 'app' (`evidencePlacementOf`).
+   */
+  evidence?: RunnerEvidence;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /**

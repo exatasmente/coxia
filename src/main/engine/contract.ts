@@ -4,6 +4,7 @@ import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
 import type { SandboxSession } from '../sandbox/session';
+import type { EvidenceTools } from '../evidence/tool';
 
 // The contract between the ceremonies (main/agents.ts `run`) and an agent engine.
 // An engine takes one structured request and returns the model's JSON answer plus the sources it read; it never knows about ceremonies.
@@ -97,6 +98,8 @@ export interface EngineRequest {
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
+  /** The evidence tools of a stage that keeps evidence (a stage with a sandbox): the engines offer them next to the `Shell` tool. */
+  evidence?: EvidenceTools;
   /**
    * A ceremony agent: a command the code does not allow is asked of the person instead of refused (the call waits for the answer), and the rules the person
    * gave the agent ("allow always") let a command through without asking. Never for a write to the code host, which is asked every time.

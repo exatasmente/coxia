@@ -1,7 +1,9 @@
 import type { WorkspaceConfig } from '../../../../shared/config/types';
+import type { EvidenceView } from '../../../../shared/evidence';
 import { type Run, whereOf } from '../../../../shared/runs';
 import { type FindingThread, reviewRounds } from '../../../../shared/runs/view';
 import { intlLocale, useT } from '../../i18n';
+import { EvidenceCites } from './Evidence';
 import { agentName } from './names';
 
 const THREAD_KEY: Record<FindingThread, string> = {
@@ -23,7 +25,7 @@ function stamp(iso: string): string {
 }
 
 /** Each review pass of the run: its verdict and what the reviewer found, with where each finding stands on the pull request (its thread). */
-export function ReviewRounds({ run, config }: { run: Run; config: WorkspaceConfig | null }) {
+export function ReviewRounds({ run, config, evidence }: { run: Run; config: WorkspaceConfig | null; evidence?: EvidenceView[] | null }) {
   const t = useT();
   const rounds = reviewRounds(run);
   if (!rounds.length && !run.qa.length) return null;
@@ -72,6 +74,7 @@ export function ReviewRounds({ run, config }: { run: Run; config: WorkspaceConfi
                   {s.unbacked && <span className="badge cy-tone-blocked">{t('ui.cycle.evidence.unbacked')}</span>}
                 </div>
                 {s.detail && <p className="small cy-finding-body">{s.detail}</p>}
+                <EvidenceCites runId={run.id} ids={s.evidenceIds} list={evidence} />
               </li>
             ))}
           </ul>

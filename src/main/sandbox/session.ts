@@ -33,6 +33,8 @@ export interface ExecResult {
 export interface SandboxSession {
   /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
   readonly description?: string;
+  /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
+  readonly stageDir?: string;
   /** Runs one command; one at a time per stage (calls queue). Never throws for a command that fails. */
   exec(command: string): Promise<ExecResult>;
   /** Every command of the stage, in order, with what it did. */
@@ -247,6 +249,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
     });
 
   return {
+    stageDir: o.stageDir,
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);

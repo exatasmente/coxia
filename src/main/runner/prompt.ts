@@ -40,6 +40,8 @@ export interface StageInput {
   sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean };
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
+  /** The agent has the evidence tools: what it is told about keeping a file and citing its id. */
+  evidence?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
   earlier?: ReviewRecord[];
   /** The branch's diff, for the stage that reads it. */
@@ -101,6 +103,7 @@ export function systemText(i: StageInput): string {
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
+    i.evidence ? cp('runner.rules.evidence') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),

@@ -25,6 +25,11 @@ export interface ToolContext {
 export interface ToolResult {
   response: unknown;
   render: (response: unknown) => string;
+  /**
+   * An image the tool produced (the image tool of the evidence): the tool message stays text (the API disapproves of a tool result as an array) and the image
+   * is sent as a part of the user turn right after it, which is how a model reads an image on this engine.
+   */
+  image?: { data: Uint8Array; media: string };
 }
 
 export interface ToolImpl {

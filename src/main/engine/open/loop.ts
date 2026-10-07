@@ -361,15 +361,15 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     }
   };
 
-  const execute = async (tc: ToolCall): Promise<string> => {
+  const execute = async (tc: ToolCall): Promise<{ text: string; image?: { data: Uint8Array; media: string } }> => {
     const impl = byApi.get(tc.function.name);
     const input = parseToolArguments(tc.function.arguments);
     const name = impl?.name ?? tc.function.name;
     sources.push(describe(name, input));
     events.onToolUse?.(name, input);
-    const fail = (text: string): string => {
+    const fail = (text: string): { text: string } => {
       events.onToolResult?.(name, true);
-      return t('main.engine.text.toolError', { text });
+      return { text: t('main.engine.text.toolError', { text }) };
     };
     if (!impl) return fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') }));
     const argErrors = validate(input, impl.parameters);
@@ -380,7 +380,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       const r = await impl.run(input, ctx);
       const rewritten = await policy.post(impl.name, input, r.response, p.cwd);
       events.onToolResult?.(name, false);
-      return r.render(rewritten ?? r.response);
+      return { text: r.render(rewritten ?? r.response), ...(r.image ? { image: r.image } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
       return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
@@ -389,6 +389,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
 
   const done = (data: unknown, turns: number): OpenRunResult<T> => ({ data: data as T, sessionId, sources, usage, turns, strategy });
   const toolMessage = (tc: ToolCall, content: string): ChatMessage => ({ role: 'tool', tool_call_id: tc.id, content });
+  const dataUrl = (image: { data: Uint8Array; media: string }): string => `data:${image.media};base64,${Buffer.from(image.data).toString('base64')}`;
 
   // --- the loop
   let turns = 0;
@@ -427,7 +428,10 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       }
       if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
-      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
+      c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i].text)));
+      // An image a tool produced (the evidence tool) follows its tool message as a part of a user turn: this engine's tool results are text, and the API
+      // disapproves of a tool message whose content is an array.
+      for (const r of results) if (r.image) write({ role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl(r.image) } }, { type: 'text', text: t('main.engine.text.toolImage') }] });
       continue;
     }
     if (!p.schema) return done(c.text, turns);

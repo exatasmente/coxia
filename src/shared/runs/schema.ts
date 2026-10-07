@@ -3,6 +3,7 @@ import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
 import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { EVIDENCE_KINDS } from '../evidence';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -13,6 +14,8 @@ const time = (description: string): JsonSchema => string(description, { minLengt
 const enumOf = (description: string, values: readonly string[]): JsonSchema => ({ type: 'string', description, enum: [...values] });
 const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
 const FILE = '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$';
+/** Evidence ids a scenario or a stage output cites (`ev-<digits>`). */
+const EVIDENCE_REFS: JsonSchema = { type: 'array', description: 'Evidence ids (ev-<digits>).', items: string('An evidence id.', { pattern: '^ev-\\d{1,6}$', maxLength: 12 }), maxItems: 50 };
 
 function object(description: string, properties: Record<string, JsonSchema>, required: string[]): JsonSchema {
   return { type: 'object', description, properties, required, additionalProperties: false };
@@ -105,7 +108,7 @@ const qaRecord = object(
     scenarios: {
       type: 'array',
       description: 'The scenarios checked.',
-      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }), severity: enumOf('Whether a failure sends the work back; absent: blocking.', SCENARIO_SEVERITIES), evidence: enumOf('executed: the agent ran something in its sandbox to check it; read: it only looked.', SCENARIO_EVIDENCE), unbacked: { type: 'boolean', description: 'Claimed as executed and nothing of the stage\'s commands backs it.' }, commands: { type: 'array', description: 'Numbers of the stage\'s commands the scenario rests on.', items: { type: 'integer', minimum: 1, maximum: 10_000 }, maxItems: 50 } }, ['name', 'result', 'detail']),
+      items: object('One scenario.', { name: string('Name.', { maxLength: 500 }), result: enumOf('The result.', SCENARIO_RESULTS), detail: string('What was seen.', { maxLength: 8000 }), severity: enumOf('Whether a failure sends the work back; absent: blocking.', SCENARIO_SEVERITIES), evidence: enumOf('executed: the agent ran something in its sandbox to check it; read: it only looked.', SCENARIO_EVIDENCE), unbacked: { type: 'boolean', description: 'Claimed as executed and nothing of the stage\'s commands backs it.' }, commands: { type: 'array', description: 'Numbers of the stage\'s commands the scenario rests on.', items: { type: 'integer', minimum: 1, maximum: 10_000 }, maxItems: 50 }, evidenceIds: EVIDENCE_REFS }, ['name', 'result', 'detail']),
       maxItems: 200,
     },
     head: { type: ['string', 'null'], description: 'The commit looked at.', maxLength: 80 },
@@ -139,6 +142,25 @@ const pending = {
 const waitFor = object('What a wait waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label: the label name.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time: minutes.', minimum: 1, maximum: 525_600 } }, ['kind']);
 
 const fileNames = { type: 'array', description: 'File names.', items: string('File name.', { pattern: FILE, maxLength: 100 }), maxItems: 50 } as JsonSchema;
+
+const evidenceRecord = object(
+  'One piece of evidence a stage kept.',
+  {
+    id: string('The evidence id.', { pattern: '^ev-\\d{1,6}$', maxLength: 12 }),
+    stage: string('The stage that kept it.', { pattern: ID }),
+    by: string('The agent that kept it.', { maxLength: 48 }),
+    title: string('The title a person reads.', { maxLength: 200 }),
+    description: string('An optional short text.', { maxLength: 1000 }),
+    name: string('The name the agent gave the file.', { maxLength: 200 }),
+    kind: enumOf('The kind, read from the content.', EVIDENCE_KINDS),
+    bytes: { type: 'integer', description: 'The size of the file.', minimum: 0 },
+    at: time('When it was kept.'),
+    from: { type: ['string', 'null'], description: 'The evidence this one was made from.', pattern: '^ev-\\d{1,6}$', maxLength: 12 },
+    message: { type: ['integer', 'null'], description: 'The forum message it was published as an attachment of.', minimum: 1 },
+    inCycle: { type: 'boolean', description: 'The file was also copied into the cycle folder.' },
+  },
+  ['id', 'stage', 'by', 'title', 'description', 'name', 'kind', 'bytes', 'at', 'from', 'message'],
+);
 
 const flowStage = object(
   'One stage of the flow the run follows, with every default filled in.',
@@ -264,6 +286,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     comments: { type: 'object', description: 'Tracker comments by stage id, and `pr` for the pull request.', additionalProperties: comment },
     reviews: { type: 'array', description: 'Every review pass with its findings.', items: review, maxItems: 100 },
     qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
+    evidence: { type: 'object', description: 'Every piece of evidence the stages kept, by id. Optional: a run written before evidence existed kept none.', additionalProperties: evidenceRecord },
     base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
     subject,
     createdAt: time('When the run started.'),

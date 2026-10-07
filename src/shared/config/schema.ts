@@ -1,7 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 11). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -448,6 +448,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           }),
         }),
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
+        evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),
         release: object('How a release run integrates its pull requests.', {

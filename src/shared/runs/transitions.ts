@@ -1,4 +1,5 @@
 import type { ArtifactRef, ForumDraft } from '../forum';
+import type { EvidenceRecord } from '../evidence';
 import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
@@ -10,7 +11,7 @@ import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
 
-export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing', 'unknown-link'] as const;
+export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'unknown-evidence', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing', 'unknown-link'] as const;
 export type RunErrorCode = (typeof RUN_ERROR_CODES)[number];
 
 export class RunError extends Error {
@@ -978,6 +979,23 @@ export function recordQa(run: Run, input: Omit<QaRecord, 'at'>, at: string): Tra
   const out = clone(run, at);
   out.qa.push({ ...structuredClone(input), at });
   log(out, at, 'qa', input.stage, input.by, input.scenarios.some(scenarioBlocks) ? 'fail' : 'pass');
+  return { run: out, messages: [] };
+}
+
+/** A stage kept a piece of evidence: the run records it by id, so the stage and the QA view can list and cite it. */
+export function recordEvidence(run: Run, record: EvidenceRecord, at: string): Transition {
+  const out = clone(run, at);
+  out.evidence = { ...(out.evidence ?? {}), [record.id]: structuredClone(record) };
+  log(out, at, 'evidence', record.stage, record.by, `${record.id}: ${record.title}`);
+  return { run: out, messages: [] };
+}
+
+/** The person removed a piece of evidence: the run drops the record; what already went to the code host is not touched. */
+export function deleteEvidence(run: Run, id: string, at: string): Transition {
+  const out = clone(run, at);
+  if (!out.evidence?.[id]) throw new RunError('unknown-evidence', { id });
+  delete out.evidence[id];
+  log(out, at, 'evidence-removed', run.stage, 'person', id);
   return { run: out, messages: [] };
 }
 

@@ -130,6 +130,19 @@ export function RunnerSection({ config, save }: SectionProps) {
 
       <SandboxBlock draft={draft} set={set} stored={config.runner} web={web} at={at} />
 
+      {!web && (
+        <fieldset className="wz-fieldset">
+          <legend className="wz-label">{t('ui.runner.evidence')}</legend>
+          <p className="small muted">{t('ui.runner.evidenceHint')}</p>
+          <div role="group" aria-label={t('ui.runner.evidence')} className="wz-pills">
+            {(['app', 'cycle'] as const).map((where) => (
+              <button key={where} type="button" aria-pressed={draft.evidence === where} className={`filter ${draft.evidence === where ? 'on' : ''}`} onClick={() => set({ evidence: where })}>{t(where === 'app' ? 'ui.runner.evidenceApp' : 'ui.runner.evidenceCycle')}</button>
+            ))}
+          </div>
+          <p className="small muted">{draft.evidence === 'app' ? t('ui.runner.evidenceAppHint') : t('ui.runner.evidenceCycleHint')}</p>
+        </fieldset>
+      )}
+
       <Labeled label={t('ui.runner.commit')} hint={t('ui.runner.commitHint')} error={at('commitMessage')}>
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
       </Labeled>
@@ -176,6 +189,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dd className="small">{identity}</dd>
       <dt className="wz-label">{t('ui.runner.soleMaintainer')}</dt>
       <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
+      <dt className="wz-label">{t('ui.runner.evidence')}</dt>
+      <dd className="small">{t(runner.evidence === 'cycle' ? 'ui.runner.evidenceCycle' : 'ui.runner.evidenceApp')}</dd>
     </dl>
   );
 }

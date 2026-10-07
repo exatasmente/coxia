@@ -214,8 +214,12 @@ export function fakeSandbox(o: { onOpen?: (options: OpenOptions) => void; repoFo
   function session(options: OpenOptions & Pick<HostOpenOptions, 'approve'>, host: boolean): FakeSession {
     const log: ExecResult[] = [];
     const asked: string[] = [];
+    // A stage folder with an `out` inside, as the real sandbox makes: what the evidence tools read.
+    const stageDir = mkdtempSync(join(tmpdir(), 'cerimonias-fake-stage-'));
+    mkdirSync(join(stageDir, 'out'), { recursive: true });
     const made: FakeSession = {
       ...(host ? { description: 'host' } : {}),
+      stageDir,
       closed: false,
       asked,
       log,

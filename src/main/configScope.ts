@@ -6,6 +6,9 @@ import type { WorkspaceConfig } from '../shared/config/types';
 // to work from the phone, so they save through config:cycle-save: a separate channel, which leaves config:save refused by name, and whose handler (configModule.ts)
 // accepts a change only when every path that differs from the stored configuration is one of WEB_EDITABLE. The diff is computed here, on the validated
 // configuration against the one the app holds, so what the client says it changed does not matter: a full config with a sneaky change elsewhere is refused.
+//
+// `runner.evidence` is deliberately absent from the list, like `runner.worktreesDir`, `runner.commands`, `runner.identity`, `runner.sandbox` and
+// `runner.release`: it decides what enters a commit and only the computer changes it (see RunnerSection.tsx).
 
 /** The paths (a path and everything under it) a paired browser may change. */
 export const WEB_EDITABLE = [

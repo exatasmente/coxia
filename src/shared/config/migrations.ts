@@ -260,7 +260,16 @@ function v11ToV12(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 12, agents: { ...agents, team } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12 };
+// The runner gains where a stage's evidence is kept: `runner.evidence`, whose safe default is `app` (nothing of the evidence enters a commit). The step writes
+// the default when the field is missing and touches nothing else; the bump makes an older app refuse the file instead of repairing it without the field.
+function v12ToV13(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  if (runner.evidence === 'app' || runner.evidence === 'cycle') return { ...old, schemaVersion: 13 };
+  notes.push('runner.evidence got its default ("app": a stage\'s evidence stays with the run in the workspace\'s data, never in a commit)');
+  return { ...old, schemaVersion: 13, runner: { ...runner, evidence: 'app' } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

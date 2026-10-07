@@ -36,6 +36,9 @@ import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
 import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
+import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
+import { evidenceMcpToolName } from './evidence/tool';
+import type { EvidenceTools } from './evidence/tool';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME } from './sandbox/tool';
 import type { SandboxSession } from './sandbox/session';
 
@@ -466,8 +469,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -521,7 +525,10 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
   const release = req.release ? await releaseMcpServer(keepAlive(req.release, req.beat)) : null;
   if (req.release && !release) throw new Error(t('main.release.toolMissing'));
-  const mcp = vcs || shell || release ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}) } : null;
+  // The evidence tools of a stage that keeps evidence: the same in-process MCP server shape as the Shell tool.
+  const evidence = req.evidence ? await evidenceMcpServer(req.evidence) : null;
+  if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
+  const mcp = vcs || shell || release || evidence ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(evidence ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
@@ -529,7 +536,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,
@@ -978,6 +985,8 @@ export interface AgentCall {
   confine?: Confinement;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
   exec?: SandboxSession;
+  /** The evidence tools of a stage that keeps evidence (only with a sandbox): keeping a file, marking an image and looking at it. */
+  evidence?: EvidenceTools;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1018,6 +1027,7 @@ export function trackerOf(agent: Pick<AgentDef, 'tracker' | 'permission'>): NonN
 function withActivity(session: SandboxSession, activity: RunActivity): SandboxSession {
   return {
     description: session.description,
+    ...(session.stageDir ? { stageDir: session.stageDir } : {}),
     exec: async (command) => {
       const r = await session.exec(command);
       activity.tool(r.refused ? `exit — ${r.refused}` : r.timedOut ? `exit — timeout (${Math.round(r.ms / 1000)}s)` : `exit ${r.exitCode ?? '—'} (${Math.max(1, Math.round(r.ms / 100) / 10)}s)`);
@@ -1059,6 +1069,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       confine: call.confine,
       tracker,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
+      evidence: call.evidence,
       release: call.release,
       abort: call.abort,
       beat: call.beat,
