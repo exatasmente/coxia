@@ -9,8 +9,8 @@ const ROOT = join(__dirname, '..');
 const text = (f: string): string => readFileSync(join(ROOT, f), 'utf8');
 const hasJq = spawnSync('jq', ['--version']).status === 0;
 
-// electron-builder creates the draft with tag_name = the tag, but GitHub answered with "untagged-<hash>" (and target_commitish main) on
-// v0.5.0-beta.2, so the lookups of release.yml go by the release's name, and a step sets tag_name before the draft is checked.
+// GitHub answered a draft with tag_name "untagged-<hash>" (and target_commitish main) on v0.5.0-beta.2, so the lookups of release.yml go by
+// the release's name, and the draft job sets tag_name before any build uploads into the draft.
 const BETA_ASSETS = ['coxia-0.6.0-beta.1.AppImage', 'coxia_0.6.0-beta.1_amd64.deb', 'beta-linux.yml'].map((name) => ({ name }));
 const RELEASES = [
   { id: 41, draft: true, prerelease: false, name: 'v0.6.0-beta.1', tag_name: 'untagged-3f2a9c', target_commitish: 'main', assets: BETA_ASSETS },
@@ -19,7 +19,7 @@ const RELEASES = [
   { id: 38, draft: true, prerelease: true, name: 'a title that is not a version', tag_name: 'v0.6.0-beta.1', target_commitish: 'main', assets: [] },
 ];
 
-// The run: block of a step of the linux job, as the runner sees it (no ${{ }} inside, everything comes through env).
+// The run: block of a step, as the runner sees it (no ${{ }} inside, everything comes through env).
 const stepScript = (name: string): string => {
   const yml = text('.github/workflows/release.yml');
   const start = yml.indexOf(`      - name: ${name}\n`);
@@ -32,16 +32,17 @@ const stepScript = (name: string): string => {
   return run![1].split('\n').map((l) => l.slice(10)).join('\n');
 };
 
-// A gh that answers `gh api` from a JSON list of releases, applies the -f/-F fields of a PATCH to the release it names, and logs each call.
+// A gh that answers `gh api` from a JSON list of releases, applies the -f/-F fields of a PATCH to the release it names, adds the release a POST
+// makes (id 99), and logs each call.
 const GH_STUB = `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_LOG"
 shift
-path= prog=. edits=.
+path= prog=. edits=. method=GET
 args=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --method) shift ;;
+    --method) method="$2"; shift ;;
     --paginate) ;;
     --jq) prog="$2"; shift ;;
     -f) args+=(--arg "\${2%%=*}" "\${2#*=}"); edits="$edits | .\${2%%=*} = \\$\${2%%=*}"; shift ;;
@@ -50,9 +51,13 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-case "$path" in
-  */releases) jq -r "$prog" "$GH_RELEASES" ;;
-  */releases/*) jq "\${args[@]}" ".[] | select(.id == \${path##*/}) | $edits" "$GH_RELEASES" | jq -r "$prog" ;;
+case "$method:$path" in
+  POST:*/releases)
+    made="$(jq -n "\${args[@]}" "{id: 99, assets: []} | $edits")"
+    jq --argjson made "$made" '. + [$made]' "$GH_RELEASES" > "$GH_RELEASES.new" && mv "$GH_RELEASES.new" "$GH_RELEASES"
+    echo "$made" | jq -r "$prog" ;;
+  *:*/releases) jq -r "$prog" "$GH_RELEASES" ;;
+  *:*/releases/*) jq "\${args[@]}" ".[] | select(.id == \${path##*/}) | $edits" "$GH_RELEASES" | jq -r "$prog" ;;
 esac
 `;
 
@@ -63,7 +68,9 @@ const runStep = (name: string, releases: unknown[], env: Record<string, string>)
     chmodSync(join(dir, 'gh'), 0o755);
     writeFileSync(join(dir, 'releases.json'), JSON.stringify(releases));
     writeFileSync(join(dir, 'calls.log'), '');
+    writeFileSync(join(dir, 'release-notes.md'), 'The notes of the version.\n');
     const r = spawnSync('bash', ['-c', stepScript(name)], {
+      cwd: dir,
       env: { PATH: `${dir}:${process.env.PATH}`, GH_RELEASES: join(dir, 'releases.json'), GH_LOG: join(dir, 'calls.log'), REPOSITORY: 'group/project', ...env },
       encoding: 'utf8',
     });
@@ -74,7 +81,7 @@ const runStep = (name: string, releases: unknown[], env: Record<string, string>)
   }
 };
 
-const LINK = 'Link the draft to its tag, and keep it a pre-release when the version has a suffix';
+const LINK = 'Make the draft, linked to its tag, a pre-release when the version has a suffix';
 const CHECK = 'Check what the draft release holds';
 
 describe('release.yml finds the draft of a pre-release', () => {
@@ -109,33 +116,52 @@ describe('release.yml finds the draft of a pre-release', () => {
   });
 });
 
-describe('release.yml links the draft to its tag', () => {
-  it('runs the link for every real release, a stable included, and before the draft is checked', () => {
-    const yml = text('.github/workflows/release.yml');
-    const link = yml.indexOf(`      - name: ${LINK}\n`);
-    expect(yml.slice(link).split('\n')[1]).toBe("        if: needs.prepare.outputs.dry_run != 'true'");
-    expect(link).toBeLessThan(yml.indexOf(`      - name: ${CHECK}\n`));
+const jobOf = (name: string): string => {
+  const yml = text('.github/workflows/release.yml');
+  const start = yml.indexOf(`  ${name}:\n`);
+  expect(start).toBeGreaterThan(-1);
+  const next = yml.slice(start + 1).search(/\n  [a-z]+:\n/);
+  return next === -1 ? yml.slice(start) : yml.slice(start, start + 1 + next);
+};
+
+describe('release.yml makes the draft before any build', () => {
+  it('makes it in a job of its own, for every real release, a stable included, and never in a dry run', () => {
+    const job = jobOf('draft');
+    expect(job).toMatch(/^    needs: prepare$/m);
+    expect(job).toMatch(/^    if: needs\.prepare\.outputs\.dry_run != 'true'$/m);
+    expect(job).toContain(`      - name: ${LINK}\n`);
+    expect(jobOf('linux')).not.toContain(LINK);
   });
 
-  it.skipIf(!hasJq)('sets tag_name to the tag on the untagged draft of a beta, and keeps it a pre-release', () => {
+  it('builds every platform at the same time, after the draft, and still in a dry run where the draft job is skipped', () => {
+    for (const name of ['linux', 'windows', 'macos']) {
+      const job = jobOf(name);
+      expect(job).toMatch(/^    needs: \[prepare, draft\]$/m);
+      expect(job).toMatch(/^    if: \$\{\{ !failure\(\) && !cancelled\(\)( && inputs\.experimental_platforms == true)? \}\}$/m);
+    }
+    expect(jobOf('windows')).not.toMatch(/needs: .*linux/);
+  });
+
+  it.skipIf(!hasJq)('links the untagged draft a first attempt left to the tag, and keeps it a pre-release, without making another', () => {
     const r = runStep(LINK, RELEASES, { TAG: 'v0.6.0-beta.1', PRERELEASE: 'true' });
     expect(r.code).toBe(0);
-    expect(r.calls[1]).toBe('api --method PATCH repos/group/project/releases/41 -f tag_name=v0.6.0-beta.1 -F prerelease=true --jq "tag_name=\\(.tag_name) draft=\\(.draft) prerelease=\\(.prerelease)"');
-    expect(r.out).toContain('tag_name=v0.6.0-beta.1 draft=true prerelease=true');
+    expect(r.calls.some((c) => c.includes('POST'))).toBe(false);
+    expect(r.calls[1]).toBe("api --method PATCH repos/group/project/releases/41 -f tag_name=v0.6.0-beta.1 -F prerelease=true --jq .tag_name");
+    expect(r.out).toContain('draft 41: tag_name=v0.6.0-beta.1 prerelease=true');
   });
 
-  it.skipIf(!hasJq)('sets tag_name on the draft of a stable too, and leaves it a full release', () => {
+  it.skipIf(!hasJq)('links the draft of a stable too, and leaves it a full release', () => {
     const r = runStep(LINK, RELEASES, { TAG: 'v0.5.0', PRERELEASE: 'false' });
     expect(r.code).toBe(0);
     expect(r.calls[1]).toContain('PATCH repos/group/project/releases/39 -f tag_name=v0.5.0 -F prerelease=false');
-    expect(r.out).toContain('tag_name=v0.5.0 draft=true prerelease=false');
   });
 
-  it.skipIf(!hasJq)('fails when there is no draft to link', () => {
+  it.skipIf(!hasJq)('makes the draft when there is none, named after the tag with the notes as its body, and then links it', () => {
     const r = runStep(LINK, RELEASES, { TAG: 'v0.7.0', PRERELEASE: 'false' });
-    expect(r.code).not.toBe(0);
-    expect(r.out).toContain('::error::no draft release for v0.7.0');
-    expect(r.calls.some((c) => c.includes('PATCH'))).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.calls[1]).toBe('api --method POST repos/group/project/releases -f tag_name=v0.7.0 -f name=v0.7.0 -F draft=true -F prerelease=false -f body=The notes of the version. --jq .id');
+    expect(r.calls[2]).toContain('PATCH repos/group/project/releases/99 -f tag_name=v0.7.0');
+    expect(r.out).toContain('draft 99: tag_name=v0.7.0 prerelease=false');
   });
 
   it.skipIf(!hasJq)('refuses a draft still untagged: publishing it would create a tag named untagged-<hash>', () => {
@@ -154,7 +180,7 @@ describe('release.yml links the draft to its tag', () => {
 
 const WINDOWS_CHECK = 'Check the Windows files in the draft release';
 const WINDOWS_BETA = ['coxia-setup-0.6.0-beta.1.exe', 'coxia-setup-0.6.0-beta.1.exe.blockmap', 'beta.yml'].map((name) => ({ name }));
-// The beta's draft once the Linux job linked it, with no leftover draft of the same version around.
+// The beta's draft once the draft job linked it, with no leftover draft of the same version around.
 const linkedBeta = (assets: { name: string }[]): unknown[] => [{ ...RELEASES[0], tag_name: 'v0.6.0-beta.1', assets: [...BETA_ASSETS, ...assets] }, RELEASES[1], RELEASES[2]];
 const BETA_ENV = { TAG: 'v0.6.0-beta.1', VERSION: '0.6.0-beta.1', CHANNEL: 'beta' };
 
@@ -164,12 +190,9 @@ describe('release.yml builds Windows for every tag', () => {
     return yml.slice(yml.indexOf('  windows:\n'), yml.indexOf('  macos:\n'));
   };
 
-  it('runs the Windows job on every run, after the Linux job made the draft, and keeps macOS behind the switch', () => {
-    const job = windowsJob();
-    expect(job).toMatch(/needs: \[prepare, linux\]/);
-    expect(job).not.toMatch(/^    if:/m);
-    const yml = text('.github/workflows/release.yml');
-    expect(yml.slice(yml.indexOf('  macos:\n'))).toMatch(/^    if: inputs\.experimental_platforms == true$/m);
+  it('runs the Windows job on every run, and keeps macOS behind the switch', () => {
+    expect(windowsJob()).not.toMatch(/experimental_platforms/);
+    expect(jobOf('macos')).toMatch(/^    if: .*inputs\.experimental_platforms == true \}\}$/m);
   });
 
   it('uploads into the draft named after the tag, with the feed of the channel', () => {
