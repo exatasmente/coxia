@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { autonomousOf } from '../../shared/config/squads';
 import type { AgentDef, CommentTemplate, WorkspaceConfig } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
@@ -103,6 +104,8 @@ export interface Door {
   /** Puts the commands in Actions as one proposal; false when the same proposal is already there. */
   propose(meta: ProposalMeta, commands: VcsCommand[]): boolean;
   proposePush(meta: PushMeta): boolean;
+  /** Pushes the run's branch by itself, audited, under the autonomy block's "push" choice. Throws the reason it did not happen. */
+  push(meta: PushMeta, by: string): Promise<void>;
   /** Puts one step of a release in Actions as a proposal; false when the same proposal is already there. */
   proposeRelease(meta: ReleaseMeta): boolean;
   /** Runs one local step of a release by itself, audited as the agent. A push is refused by the door whatever is asked. Throws the reason it did not happen. */
@@ -659,7 +662,13 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return `Closes ${issue === repo ? '' : issue}#${run.issue.iid}`;
   };
 
-  /** At the end of the stage that ends with the push: the pull request's description is written, and the push waits in Actions. */
+  /**
+   * The autonomy block that decides this run's steps, and one of its choices as it stands right now. A run of a release is left out whatever the block says: the steps
+   * that leave the machine in a release (the push of the branch, the push of a tag) run the repository's own script as the person and only ever wait for a "sim".
+   */
+  const chooses = (run: Run, choice: 'push' | 'pullRequest'): boolean => (run.subject ? false : choiceOn(autonomyOf(deps.config(), flowKeyOf(run.squad)), choice));
+
+  /** At the end of the stage that ends with the push: the pull request's description is written, and the push goes out by itself or waits in Actions. */
   async function pushStage(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
     const run = need(runId);
@@ -680,11 +689,27 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.
     const attempt = run.stages.find((s) => s.stage === end.stage.id)?.attempts ?? 1;
-    const created = door.proposePush({ key: `push:${run.id}:${attempt}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: tr('main.runner.push.summary', { branch: run.branch }), runId: run.id, branch: run.branch, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: tr('main.runner.push.summary', { branch: run.branch }) } });
+    const meta = { key: `push:${run.id}:${attempt}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: tr('main.runner.push.summary', { branch: run.branch }), runId: run.id, branch: run.branch, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: tr('main.runner.push.summary', { branch: run.branch }) } };
+    // The autonomy block may let the push go out by itself, audited; a test workspace and a workspace with no host still refuse it where they always did.
+    if (chooses(run, 'push')) {
+      const refusal = door.refusal();
+      if (refusal) {
+        say(run, 'runner.push.refused', { reason: refusal }, end.stage.id);
+      } else {
+        try {
+          await door.push(meta, end.agent.id);
+          say(run, 'runner.push.pushed', { branch: run.branch }, end.stage.id);
+        } catch (e) {
+          say(run, 'runner.push.failed', { reason: message(e) }, end.stage.id);
+        }
+      }
+      return;
+    }
+    const created = door.proposePush(meta);
     if (created) say(run, 'runner.push.proposed', { branch: run.branch }, end.stage.id);
   }
 
-  /** The push was carried out: the pull request waits in Actions for its own "sim" (unless one is already there). */
+  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). */
   async function pullRequest(runId: string): Promise<void> {
     const run = need(runId);
     const provider = door.provider();
@@ -698,6 +723,21 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const body = draft?.body ? draft.body : run.docs ? '' : `${closesOf(run)}\n`;
       const target = (await provider.getRepo(repo)).defaultBranch;
       const commands = await provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
+      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out.
+      if (chooses(run, 'pullRequest')) {
+        const refusal = door.refusal();
+        if (refusal) {
+          say(run, 'runner.pr.refused', { reason: refusal });
+          return;
+        }
+        try {
+          const responses = await door.post({ key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' }, commands);
+          await pullRequestOpened(runId, responses);
+        } catch (e) {
+          say(run, 'runner.pr.failed', { reason: message(e) });
+        }
+        return;
+      }
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: body, unit: { runId, purpose: 'run-pr' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
       moveRun(d, runId, (r) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: hashOf(body), body, title }, now()));
       if (created) say(run, 'runner.pr.proposed', { title }, 'implement');

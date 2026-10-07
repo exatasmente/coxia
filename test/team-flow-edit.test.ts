@@ -8,7 +8,7 @@ import { createTranslator } from '../src/shared/i18n';
 import { flowIssueText } from '../src/shared/runs';
 import {
   applyFlows, chainRename, checkFlows, draftOfFlows, dropOwnFlow, duplicateStage, giveOwnFlow, insertStage, moveBy, moveStage, newStageId, ownsFlow, patchStage, removeStage, renameStage,
-  stageFieldProblems, stagesOfTarget, withStages,
+  autonomyOfTarget, stageFieldProblems, stagesOfTarget, withAutonomy, withStages,
 } from '../src/renderer/src/screens/team/flowEdit';
 
 const ids = (stages: StageDef[]) => stages.map((s) => s.id);
@@ -189,6 +189,22 @@ describe('one flow per squad', () => {
     const c = config();
     const d = withStages(draftOfFlows(c), 'ghost', c.devCycle.stages);
     expect(applyFlows(c, d).devCycle.flows).toBeUndefined();
+  });
+
+  it('the autonomy block of each flow is read, changed and written, following the workspace by default', () => {
+    const c = withSquad();
+    let d = draftOfFlows(c);
+    // a flow with no block reads as one that follows the workspace, everything off
+    expect(autonomyOfTarget(d, null)).toEqual({ useWorkspace: true, cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false });
+    expect(autonomyOfTarget(d, 'core')).toMatchObject({ useWorkspace: true, push: false });
+    d = withAutonomy(d, 'core', { push: true });
+    expect(autonomyOfTarget(d, 'core')).toMatchObject({ useWorkspace: true, push: true });
+    expect(autonomyOfTarget(d, null).push).toBe(false);
+    expect(applyFlows(c, d).devCycle.autonomy?.core).toMatchObject({ useWorkspace: true, push: true });
+    // the block of a flow this editor does not show is left alone
+    const only = applyFlows(c, withAutonomy(draftOfFlows(c), null, { cycle: true }));
+    expect(only.devCycle.autonomy?.['']).toMatchObject({ cycle: true });
+    expect(Object.keys(only.devCycle.autonomy ?? {})).toEqual(['']);
   });
 });
 

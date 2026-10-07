@@ -1,53 +1,49 @@
-# A autonomia lida em cada decisão, a rede aberta na sandbox e a lista dos comandos, presas no stash
+# A autonomia ligada nos quatro pontos de decisão, a rede aberta na sandbox e a lista dos comandos
 
 ## Estado desta passada
 
-A implementação foi feita sobre a `release/0.7.0` (o rebase que a resposta da pessoa pediu) e **passou em todas as verificações que rodei**. O worktree, porém, **não mostra o código agora**: o último comando desta etapa (`git stash pop`, ao pausar para comparar com a base) não voltou, o orçamento de comandos da etapa acabou, e as alterações ficaram presas em `stash@{0}` (a entrada marcada "wip4"). O que está visível no worktree é o estado commitado: os documentos do ciclo sobre a `release/0.7.0`.
+A revisão anterior derrubou a entrega por três buracos: o push e o pull request autônomos não estavam ligados, a seção "Comandos" e a mensagem final não existiam, e nem o cabeçalho da execução nem as telas do bloco de autonomia foram escritas. Nesta passada os quatro foram escritos, e o trabalho está **no worktree, sem commit** (quem commita é o app).
 
-**A primeira coisa a fazer na próxima etapa é `git stash pop`** (ou `git stash apply stash@{0}`) e conferir `git status`. Sem isso, nada do que este documento descreve aparece no código.
+## O que foi implementado
 
-## O que foi implementado e conferido
+### Push e pull request autônomos
 
-### Rebase e configuração
+- `src/main/runner/publish.ts`: um `chooses(run, choice)` lê `autonomyOf(config, flowKeyOf(run.squad))`, e **uma execução de release fica fora das duas escolhas** pelo próprio resolvedor (`run.subject ? false : ...`), sem tocar em `releaseWaits`/`alwaysWaits`.
+- `pushStage`: com `cycle` + `push`, o push sai pela porta em vez de virar proposta. Sem host ou num espaço de trabalho de teste a porta recusa e a conversa diz (`runner.push.refused`); uma falha vira `runner.push.failed`.
+- `pullRequest`: com `cycle` + `pullRequest`, o pull request é aberto por `door.post` (auditado) e segue por `pullRequestOpened`; num espaço de trabalho de teste a recusa é dita (`runner.pr.refused`).
+- `src/main/actions.ts`: `pushRunBranchAuto` novo — as mesmas checagens do caminho proposto (a execução existe, a branch bate, o worktree existe e está na branch certa, nada por commitar fora da memória do ciclo), uma linha de auditoria com o agente que pediu, a proposta antiga da mesma execução marcada como substituída, e o aviso `told(a, [])` no fim para que o pull request siga o push. A branch é lida do arquivo da execução, nunca de quem chama.
+- `src/main/runner/door.ts`: a porta ganhou `push(meta, by)`, que é a única coisa que fala com as Actions.
 
-- A branch foi rebaseada sobre `release/0.7.0` (esquema 15), como a resposta pediu. A migração de autonomia ficou em **`v15ToV16`** (`CONFIG_SCHEMA_VERSION` 15 → 16), sem o `v12ToV13` que colidia com o da release.
-- Sobre o código da release: `AUTONOMY_CHOICES`/`AutonomyBlock`/`FlowAutonomy` em `types.ts`, `RunnerConfig.autonomy`, `DevCycleConfig.autonomy` (mapa por fluxo), `SANDBOX_NETWORKS` com `open` e o contrato de `SandboxNetwork`; `neutralAutonomy()` e `neutralRunner()` em `defaults.ts`; `autonomy: {}` em `neutralDevCycle()`; os objetos `autonomy`/`flowAutonomy` em `schema.ts`; `v15ToV16` em `migrations.ts` (cria os blocos desligados, mantém um já presente, **nunca toca na rede**); o resolvedor puro `src/shared/config/autonomy.ts`.
+### A lista dos comandos
 
-### A decisão lida nos pontos de decisão
+- `postRunCommands` (`service.ts`), chamado de um ponto único em `tell` (`reachedEnd`: done, cancelled ou failed) e protegido contra postar duas vezes. Monta o texto por agente e por etapa a partir das mensagens `runner.exec`/`runner.exec.host` que a execução já escreve, e posta uma mensagem `runner.commands.list`.
+- `CommandsSection.tsx` (novo) lê a conversa com `useThread` (viva) e agrupa com `groupCommands`; fica na tela da execução, ao lado da timeline.
+- Chaves novas `main.runner.commands.*` e `main.forum.code.runner.commands.list` nos dois idiomas.
 
-- `FlowStage.cycleAutonomous` (novo, no esquema do run também) guarda o valor do bloco quando o fluxo é resolvido; `enter` faz `rec.autonomous = stage.cycleAutonomous || stage.autonomous`, e `startStage` repete — a regra "vale a partir da próxima, nunca a meio" se mantém pelo `StageRecord.autonomous`.
-- **Gate**: `drive` chama `autoGate`, que com `cycle && gates` ligados aprova por `gateBy(id, 'approve', motivo, 'app')`; `gateApprove` ganhou um `by` e registra `gate-approved` com `by: 'app'` e o motivo com a origem (espaço de trabalho ou fluxo), em `main.runner.gate.autonomy*`.
-- **Comando `host`**: `hostApproval` lê `choiceOn(autonomyOf(config, flowKeyOf(run.squad)), 'hostCommands')` e devolve `{ ok: true }` sem `askCommand`.
-- **Push e pull request**: a regra da release continua intacta (`proposePush` e a proposta de pull request seguem sendo os caminhos de sempre); a leitura das escolhas de push/pull request **não foi ligada** nesta passada (ver abaixo).
+### O cabeçalho e as telas
 
-### Rede `open`
+- `AutonomyNote.tsx` (novo): uma linha no cabeçalho da tela da execução dizendo que ela roda sozinha, quais das quatro escolhas estão ligadas e de onde vem a decisão. Some numa release.
+- `AutonomyFields.tsx` (novo): os cinco campos, com os quatro de baixo desabilitados enquanto a chave geral está desligada. Usado no bloco do espaço de trabalho (Settings › Runner) e no bloco de cada fluxo (Settings › Team e ciclo), este com o interruptor "Usar a configuração do espaço de trabalho" ligado por padrão, os campos desabilitados e a dica enquanto ele está ligado.
+- `runnerEdit.ts` e `flowEdit.ts` passaram a carregar e a gravar os dois blocos (`runner.autonomy` e `devCycle.autonomy`, por chave de fluxo); o bloco de um fluxo que o editor não mostra (release, documentação) fica como está.
 
-- `SandboxSpec.network` ganhou `'open'`; `bwrapArgs` deixa de pôr `--unshare-net` em `open` (os outros unshares ficam); `sandboxEnv` não põe proxy em `open`; `index.ts` monta o resolvedor (`nameResolverBinds`, novo em `system.ts`) somente leitura, no alvo real de `/etc/resolv.conf` e no caminho convencional; `probe.ts` continua `off`.
-- O prompt (`prompt.ts`, `mentions/call.ts`) distingue `open` e usa as chaves novas `prompt.sdd.runner.rules.shell.open` nos dois idiomas.
+### A marca do comando `host` sob autonomia
 
-### Lista de comandos
-
-- Módulo puro novo `src/shared/runCommands.ts` (`groupCommands`, `countCommands`), que agrupa por agente e etapa a partir das mensagens `runner.exec`/`runner.exec.host`. A seção na tela e a mensagem única ao fim da execução **não foram ligadas** (ver abaixo).
-
-### Navegador pareado
-
-- `devCycle.autonomy` entrou em `WEB_EDITABLE` com `raisedAutonomy`, que recusa qualquer campo `false → true` e `useWorkspace true → false`; `runner.autonomy` e `runner.sandbox` continuam fora, então nem o bloco do espaço de trabalho nem a rede `open` se mexem do celular.
+- `hostApproval` (`executor.ts`) registra uma linha `runner.command.autonomy` na conversa quando a escolha liberou o comando, dizendo que ele rodou neste computador sob a autonomia do ciclo (a recomendação que a spec registrava e que não estava seguida).
 
 ### Documentação
 
-- `docs/runner.md` (o resumo, o parágrafo do push e do pull request, o contrato de `shell: host` ganhou a exceção, a linha de `runs:start`, a descrição da sandbox e a seção "Não verificado" dizendo que `open` nasce não exercitada), `docs/configuration.md` (o passo v16 no histórico, o contrato do `autonomous`, o bloco `autonomy`, a rede `open`, a tabela de `config:cycle-save`) e `CHANGELOG.md` em `## [Unreleased]`.
+- `docs/runner.md`: o bloco de autonomia e o que cada escolha faz, a exceção do `shell: host`, o push e o pull request condicionais à escolha (com a release fora e o espaço de trabalho de teste recusando), a rede `open` na descrição da sandbox, o cabeçalho e a seção "Comandos" na tela da execução, a linha do navegador pareado e a seção "Não verificado" dizendo que a rede `open` nasce não exercitada quanto a **alcançar** um endereço público.
+- `CHANGELOG.md`, em `## [Unreleased]`: o bloco de autonomia, a rede `open` e a lista dos comandos, com o que está conferido e o que não está.
 
 ## O que foi verificado
 
-- `npx tsc --noEmit` limpo; `npx vitest run` em lotes (a suíte inteira estoura o tempo desta máquina): ~1800 casos verdes, incluindo config, migração, `autonomy`, `run-commands`, sandbox (com o teste real de `bwrap`), runs, gate, release, publish, runner-*, web-scope.
-- **A rede `open` foi exercitada num teste real de sandbox**: uma interface da máquina existe dentro e `getent hosts example.com` resolve (nesta máquina `/etc/resolv.conf` é um link para `/run/systemd/resolve/stub-resolv.conf`, e a resolução funcionou). Alcançar um endereço público por TCP não foi confirmado.
-- `node scripts/theme-audit.mjs`, `npm run i18n:lint` (4378 chaves nos dois idiomas) e `node scripts/public-audit.mjs` limpos.
-- Um teste que falha na base (`test/sandbox-gui.test.ts`, o da pasta de navegadores) foi conferido como **pré-existente**, não desta mudança.
+- `npx tsc --noEmit` limpo; `npx vitest run --exclude test/sandbox-gui.test.ts` (a suíte inteira, uma vez): **4156 casos verdes, 253 arquivos**. Dois casos falharam: `test/sandbox-gui.test.ts` (o da pasta de navegadores, que falha na base e não toca arquivo desta mudança) e um caso de `test/sandbox-hardening.test.ts` que estourou o tempo limite de 5 s sob carga, e passa sozinho.
+- Testes novos: push e pull request autônomos, auditados e sem proposta; a recusa no espaço de trabalho de teste com as duas escolhas ligadas; "só o pull request ligado" deixando o push esperar; o comando `host` sem pergunta com a linha de autonomia e a mensagem final; o bloco de autonomia do fluxo no editor.
+- `node scripts/theme-audit.mjs`, `npm run i18n:lint` (4422 chaves nos dois idiomas), `node scripts/public-audit.mjs` (1092 arquivos) e `npx electron-vite build` limpos.
+- O `test/runs-policy.test.ts` foi ajustado: o contrato "o runner não faz `git push`" continua valendo (nome de função e linha de comando proibidos), e agora fixa que a porta é quem pede o push.
 
-## O que não foi feito ou não foi verificado
+## O que não foi verificado
 
-- **O push e o pull request autônomos não foram ligados**: com as escolhas ligadas, o push e o pull request ainda viram propostas em Ações. O caminho autônomo da porta para os dois (o `door.push` novo e o `door.post` do pull request) ficou desenhado e não escrito.
-- **A seção "Comandos" na tela e a mensagem única ao fim da execução não foram ligadas**: o módulo puro `runCommands.ts` existe e tem teste, mas `CommandsSection.tsx` e a mensagem `runner.commands.list` no `service.ts` não foram escritas.
-- **O cabeçalho da execução** não diz que ela é autônoma nem de onde vem a decisão.
-- **As telas do bloco de autonomia** (Configurações › Runner e Time e ciclo) não foram escritas; só o seletor de rede ganhou o valor `open` no `RunnerSection.tsx`.
-- Nenhuma tela foi aberta e nada foi visto funcionando no aplicativo.
+- **Nada do comportamento novo foi visto funcionando no aplicativo**: nenhuma tela foi aberta, nenhum bloco foi ligado à mão e nenhuma execução foi rodada de ponta a ponta. O que se viu foi o código, os portões e os testes.
+- A rede `open` **não alcançou um endereço público de verdade** em teste nenhum: o que o teste real mostra é que existe uma interface da máquina dentro da sandbox e que um nome público é resolvido. A seção "Não verificado" do documento do runner diz isso.
+- O push autônomo e o pull request autônomo só rodaram contra o host falso com memória e um repositório git temporário; **nenhum host real**.

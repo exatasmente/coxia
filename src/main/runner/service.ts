@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
-import { t } from '../../shared/i18n';
+import { createTranslator, t } from '../../shared/i18n';
 import {
   type FlowStage,
   type PendingQuestion,
@@ -82,6 +82,7 @@ import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf, type EffectiveAutonomy } from '../../shared/config/autonomy';
+import { type RunAgentCommands, countCommands, groupCommands } from '../../shared/runCommands';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
@@ -385,6 +386,34 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
+  /** Whether this move is where the run ended: done, cancelled or failed, and it was not there before (so the closing list is posted once). */
+  const reachedEnd = (prior: Run | null, run: Run): boolean => isTerminal(run) || (run.status === 'failed' && prior?.status !== 'failed');
+
+  /**
+   * The one message the run's thread carries when it ends: the commands each agent ran, by agent and by stage, built from the `runner.exec` and `runner.exec.host`
+   * messages the run already wrote. Nothing new is recorded anywhere else by it, and nothing of it goes to the code host.
+   */
+  function postRunCommands(id: string): void {
+    try {
+      const thread = runThreadId(id);
+      const messages = deps.forum.read(thread, 0, 5000)?.messages ?? [];
+      if (messages.some((m) => m.code === 'runner.commands.list')) return;
+      const groups: RunAgentCommands[] = groupCommands(messages);
+      const total = countCommands(groups);
+      if (!total) return;
+      const runs = deps.runs.get(id);
+      if (!runs) return;
+      const lang = deps.config().language;
+      const tr = createTranslator(lang);
+      const text = groups
+        .map((g) => [tr('main.runner.commands.agent', { agent: g.agent, count: g.stages.reduce((k, s) => k + s.commands.length, 0) }), ...g.stages.flatMap((s) => [tr('main.runner.commands.stage', { stage: cycleText(s.stage, lang) }), ...s.commands.map((c) => `· ${tr('main.runner.commands.line', { n: c.n, command: c.command, where: tr(`main.runner.commands.where.${c.via}`), result: c.result, ms: Math.round(c.ms / 100) / 10 })}`)])].join('\n'))
+        .join('\n\n');
+      deps.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'runner.commands.list', params: { count: total, text }, stage: runs.stage });
+    } catch (e) {
+      console.error('[runner] could not post the commands of the run', id, e instanceof Error ? e.message : e);
+    }
+  }
+
   function tell(prior: Run | null, run: Run): void {
     // A run that was made for another's request has ended: the run that waits on it can go on.
     if (run.status === 'done' && prior?.status !== 'done') for (const l of run.links ?? []) if (l.role === 'origin' && l.run) trackLink(settleLinked(l.run).then(() => undefined));
@@ -402,6 +431,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
     if (!prior || prior.stage !== run.stage) void pluginDone('stage-entered', run);
     if (isTerminal(run) && (!prior || !isTerminal(prior))) void pluginDone('run-finished', run);
+    // The run reached its end (done, cancelled or failed): the app posts the list of the commands each agent ran, once, as the run's own record.
+    if (reachedEnd(prior, run)) postRunCommands(run.id);
     // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
     if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;

@@ -9,6 +9,7 @@ import { isWeb } from '../../platform';
 import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MINUTES, MIN_TURNS, MIN_IDLE_MINUTES, runnerOf, runnerOfWeb, runnerProblems, withCommand, type RunnerDraft } from './runnerEdit';
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 import { SANDBOX_BROWSERS_LABEL, SANDBOX_DISPLAY_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL } from './labels';
+import { AutonomyFields } from './AutonomyFields';
 import { useSandboxStatus } from './sandboxStatus';
 
 /**
@@ -130,6 +131,8 @@ export function RunnerSection({ config, save }: SectionProps) {
 
       <SandboxBlock draft={draft} set={set} stored={config.runner} web={web} at={at} />
 
+      <AutonomyBlock draft={draft} set={set} stored={config.runner} web={web} />
+
       <Labeled label={t('ui.runner.commit')} hint={t('ui.runner.commitHint')} error={at('commitMessage')}>
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}
       </Labeled>
@@ -177,6 +180,22 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dt className="wz-label">{t('ui.runner.soleMaintainer')}</dt>
       <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
     </dl>
+  );
+}
+
+/**
+ * The workspace's autonomy block: what an ordinary run may do without stopping for the person. A paired browser is shown it and cannot change it (the save is
+ * refused), because letting a run push, open a pull request or keep the machine's shell without being asked is a decision that stays on the computer.
+ */
+function AutonomyBlock({ draft, set, stored, web }: { draft: RunnerDraft; set: (p: Partial<RunnerDraft>) => void; stored: RunnerConfig; web: boolean }) {
+  const t = useT();
+  return (
+    <fieldset className="wz-fieldset">
+      <legend className="wz-label">{t('ui.autonomy.title')}</legend>
+      <p className="small muted">{t('ui.autonomy.hint')}</p>
+      <AutonomyFields value={web ? stored.autonomy : draft.autonomy} onChange={(patch) => set({ autonomy: { ...draft.autonomy, ...patch } })} readOnly={web} />
+      {web && <p className="small muted" role="note">{t('ui.autonomy.webNote')}</p>}
+    </fieldset>
   );
 }
 

@@ -318,8 +318,22 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
   let trusted = false;
   // The autonomy block of the run may let every command of a `shell: host` agent through; it is read when the stage opens its session, so a change applies from the next stage.
   const auto = choiceOn(autonomyOf(d.config(), flowKeyOf(run.squad)), 'hostCommands');
+  // The command that ran under the autonomy is said as such, so the person keeps the mark that an agent had the machine's own shell without being asked.
+  let spotted = false;
+  const noteAuto = (command: string): void => {
+    if (spotted) return;
+    spotted = true;
+    try {
+      d.forum.append(runThreadId(run.id), { kind: 'system', author: { type: 'app' }, code: 'runner.command.autonomy', params: { agent: agent.id, n: 1, command: clipText(redact(command.replace(/\s+/g, ' ')), 300) }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record an autonomous command', e instanceof Error ? e.message : e);
+    }
+  };
   return async (command) => {
-    if (auto || trusted || clock.allowed.has(command)) return { ok: true };
+    if (auto || trusted || clock.allowed.has(command)) {
+      if (auto && !trusted) noteAuto(command);
+      return { ok: true };
+    }
     if (!d.askCommand || signal.aborted) return { ok: false };
     const resume = clock.pause();
     try {
