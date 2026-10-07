@@ -3,7 +3,7 @@ checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
 checked-date: 2026-10-06
 evidence: [docs/cycles.md:53-64, docs/runner.md:42-45, src/shared/priority.ts, src/shared/runs/proposal.ts, test/runner-priority.test.ts]
 summary: Notes for the Product Owner agent: the functional spec, the priority proposal, and who decides
-stages: [development]
+stages: [refine]
 roles: [product-owner]
 ---
 

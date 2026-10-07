@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **The person's note comes first when sending work back.** What the review and QA left open follows it as context, so a note that narrows the work ("only redo the evidence") is not undone by the list.
 - **Every stage is told how to work.** Know what the stage delivers before exploring, read a file once, ask only what the documents and the code cannot answer, and give the final answer once the work is ready. A stage with the evidence tools is told to keep each file right after making it, since what is not kept is deleted when the stage ends.
 
+### Fixed
+
+- **An agent gets the notes of its own role, not of every role.** The role notes of the repository's documentation were marked for every development stage, so planning, implementation, review and QA were handed the notes of triage, refinement, development and the release note alike; each role note now names its own stage.
+
 ## [0.8.0-beta.6] - 2026-10-07
 
 ### Added
