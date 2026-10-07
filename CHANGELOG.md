@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0-beta.1] - 2026-10-07
+
 ### Added
 
 - **An agent keeps evidence of what it saw, and can mark up an image.** A stage with a sandbox can keep a file it made in its own output folder as *evidence* of the stage: an image (PNG, JPEG, GIF, WebP), a plain-text log or a PDF, with a title and an optional description. The file is kept under a short id (`ev-3`) that a QA scenario and a stage output can cite; it is published in the run's conversation at once, listed under the stage that kept it, and the person can open, download and delete it. A second tool marks an image — rectangle, arrow, ellipse, label, numbered marker and a blur box — and keeps the result as a new piece of evidence, leaving the original untouched; the agent can look at the result and mark it again. Where the evidence is kept is a choice in Settings › Runner, changed only on the computer: **app data only** (the default: never in a commit) or **also in the cycle folder** (a copy is taken by the stage's commit). When a stage comment or the pull request's description cites evidence, the image is sent to the code host and embedded in the text, through the same door as the other writes — the image leaves as part of the same write that cites it, so an autonomous agent publishes by itself and is audited while anyone else waits for the "yes" in Actions with the images in view and nothing of theirs on the host before that, and a test workspace refuses; where a host cannot embed the image, the comment says how many pieces of evidence there are and that they are in the app. No real host was used: the providers are exercised against a fake host.
@@ -263,7 +265,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.1...HEAD
+[0.8.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0-beta.1
 [0.7.0]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0
