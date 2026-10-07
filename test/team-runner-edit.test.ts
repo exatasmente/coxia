@@ -89,9 +89,9 @@ describe('the problems of the runner draft', () => {
   });
 
   it('wants {summary} in one line of at most 200 characters', () => {
-    expect(keys({ ...base(), commitMessage: 'feat: stuff' })).toEqual(['error:commitSummary']);
-    expect(keys({ ...base(), commitMessage: 'feat: {summary}\nmore' })).toEqual(['error:commitLine']);
-    expect(keys({ ...base(), commitMessage: `{summary}${'x'.repeat(200)}` })).toEqual(['error:commitLong']);
+    expect(keys({ ...base(), commitMessage: 'feat: stuff' })).toEqual(['error:commitSummary', 'error:commitIssue']);
+    expect(keys({ ...base(), commitMessage: 'feat: {summary}\nmore' })).toEqual(['error:commitIssue', 'error:commitLine']);
+    expect(keys({ ...base(), commitMessage: `{summary}${'x'.repeat(200)}` })).toEqual(['error:commitIssue', 'error:commitLong']);
   });
 
   it('warns that the runner works only with a flow cycle', () => {

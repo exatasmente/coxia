@@ -561,6 +561,24 @@ describe('the push and the pull request', () => {
     expect(forge.reviews[0].body.startsWith('**Review: changes requested (round 1)**')).toBe(true);
   });
 
+  it('builds the proposal title from the issue when a stored pull request record has no title', async () => {
+    forge = makeForge({ pr: null, linked: false });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    // a record from a run that predates the title field: the draft carries no title at all
+    b.runs.update(run.id, (r) => ({ run: { ...r, comments: { ...r.comments, pr: { ...r.comments.pr!, title: null } } }, messages: [] }));
+    const push = actions.listActions().find((a) => a.kind === 'run-push')!;
+    await actions.approveAction(push.id);
+    await b.settle();
+    const prProposal = actions.listActions().find((a) => a.state === 'pending')!;
+    const prBody = JSON.parse(prProposal.command!.json!) as { title: string };
+    expect(prBody.title).toBe('Add the thing 101 #101');
+  });
+
   it('finds a pull request the person opened by hand, and reviews on it without proposing another', async () => {
     forge = makeForge({ pr: { branch: 'cycle/101-add-the-thing-101' }, linked: true });
     setVcsRuntimeForTests(forge.runtime());

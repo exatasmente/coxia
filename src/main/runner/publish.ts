@@ -689,7 +689,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (await prOf(run, provider)) return;
       const draft = run.comments.pr;
       const { repo } = projects(run);
-      const title = (draft?.title || run.issue.title).trim();
+      const title = pullRequestTitle(deps.config().runner.prTitle, draft?.title?.trim() || run.issue.title, run.issue.iid);
       // The description comes from the template; a cycle with none still says which issue the pull request closes.
       const closes = closesOf(run);
       const body = draft?.body ? draft.body : `${closes}\n`;

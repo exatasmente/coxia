@@ -187,7 +187,7 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `voice` | `enabled`, `engine`, `sttModel`, `depsInstalled`, plus the settings that already existed |
 | `claudeSdk` | `{ installed, version, path }`: where the Claude Agent SDK comes from |
 | `externalTools` | **optional** integrations, all off until configured: `cardSource` (command that lists the day's cards), `releaseSync`, `timeExport`, `terminal`, `claudeCli` |
-| `runner` | what takes an issue through the agent cycle by itself: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `linkDependencies`, `release` (below) |
+| `runner` | what takes an issue through the agent cycle by itself: `enabled`, `triggerLabel`, `maxConcurrentRuns`, `worktreesDir`, `commands`, `stageIdleMs`, `stageMaxMs`, `turns`, `identity`, `sandbox`, `commitMessage`, `prTitle`, `linkDependencies`, `release` (below) |
 
 Paths use `~/` when under the home folder, so a config is portable. Browser access (host, port, public URL) belongs to the machine and stays in `web.json`.
 
