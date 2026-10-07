@@ -831,8 +831,21 @@ export interface RunnerConfig {
    * commands the app runs there find their tools. A config stored without it reads as true.
    */
   linkDependencies: boolean;
+  /**
+   * The limits of a conversation between team agents inside a run: how many messages a conversation accepts before it ends, and how many conversations one attempt
+   * at a stage may open. A config stored without it reads the defaults (6 and 3). Never widens what an agent may do.
+   */
+  conversations: RunnerConversations;
   /** Absent in a config stored before it: read it through `soleMaintainerOf`. */
   release?: RunnerRelease;
+}
+
+/** The limits of a conversation between team agents inside a run. */
+export interface RunnerConversations {
+  /** How many messages of each side one conversation accepts before the app ends it. */
+  roundsPerConversation: number;
+  /** How many conversations one attempt at a stage may open. */
+  perStage: number;
 }
 
 export interface ScheduleConfig {

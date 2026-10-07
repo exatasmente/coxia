@@ -36,6 +36,8 @@ import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
+import { runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
 import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engineTool';
@@ -498,8 +500,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
   const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -533,12 +535,48 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onInterim: (text) => req.activity?.text(text),
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
+    incoming: req.incoming,
     });
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
     throw e;
   }
+}
+
+// The input of a call whose session stays open: the stage's prompt first, then each message the door hands over, as user turns of the same session. The SDK's
+// streaming input keeps the process alive between turns, so a message never restarts the session.
+interface MessageStream extends AsyncIterable<{ type: 'user'; message: { role: 'user'; content: string }; parent_tool_use_id: null }> {
+  push(text: string): void;
+  end(): void;
+}
+
+function messageStream(prompt: string): MessageStream {
+  const queued: string[] = [prompt];
+  let wake: (() => void) | null = null;
+  let done = false;
+  const flush = (): void => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+  return {
+    push: (text) => {
+      queued.push(text);
+      flush();
+    },
+    end: () => {
+      done = true;
+      flush();
+    },
+    async *[Symbol.asyncIterator]() {
+      for (;;) {
+        while (queued.length) yield { type: 'user' as const, message: { role: 'user' as const, content: queued.shift() as string }, parent_tool_use_id: null };
+        if (done) return;
+        await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+  };
 }
 
 // The SDK prices a call as if it went to Anthropic's own API, whatever provider the role is mapped to: outside it, that list price says nothing about what was
@@ -565,21 +603,39 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The evidence tools of a stage that keeps evidence: the same in-process MCP server shape as the Shell tool.
   const evidence = req.evidence ? await evidenceMcpServer(req.evidence) : null;
   if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
-  const mcp = vcs || shell || release || attachment || evidence ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}) } : null;
+  // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
+  const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
-  const q = query({
-    prompt: req.prompt,
-    options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : [])], confine }),
-      ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
-      model: req.target.model,
-      env,
-      ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
-    },
-  });
+  const options = {
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : [])], confine }),
+    ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
+    model: req.target.model,
+    env,
+    ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
+  };
+  // A stage that talks while it works keeps the session open: the message a person or another agent sent enters as a user turn between two steps, and the
+  // stage does not restart. The door decides; without one the call is a single prompt, exactly as before.
+  const stream = req.incoming ? messageStream(req.prompt) : null;
+  // The door of a stage that talks while it works is asked what the model has already said, never before it spoke: a message that is waiting enters the session,
+  // and the collection asks for the final answer once the queue is empty. Asking it only on a turn that produced no final answer would leave a message already
+  // queued undelivered when the stage ends answering. Only while the stream is open: at the collection pass there is no message to wait for.
+  let open = stream !== null;
+  const throughDoor = async (): Promise<boolean> => {
+    if (!stream || !req.incoming || !open) return false;
+    const message = await req.incoming((text) => req.activity?.text(`${t('main.engine.text.messageIn')}\n${text}`));
+    if (message === null) {
+      open = false;
+      stream.push(t('main.engine.text.collect'));
+      return false;
+    }
+    stream.push(`${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}`);
+    return true;
+  };
+  const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
   const assistantText: string[] = [];
@@ -617,6 +673,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
       if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
+      // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
+      // the closing call asks for the final answer with what the session already has.
+      if (await throughDoor()) continue;
       if (m.subtype !== 'success' || m.structured_output == null) {
         // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
         const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
@@ -625,6 +684,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // i18n-ignore: developer error from the SDK result
         throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
       }
+      stream?.end();
       return { data: m.structured_output as T, sessionId, sources };
     }
   }
@@ -1034,6 +1094,10 @@ export interface AgentCall {
   exec?: SandboxSession;
   /** The evidence tools of a stage that keeps evidence (only with a sandbox): keeping a file, marking an image and looking at it. */
   evidence?: EvidenceTools;
+  /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
+  incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
+  runnerTools?: ToolImpl[];
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1133,6 +1197,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
+      incoming: call.incoming,
+      runnerTools: call.runnerTools,
     };
     let r: Run<T>;
     try {

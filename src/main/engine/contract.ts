@@ -148,6 +148,17 @@ export interface EngineRequest {
   beat?: () => void;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
+  /**
+   * The door of a stage that talks while it works: the engine calls it when the model finished a step and no final answer was given yet, and gets back the
+   * next message to deliver into the session, or null when there is none. `delivered` is called the moment the message entered the session (the app writes
+   * its line). Absent: the call is the one of today, a single pass.
+   */
+  incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /**
+   * The app tools of a stage that talks while it works (`SendMessage`, `CallAgent`), or of a called agent (`AskConversation`), already built as engine-neutral
+   * tools (runner/tools.ts). The engine offers each one when its name is in `allowedTools`; absent: the call gets none of them.
+   */
+  runnerTools?: import('./open/tools/types').ToolImpl[];
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;

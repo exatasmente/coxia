@@ -111,6 +111,7 @@ import { reasonText, type SandboxService } from '../sandbox';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
@@ -1235,15 +1236,35 @@ export function createRunner(deps: RunnerDeps): Runner {
       const runId = message.thread.slice(4);
       const run = deps.runs.get(runId);
       if (!run) return;
+      // The agent working the stage is reached inside the stage: the message queues for its next step and the stage does not restart. Every other agent named
+      // keeps today's behaviour (a call in parallel, read-only), and a run that is not working has no stage to reach.
+      const text = (message.text ?? '').trim();
+      const working = workingAgent(run);
+      const inbox = working ? inboxOf(runId) : null;
+      // Naming the agent that works queues one message for it; the other mentions of the same message keep today's call. A mention repeated for the same agent
+      // keeps one call per mention, as today: only the occurrences that went to the queue are left out of the parallel call.
+      let toStage = 0;
+      if (inbox && working && text) {
+        for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
+          if (id !== working || toStage >= 1) continue;
+          const queued = inbox.post(text, message.waitsForAnswer);
+          toStage++;
+          // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
+          if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
+        }
+      }
+      const call = toStage ? message.mentions.slice(toStage, MAX_MENTIONS) : message.mentions.slice(0, MAX_MENTIONS);
+      if (!call.length) return;
+      const rest = { ...message, mentions: call };
       // Each agent named gets its call line at once, before the queue: the person sees who was called and who waits its turn.
       try {
-        openCalls(runId, run, message);
+        openCalls(runId, run, rest);
       } catch (e) {
         console.error('[runner] could not open the mention calls', runId, e instanceof Error ? e.message : e);
       }
       const prior = mentions.get(runId) ?? Promise.resolve();
       // One answer at a time per run: the thread reads in order.
-      const next = prior.then(() => answerMention(runId, message)).catch(() => undefined);
+      const next = prior.then(() => answerMention(runId, rest)).catch(() => undefined);
       mentions.set(runId, next);
       void next.finally(() => {
         if (mentions.get(runId) === next) mentions.delete(runId);
@@ -1324,6 +1345,13 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   const callKey = (runId: string, message: number, agent: string): string => `${runId}:${message}:${agent}`;
 
+  /** The agent working the stage of a run right now; null when the run is not working a stage. */
+  function workingAgent(run: Run): string | null {
+    if (run.status !== 'working') return null;
+    const stage = flowFor(run).find((s) => s.id === run.stage);
+    return stage?.agent ?? null;
+  }
+
   // Every agent named in the message gets its call as soon as the message is accepted, before the queue: the line exists while it waits its turn.
   function openCalls(runId: string, run: { worktree: string }, message: ForumMessage): void {
     const team = deps.config().agents.team;
@@ -1371,7 +1399,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
-        const clock: StageClock = { pause: watch.pause, allowed: new Set() };
+        const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
         return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.

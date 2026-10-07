@@ -73,6 +73,8 @@ export interface BridgeArgs {
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
   makeMaxTurnsError: (sessionId: string, sources: string[]) => Error;
+  /** The door of a stage that talks while it works, passed through from the engine request. */
+  incoming?: OpenRunParams['incoming'];
 }
 
 export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionId: string; sources: string[] }> {
@@ -108,6 +110,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       signal: a.signal,
       describeTool: a.describeTool,
       events: a.events,
+      incoming: a.incoming,
     });
     return { data: r.data, sessionId: r.sessionId, sources: r.sources };
   } catch (e) {

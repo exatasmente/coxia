@@ -34,7 +34,7 @@ const nameOf = (agent: AgentDef): string => cycleWord(agent.name);
 function asThread(msgs: { who: string; text: string }[]): ForumMessage[] {
   return msgs.map((m, i) => {
     const author: Author = m.who === 'me' ? { type: 'person' } : m.who === 'app' ? { type: 'app' } : { type: 'agent', id: m.who };
-    return { v: 1, type: 'message', seq: i + 1, thread: '', at: '', kind: 'post', author, text: m.text, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null, replyTo: null, public: false, published: null };
+    return { v: 1, type: 'message', seq: i + 1, thread: '', at: '', kind: 'post', author, text: m.text, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null, replyTo: null, public: false, waitsForAnswer: false, published: null };
   });
 }
 

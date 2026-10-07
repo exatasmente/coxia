@@ -70,6 +70,8 @@ export interface ForumDraft {
   replyTo?: number | null;
   /** Public record: what an agent did, asked, was answered or was decided, and may appear on the tracker. Handoffs and stage changes stay internal. Default false. */
   public?: boolean;
+  /** The person's own message asks something and waits for an answer: what the thread says when the stage ends before the message reaches the agent. */
+  waitsForAnswer?: boolean;
   published?: PublishedRef | null;
 }
 
@@ -100,6 +102,8 @@ export interface ForumMessage {
   replyTo: number | null;
   /** Eligible to appear on the tracker. Being public is not being published: nothing is mirrored without the workspace option and an approval. */
   public: boolean;
+  /** The message asks something of the agent it names and waits for an answer (a question mark in the person's own words). */
+  waitsForAnswer: boolean;
   /** Set once the message was mirrored to the tracker. */
   published: PublishedRef | null;
 }

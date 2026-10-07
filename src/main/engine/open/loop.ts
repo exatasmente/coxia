@@ -89,6 +89,8 @@ export interface OpenRunParams {
   events?: RunEvents;
   // How a tool call shows up in the sources list.
   describeTool?: (name: string, input: Json) => string;
+  // The door of a stage that talks while it works (see EngineRequest.incoming): a message delivered between two steps restarts the loop with it in the dialog.
+  incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   // Shared by sub-agents so their reads count as the parent's sources.
   sources?: string[];
   depth?: number;
@@ -296,13 +298,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const policy = policyFromHooks(p.hooks, sessionId);
 
   // --- structured output strategy
+  // A stage with a door has a strategy of its own: no final-answer tool (only the stage's own tools are offered), because a call with no tool at all is what
+  // closes the dialog — by the response format when the server has one, by the prompt otherwise. Everything else stays as it is.
+  const door = !!p.incoming && !!p.schema;
   const schemaObject = p.schema && (p.schema as { type?: unknown }).type === 'object';
   let strategy: OpenRunResult<T>['strategy'] = 'text';
   if (p.schema) {
     const asked = p.structured ?? 'auto';
     const auto = p.capabilities?.jsonSchema === true && !client.learned.dropParams.has('response_format') ? 'response_format' : toolsAllowed && schemaObject ? 'tool' : 'prompt';
     strategy = asked === 'auto' ? auto : asked;
-    if (strategy === 'tool' && (!toolsAllowed || !schemaObject)) strategy = 'prompt';
+    if (door) strategy = strategy === 'response_format' ? 'response_format' : 'prompt';
+    else if (strategy === 'tool' && (!toolsAllowed || !schemaObject)) strategy = 'prompt';
   }
   const finalDef: ToolDef | null =
     strategy === 'tool' && p.schema
@@ -414,6 +420,33 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   let repairs = 0;
   let forceFinal = finalDef !== null && impls.length === 0;
   const responseFormat: Json | undefined = p.schema ? { type: 'json_schema', json_schema: { name: 'answer', schema: p.schema, strict: false } } : undefined;
+
+  // A stage that talks while it works: the door is asked what the model has already said, never before it spoke. A pending message becomes a user turn of the same
+  // dialog and another step follows; when there is none, one closing call, with no tool at all and with the schema's format, asks for the result of the stage. Only
+  // what comes out of that call counts, so a message delivered in the middle never costs the stage its shape. Answering is the point of the closing call, so it
+  // happens here and not in a later turn of the loop: a text that merely described the message never becomes the result. `answer` carries the result of that call,
+  // and `bad` the errors of a text outside the schema, so the dialog can have one round to fix them instead of failing the stage on the first text. Once the
+  // closing call went in the door is never asked again: a message that arrives after the result was given cannot enter the session behind it.
+  type DoorTurn = { took: 'none' } | { took: 'message' } | { took: 'answer'; value: Json } | { took: 'bad'; errors: string };
+  let doorClosed = false;
+  const throughDoor = async (): Promise<DoorTurn> => {
+    if (!p.incoming || !p.schema || doorClosed) return { took: 'none' };
+    const message = await p.incoming((text) => events.onInterim?.(`${t('main.engine.text.messageIn')}\n${text}`));
+    if (message !== null) {
+      write({ role: 'user', content: `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
+      return { took: 'message' };
+    }
+    doorClosed = true;
+    write({ role: 'user', content: t('main.engine.text.collect') });
+    const last = await call({ tools: [], responseFormat });
+    const got = extractAnswer(last.text, p.schema as Json);
+    if (got.ok) return { took: 'answer', value: got.value as Json };
+    return { took: 'bad', errors: describeErrors(got.errors) };
+  };
+  // One round for the model to fix a closing text that did not follow the schema, in a step of the loop with the stage's own tools; a second one ends the
+  // stage with the failure, so a model that never follows the schema cannot spin.
+  let doorRepairs = 0;
+
   for (;;) {
     if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
     turns++;
@@ -451,9 +484,25 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       if (images.length) write(imageMessage(images));
       continue;
     }
-    if (!p.schema) return done(c.text, turns);
-    const first = extractAnswer(c.text, p.schema);
-    if (first.ok) return done(first.value, turns);
+    if (!p.schema) {
+      // A call without a schema has no shape to collect: the text is the answer, but the door is asked first, since the step just ended and a message that arrived
+      // meanwhile is still due.
+      if ((await throughDoor()).took === 'message') continue;
+      return done(c.text, turns);
+    }
+
+    // The step ended without a tool call that answers, so the door's turn is now: whether the model followed the schema or not, a message that is waiting is
+    // delivered before anything of the stage is concluded. Asking the door only after a text outside the schema would leave a message already queued undelivered
+    // when the stage ends answering to the format. With no message the closing call asks for the result, and only what it returned can be the result.
+    const doorTurn = await throughDoor();
+    if (doorTurn.took === 'message') continue;
+    if (doorTurn.took === 'answer') return done(doorTurn.value, turns);
+
+    // The design of a step whose text does not follow the schema, with the `prompt` strategy: the step's text is a candidate result, the door is asked when the
+    // step ends and the collection is asked before anything is concluded; whatever the collection returned is what counts. This is why the dialog of a stage that
+    // answers to the format never ends on the text of a step that merely described a message.
+    const parsed = doorTurn.took === 'bad' ? { ok: false as const, value: undefined as unknown as Json, errors: [doorTurn.errors] } : extractAnswer(c.text, p.schema);
+    if (parsed.ok) return done(parsed.value, turns);
 
     if (strategy === 'tool' && nudges < 2) {
       nudges++;
@@ -462,20 +511,28 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       forceFinal = true;
       continue;
     }
-    if (strategy === 'tool') throw new StructuredOutputError(describeErrors(first.errors));
+    if (strategy === 'tool') throw new StructuredOutputError(describeErrors(parsed.errors));
 
     // response_format and prompt strategies: a closing call that asks for the JSON (with response_format when the server has it),
-    // then one correction round with the validation errors.
-    write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(first.errors) })}` });
-    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
-    let parsed = extractAnswer(last.text, p.schema);
-    if (!parsed.ok) {
+    // then one correction round with the validation errors. A stage that talks lets the door ask for that JSON instead: the errors of a text outside the schema go
+    // back to the model in the dialog, and the next step of the loop — with the stage's own tools — has one round to fix them before the stage fails.
+    if (door) {
+      if (doorRepairs++ >= 1) throw new StructuredOutputError(describeErrors(parsed.errors));
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
-      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
-      parsed = extractAnswer(last.text, p.schema);
+      if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
+      turns++;
+      continue;
     }
-    if (parsed.ok) return done(parsed.value, turns);
-    throw new StructuredOutputError(describeErrors(parsed.errors));
+    write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(parsed.errors) })}` });
+    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+    let fixed = extractAnswer(last.text, p.schema);
+    if (!fixed.ok) {
+      write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(fixed.errors) }) });
+      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+      fixed = extractAnswer(last.text, p.schema);
+    }
+    if (fixed.ok) return done(fixed.value, turns);
+    throw new StructuredOutputError(describeErrors(fixed.errors));
   }
 
 }

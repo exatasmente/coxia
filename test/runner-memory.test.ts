@@ -21,6 +21,7 @@ const message = (over: Partial<ForumMessage>): ForumMessage => ({
   to: null,
   replyTo: null,
   public: false,
+  waitsForAnswer: false,
   published: null,
   ...over,
 });

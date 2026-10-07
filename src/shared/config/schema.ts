@@ -521,6 +521,10 @@ export const CONFIG_SCHEMA: JsonSchema = {
         release: object('How a release run integrates its pull requests.', {
           soleMaintainer: boolean('The person is the repository\'s only maintainer: their "yes" in Actions on a merge-pr stands for the host\'s approval of a pull request opened by the account the app uses on the host, with no changes asked; every merge-pr then waits for that "yes". Optional: absent reads as false.'),
         }),
+        conversations: object('The limits of a conversation between team agents inside a run: how many messages a conversation accepts and how many one attempt at a stage may open. Optional: absent reads the defaults (6 and 3).', {
+          roundsPerConversation: integer('How many messages of each side one conversation accepts before the app ends it.', 1, 50),
+          perStage: integer('How many conversations one attempt at a stage may open.', 1, 20),
+        }),
       }),
       plugins,
     },
