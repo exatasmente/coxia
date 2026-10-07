@@ -26,7 +26,7 @@ import { copyToCycleFolder } from '../evidence/store';
 import { evidencePlacementOf, type EvidenceRecord } from '../../shared/evidence';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
-import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
+import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
@@ -140,6 +140,39 @@ export function pendingHandoff(thread: ForumMessage[], agent: string): { from: s
   const lastPost = Math.max(0, ...thread.filter((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === agent).map((m) => m.seq));
   const note = [...thread].reverse().find((m) => m.kind === 'handoff' && m.to === agent && m.seq > lastPost);
   return note ? { from: note.author.type === 'agent' ? note.author.id : note.author.type, text: note.text } : null;
+}
+
+/**
+ * Why the current attempt at `stageId` runs again, read from the history entry that led to its last start: null for a stage that started in the flow's
+ * order (its first attempt, or a later one reached by moving forward).
+ */
+export function resumeWhy(run: Run, stageId: string): ResumeWhy | null {
+  const h = run.history;
+  const start = h.findLastIndex((e) => e.type === 'stage-started' && e.stage === stageId);
+  for (let n = start - 1; n >= 0; n--) {
+    const type = h[n].type;
+    if (type === 'sent-back') return 'sent-back';
+    if (type === 'handback' || type === 'stage-returned' || type === 'gate-rejected') return 'returned';
+    if (type === 'retried') return 'retried';
+    if (type === 'interrupted') return 'restarted';
+    if (type === 'stage-done' || type === 'stage-started' || type === 'started') return null;
+  }
+  return null;
+}
+
+/** What a stage that runs again is told about the earlier attempts: its documents already in the folder, the evidence it kept and its last report. */
+export function stageResume(run: Run, stage: FlowStage, agent: string, thread: ForumMessage[], wt: string): StageResume | null {
+  const why = resumeWhy(run, stage.id);
+  if (!why) return null;
+  const report = [...thread].reverse().find((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === agent && m.stage === stage.id);
+  return {
+    why,
+    done: stage.artifacts.filter((name) => existsSync(join(wt, run.cycleFolder, name))),
+    evidence: Object.values(run.evidence ?? {})
+      .filter((e) => e.stage === stage.id)
+      .map((e) => ({ id: e.id, title: e.title })),
+    previous: report?.text.trim() || null,
+  };
 }
 
 /** The person's answer to the last question this agent asked in this stage, until the agent reports again. */
@@ -526,6 +559,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     attempt,
     handoff: pendingHandoff(thread, agent.id),
     answer: pendingAnswer(thread, agent.id, stage.id),
+    resume: stageResume(run, stage, agent.id, thread, wt),
     comment,
     pr,
     reporter,

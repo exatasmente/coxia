@@ -69,7 +69,12 @@ describe('sending a run back through the runner', () => {
     expect(dev[0].prompt).toContain('Go through the comments on the pull request.');
     expect(dev[0].prompt).toContain('Name the constant.');
     expect(dev[0].prompt).toContain('Edge case, not run: needs a browser');
-    expect(dev[0].prompt).toContain('Handoff for you, from person');
+    // the attempt opens with why it runs again and what was asked, said once and before the cycle folder; the handoff is not repeated at the end
+    const prompt = dev[0].prompt;
+    expect(prompt).toContain('This attempt picks the stage up again: the person sent the work back to you.');
+    expect(prompt.indexOf('What this attempt is for, from person')).toBeLessThan(prompt.indexOf('MEMORY.md'));
+    expect(prompt).toContain('Context for the request above, not new work');
+    expect(prompt).not.toContain('Handoff for you, from');
     // review sees round 2 with the first round before it, QA runs again, and the run is back at the wait
     const reviews = b.engine.calls.slice(calls).filter((c) => c.agent.id === 'reviewer');
     expect(reviews).toHaveLength(1);
