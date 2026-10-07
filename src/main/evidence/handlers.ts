@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { checkMarks, EVIDENCE_MAX_BYTES, isEvidenceId, MARK_MAX_WIDTH, type EvidenceRecord } from '../../shared/evidence';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
+import { imageMediaType } from '../imageType';
 import { drawMarks } from './draw';
 import { resolveOutputPath, type OutputProblem } from './paths';
 import { decodePng, encodePng } from './png';
@@ -147,8 +148,10 @@ async function view(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   if (!source) return { text: t('main.evidence.refused.source') };
   const found = sourceOf(ctx, source);
   if (!found.ok) return { text: found.text };
-  const isPng = found.bytes.length > 7 && found.bytes[0] === 0x89 && found.bytes[1] === 0x50;
-  return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media: isPng ? 'image/png' : 'image/jpeg' } };
+  // The media type comes from the bytes: a path in the output folder can hold anything, and a GIF or a WebP told as JPEG is refused by the provider.
+  const media = imageMediaType(Buffer.from(found.bytes.subarray(0, 12)));
+  if (!media) return { text: t('main.evidence.refused.notPicture') };
+  return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media } };
 }
 
 export function evidenceToolsOf(ctx: EvidenceContext): EvidenceTools {

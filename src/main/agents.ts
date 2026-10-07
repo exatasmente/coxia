@@ -492,12 +492,11 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const hook = openEngineFromEnv();
   const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
   const tool = wantsVcsTool(req);
-  // A stage that keeps evidence gets the evidence `ViewImage` (an evidence id or a path in the output folder), which covers what the sandbox's `ViewImage` does:
-  // offering both would put two tools of one name in front of the model.
-  const sandboxLooks = offersViewImage(req.exec) && !req.evidence;
+  // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
+  const looks = offersViewImage(req.exec, req.evidence);
   const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(sandboxLooks && req.exec ? [viewImageToolImpl(req.exec)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(sandboxLooks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -552,7 +551,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
   const vcs = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider(), workspaceProjects, req.tracker !== undefined) : null;
-  const shell = req.exec ? await shellMcpServer(req.exec, !req.evidence) : null;
+  const shell = req.exec ? await shellMcpServer(req.exec, req.evidence) : null;
   // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
   if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));
   // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
@@ -569,7 +568,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec) && !req.evidence ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,

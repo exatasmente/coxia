@@ -122,11 +122,33 @@ describe('the ViewImage tool', () => {
   it('gives the open engine the picture to show the model, and says where to save one it cannot read', async () => {
     const tool = viewImageToolImpl(session({ browsers: '/b', display: null }));
     const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 1000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, seesImages: () => true };
-    const shown = await tool.run({ path: 'home.png' }, ctx);
+    const shown = await tool.run({ source: 'home.png' }, ctx);
     expect(shown.images?.[0]).toMatchObject({ path: '/coxia/out/home.png', mediaType: 'image/png' });
-    const refused = await tool.run({ path: '/etc/passwd' }, ctx);
+    const refused = await tool.run({ source: '/etc/passwd' }, ctx);
     expect(refused.images).toBeUndefined();
     expect(refused.render(refused.response)).toContain('/coxia/out');
+  });
+
+  it('still takes the `path` of its first contract when `source` is absent', async () => {
+    const tool = viewImageToolImpl(session({ browsers: '/b', display: null }));
+    const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 1000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, seesImages: () => true };
+    const shown = await tool.run({ path: 'home.png' }, ctx);
+    expect(shown.images?.[0]).toMatchObject({ path: '/coxia/out/home.png', mediaType: 'image/png' });
+  });
+
+  it('tells a model that takes no images that the file is one, and sends nothing', async () => {
+    const tool = viewImageToolImpl(session({ browsers: '/b', display: null }));
+    const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 1000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, seesImages: () => false };
+    const told = await tool.run({ source: 'home.png' }, ctx);
+    expect(told.images).toBeUndefined();
+    expect(String(told.response)).toContain('is an image');
+  });
+
+  it('asks for `source` and does not mention evidence to a stage that keeps none', () => {
+    const tool = viewImageToolImpl(session({ browsers: '/b', display: null }));
+    expect(tool.parameters).toMatchObject({ required: ['source'] });
+    expect(tool.description).not.toMatch(/evidence|ev-/i);
+    expect(JSON.stringify(tool.parameters)).not.toMatch(/evidence|ev-/i);
   });
 });
 

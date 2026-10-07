@@ -1,12 +1,12 @@
 // i18n-lint: allow-file what the evidence tools tell a model: English by design, like the other tool texts of the engines
 import { EVIDENCE_MAX_BYTES, MARK_COLORS, MARK_KINDS, MARK_MAX_WIDTH, type EvidenceKind } from '../../shared/evidence';
 
-// The three tools a stage with a sandbox gets for its evidence: keeping a file, marking an image and looking at the result. The text each one is described with
-// is English by design (the engines' tool texts are); every refusal a model reads comes back from the handler, worded by the app.
+// The two tools a stage with a sandbox gets for its evidence: keeping a file and marking an image. Looking at the result is the sandbox's `ViewImage`, which takes an
+// evidence id too and calls `EvidenceTools.view`. The text each tool is described with is English by design (the engines' tool texts are); every refusal a model reads
+// comes back from the handler, worded by the app.
 
 export const SAVE_EVIDENCE_TOOL = 'SaveEvidence';
 export const ANNOTATE_IMAGE_TOOL = 'AnnotateImage';
-export const VIEW_IMAGE_TOOL = 'ViewImage';
 
 export const EVIDENCE_MCP_SERVER = 'coxia_evidence';
 export const evidenceMcpToolName = (name: string): string => `mcp__${EVIDENCE_MCP_SERVER}__${name}`;
@@ -20,9 +20,6 @@ export const ANNOTATE_IMAGE_DESCRIPTION =
   'Draws marks on an image and keeps the result as a new piece of evidence; the original is left as it is. Give the source (an evidence id, or a path in your output folder) and a list of marks. ' +
   `Each mark has a kind (${MARK_KINDS.join(', ')}), a colour of ${MARK_COLORS.join(', ')}, a line width up to ${MARK_MAX_WIDTH} and coordinates in pixels of the image: rectangle and blur take x, y, w, h; ` +
   'arrow takes x, y and x2, y2; ellipse takes x, y and rx, ry; label takes x, y and text; marker takes x, y and n (1..99). The blur box hides what should not be seen. It answers with the id of the new evidence, linked to the one it came from.';
-
-export const VIEW_IMAGE_DESCRIPTION =
-  'Looks at an image again: an evidence image of this stage, or an image of your output folder. Use it to check what a mark looks like before marking again. It answers with the image itself when the model can read images.';
 
 export const SAVE_EVIDENCE_SCHEMA = {
   type: 'object',
@@ -70,23 +67,14 @@ export const ANNOTATE_IMAGE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export const VIEW_IMAGE_SCHEMA = {
-  type: 'object',
-  properties: {
-    source: { type: 'string', description: 'The evidence id to look at (like "ev-3"), or an image path in your output folder.' },
-  },
-  required: ['source'],
-  additionalProperties: false,
-} as const;
-
 /** What a tool handler returns: the text the model reads, and, for looking at an image, the image itself. */
 export interface ToolAnswer {
   text: string;
-  /** Only `ViewImage` fills it: the image as bytes and its media type. */
+  /** Only `view` fills it: the image as bytes and its media type. */
   image?: { data: Uint8Array; media: string };
 }
 
-/** The handlers of the three tools, given by the executor: they know the stage, the run and the output folder. */
+/** The handlers of the evidence tools and of looking at an image, given by the executor: they know the stage, the run and the output folder. */
 export interface EvidenceTools {
   save(input: unknown): Promise<ToolAnswer>;
   annotate(input: unknown): Promise<ToolAnswer>;

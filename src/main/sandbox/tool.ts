@@ -1,5 +1,7 @@
 // i18n-lint: allow-file what the Shell tool tells a model: English by design, like the other tool texts of the engines
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
+import { MAX_IMAGE_BYTES } from '../imageType';
+import type { EvidenceTools } from '../evidence/tool';
 import type { ExecResult, ImageRead, SandboxSession } from './session';
 
 // The `Shell` tool: the one way an agent set to `shell: sandbox` runs a command. It takes one string and nothing else: the mounts, the limits, the network and the environment
@@ -44,29 +46,34 @@ export async function runShell(session: SandboxSession, input: unknown): Promise
   return renderExec(await session.exec(command));
 }
 
-// The `ViewImage` tool: how an agent that tests an interface looks at a screenshot it saved. It reads only the stage's output folder, the one place both a reader and a
-// writer can save to without the file being committed or thrown away; anything else is refused with where to save it.
+// The `ViewImage` tool: the one way an agent looks at an image. It reads the stage's output folder, the one place both a reader and a writer can save to without the file
+// being committed or thrown away; anything else is refused with where to save it. A stage that keeps evidence can also name a piece of evidence by its id.
+// There is one tool of this name for both engines: two tools called ViewImage would be two contracts for the same word.
 
 export const VIEW_IMAGE_TOOL_NAME = 'ViewImage';
 export const VIEW_IMAGE_MCP_TOOL_NAME = `mcp__${SHELL_MCP_SERVER}__${VIEW_IMAGE_TOOL_NAME}`;
 
-export const VIEW_IMAGE_DESCRIPTION =
-  // i18n-ignore: tool description for the model: English by design
+/** What the model is told: the evidence ids are mentioned only when the stage keeps evidence, so a stage without it never hears of them. */
+export const viewImageDescription = (withEvidence: boolean): string =>
+  // i18n-ignore-start: tool description for the model: English by design
   'Shows you an image (PNG, JPEG, GIF or WebP, at most 4 MB) that you saved in /coxia/out inside the sandbox, such as a screenshot of the interface you are testing. ' +
-  // i18n-ignore: tool description for the model: English by design
-  'Give the path (/coxia/out/name.png) or the name of a file in that folder. Nothing outside /coxia/out can be read.';
+  'Give the path (/coxia/out/name.png) or the name of a file in that folder. Nothing outside /coxia/out can be read.' +
+  (withEvidence ? ' It also shows a piece of evidence of this stage, by its id (like "ev-3"): use it to check what a mark looks like before marking again.' : '');
+// i18n-ignore-end
 
-export const VIEW_IMAGE_SCHEMA = {
-  type: 'object',
-  properties: {
-    // i18n-ignore: tool description for the model: English by design
-    path: { type: 'string', description: 'The image in /coxia/out (an absolute path in it, or a file name)' },
-  },
-  required: ['path'],
-} as const;
+export const viewImageSchema = (withEvidence: boolean) =>
+  ({
+    type: 'object',
+    properties: {
+      // i18n-ignore: tool description for the model: English by design
+      source: { type: 'string', description: withEvidence ? 'The image in /coxia/out (an absolute path in it, or a file name), or an evidence id (like "ev-3")' : 'The image in /coxia/out (an absolute path in it, or a file name)' },
+    },
+    required: ['source'],
+  }) as const;
 
-/** The tool is offered to a stage whose sandbox has something to test an interface with (browsers or a display) and an output folder to read from. */
-export const offersViewImage = (session: SandboxSession | null | undefined): boolean => !!session?.readImage && !!session.gui && (session.gui.browsers !== null || session.gui.display === 'on');
+/** The tool is offered to a stage whose sandbox has something to test an interface with (browsers or a display) and an output folder to read from, and to any stage with a sandbox that keeps evidence. */
+export const offersViewImage = (session: SandboxSession | null | undefined, evidence?: EvidenceTools | null): boolean =>
+  (!!evidence && !!session) || (!!session?.readImage && !!session.gui && (session.gui.browsers !== null || session.gui.display === 'on'));
 
 /** Why an image was not shown, for the model: what to do instead. */
 export function imageRefusal(r: Exclude<ImageRead, { ok: true }>): string {
@@ -86,8 +93,30 @@ export function imageRefusal(r: Exclude<ImageRead, { ok: true }>): string {
   // i18n-ignore-end
 }
 
-/** Reads the image a model asked for from the stage's output folder. */
-export function viewImage(session: SandboxSession, input: unknown): ImageRead {
-  const path = typeof (input as { path?: unknown } | null)?.path === 'string' ? (input as { path: string }).path : '';
-  return session.readImage ? session.readImage(path) : { ok: false, why: 'missing' };
+/** The image a model asked for, or the text that says why not (and, for evidence, the line that goes with the picture). */
+export type ImageLook = { ok: true; path: string; mediaType: string; data: string; text?: string } | { ok: false; text: string };
+
+const EVIDENCE_ID = /^ev-\d+$/i;
+
+/** The place a model named: `source`, or the older `path` of the tool's first contract. */
+export function viewImageSource(input: unknown): string {
+  const o = (input && typeof input === 'object' ? input : {}) as { source?: unknown; path?: unknown };
+  const raw = typeof o.source === 'string' ? o.source : typeof o.path === 'string' ? o.path : '';
+  return raw.trim();
+}
+
+/**
+ * Reads the image a model asked for. An evidence id goes to the evidence tools; anything else is a place in the output folder, read through the sandbox when it can
+ * (proper media type, the 4 MB cap and its own refusals) and through the evidence tools otherwise (they read that folder too).
+ */
+export async function lookAtImage(session: SandboxSession, evidence: EvidenceTools | null | undefined, input: unknown): Promise<ImageLook> {
+  const source = viewImageSource(input);
+  if (evidence && (EVIDENCE_ID.test(source) || !session.readImage)) {
+    const a = await evidence.view({ source });
+    if (!a.image) return { ok: false, text: a.text };
+    if (a.image.data.length > MAX_IMAGE_BYTES) return { ok: false, text: imageRefusal({ ok: false, why: 'too-big' }) };
+    return { ok: true, path: source, mediaType: a.image.media, data: Buffer.from(a.image.data).toString('base64'), text: a.text };
+  }
+  const r: ImageRead = session.readImage ? session.readImage(source) : { ok: false, why: 'missing' };
+  return r.ok ? r : { ok: false, text: imageRefusal(r) };
 }

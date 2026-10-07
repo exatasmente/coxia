@@ -1,8 +1,9 @@
 import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, clip } from '../engine/open/tools/types';
 import type { Json } from '../engine/open/types';
+import type { EvidenceTools } from '../evidence/tool';
 import type { SandboxSession } from './session';
-import { SHELL_DESCRIPTION, SHELL_MCP_SERVER, SHELL_SCHEMA, SHELL_TOOL_NAME, VIEW_IMAGE_DESCRIPTION, VIEW_IMAGE_SCHEMA, VIEW_IMAGE_TOOL_NAME, imageRefusal, offersViewImage, runShell, viewImage } from './tool';
+import { SHELL_DESCRIPTION, SHELL_MCP_SERVER, SHELL_SCHEMA, SHELL_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, lookAtImage, offersViewImage, runShell, viewImageDescription, viewImageSchema } from './tool';
 
 // The `Shell` tool in the shapes the two engines take it: a ToolImpl for the open engine, an in-process MCP server for the Claude Agent SDK. Both call runShell on the
 // stage's session; the SDK's own Bash stays off for an agent that has a sandbox (it would be the unsandboxed way to run the same command).
@@ -20,24 +21,28 @@ export function shellToolImpl(session: SandboxSession): ToolImpl {
 }
 
 /** `ViewImage` for the open engine: the picture goes to the model the way an image `Read` does, after the tool results; a refusal is the text that says why. */
-export function viewImageToolImpl(session: SandboxSession): ToolImpl {
+export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTools | null): ToolImpl {
   return {
     name: VIEW_IMAGE_TOOL_NAME,
-    description: VIEW_IMAGE_DESCRIPTION,
-    parameters: VIEW_IMAGE_SCHEMA as unknown as Json,
+    description: viewImageDescription(!!evidence),
+    parameters: viewImageSchema(!!evidence) as unknown as Json,
     async run(input, ctx) {
-      const r = viewImage(session, input);
-      if (!r.ok) return { response: imageRefusal(r), render: (x) => String(x) };
+      const r = await lookAtImage(session, evidence, input);
+      if (!r.ok) return { response: r.text, render: (x) => String(x) };
       // A model the provider says takes no image is told so, as Read does.
       // i18n-ignore: tool result for the model: English by design
       if (ctx.seesImages && !ctx.seesImages()) return { response: `${r.path} is an image, and this model does not take images.`, render: (x) => String(x) };
-      return { response: { type: 'image', file: { filePath: r.path, type: r.mediaType } }, render: () => `${r.path} (${r.mediaType})`, images: [{ path: r.path, mediaType: r.mediaType, data: r.data }] };
+      return {
+        response: r.text ?? { type: 'image', file: { filePath: r.path, type: r.mediaType } },
+        render: (x) => (r.text ? clip(String(x), ctx.outputMax) : `${r.path} (${r.mediaType})`),
+        images: [{ path: r.path, mediaType: r.mediaType, data: r.data }],
+      };
     },
   };
 }
 
-/** The same tool as an in-process MCP server (`withViewImage` off when the stage's evidence tools bring their own `ViewImage`); null when the SDK or zod cannot be loaded (the agent then runs without it, and the stage says so). */
-export async function shellMcpServer(session: SandboxSession, withViewImage = true): Promise<Record<string, unknown> | null> {
+/** The same tool as an in-process MCP server; `evidence` is given when the stage keeps evidence, and the tool then also takes an evidence id. Null when the SDK or zod cannot be loaded (the agent then runs without it, and the stage says so). */
+export async function shellMcpServer(session: SandboxSession, evidence?: EvidenceTools | null): Promise<Record<string, unknown> | null> {
   try {
     const sdk = await loadClaudeSdkModule();
     const { z } = await import('zod');
@@ -45,11 +50,13 @@ export async function shellMcpServer(session: SandboxSession, withViewImage = tr
       name: SHELL_MCP_SERVER,
       tools: [
         sdk.tool(SHELL_TOOL_NAME, session.description ?? SHELL_DESCRIPTION, { command: z.string() }, async (args) => ({ content: [{ type: 'text' as const, text: await runShell(session, args) }] })),
-        ...(withViewImage && offersViewImage(session)
+        ...(offersViewImage(session, evidence)
           ? [
-              sdk.tool(VIEW_IMAGE_TOOL_NAME, VIEW_IMAGE_DESCRIPTION, { path: z.string() }, async (args) => {
-                const r = viewImage(session, args);
-                return { content: [r.ok ? { type: 'image' as const, data: r.data, mimeType: r.mediaType } : { type: 'text' as const, text: imageRefusal(r) }] };
+              sdk.tool(VIEW_IMAGE_TOOL_NAME, viewImageDescription(!!evidence), { source: z.string() }, async (args) => {
+                const r = await lookAtImage(session, evidence, args);
+                if (!r.ok) return { content: [{ type: 'text' as const, text: r.text }] };
+                const image = { type: 'image' as const, data: r.data, mimeType: r.mediaType };
+                return { content: r.text ? [{ type: 'text' as const, text: r.text }, image] : [image] };
               }),
             ]
           : []),

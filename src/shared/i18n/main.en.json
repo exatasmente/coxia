@@ -1297,6 +1297,7 @@
   "main.evidence.refused.unknown": "The content of that file does not confirm an accepted format (image, text or PDF): the kind is read from the bytes, never from the name.",
   "main.evidence.refused.otherStage": "Evidence {id} is not of this stage: only a piece of evidence this stage kept counts.",
   "main.evidence.refused.notImage": "Evidence {id} is not an image, so it cannot be marked.",
+  "main.evidence.refused.notPicture": "That file is not a PNG, JPEG, GIF or WebP image, so it cannot be looked at.",
   "main.evidence.refused.gone": "Evidence {id} is no longer kept with this run.",
   "main.evidence.refused.decode": "That image could not be read to be marked ({problem}).",
   "main.evidence.refused.mark": "Mark {index} is not one the app draws ({problem}): the coordinate must be inside the image, the colour in the fixed list and the width up to {max}.",

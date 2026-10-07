@@ -1297,6 +1297,7 @@
   "main.evidence.refused.unknown": "O conteúdo desse arquivo não confirma um formato aceito (imagem, texto ou PDF): o tipo é lido dos bytes, nunca do nome.",
   "main.evidence.refused.otherStage": "A comprovação {id} não é desta etapa: só vale uma comprovação que esta etapa guardou.",
   "main.evidence.refused.notImage": "A comprovação {id} não é uma imagem, então não dá para marcar.",
+  "main.evidence.refused.notPicture": "Esse arquivo não é uma imagem PNG, JPEG, GIF ou WebP, então não dá para olhá-lo.",
   "main.evidence.refused.gone": "A comprovação {id} não está mais guardada nesta execução.",
   "main.evidence.refused.decode": "Não foi possível ler essa imagem para marcá-la ({problem}).",
   "main.evidence.refused.mark": "A marca {index} não é uma que o app desenhe ({problem}): a coordenada precisa estar dentro da imagem, a cor na lista fixa e a espessura até {max}.",
