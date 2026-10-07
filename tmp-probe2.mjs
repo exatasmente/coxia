@@ -1,0 +1,13 @@
+import { chromium } from 'playwright-core';
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const ctx = browser.contexts()[0];
+const page = ctx.pages()[0] ?? (await ctx.waitForEvent('page'));
+page.on('console', (m) => console.log('[console]', m.type(), m.text().slice(0, 300)));
+page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));
+await page.locator('.cy-top .btn.icon-btn').click();
+await page.waitForTimeout(800);
+await page.locator('.dash-nav').getByRole('button', { name: 'Execuções', exact: true }).click();
+await page.waitForTimeout(2500);
+console.log(JSON.stringify(await page.evaluate(() => ({ reads: window.__qa.unassignedReads, calls: window.__qa.startCalls }))));
+console.log('html of the page:', (await page.locator('.cy-wrap').innerHTML()).slice(0, 700));
+await browser.close();

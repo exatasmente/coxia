@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coxia (QA seed)</title>
+<!-- QA scratch harness, removed before this stage ends: writes setupComplete in a throwaway workspace, then loads the app's own renderer. -->
+<script>
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const v = await window.api.invoke('config:get');
+    const saved = await window.api.invoke('config:save', { ...v.config, setupComplete: true });
+    console.log('[seed] setupComplete', saved.config.setupComplete);
+  } catch (e) {
+    console.log('[seed] failed', String(e));
+  }
+  location.replace('/home/luiz-neto/.local/share/cerimonias/workspaces/coxia/worktrees/coxia/105-say-on-the-runs-screen-when-a-labeled-is/out/renderer/index.html');
+});
+</script>
+</head>
+<body>
+<div id="root"><p>Seeding the throwaway workspace…</p></div>
+</body>
+</html>

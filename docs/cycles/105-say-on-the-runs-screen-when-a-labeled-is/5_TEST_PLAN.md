@@ -1,110 +1,73 @@
-# The runs screen lists labeled issues without an assignee, and each can be started by hand
+# A lista de issues com rótulo e sem responsável na tela de execuções, e o início à mão de cada uma
 
-## What this plan covers
+## O que este plano cobre
 
-The runs screen shows, in a section of its own, the open issues of the project that carry the
-trigger label and have no assignee, each with a button that starts a run for it by hand. The
-button is disabled for an issue that already has a run, a refusal to start shows its reason on
-the screen, and the section hides itself when the list is empty. Nothing starts by itself from
-that list: the automatic scan is unchanged.
+A tela de execuções mostra, numa seção própria, as issues abertas do projeto que carregam o rótulo de gatilho e não têm ninguém assumido, cada uma com um controle de iniciar. O controle fica desabilitado quando a issue já virou execução, uma recusa ao iniciar aparece na tela com o motivo, e a seção some quando a lista está vazia. Nada inicia por si mesmo a partir dessa lista.
 
-## How this plan was checked
+## Como foi conferido
 
-Every scenario in this plan was verified by reading the delivered code and the tests that cover
-it. No command was run in this stage and no running app was opened, so the visual flow of the
-section on screen was not exercised live; for each scenario the evidence column says whether it
-was read in the code or only reasoned about, and the things not seen in a running window are
-named in "Not verified" at the end.
+Foi aberta uma janela do aplicativo sobre uma tela virtual, com uma pasta de dados descartável própria (nunca a de quem mantém). A tela de execuções foi conduzida e fotografada a cada passo. Para levar à tela exatamente os casos pedidos, a resposta que o processo principal daria foi substituída por uma resposta de teste com um item já em execução e um item sem execução; a mesma tela foi conduzida com a lista cheia, com a lista de um item já iniciado e com a lista vazia. Cada cenário abaixo diz o que foi visto na janela; o que foi apenas lido no código está marcado como lido.
 
-## Scenarios
+## Cenários
 
-### 1. An open labeled issue with no assignee appears listed
+### 1. Uma issue aberta, com o rótulo e sem responsável, aparece listada
 
-- Result: pass (read)
-- Evidence: the runner's `unassigned(label)` read returns only the open issues of the project
-  with the trigger label and an empty assignee list; the `runs:unassigned` channel serves that
-  list to the screen as number, reference, title and address; the screen section renders one
-  item per returned issue. The unit test "returns only the open issues that carry the label and
-  have no assignee" confirms an open labeled unassigned issue is returned.
+- Resultado: passou (executado)
+- O que se viu: na tela de execuções, a seção com o título próprio apareceu acima da lista de execuções, com o item da issue que o processo principal devolveria (a referência do cartão e o título), e nenhuma mensagem de erro.
 
-### 2. Each listed issue has a control that starts its run
+### 2. Cada item listado tem um controle que inicia a execução
 
-- Result: pass (read)
-- Evidence: each item of the section renders a "Start" button that calls the existing manual
-  start by reference (`runs:start`), the same path that creates the branch, worktree and cycle
-  folder for the issue. The test "starts a run for the issue only by hand" shows the run starts
-  for the issue on a manual start.
+- Resultado: passou (executado)
+- O que se viu: cada item da seção traz um botão de iniciar, habilitado; é o único controle do item.
 
-### 3. A closed issue with the label and no assignee does not appear
+### 3. Uma issue fechada com o rótulo e sem responsável não aparece
 
-- Result: pass (read)
-- Evidence: the `unassigned` read filters to `state === 'open'`, so a closed issue never enters
-  the list. The unit test covers a closed labeled issue being excluded.
+- Resultado: passou (lido)
+- O que se viu: por leitura, a consulta exige a issue aberta, então uma issue fechada não entra na lista; o teste da consulta cobre o caso. Não foi exercitado numa janela.
 
-### 4. An open labeled issue with an assignee does not appear in this section
+### 4. Uma issue aberta com responsável não entra nessa parte da tela
 
-- Result: pass (read)
-- Evidence: the read requires an empty assignee list, so an issue with an assignee is excluded
-  from the list (it already belongs to the automatic scan's scope). The unit test covers an
-  assigned issue being excluded.
+- Resultado: passou (lido)
+- O que se viu: por leitura, a consulta exige a lista de responsáveis vazia; o teste da consulta cobre o caso. Não foi exercitado numa janela.
 
-### 5. Nothing but the explicit start gesture creates a run from the list
+### 5. Nada além do gesto de iniciar cria execução a partir da lista
 
-- Result: pass (read)
-- Evidence: the `runs:unassigned` channel only reads and serves the list; it never starts a run.
-  The only way a run begins for a listed issue is the person pressing the start button, which
-  goes through the manual `runs:start`. The test "never lets the automatic scan start an issue
-  that has no assignee, even when it is on the list" shows scanning produces no run for an
-  unassigned listed issue.
+- Resultado: passou (executado)
+- O que se viu: abrir a tela e navegar até ela não disparou nenhuma chamada de iniciar (a lista de chamadas de iniciar estava vazia antes do clique); a chamada só apareceu depois do clique no botão do item.
 
-### 6. The automatic scan behaves as before
+### 6. A varredura automática se comporta como antes
 
-- Result: pass (read)
-- Evidence: the scan's source (`triggered` / `listMyIssues`) is untouched and keeps reading only
-  the person's own issues, so an unassigned labeled issue never starts by itself, while the
-  issues the scan already started keep starting. The unit test confirms the scan returns nothing
-  for an unassigned issue even when it is on the manual list.
+- Resultado: passou (lido)
+- O que se viu: por leitura, a fonte da varredura (as issues do rótulo atribuídas à pessoa) não foi tocada, e o teste confirma que ela não inicia uma issue sem responsável mesmo quando ela está na lista nova. Não foi exercitado numa janela.
 
-### 7. An issue that already has a run cannot be started again by accident
+### 7. Uma issue que já tem execução não pode ser iniciada de novo por acidente
 
-- Result: pass (read)
-- Evidence: the start button is disabled for a reference that already appears among the runs on
-  the screen, and the manual start path itself refuses a second run without the person saying so
-  (a duplicate is refused). The unit test "starts a run for the issue only by hand, and refuses
-  a second without the person saying so" covers the refusal.
+- Resultado: passou (executado)
+- O que se viu: com a lista contendo uma issue que já aparece entre as execuções da tela, o botão daquele item apareceu desabilitado, enquanto o botão do item novo continuou habilitado.
 
-### 8. A refusal to start shows its reason on the screen
+### 8. Uma recusa ao iniciar mostra o motivo na tela
 
-- Result: pass (read)
-- Evidence: when a start is refused (a closed issue, an existing branch, a duplicate run), the
-  screen shows the refusal reason through the same error path other start controls use, in the
-  section and not as a silent failure. This was read in the section's start handler; it was not
-  exercised in a running window.
+- Resultado: passou (executado)
+- O que se viu: ao usar o botão de um item cujo início o código de hospedagem recusa, a seção passou a mostrar a mensagem de recusa, marcada como alerta para quem usa leitor de tela, sem falhar em silêncio.
 
-### 9. The section hides itself when the list is empty
+### 9. A seção se esconde quando a lista está vazia
 
-- Result: pass (read)
-- Evidence: the section returns nothing when the read comes back empty or when there is no
-  issue project (the read returns an empty list in either case), so the screen shows no empty
-  section and no error. This was read in the section's render logic; it was not exercised in a
-  running window.
+- Resultado: passou (executado)
+- O que se viu: com a lista vazia, a seção não foi renderizada e a tela de execuções seguiu normal, sem erro nem seção vazia. O mesmo foi visto no workspace descartável, cuja lista real veio vazia: a tela de execuções apareceu sem a seção.
 
-### 10. The change is a read and stays inside the security boundary
+### 10. A mudança é leitura e fica dentro da fronteira de segurança
 
-- Result: pass (read)
-- Evidence: the new channel is classified by the web policy as an open read to a paired browser,
-  is not desktop-only and is not behind the external-effects switch; the runs module still
-  reaches the provider only through reads (the by-label list read included) and writes to the
-  host through nothing new. The web-policy tests pin the served channels and the provider calls.
+- Resultado: passou (lido)
+- O que se viu: por leitura, o canal novo é classificado como leitura aberta ao navegador pareado e não fica atrás do interruptor de efeitos externos; a mudança não acrescenta nenhuma escrita no host, e o iniciar continua sendo o caminho manual já existente. Os testes de política do navegador fixam os canais servidos e as leituras feitas ao provedor.
 
-## Not verified
+### 11. O controle de iniciar leva à execução criada
 
-- The visual flow of the section in a running app (Electron) was not exercised in this stage:
-  the list rendering, the disabled button for an already-started issue, the refusal reason shown
-  on the screen, the section hiding when the list is empty, and starting a run by clicking were
-  all verified by reading the code and the tests, not by interacting with an open window.
-- The whole Vitest suite was not run in this stage; the tests read for this plan are the new
-  `runner-unassigned` tests and the web-policy tests. A previously noted environmental failure
-  in a sandbox GUI test does not touch the files of this change.
-- No configured commands were run here; the gates the implementation/review ran (type check,
-  i18n lint, theme audit, public audit) are reported in those stages' documents, not re-run here.
+- Resultado: não executado (lido)
+- O que se viu: por leitura, o mesmo manipulador que inicia a execução leva a tela à execução devolvida; não foi exercitado numa janela, porque o código de hospedagem do teste de interface recusa o início (é o mesmo caminho do cenário 8).
+
+## Não verificado
+
+- O fluxo visual num workspace com a pasta de navegadores e a tela virtual configuradas: a configuração em uso não as tem, então a janela testada não foi a que o prompt de QA descreve para testar interface. O comportamento da seção em si foi exercitado na janela, mas não por meio de uma sandbox de QA.
+- O caminho real de leitura do provedor de código (a consulta ao host) não foi exercitado numa janela: a lista servida à tela foi a de teste. As consultas ao provedor estão cobertas pelos testes da mudança.
+- A contagem de cenários executados que o relatório do app deriva de comandos não foi exercitada: a configuração desta execução não lista comandos e é o próprio aplicativo em execução que está sob teste, então nada foi medido por comando aqui.
+- O tema escuro da seção não foi conferido; as capturas foram feitas no tema claro.
