@@ -122,6 +122,8 @@ export interface CommentRecord {
   headline?: string | null;
   /** The pull request's title, for the `pr` record. */
   title?: string | null;
+  /** The evidence ids the description cites, for the `pr` record: the images go up with the pull request's own proposal, on its "sim". */
+  evidenceIds?: string[];
 }
 
 /** What a transition may record about a comment besides where it stands. */
@@ -129,6 +131,8 @@ export interface CommentDetails {
   body?: string;
   headline?: string;
   title?: string;
+  /** Evidence ids the text cites, for a comment whose images leave with the proposal of the write itself (the pull request's description). */
+  evidenceIds?: string[];
 }
 
 /** What a non-autonomous agent finished and the person has not accepted yet. */

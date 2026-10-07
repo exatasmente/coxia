@@ -72,6 +72,11 @@ export interface ProposalMeta {
   detail?: string;
   /** What the publisher needs to recognise the proposal when it is carried out. */
   unit: Record<string, unknown>;
+  /**
+   * The uploads of evidence planned with the comment, in the order their commands sit in the group: the address each host answers with is read back into the
+   * body once the "sim" has run. `bodyAt` is the command of the comment itself inside the group. Absent when the comment cites no evidence (the common case).
+   */
+  evidence?: { titles: string[]; positions: number[]; bodyAt: number };
   notify?: { title: string; body: string };
 }
 
@@ -221,28 +226,29 @@ function prRefOf(response: unknown): { iid: number | null; url: string | null } 
   return { iid: typeof n === 'number' ? n : typeof n === 'string' && /^\d+$/.test(n) ? Number(n) : null, url };
 }
 
-/**
- * Fills what only the caller of an upload can know and the proposal never stores: the file it reads and the headers it sends. On GitHub that is the
- * credential and the User-Agent of the upload host; a transport that cannot carry a file is refused here, so a comment that cannot embed an image says so.
- */
-async function prepareUpload(provider: VcsProvider, commands: VcsCommand[], media: string): Promise<VcsCommand[]> {
-  if (!commands.some((c) => c.bodyFile)) return commands;
-  const token = await provider.uploadToken();
-  if (!token) throw new VcsError('no_token', { id: '', ref: '-' });
-  return commands.map((c) =>
-    c.bodyFile
-      ? provider.kind === 'github'
-        ? { ...c, headers: { ...(c.headers ?? {}), 'Content-Type': media, 'User-Agent': 'Coxia', Authorization: `Bearer ${token}` } }
-        : { ...c, headers: { ...(c.headers ?? {}), 'Content-Type': media } }
-      : c,
-  );
-}
-
 /** Where the host says an uploaded piece of evidence lives: the address a comment embeds it by. */
 function embedUrlOf(response: unknown): string | null {
   const r = rec(response);
   const url = [r.url, r.web_url, r.html_url, r.href, r.links && rec(r.links)?.html && rec(rec(r.links).html).href, r.download && rec(r.download)?.link].find((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u));
   return url ?? (typeof r.markdown === 'string' ? /\((https?:\/\/[^)]+)\)/.exec(r.markdown)?.[1] ?? null : null);
+}
+
+/**
+ * One upload of evidence waiting for the same "sim" as the comment that cites it: the bytes with the name and the type the host is told, the throwaway file
+ * the command reads, and where the address of a piece the host took is written once the group runs. The upload is never a write of its own: it is one more
+ * command of the comment's group, so a comment that waits in Actions takes its images up only when the person says so.
+ */
+interface PendingUpload {
+  id: string;
+  title: string;
+  media: string;
+  /** The throwaway file the command reads at the moment it runs; the caller that owns the bytes cleans it up. */
+  path: string;
+  commands: VcsCommand[];
+  /** What the commands run are, in order: one upload is one command, kept as a list because a provider may plan more than one. */
+  at: number;
+  /** Filled with the address the host answered with once the group has run; the `finally` of the group is what reads it. */
+  url?: string;
 }
 
 interface Delivery {
@@ -314,34 +320,54 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   };
 
   /**
-   * Sends the pieces of evidence a comment cites to the code host just before the comment goes up, and returns the comment with them embedded. The files
-   * are written to a throwaway folder (this process holds the bytes; the executable that carries out the commands does not), the address each host answers
-   * with is embedded under the text, and a piece the host refused, was too big or was not an image is counted in a line instead of being dropped silently.
+   * Plans the pieces of evidence a comment cites, ready to be sent to the code host together with the comment itself: the files are written to a throwaway
+   * folder (this process holds the bytes; the executable that carries out the commands does not) and each one is described as part of the comment's group of
+   * commands. Nothing runs here, so a comment that waits in Actions shows its images before the person confirms and takes them up only on the "sim". `missing`
+   * counts the pieces no command could carry (the host plans nothing for them); they are counted in a line under the text once the body is final.
    */
-  async function withEvidence(run: Run, provider: VcsProvider, body: string, ids: readonly string[]): Promise<string> {
+  function planEvidence(run: Run, provider: VcsProvider, body: string, ids: readonly string[]): Promise<{ body: string; uploads: PendingUpload[]; dir: string | null; missing: number }> {
     const { images, total } = uploadableEvidence(run, ids);
-    if (!images.length) return total > 0 ? withEvidenceImages(body, [], total) : body;
+    if (!images.length) return Promise.resolve({ body, uploads: [], dir: null, missing: total });
     const dir = mkdtempSync(join(tmpdir(), 'coxia-evidence-'));
-    try {
-      const places: { title: string; url: string }[] = [];
+    return (async () => {
+      const uploads: PendingUpload[] = [];
       for (const image of images) {
-        const at = join(dir, uploadNameOf({ id: image.id, media: image.media }));
+        const name = uploadNameOf({ id: image.id, media: image.media });
+        const at = join(dir, name);
         writeFileSync(at, image.bytes, { mode: 0o600 });
-        const op: VcsWriteOp = { op: 'uploadAttachment', project: projects(run).repo, path: at, name: uploadNameOf({ id: image.id, media: image.media }), media: image.media };
+        const op: VcsWriteOp = { op: 'uploadAttachment', project: projects(run).repo, path: at, name, media: image.media };
         const commands = await provider.planWrite(op);
         // A host that plans nothing for the file is one that cannot take it: the piece is counted as missing, never embedded, and the comment goes on.
-        if (!commands.some((c) => c.bodyFile)) return withEvidenceImages(body, places, total - places.length);
-        const filled = await prepareUpload(provider, commands, image.media);
-        const responses = await door.post({ issue: trackIid(run), key: `evidence:${run.id}:${image.id}`, summary: image.title, by: 'app' }, filled);
-        const at0 = filled.findIndex((c) => c.bodyFile !== undefined);
-        const url = embedUrlOf(at0 >= 0 ? responses[at0] : undefined);
-        if (url) places.push({ title: image.title, url });
-        else return withEvidenceImages(body, places, total - places.length);
+        if (!commands.some((c) => c.bodyFile)) continue;
+        uploads.push({ id: image.id, title: image.title, media: image.media, path: at, commands, at: 0 });
       }
-      return withEvidenceImages(body, places, total - places.length);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      // The pieces with no command at all, plus the citations that name nothing the run still has: both are counted in the text.
+      return { body, uploads, dir, missing: total - uploads.length };
+    })();
+  }
+
+  /**
+   * The comment and its uploads went up as one group under one "sim": the address each host answered with is read back into the body, and a piece the host took
+   * no address from is counted in a line (the pieces no command could carry were counted when the body was written).
+   */
+  function evidenceBody(body: string, evidence: { titles: string[]; positions: number[] }, responses: readonly unknown[]): string {
+    const taken = evidence.positions.map((at, i) => ({ title: evidence.titles[i] ?? '', url: embedUrlOf(responses[at]) })).filter((p): p is { title: string; url: string } => !!p.url);
+    const missing = evidence.positions.length - taken.length;
+    return taken.length || missing > 0 ? withEvidenceImages(body, taken, missing) : body;
+  }
+
+  /** The place of each upload inside the group of commands a comment proposes or posts. */
+  function placeUploads(uploads: PendingUpload[], offset: number): void {
+    let at = offset;
+    for (const u of uploads) {
+      u.at = at;
+      at += u.commands.length;
     }
+  }
+
+  /** Removes the throwaway folder an upload was written into; the run's own evidence is the only copy that stays. */
+  function dropUploads(dir: string | null): void {
+    if (dir) rmSync(dir, { recursive: true, force: true });
   }
 
   // ---- the forum links to what was posted ------------------------------------------------------------------------------------------
@@ -418,41 +444,71 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const marked = findMarked(await commentsOf(provider, run, x.target, x.target === 'mr' ? (where as { project: string; iid: number }) : null), run.id, x.key);
       if (marked) noteId = marked.id;
     }
-    // The evidence the comment cites goes up just before it: the pieces the host takes are embedded, and the rest are counted in the text. A host that
-    // cannot take any of them leaves the comment as it was written.
-    let body = x.body;
+    // The pieces the stage's output cites are planned as part of the comment's own group of commands, never as a write of their own: a comment that waits in
+    // Actions takes its images up only on the "sim", so the person sees every image before the write leaves. The pieces the host cannot take are counted in the
+    // text here, before the proposal exists; the ones it does take are embedded once the group has run.
     const ids = citedEvidence(x.end);
+    let planned: { body: string; uploads: PendingUpload[]; dir: string | null; missing: number } = { body: x.body, uploads: [], dir: null, missing: 0 };
     if (ids.length) {
       try {
-        body = await withEvidence(run, provider, body, ids);
+        planned = await planEvidence(run, provider, x.body, ids);
       } catch (e) {
         say(run, 'runner.evidence.uploadFailed', { title: x.title, reason: message(e) });
+        planned = { body: x.body, uploads: [], dir: null, missing: ids.length };
       }
     }
-    const op: VcsWriteOp =
-      noteId === null
-        ? { op: x.target === 'issue' ? 'commentIssue' : 'commentMr', project: where.project, iid: where.iid, body }
-        : { op: x.target === 'issue' ? 'editIssueNote' : 'editMrNote', project: where.project, iid: where.iid, noteId, body };
-    const commands = await provider.planWrite(op);
+    // The pieces no command can carry are counted in the text right away: they are what the person reads in the proposal. The ones a command carries are
+    // embedded at the end of the group, so the stored body never holds an address that does not exist yet.
+    const { uploads, dir, missing: planMissing } = planned;
+    const plannedBody = planMissing > 0 ? withEvidenceImages(planned.body, [], planMissing) : planned.body;
+    // The file commands go first: an address the host answers with is what the comment's body needs.
+    const commandOf = async (b: string): Promise<VcsCommand[]> => {
+      const op: VcsWriteOp =
+        noteId === null
+          ? { op: x.target === 'issue' ? 'commentIssue' : 'commentMr', project: where.project, iid: where.iid, body: b }
+          : { op: x.target === 'issue' ? 'editIssueNote' : 'editMrNote', project: where.project, iid: where.iid, noteId, body: b };
+      return provider.planWrite(op);
+    };
+    placeUploads(uploads, 0);
+    const uploadCommands = uploads.flatMap((u) => u.commands);
+    const evidence = uploads.length ? { titles: uploads.map((u) => u.title), positions: uploads.map((u) => u.at), bodyAt: uploadCommands.length } : undefined;
 
     const meta = { issue: trackIid(run), summary: x.title, by: x.by, bodyHash: hash };
     const unit = { runId, purpose: 'comment', key: x.key, stage: x.stage, kinds: x.kinds, target: x.target, bodyHash: hash, project: where.project, iid: where.iid, edit: noteId !== null };
 
     if (!x.autonomous || x.problems.length) {
-      const created = door.propose({ key: `comment:${runId}:${x.key}:${hash.slice(0, 12)}`, issue: trackIid(run), issueTitle: run.issue.title, summary: x.title, detail: [x.problems.length ? tr('main.runner.comment.heldDetail', { problems: problemsText(x.problems) }) : '', x.body].filter(Boolean).join('\n\n'), unit, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: x.title } }, commands);
+      const commands = [...uploadCommands, ...(await commandOf(plannedBody))];
+      const created = door.propose({ key: `comment:${runId}:${x.key}:${hash.slice(0, 12)}`, issue: trackIid(run), issueTitle: run.issue.title, summary: x.title, detail: [x.problems.length ? tr('main.runner.comment.heldDetail', { problems: problemsText(x.problems) }) : '', plannedBody].filter(Boolean).join('\n\n'), unit, evidence, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: x.title } }, commands);
       moveRun(d, runId, (r) => recordCommentProposal(r, x.key, { target: x.target, bodyHash: hash, ...details }, now()));
       if (created) say(run, x.problems.length ? 'runner.comment.held' : 'runner.comment.proposed', x.problems.length ? { title: x.title, problems: problemsText(x.problems) } : { title: x.title });
+      dropUploads(dir);
       return;
     }
 
     let responses: unknown[];
     try {
-      responses = await door.post({ ...meta, key: `comment:${runId}:${x.key}` }, commands);
+      // The images go up first, by themselves, under the same autonomy; the comment waits for their addresses and follows them. Nothing here is a group the
+      // person approved, so the upload and the comment are two calls of one run: the audit log gets a line for each.
+      const uploaded: { title: string; url: string }[] = [];
+      if (uploadCommands.length) {
+        const answers = await door.post({ ...meta, key: `comment:${runId}:${x.key}` }, uploadCommands);
+        for (const u of uploads) {
+          const url = embedUrlOf(answers[u.at]);
+          if (url) uploaded.push({ title: u.title, url });
+        }
+      }
+      // The comment was written with the count of the pieces no command carries; here only the uploads that were planned matter, and one the host took no
+      // address from is counted too instead of disappearing.
+      const body = uploads.length ? withEvidenceImages(planned.body, uploaded, uploads.length - uploaded.length) : plannedBody;
+      responses = await door.post({ ...meta, key: `comment:${runId}:${x.key}` }, await commandOf(body));
+      dropUploads(dir);
+      await afterPosted(runId, { ...x, body, hash: hashOf(body), details: { ...details, body }, noteId, responses, where, provider, previous: had?.headline ?? null });
+      return;
     } catch (e) {
       say(run, 'runner.comment.failed', { title: x.title, reason: message(e) });
+      dropUploads(dir);
       return;
     }
-    await afterPosted(runId, { ...x, hash, details, noteId, responses, where, provider, previous: had?.headline ?? null });
   }
 
   interface Posted {
@@ -763,18 +819,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const closes = closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
-      // The description carries the evidence the stage cites the same way a comment does; without a host it stays as it was written.
-      const provider = door.provider();
-      let body = checked.body;
-      if (provider && citedEvidence(end).length && !door.refusal()) {
-        try {
-          body = await withEvidence(run, provider, body, citedEvidence(end));
-        } catch (e) {
-          say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
-        }
-      }
+      // The description carries the evidence the stage cites, but nothing goes up here: the push still waits in Actions, and the images leave with the pull
+      // request's own proposal, on its "sim". What is kept now is the text plus the ids it cites.
+      const ids = citedEvidence(end);
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
-      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(body), body, headline: rendered.status, title }, now()));
+      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title, ...(ids.length ? { evidenceIds: ids } : {}) }, now()));
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.
     const attempt = run.stages.find((s) => s.stage === end.stage.id)?.attempts ?? 1;
@@ -782,7 +831,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (created) say(run, 'runner.push.proposed', { branch: run.branch }, end.stage.id);
   }
 
-  /** The push was carried out: the pull request waits in Actions for its own "sim" (unless one is already there). */
+  /** The push was carried out: the pull request waits in Actions for its own "sim" (unless one is already there). The images its description cites go up in the same group. */
   async function pullRequest(runId: string): Promise<void> {
     const run = need(runId);
     const provider = door.provider();
@@ -794,26 +843,48 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const title = (draft?.title || run.issue.title).trim();
       // The description comes from the template; a cycle with none still says which issue the pull request closes.
       const closes = closesOf(run);
-      const body = draft?.body ? draft.body : `${closes}\n`;
+      const written = draft?.body ? draft.body : `${closes}\n`;
+      const ids = draft?.evidenceIds ?? [];
+      // The cited images are planned as the first commands of the pull request's own proposal: nothing goes up before the person's "sim", and the description
+      // the host takes is the one with the addresses embedded once it ran.
+      const total = ids.length ? uploadableEvidence(run, ids).total : 0;
+      let planned: { body: string; uploads: PendingUpload[]; dir: string | null; missing: number } = { body: written, uploads: [], dir: null, missing: 0 };
+      if (ids.length) {
+        try {
+          planned = await planEvidence(run, provider, written, ids);
+        } catch (e) {
+          say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
+          planned = { body: written, uploads: [], dir: null, missing: total };
+        }
+      }
+      const { uploads, dir, missing: planMissing } = planned;
+      // The pieces no command carries are counted in the description right away; the ones a command carries are embedded when the "sim" runs.
+      const plannedBody = planMissing > 0 ? withEvidenceImages(planned.body, [], planMissing) : planned.body;
+      placeUploads(uploads, 0);
+      const uploadCommands = uploads.flatMap((u) => u.commands);
       const target = (await provider.getRepo(repo)).defaultBranch;
-      const commands = await provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
-      const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: body, unit: { runId, purpose: 'run-pr' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
-      moveRun(d, runId, (r) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: hashOf(body), body, title }, now()));
+      const commands = [...uploadCommands, ...(await provider.planWrite({ op: 'createMr', project: repo, title, body: plannedBody, sourceBranch: run.branch, targetBranch: target }))];
+      const evidence = uploads.length ? { titles: uploads.map((u) => u.title), positions: uploads.map((u) => u.at), bodyAt: uploadCommands.length } : undefined;
+      const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: plannedBody, unit: { runId, purpose: 'run-pr' }, evidence, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
+      moveRun(d, runId, (r) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: hashOf(plannedBody), body: plannedBody, title }, now()));
       if (created) say(run, 'runner.pr.proposed', { title }, 'implement');
+      dropUploads(dir);
     } catch (e) {
       say(run, 'runner.pr.failed', { reason: message(e) });
     }
   }
 
-  async function pullRequestOpened(runId: string, responses: unknown[]): Promise<void> {
+  /** The proposal of the pull request was carried out: what the host answered for the pull request itself, with the addresses of the images it embedded. */
+  async function pullRequestOpened(runId: string, responses: unknown[], evidence: { titles: string[]; positions: number[]; bodyAt: number } | undefined): Promise<void> {
     const run = need(runId);
-    const made = prRefOf(responses[0]);
+    const made = prRefOf(responses[evidence ? evidence.bodyAt : 0]);
     if (made.iid === null) {
       say(run, 'runner.pr.failed', { reason: tr('main.runner.comment.noId') });
       return;
     }
-    const body = run.comments.pr?.body ?? '';
-    const after = moveRun(d, runId, (r) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: made.iid as number, url: made.url, bodyHash: hashOf(body) }, now()));
+    const written = run.comments.pr?.body ?? '';
+    const body = evidence ? evidenceBody(written, evidence, responses) : written;
+    const after = moveRun(d, runId, (r) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: made.iid as number, url: made.url, bodyHash: hashOf(body), body }, now()));
     say(after, 'runner.pr.created', { url: made.url ?? '' });
     await flush(runId);
   }
@@ -891,7 +962,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const run = deps.runs.get(runId);
     if (!run) return;
     const provider = door.provider();
-    if (unit.purpose === 'run-pr') return pullRequestOpened(runId, responses);
+    if (unit.purpose === 'run-pr') return pullRequestOpened(runId, responses, a.evidence);
     if (unit.purpose === 'release-tracking') return trackingMade(runId, responses);
     if (unit.purpose === 'release-close') {
       const tracking = run.subject?.tracking;
@@ -916,18 +987,22 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const key = String(unit.key);
       const draft = run.comments[key];
       const target = unit.target === 'mr' ? 'mr' : 'issue';
+      // The images the comment cites went up as the first commands of the group, under the same "sim": their addresses are embedded now, and the pieces the
+      // host did not take (or the run no longer has) stay counted in the text.
+      const draftBody = draft?.body ?? '';
+      const body = a.evidence ? evidenceBody(draftBody, a.evidence, responses) : draftBody;
       await afterPosted(runId, {
         key,
         stage: String(unit.stage ?? key),
         kinds: Array.isArray(unit.kinds) ? (unit.kinds as ForumMessage['kind'][]) : ['post'],
         target,
         title: draft?.title ?? a.summary ?? key,
-        body: draft?.body ?? '',
+        body,
         headline: draft?.headline ?? '',
         // The person decided to post it: no extra notice on top of the comment they approved.
         announce: false,
-        hash: String(unit.bodyHash ?? draft?.bodyHash ?? ''),
-        details: { body: draft?.body ?? '', headline: draft?.headline ?? '', title: draft?.title ?? a.summary ?? key },
+        hash: hashOf(body),
+        details: { body, headline: draft?.headline ?? '', title: draft?.title ?? a.summary ?? key },
         noteId: unit.edit === true ? (draft?.noteId ?? null) : null,
         responses,
         where: { project: String(unit.project), iid: Number(unit.iid) },

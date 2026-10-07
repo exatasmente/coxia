@@ -924,7 +924,7 @@ function noteComment(run: Run, key: string, at: string, status: CommentStatus, c
 const fresh = (target: CommentTarget, status: CommentStatus, at: string): CommentRecord => ({ target, noteId: null, url: null, bodyHash: null, status, updatedAt: at });
 
 // What the caller says about the text, kept only when it says it: an edit that does not carry a title does not lose the one it had.
-const details = (input: CommentDetails): CommentDetails => Object.fromEntries(Object.entries({ body: input.body, headline: input.headline, title: input.title }).filter(([, v]) => v !== undefined));
+const details = (input: CommentDetails): CommentDetails => Object.fromEntries(Object.entries({ body: input.body, headline: input.headline, title: input.title, evidenceIds: input.evidenceIds }).filter(([, v]) => v !== undefined));
 
 /** A body was written but nothing was asked of the person yet. */
 export function recordCommentDraft(run: Run, key: string, input: { target: CommentTarget; bodyHash: string } & CommentDetails, at: string): Transition {

@@ -1,113 +1,109 @@
-# A comprovação que o agente guardou chega ao host, e os consertos da revisão
+# A imagem da comprovação sobe junto com a escrita que a cita, e os consertos da revisão
 
 ## O que esta entrega faz
 
 Um agente que trabalha numa etapa com sandbox guarda um arquivo que ele mesmo fez na pasta de saída como
 **comprovação** da etapa; a comprovação é publicada na conversa da execução como anexo de uma mensagem e
 listada sob a etapa, com um id `ev-<algarismos>`. Uma imagem pode ser marcada e olhada de novo. A escolha do
-espaço de trabalho decide se uma cópia também vai para a pasta do ciclo e entra no commit da etapa.
+espaço de trabalho decide se uma cópia também vai para a pasta do ciclo e entra no commit da etapa. Quando um
+comentário de etapa ou a descrição do pull request cita uma comprovação, a imagem é enviada ao host e sai
+embutida no texto.
 
-Esta etapa fecha o que faltava do plano e o que a revisão apontou:
+Esta tentativa fecha o **bloqueante da revisão** — o envio da imagem saía pela via automática **antes** de
+qualquer "sim" — e o menor do comentário duplicado. Nada mais foi mudado: o escopo é o que a revisão apontou.
 
-- **Levar a comprovação ao host de código** (passo 9): a imagem que um comentário de etapa ou a descrição do
-  pull request cita é enviada ao host e sai embutida no texto, pela mesma porta das outras escritas.
-- **A raiz de leitura não deixa passar um arquivo atrás de um vínculo de dependência** (o bloqueante da
-  revisão): além de recusar o caminho que passa por um link escrito, o app confere o caminho real do arquivo
-  contra o caminho real da pasta de saída: um arquivo que termina fora dela é recusado como um que passa por
-  um link.
-- **Documentação e changelog** (passo 10): `docs/runner.md`, `docs/configuration.md` e o `## [Unreleased]`.
-- Os menores da revisão: a chave duplicada no catálogo português, textos de interface por `t()`, as classes
-  de CSS da comprovação e a instrução de QA que citava comprovação por ter sandbox em vez de por ter as
-  ferramentas.
+### O bloqueante: a imagem sobe com a escrita, não antes dela
+
+Antes, a imagem citada era enviada no instante em que o comentário era montado, pela via auditada das
+escritas que saem sozinhas, **antes** de a proposta do comentário ser criada. Num agente que espera, a pessoa
+via a proposta e a imagem já estava no host; na descrição do pull request, a imagem subia quando o push era
+proposto, enquanto o pull request ainda esperava. A trava "a pessoa vê cada imagem antes de um sim" não se
+cumpria.
+
+Agora o envio é **parte do mesmo grupo de comandos** que o "sim" libera:
+
+- **Comentário de etapa.** O publicador planeja as comprovações citadas como os **primeiros comandos** do
+  grupo do comentário (`planEvidence`); o comentário propriamente dito é o último comando. Nada é postado até
+  o "sim", e o corpo guardado na proposta não carrega endereço nenhum: a proposta nunca guarda o que ainda não
+  existe. Quando o "sim" chega, o grupo roda em ordem e, imediatamente **antes** de o comentário rodar, o
+  endereço que cada upload respondeu é embutido sob o texto (`withEvidenceEmbeds`, em `actions.ts`). A
+  posição de cada upload no grupo e o índice do comando do comentário viajam na proposta
+  (`ReleaseAction.evidence`), não numa credencial.
+- **Agente autônomo.** Não há "sim": os uploads sobem numa chamada auditada e o comentário, já com as imagens
+  embutidas, na chamada seguinte; as duas sob a autonomia do agente, cada uma com a sua linha no registro de
+  auditoria.
+- **Descrição do pull request.** Como o push e o pull request sempre esperam, os ids citados são guardados no
+  rascunho da descrição (`CommentRecord.evidenceIds`) e as imagens entram no **mesmo grupo** da proposta do
+  pull request (`createMr`); os endereços são embutidos quando a proposta é confirmada.
+- **Onde o host não aceita o arquivo.** Uma comprovação que o provedor não planeja (ou que o host responde sem
+  endereço) continua contada no texto pelo número de peças que ficam no app: a publicação não quebra nem some
+  com a informação.
+
+### O menor da revisão
+
+- **`src/main/evidence/paths.ts:58-61`** — o comentário duplicado sobre o vínculo saiu.
 
 ## O que mudou, por arquivo
 
-### Levar a comprovação ao host (passo 9)
-
-- **`src/shared/types.ts`** — `VcsCommand` ganha `headers?` (cabeçalhos próprios de um upload, preenchidos na
-  hora de rodar e nunca guardados numa proposta) e `bodyFile?` (o corpo é o próprio arquivo, não um campo de
-  texto).
-- **`src/main/vcs/types.ts`** — `VcsWriteOp` ganha `uploadAttachment` (o arquivo, o nome e o tipo de
-  conteúdo); a interface do provedor ganha `uploadToken()` (a credencial que um upload leva nos seus próprios
-  cabeçalhos; `null` quando o host fala pela CLI).
-- **`src/main/vcs/github.ts`** — planeja o upload para a hospedagem de arquivos do host
-  (`uploads.github.com/?repository_id=…&name=…&content_type=…`), com o tipo de conteúdo no cabeçalho; o
-  validador aceita essa forma e recusa cabeçalhos ou `bodyFile` em qualquer outra escrita.
-- **`src/main/vcs/gitlab.ts`** — planeja `POST projects/<path>/uploads` com o arquivo no corpo.
-- **`src/main/vcs/bitbucket.ts`** — planeja `POST repositories/<path>/downloads` com o nome num cabeçalho.
-- **`src/main/vcs/exec.ts`** — cada executor manda `bodyFile` como corpo cru (lido do disco na hora de rodar),
-  com os cabeçalhos do comando; no GitHub e no Bitbucket a chamada vai para o endereço absoluto do host de
-  arquivos.
-- **`src/main/vcs/http.ts`** — `RequestOptions` ganha `body?: BodyInit`; `absolute` passa a fazer um POST
-  quando há corpo. Nada de upload é repetido (não é leitura).
-- **`src/main/vcs/runtime.ts`** — passa a fonte do token ao provedor do GitHub.
-- **`src/main/actions.ts`** — `withUploadHeaders` preenche os cabeçalhos do upload na hora de rodar (o token
-  da integração) e recusa um upload que o transporte não possa carregar; vale no caminho autônomo e no "sim".
-- **`src/main/runner/publish.ts`** — `withEvidence` lê os bytes das comprovações citadas (dados pelo
-  executor), escreve cada uma numa pasta descartável, manda pelo provedor e pela porta, e embute o endereço
-  que o host responde sob o texto; onde o host não aceita o arquivo, o comentário diz quantas comprovações
-  existem e que elas estão no app. Uma comprovação só sai quando alguém a cita; a conferência de vocabulário
-  vale para o texto.
-- **`src/main/runner/module.ts`** — liga `evidenceUploads`, que lê os bytes do armazenamento do espaço de
-  trabalho.
-- **`src/shared/evidence.ts`** — `EvidenceUpload`, `isUploadable`, `uploadNameOf` e `withEvidenceImages` (a
-  linha que conta as que ficaram no app).
-- **`src/main/evidence/store.ts`** — `uploadsOf`, que monta o que vai subir.
-- **`src/main/vcs/validate.ts`** — o registro de auditoria não leva os cabeçalhos nem o arquivo de um upload.
-
-### A raiz de leitura (bloqueante da revisão)
-
-- **`src/main/evidence/paths.ts`** — depois de resolver o caminho, confere se o caminho **real** do arquivo
-  continua sob o caminho **real** da pasta de saída; um arquivo que termina fora (atrás do vínculo de uma
-  dependência, por exemplo) é recusado com o motivo do link. `test/evidence-path.test.ts` cobre o caso com um
-  vínculo de pasta dentro da pasta de saída.
-
-### Os menores da revisão
-
-- **`src/shared/i18n/ui-team.pt-BR.json`** — some a entrada duplicada de `ui.runner.evidenceHint` (a chave
-  `ui.runner.evidenceApp` já existia).
-- **`src/renderer/src/screens/cycle/Evidence.tsx`** — o tamanho do arquivo monta "KB"/"MB" por `t()`
-  (`ui.cycle.evidenceBlock.kb`/`.mb`), nos dois idiomas.
-- **`src/renderer/src/screens/cycle/cycle.css`** — as classes `cy-evidence-*` ganham estilo (antes caíam no
-  estilo do navegador e a miniatura não tinha tamanho).
-- **`src/main/runner/prompt.ts`** — a linha de QA que convida a citar comprovação passa a valer pela
-  ferramenta (`i.evidence`), não pela sandbox (`i.sandbox`), ficando de acordo com o esquema.
-
-### Documentação e changelog (passo 10)
-
-- **`docs/runner.md`** (PT e EN) — a comprovação: as três ferramentas, o que é aceito e recusado, onde fica, a
-  escolha do espaço de trabalho e o envio ao host.
-- **`docs/configuration.md`** (PT e EN) — `runner.evidence` e o histórico do esquema v13.
-- **`CHANGELOG.md`** — a entrada em `## [Unreleased]` › `### Added`.
+- **`src/main/runner/publish.ts`** — `withEvidence` (que subia a imagem na hora de montar o comentário) vira
+  `planEvidence`: ela lê os bytes, escreve cada um numa pasta descartável e **descreve** o upload como comando,
+  sem rodar nada. `evidenceBody` monta o corpo final a partir dos endereços que o grupo respondeu. O
+  `deliver` põe os comandos de upload antes do comentário e, no ramo autônomo, sobe os arquivos numa chamada e
+  o comentário na seguinte, com as imagens embutidas. `pushStage` deixa de enviar a imagem: guarda os ids
+  citados no rascunho da descrição. `pullRequest` planeja as comprovações citadas como o começo do grupo da
+  proposta do pull request; `pullRequestOpened` embute os endereços quando o "sim" roda. O tratador `done`
+  reconstrói o corpo com os endereços das respostas do grupo.
+- **`src/main/actions.ts`** — `proposeVcsAction`/`proposeVcsGroup` aceitam e guardam `evidence` (os títulos, as
+  posições no grupo e o índice do comando do corpo). `approveAction`, ao rodar um grupo, lembra o endereço que
+  cada upload respondeu e o embute no corpo do comando do comentário **antes** de ele rodar
+  (`withEvidenceEmbeds`); `embedUrlOfResponse` lê o endereço que cada host devolve. O cabeçalho com o token
+  continua preenchido na hora de rodar (`withUploadHeaders`), nunca guardado na proposta.
+- **`src/main/runner/door.ts`** — passa `meta.evidence` para a proposta.
+- **`src/shared/types.ts`** — `ReleaseAction.evidence` (títulos, posições e `bodyAt`).
+- **`src/shared/runs/types.ts`** — `CommentRecord.evidenceIds` e `CommentDetails.evidenceIds`, para o rascunho
+  da descrição do pull request carregar os ids entre o fim da etapa e a proposta do pull request.
+- **`src/shared/runs/transitions.ts`** — `details` deixa passar `evidenceIds`.
+- **`src/shared/runs/schema.ts`** — `evidenceIds` no objeto do registro de comentário (o esquema recusa
+  propriedade fora da lista).
+- **`docs/runner.md`** (PT e EN) — uma frase diz que a imagem faz parte da **mesma escrita** que a cita e que
+  um comentário que espera em Ações não põe imagem no host até a confirmação.
+- **`CHANGELOG.md`** — a entrada de `## [Unreleased]` passa a dizer que a imagem sai como parte da mesma
+  escrita que a cita.
 
 ## O que foi conferido nesta etapa
 
 Tudo o que está dito como pronto foi **rodado** nesta cópia de trabalho:
 
 - **`npx tsc --noEmit`** — sem erro.
-- **`npx vitest run`** — 3702 de 3702, todos os arquivos (228).
-- **`node scripts/theme-audit.mjs`** — passa (nenhuma cor literal nova; o bloco de comprovação usa tokens).
+- **`npx vitest run`** — 3704 de 3704, todos os arquivos (228).
+- **`node scripts/theme-audit.mjs`** — passa.
 - **`npm run i18n:lint`** — 4106 chaves nos dois idiomas, nenhuma fora de ordem.
 - **`node scripts/public-audit.mjs`** — 927 arquivos, nada que pertença a uma empresa ou a uma pessoa.
 - **Exercitado por teste, sem sandbox, sem modelo e sem host:**
-  - `test/runner-evidence-upload.test.ts` (novo): um comentário que cita `ev-1` faz o upload subir antes do
-    comentário e o endereço que o host responde sai embutido sob o texto (`![The screen](…)`); quando o host
-    não planeja o upload, o comentário sai sem a imagem e dizendo "1 piece(s) of evidence stay in the app".
-  - `test/vcs-github.test.ts`, `test/vcs-gitlab.test.ts`, `test/vcs-bitbucket.test.ts`: o upload é planejado
-    por provedor e cada comando passa pelo próprio validador.
-  - `test/evidence-path.test.ts`: um arquivo comum atrás de um vínculo de pasta dentro da pasta de saída é
-    recusado com o motivo do link (o caso que a revisão apontou).
+  - `test/runner-evidence-upload.test.ts` (o terceiro caso, novo): um comentário de um agente que **espera** e
+    que cita `ev-1` **não posta nada** — a proposta é a única coisa criada, o upload é o primeiro comando do
+    grupo (`bodyFile` no índice 0) e a proposta carrega `{ titles: ['The screen'], positions: [0], bodyAt: 1 }`.
+    É a prova de que a imagem deixou de sair antes do "sim".
+  - `test/actions-group.test.ts` (o caso novo): um grupo com um upload de comprovação e um comentário, sob um
+    "sim", roda o upload primeiro e o comentário depois, com o endereço que o host respondeu **embutido sob o
+    texto** do comentário, e as duas escritas aparecem no registro de auditoria.
+  - `test/runner-evidence-upload.test.ts` (os dois primeiros casos): um agente **autônomo** sobe a imagem e o
+    comentário sai com o endereço embutido; um host que não planeja o upload faz o comentário sair sem imagem,
+    dizendo quantas peças ficam no app.
+- **Ajustadas as expectativas que mudaram com o desenho:** `test/runs-policy.test.ts` deixa de exigir que o
+  publicador chame `uploadToken` (quem preenche o cabeçalho é quem roda a escrita), e o duble de host de
+  `test/runner-evidence-upload.test.ts` responde uma vez por comando, na ordem.
 
 ## O que **não** foi verificado
 
-- **Nenhum host real foi usado.** O envio e o embutimento são exercitados contra provedores falsos (o
-  repositório não exercita GitHub, GitLab nem Bitbucket de verdade). O que cada host aceita e devolve é o que
-  a documentação diz; que a hospedagem de arquivos do GitHub devolva o endereço esperado, que o `POST
-  /projects/:id/uploads` do GitLab funcione com o token e que o Bitbucket aceite a subida em `downloads` não
-  foi visto.
-- **A conversa em tela, o navegador pareado e o acesso pelo telefone** foram lidos no código, não abertos numa
-  janela.
+- **Nenhum host real foi usado.** O envio e o embutimento são exercitados contra provedores falsos; que a
+  hospedagem de arquivos do GitHub devolva o endereço esperado, que a subida do GitLab funcione com o token e
+  que o Bitbucket aceite a subida não foi visto. O caminho de JSON (GitHub/Bitbucket) e o de campo de
+  formulário (GitLab) foram exercitados por testes diferentes, não num host.
+- **A conversa em tela, o navegador pareado e o telefone** foram lidos no código, não abertos numa janela.
+- **A descrição do pull request de ponta a ponta com comprovação citada** não foi exercitada por teste: o
+  caminho (planejar no grupo da proposta do pull request, embutir no "sim") foi conferido por leitura e o
+  mecanismo de embutir no "sim" foi exercitado no caso do comentário.
 - **A decodificação de JPEG, GIF e WebP para marcar** continua uma limitação conhecida: `AnnotateImage` só
   decodifica PNG; os outros formatos são aceitos, vistos, baixados e enviados, mas não marcados.
-- **Um sandbox de verdade**: os testes usam a sandbox falsa; a recusa do arquivo atrás de um vínculo foi
-  exercitada sobre o sistema de arquivos real de um teste, não dentro de uma sandbox.
+- **Um sandbox de verdade**: os testes usam a sandbox falsa.

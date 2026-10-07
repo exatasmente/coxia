@@ -57,8 +57,6 @@ export function resolveOutputPath(stageDir: string, input: unknown): ResolvedOut
   if (candidate.split(/[\\/]+/).includes('..')) return { ok: false, problem: 'traversal' };
   // A link on the way (a component of the path, or the file itself) is the thing this refuses most often, so it is looked for first and said as such: a link the
   // sandbox left behind is a way to hang anything of the person's on the evidence.
-  // A link on the way (a component of the path, or the file itself) is the thing this refuses most often, so it is looked for first and said as such: a link the
-  // sandbox left behind is a way to hang anything of the person's on the evidence.
   if (hasLink(root, candidate)) return { ok: false, problem: 'link' };
   const check = checkPath(root, candidate, { read: true });
   if (!check.ok) return { ok: false, problem: check.code === 'traversal' ? 'traversal' : check.code === 'dangling' ? 'link' : 'outside' };

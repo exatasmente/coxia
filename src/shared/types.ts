@@ -444,6 +444,12 @@ export interface ReleaseAction {
   group?: string;
   /** A push of a release that sent nothing: the remote already had exactly what it would send. Done, but nothing moved on the host. */
   nothingSent?: boolean;
+  /**
+   * The uploads of evidence planned with a write that waits in Actions: `positions` index the group of `commands` (each an upload), `titles` name the images in
+   * the same order, and `bodyAt` is the command of the comment or description whose body takes the addresses once the uploads have run. Absent when the write
+   * cites no evidence.
+   */
+  evidence?: { titles: string[]; positions: number[]; bodyAt: number };
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }

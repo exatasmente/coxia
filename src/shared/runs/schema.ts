@@ -65,6 +65,7 @@ const comment = object(
     body: { type: ['string', 'null'], description: 'The text last written for it, as it goes to the tracker.', maxLength: 200_000 },
     headline: { type: ['string', 'null'], description: 'The first line of the body: its status.', maxLength: 1000 },
     title: { type: ['string', 'null'], description: 'The title of the pull request (the `pr` record).', maxLength: 500 },
+    evidenceIds: EVIDENCE_REFS,
   },
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );

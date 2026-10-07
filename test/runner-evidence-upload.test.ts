@@ -96,18 +96,23 @@ function world(dataDir: string): World {
 
 type Door = Parameters<typeof createPublisher>[0]['door'];
 
-function doorOf(provider: VcsProvider, posted: VcsCommand[][]): Door {
+function doorOf(provider: VcsProvider, posted: VcsCommand[][], proposed: VcsCommand[][] = [], metas: Record<string, unknown>[] = []): Door {
   return {
     provider: () => provider,
     refusal: () => null,
     post: async (_meta: unknown, commands: VcsCommand[]) => {
       posted.push(commands);
-      // The host answers a different thing for an upload (where the file lives) than for a comment (its note id).
-      const upload = commands.find((c) => c.bodyFile);
-      if (upload) return [{ url: `https://example.test/group/project/assets/${new URLSearchParams(upload.endpoint.split('?')[1] ?? '').get('name') ?? 'file'}` }];
-      return [{ id: 9, html_url: 'https://example.test/group/project/issues/101#issuecomment-9' }];
+      // One answer per command, in the order they ran: an upload answers where the file lives, a comment its note id.
+      return commands.map((c) => {
+        if (c.bodyFile) return { url: `https://example.test/group/project/assets/${new URLSearchParams(c.endpoint.split('?')[1] ?? '').get('name') ?? 'file'}` };
+        return { id: 9, html_url: 'https://example.test/group/project/issues/101#issuecomment-9' };
+      });
     },
-    propose: () => true,
+    propose: (meta: Record<string, unknown>, commands: VcsCommand[]) => {
+      metas.push(meta);
+      proposed.push(commands);
+      return true;
+    },
     proposePush: () => true,
     proposeRelease: () => true,
     release: async () => 'ok',
@@ -162,5 +167,33 @@ describe('evidence and the code host', () => {
     // The host planned no upload for the file: the comment goes up without the image, saying the piece stays in the app.
     expect(commentBodyOf(posted)).toContain('1 piece(s) of evidence stay in the app');
     expect(posted.flat().some((c) => c.bodyFile)).toBe(false);
+  });
+
+  it('sends no image before the "sim" of an agent that waits', async () => {
+    const dataDir = make();
+    dirs.push(dataDir);
+    const { config, run, runs, forum, stage, agent } = world(dataDir);
+    const posted: VcsCommand[][] = [];
+    const proposed: VcsCommand[][] = [];
+    const metas: Record<string, unknown>[] = [];
+    const publisher = createPublisher({
+      runs,
+      forum,
+      config: () => config,
+      env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
+      door: doorOf(fakeProvider(), posted, proposed, metas),
+      now: () => new Date('2026-10-03T12:00:00Z'),
+      evidenceUploads: uploads,
+    });
+    const output = readOutput({ summary: 'Looked.', comment: { sections: [{ heading: 'What I saw', body: 'The field.' }], technical: '' }, scenarios: [{ name: 'See the app', result: 'fail', severity: 'blocking', detail: 'Crashes', evidenceIds: ['ev-1'] }] }, 'qa');
+    const end = { stage, agent, kind: 'qa', output, autonomous: false } as StageEnd;
+    await publisher.stageEnded(run.id, end);
+    // An agent that waits sends nothing: the upload and the comment wait in one proposal, so the person sees the image before a "yes".
+    expect(posted.flat()).toHaveLength(0);
+    expect(proposed).toHaveLength(1);
+    expect(proposed[0].some((c) => c.bodyFile)).toBe(true);
+    // The upload is the first command of the group and the comment owns the body the address goes into once the group runs.
+    expect(proposed[0].findIndex((c) => c.bodyFile)).toBe(0);
+    expect(metas[0].evidence).toEqual({ titles: ['The screen'], positions: [0], bodyAt: 1 });
   });
 });
