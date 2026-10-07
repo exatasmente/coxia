@@ -1,13 +1,14 @@
 // The door of a stage that talks while it works, in both engines: a message handed over between two steps enters the session and the stage goes on (it does not
 // restart), and the collection pass asks for the final answer with no tool at all, so a message in the middle never costs the stage its shape. Without the door
 // the call is exactly the one of today: this file also pins that a call with no `incoming` never takes the collection pass.
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SECRET_GLOBS, agentHooks, obj, secretPath, str } from '../src/main/agents';
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
+import type { ToolImpl } from '../src/main/engine/open/tools/types';
 import { installLegacyConfig } from './helpers/config';
 import { type Fake, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
@@ -202,6 +203,34 @@ describe('the open engine, a stage that talks while it works', () => {
     expect(chats).toHaveLength(3);
     expect((chats[1].body as Record<string, any>).messages.some((m: { content?: string }) => String(m.content ?? '').includes('use o helper existente'))).toBe(true);
     expect((chats[2].body as Record<string, any>).tools).toBeUndefined();
+  });
+
+  it('takes a model that only posts notes for three steps as done, and asks for the answer with no tool', async () => {
+    // A real model behind the open engine finished its work and kept announcing it with SendMessage, step after step, never ending the stage.
+    const notes: string[] = [];
+    const note: ToolImpl = { name: 'SendMessage', description: 'Posts a note.', parameters: { type: 'object', properties: { text: { type: 'string' } } }, note: true, async run(input) { notes.push(String(input.text)); return { response: 'Message delivered.', render: String }; } };
+    const said = (n: number) => toolStep([{ id: `call_note_${n}`, name: 'SendMessage', args: { text: `etapa concluída ${n}` } }]);
+    fake = await fakeOpenAI([said(1), said(2), said(3), textStep(JSON.stringify(answer)), said(4)]);
+    const r = await runOpen<typeof answer>(params(fake, { allowedTools: ['Read', 'SendMessage'], extraTools: [note], incoming: async () => null }));
+    expect(r.data).toEqual(answer);
+    expect(notes).toEqual(['etapa concluída 1', 'etapa concluída 2', 'etapa concluída 3']);
+    // The fourth call is the collection: no tool offered, so the model can only answer.
+    expect(fake.chats()).toHaveLength(4);
+    expect((fake.chats()[3].body as Record<string, any>).tools).toBeUndefined();
+  });
+
+  it('counts only notes in a row: a step that does other work starts the count again', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'conteúdo');
+    const note: ToolImpl = { name: 'SendMessage', description: 'Posts a note.', parameters: { type: 'object', properties: { text: { type: 'string' } } }, note: true, async run() { return { response: 'Message delivered.', render: String }; } };
+    const said = (n: number) => toolStep([{ id: `call_note_${n}`, name: 'SendMessage', args: { text: `nota ${n}` } }]);
+    const read = toolStep([{ id: 'call_read', name: 'Read', args: { file_path: join(dir, 'a.txt') } }]);
+    fake = await fakeOpenAI([said(1), said(2), read, said(3), said(4), textStep('terminei'), textStep(JSON.stringify(answer))]);
+    const r = await runOpen<typeof answer>(params(fake, { allowedTools: ['Read', 'SendMessage'], extraTools: [note], incoming: async () => null }));
+    expect(r.data).toEqual(answer);
+    // Two notes, a read, two notes: never three notes in a row, so every step kept its tools until the model ended the step with a text.
+    expect(fake.chats()).toHaveLength(7);
+    expect((fake.chats()[5].body as Record<string, any>).tools).toBeDefined();
+    expect((fake.chats()[6].body as Record<string, any>).tools).toBeUndefined();
   });
 
   it('asks the door once per step and never after the closing call', async () => {

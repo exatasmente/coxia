@@ -75,6 +75,7 @@ export function sendMessageTool(tools: RunnerTools, onSend: (to: MessageTo, text
       required: ['to', 'text'],
       additionalProperties: false,
     } as unknown as Json,
+    note: true,
     async run(input) {
       const to = String(input.to ?? '');
       const text = String(input.text ?? '').trim();
