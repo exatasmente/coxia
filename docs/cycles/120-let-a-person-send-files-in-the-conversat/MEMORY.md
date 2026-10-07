@@ -11,6 +11,7 @@
 - Retenção: `src/shared/retention.ts` ganhou o grupo `anexos`; `referencedAttachments` lê `"attachments"` direto das linhas do `.jsonl` (não olha a âncora), protegendo inclusive os arquivos de uma mensagem `answer`.
 - Agente: ferramenta somente leitura `ConversationAttachment` nos dois motores (`src/main/attachmentTool.ts`), com nome/tipo/tamanho dos refs da mensagem e nunca um caminho. Motor aberto: resultado de ferramenta texto + imagem como mensagem de usuário com pedaço de imagem logo depois; motor fechado: bloco de imagem no MCP.
 - Configuração: bloco `attachments` (`enabled`, `limits`, `agents`) no tipo, defaults, schema, validação e `WEB_EDITABLE`; aba Arquivos na tela de time e ciclo. Testes que montam config à mão não podem omitir `limits`.
+- **QA (esta etapa):** aprovado sem bloqueio novo. A tela segue sem verificação e a sugestão do motor aberto de juntar os pedaços de imagem numa única mensagem de usuário por rodada segue não feita.
 - Resposta: a atividade deve ter a funcionalidade, pode voltar ela para o DEV <!-- answer:123 -->
 - Resposta: Resolve os bloqueios <!-- answer:224 -->
 
@@ -20,28 +21,27 @@
 - O nome que a pessoa deu é dado, nunca caminho; o agente nunca recebe um caminho.
 - Toda string nova passa pelos catálogos; cores só por tokens. Nada tocado fora da pasta de trabalho.
 - O registro de anexos é por conversa, não por mensagem (alcance do agente é a conversa inteira) — nota aceita, não bloqueio.
+- Nada de commit por esta etapa; o app commita o que ela altera.
 
 ## Tentado e descartado
 
 - Apagar a pasta da conversa inteira ao excluir uma mensagem: descartado; apaga-se o que a mensagem nomeava, vizinhos ficam.
 - Esperar o arquivo do fórum ter os refs antes do primeiro turno: a leitura pode vir de cache; a guarda em memória por execução+etapa cobre.
 - Enviar a imagem como texto no resultado de ferramenta: perdida pelo redutor e recusada pela API.
-- Teste em dois casos para abertura e exclusão da mensagem `answer`: `ATAS` fixado no import e loja compartilhada; um caso só cobre os dois.
+- Testar o desenho do canal de arquivo pelo `web.ts` real: o teste do caminho do navegador não foi reconstruído para os cinco canais; o teto de 15 MB do corpo é coberto por teste próprio em `web-server.test.ts`, com outro canal. Fica como limite conhecido da cobertura, não como defeito.
 
 ## Perguntas abertas
 
-- **Não verificado:** telefone real (arquivo perto do limite pelo corpo de 15 MB); provedor compatível real aceitando pedaço de imagem; tela rodando (miniatura, cartão, arrastar-e-soltar, seletor do telefone, botão de apagar e confirmação); leitura da imagem pelos dois motores produzindo a resposta do aceite.
+- **Não verificado:** telefone real (arquivo perto do limite pelo corpo de 15 MB); provedor compatível real aceitando pedaço de imagem; tela rodando (miniatura, cartão, arrastar-e-soltar, seletor do telefone, botão de apagar e confirmação); leitura da imagem pelos dois motores produzindo a resposta do aceite; publicação no rastreador (nenhum host real alcançado); editor do navegador pareado salvando o bloco de anexos de ponta a ponta.
+- Com `attachments.enabled` desligado, o compositor deixa de aceitar arquivos? O campo é lido na validação e nos limites; a caixa de escrita foi lida sem esse guarda — **não verificado**, não bloqueante.
+- Notas não bloqueantes da QA: `cleanAttachments` descarta em silêncio um ref com id fora de `[a-f0-9]{8,32}` em vez de recusar (inalcançável hoje); a retenção lê as linhas `removed` do `.jsonl` como se trouxessem `attachments` (só as chaves `get`/`has` são usadas no caminho do anexo, então nada muda).
 - Sugestão do motor aberto (juntar os pedaços de imagem numa única mensagem de usuário por rodada) segue **não feita**, não bloqueante.
 
 ## Onde o trabalho está
 
-Revisão rodada 3: **aprovado**. Os dois bloqueantes da rodada 2 fechados e cobertos:
-
-1. Typecheck limpo — `runner-answer-attachments` deixou de montar `limits` à mão.
-2. Âncora da mensagem `answer` — `moveRun` põe a âncora; teste novo `runner-answer-attachment-open` confirma bytes servidos e exclusão apagando os arquivos.
-
-Gates desta passada, todos verdes: `tsc` (0), `i18n:lint` (4127 chaves), `theme-audit` (55 pares), `public-audit` (927 arquivos), `electron-vite build`, e a suíte inteira **inteira verde** (233 arquivos, 3734 testes). Testes do recurso verdes: `runner-answer-attachment-open` (1), `runner-answer-attachments` (3), `forum-attachment-delete` (4), `forum-attachments` (7), `attachments-tool` (7), `attachments-store` (6). Documentos do ciclo: `0_TRIAGE.md`..`4_REVIEW.md`. Nada de commit foi feito por esta etapa.
-- Passagem tl-experiencia → dev-experiencia (rodada 3): aprovado. Veredito no PR.
+QA da etapa 5 concluída. Rodado nesta etapa, com resultado: `tsc` (0), `i18n:lint` (4127 chaves), `theme-audit` (55 pares), `public-audit` (927 arquivos antes do documento novo, 928 depois), `electron-vite build` (0), a suíte inteira verde numa execução (233 arquivos, 3734 testes) e 70 testes do recurso em 11 arquivos verdes numa execução só deles. Provas pontuais fora da suíte: gravação do bloco `attachments` pelo navegador pareado não recusada (`refused paths: []`), `config:cycle-save` aberto; aviso e motivos de recusa nos dois idiomas; limites próprios chegando ao armazenamento; tipo pelo conteúdo com bytes reais; varredura de retenção mantendo o que uma mensagem viva nomeia. Documentos do ciclo: `0_TRIAGE.md` .. `5_TEST_PLAN.md`. Nenhuma alteração de código por esta etapa.
+- Passagem tl-experiencia → qa-experiencia: revisão aprovada na rodada 3; bloqueantes da rodada 2 fechados (typecheck e âncora da mensagem `answer`). <!-- handoff:273 -->
+- Passagem qa-experiencia → entregar: sem bloqueio novo; o que segue sem verificação está em `5_TEST_PLAN.md`.
 - Passagem support → product-owner: Issue 120 está entendida e nada falta de quem a abriu. O refino deve escrever a spec funcional apoiada em `0_TRIAGE.md`: os padrões numéricos de tamanho por arquivo e por mensagem; como o tipo é checado pelo conteúdo; onde o arquivo vive em `workspaces/<id>/` e como ele é apagado (mensagem excluída, anexo removido antes de enviar, retenção); como o anexo entra no prompt da etapa quando a mensagem é a resposta que a execução espera; como uma imagem chega ao modelo nos dois motores, dado que o resultado de ferramenta do motor aberto é texto hoje; e o comportamento do canal novo na política web, … <!-- handoff:7 -->
 - Passagem product-owner → pessoa: A spec funcional está em `1_SPEC.md`. O portão 1 decide as perguntas 1 a 3 (leitura estrita ou ampla para o que vai ao modelo, os padrões numéricos dos limites e o teto do telefone) e a prioridade/marco propostos; depois, o plano técnico cobre: onde o anexo fica em `workspaces/<id>/` e como é apagado (remover antes de enviar, excluir a mensagem, retenção); como o teto de corpo de 15 MB do RPC e o redutor de credenciais convivem com um arquivo em base64; a ferramenta de leitura de anexo (nome, parâmetros, limites) e como uma imagem chega ao modelo nos dois motores, dado que o resultado de ferra… <!-- handoff:16 -->
 - Passagem tl-experiencia → pessoa: O plano está em `2_PLAN.md` e cobre as quatro decisões que a spec deixou em aberto: onde o anexo mora (`ATAS/anexos/<conversa>/`, uma pasta por mensagem, apagada ao remover antes de enviar e ao excluir a mensagem, com a varredura de retenção conhecendo o grupo novo e protegendo o que uma mensagem ainda referencia); o teto de 15 MB do RPC (um anexo por chamada, mais a mensagem depois, com o redutor de credenciais nunca sobre os bytes); o anexo da resposta (a mensagem do fórum continua sendo o instrumento, com a decisão do tipo de mensagem passando do interceptor para o handler novo); e a imagem… <!-- handoff:26 -->
