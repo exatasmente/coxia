@@ -6,24 +6,26 @@ A tela de execuções mostra, numa seção própria, as issues abertas do projet
 
 ## Como foi conferido
 
-Uma janela do aplicativo foi aberta com a tela virtual deste computador, apontando para uma pasta de dados descartável (nunca a de quem mantém) e servida pela própria resposta do processo principal, que por sua vez leu um host de código simulado local. A tela de execuções foi conduzida e fotografada a cada passo, e cada chamada que a tela fez ao processo principal foi observada. Cada cenário abaixo diz o que foi visto na janela; o que foi apenas lido no código está marcado como lido.
+A tela foi exercitada numa página servida pelo próprio servidor web do aplicativo (o caminho do navegador pareado): um navegador novo foi pareado por um código gerado dentro do próprio aplicativo, e cada leitura da tela virou uma chamada HTTP ao processo principal desse aplicativo. A pasta de dados foi uma pasta descartável, nunca a de quem mantém, e o aplicativo foi apontado para um provedor de código simulado local, que responde aos mesmos caminhos que o provedor real usa. As capturas e os registros ficaram no diretório de saída da etapa.
+
+Cada cenário abaixo diz o que foi visto; o que foi apenas lido no código está marcado como lido. As numerações dos sete critérios do aceite e os onze cenários deste plano são os mesmos da versão anterior.
 
 ## Cenários
 
 ### 1. Uma issue aberta, com o rótulo e sem responsável, aparece listada
 
 - Resultado: passou (executado)
-- O que se viu: na tela de execuções, a seção com o título próprio apareceu acima da lista de execuções, com a referência do cartão e o título de cada issue devolvida pelo processo principal, e nenhuma mensagem de erro.
+- O que se viu: na tela de execuções, a seção com o título próprio apareceu acima da lista de execuções, com a referência do cartão e o título de cada issue devolvida pelo processo principal ("app#501 A labeled issue with nobody assigned"), e nenhuma mensagem de erro. A consulta que o aplicativo fez ao provedor simulado foi registada com o rótulo do gatilho e o token no cabeçalho.
 
 ### 2. Cada item listado tem um controle que inicia a execução
 
 - Resultado: passou (executado)
-- O que se viu: cada item da seção traz um botão de iniciar, habilitado, e é o único controle do item.
+- O que se viu: o item da seção traz um botão de iniciar, habilitado, e é o único controle do item.
 
 ### 3. Uma issue fechada com o rótulo e sem responsável não aparece
 
 - Resultado: passou (executado)
-- O que se viu: a consulta real ao host de código, exercitada dentro da janela, devolveu só as issues abertas com o rótulo e sem responsável: a issue fechada da lista simulada não chegou à tela. O teste da consulta cobre o mesmo caso.
+- O que se viu: a consulta real ao provedor, exercitada dentro do navegador pareado, devolveu só as issues abertas com o rótulo e sem responsável: a issue fechada da lista simulada não chegou à tela. O teste da consulta cobre o mesmo caso.
 
 ### 4. Uma issue aberta com responsável não entra nessa parte da tela
 
@@ -33,7 +35,7 @@ Uma janela do aplicativo foi aberta com a tela virtual deste computador, apontan
 ### 5. Nada além do gesto de iniciar cria execução a partir da lista
 
 - Resultado: passou (executado)
-- O que se viu: abrir a tela e esperar a lista carregar não disparou nenhuma chamada de iniciar (a lista de execuções continuou vazia); nenhuma execução nasceu sem o clique.
+- O que se viu: abrir a tela e esperar a lista carregar não disparou nenhuma chamada de iniciar — a lista de execuções continuou vazia e nenhuma execução nasceu sem o clique.
 
 ### 6. A varredura automática se comporta como antes
 
@@ -48,12 +50,12 @@ Uma janela do aplicativo foi aberta com a tela virtual deste computador, apontan
 ### 8. Uma recusa ao iniciar mostra o motivo na tela
 
 - Resultado: passou (executado)
-- O que se viu: ao usar o botão de um item cujo início o processo principal recusou, a seção passou a mostrar a mensagem de recusa, marcada como alerta para quem usa leitor de tela, sem falhar em silêncio.
+- O que se viu: ao usar o botão do item, o processo principal recusou o início (o workspace descartável não tem o ciclo de agentes) e a seção passou a mostrar a mensagem de recusa, marcada como alerta para quem usa leitor de tela, sem falhar em silêncio.
 
 ### 9. A seção se esconde quando a lista está vazia
 
 - Resultado: passou (executado)
-- O que se viu: com a lista vazia, a seção não foi renderizada e a tela de execuções seguiu normal, sem erro nem seção vazia.
+- O que se viu: com o provedor devolvendo uma lista vazia, a seção não foi renderizada e a tela de execuções seguiu normal, sem erro nem seção vazia.
 
 ### 10. A mudança é leitura e fica dentro da fronteira de segurança
 
@@ -63,11 +65,19 @@ Uma janela do aplicativo foi aberta com a tela virtual deste computador, apontan
 ### 11. O controle de iniciar leva à execução criada
 
 - Resultado: não executado (lido)
-- O que se viu: por leitura, o mesmo manipulador que inicia leva a tela à execução devolvida; nesta janela o início não chegou a criar uma execução (a razão da recusa apareceu na tela, como no cenário 8), então a ida até a execução não foi exercitada.
+- O que se viu: por leitura, o mesmo manipulador que inicia leva a tela à execução devolvida; nesta passagem o início foi recusado antes de criar uma execução (a razão apareceu na tela, como no cenário 8), então a ida até a execução não foi exercitada.
+
+## As capturas desta passagem
+
+- A seção com o item e o botão de iniciar.
+- A recusa ao iniciar mostrada na tela como alerta.
+- A tela sem a seção, com o provedor devolvendo uma lista vazia.
+- A tela de entrada, antes de chegar às execuções.
 
 ## Não verificado
 
-- O caminho do clique até a execução devolvida (cenário 11): a janela usada recusou o início antes de criar a execução, e a tela mostrou o motivo; a ida até a execução criada não foi vista.
-- O fluxo numa sandbox de QA com pasta de navegadores e tela virtual: nenhuma sandbox foi usada nesta execução; a janela foi a do próprio aplicativo, com a tela virtual deste computador e uma pasta de dados descartável.
+- O caminho do clique até a execução devolvida (cenário 11): o início foi recusado antes de criar a execução, e a tela mostrou o motivo; a ida até a execução criada não foi vista.
+- O fluxo numa sandbox de QA com pasta de navegadores e tela virtual: nenhuma sandbox foi usada nesta execução; a página foi a do próprio aplicativo.
 - O tema escuro da seção: as capturas foram feitas no tema claro.
+- A varredura automática exercitada numa janela: ela é conferida pelos testes, não por interação.
 - A contagem de cenários executados que o relatório do app deriva de comandos: a configuração desta execução não lista comandos e é o próprio aplicativo em execução que está sob teste, então nada foi medido por comando aqui.
