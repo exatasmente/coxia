@@ -8,13 +8,16 @@ import type { ForumStore } from '../forum-core';
 export interface StageInbox {
   /** The agent whose stage this mailbox belongs to: what a message of another agent is routed by. */
   readonly agent: string;
-  /** The next message to hand over, or a promise that wakes when one arrives; null only after `close`. */
-  next(): Promise<string | null>;
+  /**
+   * The next message to hand over, or null when none is queued: never waits. The engines ask it when the model finished a step, and null is what lets them ask
+   * for the final answer; a door that waited for a message would hold a stage that has nothing more to hear until its idle limit.
+   */
+  take(): string | null;
   /** The message entered the session: the delivery line in the thread, with the time. */
   delivered(text: string): void;
   /** The stage began finishing: a message that arrives now is not seen and comes back in the closing line. */
   closing(): void;
-  /** The delivery is over (well or badly): the queue closes and whoever waits is let go. */
+  /** The delivery is over (well or badly): the queue closes. */
   close(): void;
   /** Whether the stage is finishing: the tools may say so to the agent. */
   readonly isClosing: boolean;
@@ -39,14 +42,8 @@ export function inboxOf(runId: string): StageInbox | null {
 export function openInbox(runId: string, stage: string, agent: string, forum: ForumStore, now: () => string): StageInbox {
   const thread = runThreadId(runId);
   const queued: string[] = [];
-  let wake: (() => void) | null = null;
   let closed = false;
   let closing = false;
-  const flush = (): void => {
-    const w = wake;
-    wake = null;
-    w?.();
-  };
   const append = (draft: ForumDraft): void => {
     try {
       forum.append(thread, draft);
@@ -60,12 +57,8 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
   };
   const inbox: StageInbox = {
     agent,
-    async next() {
-      for (;;) {
-        if (queued.length) return queued.shift() as string;
-        if (closed) return null;
-        await new Promise<void>((resolve) => (wake = resolve));
-      }
+    take() {
+      return closed || closing ? null : (queued.shift() ?? null);
     },
     delivered(text) {
       append({ kind: 'system', author: { type: 'app' }, code: 'runner.message.delivered', params: { agent, at: now(), text: text.slice(0, 600) }, stage });
@@ -87,14 +80,12 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
         return false;
       }
       queued.push(text);
-      flush();
       return true;
     },
     close() {
       if (closed) return;
       closed = true;
       if (live.get(runId) === inbox) live.delete(runId);
-      flush();
     },
   };
   live.set(runId, inbox);

@@ -613,7 +613,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // before the sandbox, so nothing the stage hands over outlives it.
   const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());
   call.incoming = async (delivered) => {
-    const message = await inbox.next();
+    const message = inbox.take();
     if (message !== null) delivered(message);
     return message;
   };

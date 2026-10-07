@@ -294,6 +294,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
     evidence: { type: 'object', description: 'Every piece of evidence the stages kept, by id. Optional: a run written before evidence existed kept none.', additionalProperties: evidenceRecord },
     base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
+    baseBranch: { type: 'string', description: 'The branch the run was cut from, which its pull request aims at. Optional: a run made before it was recorded aims at the default branch.', maxLength: 200 },
     subject,
     docs: docsRun,
     createdAt: time('When the run started.'),

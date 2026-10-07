@@ -145,6 +145,11 @@ check_tree() {
   log "árvore: $branch @ $(git -C "$ROOT" rev-parse --short HEAD)"
   [ "$branch" = "main" ] || log "aviso: a árvore está em '$branch', não na main."
   if [ "$BUILD" = 1 ]; then
+    # A worktree that links node_modules to another checkout's builds an app with only the direct dependencies: electron-builder does not follow the link
+    # to collect the rest, and the installed app then fails at run time (electron-updater without fs-extra, every 30 s).
+    if [ -L "$ROOT/node_modules" ]; then
+      die "node_modules em $ROOT é um link ($(readlink "$ROOT/node_modules")): o build levaria só as dependências diretas. Rode npm ci nesta árvore (sem o link) ou atualize a partir do checkout principal."
+    fi
     dirty="$(git -C "$ROOT" status --porcelain -- src)"
     if [ -n "$dirty" ] && [ "$FORCE_DIRTY" = 0 ]; then
       log "há alterações não commitadas em src/:"

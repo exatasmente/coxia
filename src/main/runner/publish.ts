@@ -892,7 +892,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const plannedBody = planMissing > 0 ? withEvidenceImages(planned.body, [], planMissing) : planned.body;
       placeUploads(uploads, 0);
       const uploadCommands = uploads.flatMap((u) => u.commands);
-      const target = (await provider.getRepo(repo)).defaultBranch;
+      // The branch the run was cut from (the open release, when there was one); a run made before that was recorded aims at the default branch.
+      const target = run.baseBranch ?? (await provider.getRepo(repo)).defaultBranch;
       const createMr = (body: string): Promise<VcsCommand[]> => provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
       // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out. The images the description
       // cites go up first, by themselves, under the same autonomy; the pull request waits for their addresses and follows them, as an autonomous comment does.
