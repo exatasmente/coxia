@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A cycle can run on its own, and the sandbox can share the computer's network.** A new autonomy block — one for the workspace (Settings › Runner) and one for each flow (Settings › Team and cycle), every field off and only the computer raising one — has a general switch (**Autonomous cycle**: every stage starts by itself and hands its result on without waiting, whatever each agent's own autonomy is) and four separate choices under it: **Host commands without asking** (the commands of a `shell: host` agent run without the "Allow" question), **Gates pass by themselves** (a gate is approved by the app, recorded as an automatic approval with its reason and where it came from), **Push without a "yes"** and **Pull request without a "yes"** (the run's push and pull request go out by themselves, audited). The rule of the runner changes accordingly: the push and the pull request wait for a "yes" unless the choice that covers them is on, and a release run (its cuts and sends: `beta`, `stable`, `push-branch`, `push-tag`) is never reached. The sandbox's network gains a third value, **open**: it shares the computer's whole network, with no proxy and no host list (the machine's own services, the local network and the internet), with the system's name resolver bound in read-only. Desktop only, off by default, and a paired browser can neither raise any autonomy field nor choose `open`.
+
 ## [0.7.0-beta.10] - 2026-10-06
 
 ### Added

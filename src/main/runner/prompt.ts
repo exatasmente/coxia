@@ -38,7 +38,7 @@ export interface StageInput {
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
-  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
+  sandbox?: { network: 'off' | 'registry' | 'open'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
@@ -118,7 +118,7 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
-    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true) : '',
     cp('runner.rules.data'),

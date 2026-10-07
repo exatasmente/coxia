@@ -440,6 +440,8 @@ export interface FlowStage {
   agent: string | null;
   /** The agent runs by itself (`AgentDef.autonomous`); false when there is no agent. */
   autonomous: boolean;
+  /** The autonomy block of the run has its general switch on: the stage starts by itself whatever the agent's own `autonomous` is. */
+  cycleAutonomous: boolean;
   /** The files the stage must produce. */
   artifacts: string[];
   /** The artifacts the stage is given; null: every earlier one. */

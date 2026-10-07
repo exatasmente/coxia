@@ -81,6 +81,7 @@ import {
 import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import { autonomyOf, choiceOn, flowKeyOf, type EffectiveAutonomy } from '../../shared/config/autonomy';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
@@ -456,7 +457,32 @@ export function createRunner(deps: RunnerDeps): Runner {
         return;
       }
       await step(run);
-      if (deps.runs.get(id)?.rev === run.rev) return;
+      if (deps.runs.get(id)?.rev === run.rev) {
+        // The run reached a gate: with the autonomy block's "gates" choice on, the app approves it by itself and the run goes on; the reason says where the decision came from.
+        if (autoGate(id)) continue;
+        return;
+      }
+    }
+  }
+
+  /** The reason recorded on a gate the app approved by itself: in the app's words, saying what decided it and where that decision came from. */
+  function autonomyReason(a: EffectiveAutonomy): string {
+    const origin = a.from === 'flow' ? t('main.runner.gate.autonomy.flow', { flow: a.flow === '' ? t('main.runner.gate.autonomy.main') : (a.flow ?? '') }) : t('main.runner.gate.autonomy.workspace');
+    return t('main.runner.gate.autonomy', { origin });
+  }
+
+  /** Approves a gate the run is sitting on, when the autonomy block decides gates by themselves. True when it approved one. */
+  function autoGate(id: string): boolean {
+    const run = deps.runs.get(id);
+    if (!run || run.status !== 'gate') return false;
+    const a = autonomyOf(deps.config(), flowKeyOf(run.squad));
+    if (!(a.cycle && a.gates)) return false;
+    try {
+      gateBy(id, 'approve', autonomyReason(a), 'app');
+      return true;
+    } catch (e) {
+      console.error('[runner] could not approve a gate by itself', id, e instanceof Error ? e.message : e);
+      return false;
     }
   }
 
@@ -917,6 +943,27 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- what the person does ---------------------------------------------------------------------------------------------------------
 
+  /** Decides a gate of a run. `by` says who decided: the person, or the app under the autonomy block (an automatic approval, recorded as such). */
+  function gateBy(id: string, action: GateAction, reason: string, by: 'person' | 'app'): Run {
+    const before = need(id);
+    const flow = flowFor(before);
+    const gateStage = flow.find((s) => s.id === before.stage);
+    // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the decision was taken.
+    const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
+    const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
+    const decided = (run: Run): Run => {
+      if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+      // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
+      if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
+      return run;
+    };
+    // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
+    if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason, by)));
+    if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
+    if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
+    throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
+  }
+
   const api: Runner = {
     list: () => deps.runs.list().map((r) => withCommand(r) as Run),
     get: (id) => withCommand(deps.runs.get(id)),
@@ -928,23 +975,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
     gate(id, action, reason = '') {
-      const before = need(id);
-      const flow = flowFor(before);
-      const gateStage = flow.find((s) => s.id === before.stage);
-      // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the person decided.
-      const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
-      const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
-      const decided = (run: Run): Run => {
-        if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
-        // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
-        if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
-        return run;
-      };
-      // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
-      if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason)));
-      if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
-      if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
-      throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
+      return gateBy(id, action, reason, 'person');
     },
     answer: (id, text) => move(id, (r, f, at) => answerMove(r, f, text, at)),
     retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),

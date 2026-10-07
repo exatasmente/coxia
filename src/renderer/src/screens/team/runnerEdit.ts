@@ -1,4 +1,4 @@
-import type { RunnerConfig, RunnerSandbox } from '../../../../shared/config/types';
+import type { AutonomyBlock, RunnerConfig, RunnerSandbox } from '../../../../shared/config/types';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -26,6 +26,8 @@ export interface RunnerDraft {
   commitMessage: string;
   /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
   sandbox: RunnerSandbox;
+  /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
+  autonomy: AutonomyBlock;
   linkDependencies: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
   soleMaintainer: boolean;
@@ -47,6 +49,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
     sandbox: structuredClone(r.sandbox),
+    autonomy: structuredClone(r.autonomy),
     linkDependencies: r.linkDependencies !== false,
     soleMaintainer: soleMaintainerOf(r),
   };
@@ -64,6 +67,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     turns: { read: d.turnsRead, write: d.turnsWrite },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()), browsersPath: d.sandbox.browsersPath?.trim() || null, display: d.sandbox.display === true },
+    autonomy: structuredClone(d.autonomy),
     commitMessage: d.commitMessage,
     linkDependencies: d.linkDependencies,
     release: { soleMaintainer: d.soleMaintainer },

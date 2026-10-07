@@ -230,11 +230,11 @@ function SandboxBlock({ draft, set, stored, web, at }: { draft: RunnerDraft; set
       ) : (
         <>
           <div role="group" aria-label={t('ui.runner.sandbox.network')} className="wz-pills">
-            {(['off', 'registry'] as const).map((n) => (
+            {(['off', 'registry', 'open'] as const).map((n) => (
               <button key={n} type="button" aria-pressed={network === n} className={`filter ${network === n ? 'on' : ''}`} onClick={() => setSb({ network: n })}>{t(SANDBOX_NETWORK_LABEL[n])}</button>
             ))}
           </div>
-          <p className="small muted">{network === 'off' ? t('ui.runner.sandbox.network.off.hint') : t('ui.runner.sandbox.network.registry.hint')}</p>
+          <p className="small muted">{network === 'off' ? t('ui.runner.sandbox.network.off.hint') : network === 'open' ? t('ui.runner.sandbox.network.open.hint') : t('ui.runner.sandbox.network.registry.hint')}</p>
           {network === 'registry' && (
             <ChipsInput label={t('ui.runner.sandbox.hosts')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(host) => t('ui.runner.sandbox.hostRemove', { host })} values={sb.registryHosts} onChange={(registryHosts) => setSb({ registryHosts })} add={(list, text) => (text.trim() && !list.includes(text.trim().toLowerCase()) ? [...list, text.trim().toLowerCase()] : list)} error={at('sandboxHosts')} />
           )}

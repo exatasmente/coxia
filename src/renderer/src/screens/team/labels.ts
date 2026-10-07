@@ -23,7 +23,7 @@ export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.track
 export const SHELL_LABEL: Record<AgentShell, string> = { none: 'ui.team.shell.none', allowlist: 'ui.team.shell.allowlist', sandbox: 'ui.team.shell.sandbox', host: 'ui.team.shell.host' };
 export const SHELL_HINT: Record<AgentShell, string> = { none: 'ui.team.shell.none.hint', allowlist: 'ui.team.shell.allowlist.hint', sandbox: 'ui.team.shell.sandbox.hint', host: 'ui.team.shell.host.hint' };
 
-export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry' };
+export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry', open: 'ui.runner.sandbox.network.open' };
 /** What the sandbox has to test an interface, as Settings words it. */
 export const SANDBOX_BROWSERS_LABEL: Record<SandboxGuiStatus['browsers'], string> = {
   unset: 'ui.runner.sandbox.gui.browsers.unset',

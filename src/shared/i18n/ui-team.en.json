@@ -253,6 +253,8 @@
   "ui.runner.sandbox.network": "Network",
   "ui.runner.sandbox.network.off": "Off",
   "ui.runner.sandbox.network.off.hint": "Nothing leaves the sandbox. A project whose tests need packages that are not in the repository cannot install them.",
+  "ui.runner.sandbox.network.open": "The computer's network",
+  "ui.runner.sandbox.network.open.hint": "The sandbox shares the computer's whole network: its own services, the local network and the internet, with no proxy and no host list. A choice of risk, made on the computer only. Name resolution is set up inside.",
   "ui.runner.sandbox.network.registry": "Package registry only",
   "ui.runner.sandbox.network.registry.hint": "Only HTTPS to the hosts below, through a proxy the app runs. It is a window to those hosts and no more, but a request to a registry can carry data in its address: turn it on only when installing needs it. It needs Node inside the sandbox.",
   "ui.runner.sandbox.pathRemove": "Remove {path}",

@@ -2,7 +2,7 @@
 import { neutralDevCycle } from '../cycles/neutral';
 import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type AutonomyBlock, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -28,8 +28,13 @@ export function neutralSandbox(): RunnerSandbox {
   };
 }
 
+/** The five choices of autonomy, all off: a fresh install waits for the person at every step, as it always did. */
+export function neutralAutonomy(): AutonomyBlock {
+  return { cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false };
+}
+
 export function neutralRunner(): RunnerConfig {
-  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), commitMessage: 'feat: {summary} #{iid}', linkDependencies: true, release: { soleMaintainer: false } };
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), autonomy: neutralAutonomy(), commitMessage: 'feat: {summary} #{iid}', linkDependencies: true, release: { soleMaintainer: false } };
 }
 
 /** A workspace with no plugins: no folder listed, nothing read and nothing offered; an allowed irreversible write is announced for 30 seconds. */

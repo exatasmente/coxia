@@ -154,6 +154,21 @@ const quickTransition = object(
   ['to', 'id', 'label', 'from', 'removable'],
 );
 
+/** The five choices of autonomy, all off by default; the four below `cycle` only count while it is on. */
+const autonomy = object('What a run lets go on without the person.', {
+  cycle: boolean('Every stage starts when the run reaches it and hands its result on without waiting, whatever each agent\'s own autonomy is.'),
+  hostCommands: boolean('The commands of an agent set to `shell: host` run without the "Allow" question. Only meaningful while cycle is on.'),
+  gates: boolean('A gate of the flow is approved by the app, recorded as an automatic approval with its reason. Only meaningful while cycle is on.'),
+  push: boolean('The run\'s push goes through the door of Actions by itself, audited; steps that always wait for the person are not reached. Only meaningful while cycle is on.'),
+  pullRequest: boolean('The pull request is opened by itself, audited; a step that always waits for the person is not reached. Only meaningful while cycle is on.'),
+});
+
+/** A flow's autonomy block, the workspace's block deciding while `useWorkspace` is on (the default). */
+const flowAutonomy = object(
+  'The autonomy block of one flow: the workspace\'s decides while useWorkspace is on.',
+  { useWorkspace: boolean('On: the workspace\'s block decides for this flow and the fields here are shown disabled. Off: this block decides.'), ...autonomy.properties } as Record<string, JsonSchema>,
+);
+
 const gateFiles = object(
   'Where the artifact of a gate lives.',
   {
@@ -399,6 +414,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
         flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages. The keys release and docs are no squad\'s: they hold the flow of a release run and the flow of a documentation run.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
+        autonomy: { type: 'object', description: 'The autonomy block of each flow, by the flow\'s key: \'\' for the main flow, the id of a squad for its own, and "release" for the release flow. A flow with no entry follows the workspace\'s block.', additionalProperties: flowAutonomy },
         stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
         meanings,
         enrichment: object('What the agent is given about each card.', {
@@ -471,8 +487,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
         turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
+        autonomy,
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
-          network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy. "Localhost" inside the sandbox is the sandbox\'s own.', SANDBOX_NETWORKS),
+          network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy; open: the computer\'s own network, shared whole, with no proxy and no host list (desktop only, a choice of risk). "Localhost" inside the sandbox is the sandbox\'s own except in open mode.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
           readOnlyPaths: list('Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands). Nothing that looks like a secret location is accepted.', string('A folder.', { minLength: 2, maxLength: 1000, pattern: NO_NUL }), { maxItems: 20 }),
           browsersPath: { type: ['string', 'null'], description: 'The folder Playwright keeps its browsers in ("~/" expands), bound read-only in every sandbox with PLAYWRIGHT_BROWSERS_PATH; the guards of readOnlyPaths apply. null: none.', minLength: 2, maxLength: 1000, pattern: NO_NUL },

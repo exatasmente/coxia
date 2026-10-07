@@ -253,6 +253,8 @@
   "ui.runner.sandbox.network": "Rede",
   "ui.runner.sandbox.network.off": "Desligada",
   "ui.runner.sandbox.network.off.hint": "Nada sai da sandbox. Um projeto cujos testes precisam de pacotes que não estão no repositório não consegue instalá-los.",
+  "ui.runner.sandbox.network.open": "A rede do computador",
+  "ui.runner.sandbox.network.open.hint": "A sandbox compartilha a rede do computador inteira: os serviços da própria máquina, a rede local e a internet, sem proxy e sem lista de endereços. É uma escolha de risco, feita só no computador. A resolução de nomes é montada lá dentro.",
   "ui.runner.sandbox.network.registry": "Só o registro de pacotes",
   "ui.runner.sandbox.network.registry.hint": "Só HTTPS para os endereços abaixo, por um proxy que o app roda. É uma janela para esses endereços e nada mais, mas um pedido a um registro pode levar dados no endereço: ligue só quando instalar precisar. Precisa do Node dentro da sandbox.",
   "ui.runner.sandbox.pathRemove": "Remover {path}",

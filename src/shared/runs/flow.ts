@@ -1,4 +1,5 @@
 import { DEFAULT_ROUND_LIMIT, type DevCycleConfig, type StageDef, type WorkspaceConfig } from '../config/types';
+import { autonomyOf, choiceOn, flowKeyOf } from '../config/autonomy';
 import { squadView, type CycleView } from '../config/squads';
 import { stageAgent } from '../config/team';
 import type { FlowSnapshot, FlowStage, Run } from './types';
@@ -21,12 +22,13 @@ const nearestWork = (stages: StageDef[], i: number): string | null => {
   return null;
 };
 
-/**
- * The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
+/** The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
  * `next` is null where the run ends: after the last stage, or after a stage that says so. `stages` is the list to read when it is not the cycle's own: the
  * seam for a squad that has a flow of its own (the agents still come from the one team).
+ * `cycleAutonomous` is read once, when the flow is resolved: a change of the block applies from the next stage.
  */
-export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.stages): FlowStage[] {
+export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.stages, flowKey = ''): FlowStage[] {
+  const cycle = cycleOn(config, flowKey);
   return stages.map((s, i) => {
     const type = s.type ?? 'work';
     const who = type === 'work' ? stageAgent(config.agents.team, stages, s.id) : null;
@@ -38,6 +40,7 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       type,
       agent: who?.id ?? null,
       autonomous: who?.autonomous ?? false,
+      cycleAutonomous: cycle,
       artifacts: [...(s.produces ?? [])],
       reads: s.reads ? [...s.reads] : null,
       next: s.next === undefined ? (stages[i + 1]?.id ?? null) : s.next,
@@ -48,6 +51,13 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       trackerStatus: s.trackerStatus?.trim() || null,
     };
   });
+}
+
+/** Whether the autonomy block of a run of `flowKey` has its general switch on (its stage starts by themselves). */
+function cycleOn(config: FlowConfig, flowKey: string): boolean {
+  const c = config as Partial<WorkspaceConfig>;
+  if (!c.runner || !c.devCycle) return false;
+  return autonomyOf(c as WorkspaceConfig, flowKey).cycle;
 }
 
 // A short, stable hash of a flow (FNV-1a over its structure): it says which version a run follows. What the agents are doing (autonomy) is not part of the
@@ -72,12 +82,14 @@ export const snapshotOf = (stages: FlowStage[]): FlowSnapshot => ({ hash: flowHa
 export function flowOfRun(run: Pick<Run, 'flow' | 'squad'>, config: CycleView): FlowStage[] {
   // A run in a squad reads its agents from the squad's members and the shared ones, and the stages of the squad's flow.
   const view = squadView(config, run.squad);
-  if (!run.flow) return flowOf(view, view.devCycle.stages);
+  const key = flowKeyOf(run.squad);
+  const cycle = cycleOn(view as unknown as FlowConfig, key);
+  if (!run.flow) return flowOf(view as unknown as FlowConfig, view.devCycle.stages, key);
   const team = view.agents.team;
   return run.flow.stages.map((s) => {
-    if (s.type !== 'work' || !s.agent) return s;
+    if (s.type !== 'work' || !s.agent) return { ...s, cycleAutonomous: cycle };
     const agent = team.find((a) => a.id === s.agent) ?? stageAgent(team, view.devCycle.stages, s.id);
-    return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false };
+    return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false, cycleAutonomous: cycle };
   });
 }
 

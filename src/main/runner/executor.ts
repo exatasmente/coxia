@@ -2,6 +2,7 @@ import { offersViewImage } from '../sandbox/tool';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
+import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { type ModelRole } from '../../shared/settings';
@@ -315,8 +316,10 @@ export interface StageClock {
  */
 function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, signal: AbortSignal, clock: StageClock): (command: string) => Promise<{ ok: boolean; note?: string }> {
   let trusted = false;
+  // The autonomy block of the run may let every command of a `shell: host` agent through; it is read when the stage opens its session, so a change applies from the next stage.
+  const auto = choiceOn(autonomyOf(d.config(), flowKeyOf(run.squad)), 'hostCommands');
   return async (command) => {
-    if (trusted || clock.allowed.has(command)) return { ok: true };
+    if (auto || trusted || clock.allowed.has(command)) return { ok: true };
     if (!d.askCommand || signal.aborted) return { ok: false };
     const resume = clock.pause();
     try {

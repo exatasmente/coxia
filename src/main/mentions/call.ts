@@ -28,7 +28,7 @@ export interface MentionInput {
   /** Where the person wrote: the place text changes with it. */
   place: 'run' | 'channel' | 'general' | 'ceremony';
   /** The agent's commands run in a session over a copy of the code: what it is told about it. Absent: no commands. */
-  shell?: { host: boolean; network: 'off' | 'registry' };
+  shell?: { host: boolean; network: 'off' | 'registry' | 'open' };
   /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
   proposals?: boolean;
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
@@ -152,7 +152,7 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
     placeLine(i),
-    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'open' ? cp('runner.rules.shell.open') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     i.proposals ? (i.autonomous ? cp('runner.mention.proposalsAuto') : cp('runner.mention.proposals')) : '',
     i.proposals ? labelsLine(i.config) : '',
