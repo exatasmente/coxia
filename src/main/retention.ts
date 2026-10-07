@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join, basename, dirname, sep } from 'node:path';
 import {
   retentionLabel,
   RETENTION_MAX_DAYS,
@@ -12,6 +12,7 @@ import {
   type RetentionResult,
 } from '../shared/retention';
 import { getSettings } from './config';
+import { createAttachmentStore } from './attachments';
 import { purgeTrash } from './minutesStore';
 import { firstPromptOf } from './custo-core';
 import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
@@ -64,8 +65,11 @@ export function referencedAttachments(base = ATAS): Set<string> {
   return keep;
 }
 
-// The attachment files: one folder per conversation under <workspace>/anexos, one file per attachment. A file a live message references is kept; the
-// rest is selected by age like the other data.
+/** The workspace's attachment store, over ATAS: the sweep removes a file it selected through the store, which refuses a name that is not one of ours. */
+const attachmentFilesStore = createAttachmentStore();
+
+/** The attachment files: one folder per conversation under <workspace>/anexos, one file per attachment. A file a live message references is kept; the
+ * rest is selected by age like the other data. A file that is already gone when the sweep reaches it is nothing to do, not a failure. */
 export function attachmentFiles(base = ATAS): RetentionFile[] {
   const dir = join(base, 'anexos');
   if (!existsSync(dir)) return [];
@@ -76,10 +80,14 @@ export function attachmentFiles(base = ATAS): RetentionFile[] {
     const folder = join(dir, conversation.name);
     for (const name of readdirSync(folder)) {
       const path = join(folder, name);
-      const st = statSync(path);
-      if (!st.isFile()) continue;
-      const id = name.split('.')[0];
-      files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
+      try {
+        const st = statSync(path);
+        if (!st.isFile()) continue;
+        const id = name.split('.')[0];
+        files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
+      } catch {
+        // the file went away between the listing and the stat (a message deleted, a person took the file out): nothing to select
+      }
     }
   }
   return files;
@@ -239,21 +247,26 @@ function inside(path: string, root: string): boolean {
 }
 
 function removeOne(file: RetentionFile): void {
+  // An attachment is removed by its own door (the store resolves the name inside the conversation's folder): the sweep walks the folder and has no ref for
+  // what it found. A file that went away before this point is nothing to do, not a failure.
+  if (file.kind === 'anexos') {
+    const conversation = basename(dirname(file.path));
+    const name = basename(file.path);
+    if (!existsSync(file.path)) return;
+    attachmentFilesStore.dropFile(conversation, name);
+    try {
+      if (!readdirSync(dirname(file.path)).length) rmSync(dirname(file.path), { recursive: true, force: true });
+    } catch {
+      // a folder that cannot be removed yet is harmless; the next sweep finds it empty and tries again
+    }
+    return;
+  }
   const st = lstatSync(file.path);
   if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
   if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
   const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
   if (!inside(file.path, root)) throw new Error(t('main.retention.outside'));
   unlinkSync(file.path);
-  if (file.kind === 'anexos') {
-    // The conversation folder holds nothing once its last file is gone: it is left out of the data folder, not behind an empty folder.
-    const folder = join(file.path, '..');
-    try {
-      if (!readdirSync(folder).length) rmSync(folder, { recursive: true, force: true });
-    } catch {
-      // a folder that cannot be removed yet is harmless; the next sweep finds it empty and tries again
-    }
-  }
   if (file.kind === 'sessoes' && file.sessionId) {
     const companion = join(sessionsDir(), file.sessionId);
     if (existsSync(companion) && lstatSync(companion).isDirectory() && inside(companion, sessionsDir())) rmSync(companion, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { AttachmentRef } from '../../../../shared/attachments';
 import { EVENTS_RECONNECTED } from '../../../../shared/activity';
 import { FORUM_EVENT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary } from '../../../../shared/forum';
@@ -18,7 +18,18 @@ export const forumApi = {
   attachmentPost: (thread: string, text: string, ids: string[]) => api.invoke<ForumMessage>('forum:attachment-post', thread, text, ids),
   attachmentDrop: (thread: string, ids: string[]) => api.invoke<void>('forum:attachment-drop', thread, ids),
   attachmentGet: (thread: string, message: number, id: string) => api.invoke<{ data: string; ref: AttachmentRef } | null>('forum:attachment-get', thread, message, id),
+  // Deleting a message deletes the files it carried: the channel records the removal and removes them from disk.
+  attachmentDelete: (thread: string, seq: number) => api.invoke<boolean>('forum:attachment-delete', thread, seq),
 };
+
+/** A thread whose stored messages changed outside the append path (a message was deleted): the next read starts from the file again. */
+let forget: (() => void) | null = null;
+export function forgetThreads(onForget: () => void): void {
+  forget = onForget;
+}
+export function forgetNow(): void {
+  forget?.();
+}
 
 // ---- the list of threads ---------------------------------------------------------------------------------------------------------------
 
@@ -131,12 +142,24 @@ export interface LiveThread {
 /** A thread's messages: read once, then followed through the events (and read again from the last one after the event stream came back). */
 export function useThread(id: string | null): LiveThread {
   const [state, setState] = useState<LiveThread>({ loading: true, missing: false, summary: null, messages: [] });
+  const [nonce, setNonce] = useState(0);
+  const reread = useRef(false);
+  useEffect(() => {
+    // A message was deleted: the thread is read again from scratch, never merged (a merge would keep the removed message on screen).
+    forgetThreads(() => {
+      reread.current = true;
+      setNonce((n) => n + 1);
+    });
+    return () => forgetThreads(() => undefined);
+  }, []);
   useEffect(() => {
     if (!id) return;
     let live = true;
-    setState({ loading: true, missing: false, summary: null, messages: [] });
+    const fresh = reread.current;
+    reread.current = false;
+    setState(fresh ? { loading: false, missing: false, summary: null, messages: [] } : { loading: true, missing: false, summary: null, messages: [] });
     const merge = (messages: readonly ForumMessage[], summary?: ThreadSummary) =>
-      setState((s) => ({ loading: false, missing: false, summary: summary ?? s.summary, messages: mergeMessages(s.messages, messages) }));
+      setState((s) => ({ loading: false, missing: false, summary: summary ?? s.summary, messages: fresh && s.messages.length === 0 ? [...messages] : mergeMessages(s.messages, messages) }));
     void forumApi.read(id).then(
       (r) => {
         if (!live) return;
@@ -159,6 +182,6 @@ export function useThread(id: string | null): LiveThread {
       moduleEvents.removeEventListener(FORUM_EVENT, onMessage);
       window.removeEventListener(EVENTS_RECONNECTED, onBack);
     };
-  }, [id]);
+  }, [id, nonce]);
   return state;
 }

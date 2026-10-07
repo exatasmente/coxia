@@ -594,6 +594,7 @@
   "main.outbox.forum:attachment-put": "Arquivo anexado à conversa",
   "main.outbox.forum:attachment-post": "Mensagem com arquivos",
   "main.outbox.forum:attachment-drop": "Arquivo removido da mensagem",
+  "main.outbox.forum:attachment-delete": "Mensagem apagada com os arquivos dela",
   "main.partial.hint": "resposta parcial: o agente parou antes de terminar a investigação",
   "main.tempo.label.pre-daily": "{ceremony}",
   "main.tempo.label.desbloqueio": "desbloqueio",

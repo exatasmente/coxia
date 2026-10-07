@@ -12,7 +12,7 @@ import { RichText } from '../Diagram';
 import { ArtifactView } from './ArtifactView';
 import { MessageAttachments } from './Attachments';
 import { agentName, agentRole, authorName } from './names';
-import { forumApi, markThreadSeen, useThread } from './forumApi';
+import { forumApi, forgetNow, markThreadSeen, useThread } from './forumApi';
 import './cycle.css';
 
 const KIND_KEY: Record<MessageKind, string> = {
@@ -37,6 +37,8 @@ interface Ctx {
   /** The calls still going, by the message that named the agents: what each message shows under itself. */
   calls: ReadonlyMap<number, readonly CallGroup[]>;
   view: (name: string) => void;
+  /** Deletes a message and the files it carried: the store records the removal and the files go with it. */
+  remove: (m: ForumMessage) => void;
 }
 
 function useTarget(team: readonly AgentDef[] | undefined): (to: string | null) => string {
@@ -62,8 +64,7 @@ function CallLine({ group, team }: { group: CallGroup; team: readonly AgentDef[]
 function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inChain?: boolean }) {
   const t = useT();
   const to = useTarget(ctx.team);
-  if (m.kind === 'system') {
-    return (
+  if (m.kind === 'system') {    return (
       <li className="cy-msg cy-msg-system" id={`msg-${m.seq}`}>
         <span className="cy-msg-system-text">{messageText(m)}</span>
         <time className="faint small" dateTime={m.at}>{stamp(m.at)}</time>
@@ -81,6 +82,9 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
         <span className={`badge cy-kind cy-kind-${m.kind}`}>{t(KIND_KEY[m.kind])}</span>
         <span className={`badge ${m.public ? 'cy-pub' : 'cy-int'}`} title={t(m.public ? 'ui.forum.publicHint' : 'ui.forum.internalHint')}>{t(m.public ? 'ui.forum.public' : 'ui.forum.internal')}</span>
         <time className="faint small cy-msg-time" dateTime={m.at}>{stamp(m.at)}</time>
+        <button type="button" className="cy-link cy-msg-remove" aria-label={t('ui.forum.remove', { n: m.seq })} title={t('ui.forum.remove')} onClick={() => ctx.remove(m)}>
+          {t('ui.forum.removeLabel')}
+        </button>
       </div>
       {(m.to || m.replyTo) && (
         <p className="faint small">
@@ -122,8 +126,7 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
   );
 }
 
-/** The way a question went: who asked whom, each time it was passed on, and why it reached the person; the messages that tell it are inside. */
-function Chain({ chain, messages, ctx }: { chain: QuestionChain; messages: ForumMessage[]; ctx: Ctx }) {
+/** The way a question went: who asked whom, each time it was passed on, and why it reached the person; the messages that tell it are inside. */function Chain({ chain, messages, ctx }: { chain: QuestionChain; messages: ForumMessage[]; ctx: Ctx }) {
   const t = useT();
   const to = useTarget(ctx.team);
   const asker = authorName(chain.asker, ctx.team);
@@ -179,6 +182,51 @@ function PendingFiles({ files, onRemove }: { files: readonly Pending[]; onRemove
 function AttachmentNotice() {
   const t = useT();
   return <p className="cy-attach-notice small" role="note">{t('main.attachment.notice')}</p>;
+}
+
+/** What deleting a message is asked first, because the files it carried go with it and cannot be brought back. */
+function RemoveMessage({ target, onClose, onDone }: { target: ForumMessage; onClose: () => void; onDone: () => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const files = target.attachments.length;
+  return (
+    <div className="cy-confirm" role="dialog" aria-modal="true" aria-label={t('ui.forum.remove')}>
+      <p>
+        {t('ui.forum.removeAsk', { n: target.seq })}
+        {files > 0 && ` ${t('ui.forum.removeFiles', { count: files })}`}
+      </p>
+      {error && <div className="error" role="alert">{error}</div>}
+      <div className="row spread">
+        <button type="button" className="btn" disabled={busy} onClick={onClose}>{t('ui.forum.removeCancel')}</button>
+        <button
+          type="button"
+          className="btn btn-dark"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setError(null);
+            void forumApi.attachmentDelete(target.thread, target.seq).then(
+              (ok) => {
+                setBusy(false);
+                if (!ok) {
+                  setError(t('ui.forum.removeFailed'));
+                  return;
+                }
+                onDone();
+              },
+              (e: unknown) => {
+                setBusy(false);
+                setError(errorText(e));
+              },
+            );
+          }}
+        >
+          {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.removeConfirm')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 async function readFileAsBase64(file: File): Promise<string> {
@@ -414,6 +462,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
   const runId = run?.id ?? null;
   const activity = useActivity(runId ? `run:${runId}` : undefined);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ForumMessage | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
   const rows = useMemo(() => groupThread(live.messages, messageText), [live.messages]);
@@ -429,7 +478,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
     }
     return byMessage;
   }, [activity, thread]);
-  const ctx: Ctx = { team, runId, calls, view: setViewing };
+  const ctx: Ctx = { team, runId, calls, view: setViewing, remove: setRemoving };
 
   // What is on screen is read: the thread counts as seen up to its last message.
   useEffect(() => {
@@ -473,6 +522,17 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
         }}
       />
       {viewing && run && <ArtifactView runId={run.id} name={viewing} onClose={() => setViewing(null)} />}
+      {removing && (
+        <RemoveMessage
+          target={removing}
+          onClose={() => setRemoving(null)}
+          onDone={() => {
+            setRemoving(null);
+            // The thread is read again from the file: the removed message and the files it carried are gone from the screen.
+            forgetNow();
+          }}
+        />
+      )}
     </section>
   );
 }

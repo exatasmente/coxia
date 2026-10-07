@@ -279,7 +279,7 @@ describe('what an agent is given from the thread', () => {
     const asked = msg(1, { kind: 'question', author: agent('planner'), text: 'Which?', stage: 'plan' });
     expect(pendingAnswer([asked], 'planner', 'plan')).toBeNull();
     const answered = [asked, msg(2, { kind: 'answer', text: 'This one.', stage: 'plan' })];
-    expect(pendingAnswer(answered, 'planner', 'plan')).toEqual({ question: 'Which?', text: 'This one.', by: expect.any(String) });
+    expect(pendingAnswer(answered, 'planner', 'plan')).toEqual({ question: 'Which?', text: 'This one.', by: expect.any(String), attachments: [] });
     expect(pendingAnswer(answered, 'planner', 'refine')).toBeNull();
     expect(pendingAnswer([...answered, msg(3, { kind: 'post', author: agent('planner'), text: 'ok' })], 'planner', 'plan')).toBeNull();
   });

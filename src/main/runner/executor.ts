@@ -124,6 +124,16 @@ export function pendingAnswer(thread: ForumMessage[], agent: string, stage: stri
   return reported ? null : { question: asked.text, text: answered.text, by: answered.author.type === 'agent' ? answered.author.id : t(answered.author.type === 'app' ? 'main.runner.author.app' : 'main.runner.author.person'), attachments: answered.attachments ?? [] };
 }
 
+/**
+ * The files a stage's agent may open: the ones the answer message names, and, for the turn that just resumed the stage, the ones the move that recorded the
+ * answer carried (the run file does not keep them). The workspace option turns the files off for agents; the message keeps showing them to the person.
+ */
+function attachmentsFor(config: WorkspaceConfig, thread: string, answer: { attachments: AttachmentRef[] } | null, carried: readonly AttachmentRef[] | undefined): { thread: string; refs: AttachmentRef[] } | undefined {
+  if (config.attachments?.agents === false) return undefined;
+  const refs = carried?.length ? [...carried] : (answer?.attachments ?? []);
+  return refs.length ? { thread, refs } : undefined;
+}
+
 /** How long an agent may be silent, and how long a call may take in all. */
 export interface Limits {
   idleMs: number;
@@ -309,8 +319,9 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
 
 /**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
+ * @param carried The files the message that resumes the stage carries (the person's answer): the run file does not keep them, so they come from the turn that recorded the move.
  */
-export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void): Promise<StageRun> {
+export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void, carried?: readonly AttachmentRef[]): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
@@ -322,14 +333,14 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), allowed: new Set() };
   const session = agent.shell === 'sandbox' || agent.shell === 'host' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
-    return await runStage(d, run, flow, abort, usage, session, clock);
+    return await runStage(d, run, flow, abort, usage, carried, session, clock);
   } finally {
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
 }
 
-async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: { watch?: Watchdog; allowed: Set<string> }): Promise<StageRun> {
+async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: { watch?: Watchdog; allowed: Set<string> }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
@@ -433,8 +444,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
-    // The files of the answer the stage waits for: the agent opens them with the read-only tool, scoped to the run's conversation.
-    attachments: input.answer && input.answer.attachments.length && config.attachments?.agents !== false ? { thread: threadId, refs: input.answer.attachments } : undefined,
+    // The files of the answer the stage waits for: the agent opens them with the read-only tool, scoped to the run's conversation. They come from the
+    // message the answer recorded (a run file never holds them); when this turn is running the stage the answer just resumed, from the move that recorded it.
+    attachments: attachmentsFor(config, threadId, input.answer, carried),
     // The agent of a release run asks for the steps of the release through the app: the stage and the attempt say whose step it is, and its autonomy at the start decides what waits.
     release: run.subject && d.release ? (input) => (d.release as NonNullable<ExecutorDeps['release']>)(run.id, input, { by: agent.id, autonomous: run.stages.find((s) => s.stage === stage.id)?.autonomous ?? false, stage: stage.id, attempt }) : undefined,
   };

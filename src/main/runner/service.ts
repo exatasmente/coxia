@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
+import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
 import { t } from '../../shared/i18n';
 import {
   type FlowStage,
@@ -142,6 +143,30 @@ export interface LinkedStart {
   origin: NonNullable<Parameters<typeof startRun>[0]['origin']>;
 }
 
+/**
+ * The files a person attached to the message that resumes a stage. A run file never holds them, so the turn that recorded the answer keeps them by the
+ * thread and the stage it resumed, until the attempt that reads them starts.
+ */
+const carriedByStage = new Map<string, AttachmentRef[]>();
+
+const carriedKey = (runId: string, stage: string): string => `${runId}:${stage}`;
+
+/** What a stage's first turn was handed: the files of the answer it resumed, and the key they were kept under. */
+function takeCarried(runId: string, stage: string): AttachmentRef[] | undefined {
+  const key = carriedKey(runId, stage);
+  const refs = carriedByStage.get(key);
+  carriedByStage.delete(key);
+  return refs;
+}
+
+/** The files a person attached, as the runner takes them from a caller: only what holds its own shape, so a hand-made call cannot smuggle anything in. */
+function cleanAttachments(list: readonly AttachmentRef[] | undefined): AttachmentRef[] {
+  return (list ?? [])
+    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && typeof a.name === 'string')
+    .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Number(a.bytes) || 0 }))
+    .slice(0, 50);
+}
+
 export interface RunnerEnv {
   repos: ResolvedRepo[];
   issues: IssueProjectConfig;
@@ -195,7 +220,7 @@ export interface Runner {
   accept(id: string, note?: string): Run;
   returnStage(id: string, note: string): Run;
   gate(id: string, action: GateAction, reason?: string): Run;
-  answer(id: string, text: string): Run;
+  answer(id: string, text: string, attachments?: AttachmentRef[]): Run;
   retry(id: string): Run;
   cancel(id: string): Run;
   /** The person's answer to the command an agent set to `shell: host` waits to run; `commandId` must be the one waiting, so a late click never answers a newer one. */
@@ -225,7 +250,7 @@ export interface Runner {
   /** The switch of a whole squad: off holds every member (each agent's own switch applies when it is on). Takes effect at the next stage start or publication. */
   setSquadAutonomous(squad: string, on: boolean): WorkspaceConfig;
   /** A person's post in a run's thread that answers the run's pending question: the answer is recorded and the stage goes on. Null when the post answers nothing. */
-  answerPost(thread: string, text: string): ForumMessage | null;
+  answerPost(thread: string, text: string, attachments?: AttachmentRef[]): ForumMessage | null;
   /** Reacts to a message of the forum: a person's `@agent` in a run's thread has that agent answer, read only. */
   onMessage(message: ForumMessage): void;
   /** Starts runs for the issues that ask for one, up to the configured number at a time. */
@@ -413,7 +438,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     let failure: unknown = null;
     let used = emptyUsage();
     try {
-      result = await executeStage(exec, run, flowFor(run), abort, (u) => void (used = addReport(used, u)));
+      result = await executeStage(exec, run, flowFor(run), abort, (u) => void (used = addReport(used, u)), takeCarried(run.id, run.stage));
     } catch (e) {
       failure = e;
     } finally {
@@ -789,7 +814,6 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
       throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
     },
-    answer: (id, text) => move(id, (r, f, at) => answerMove(r, f, text, at)),
     retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),
     cancel(id) {
       const run = move(id, (r, _f, at) => cancelMove(r, 'person', at));
@@ -881,15 +905,29 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
       return deps.updateConfig((c) => updateAgent(c, agentId, { autonomous: on }));
     },
-    answerPost(thread, text) {
+    answer(id, text, attachments) {
+      // The files ride to the stage that resumes: the move hangs them on the message it records, and this turn keeps them for the attempt that reads them.
+      const files = cleanAttachments(attachments);
+      const carried = files.length ? { 0: files } : undefined;
+      const stage = deps.runs.get(id)?.stage ?? '';
+      if (carried) carriedByStage.set(carriedKey(id, stage), files);
+      try {
+        return move(id, (r, f, at) => ({ ...answerMove(r, f, text, at, files), ...(carried ? { attachments: carried } : {}) }));
+      } catch (e) {
+        carriedByStage.delete(carriedKey(id, stage));
+        throw e;
+      }
+    },
+    answerPost(thread, text, attachments) {
       const id = thread.startsWith('run-') ? thread.slice(4) : '';
       const run = id ? deps.runs.get(id) : null;
       if (!run || run.status !== 'question' || run.question?.kind === 'squad' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
       if (parseMentions(text, deps.config().agents.team.map((a) => a.id)).length) return null;
-      api.answer(run.id, text);
-      const last = deps.forum.read(thread, Math.max(0, (deps.forum.summary(thread)?.count ?? 1) - 6))?.messages ?? [];
-      return [...last].reverse().find((m) => m.kind === 'answer') ?? null;
+      // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
+      api.answer(run.id, text, attachments ?? []);
+      const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];
+      return [...last].filter((m) => m.kind === 'answer').at(-1) ?? null;
     },
     onMessage(message) {
       if (message.author.type !== 'person' || message.kind !== 'post' || !message.mentions.length || !message.thread.startsWith('run-')) return;

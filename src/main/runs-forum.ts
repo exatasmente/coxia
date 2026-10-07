@@ -25,6 +25,8 @@ export function beginRun(d: RunForum, started: Transition): Run {
 export function moveRun(d: RunForum, id: string, move: (run: Run) => Transition): Run {
   const done = d.runs.update(id, move);
   d.forum.ensureThread({ id: runThreadId(id), kind: 'run', runId: id, title: titleOf(done.run) });
-  d.forum.append(runThreadId(id), done.messages);
+  // What a move says a message carries rides on that message: the files a person attached to the answer stay on the answer the runner records.
+  const messages = done.messages.map((m, i) => (done.attachments?.[i]?.length ? { ...m, attachments: done.attachments[i] } : m));
+  d.forum.append(runThreadId(id), messages);
   return done.run;
 }

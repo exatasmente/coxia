@@ -52,6 +52,12 @@ export interface ForumStore {
   append(thread: string, drafts: ForumDraft | ForumDraft[]): ForumMessage[];
   /** Records that a message was mirrored to the tracker. */
   markPublished(thread: string, seq: number, published: PublishedRef): ForumMessage;
+  /**
+   * Deletes one message of a thread and returns it, or null when there is no such message. The thread file is append-only, so the deletion is
+   * recorded as its own line and reading folds it in: a torn write never loses a message, and the message comes back with the files it carried,
+   * so the caller can delete them from disk.
+   */
+  remove(thread: string, seq: number): ForumMessage | null;
   list(): ThreadSummary[];
   /** Messages after `afterSeq` (at most `limit`), or null when the thread does not exist. */
   read(thread: string, afterSeq?: number, limit?: number): ThreadRead | null;
@@ -128,6 +134,12 @@ const ANNOTATION: JsonSchema = {
   required: ['v', 'type', 'seq', 'published'],
   additionalProperties: false,
 };
+const REMOVAL: JsonSchema = {
+  type: 'object',
+  properties: { v: { type: 'integer', const: 1 }, type: { type: 'string', const: 'removed' }, seq: { type: 'integer', minimum: 1 } },
+  required: ['v', 'type', 'seq'],
+  additionalProperties: false,
+};
 
 interface Parsed {
   header: ThreadHeader | null;
@@ -135,11 +147,12 @@ interface Parsed {
   endsClean: boolean;
 }
 
-/** The thread file as it stands: header, messages in sequence order with their `published` link folded in, and whether the last line is closed. */
+/** The thread file as it stands: header, messages in sequence order (already-removed ones left out) with their `published` link folded in, and whether the last line is closed. */
 function parse(text: string): Parsed {
   let header: ThreadHeader | null = null;
   const messages = new Map<number, ForumMessage>();
   const published = new Map<number, PublishedRef>();
+  const removed = new Set<number>();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let raw: unknown;
@@ -156,9 +169,14 @@ function parse(text: string): Parsed {
     } else if (kind === 'published' && !validateSchema(raw, ANNOTATION).length) {
       const a = raw as { seq: number; published: PublishedRef };
       published.set(a.seq, a.published);
+    } else if (kind === 'removed' && !validateSchema(raw, REMOVAL).length) {
+      removed.add((raw as { seq: number }).seq);
     }
   }
-  const sorted = [...messages.values()].sort((a, b) => a.seq - b.seq).map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
+  const sorted = [...messages.values()]
+    .filter((m) => !removed.has(m.seq))
+    .sort((a, b) => a.seq - b.seq)
+    .map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
   return { header, messages: sorted, endsClean: text === '' || text.endsWith('\n') };
 }
 
@@ -186,7 +204,9 @@ function stateOf(p: Parsed & { header: ThreadHeader }): State {
   let open: number[] = [];
   for (const m of p.messages) open = settle(open, m);
   const last = p.messages[p.messages.length - 1];
-  return { header: p.header, lastSeq: last?.seq ?? 0, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
+  // `lastSeq` is the highest sequence number ever used: it does not go back when a message is removed, and a number is never handed out twice.
+  const lastSeq = p.messages.reduce((n, m) => Math.max(n, m.seq), 0);
+  return { header: p.header, lastSeq, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
 }
 
 const summaryOf = (s: State): ThreadSummary => ({ id: s.header.id, kind: s.header.kind, runId: s.header.runId, ...(s.header.kind === 'channel' ? { squad: s.header.squad ?? null } : {}), title: s.header.title, createdAt: s.header.createdAt, count: s.count, lastAt: s.lastAt, lastKind: s.lastKind, openQuestion: s.open.length > 0 });
@@ -331,6 +351,18 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       cache.set(thread, { ...state, endsClean: true });
       const message = (store.read(thread, seq - 1, 1)?.messages[0]) as ForumMessage;
       return message;
+    },
+    remove(thread, seq) {
+      const state = load(thread);
+      if (!state) throw new ForumError('unknown-thread', { id: thread });
+      if (!Number.isInteger(seq) || seq < 1 || seq > state.lastSeq) return null;
+      // What is read back is what stood before the removal: a message already removed is gone, and the deletion is never recorded twice.
+      const before = parse(readFileSync(path(thread), 'utf8'));
+      const found = before.messages.find((m) => m.seq === seq) ?? null;
+      if (!found) return null;
+      appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${JSON.stringify({ v: 1, type: 'removed', seq })}\n`);
+      cache.set(thread, stateOf({ ...before, header: before.header as ThreadHeader, endsClean: true }));
+      return found;
     },
     list() {
       if (!existsSync(dir)) return [];

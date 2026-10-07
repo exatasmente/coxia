@@ -20,8 +20,9 @@ let store: ForumStore | null = null;
 
 // A person's post can be the answer to a run's question: the runner (which this module knows nothing about) takes the messages that answer and records
 // them as answers in the thread. The post is checked before it is shown to anyone; a post that carries attachments is decided here as well (the type
-// of the message is decided after the bytes were stored, in `forum:attachment-post`), so the runner answers an attachment the same way.
-type PostInterceptor = (thread: string, text: string) => ForumMessage | null;
+// of the message is decided after the bytes were stored, in `forum:attachment-post`). The files travel with the answer: the runner records them on the
+// message it writes, so the answer shows them and a live message keeps them from the retention sweep.
+type PostInterceptor = (thread: string, text: string, attachments: AttachmentRef[]) => ForumMessage | null;
 let interceptor: PostInterceptor | null = null;
 
 export function interceptPosts(fn: PostInterceptor | null): void {
@@ -62,9 +63,10 @@ export function attachmentPost(forum: ForumStore, agentIds: readonly string[], t
   // Every ref must hold a file of this conversation, and be the size it says: a ref that points nowhere is refused, nothing is written.
   for (const r of refs) if (!storeApi.holds(thread, r.id, r.bytes)) throw new Error(t('main.attachment.gone'));
   const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
-  // A message that answers a run's open question is recorded by the runner (its own answer message); the handler returns it and writes nothing else,
-  // so the answer is posted once. The files stay in the conversation's folder and the retention sweep collects them if no message ends up carrying them.
-  const answered = interceptor && body ? interceptor(thread, body) : null;
+  // A message that answers a run's open question is recorded by the runner: the handler hands it the refs and the runner writes the answer message with them, so
+  // the answer carries the files (it shows them, and the retention sees a live message referencing them) and nothing is posted twice. When nothing answers, the
+  // message is written here as it stands.
+  const answered = interceptor ? interceptor(thread, body, refs) : null;
   if (answered) return answered;
   const [message] = forum.append(thread, draft);
   const unknown = unknownMentions(body, agentIds);
@@ -102,12 +104,21 @@ export const forumModule: Module = (ctx) => {
     return forum.read(thread, typeof afterSeq === 'number' ? afterSeq : 0, typeof limit === 'number' ? limit : undefined);
   });
   ctx.handle('forum:post', (thread: unknown, text: unknown) => {
-    const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text) : null;
+    const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, []) : null;
     return answered ?? personPost(forum, getConfig().agents.team.map((a) => a.id), thread, text);
   });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');
     return forum.createGeneral(title);
+  });
+  // Deleting a message deletes its files from disk: the store records the removal and hands back what the message carried, and those files go with it. The refs
+  // come from the stored message, never from the caller, so a seq of another conversation cannot name a file here.
+  ctx.handle('forum:attachment-delete', (thread: unknown, seq: unknown): boolean => {
+    if (typeof thread !== 'string' || !Number.isInteger(seq)) return false;
+    const removed = forum.remove(thread, seq as number);
+    if (!removed || removed.anchor !== threadAnchor(thread)) return false;
+    attachmentStore().dropAll(thread, removed.attachments ?? []);
+    return true;
   });
 
   // --- the attachment channels: the bytes travel base64 in one call each, so the 15 MB body cap is never approached.

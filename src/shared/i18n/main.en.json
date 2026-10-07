@@ -594,6 +594,7 @@
   "main.outbox.forum:attachment-put": "File attached to the conversation",
   "main.outbox.forum:attachment-post": "Message with files",
   "main.outbox.forum:attachment-drop": "File removed from the message",
+  "main.outbox.forum:attachment-delete": "Message deleted with its files",
   "main.partial.hint": "partial answer: the agent stopped before finishing the investigation",
   "main.tempo.label.pre-daily": "{ceremony}",
   "main.tempo.label.desbloqueio": "unblock",

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   ATTACHMENT_LIMITS,
   type AttachmentKind,
@@ -118,6 +118,28 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
     if (found) rmSync(found.path, { force: true });
   }
 
+  /**
+   * Deletes the files a message carried, given the refs that message names. Deleting a message deletes its files from disk (the acceptance
+   * criterion): what the message still names is removed, a file that is already gone is nothing to do, and a ref of another message is left alone.
+   */
+  function dropAll(thread: string, refs: readonly AttachmentRef[]): void {
+    for (const ref of refs) drop(thread, ref?.id);
+  }
+
+  /**
+   * Deletes one file the conversation holds, by name on disk, whatever kind it is and whether or not a ref still names it. The retention sweep walks
+   * the folder and has no ref for what it found, so this is the door that lets it remove a file a message no longer carries. A name that is not one of
+   * ours is nothing to do, so a hand-written line of the sweep can never reach outside the conversation's folder.
+   */
+  function dropFile(thread: string, name: unknown): void {
+    const file = typeof name === 'string' ? name : '';
+    if (!file || file !== basename(file) || file.startsWith('.')) return;
+    const dir = dirOf(thread);
+    if (!existsSync(dir)) return;
+    const path = join(dir, file);
+    if (existsSync(path) && statSync(path).isFile()) rmSync(path, { force: true });
+  }
+
   /** The ref and the bytes of one attachment, or null when the conversation has no such file. */
   function get(thread: string, id: unknown): { ref: AttachmentRef; bytes: Uint8Array } | null {
     const found = find(thread, String(id ?? ''));
@@ -191,7 +213,7 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
       .map((path) => ({ path, size: statSync(path).size, mtimeMs: statSync(path).mtimeMs }));
   }
 
-  return { put, drop, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
+  return { put, drop, dropAll, dropFile, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
 }
 
 export type AttachmentStore = ReturnType<typeof createAttachmentStore>;

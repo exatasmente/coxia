@@ -157,6 +157,9 @@
 .cy-msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .cy-msg-who { font-size: 14px; }
 .cy-msg-time { margin-left: auto; }
+/* Deleting a message takes the files it carried with it: the door stays quiet, and the confirm says what goes. */
+.cy-msg-remove { font-size: 12px; }
+.cy-confirm { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface); }
 .cy-msg-text { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .cy-msg-text .rich { gap: 6px; }
 .cy-kind { background: var(--chip-quiet-bg); color: var(--muted); font-weight: 600; }

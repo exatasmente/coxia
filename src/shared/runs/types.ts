@@ -1,3 +1,4 @@
+import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { ForumDraft } from '../forum';
 
@@ -447,6 +448,12 @@ export interface FlowSnapshot {
 export interface Transition {
   run: Run;
   messages: ForumDraft[];
+  /**
+   * The files a message this move records is to carry, by the sequence of that message in `messages` (0-based). The files a person attaches to
+   * the message that answers a run's question ride here, so the answer the runner records carries them (it shows them, and the retention sweep
+   * sees a live message naming them). Read by the turn that runs the stage, which needs them for the agent; the run file itself never holds them.
+   */
+  attachments?: Record<number, AttachmentRef[]>;
 }
 
 export const isTerminal = (r: Pick<Run, 'status'>): boolean => r.status === 'done' || r.status === 'cancelled';
