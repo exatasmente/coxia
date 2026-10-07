@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -177,6 +177,19 @@ describe('update.sh preconditions', () => {
     expect(alive(old)).toBe(true);
     expect(readFileSync(w.app, 'utf8')).toBe(before);
   }, 60_000);
+
+  it('refuses to build a tree whose node_modules is a link to another checkout, without installing anything', () => {
+    const w = world();
+    install(w.app, FAKE_APP(true));
+    const before = readFileSync(w.app, 'utf8');
+    mkdirSync(join(w.root, 'elsewhere/node_modules'), { recursive: true });
+    symlinkSync(join(w.root, 'elsewhere/node_modules'), join(w.root, 'repo/node_modules'));
+    const out = update(w);
+    expect(out.status).toBe(1);
+    expect(out.stdout).toContain('o build levaria só as dependências diretas');
+    expect(out.stdout).not.toContain('compilando com npm run dist');
+    expect(readFileSync(w.app, 'utf8')).toBe(before);
+  });
 
   it('stops before touching anything when there is nothing to install', () => {
     const w = world();
