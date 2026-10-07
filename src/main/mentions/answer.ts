@@ -18,6 +18,7 @@ import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
+import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
@@ -67,6 +68,8 @@ export interface MentionDeps {
    * worktree to be confined to (a channel, a general conversation, a ceremony), the mention keeps the read policy of the ceremonies: no confinement.
    */
   readRoot?: (place: MentionPlace, agent: AgentDef, cwd: string) => ReadConfinement | undefined;
+  /** The agents already in the exchange that led to this answer, when one agent called another (`CallAgent`): a call back to one of them is refused. */
+  chain?: readonly string[];
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -196,6 +199,28 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
       call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
+      // The agent may bring another agent of the team into the conversation (not in a ceremony, whose answers are recorded elsewhere): the other answers here, read
+      // only, and the answer comes back to it. The caller's clocks stop while the other answers, as they do while a command waits for the person.
+      if (place.kind !== 'ceremony') {
+        const chain = [...(deps.chain ?? []), id];
+        call.runnerTools = [
+          conversationCallTool({
+            team: config.agents.team.map((a) => a.id),
+            chain,
+            cap: config.runner.conversations.perStage,
+            ask: async (to, topic) => {
+              const [asked] = deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text: topic, mentions: [to], stage, public: false });
+              const resume = watch.pause();
+              try {
+                const answers = await answerMentions(place, asked, { ...deps, calls: [to], chain, callOf: undefined, release: undefined });
+                return answers.find((a) => a.agent === to)?.text ?? null;
+              } finally {
+                resume();
+              }
+            },
+          }),
+        ];
+      }
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');
       ran = true;
