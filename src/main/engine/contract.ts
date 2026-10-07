@@ -116,6 +116,11 @@ export interface EngineRequest {
    * its line). Absent: the call is the one of today, a single pass.
    */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /**
+   * The app tools of a stage that talks while it works (`SendMessage`, `CallAgent`), or of a called agent (`AskConversation`), already built as engine-neutral
+   * tools (runner/tools.ts). The engine offers each one when its name is in `allowedTools`; absent: the call gets none of them.
+   */
+  runnerTools?: import('./open/tools/types').ToolImpl[];
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;

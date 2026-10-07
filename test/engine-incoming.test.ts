@@ -205,7 +205,7 @@ describe('the open engine, a stage that talks while it works', () => {
   });
 
   it('asks the door once per step and never after the closing call', async () => {
-    fake = await fakeOpenAI(['a resposta', '{"texto": "feito"}']);
+    fake = await fakeOpenAI([textStep('a resposta'), textStep('{"texto": "feito"}')]);
     let asked = 0;
     const r = await runOpen<typeof answer>(
       params(fake, {
@@ -229,8 +229,10 @@ describe('the open engine, a stage that talks while it works', () => {
   it('gives the model one round to fix a text that did not follow the schema, before the stage fails', async () => {
     // A stage on a server that refuses the response format: the closing call cannot force the shape, so the errors of the model's own text go back into the
     // dialog and the next step has a chance to fix it. Without the round the stage would fail on whatever the model wrote first.
-    // The step and the closing answer carry a text that does not follow the schema, and only the third step has it.
-    fake = await fakeOpenAI(['prosa que não é o formato', 'ainda em prosa', '{"texto": "feito"}']);
+    // The design of the `prompt` strategy, pinned here: the step's text is a candidate result, the door is asked when the step ends, and the collection is asked
+    // before anything is concluded. Whatever the collection returned counts, so the second step of the script is the collection — its text is outside the schema
+    // — and the third step is the step of the loop that carries the errors back and answers to the schema, with the stage's own tools offered again.
+    fake = await fakeOpenAI([textStep('prosa que não é o formato'), textStep('ainda em prosa'), textStep('{"texto": "feito"}')]);
     const client = clientFor(fake);
     client.learned.dropParams.add('response_format');
     const r = await runOpen<typeof answer>(params(fake, { client, incoming: async () => null }));

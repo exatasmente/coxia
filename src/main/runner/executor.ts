@@ -20,7 +20,9 @@ import { type ExecResult, type SandboxService, type SandboxSession, SandboxError
 import { redact } from '../errorlog-core';
 import { type Denial, confinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
-import { type StageInbox, openInbox } from './inbox';
+import { type StageInbox, inboxOf, openInbox } from './inbox';
+import { type RunnerTools, runnerTools } from './tools';
+import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
@@ -280,8 +282,37 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   }
 }
 
-/** What a host session needs from its stage: the watchdog, once it exists (a command waiting for the person stops its clocks), and the commands already allowed. */
-export interface StageClock {
+/**
+ * A message an agent posts with `SendMessage`, while its stage goes on: it is written in the run's conversation as a post of that agent, and — when it names
+ * another agent of the team that is working a stage — it enters that agent's stage as the next step's message, exactly as a message of the person would. It
+ * never reaches the code host and never ends the stage. `false` when the stage is already finishing: the message did not reach anyone and the mailbox wrote why.
+ */
+function sendFromStage(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, inbox: StageInbox, to: string, text: string): boolean {
+  const threadId = runThreadId(run.id);
+  try {
+    d.forum.append(threadId, {
+      kind: 'post',
+      author: { type: 'agent', id: agent.id },
+      text,
+      stage: stage.id,
+      public: false,
+      ...(to && to !== 'todos' ? { mentions: [to] } : {}),
+    });
+  } catch (e) {
+    console.error('[runner] could not record an agent message', run.id, e instanceof Error ? e.message : e);
+  }
+  if (inbox.isClosing) return false;
+  // Another agent that is working hears it as a message of its stage; everyone else reads it in the conversation.
+  for (const id of to === 'todos' ? d.config().agents.team.map((a) => a.id) : [to]) {
+    if (!id || id === agent.id) continue;
+    const target = inboxOf(run.id);
+    const other = target && target.agent === id ? target : null;
+    other?.post(text);
+  }
+  return true;
+}
+
+/** What a host session needs from its stage: the watchdog, once it exists (a command waiting for the person stops its clocks), and the commands already allowed. */export interface StageClock {
   pause(): () => void;
   /**
    * The stage's idle clock starts again as if the agent had just shown a sign of life. A command that waits for the person stops both clocks (`pause`), but the
@@ -454,6 +485,78 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (message !== null) delivered(message);
     return message;
   };
+  // The tools of a stage that talks while it works. `SendMessage` posts in the run's conversation, internal to the run and without ending the stage; a message to
+  // another agent that is working enters that agent's stage, as a message of the person would. `CallAgent` opens a conversation with another agent of the team,
+  // refused when the agent is not of the team, is already in the chain, or the attempt has opened its limit of conversations.
+  const chain = [agent.id];
+  const conversationOf = new Map<string, { thread: string; say: (text: string) => void }>();
+  const teamIds = config.agents.team.map((a) => a.id);
+  const toolset: RunnerTools = {
+    team: { ids: teamIds, caller: agent.id },
+    sendMessage: (to, text) => (sendFromStage(d, run, stage, agent, inbox, to, text) ? t('main.runner.tools.sent') : t('main.runner.tools.notInTime')),
+    askConversation: async () => '',
+    callAgent: async (to, topic, place) => {
+      const open = conversationOf.get(to);
+      if (open) {
+        open.say(topic);
+        return t('main.runner.tools.conversationOpened', { called: to, thread: open.thread });
+      }
+      const called = config.agents.team.find((a) => a.id === to);
+      if (!called) return t('main.runner.tools.unknownAgent', { to, list: teamIds.join(', ') });
+      const refusal = callRefusal({ called: to, chain, opened: openedIn(run.id, stage.id), perStage: config.runner.conversations.perStage });
+      if (refusal) return t(refusal === 'cycle' ? 'main.runner.tools.callRefusedCycle' : 'main.runner.tools.callRefusedCap', { called: to, cap: config.runner.conversations.perStage });
+      countOpen(run.id, stage.id);
+      chain.push(to);
+      const pending: string[] = [topic];
+      let wake: (() => void) | null = null;
+      const incoming = async (): Promise<string | null> => {
+        for (;;) {
+          const next = pending.shift();
+          if (next !== undefined) return next;
+          if (abort.signal.aborted || inbox.isClosing) return null;
+          await new Promise<void>((resolve) => (wake = resolve));
+        }
+      };
+      const entry = {
+        thread: runThreadId(run.id),
+        say: (text: string): void => {
+          pending.push(text);
+          const w = wake;
+          wake = null;
+          w?.();
+        },
+      };
+      conversationOf.set(to, entry);
+      // The conversation runs beside the stage: its answers enter the stage as messages, and the stage goes on without waiting for it.
+      void runConversation(
+        {
+          run,
+          stage,
+          caller: agent,
+          called: called,
+          forum: d.forum,
+          config: d.config,
+          engine: d.engine,
+          openSession: (def, writes, clock) => (d.sandbox ? openStageSandbox(d, run, stage, def, writes, abort.signal, clock) : Promise.resolve(null)),
+          commands,
+          onUsage: usage,
+          abort,
+          chain,
+          place,
+          title: t('main.runner.conversation.title', { caller: agent.id, called: to, ref: run.issue.ref }),
+        },
+        { fromCaller: incoming, answered: (text) => inbox.post(text) },
+      )
+        .then((r) => {
+          conversationOf.set(to, { thread: r.thread, say: entry.say });
+        })
+        .catch((e: unknown) => {
+          console.error('[runner] the conversation failed', run.id, to, e instanceof Error ? e.message : e);
+        });
+      return t('main.runner.tools.conversationOpened', { called: to, thread: entry.thread });
+    },
+  };
+  call.runnerTools = runnerTools(toolset, 'run');
   // A stage that talks shows a sign of life beyond the model events: a message comes in, someone answers the command question — the stage is alive even while the
   // agent waits on the person. `beat` is what the idle clock of the stage reads, and without it the time the person took to answer kills a stage that is working.
   const beat = call.beat ?? ((): void => undefined);
@@ -473,6 +576,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // The stage begins finishing: a message that arrives now is not handed over and comes back in the thread with the reason.
     inbox.closing();
     inbox.close();
+    // The attempt is over: the cap of conversations starts again, so a stage returned and run again may talk once more.
+    resetOpened(run.id, stage.id);
     // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.
     await session?.close();
   }

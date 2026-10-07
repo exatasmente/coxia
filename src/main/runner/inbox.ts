@@ -6,6 +6,8 @@ import type { ForumStore } from '../forum-core';
 // handed over: the stage ends with what it has and the message comes back in the thread with the reason, so nothing restarts.
 
 export interface StageInbox {
+  /** The agent whose stage this mailbox belongs to: what a message of another agent is routed by. */
+  readonly agent: string;
   /** The next message to hand over, or a promise that wakes when one arrives; null only after `close`. */
   next(): Promise<string | null>;
   /** The message entered the session: the delivery line in the thread, with the time. */
@@ -57,6 +59,7 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
     append({ kind: 'system', author: { type: 'app' }, code: asked ? SAY.asks : SAY.message, params: { agent, text: text.slice(0, 600) }, stage });
   };
   const inbox: StageInbox = {
+    agent,
     async next() {
       for (;;) {
         if (queued.length) return queued.shift() as string;

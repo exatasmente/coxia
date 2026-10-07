@@ -39,6 +39,19 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...runner, release: { soleMaintainer: 'yes' } } }).ok).toBe(false);
   });
 
+  it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
+    const { conversations: _gone, ...runner } = neutralConfig().runner;
+    const r = validateConfig({ ...neutralConfig(), runner });
+    expect(r.errors).toEqual([]);
+    expect(r.config?.runner.conversations).toEqual({ roundsPerConversation: 6, perStage: 3 });
+    const out = (c: { roundsPerConversation: number; perStage: number }) => validateConfig({ ...neutralConfig(), runner: { ...runner, conversations: c } }).errors.map((e) => e.path);
+    expect(out({ roundsPerConversation: 0, perStage: 1 })).toEqual(['runner.conversations.roundsPerConversation']);
+    expect(out({ roundsPerConversation: 51, perStage: 1 })).toEqual(['runner.conversations.roundsPerConversation']);
+    expect(out({ roundsPerConversation: 6, perStage: 0 })).toEqual(['runner.conversations.perStage']);
+    expect(out({ roundsPerConversation: 6, perStage: 21 })).toEqual(['runner.conversations.perStage']);
+    expect(validateConfig({ ...neutralConfig(), runner: { ...runner, conversations: { roundsPerConversation: 6, perStage: 3, extra: 1 } } }).ok).toBe(false);
+  });
+
   it('accepts the example legacy profile merged over the defaults', () => {
     const merged = mergeDeep(neutralConfig(), exampleProfile().config);
     expect(validateConfig(merged).errors).toEqual([]);

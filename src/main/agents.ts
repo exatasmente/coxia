@@ -33,6 +33,8 @@ import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
+import { runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
 import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
@@ -466,8 +468,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
   const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.runnerTools ?? [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -557,13 +559,15 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
   const release = req.release ? await releaseMcpServer(keepAlive(req.release, req.beat)) : null;
   if (req.release && !release) throw new Error(t('main.release.toolMissing'));
-  const mcp = vcs || shell || release ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}) } : null;
+  // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
+  const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
+  const mcp = vcs || shell || release || runner ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(runner ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     model: req.target.model,
     env,
@@ -1036,6 +1040,8 @@ export interface AgentCall {
   exec?: SandboxSession;
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
+  runnerTools?: ToolImpl[];
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1122,6 +1128,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       beat: call.beat,
       onUsage: call.onUsage,
       incoming: call.incoming,
+      runnerTools: call.runnerTools,
     };
     let r: Run<T>;
     try {

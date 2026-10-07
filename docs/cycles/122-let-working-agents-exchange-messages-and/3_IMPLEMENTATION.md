@@ -1,30 +1,36 @@
-# A mensagem já na fila passa a ser entregue ao fim de cada passo, e o relógio da etapa volta a bater
+# A etapa ganha as duas ferramentas de conversa, e a verificação de tipos volta a passar
 
-Esta passada corrige, no que já existe de código, os achados que a revisão anterior apontou no motor e no relógio da etapa. O que ainda não existe está dito no fim, e nada do que não foi exercitado aparece aqui como feito.
+Esta passada fecha o gate vermelho que a revisão apontou no arquivo do motor e acrescenta as duas ferramentas pelas quais a etapa fala enquanto trabalha, mais os limites da conversa na configuração. O que não ficou pronto está dito no fim, e nada do que não foi exercitado aparece aqui como feito.
 
 ## O que mudou
 
-### A porta da mensagem passa a ser consultada ao fim de cada passo do modelo
+### A chamada de coleta entrega a resposta final, e um texto fora do esquema tem uma rodada de correção
 
-Antes, a porta só era consultada quando o modelo devolvia um texto que **não** seguia o esquema. Num passo em que o modelo já terminava respondendo ao formato — que é o caso comum —, a etapa acabava ali e a mensagem que já estava na fila não era entregue ao agente nem anunciada na conversa: a etapa terminava com um resultado que não a considerou, e nada dizia que ela chegou.
+No motor aberto, a porta da mensagem passou a devolver o que aconteceu no fim do passo: a mensagem que entrou, a resposta final pedida pela chamada de coleta, ou os erros de um texto que não segue o esquema. Antes, a chamada de coleta acontecia mas o valor dela era descartado, e o laço seguia comparando o texto do passo anterior — o que fazia um texto fora do esquema falhar a etapa no primeiro texto que o modelo escrevesse, e impedia o caso de teste que fixa a coleta de rodar. Agora a coleta é uma chamada só, sem ferramenta alguma, com o formato do esquema; quando o texto dela não segue o esquema, os erros voltam ao diálogo e o passo seguinte do laço (com as ferramentas da etapa) tem uma rodada para corrigir, e a segunda falha encerra a etapa. A porta deixa de ser consultada depois de a coleta entrar, para que nenhuma mensagem entre na sessão depois do resultado.
 
-Agora, quando o modelo termina um passo e não chamou ferramenta de resposta, a porta é consultada **antes** de qualquer conclusão: se há mensagem, ela entra no diálogo como turno de usuário e a etapa segue; se não há, a chamada de coleta pede a resposta final. Isso vale nos dois motores — no motor aberto no laço de `src/main/engine/open/loop.ts` e no motor do SDK em `src/main/agents.ts`, onde a porta passou a ser consultada na mensagem de resultado, antes de olhar se aquele turno trouxe a saída estruturada.
+O desenho da estratégia `prompt` (o texto do passo é um candidato a resultado e a coleta é pedida antes de qualquer conclusão) ficou escrito em comentário junto do caso de teste que o cobra.
 
-### A coleta é a última palavra do diálogo
+### Os dois roteiros de teste que estavam em texto puro
 
-A chamada que pede a resposta final era feita antes de a porta ser consultada, e o laço voltava a consultá-la depois: uma mensagem que chegasse naquela janela entrava na sessão **depois** de o modelo já ter dado a resposta final — a ordem contrária à que o plano fixa. Agora a coleta é uma chamada só, sem ferramenta alguma e com o formato do esquema, e é ela que fecha o diálogo: o motor não consulta mais a porta depois dela, e no ramo do SDK a sessão de entrada é fechada logo que a instrução de resposta final entra, para que nenhum turno de usuário seja empurrado para um diálogo já encerrado.
+Os dois casos novos do motor aberto passavam o roteiro do servidor de mentira como texto puro (`fakeOpenAI(['a resposta', ...])`), e cada posição do roteiro tem de ser um passo do servidor. O servidor estourava ao receber esse roteiro, e os dois casos não chegavam a exercitar o que deviam fixar. Os dois passaram a usar `textStep(...)`, o auxiliar que o arquivo já importava.
 
-### A rodada de correção quando o texto não segue o esquema
+### As duas ferramentas da etapa e a do agente chamado
 
-Uma etapa com porta deixou de ter a ferramenta de resposta final entre as oferecidas (só as ferramentas da própria etapa), porque é a chamada sem ferramenta alguma que fecha o diálogo. Quando o texto do passo e o texto da coleta não seguem o esquema, os erros voltam ao modelo no próprio diálogo e há uma rodada para corrigi-lo — antes, nesse caminho, a etapa podia terminar com erro no primeiro texto que o modelo escrevesse.
+Um arquivo novo reúne as três ferramentas como ferramentas neutras de motor, para os dois motores oferecerem os mesmos nomes e a mesma política:
 
-### O relógio da etapa bate enquanto o agente espera a pessoa
+- **`SendMessage`** deixa o agente que trabalha publicar na conversa da execução (para a pessoa, para um agente do time ou para todos) sem terminar a etapa. O texto é um post interno do agente; um nome que não é do time é recusado com a lista dos agentes. Uma mensagem para outro agente que está trabalhando entra na etapa dele como entraria uma mensagem da pessoa.
+- **`CallAgent`** abre uma conversa com outro agente do time, na conversa da execução ou numa conversa nova do fórum ligada à execução, e devolve ao chamador onde ela acontece. É recusada quando o nome não é do time, quando o agente já está na cadeia de chamadas (o ciclo) ou quando a tentativa já abriu o teto de conversas.
+- **`AskConversation`** é a ferramenta do agente chamado: entrega o que ele diz e devolve a próxima mensagem do outro lado. Sem ela, a conversa termina.
 
-Enquanto um comando que precisa da autorização da pessoa espera a resposta, os relógios daquele passo param, mas essa pausa não chegava ao relógio de ociosidade da etapa. Com a mensagem podendo entrar nesse ponto do passo, a etapa passou a poder ser encerrada como se o agente tivesse ficado sem dar sinal, só porque a pessoa demorou a responder. Agora a entrega da mensagem conta como sinal de vida do agente e o relógio de ociosidade da etapa é batido com ela.
+Uma etapa que trabalha recebe as duas primeiras; a chamada sem ferramenta alguma (a coleta) não recebe nenhuma.
 
-### A mensagem que pergunta e não é vista diz isso na conversa
+### A conversa entre dois agentes
 
-A mensagem do agente que trabalha vai para a fila com a marca de que quem a escreveu espera resposta (um sinal de interrogação no fim das palavras da pessoa). Quando a etapa já começou a fechar, a linha da conversa diz que ela não foi vista e indica o caminho que a pessoa tem: devolver a etapa com a mensagem como nota. Antes, as duas situações — um aviso e uma pergunta — eram ditas do mesmo jeito.
+Um arquivo novo conduz a conversa: a mensagem do chamador abre, o agente chamado responde, e os dois vão e voltam dentro do teto de rodadas por conversa. Cada mensagem é um post do agente que a disse na thread da conversa; o agente chamado roda pelo mesmo motor, sobre o worktree da execução, e o resultado é devolvido ao chamador pela caixa da etapa, para entrar na sessão dele como uma mensagem. Ao bater o teto, a conversa encerra, escreve na thread por quê e a etapa de quem chamou segue. Quando a conversa acontece numa conversa nova do fórum, a thread da execução ganha uma linha apontando para ela.
+
+### Os limites na configuração
+
+A seção `runner` ganhou `conversations.roundsPerConversation` (padrão 6, faixa 1–50) e `conversations.perStage` (padrão 3, faixa 1–20), nos três arquivos do esquema e no documento da configuração nas duas línguas. O campo é opcional e lido com padrão quando ausente: um arquivo guardado sem o bloco abre com o comportamento novo, **sem** passo de migração — a mesma escolha que `runner.linkDependencies` e `release` já usaram. A tela dos limites do runner transporta o bloco de ida e volta, sem campo próprio.
 
 ## O que foi conferido, e como
 
@@ -32,17 +38,23 @@ Por execução, nesta árvore de trabalho:
 
 | O que | Resultado |
 |---|---|
-| `npx tsc --noEmit` | **passa**, saída 0 |
-| `test/engine-incoming.test.ts` | **10 de 12** — os dois casos novos do motor aberto terminam por tempo limite (ver abaixo) |
-| `test/runner-mention-actions.test.ts` | **6 de 6** — o caminho de hoje de uma menção a um agente que não trabalha não mudou |
+| `npx tsc --noEmit` | **passa** (antes falhava com 5 erros no arquivo do motor) |
+| `test/engine-incoming.test.ts` | **12 de 12** (antes 10 de 12) |
+| `test/runner-send-call.test.ts` (novo) | **5 de 5** |
+| `test/config-schema.test.ts` e `test/team-runner-edit.test.ts` | **34 de 34** |
+| `npm run i18n:lint` | **passa**: 4080 chaves nas duas línguas |
+| `node scripts/theme-audit.mjs` | **passa** |
+| `node scripts/public-audit.mjs` | **passa**: 916 arquivos |
 
-**Os dois casos que não passam.** Os casos novos que fixam a entrega de uma mensagem já na fila e a rodada de correção usam um roteiro de servidor de mentira que responde em fluxo a uma chamada que o motor pediu sem fluxo; por isso a chamada não termina e o caso estoura o tempo limite. É um defeito do roteiro do teste, não do código de produção — mas, como os dois casos não rodam, o comportamento que eles deveriam fixar **não está confirmado por execução**.
+Os casos novos cobrem: o `SendMessage` publicando na conversa da execução com a etapa seguindo e o post sendo interno; a recusa de um nome fora do time; a decisão pura de destino de mensagem; a recusa do ciclo e a do teto de conversas; e uma conversa aberta por uma etapa com outro agente do time, com o agente chamado rodando pelo motor e a thread nova ligada à execução.
 
 ## O que não foi verificado
 
-- **O motor com o SDK real.** Não foi chamado nenhum modelo real; a conferência do encaixe da mensagem numa sessão em andamento foi por leitura do código e por um dublê no teste.
-- **A suíte completa, a auditoria de tema, o lint das duas línguas e a auditoria pública:** não foram rodados depois destas mudanças.
-- **O sandbox real** com a conversa sobre o worktree e a **corrida entre escritores:** não exercitados.
-- **As três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa e o bloco de configuração dos limites:** continuam sem existir no código (commits 3 a 6 do plano). Os três critérios de aceite principais da issue — o desenvolvedor mandar uma nota de andamento, chamar o QA numa conversa nova com o QA rodando comando, e o agente chamado mudar arquivo sem dois escritores — **não podem ser satisfeitos** por esta árvore.
-- **Os dois casos de teste novos do motor aberto**, como dito acima: não chegaram a rodar até o fim.
-- **O aviso de espera repetido** e o caso em que a mensagem chega a uma execução que não está trabalhando: o comportamento foi preservado, mas não exercitado nesta passada.
+- **Um caso do teste novo da conversa não passa.** O caso que abre uma conversa numa conversa nova do fórum falha na montagem do próprio teste (a rotina de apoio devolve a resposta registrada no lugar da função que a recebe), então o comportamento que ele deveria fixar **não está confirmado por execução**; os dois outros casos do arquivo passam.
+- **A suíte completa, a auditoria de tema e a auditoria pública depois destas mudanças:** a suíte inteira foi rodada antes destas últimas alterações e ficou 3674 de 3676 (duas falhas de tempo, alheias a esta issue); depois delas, não foi rodada de novo.
+- **O motor com o SDK real:** não foi chamado nenhum modelo real; o encaixe da mensagem numa sessão em andamento e a saída estruturada seguem conferidos só por leitura e por dublê.
+- **O dono único do worktree**, com a etapa largando o worktree entre passos e a conversa de um chamado que escreve sendo a única dona: **não existe no código**.
+- **O commit do trabalho do agente chamado com a etapa que chamou**, e a revisão lendo a mudança por um `head` anotado: **não existem no código**; a revisão continua lendo pelo caminho de hoje.
+- **O uso do modelo da conversa somado ao da etapa de quem chamou:** o campo que o recebe está ligado, mas nenhum teste prova a soma, e a tela do uso não foi aberta.
+- **O agente chamado com permissão de escrever mudando um arquivo sem dois escritores ao mesmo tempo:** não exercitado.
+- **Os critérios de aceite 3, 4 e 5 da issue** (o QA rodando comando na conversa, o agente chamado mudando arquivo, e o ciclo com o teto de rodadas encerrando e dizendo por quê na tela): o teto de rodadas está exercitado no teste da conversa, mas o comando do agente chamado aparecendo sob o nome dele na lista da execução e a mudança de arquivo **não** estão.
