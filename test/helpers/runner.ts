@@ -216,8 +216,12 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
   function session(options: OpenOptions & Pick<HostOpenOptions, 'approve'>, host: boolean): FakeSession {
     const log: ExecResult[] = [];
     const asked: string[] = [];
+    // A stage folder with an `out` inside, as the real sandbox makes: what the evidence tools read.
+    const stageDir = mkdtempSync(join(tmpdir(), 'cerimonias-fake-stage-'));
+    mkdirSync(join(stageDir, 'out'), { recursive: true });
     const made: FakeSession = {
       ...(host ? { description: 'host' } : {}),
+      stageDir,
       // A sandbox (never a host session) carries what it offers to test an interface, and reads images from its output folder.
       ...(!host && o.gui ? { gui: o.gui } : {}),
       ...(!host ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
@@ -343,7 +347,23 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');
     const { realDoor } = await import('../../src/main/runner/door');
-    deps.publisher = createPublisher({ runs, forum, config: getConfig, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door: realDoor, now: options.now, localTags: options.localTags, remoteRelease: options.remoteRelease });
+    const { uploadsOf } = await import('../../src/main/evidence/store');
+    deps.publisher = createPublisher({
+      runs,
+      forum,
+      config: getConfig,
+      env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
+      door: realDoor,
+      now: options.now,
+      // The evidence a comment cites, read from the run's own store: what a test with a sandbox can put on the host.
+      evidenceUploads: (run, ids) => {
+        const images = uploadsOf(dir, run, [...ids]);
+        const present = ids.filter((id) => run.evidence?.[id]);
+        return { images, total: present.length || ids.length };
+      },
+      localTags: options.localTags,
+      remoteRelease: options.remoteRelease,
+    });
   }
   const runner = createRunner(deps);
   return {

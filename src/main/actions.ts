@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { AuditEntry } from '../shared/auditoria';
 import { getTerms, t } from '../shared/i18n';
+import { withEvidenceImages } from '../shared/evidence';
 import { crRef } from '../shared/vcs';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import { isStageKind } from '../shared/cycles/stages';
@@ -177,6 +178,8 @@ export function proposeVcsAction(input: {
   notify?: { title: string; body: string };
   /** What the module that proposed it needs to recognise it when it is done (the runner's comments and pull request). */
   unit?: Record<string, unknown>;
+  /** The uploads of evidence planned with the write, for the module to read the addresses back once it ran. */
+  evidence?: { titles: string[]; positions: number[]; bodyAt: number };
 }): ReleaseAction | null {
   validateVcsCommand(input.command);
   const store = read();
@@ -191,6 +194,7 @@ export function proposeVcsAction(input: {
     summary: input.summary,
     command: input.command,
     unit: input.unit ?? null,
+    evidence: input.evidence,
     output: [input.detail, describe(input.command)].filter(Boolean).join('\n\n'),
   });
   write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
@@ -219,6 +223,7 @@ export function proposeVcsGroup(input: Omit<Parameters<typeof proposeVcsAction>[
     commands,
     done: 0,
     unit: input.unit ?? null,
+    evidence: input.evidence,
     output: [input.detail, ...commands.map((c, i) => `${i + 1}/${commands.length}  ${describe(c)}`)].filter(Boolean).join('\n\n'),
   });
   write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
@@ -292,7 +297,60 @@ async function runVcs(c: VcsCommand, meta: ExecMeta = {}): Promise<string> {
   return runtimeFor(c).exec.run(c, meta);
 }
 
+/**
+ * Fills the headers an upload of evidence sends but a proposal never stores (the credential of the host, resolved at the moment it runs) and rejects one
+ * whose host or transport cannot carry a file: the proposal stays for the person to see, and the write says why instead of running half of it.
+ */
+async function withUploadHeaders(c: VcsCommand): Promise<VcsCommand> {
+  if (!c.bodyFile) return c;
+  const runtime = runtimeFor(c);
+  const token = await runtime.provider.uploadToken();
+  if (!token && runtime.provider.kind === 'github') throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') });
+  const headers = token ? { ...(c.headers ?? {}), Authorization: `Bearer ${token}` } : (c.headers ?? {});
+  const filled: VcsCommand = { ...c, headers };
+  runtime.provider.validateCommand(filled);
+  return filled;
+}
+
 const isVcsAction = (a: ReleaseAction): boolean => (a.kind === 'gitlab' || a.kind === 'vcs') && !!a.command;
+
+/**
+ * The address a host answers an upload with (GitHub's `user-attachments`, GitLab's Markdown link, Bitbucket's download): what a comment embeds the image by.
+ * The providers never hold a credential here; this is only what the host answered.
+ */
+function embedUrlOfResponse(response: unknown): string | null {
+  const r = (typeof response === 'object' && response !== null ? response : {}) as Record<string, unknown>;
+  const links = (typeof r.links === 'object' && r.links !== null ? r.links : {}) as Record<string, unknown>;
+  const html = (typeof links.html === 'object' && links.html !== null ? links.html : {}) as Record<string, unknown>;
+  const download = (typeof r.download === 'object' && r.download !== null ? r.download : {}) as Record<string, unknown>;
+  const found = [r.url, r.web_url, r.html_url, r.href, html.href, download.link].find((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u));
+  return found ?? (typeof r.markdown === 'string' ? /\((https?:\/\/[^)]+)\)/.exec(r.markdown)?.[1] ?? null : null);
+}
+
+/** The body of a write with the images the uploads of its own group answered with: appended under the text, in the order the pieces were cited, and a piece with no address counted in a line. */
+function withEvidenceEmbeds(c: VcsCommand, evidence: { titles: string[]; positions: number[]; bodyAt: number }, urls: ReadonlyMap<number, string>): VcsCommand {
+  const places = evidence.positions.flatMap((at, i) => {
+    const url = urls.get(at);
+    return url ? [{ title: evidence.titles[i] ?? '', url }] : [];
+  });
+  // A host that took no file leaves the comment as it was written and the runner counts the piece when it reads the answer back; with at least one address, the
+  // images go under the text and the pieces without one are counted there too, so the comment the host takes and the one the run remembers read the same.
+  if (!places.length) return c;
+  const tail = withEvidenceImages('', places, evidence.positions.length - places.length);
+  if (c.json === undefined) {
+    // GitLab sends a comment as a form field; the body is the only field a comment carries.
+    const body = c.fields.body ?? Object.values(c.fields).at(-1) ?? '';
+    return { ...c, fields: { ...c.fields, body: [body, tail].filter(Boolean).join('\n\n') } };
+  }
+  try {
+    const parsed = JSON.parse(c.json) as Record<string, unknown>;
+    if (typeof parsed.body !== 'string') return c;
+    parsed.body = [parsed.body, tail].filter(Boolean).join('\n\n');
+    return { ...c, json: JSON.stringify(parsed) };
+  } catch {
+    return c;
+  }
+}
 
 export function listActions(): ReleaseAction[] {
   return read().actions;
@@ -519,8 +577,15 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       // A group runs in order from where it stopped; each write is audited on its own, under the proposal that holds them.
       const all = a.commands ?? [a.command as VcsCommand];
       const outputs: string[] = [];
+      const evidence = a.evidence;
+      // The address each upload answered with, in the order the group has run so far: what the comment's body embeds just before it goes up.
+      const uploadedAt = new Map<number, string>();
       for (let i = a.done ?? 0; i < all.length; i++) {
-        const c = all[i];
+        // An upload of evidence carries its header only at the moment it runs: the proposal never stores the credential.
+        const raw = all[i];
+        let c = await withUploadHeaders(raw);
+        // The comment that cites evidence takes up the addresses the uploads of the same group just answered with; without an image the body goes as written.
+        if (evidence && i === evidence.bodyAt) c = withEvidenceEmbeds(c, evidence, uploadedAt);
         let response: unknown;
         outputs.push(
           await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
@@ -530,6 +595,10 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
           }),
         );
         responses.push(response);
+        if (evidence && evidence.positions.includes(i)) {
+          const url = embedUrlOfResponse(response);
+          if (url) uploadedAt.set(i, url);
+        }
         if (all.length > 1) update(id, (x) => ({ ...x, done: i + 1 }));
       }
       output = outputs.join('\n');

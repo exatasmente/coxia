@@ -546,6 +546,9 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
           return [rest('POST', `${repoPath(op.project)}/issues`, { title: checkTitle(op.title), description: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel).join(',') } : {}) })];
         case 'createMr':
           return [rest('POST', `${repoPath(op.project)}/merge_requests`, { source_branch: op.sourceBranch, target_branch: op.targetBranch, title: op.title, description: op.body })];
+        case 'uploadAttachment':
+          // GitLab takes an upload of the project and answers the Markdown address the comment embeds; the file travels as the body, with its own type.
+          return [{ vcs: 'gitlab', via: 'api', method: 'POST', endpoint: `${repoPath(op.project)}/uploads`, fields: {}, headers: { 'Content-Type': op.media }, bodyFile: op.path }];
         case 'submitReview': {
           const n = checkIid(op.iid);
           const base = `${repoPath(op.project)}/merge_requests/${n}`;
@@ -572,6 +575,8 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     },
 
     validateCommand: validateGitLabCommand,
+    // GitLab takes the file with `glab`'s own login or with the API client's headers: no extra credential is put on the upload.
+    uploadToken: async () => null,
   };
   return provider;
 }
@@ -596,6 +601,15 @@ const DELETE_NOTE = /^projects\/[\w%.-]+\/(?:issues|merge_requests)\/\d+\/notes\
 
 /** What a GitLab write may look like: GraphQL only for the status mutation, REST only under projects/, and the review calls with only their own fields. */
 export function validateGitLabCommand(command: VcsCommand): void {
+  // An upload of evidence: a POST of a file under projects/<path>/uploads, with its own content type and no form field at all.
+  if (/^projects\/[\w%.-]+\/uploads$/.test(command.endpoint)) {
+    const keys = Object.keys(command.headers ?? {});
+    if (command.via !== 'api' || command.method !== 'POST' || Object.keys(command.fields).length || !command.bodyFile || command.json !== undefined || keys.length !== 1 || !(command.headers?.['Content-Type'] ?? '').startsWith('image/')) {
+      throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
+    }
+    return;
+  }
+  if (command.headers || command.bodyFile) throw new Error(t('vcs.validate.endpoint', { endpoint: command.endpoint }));
   if (command.endpoint === 'graphql') {
     const keys = Object.keys(command.fields);
     if ((command.via !== 'glab' && command.via !== 'api') || command.method !== 'POST' || keys.length !== 1 || !STATUS_MUTATION.test(command.fields.query ?? '')) {

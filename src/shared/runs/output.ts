@@ -1,4 +1,5 @@
 import type { StageKind } from '../config/types';
+import { isEvidenceId } from '../evidence';
 import { t } from '../i18n';
 import type { Finding, Scenario } from './types';
 
@@ -65,6 +66,8 @@ export interface StageOutput {
   comment: StageComment | null;
   /** The pull request description, asked of the stage that ends with the push. */
   pr: PullRequestText | null;
+  /** Evidence ids (`ev-<digits>`) this stage's output cites: a QA scenario's proof, the product owner's exploratory validation, a review finding. */
+  evidence: string[];
 }
 
 const str = { type: 'string' };
@@ -77,8 +80,8 @@ function obj(properties: Record<string, unknown>): Record<string, unknown> {
 
 const finding = obj({ path: str, line: intOrNull, endLine: intOrNull, side: { enum: ['new', 'old'] }, severity: { enum: ['blocking', 'suggestion'] }, body: str, suggestion: strOrNull });
 const scenario = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str });
-// An agent that can run commands says, per scenario, whether it did and which commands (their numbers) back it.
-const scenarioWithEvidence = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str, evidence: { enum: ['executed', 'read'] }, commands: { type: 'array', items: { type: 'integer' } } });
+// An agent that can run commands says, per scenario, whether it did and which commands (their numbers) back it; with a sandbox it may also cite the evidence ids it kept.
+const scenarioWithEvidence = obj({ name: str, result: { enum: ['pass', 'fail', 'not-run'] }, severity: { enum: ['blocking', 'non-blocking'] }, detail: str, evidence: { enum: ['executed', 'read'] }, commands: { type: 'array', items: { type: 'integer' } }, evidenceIds: { type: 'array', items: { type: 'string' } } });
 
 const commentText = (extra: Record<string, unknown> = {}) => obj({ ...extra, sections: { type: 'array', items: obj({ heading: str, body: str }) }, technical: str });
 
@@ -97,6 +100,8 @@ export interface OutputWants {
   pr?: boolean;
   /** QA can run commands in a sandbox: ask each scenario for its `evidence` and the numbers of the commands behind it. */
   evidence?: boolean;
+  /** The agent has a sandbox and keeps evidence: ask it to cite the evidence ids its output rests on (`evidence`). */
+  keepsEvidence?: boolean;
 }
 
 /** The JSON Schema of a stage's answer. */
@@ -111,6 +116,7 @@ export function outputSchema(kind: OutputKind, wants: OutputWants = {}): Record<
   };
   if (kind === 'review') Object.assign(base, { verdict: { enum: ['approved', 'changes'] }, findings: { type: 'array', items: finding } });
   if (kind === 'qa') Object.assign(base, { scenarios: { type: 'array', items: wants.evidence ? scenarioWithEvidence : scenario } });
+  if (wants.keepsEvidence) base.evidence = { type: 'array', items: { type: 'string' }, description: 'Evidence ids (ev-<digits>) this output rests on.' };
   if (wants.ask) base.needsPerson = { type: 'boolean' };
   if (wants.reporter) base.reporterQuestion = strOrNull;
   if (wants.priority) Object.assign(base, { priority: strOrNull, milestone: strOrNull });
@@ -159,6 +165,7 @@ export function readScenario(raw: unknown): Scenario | null {
   const name = text(s.name, 500);
   if (!name) return null;
   const commands = list(s.commands).filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1).slice(0, 50);
+  const evidenceIds = readEvidenceIds(s.evidenceIds);
   return {
     name,
     result: s.result === 'pass' || s.result === 'fail' ? s.result : 'not-run',
@@ -166,7 +173,18 @@ export function readScenario(raw: unknown): Scenario | null {
     detail: text(s.detail, 8000),
     ...(s.evidence === 'executed' || s.evidence === 'read' ? { evidence: s.evidence } : {}),
     ...(commands.length ? { commands } : {}),
+    ...(evidenceIds.length ? { evidenceIds } : {}),
   };
+}
+
+/** The evidence ids of a piece of an answer, in order and each once; anything that is not an `ev-<digits>` id is dropped. */
+export function readEvidenceIds(raw: unknown): string[] {
+  const out: string[] = [];
+  for (const v of list(raw)) {
+    const id = typeof v === 'string' ? v.trim() : '';
+    if (isEvidenceId(id) && !out.includes(id)) out.push(id);
+  }
+  return out.slice(0, 50);
 }
 
 /** What the app knows of a command of the stage, for checking a claim of execution. */
@@ -250,6 +268,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
     scenarios: kind === 'qa' ? list(o.scenarios).flatMap((s) => readScenario(s) ?? []) : [],
     comment: readComment(o.comment),
     pr: readPullRequest(o.pr),
+    evidence: readEvidenceIds(o.evidence),
   };
 }
 

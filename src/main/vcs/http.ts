@@ -40,6 +40,8 @@ export interface RequestOptions {
   json?: unknown;
   /** Form-encoded body. */
   form?: Record<string, string>;
+  /** Raw body: the file of an upload, which is never parsed and never retried. */
+  body?: BodyInit;
   headers?: Record<string, string>;
   /** Return the body as text, not parsed. */
   text?: boolean;
@@ -101,7 +103,7 @@ export class HttpClient {
   }
 
   async absolute(url: string, o: RequestOptions = {}): Promise<HttpResponse> {
-    return this.send('GET', this.sameOrigin(url), o);
+    return this.send(o.body !== undefined ? 'POST' : 'GET', this.sameOrigin(url), o);
   }
 
   private async send(method: string, url: string, o: RequestOptions): Promise<HttpResponse> {
@@ -124,8 +126,10 @@ export class HttpClient {
 
   private async once(method: string, url: string, o: RequestOptions): Promise<HttpResponse> {
     const headers: Record<string, string> = { ...this.headers(), ...o.headers };
-    let body: string | undefined;
-    if (o.json !== undefined) {
+    let body: BodyInit | undefined;
+    if (o.body !== undefined) {
+      body = o.body;
+    } else if (o.json !== undefined) {
       body = JSON.stringify(o.json);
       headers['Content-Type'] = 'application/json';
     } else if (o.form) {

@@ -9,6 +9,7 @@ import {
   THREAD_ID,
   THREAD_KINDS,
   type ArtifactRef,
+  type EvidenceRef,
   type ForumDraft,
   type ForumMessage,
   type PublishedRef,
@@ -119,13 +120,14 @@ const MESSAGE: JsonSchema = {
       items: { type: 'object', properties: { id: { type: 'string', maxLength: 32 }, name: { type: 'string', maxLength: 200 }, kind: { type: 'string', enum: ['image', 'text', 'pdf', 'json', 'csv'] }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'kind', 'bytes'], additionalProperties: false },
     },
     anchor: { type: ['string', 'null'], maxLength: 80 },
+    evidence: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', maxLength: 16 }, name: { type: 'string', maxLength: 200 }, media: { type: 'string', maxLength: 100 }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'media', 'bytes'], additionalProperties: false }, maxItems: 10 },
     stage: { type: ['string', 'null'], maxLength: 48 },
     to: { type: ['string', 'null'], maxLength: 48 },
     replyTo: { type: ['integer', 'null'] },
     public: { type: 'boolean' },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
-  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'attachments', 'stage', 'to', 'replyTo', 'public', 'published'],
+  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
   additionalProperties: false,
 };
 const ANNOTATION: JsonSchema = {
@@ -177,6 +179,8 @@ function parse(text: string): Parsed {
     .filter((m) => !removed.has(m.seq))
     .sort((a, b) => a.seq - b.seq)
     .map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
+  // A message written before attachments existed carries none; the field the type promises is filled in here, not stored.
+  for (const m of sorted) if (!Array.isArray(m.attachments)) m.attachments = [];
   return { header, messages: sorted, endsClean: text === '' || text.endsWith('\n') };
 }
 
@@ -277,6 +281,13 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Math.floor(a.bytes) }))
       .slice(0, 50);
 
+  /** The evidence a message carries, as stored: the id is an evidence id, and the name and the media type are short strings. */
+  const cleanEvidence = (list: EvidenceRef[] | undefined): EvidenceRef[] =>
+    (list ?? [])
+      .filter((a) => typeof a?.id === 'string' && /^ev-\d{1,6}$/.test(a.id) && typeof a.name === 'string' && typeof a.media === 'string' && Number.isInteger(a.bytes) && a.bytes >= 0)
+      .slice(0, 10)
+      .map((a) => ({ id: a.id, name: a.name.slice(0, 200), media: a.media.slice(0, 100), bytes: a.bytes }));
+
   function build(state: State, d: ForumDraft, seq: number): ForumMessage {
     const a = d.author;
     if (!a || (a.type !== 'agent' && a.type !== 'person' && a.type !== 'app') || (a.type === 'agent' && !AGENT_ID.test(a.id))) throw new ForumError('bad-author');
@@ -302,6 +313,7 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       refs: cleanRefs(d.refs),
       attachments: cleanAttachments(d.attachments),
       anchor: typeof d.anchor === 'string' && d.anchor ? d.anchor.slice(0, 80) : null,
+      ...(d.evidence?.length ? { evidence: cleanEvidence(d.evidence) } : {}),
       stage: d.stage ?? null,
       to: d.to ?? null,
       // An answer says which question or request it answers: the one it names when that one is open, else the latest nobody has answered.

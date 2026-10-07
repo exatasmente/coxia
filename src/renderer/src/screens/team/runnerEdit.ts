@@ -1,4 +1,4 @@
-import type { AutonomyBlock, RunnerConfig, RunnerSandbox } from '../../../../shared/config/types';
+import type { AutonomyBlock, RunnerConfig, RunnerEvidence, RunnerSandbox } from '../../../../shared/config/types';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -28,6 +28,8 @@ export interface RunnerDraft {
   prTitle: string;
   /** What the sandbox of an agent set to run commands in one may reach and use (desktop only). */
   sandbox: RunnerSandbox;
+  /** Where a stage's evidence is kept: with the run only (the default) or also in the cycle folder (desktop only, it decides what enters a commit). */
+  evidence: RunnerEvidence;
   /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
   autonomy: AutonomyBlock;
   linkDependencies: boolean;
@@ -52,6 +54,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     commitMessage: r.commitMessage,
     prTitle: r.prTitle,
     sandbox: structuredClone(r.sandbox),
+    evidence: r.evidence ?? 'app',
     autonomy: structuredClone(r.autonomy),
     linkDependencies: r.linkDependencies !== false,
     soleMaintainer: soleMaintainerOf(r),
@@ -71,6 +74,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()), browsersPath: d.sandbox.browsersPath?.trim() || null, display: d.sandbox.display === true },
     autonomy: structuredClone(d.autonomy),
+    evidence: d.evidence,
     commitMessage: d.commitMessage,
     prTitle: d.prTitle,
     linkDependencies: d.linkDependencies,
@@ -83,7 +87,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), release: stored.release && { ...stored.release } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', release: stored.release && { ...stored.release } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

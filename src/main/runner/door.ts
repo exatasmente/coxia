@@ -21,7 +21,7 @@ export const realDoor: Door = {
     for (const [i, command] of commands.entries()) responses.push(await runVcsAuto({ ...meta, key: commands.length > 1 ? `${meta.key}#${i + 1}` : meta.key }, command));
     return responses;
   },
-  propose: (meta, commands) => proposeVcsGroup({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, detail: meta.detail, unit: meta.unit, notify: meta.notify }, commands) !== null,
+  propose: (meta, commands) => proposeVcsGroup({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, detail: meta.detail, unit: meta.unit, evidence: meta.evidence, notify: meta.notify }, commands) !== null,
   proposePush: (meta) => proposeRunPush({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, runId: meta.runId, branch: meta.branch, notify: meta.notify }) !== null,
   push: async (meta, by) => {
     await pushRunBranchAuto({ issue: meta.issue, key: meta.key, summary: meta.summary, by }, meta.runId, meta.branch);

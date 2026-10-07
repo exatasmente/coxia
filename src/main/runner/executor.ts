@@ -21,6 +21,9 @@ import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCo
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
+import { evidenceToolsOf } from '../evidence/handlers';
+import { copyToCycleFolder } from '../evidence/store';
+import { evidencePlacementOf, type EvidenceRecord } from '../../shared/evidence';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
@@ -81,6 +84,15 @@ export interface ExecutorDeps {
   limits?: Partial<Limits>;
   /** What the `ReleaseAction` tool of a release run's agent calls: one step of the release, answered in text for the model. Without it the agent gets no such tool. */
   release?: (runId: string, input: unknown, who: { by: string; autonomous: boolean; stage: string; attempt: number }) => Promise<string>;
+  /**
+   * Records a piece of evidence a stage kept and publishes it in the run's conversation; without it the evidence tools are not offered (a test that does not want them).
+   * The publisher and the run store are the service's, not the executor's.
+   */
+  keepEvidence?: (runId: string, record: EvidenceRecord) => ForumMessage | null;
+  /** Updates a piece of evidence already recorded (the copy that went into the cycle folder): the run's record changes, nothing is published again. */
+  updateEvidence?: (runId: string, record: EvidenceRecord) => void;
+  /** The workspace's data folder: where a run's evidence is stored. */
+  dataDir: () => string;
 }
 
 export interface StageRun {
@@ -96,6 +108,8 @@ export interface StageRun {
   noCodeChange?: boolean;
   /** The branch's commit the agent looked at, before the app committed what the attempt produced: what a review or a QA pass is about. */
   head: string | null;
+  /** The evidence kept during this attempt, in the order it was kept. */
+  keptEvidence?: EvidenceRecord[];
 }
 
 export interface Picked {
@@ -483,6 +497,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
+    evidence: !!(session?.stageDir && d.keepEvidence),
     sandbox: session
       ? {
           network: config.runner.sandbox.network,
@@ -505,13 +520,36 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
   };
 
+  // The evidence a stage keeps while it works: each one is recorded with the run and published in its conversation, and the ids are what the stage output cites.
+  const keptIds: string[] = [];
+  const keptRecords: EvidenceRecord[] = [];
+  const evidence =
+    session?.stageDir && d.keepEvidence
+      ? evidenceToolsOf({
+          dataDir: d.dataDir(),
+          stageDir: session.stageDir,
+          run,
+          stage: stage.id,
+          by: agent.id,
+          onKept: (record) => {
+            keptIds.push(record.id);
+            keptRecords.push(record);
+            try {
+              d.keepEvidence?.(run.id, record);
+            } catch (e) {
+              console.error('[runner] could not publish a piece of evidence', e instanceof Error ? e.message : e);
+            }
+          },
+          now: () => new Date().toISOString(),
+        })
+      : undefined;
   // The agent of a documentation run reads the whole worktree and changes only `.coxia/`, which `executeStage` made sure exists as a real folder (a path guard needs its root to).
   const writeRoot = writes && run.docs ? join(wt, HARNESS_DIR) : undefined;
 
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
-    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session }),
+    schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session, keepsEvidence: !!evidence }),
     system: systemText(input),
     cwd: wt,
     // The documentation of the repository (`.coxia/`) for this stage: chosen by the stage, the agent and the files the work touches. Nothing is read from git when there is none.
@@ -519,6 +557,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeReserved: HARNESS_OWN } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeReserved: writeRoot ? HARNESS_OWN : undefined, commands, onDenied: denied }) } : undefined,
     readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
+    evidence,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
@@ -546,6 +585,18 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   }
 
   const output = readOutput(data, kind);
+  // The evidence ids the stage cites are kept only when this stage really kept them (or, for a QA pass, cites them beside its scenarios): an unknown id is told
+  // in the conversation and dropped, never taken as proof of anything.
+  const known = new Set([...keptIds, ...Object.keys(run.evidence ?? {})]);
+  const cited = output.evidence.filter((id) => known.has(id));
+  const unknownEvidence = output.evidence.filter((id) => !known.has(id));
+  output.evidence = cited;
+  for (const id of unknownEvidence) {
+    d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.evidence.unknown', params: { agent: agent.id, id }, stage: stage.id });
+  }
+  if (kind === 'qa') {
+    output.scenarios = output.scenarios.map((s) => (s.evidenceIds ? { ...s, evidenceIds: s.evidenceIds.filter((id) => known.has(id)) } : s));
+  }
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
   if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), !!session);
@@ -563,7 +614,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(a.content, run.issue));
     written.push(a.name);
   }
-  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
+  if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 
   // A stage that concludes rewrites the memory: normalized to the file's shape, masked, and with the conversation's markers reapplied so nothing the person said is lost.
   // A stage that pauses writes nothing: what it decided is not lost either, since the conversation carries it back in through `factsOfThread`.
@@ -573,6 +624,17 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const missing = stage.artifacts.filter((n) => !written.includes(n) && !existsSync(join(wt, run.cycleFolder, n)));
   if (missing.length) throw new StageError('missing-artifacts', { names: missing.join(', ') });
+
+  // With "also in the cycle folder", a copy of each piece of evidence the stage kept goes into the cycle folder before the commit, which then takes it. The copy is
+  // made by the app from the stored evidence (never by re-reading the stage's output), and it is the only way a piece of evidence reaches a commit.
+  if (evidencePlacementOf(config.runner) === 'cycle' && keptRecords.length) {
+    for (const record of keptRecords) {
+      if (copyToCycleFolder(run, record, d.dataDir())) {
+        record.inCycle = true;
+        d.updateEvidence?.(run.id, record);
+      }
+    }
+  }
 
   const identity = await commitIdentity(config.runner.identity, wt, d.identity);
   if (!identity) throw new StageError('no-identity');
@@ -591,6 +653,6 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
   // The files of the documentation this commit holds get the commit and the day they were checked, in a commit of their own: the agent cannot write a commit that does not exist yet.
   if (commit && docs?.stamp.length && (await stampHarness(wt, docs.stamp, commit)).length) await commitAll(wt, commitMessage(config.runner.commitMessage, STAMP_SUMMARY, run.issue.iid), identity);
-  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
+  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
 

@@ -17,6 +17,7 @@ import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
 import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
+import { uploadsOf } from '../evidence/store';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
 import { createPublisher } from './publish';
@@ -95,6 +96,13 @@ export const runsModule: Module = (ctx) => {
       config: getConfig,
       env: () => ({ issueProject: rc().issues.project ?? '', repos: rc().repos.map((x) => ({ id: x.id, projectPath: x.projectPath })) }),
       door: realDoor,
+      // The evidence a comment cites, ready to go up: read here, where the workspace's data folder is; the executable that runs the command never sees the file until the throwaway copy is written.
+      evidenceUploads: (run, ids) => {
+        const dataDir = ATAS;
+        const all = uploadsOf(dataDir, run, [...ids]);
+        const present = ids.filter((id) => run.evidence?.[id]);
+        return { images: all, total: present.length || ids.length };
+      },
       // The tags of the repository of a release run: what the wait for its beta reads (the clone's own, never a path from the run's file but its worktree, which shares them).
       localTags: async (run) => {
         const at = existsSync(run.worktree) ? run.worktree : rc().repos.find((x) => x.id === run.repo)?.path;
@@ -149,6 +157,11 @@ export const runsModule: Module = (ctx) => {
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
   ctx.handle('runs:memory', (run: unknown, body: unknown) => r.editMemory(id(run), text(body)));
+  // The evidence a run kept: read only, from the run's own store, and open to a paired browser like the thread beside it. The bytes come back as an ArrayBuffer.
+  ctx.handle('runs:evidenceList', (run: unknown) => r.evidence(id(run)));
+  ctx.handle('runs:evidence', (run: unknown, evidence: unknown) => r.evidenceBytes(id(run), text(evidence))?.bytes ?? null);
+  // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
+  ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
   // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
   ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));

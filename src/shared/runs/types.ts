@@ -1,11 +1,14 @@
 import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
+import type { EvidenceRecord } from '../evidence';
 import type { ForumDraft } from '../forum';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
 export const RUN_VERSION = 1;
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
+
+export type { EvidenceRecord };
 
 /**
  * working: an agent works `stage`. gate: the person decides. question: waiting for an answer. failed: waiting for a retry or a cancel.
@@ -87,7 +90,7 @@ export interface RunFailure {
   detail: string | null;
 }
 
-export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'memory-edited', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
+export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'evidence', 'evidence-removed', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'memory-edited', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
 
 /** Longest `HistoryEntry.detail` a run file holds: the history is a log, the whole text (an answer, a reason) is in the run's thread. */
@@ -125,6 +128,8 @@ export interface CommentRecord {
   headline?: string | null;
   /** The pull request's title, for the `pr` record. */
   title?: string | null;
+  /** The evidence ids the description cites, for the `pr` record: the images go up with the pull request's own proposal, on its "sim". */
+  evidenceIds?: string[];
 }
 
 /** What a transition may record about a comment besides where it stands. */
@@ -132,6 +137,8 @@ export interface CommentDetails {
   body?: string;
   headline?: string;
   title?: string;
+  /** Evidence ids the text cites, for a comment whose images leave with the proposal of the write itself (the pull request's description). */
+  evidenceIds?: string[];
 }
 
 /** What a non-autonomous agent finished and the person has not accepted yet. */
@@ -210,6 +217,8 @@ export interface Scenario {
   unbacked?: boolean;
   /** The numbers (in the stage's command list) of the commands an `executed` scenario rests on. */
   commands?: number[];
+  /** Evidence ids (`ev-<digits>`) this scenario cites, beside the command numbers. Citing evidence never makes a scenario `executed`. */
+  evidenceIds?: string[];
 }
 
 /** What the QA agent checked. */
@@ -222,6 +231,11 @@ export interface QaRecord {
   head: string | null;
   /** The commands the app ran in the worktree before this pass, with how each ended. Absent in a pass recorded before the app ran any. */
   commands?: QaCommand[];
+}
+
+/** One piece of evidence a run keeps, by id. The record says what it is and where it is; the file lives in the workspace's data, and a copy may go into the cycle folder. */
+export interface RunEvidence {
+  [id: string]: EvidenceRecord;
 }
 
 /** One command the app ran for a QA pass: the exit code (null when it did not run to one) and whether it was stopped for taking too long. The output is not kept. */
@@ -395,6 +409,8 @@ export interface Run {
   reviews: ReviewRecord[];
   /** Every QA pass, with its scenarios. */
   qa: QaRecord[];
+  /** Every piece of evidence the stages kept, by id (never reused inside the run). Absent in a run written before evidence existed: it kept none. */
+  evidence?: RunEvidence;
   /** The commit the branch was cut from; what the review's diff starts at. Null for a run made before it was recorded. */
   base: string | null;
   /** What the run is about when it is not an issue: a release. Absent for an issue run. */

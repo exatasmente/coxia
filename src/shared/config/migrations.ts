@@ -34,6 +34,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //       Nothing is raised and the sandbox network of a stored workspace is left exactly as it was.
 //   v17 `runner.prTitle` (the template of the pull request title, `{title}` and `{iid}`) and `{iid}` in `runner.commitMessage`, which is
 //       appended when a stored message leaves the number out. Nothing else moves.
+//   v18 `runner.evidence`: where a stage's evidence is kept, `app` by default (nothing of it enters a commit). Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -310,7 +311,16 @@ function v16ToV17(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 17, runner: { ...runner, commitMessage, prTitle: runner.prTitle ?? neutralRunner().prTitle } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17 };
+// The runner gains where a stage's evidence is kept: `runner.evidence`, whose safe default is `app` (nothing of the evidence enters a commit). The step writes
+// the default when the field is missing and touches nothing else; the bump makes an older app refuse the file instead of repairing it without the field.
+function v17ToV18(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  if (runner.evidence === 'app' || runner.evidence === 'cycle') return { ...old, schemaVersion: 18 };
+  notes.push('runner.evidence got its default ("app": a stage\'s evidence stays with the run in the workspace\'s data, never in a commit)');
+  return { ...old, schemaVersion: 18, runner: { ...runner, evidence: 'app' } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

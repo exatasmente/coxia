@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
+import type { EvidenceView } from '../../../../shared/evidence';
 import { FORUM_EVENT, type ForumEventPayload } from '../../../../shared/forum';
 import type { CommandDecision, Run } from '../../../../shared/runs';
 import { api, moduleEvents } from '../../api';
@@ -42,6 +43,10 @@ export const runsApi = {
   setAutonomous: (agent: string, on: boolean) => api.invoke<boolean>('runs:setAutonomous', agent, on),
   setSquadAutonomous: (squad: string, on: boolean) => api.invoke<boolean>('runs:setSquadAutonomous', squad, on),
   artifact: (id: string, name: string) => api.invoke<ArtifactText | null>('runs:artifact', id, name),
+  // The evidence a run kept: the list, its bytes and the person's removal. The bytes travel as an ArrayBuffer, as any file read of this app does.
+  evidenceList: (id: string) => api.invoke<EvidenceView[] | null>('runs:evidenceList', id),
+  evidenceBytes: (id: string, evidence: string) => api.invoke<ArrayBuffer | null>('runs:evidence', id, evidence),
+  removeEvidence: (id: string, evidence: string) => api.invoke<boolean>('runs:evidenceDelete', id, evidence),
   // The cycle memory, which only the run screen may rewrite; the answer is what was really written (masked, capped).
   editMemory: (id: string, text: string) => api.invoke<ArtifactText | null>('runs:memory', id, text),
 };

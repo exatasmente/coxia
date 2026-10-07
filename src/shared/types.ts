@@ -394,6 +394,13 @@ export interface VcsCommand {
   fields: Record<string, string>;
   /** Request body as JSON text, for the providers that take one (GitHub and Bitbucket). */
   json?: string;
+  /**
+   * Extra request headers of an upload, filled by the caller that holds the bytes right before the call and never stored with the proposal (GitHub wants
+   * its own file upload host and a User-Agent next to the Authorization it is already sent). Never carries a secret that is not already the credential.
+   */
+  headers?: Record<string, string>;
+  /** An upload whose body is a file on disk rather than a string: the executor reads it and sends it as it is, never through a text field. */
+  bodyFile?: string;
 }
 
 /** The name the type had when GitLab was the only host. */
@@ -440,6 +447,12 @@ export interface ReleaseAction {
   group?: string;
   /** A push of a release that sent nothing: the remote already had exactly what it would send. Done, but nothing moved on the host. */
   nothingSent?: boolean;
+  /**
+   * The uploads of evidence planned with a write that waits in Actions: `positions` index the group of `commands` (each an upload), `titles` name the images in
+   * the same order, and `bodyAt` is the command of the comment or description whose body takes the addresses once the uploads have run. Absent when the write
+   * cites no evidence.
+   */
+  evidence?: { titles: string[]; positions: number[]; bodyAt: number };
   // Release conflicts only: the in-app resolution (worktree, hunks, verification, push). Absent in files saved before it existed.
   resolve?: import('./conflict').ConflictResolve | null;
 }

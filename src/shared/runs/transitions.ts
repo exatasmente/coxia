@@ -1,5 +1,6 @@
 import type { AttachmentRef } from '../attachments';
 import type { ArtifactRef, ForumDraft } from '../forum';
+import type { EvidenceRecord } from '../evidence';
 import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
 import { flowProblems, producerOf, snapshotOf } from './flow';
@@ -11,7 +12,7 @@ import { HISTORY_DETAIL_MAX, RUN_VERSION, isTerminal, type CommentDetails, type 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
 
-export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing', 'unknown-link'] as const;
+export const RUN_ERROR_CODES = ['no-flow', 'no-agent', 'wrong-state', 'empty-reason', 'empty-text', 'duplicate', 'unknown-stage', 'not-active', 'unknown-run', 'newer-version', 'invalid', 'unknown-comment', 'unknown-evidence', 'invalid-flow', 'flow-mismatch', 'not-waiting', 'unknown-squad', 'not-routing', 'unknown-link'] as const;
 export type RunErrorCode = (typeof RUN_ERROR_CODES)[number];
 
 export class RunError extends Error {
@@ -956,7 +957,7 @@ function noteComment(run: Run, key: string, at: string, status: CommentStatus, c
 const fresh = (target: CommentTarget, status: CommentStatus, at: string): CommentRecord => ({ target, noteId: null, url: null, bodyHash: null, status, updatedAt: at });
 
 // What the caller says about the text, kept only when it says it: an edit that does not carry a title does not lose the one it had.
-const details = (input: CommentDetails): CommentDetails => Object.fromEntries(Object.entries({ body: input.body, headline: input.headline, title: input.title }).filter(([, v]) => v !== undefined));
+const details = (input: CommentDetails): CommentDetails => Object.fromEntries(Object.entries({ body: input.body, headline: input.headline, title: input.title, evidenceIds: input.evidenceIds }).filter(([, v]) => v !== undefined));
 
 /** A body was written but nothing was asked of the person yet. */
 export function recordCommentDraft(run: Run, key: string, input: { target: CommentTarget; bodyHash: string } & CommentDetails, at: string): Transition {
@@ -1011,6 +1012,23 @@ export function recordQa(run: Run, input: Omit<QaRecord, 'at'>, at: string): Tra
   const out = clone(run, at);
   out.qa.push({ ...structuredClone(input), at });
   log(out, at, 'qa', input.stage, input.by, input.scenarios.some(scenarioBlocks) ? 'fail' : 'pass');
+  return { run: out, messages: [] };
+}
+
+/** A stage kept a piece of evidence: the run records it by id, so the stage and the QA view can list and cite it. */
+export function recordEvidence(run: Run, record: EvidenceRecord, at: string): Transition {
+  const out = clone(run, at);
+  out.evidence = { ...(out.evidence ?? {}), [record.id]: structuredClone(record) };
+  log(out, at, 'evidence', record.stage, record.by, `${record.id}: ${record.title}`);
+  return { run: out, messages: [] };
+}
+
+/** The person removed a piece of evidence: the run drops the record; what already went to the code host is not touched. */
+export function deleteEvidence(run: Run, id: string, at: string): Transition {
+  const out = clone(run, at);
+  if (!out.evidence?.[id]) throw new RunError('unknown-evidence', { id });
+  delete out.evidence[id];
+  log(out, at, 'evidence-removed', run.stage, 'person', id);
   return { run: out, messages: [] };
 }
 

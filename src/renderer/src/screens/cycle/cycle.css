@@ -127,6 +127,24 @@
 .cy-thread-still { background: var(--red-soft); color: var(--red-ink); }
 .cy-thread-fixed { background: var(--teal-soft); color: var(--teal-ink); }
 
+/* the evidence a stage kept: the list under the stage, a message's attachment, the citation of a scenario */
+.cy-evidence-block { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.cy-evidence-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cy-evidence { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-3); background: var(--surface-2); min-width: 0; }
+.cy-evidence-head { gap: 8px; flex-wrap: wrap; }
+.cy-evidence-desc { line-height: 1.45; overflow-wrap: anywhere; }
+.cy-evidence-view { display: flex; flex-direction: column; gap: 4px; }
+.cy-evidence-image { max-width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--line-3); }
+.cy-evidence-actions { gap: 8px; flex-wrap: wrap; align-items: center; }
+.cy-evidence-confirm { gap: 8px; align-items: center; flex-wrap: wrap; }
+.cy-evidence-cites { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cy-evidence-cite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.cy-evidence-cite { display: inline-flex; align-items: center; gap: 6px; }
+.cy-evidence-link { background: transparent; border: 0; color: var(--link); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-align: left; }
+.cy-evidence-thumb { display: block; margin-top: 4px; max-width: 240px; max-height: 180px; border-radius: 8px; border: 1px solid var(--line-3); }
+.cy-evidence-attach { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cy-evidence-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 0; }
+
 @media (max-width: 900px) {
   .cy-cols { grid-template-columns: minmax(0, 1fr); }
   .cy-title { font-size: 19px; }

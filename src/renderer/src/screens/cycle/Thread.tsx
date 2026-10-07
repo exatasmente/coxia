@@ -12,6 +12,7 @@ import { useActivity } from '../../useActivity';
 import { RichText } from '../Diagram';
 import { ArtifactView } from './ArtifactView';
 import { MessageAttachments } from './Attachments';
+import { EvidenceAttachment } from './Evidence';
 import { agentName, agentRole, authorName } from './names';
 import { forumApi, forgetNow, markThreadSeen, useThread } from './forumApi';
 import './cycle.css';
@@ -100,6 +101,11 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
       <div className="cy-msg-text">
         <RichText text={messageText(m)} />
       </div>
+      {(m.evidence?.length ?? 0) > 0 && ctx.runId && (
+        <p className="cy-evidence-attachments">
+          {m.evidence?.map((a) => <EvidenceAttachment key={a.id} runId={ctx.runId as string} attachment={a} />)}
+        </p>
+      )}
       {(ctx.calls.get(m.seq) ?? []).map((g) => <CallLine key={g.runId} group={g} team={ctx.team} />)}
       {m.author.type === 'person' && m.mentions.length > 0 && (
         <>

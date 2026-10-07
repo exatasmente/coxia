@@ -47,6 +47,8 @@ import {
   defaultSendBackTarget,
   sendBackTo,
   recordQa,
+  recordEvidence,
+  deleteEvidence,
   recordReview,
   recordUsage,
   addReport,
@@ -106,6 +108,8 @@ import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, 
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
+import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
+import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
@@ -233,6 +237,12 @@ export type GateAction = 'approve' | 'reject' | 'skip';
 export interface Runner {
   list(): Run[];
   get(id: string): Run | null;
+  /** The evidence a run kept, oldest first: what the run screen lists under the stage. Null when there is no such run. */
+  evidence(runId: string): EvidenceView[] | null;
+  /** The bytes of one piece of evidence; null when the run or the file is not there. */
+  evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
+  /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
+  removeEvidence(runId: string, id: string): boolean;
   start(ref: string, repoId?: string): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
@@ -319,7 +329,43 @@ export function createRunner(deps: RunnerDeps): Runner {
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
   const d = { runs: deps.runs, forum: deps.forum };
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined };
+  /**
+   * Records a piece of evidence a stage kept and publishes it, at once, in the run's conversation, as a message of the agent that carries the file: the person sees
+   * it live, and the run keeps the record (`Run.evidence`) so the stage and the scenarios can list and cite it. Returns the message, or null when the run is gone.
+   */
+  function keepEvidence(runId: string, record: EvidenceRecord): ForumMessage | null {
+    const nowIso = now();
+    let done: Run;
+    try {
+      done = moveRun(d, runId, (r) => recordEvidence(r, record, nowIso));
+    } catch (e) {
+      console.error('[runner] could not record a piece of evidence', e instanceof Error ? e.message : e);
+      return null;
+    }
+    void done;
+    const media = evidenceViewOf(record).media;
+    const messages = deps.forum.append(runThreadId(runId), {
+      kind: 'post',
+      author: { type: 'agent', id: record.by },
+      code: 'runner.evidence.kept',
+      params: { title: record.title, kind: record.kind, description: record.description, id: record.id },
+      evidence: [{ id: record.id, name: record.name, media, bytes: record.bytes }],
+      stage: record.stage,
+      public: true,
+    });
+    return messages[0] ?? null;
+  }
+
+  /** Updates a piece of evidence already recorded (the copy that went into the cycle folder): the run's record changes; nothing is published again. */
+  function updateEvidence(runId: string, record: EvidenceRecord): void {
+    try {
+      moveRun(d, runId, (r) => recordEvidence(r, record, now()));
+    } catch (e) {
+      console.error('[runner] could not update a piece of evidence', e instanceof Error ? e.message : e);
+    }
+  }
+
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -1023,6 +1069,28 @@ export function createRunner(deps: RunnerDeps): Runner {
   const api: Runner = {
     list: () => deps.runs.list().map((r) => withCommand(r) as Run),
     get: (id) => withCommand(deps.runs.get(id)),
+    evidence: (runId) => {
+      const run = deps.runs.get(runId);
+      if (!run) return null;
+      return Object.values(run.evidence ?? {})
+        .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+        .map(evidenceViewOf);
+    },
+    evidenceBytes: (runId, id) => {
+      const run = deps.runs.get(runId);
+      const record = run?.evidence?.[id];
+      if (!run || !record) return null;
+      const bytes = readEvidence(deps.env().dataDir, run.id, record);
+      return bytes ? { bytes, record } : null;
+    },
+    removeEvidence: (runId, id) => {
+      const run = deps.runs.get(runId);
+      const record = run?.evidence?.[id];
+      if (!run || !record) return false;
+      dropEvidence(deps.env().dataDir, run.id, record);
+      moveRun(d, run.id, (r) => deleteEvidence(r, id, now()));
+      return true;
+    },
     start,
     startRelease,
     startDocs,

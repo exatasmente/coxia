@@ -20,6 +20,21 @@ export interface ArtifactRef {
   label?: string;
 }
 
+/**
+ * A piece of evidence a message carries (the file a stage kept). The bytes live in the workspace's own data (the evidence store), never in the message file: the
+ * message holds only this reference, with what the person needs to see it (its name, its media type and its size) and the evidence id it belongs to.
+ * It is not an attachment of the person (`attachments`, shared/attachments.ts): those are files in a conversation, this one is the run's own record.
+ */
+export interface EvidenceRef {
+  /** The evidence id (`ev-<digits>`), which is the file's name in the store. */
+  id: string;
+  /** The name the file was given, for display only. */
+  name: string;
+  /** Platform-independent media type, read from the content. */
+  media: string;
+  bytes: number;
+}
+
 export type ParamValue = string | number;
 
 /** Where a thread message was mirrored on the tracker, so the thread links to it. */
@@ -45,6 +60,8 @@ export interface ForumDraft {
   attachments?: AttachmentRef[];
   /** Internal: the anchor of the conversation, so a message of another conversation never opens a file here (filled by the forum module). */
   anchor?: string | null;
+  /** The evidence this message carries (what a stage kept): the person sees it with the message. */
+  evidence?: EvidenceRef[];
   /** The stage of the run the message belongs to. */
   stage?: string | null;
   /** Handoff: the agent id that takes over, or "person". */
@@ -75,6 +92,8 @@ export interface ForumMessage {
   attachments: AttachmentRef[];
   /** Internal: the anchor of the conversation this message is in, so a message id from another conversation never opens a file here. */
   anchor?: string | null;
+  /** The evidence this message carries (what a stage kept); absent in a message stored before evidence existed, read as none. */
+  evidence?: EvidenceRef[];
   stage: string | null;
   to: string | null;
   /** An answer: the `seq` of the question or request it answers. */

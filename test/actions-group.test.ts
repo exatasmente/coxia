@@ -33,6 +33,14 @@ beforeEach(() => {
   failAt = null;
   setVcsRuntimeForTests(
     fakeGitlabRuntime(async () => ({}), undefined, async (command, meta) => {
+      if (command.bodyFile) {
+        // An upload of evidence answers where the host keeps the file; the runner embeds that address in the comment that cites it.
+        if (meta) {
+          meta.code = 201;
+          meta.response = { url: 'https://example.test/uploads/ev-1.png' };
+        }
+        return 'uploaded';
+      }
       const body = command.fields.body;
       if (failAt && body === failAt) throw new Error('boom');
       ran.push(body);
@@ -117,6 +125,22 @@ describe('a group of writes', () => {
     const a = actions.proposeVcsAction({ ...input('single'), command: note('x') }) as { id: string };
     expect((await actions.approveAction(a.id)).state).toBe('done');
     stop();
+  });
+
+  it('appends the address of an upload of evidence to the comment that cites it, in the order the group runs', async () => {
+    const file = join(DATA, 'ev-1.png');
+    const upload: VcsCommand = { vcs: 'gitlab', via: 'api', method: 'POST', endpoint: 'projects/acme%2Fweb/uploads', fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: file };
+    const a = actions.proposeVcsGroup({ ...input('evidence'), evidence: { titles: ['The screen'], positions: [0], bodyAt: 1 } }, [upload, note('What I saw')]) as { id: string };
+    const told: unknown[][] = [];
+    const stop = actions.onActionDone((_a, responses) => told.push(responses));
+    await actions.approveAction(a.id);
+    stop();
+    // The upload ran first (a command of its own, with the file as its body) and answered where the file lives; the comment follows with the image embedded
+    // under its text, inside the same "sim". The proposal stored the body without a URL: only what the host answered put it there.
+    const bodies = listAudit().map((l) => l.fields.body).filter(Boolean);
+    expect(bodies).toEqual(['What I saw\n\n![The screen](https://example.test/uploads/ev-1.png)']);
+    expect(ran).toEqual(bodies);
+    expect(told).toHaveLength(1);
   });
 });
 

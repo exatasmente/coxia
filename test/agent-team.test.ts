@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 17, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: 18, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });
@@ -40,7 +40,7 @@ describe('the five system agents', () => {
 
   it('are seeded from agents.roles when they have to be added back', () => {
     const roles = neutralConfig().agents.roles;
-    const r = validateConfig({ schemaVersion: 17, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
+    const r = validateConfig({ schemaVersion: 18, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
     expect(r.config?.agents.team.find((a) => a.id === 'deep')).toMatchObject({ model: { role: 'turn' }, instructions: 'dig' });
   });
 
@@ -152,7 +152,7 @@ describe('the migration to schema 5', () => {
     );
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(17);
+    expect(r.config.schemaVersion).toBe(18);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -173,7 +173,7 @@ describe('the migration to schema 5', () => {
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(17);
+    expect(r.config.schemaVersion).toBe(18);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });
@@ -263,7 +263,7 @@ describe('autonomy of each agent', () => {
   it('is off for the system agents and for an agent nobody said anything about', () => {
     expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
     expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
-    const r = validateConfig({ schemaVersion: 17, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    const r = validateConfig({ schemaVersion: 18, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
   });
@@ -340,7 +340,7 @@ describe('the tools an agent uses', () => {
     v12.schemaVersion = 12;
     for (const a of v12.agents.team) delete a.tools;
     const r = migrateConfig(v12, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(17);
+    expect(r.config.schemaVersion).toBe(18);
     expect(r.config.agents.team.some((a: { tools?: unknown }) => a.tools !== undefined)).toBe(false);
     expect(r.notes.join(' ')).toContain('an agent may name the tools it uses');
   });
