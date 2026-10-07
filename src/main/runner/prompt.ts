@@ -103,15 +103,16 @@ export function threadText(messages: ForumMessage[]): string {
 export const DIFF_LIMIT = DIFF_MAX;
 
 /**
- * How to test an interface in this stage's sandbox: the general way, then one line for each piece the person switched on, saying whether the stage has it. Absent when
- * the person switched neither on, so such a stage's prompt is what it was.
+ * How to test an interface in this stage: the general way (the sandbox's, or the computer's for an agent that runs commands there), then one line for each piece the
+ * person switched on, saying whether the stage has it. Absent when the person switched neither on, so such a stage's prompt is what it was.
  */
-function guiRules(gui: SandboxGui, look: boolean): string {
+function guiRules(gui: SandboxGui, look: boolean, host: boolean): string {
+  const out = gui.out ?? '';
   return [
-    cp('runner.rules.gui'),
+    host ? cp('runner.rules.gui.host', { out }) : cp('runner.rules.gui'),
     gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
     gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
-    look ? cp('runner.rules.gui.look') : cp('runner.rules.gui.noLook'),
+    look ? (host ? cp('runner.rules.gui.look.host', { out }) : cp('runner.rules.gui.look')) : cp('runner.rules.gui.noLook'),
   ]
     .filter(Boolean)
     .join(' ');
@@ -129,7 +130,7 @@ export function systemText(i: StageInput): string {
     rules,
     i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true) : '',
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),

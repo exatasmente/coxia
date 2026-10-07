@@ -1,6 +1,6 @@
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { RunnerSandbox } from '../../shared/config/types';
 import { readOnlyPathProblem } from '../../shared/sandboxPaths';
@@ -16,6 +16,7 @@ import { invalidateSandboxStatus, sandboxStatus } from './probe';
 import { type ProxyDecision, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
 import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
+import { type HostDisplay, startHostDisplay } from './display';
 import { loginEnv } from '../loginPath';
 import { nameResolverBinds, systemLayout } from './system';
 
@@ -57,8 +58,8 @@ export interface OpenOptions {
   clone?: string;
 }
 
-/** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal'> & Pick<HostSessionOptions, 'approve'>;
+/** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -83,6 +84,8 @@ export interface SandboxServiceOptions {
   status?: (force: boolean) => Promise<SandboxStatus>;
   deps?: SessionDeps;
   hostDeps?: HostSessionDeps;
+  /** Starts the display program of a host stage (default: the real one); for a test. */
+  startDisplay?: (program: string) => Promise<HostDisplay | null>;
   /** The environment a host command starts from (default: the app's, with the login PATH). */
   hostEnv?: () => Promise<NodeJS.ProcessEnv>;
 }
@@ -190,6 +193,29 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
   });
   const status = o.status ?? ((force: boolean) => sandboxStatus(force));
 
+  /**
+   * The browsers folder answers to the guards of a read-only folder and is bound like one, but is not put on PATH: it holds browsers, not tools. A folder the guards
+   * refuse fails the stage, as a listed folder does; one that is gone only leaves the stage without browsers, and the app says so.
+   */
+  function browsersOf(config: RunnerSandbox): { browsers: string | null; browsersGone?: string } {
+    if (!config.browsersPath) return { browsers: null };
+    try {
+      return { browsers: readOnlyFolders([config.browsersPath], home, protect)[0] };
+    } catch (e) {
+      if (!(e instanceof SandboxError && e.code === 'path-missing')) throw e;
+      return { browsers: null, browsersGone: config.browsersPath };
+    }
+  }
+
+  /** The `bin` of every read-only folder the workspace listed, for the display program to be looked for in; a folder that is gone or refused is left out. */
+  function listedBins(config: RunnerSandbox): string[] {
+    try {
+      return readOnlyFolders(config.readOnlyPaths, home, protect).flatMap((p) => [join(p, 'bin'), p]);
+    } catch {
+      return [];
+    }
+  }
+
   return {
     status: (force = false) => status(force),
     async open(opts) {
@@ -219,18 +245,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
         }
-        // The browsers folder answers to the guards of a read-only folder and is bound like one, but is not put on PATH: it holds browsers, not tools.
-        // A folder the guards refuse fails the stage, as a listed folder does; one that is gone only leaves the stage without browsers, and the app says so.
-        let browsersGone: string | undefined;
-        let browsers: string | null = null;
-        if (opts.config.browsersPath) {
-          try {
-            browsers = readOnlyFolders([opts.config.browsersPath], home, protect)[0];
-          } catch (e) {
-            if (!(e instanceof SandboxError && e.code === 'path-missing')) throw e;
-            browsersGone = opts.config.browsersPath;
-          }
-        }
+        const { browsers, browsersGone } = browsersOf(opts.config);
         const pathDirs = roFolders.flatMap((p) => [join(p, 'bin'), p]);
         const askedDisplay = opts.display === true && opts.config.display === true;
         const xvfb = askedDisplay ? displayProgram(pathDirs) : null;
@@ -260,18 +275,47 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
     },
     async openHost(opts) {
       const worktree = realpathSync(opts.worktree);
-      if (!opts.reader) return openHostSession({ cwd: worktree, limits: opts.config.limits, env: o.hostEnv ?? (() => loginEnv()), onExec: opts.onExec, approve: opts.approve }, o.hostDeps);
+      const env = o.hostEnv ?? (() => loginEnv());
+      const { browsers, browsersGone } = browsersOf(opts.config);
+      const askedDisplay = opts.display === true && opts.config.display === true;
+      const wantsGui = !!browsers || !!browsersGone || askedDisplay;
       // An agent that only reads works in a copy, as in a sandbox: what it builds or installs there is thrown away. Its commands still reach the whole computer.
-      mkdirSync(o.dir, { recursive: true, mode: 0o700 });
-      const stageDir = join(realpathSync(o.dir), randomUUID().slice(0, 12));
-      const tree = join(stageDir, 'tree');
+      let cwd = worktree;
+      let cleanup: (() => Promise<void> | void)[] | undefined;
+      if (opts.reader) {
+        mkdirSync(o.dir, { recursive: true, mode: 0o700 });
+        const stageDir = join(realpathSync(o.dir), randomUUID().slice(0, 12));
+        cwd = join(stageDir, 'tree');
+        try {
+          await copyTree(worktree, cwd, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
+        } catch (e) {
+          removeTree(stageDir);
+          throw e;
+        }
+        cleanup = [() => void removeTree(stageDir)];
+      }
+      // The display is the stage's own, never the person's screen: a program of its own, started after the copy so a failed copy leaves nothing running.
+      let display: 'on' | 'missing' | 'failed' | null = null;
+      let displayName: string | undefined;
+      if (askedDisplay) {
+        const loginPath = ((await env().catch(() => process.env)).PATH ?? '').split(delimiter).filter((p) => isAbsolute(p));
+        const program = displayProgram([...listedBins(opts.config), ...loginPath]);
+        const started = program ? await (o.startDisplay ?? startHostDisplay)(program) : null;
+        display = started ? 'on' : program ? 'failed' : 'missing';
+        if (started) {
+          displayName = started.name;
+          cleanup = [...(cleanup ?? []), () => started.stop()];
+        }
+      }
       try {
-        await copyTree(worktree, tree, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
+        return openHostSession(
+          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
+          o.hostDeps,
+        );
       } catch (e) {
-        removeTree(stageDir);
+        for (const c of cleanup ?? []) await Promise.resolve(c()).catch(() => undefined);
         throw e;
       }
-      return openHostSession({ cwd: tree, limits: opts.config.limits, env: o.hostEnv ?? (() => loginEnv()), onExec: opts.onExec, approve: opts.approve, cleanup: [() => void removeTree(stageDir)] }, o.hostDeps);
     },
     guiStatus(config) {
       let browsers: SandboxGuiStatus['browsers'] = 'unset';
@@ -284,13 +328,8 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           browsers = e instanceof SandboxError && e.code === 'path-refused' ? 'refused' : 'missing';
         }
       }
-      let pathDirs: string[] = [];
-      try {
-        pathDirs = readOnlyFolders(config.readOnlyPaths, home, protect).flatMap((p) => [join(p, 'bin'), p]);
-      } catch {
-        // A listed folder that is gone or refused already fails the stage on its own; the display is looked for on the system's path then.
-      }
-      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(pathDirs) ? 'ready' : 'missing';
+      // A listed folder that is gone or refused already fails a sandbox stage on its own; the display is looked for on the system's path then.
+      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
       return { browsers, display };
     },
     purge() {

@@ -39,6 +39,8 @@ export interface SandboxGui {
   browsersGone?: string;
   /** The virtual display: on, asked for and no display program found (`missing`), started and never came up (`failed`); null: not asked for. */
   display: 'on' | 'missing' | 'failed' | null;
+  /** A host session only: the real folder the stage saves screenshots in (a sandbox has `/coxia/out` at a fixed place). */
+  out?: string;
 }
 
 /** An image the stage saved in its output folder, read for the model, or why it was not. */
@@ -49,9 +51,9 @@ export interface SandboxSession {
   readonly description?: string;
   /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
   readonly stageDir?: string;
-  /** What the sandbox offers to test an interface; absent: nothing was asked for (a host session, a sandbox with neither setting on). */
+  /** What the sandbox offers to test an interface; absent: nothing was asked for (a session with neither setting on). */
   readonly gui?: SandboxGui;
-  /** Reads an image the stage saved in its output folder (`/coxia/out` inside); absent where there is no such folder (a host session). */
+  /** Reads an image the stage saved in its output folder (`/coxia/out` inside; a host session's own folder, `gui.out`); absent where there is no such folder. */
   readImage?(path: string): ImageRead;
   /**
    * Hands a file to the inside, read-only, without a command: the app writes it into the stage's control folder, which the sandbox sees at `/coxia/ctl`.
@@ -337,8 +339,8 @@ export function readOutputText(outDir: string, name: string, max: number): strin
  * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
  * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
  */
-export function readOutputImage(outDir: string, path: string): ImageRead {
-  const rel = path.startsWith(`${OUT}/`) ? path.slice(OUT.length + 1) : path.startsWith('/') ? null : path;
+export function readOutputImage(outDir: string, path: string, shown: string = OUT): ImageRead {
+  const rel = path.startsWith(`${shown}/`) ? path.slice(shown.length + 1) : path.startsWith('/') ? null : path;
   if (!rel || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
   let fd: number | null = null;
   try {
@@ -359,7 +361,7 @@ export function readOutputImage(outDir: string, path: string): ImageRead {
     }
     const mediaType = imageMediaType(buf.subarray(0, Math.min(got, 12)));
     if (!mediaType) return { ok: false, why: 'not-image' };
-    return { ok: true, path: `${OUT}/${rel}`, mediaType, data: buf.subarray(0, got).toString('base64') };
+    return { ok: true, path: `${shown}/${rel}`, mediaType, data: buf.subarray(0, got).toString('base64') };
   } catch {
     return { ok: false, why: 'not-file' };
   } finally {

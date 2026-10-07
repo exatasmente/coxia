@@ -24,8 +24,8 @@ export function shellToolImpl(session: SandboxSession): ToolImpl {
 export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTools | null): ToolImpl {
   return {
     name: VIEW_IMAGE_TOOL_NAME,
-    description: viewImageDescription(!!evidence),
-    parameters: viewImageSchema(!!evidence) as unknown as Json,
+    description: viewImageDescription(!!evidence, session.gui?.out),
+    parameters: viewImageSchema(!!evidence, session.gui?.out) as unknown as Json,
     async run(input, ctx) {
       const r = await lookAtImage(session, evidence, input);
       if (!r.ok) return { response: r.text, render: (x) => String(x) };
@@ -52,7 +52,7 @@ export async function shellMcpServer(session: SandboxSession, evidence?: Evidenc
         sdk.tool(SHELL_TOOL_NAME, session.description ?? SHELL_DESCRIPTION, { command: z.string() }, async (args) => ({ content: [{ type: 'text' as const, text: await runShell(session, args) }] })),
         ...(offersViewImage(session, evidence)
           ? [
-              sdk.tool(VIEW_IMAGE_TOOL_NAME, viewImageDescription(!!evidence), { source: z.string() }, async (args) => {
+              sdk.tool(VIEW_IMAGE_TOOL_NAME, viewImageDescription(!!evidence, session.gui?.out), { source: z.string() }, async (args) => {
                 const r = await lookAtImage(session, evidence, args);
                 if (!r.ok) return { content: [{ type: 'text' as const, text: r.text }] };
                 const image = { type: 'image' as const, data: r.data, mimeType: r.mediaType };

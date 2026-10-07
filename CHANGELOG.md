@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent that runs commands on the computer can test an interface too.** The two settings of "Testing an interface in the sandbox" (the browsers folder and the virtual display for QA) now also reach an agent set to `shell: host`: its commands see the browsers folder through `PLAYWRIGHT_BROWSERS_PATH`, a QA stage gets a display of its own (an Xvfb the app starts and ends with the stage, never the person's screen), screenshots go to a folder the app makes and `ViewImage` reads only from there, and the stage's prompt explains how to test on the computer (a free port, an empty data folder for the app under test). Until now such a stage had none of this and could only read the code.
+
 ## [0.8.0-beta.5] - 2026-10-07
 
 ### Fixed

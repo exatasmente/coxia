@@ -317,9 +317,11 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     }
   };
   try {
-    if (host) return await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal });
-    // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox.
-    const session = await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display: outputKindOf(stage.kind) === 'qa' });
+    // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox and every host session.
+    const display = outputKindOf(stage.kind) === 'qa';
+    const session = host
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });

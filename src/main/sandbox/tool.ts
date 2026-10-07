@@ -2,7 +2,7 @@
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { MAX_IMAGE_BYTES } from '../imageType';
 import type { EvidenceTools } from '../evidence/tool';
-import type { ExecResult, ImageRead, SandboxSession } from './session';
+import { type ExecResult, type ImageRead, OUTPUT_DIR, type SandboxSession } from './session';
 
 // The `Shell` tool: the one way an agent set to `shell: sandbox` runs a command. It takes one string and nothing else: the mounts, the limits, the network and the environment
 // come from the configuration, never from the model. The same function serves both engines (see engineTool.ts).
@@ -53,20 +53,23 @@ export async function runShell(session: SandboxSession, input: unknown): Promise
 export const VIEW_IMAGE_TOOL_NAME = 'ViewImage';
 export const VIEW_IMAGE_MCP_TOOL_NAME = `mcp__${SHELL_MCP_SERVER}__${VIEW_IMAGE_TOOL_NAME}`;
 
-/** What the model is told: the evidence ids are mentioned only when the stage keeps evidence, so a stage without it never hears of them. */
-export const viewImageDescription = (withEvidence: boolean): string =>
+/**
+ * What the model is told: the evidence ids are mentioned only when the stage keeps evidence, so a stage without it never hears of them. `out` is the folder a host
+ * session saves in; a sandbox has its fixed `/coxia/out`.
+ */
+export const viewImageDescription = (withEvidence: boolean, out?: string): string =>
   // i18n-ignore-start: tool description for the model: English by design
-  'Shows you an image (PNG, JPEG, GIF or WebP, at most 4 MB) that you saved in /coxia/out inside the sandbox, such as a screenshot of the interface you are testing. ' +
-  'Give the path (/coxia/out/name.png) or the name of a file in that folder. Nothing outside /coxia/out can be read.' +
+  `Shows you an image (PNG, JPEG, GIF or WebP, at most 4 MB) that you saved in ${out ?? OUTPUT_DIR}${out ? '' : ' inside the sandbox'}, such as a screenshot of the interface you are testing. ` +
+  `Give the path (${out ?? OUTPUT_DIR}/name.png) or the name of a file in that folder. Nothing outside ${out ?? OUTPUT_DIR} can be read.` +
   (withEvidence ? ' It also shows a piece of evidence of this stage, by its id (like "ev-3"): use it to check what a mark looks like before marking again.' : '');
 // i18n-ignore-end
 
-export const viewImageSchema = (withEvidence: boolean) =>
+export const viewImageSchema = (withEvidence: boolean, out?: string) =>
   ({
     type: 'object',
     properties: {
       // i18n-ignore: tool description for the model: English by design
-      source: { type: 'string', description: withEvidence ? 'The image in /coxia/out (an absolute path in it, or a file name), or an evidence id (like "ev-3")' : 'The image in /coxia/out (an absolute path in it, or a file name)' },
+      source: { type: 'string', description: withEvidence ? `The image in ${out ?? OUTPUT_DIR} (an absolute path in it, or a file name), or an evidence id (like "ev-3")` : `The image in ${out ?? OUTPUT_DIR} (an absolute path in it, or a file name)` },
     },
     required: ['source'],
   }) as const;
@@ -76,15 +79,15 @@ export const offersViewImage = (session: SandboxSession | null | undefined, evid
   (!!evidence && !!session) || (!!session?.readImage && !!session.gui && (session.gui.browsers !== null || session.gui.display === 'on'));
 
 /** Why an image was not shown, for the model: what to do instead. */
-export function imageRefusal(r: Exclude<ImageRead, { ok: true }>): string {
+export function imageRefusal(r: Exclude<ImageRead, { ok: true }>, out: string = OUTPUT_DIR): string {
   // i18n-ignore-start: tool result for the model: English by design
   switch (r.why) {
     case 'outside':
-      return 'Only images saved in /coxia/out can be viewed: save the screenshot there (for example /coxia/out/home.png) and ask again.';
+      return `Only images saved in ${out} can be viewed: save the screenshot there (for example ${out}/home.png) and ask again.`;
     case 'missing':
-      return 'There is no such file in /coxia/out.';
+      return `There is no such file in ${out}.`;
     case 'not-file':
-      return 'That is not a regular file (a link, a folder or a pipe): save the image as a plain file in /coxia/out.';
+      return `That is not a regular file (a link, a folder or a pipe): save the image as a plain file in ${out}.`;
     case 'too-big':
       return 'The image is larger than 4 MB: take a smaller one (a smaller viewport or a crop of the element).';
     case 'not-image':
@@ -114,9 +117,9 @@ export async function lookAtImage(session: SandboxSession, evidence: EvidenceToo
   if (evidence && (EVIDENCE_ID.test(source) || !session.readImage)) {
     const a = await evidence.view({ source });
     if (!a.image) return { ok: false, text: a.text };
-    if (a.image.data.length > MAX_IMAGE_BYTES) return { ok: false, text: imageRefusal({ ok: false, why: 'too-big' }) };
+    if (a.image.data.length > MAX_IMAGE_BYTES) return { ok: false, text: imageRefusal({ ok: false, why: 'too-big' }, session.gui?.out) };
     return { ok: true, path: source, mediaType: a.image.media, data: Buffer.from(a.image.data).toString('base64'), text: a.text };
   }
   const r: ImageRead = session.readImage ? session.readImage(source) : { ok: false, why: 'missing' };
-  return r.ok ? r : { ok: false, text: imageRefusal(r) };
+  return r.ok ? r : { ok: false, text: imageRefusal(r, session.gui?.out) };
 }

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
-import { closeSync, existsSync, mkdtempSync, openSync, rmSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SandboxLimits } from '../../shared/config/types';
@@ -7,13 +7,16 @@ import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { scrubbedEnv } from '../engine/guard';
 import { tail } from '../runner/commands';
-import { type ExecResult, type SandboxSession, readTailNoFollow } from './session';
+import { type ExecResult, type SandboxGui, type SandboxSession, readOutputImage, readTailNoFollow } from './session';
 
 // The session of an agent set to `shell: host`: the same Shell tool, log and limits of time as a sandbox, but every command runs on this computer, as the person who runs
 // the app, with the login PATH and the app's environment cleaned of what looks like a credential. Nothing confines it: it reaches what the person reaches (the network,
 // the container engine, a display, an emulator). It is the person's choice, made on the computer, for one agent. Each command starts its own process group, so a process
 // it leaves in the background (a dev server) stays up for the next command and is ended with the others when the stage ends. With `approve`, no command starts before the
 // person allows it: the time spent waiting is not the stage's time for commands.
+//
+// To test an interface (`gui`), the session adds what a sandbox gives by itself: the browsers folder in `PLAYWRIGHT_BROWSERS_PATH`, the stage's own virtual display in
+// `DISPLAY` (never the person's screen: without the virtual display, none) and a folder to save screenshots in, the only place `ViewImage` reads from.
 
 export interface HostSessionOptions {
   /** Where the commands run: the worktree, or the throwaway copy of an agent that only reads. */
@@ -26,8 +29,10 @@ export interface HostSessionOptions {
   onExec?: (result: ExecResult, mode: 'run' | 'refused') => void;
   /** Asked before each command starts; a refusal comes back to the model as a command that did not run, with the person's note. */
   approve?: (command: string) => Promise<{ ok: boolean; note?: string }>;
-  /** What to undo once everything has ended: the copy of a reader. */
+  /** What to undo once everything has ended: the copy of a reader, the display. */
   cleanup?: (() => Promise<void> | void)[];
+  /** Asked for by the caller, who found the browsers and started the display: the session makes the output folder and adds the variables. Absent: nothing changes. */
+  gui?: { browsers: string | null; browsersGone?: string; display: SandboxGui['display']; /** `DISPLAY` for the commands; set when `display` is `on`. */ displayName?: string };
 }
 
 export interface HostSessionDeps {
@@ -48,6 +53,26 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
   const results: ExecResult[] = [];
   // Output goes to a file, not a pipe: a process left in the background keeps writing after the command ends, and a closed pipe would kill it.
   const outDir = mkdtempSync(join(tmpdir(), 'coxia-host-'));
+  // Screenshots and traces, apart from the commands' output files: the one folder `ViewImage` reads.
+  const shots = o.gui ? join(outDir, 'out') : null;
+  if (shots) mkdirSync(shots, { mode: 0o700 });
+  const gui: SandboxGui | undefined = o.gui && shots ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display, out: shots } : undefined;
+  // The variables a command starts with to test an interface. With the display on, a Wayland session or an authority file of the person's must not win over it.
+  const guiEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+    if (!o.gui || !shots) return env;
+    const next: NodeJS.ProcessEnv = { ...env, COXIA_OUT: shots };
+    if (o.gui.browsers) next.PLAYWRIGHT_BROWSERS_PATH = o.gui.browsers;
+    if (o.gui.display === 'on' && o.gui.displayName) {
+      next.DISPLAY = o.gui.displayName;
+      delete next.WAYLAND_DISPLAY;
+      delete next.XAUTHORITY;
+    } else if (o.gui.display === 'missing' || o.gui.display === 'failed') {
+      // The person asked for the virtual display, not for their screen: a window app finds none and fails, and the agent was told to mark that scenario not run.
+      delete next.DISPLAY;
+      delete next.WAYLAND_DISPLAY;
+    }
+    return next;
+  };
   let spent = 0;
   let closed = false;
   let queue: Promise<unknown> = Promise.resolve();
@@ -84,7 +109,7 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
         .then(async (answer) => {
           if (closed) return refuse('closed');
           if (!answer.ok) return record({ command, exitCode: null, timedOut: false, output: answer.note ? redact(answer.note.slice(0, 500)) : '', ms: 0, refused: 'denied' }, 'refused');
-          start(await o.env().catch(() => ({ ...process.env })));
+          start(guiEnv(await o.env().catch(() => ({ ...process.env }))));
         });
       const start = (env: NodeJS.ProcessEnv): void => {
         if (closed) return refuse('closed');
@@ -143,6 +168,7 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
 
   return {
     description: HOST_SHELL_DESCRIPTION,
+    ...(gui ? { gui, readImage: (path: string) => readOutputImage(shots as string, path, shots as string) } : {}),
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);

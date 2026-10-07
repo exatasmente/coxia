@@ -222,9 +222,10 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
     const made: FakeSession = {
       ...(host ? { description: 'host' } : {}),
       stageDir,
-      // A sandbox (never a host session) carries what it offers to test an interface, and reads images from its output folder.
-      ...(!host && o.gui ? { gui: o.gui } : {}),
-      ...(!host ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
+      // What the stage offers to test an interface, and the reading of images from its output folder: a sandbox always reads one, a host session when it was given the settings
+      // (and then its folder is a real one, named in `gui.out`).
+      ...(o.gui ? { gui: host ? { out: '/tmp/coxia-host-test/out', ...o.gui } : o.gui } : {}),
+      ...(!host || o.gui ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
       closed: false,
       asked,
       log,
