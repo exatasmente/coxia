@@ -64,7 +64,27 @@ way when it stores it.
 
 **Only what was verified is asserted.** The system text of every runner agent says to state
 only what the stage verified (read, ran or saw working) and to mark the rest as not verified.
-This is text for a model: the app does not check whether the claim is true.
+The app does check one narrow claim of that kind: a QA scenario that says it was executed has
+to rest on a command the stage's own sandbox ran, and the app records it as read when nothing
+backs it (see "What a QA stage says it ran" below). Everything else the agent asserts is its
+own word: the app does not check whether it is true.
+
+**What a QA stage says it ran.** In a QA stage with a sandbox, a scenario answered as
+`executed` with no command of its own backs it is checked against what the stage's sandbox
+ran: the same scenario comes back to the agent once, in the same stage and with the same
+tools, to keep the evidence it looked at, point at the command behind the claim, or say it
+was only read (or did not run). A scenario that still has nothing behind it after that one
+round is recorded as read and marked unbacked, and the conversation says so. A downgraded
+scenario does not fail the stage: only a failed scenario whose severity blocks sends the work
+back. What the run recorded is the one source the test plan, the QA comment and the run's
+record are written from, so a scenario the app recorded as read is never called executed in
+any of them.
+
+**What the agent looked at.** An image of the stage's output folder the agent opened with the
+`ViewImage` tool and did not keep is kept by the app as evidence of the stage when the stage
+concludes, before the sandbox (and the stage's folder) is removed: it appears in the run's
+conversation, and what could not be kept (not an image, over the ceiling, gone) is said there
+as looked and not kept, with the reason. An image the agent itself kept is not kept twice.
 
 **The app runs commands before QA.** Before the QA stage, the app runs in the run's worktree,
 against the delivered code, the commands the workspace allows (`runner.commands`; with no

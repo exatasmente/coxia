@@ -6,6 +6,7 @@ export * from './squadCheck';
 export * from './routing';
 export * from './schema';
 export * from './sendBack';
+export * from './testPlan';
 export * from './transitions';
 export * from './usage';
 export * from './types';

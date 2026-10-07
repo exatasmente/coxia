@@ -11,7 +11,7 @@ import { setLanguage } from '../src/shared/i18n';
 import { commitFallback } from '../src/main/runner/git';
 import { git } from './helpers/conflictRepos';
 import { type Forge, HEAD, makeForge } from './helpers/fakeForge';
-import { type Boot, boot, doc, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -344,6 +344,24 @@ describe('a QA failure that does not block', () => {
     expect(qa[0][1].split('\n')[0]).toBe('**QA: nothing blocks; there are notes**');
     expect(qa[0][1]).toContain('Notes that do not block');
     expect(qa[0][1]).toContain('- edge: not in the spec');
+  });
+});
+
+describe('a QA scenario the app recorded as read', () => {
+  it('is never called executed in the comment: the scenario lines come from the record', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
+    script(b);
+    // A sandbox with no command behind the claim: the app records the scenario as read, and the agent's own text still says it was executed.
+    b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] }], comment: comment([['Scenarios verified and their result', 'a: passed (executed).']]) }));
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    const qa = issueNotes().filter(([, body]) => body.includes('stage=qa -->'));
+    expect(qa).toHaveLength(1);
+    expect(qa[0][1]).toContain('a: passed (read)');
+    expect(qa[0][1]).not.toContain('passed (executed)');
   });
 });
 

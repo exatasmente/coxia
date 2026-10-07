@@ -151,7 +151,9 @@ async function view(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   // The media type comes from the bytes: a path in the output folder can hold anything, and a GIF or a WebP told as JPEG is refused by the provider.
   const media = imageMediaType(Buffer.from(found.bytes.subarray(0, 12)));
   if (!media) return { text: t('main.evidence.refused.notPicture') };
-  return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media } };
+  // A file of the output folder is reported back: the stage looked at it and did not keep it, and the app has to say so (or keep it) before the sandbox goes.
+  const looked = found.from ? undefined : resolveOutputPath(ctx.stageDir, source);
+  return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media, ...(looked?.ok && looked.path ? { looked: looked.path } : {}) } };
 }
 
 export function evidenceToolsOf(ctx: EvidenceContext): EvidenceTools {

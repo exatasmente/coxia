@@ -1,6 +1,6 @@
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
@@ -8,8 +8,10 @@ import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { type ModelRole } from '../../shared/settings';
 import { t } from '../../shared/i18n';
-import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput } from '../../shared/runs';
+import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type Scenario, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput, testPlanWithResults } from '../../shared/runs';
 import { withActivityContext } from '../activity';
+import type { ResolvedRole } from '../config-resolve';
+import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots } from '../agents';
 import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
@@ -22,11 +24,12 @@ import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { evidenceToolsOf } from '../evidence/handlers';
-import { copyToCycleFolder } from '../evidence/store';
+import { copyToCycleFolder, putEvidence } from '../evidence/store';
 import { evidencePlacementOf, type EvidenceRecord } from '../../shared/evidence';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
+import { prompt as cp } from '../cyclePrompts';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
@@ -62,7 +65,7 @@ export class StageError extends Error {
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
-export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true }>;
+export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null }>;
 
 export interface ExecutorDeps {
   engine: StageEngine;
@@ -481,6 +484,42 @@ export function readConfinement(root: string, role: ModelRole, onDenied?: (denia
   return { root, roots, hooks: readConfinedHooks({ root, roots, onDenied }) };
 }
 
+/** Whether this kind of stage checks its scenarios against the commands of its stage (only QA does). */
+const checked = (kind: OutputKind): boolean => kind === 'qa';
+
+const summariesOf = (session: SandboxSession | null, ran: CommandResult[] | undefined) => (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) }));
+
+/** The scenarios of an answer with their backing checked against what the stage's sandbox ran; a stage with no sandbox reads them without touching anything. */
+const judgeScenarios = (o: StageOutput, kind: OutputKind, session: SandboxSession | null, ran: CommandResult[] | undefined) => (checked(kind) ? backEvidence(o.scenarios, summariesOf(session, ran), !!session) : o.scenarios);
+
+/** The commands the stage's sandbox ran, numbered, as the agent reads them in the repair round. */
+const numberedCommands = (session: SandboxSession, ran: CommandResult[] | undefined): string => {
+  const own = session.log.filter((e) => !e.refused && e.n > (ran?.length ?? 0));
+  return own.map((e) => `#${e.n}: ${clipText(redact(e.command.replace(/\s+/g, ' ')), 300)} — ${endedAs(e)}`).join('\n');
+};
+
+/**
+ * The one repair round given to a QA stage whose answer claims an execution nothing backs. The same agent is asked once more, in its own stage and with its
+ * own tools and sandbox, to keep the evidence it looked at, point at the command behind the claim, or say the scenario was only read (or did not run at all).
+ * The answer comes whole, with its documents and comment, so what is written and published is what the round ended with. Null when the round fails: the first
+ * answer then stands, and the scenarios it left unbacked are recorded as read.
+ */
+async function repairRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, session: SandboxSession, ran: CommandResult[] | undefined, unbacked: readonly Scenario[], first: { sessionId: string | null; engine: ResolvedRole['engine'] }): Promise<unknown | null> {
+  const said = unbacked.map((s) => `${s.name}: ${s.detail.trim() || '—'}`).join('\n');
+  const seen = numberedCommands(session, ran);
+  const text = cp('runner.repair.unbacked', { count: unbacked.length, scenarios: said, commands: seen || cp('runner.repair.noCommands') });
+  // The same agent, the same tools, the same sandbox: the call continues the session of the answer it is about, on the engine that opened that session, so the
+  // round sees what the agent read and works with the tools of the stage. `incoming` is left out: a message of the person is not what this round waits for.
+  const round: AgentCall = { ...call, prompt: text, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined };
+  try {
+    // One link, one idle clock: the round runs inside the caller's `guard`, as the first call did, so the attempt's cap of wall-clock counts once.
+    return (await watch.guard(d.engine(round, commands))).data;
+  } catch (e) {
+    console.error('[runner] the repair round failed', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
@@ -597,6 +636,35 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The evidence a stage keeps while it works: each one is recorded with the run and published in its conversation, and the ids are what the stage output cites.
   const keptIds: string[] = [];
   const keptRecords: EvidenceRecord[] = [];
+  // The images of the stage's output folder the agent looked at with `ViewImage` and did not keep, by path: kept (or said as looked and not kept) while the
+  // sandbox is still open. An evidence id it looked at is not here: that piece is already kept.
+  const lookedPaths = new Set<string>();
+  const onLooked = (path: string): void => void lookedPaths.add(path);
+  /**
+   * Keeps what the agent looked at and did not keep, before the sandbox takes the stage folder away: every picture of the output folder it opened with `ViewImage`
+   * is kept as evidence of the stage, and what cannot be kept is said in the conversation with the reason. An evidence id it looked at is already kept.
+   */
+  const keepLooked = (): void => {
+    const dir = session?.stageDir;
+    if (!dir || !d.keepEvidence) return;
+    let keptCount = 0;
+    for (const path of lookedPaths) {
+      const put = putEvidence(d.dataDir(), run, { path, name: basename(path), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      if (!put.ok) {
+        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(path), reason: t(`main.evidence.refused.${put.problem}`) }, stage: stage.id });
+        continue;
+      }
+      keptCount++;
+      keptIds.push(put.record.id);
+      keptRecords.push(put.record);
+      try {
+        d.keepEvidence(run.id, put.record);
+      } catch (e) {
+        console.error('[runner] could not publish a piece of evidence', e instanceof Error ? e.message : e);
+      }
+    }
+    if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
+  };
   const evidence =
     session?.stageDir && d.keepEvidence
       ? evidenceToolsOf({
@@ -608,6 +676,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
           onKept: (record) => {
             keptIds.push(record.id);
             keptRecords.push(record);
+            if (!record.from) lookedPaths.add(record.name);
             try {
               d.keepEvidence?.(run.id, record);
             } catch (e) {
@@ -632,6 +701,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
     evidence,
+    onLooked,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     abort,
@@ -752,8 +822,33 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   };
 
   let data: unknown;
+  // The session the first answer was given in, and the engine that holds it: what the repair round continues from.
+  let answered: { sessionId: string | null; engine: ResolvedRole['engine'] } = { sessionId: null, engine: 'claude-sdk' };
   try {
-    data = (await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)))).data;
+    const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
+    data = firstRun.data;
+    // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows.
+    answered = { sessionId: firstRun.sessionId ?? null, engine: rc().agentModel(call.agent.model).engine };
+    // The answer is read and checked while the sandbox is still open: a QA claim of execution that nothing backs goes back to the agent for one repair
+    // round, and the pictures it looked at are kept (or said as looked and not kept). All of it has to happen before the sandbox (and the stage folder)
+    // goes away. The two model calls of the attempt run inside the same guarded work above, so the stage's clock counts the attempt once.
+    const first = readOutput(data, kind);
+    const judged = judgeScenarios(first, kind, session, ran);
+    if (checked(kind) && session && judged.some((s) => s.unbacked)) {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.repair', params: { agent: agent.id, names: judged.filter((s) => s.unbacked).map((s) => s.name).join('; ') }, stage: stage.id });
+      const repaired = await repairRound(d, call, commands, watch, session, ran, judged.filter((s) => s.unbacked), answered);
+      if (repaired !== null) {
+        data = repaired;
+        const second = readOutput(data, kind);
+        // One round, not two: a scenario that comes back unbacked is recorded as read without another question.
+        const after = judgeScenarios(second, kind, session, ran);
+        for (const s of after.filter((x) => x.unbacked)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.unbacked', params: { agent: agent.id, name: s.name }, stage: stage.id });
+      } else {
+        for (const s of judged.filter((x) => x.unbacked)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.unbacked', params: { agent: agent.id, name: s.name }, stage: stage.id });
+      }
+    }
+    // What the stage looked at and did not keep is kept as evidence of the stage here, before the sandbox takes the folder away; what cannot be kept is said.
+    if (session) keepLooked();
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
@@ -764,7 +859,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     inbox.close();
     // The attempt is over: the cap of conversations starts again, so a stage returned and run again may talk once more.
     resetOpened(run.id, stage.id);
-    // The sandbox ends before the app reads or commits anything of the worktree: no process of the stage can race it.
+    // The sandbox ends after the app read the answer, ran the repair round and kept what the agent looked at: no process of the stage can race the commit.
     await session?.close();
   }
 
@@ -783,7 +878,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   }
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
-  if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), !!session);
+  if (kind === 'qa') output.scenarios = judgeScenarios(output, kind, session, ran);
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
   // the same worktree, and its commands join the list under its name.
   const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
@@ -791,12 +886,15 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const written: string[] = [];
   if (memoryTouched) written.push(MEMORY_FILE);
+  // The test plan a QA stage writes says what the run recorded, not what the agent claimed: its scenario lines are taken from the scenarios the app checked,
+  // so the document and the record never disagree. The agent's other sections stay as it wrote them.
+  const planContent = (name: string, content: string): string => (kind === 'qa' && stage.artifacts.includes(name) ? testPlanWithResults(content, output.scenarios, config.language) : content);
   for (const a of output.artifacts) {
     if (!stage.artifacts.includes(a.name)) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });
       continue;
     }
-    writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(a.content, run.issue));
+    writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(planContent(a.name, a.content), run.issue));
     written.push(a.name);
   }
   if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };

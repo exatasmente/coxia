@@ -43,8 +43,8 @@ export interface SandboxGui {
   out?: string;
 }
 
-/** An image the stage saved in its output folder, read for the model, or why it was not. */
-export type ImageRead = { ok: true; path: string; mediaType: string; data: string } | { ok: false; why: 'outside' | 'missing' | 'not-file' | 'too-big' | 'not-image' };
+/** An image the stage saved in its output folder, read for the model, or why it was not. `file` is the real path on this computer of the file the picture came from. */
+export type ImageRead = { ok: true; path: string; mediaType: string; data: string; file?: string } | { ok: false; why: 'outside' | 'missing' | 'not-file' | 'too-big' | 'not-image' };
 
 export interface SandboxSession {
   /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
@@ -361,7 +361,7 @@ export function readOutputImage(outDir: string, path: string, shown: string = OU
     }
     const mediaType = imageMediaType(buf.subarray(0, Math.min(got, 12)));
     if (!mediaType) return { ok: false, why: 'not-image' };
-    return { ok: true, path: `${shown}/${rel}`, mediaType, data: buf.subarray(0, got).toString('base64') };
+    return { ok: true, path: `${shown}/${rel}`, mediaType, data: buf.subarray(0, got).toString('base64'), file: join(outDir, rel) };
   } catch {
     return { ok: false, why: 'not-file' };
   } finally {

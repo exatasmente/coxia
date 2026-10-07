@@ -140,6 +140,35 @@ describe('runAgent on the open engine', () => {
     expect(names).not.toContain('Edit');
     expect(names).not.toContain('Bash');
   });
+
+  it('continues the session of an earlier call, on the engine that opened it, and reports the session it left open', async () => {
+    fake.requests.length = 0;
+    const agent = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local', model: 'qwen3:8b' } });
+    const first = await runAgent<{ fala: string }>({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4 });
+    expect(first.sessionId).not.toBe('');
+    const before = fake.chats().length;
+    // A round that continues that session: the dialog the model sees starts with the prompt of the first call, so nothing the agent read was lost.
+    const round = await runAgent<{ fala: string }>({
+      agent,
+      prompt: 'keep the evidence or point at the command',
+      schema: obj({ fala: str }),
+      system: 'sys',
+      cwd: root,
+      label: 'reviewer',
+      maxTurns: 4,
+      resume: { session: first.sessionId as string, engine: 'open' },
+    });
+    // The call answers in the session it was given, and reports it back for whatever continues from it.
+    const resumed = fake.chats().slice(before).map((c) => JSON.stringify(c.body?.messages)).join('\n');
+    expect(resumed).toContain('keep the evidence or point at the command');
+    // The round adds no session of its own, and it answers in the session the first call opened: the two report one and the same session.
+    const { ATAS } = await import('../src/main/env');
+    const { readIndex } = await import('../src/main/sessions-core');
+    const index = readIndex(ATAS);
+    expect(index.filter((e) => e.id === first.sessionId)).toHaveLength(1);
+    // And the round recorded no session of its own: the sessions the index lists are the ones the file's calls opened, the round not among them.
+    expect(index.map((e) => e.id)).not.toContain(round.sessionId ?? '');
+  });
 });
 
 describe('a reading agent of a run on the open engine', () => {

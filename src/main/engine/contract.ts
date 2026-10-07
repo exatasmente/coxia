@@ -133,8 +133,18 @@ export interface EngineRequest {
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
+  /**
+   * A call that continues the session of the call before it (`resume`): the same dialog and the same tools, with one prompt of the app in between. Absent: the
+   * call opens its own session and starts from its prompt alone.
+   */
+  resume?: string;
   /** The evidence tools of a stage that keeps evidence (a stage with a sandbox): the engines offer them next to the `Shell` tool. */
   evidence?: EvidenceTools;
+  /**
+   * A picture of the stage's output folder the agent opened with `ViewImage`: the file it looked at, told the moment it looked. What a stage saw and did not keep
+   * is kept (or said as seen and not kept) while its sandbox is still open; an evidence id it looked at is not reported (it is already kept).
+   */
+  onLooked?: (path: string) => void;
   /**
    * A ceremony agent: a command the code does not allow is asked of the person instead of refused (the call waits for the answer), and the rules the person
    * gave the agent ("allow always") let a command through without asking. Never for a write to the code host, which is asked every time.
