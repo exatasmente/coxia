@@ -52,6 +52,16 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...runner, conversations: { roundsPerConversation: 6, perStage: 3, extra: 1 } } }).ok).toBe(false);
   });
 
+  it('keeps the documentation sources as they were: the same fields and types, and autoDetect on by default', () => {
+    // What autoDetect does with them is the app's behaviour; the format of the file did not change, so there is no migration step for them.
+    const docs = CONFIG_SCHEMA.properties?.docs;
+    expect(Object.keys(docs?.properties ?? {})).toEqual(['autoDetect', 'claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles', 'specsDir']);
+    expect(docs?.properties?.autoDetect.type).toBe('boolean');
+    expect(neutralConfig().docs).toEqual({ autoDetect: true, claudeMdRoots: [], skillsDirs: [], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null });
+    const filled = { ...neutralConfig(), docs: { autoDetect: true, claudeMdRoots: ['~/a'], skillsDirs: ['~/b'], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null } };
+    expect(validateConfig(filled).config?.docs).toEqual(filled.docs);
+  });
+
   it('accepts the example legacy profile merged over the defaults', () => {
     const merged = mergeDeep(neutralConfig(), exampleProfile().config);
     expect(validateConfig(merged).errors).toEqual([]);
@@ -90,7 +100,7 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 13 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: 17 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
   });
@@ -119,7 +129,7 @@ describe('config schema', () => {
   });
 
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 12, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: 16, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);

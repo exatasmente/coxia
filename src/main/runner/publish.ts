@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { autonomousOf } from '../../shared/config/squads';
 import type { AgentDef, CommentTemplate, WorkspaceConfig } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
@@ -22,7 +23,7 @@ import {
   flowOfRun,
   markerOf,
   priorityStageOf,
-  pushStageOf,
+  pushesAt,
   readMarker,
   recordSubject,
   recordCommentDraft,
@@ -103,6 +104,8 @@ export interface Door {
   /** Puts the commands in Actions as one proposal; false when the same proposal is already there. */
   propose(meta: ProposalMeta, commands: VcsCommand[]): boolean;
   proposePush(meta: PushMeta): boolean;
+  /** Pushes the run's branch by itself, audited, under the autonomy block's "push" choice. Throws the reason it did not happen. */
+  push(meta: PushMeta, by: string): Promise<void>;
   /** Puts one step of a release in Actions as a proposal; false when the same proposal is already there. */
   proposeRelease(meta: ReleaseMeta): boolean;
   /** Runs one local step of a release by itself, audited as the agent. A push is refused by the door whatever is asked. Throws the reason it did not happen. */
@@ -167,11 +170,6 @@ export interface Publisher {
    * the request runs by itself (`autonomous`), as a proposal waiting for a "yes" otherwise (the runner learns of it through `actionDone`), refused in a test workspace.
    */
   requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade>;
-  /**
-   * An issue an agent named in the thread proposes: always a proposal waiting for the person's "yes" in Actions (the runner learns of it through `actionDone`, purpose
-   * `mention-issue`), never created by itself, refused in a test workspace.
-   */
-  proposeIssue(runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string }): Promise<IssueMade>;
   /** The run started in a squad that carries a label on the tracker: the issue gets it, by itself when the squad's liaison runs by itself and as a proposal otherwise. */
   squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void>;
   /** The run entered a stage that sets a label on the tracker (and left one that had set another). */
@@ -287,6 +285,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const known = run.comments.pr;
     const { issue, repo } = projects(run);
     if (known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId))) return { project: repo, iid: Number(known.noteId), url: known.url };
+    // A documentation run has no issue to link a pull request to: what it opened is the one it recorded, and nothing is looked for under the issue number 0.
+    if (run.docs) return null;
     try {
       const found = (await provider.linkedMrs(issue, run.issue.iid)).find((m) => m.sourceBranch === run.branch && m.state === 'open');
       if (!found) return null;
@@ -302,6 +302,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function deliver(runId: string, x: Delivery): Promise<void> {
     let run = need(runId);
+    // A documentation run has no issue: what would be a comment on it stays in the run's own thread, which is its record, and nothing is drafted, proposed or written.
+    if (x.target === 'issue' && run.docs) return;
     const hash = hashOf(x.body);
     const had = run.comments[x.key];
     if (had && (had.status === 'published' || had.status === 'proposed') && had.bodyHash === hash) return;
@@ -660,26 +662,54 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return `Closes ${issue === repo ? '' : issue}#${run.issue.iid}`;
   };
 
-  /** At the end of the stage that ends with the push: the pull request's description is written, and the push waits in Actions. */
+  /**
+   * The autonomy block that decides this run's steps, and one of its choices as it stands right now. A run of a release is left out whatever the block says: the steps
+   * that leave the machine in a release (the push of the branch, the push of a tag) run the repository's own script as the person and only ever wait for a "sim".
+   */
+  const chooses = (run: Run, choice: 'push' | 'pullRequest'): boolean => (run.subject ? false : choiceOn(autonomyOf(deps.config(), flowKeyOf(run.squad)), choice));
+
+  /** At the end of the stage that ends with the push: the pull request's description is written, and the push goes out by itself or waits in Actions. */
   async function pushStage(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
     const run = need(runId);
-    const pr = config.devCycle.comments.pr;
+    const pr = config.devCycle.comments[run.docs ? 'docs-pr' : 'pr'];
     if (pr) {
       const marker = markerOf(run.id, 'pr');
-      const closes = closesOf(run);
+      // What the pull request of an issue's run says last is the line that closes the issue; a documentation run has none to close.
+      const closes = run.docs ? undefined : closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
       moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
+    } else if (run.docs) {
+      // No template for it (the person removed it): the description is what the stage said it did, still checked like any text that leaves the machine.
+      const checked = checkComment(end.output.summary, { ...checkOptions(run, config), status: '', marker: markerOf(run.id, 'pr'), technicalDetail: false });
+      const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
+      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: '', title }, now()));
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.
     const attempt = run.stages.find((s) => s.stage === end.stage.id)?.attempts ?? 1;
-    const created = door.proposePush({ key: `push:${run.id}:${attempt}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: tr('main.runner.push.summary', { branch: run.branch }), runId: run.id, branch: run.branch, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: tr('main.runner.push.summary', { branch: run.branch }) } });
+    const meta = { key: `push:${run.id}:${attempt}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: tr('main.runner.push.summary', { branch: run.branch }), runId: run.id, branch: run.branch, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: tr('main.runner.push.summary', { branch: run.branch }) } };
+    // The autonomy block may let the push go out by itself, audited; a test workspace and a workspace with no host still refuse it where they always did.
+    if (chooses(run, 'push')) {
+      const refusal = door.refusal();
+      if (refusal) {
+        say(run, 'runner.push.refused', { reason: refusal }, end.stage.id);
+      } else {
+        try {
+          await door.push(meta, end.agent.id);
+          say(run, 'runner.push.pushed', { branch: run.branch }, end.stage.id);
+        } catch (e) {
+          say(run, 'runner.push.failed', { reason: message(e) }, end.stage.id);
+        }
+      }
+      return;
+    }
+    const created = door.proposePush(meta);
     if (created) say(run, 'runner.push.proposed', { branch: run.branch }, end.stage.id);
   }
 
-  /** The push was carried out: the pull request waits in Actions for its own "sim" (unless one is already there). */
+  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). */
   async function pullRequest(runId: string): Promise<void> {
     const run = need(runId);
     const provider = door.provider();
@@ -689,11 +719,25 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const draft = run.comments.pr;
       const { repo } = projects(run);
       const title = (draft?.title || run.issue.title).trim();
-      // The description comes from the template; a cycle with none still says which issue the pull request closes.
-      const closes = closesOf(run);
-      const body = draft?.body ? draft.body : `${closes}\n`;
+      // The description comes from the template; a cycle with none still says which issue the pull request closes (a documentation run closes none).
+      const body = draft?.body ? draft.body : run.docs ? '' : `${closesOf(run)}\n`;
       const target = (await provider.getRepo(repo)).defaultBranch;
       const commands = await provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
+      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out.
+      if (chooses(run, 'pullRequest')) {
+        const refusal = door.refusal();
+        if (refusal) {
+          say(run, 'runner.pr.refused', { reason: refusal });
+          return;
+        }
+        try {
+          const responses = await door.post({ key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' }, commands);
+          await pullRequestOpened(runId, responses);
+        } catch (e) {
+          say(run, 'runner.pr.failed', { reason: message(e) });
+        }
+        return;
+      }
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: body, unit: { runId, purpose: 'run-pr' }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
       moveRun(d, runId, (r) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: hashOf(body), body, title }, now()));
       if (created) say(run, 'runner.pr.proposed', { title }, 'implement');
@@ -803,10 +847,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       say(after, 'runner.undo.removed', { title: after.comments[key].title || key });
       return;
     }
+    // A write an answer proposed in the run's thread was approved: the thread hears that it went out, so a proposal raised there is not answered in silence.
+    if (unit.purpose === 'mention-write') return say(run, 'runner.mention.writeDone', { agent: String(unit.agent ?? ''), summary: a.summary ?? '' });
     if (unit.purpose === 'review' && provider) {
       const round = Number(unit.round);
-      const draft = run.comments[`review-${round}`];
-      const commands = a.commands ?? (a.command ? [a.command] : []);
+      const draft = run.comments[`review-${round}`];      const commands = a.commands ?? (a.command ? [a.command] : []);
       return recordReviewPosted(runId, `review-${round}`, { round, commands, responses, provider, pr: { project: String(unit.project), iid: Number(unit.iid) }, bodyHash: String(unit.bodyHash ?? draft?.bodyHash ?? ''), body: draft?.body ?? '' });
     }
     if (unit.purpose === 'comment' && provider) {
@@ -842,6 +887,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (!to) return;
     const config = deps.config();
     const run = need(runId);
+    // A documentation run has no issue whose labels could be read or proposed: it is told nothing of a priority (the flow of a workspace can be edited, so the guard is here).
+    if (run.docs) return;
     const levels = config.devCycle.priority.labels;
     // Only the stage that owns the priority proposes it: a level any other stage returned is said not to have been taken.
     const flow = flowOfRun(run, config);
@@ -872,6 +919,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const known = run.comments.pr;
     const { issue, repo } = projects(run);
     if (known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId))) return (await provider.getMr(repo, Number(known.noteId))).state;
+    if (run.docs) return null;
     const found = (await provider.linkedMrs(issue, run.issue.iid)).find((m) => m.sourceBranch === run.branch);
     return found ? found.state : null;
   }
@@ -892,6 +940,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (w.kind === 'beta-age') return { over: await betaAged(run, provider, w) };
       if (w.kind === 'beta-out') return { over: await betaOut(run, provider) };
       if (w.kind === 'stable-out') return { over: await stableOut(run) };
+      // What is left is read from the issue (its label, a reply to it): a documentation run has none, so such a wait is never over by itself and the person skips it.
+      if (run.docs) return { over: false };
       if (w.kind === 'label') {
         const want = (w.label ?? '').trim().toLowerCase();
         return { over: !!want && (await provider.getIssue(issue, run.issue.iid)).labels.some((l) => l.toLowerCase() === want) };
@@ -916,6 +966,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const remove = e.previous?.trackerStatus && e.previous.trackerStatus !== add ? e.previous.trackerStatus : null;
     if ((!add || add === e.previous?.trackerStatus) && !remove) return;
     const run = need(runId);
+    // A documentation run has no issue to carry a status label.
+    if (run.docs) return;
     const refusal = door.refusal();
     if (refusal) return say(run, 'runner.status.refused', { label: add ?? remove ?? '' }, e.stage.id);
     const provider = door.provider();
@@ -944,6 +996,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
 
   async function requestIssue(runId: string, e: { key: string; squad: string; title: string; body: string; label: string | null; by: string; autonomous: boolean }): Promise<IssueMade> {
     const run = need(runId);
+    // A documentation run has no tracker project of its own to open an issue in for another squad.
+    if (run.docs) return { status: 'no-host', reason: '' };
     const refusal = door.refusal();
     if (refusal) {
       say(run, 'runner.request.refused', { title: e.title });
@@ -974,32 +1028,14 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
-  // ---- the issue an agent named in the thread proposes ----------------------------------------------------------------------------
-
-  async function proposeIssue(runId: string, e: { key: string; title: string; body: string; labels: string[]; by: string; stage: string }): Promise<IssueMade> {
-    const run = need(runId);
-    const refusal = door.refusal();
-    if (refusal) {
-      say(run, 'runner.mention.issueRefused', { agent: e.by, title: e.title, reason: refusal }, e.stage);
-      return { status: 'refused', reason: refusal };
-    }
-    const provider = door.provider();
-    if (!provider) return { status: 'no-host', reason: '' };
-    const { issue } = projects(run);
-    const labels = [...new Set(e.labels.map((l) => l.trim()).filter(Boolean))].slice(0, 10);
-    const commands = await provider.planWrite({ op: 'createIssue', project: issue, title: e.title, body: e.body, labels });
-    const summary = tr('main.runner.mention.issueSummary', { title: e.title, agent: e.by });
-    const created = door.propose({ key: `mention-issue:${runId}:${e.key}`, issue: run.issue.iid, issueTitle: run.issue.title, summary, detail: e.body, unit: { runId, purpose: 'mention-issue', key: e.key }, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: summary } }, commands);
-    if (created) say(run, 'runner.mention.issueProposed', { agent: e.by, title: e.title }, e.stage);
-    return { status: 'proposed' };
-  }
-
   // ---- the label of the squad ---------------------------------------------------------------------------------------------------
 
   async function squadRouted(runId: string, e: { squad: string; label: string; by: string; autonomous: boolean }): Promise<void> {
     const label = e.label.trim();
     if (!label) return;
     const run = need(runId);
+    // A documentation run has no issue to label with a squad.
+    if (run.docs) return;
     if (door.refusal()) return say(run, 'runner.squad.refused', { label });
     const provider = door.provider();
     if (!provider) return;
@@ -1426,7 +1462,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         if (end.kind === 'review') await review(runId, end);
         else await stageComment(runId, end);
         if (end.output.priority) await proposePriority(runId, end);
-        if (end.kind === 'work' && pushStageOf(deps.config(), flowOfRun(need(runId), deps.config()))?.id === end.stage.id) await pushStage(runId, end);
+        if (end.kind === 'work' && pushesAt(deps.config(), flowOfRun(need(runId), deps.config()), end.stage.id)) await pushStage(runId, end);
       }),
     asked: (runId, e) => guarded(runId, () => question(runId, e)),
     gateDecided: (runId, e) => guarded(runId, () => gate(runId, e)),
@@ -1438,7 +1474,6 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
     squadRouted: (runId, e) => guarded(runId, () => squadRouted(runId, e)),
     requestIssue: (runId, e) => requestIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
-    proposeIssue: (runId, e) => proposeIssue(runId, e).catch((err) => ({ status: 'failed' as const, reason: message(err) })),
     releaseBrief,
     releaseStarted: (runId, e) => guarded(runId, () => releaseStarted(runId, e)),
     releaseStep: (runId, input, who) => releaseStep(runId, input, who).catch((e) => `Did not happen: ${message(e)}`),

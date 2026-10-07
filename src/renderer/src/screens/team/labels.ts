@@ -1,4 +1,4 @@
-import type { SandboxReason } from '../../../../shared/sandbox';
+import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
 import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
 import type { TeamTab } from './teamNav';
 
@@ -23,7 +23,22 @@ export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.track
 export const SHELL_LABEL: Record<AgentShell, string> = { none: 'ui.team.shell.none', allowlist: 'ui.team.shell.allowlist', sandbox: 'ui.team.shell.sandbox', host: 'ui.team.shell.host' };
 export const SHELL_HINT: Record<AgentShell, string> = { none: 'ui.team.shell.none.hint', allowlist: 'ui.team.shell.allowlist.hint', sandbox: 'ui.team.shell.sandbox.hint', host: 'ui.team.shell.host.hint' };
 
-export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry' };
+export const SANDBOX_NETWORK_LABEL: Record<SandboxNetwork, string> = { off: 'ui.runner.sandbox.network.off', registry: 'ui.runner.sandbox.network.registry', open: 'ui.runner.sandbox.network.open' };
+/** What the sandbox has to test an interface, as Settings words it. */
+export const SANDBOX_BROWSERS_LABEL: Record<SandboxGuiStatus['browsers'], string> = {
+  unset: 'ui.runner.sandbox.gui.browsers.unset',
+  ready: 'ui.runner.sandbox.gui.browsers.ready',
+  missing: 'ui.runner.sandbox.gui.browsers.missing',
+  refused: 'ui.runner.sandbox.gui.browsers.refused',
+  empty: 'ui.runner.sandbox.gui.browsers.empty',
+};
+
+export const SANDBOX_DISPLAY_LABEL: Record<SandboxGuiStatus['display'], string> = {
+  off: 'ui.runner.sandbox.gui.display.off',
+  ready: 'ui.runner.sandbox.gui.display.ready',
+  missing: 'ui.runner.sandbox.gui.display.missing',
+};
+
 export const SANDBOX_REASON_LABEL: Record<SandboxReason, string> = {
   platform: 'ui.sandbox.reason.platform',
   'no-bwrap': 'ui.sandbox.reason.no-bwrap',
@@ -60,6 +75,7 @@ export const WAIT_LABEL: Record<WaitKind, string> = {
   'beta-out': 'ui.flow.wait.beta-out',
   'stable-out': 'ui.flow.wait.stable-out',
   budget: 'ui.flow.wait.budget',
+  plugin: 'ui.flow.wait.plugin',
 };
 
 export const EVENT_LABEL: Record<CommentEventKey, string> = {

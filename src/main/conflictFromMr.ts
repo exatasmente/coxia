@@ -39,13 +39,12 @@ export interface MrRead {
 
 export interface MrChecks {
   me: string;
-  defaultBranch: string;
 }
 
-// Throws the pt-BR reason when this MR is not one the app resolves.
+// Throws the pt-BR reason when this MR is not one the app resolves. Any target branch is: the merge brings the MR's own target into its source
+// branch (a release branch as much as the default one), which is what the host's own merge would need.
 export function assertResolvable(ref: string, mr: MrRead, c: MrChecks): void {
   if (mr.state !== 'open') throw new Error(t('main.conflictMr.notOpen', { ref, state: mr.state }));
-  if (mr.targetBranch !== c.defaultBranch) throw new Error(t('main.conflictMr.notMain', { ref, target: mr.targetBranch, main: c.defaultBranch }));
   if (mr.author !== c.me) throw new Error(t('main.conflictMr.notYours', { ref, author: mr.author }));
   // The conflict flag is computed lazily by the host and is often stale (the release tool's docs): the local merge in Preparar decides.
 }

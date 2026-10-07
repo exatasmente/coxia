@@ -147,4 +147,22 @@ maybe('a real sandbox', () => {
       await s.close();
     }
   });
+
+  // The open mode shares the computer's whole network. What can be shown without reaching it is that an interface of the host exists inside (an unshared network has
+  // only loopback); resolving and reaching a public name is left to a command, and is marked as not exercised where the machine cannot reach one.
+  it('shares the computer network in open mode, and can resolve a public name when the machine reaches one', async () => {
+    const config = neutralSandbox();
+    config.network = 'open';
+    const s = await service.open({ worktree, reader: false, config });
+    try {
+      const interfaces = await s.exec('tail -n +3 /proc/net/dev | cut -d: -f1');
+      expect(interfaces.output.split('\n').map((l) => l.trim()).filter(Boolean).some((n) => n !== 'lo')).toBe(true);
+      if (existsSync('/etc/resolv.conf')) {
+        const resolved = await s.exec('getent hosts example.com 2>&1 || echo "no-getent"');
+        expect(resolved.output).not.toContain('no-getent');
+      }
+    } finally {
+      await s.close();
+    }
+  });
 });

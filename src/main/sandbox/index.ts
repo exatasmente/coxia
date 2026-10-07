@@ -1,10 +1,10 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { RunnerSandbox } from '../../shared/config/types';
 import { readOnlyPathProblem } from '../../shared/sandboxPaths';
-import type { SandboxStatus } from '../../shared/sandbox';
+import type { SandboxGuiStatus, SandboxStatus } from '../../shared/sandbox';
 import { t } from '../../shared/i18n';
 import { copyTree } from './copy';
 import { dependencyBinds } from './dependencies';
@@ -17,7 +17,7 @@ import { type ProxyDecision, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
 import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
 import { loginEnv } from '../loginPath';
-import { systemLayout } from './system';
+import { nameResolverBinds, systemLayout } from './system';
 
 export type { ExecResult, SandboxSession } from './session';
 export { SandboxError } from './errors';
@@ -48,6 +48,13 @@ export interface OpenOptions {
   onNote?: (note: SandboxNote) => void;
   /** Aborting it stops the copy of a reader's tree. */
   signal?: AbortSignal;
+  /** The stage asks for a virtual display (a QA stage); it is started only when the workspace's `display` switch is on too. */
+  display?: boolean;
+  /**
+   * The repository a tree that is not a git worktree was copied from (a mention's throwaway copy): its dependency links lead there, and are bound read-only like a
+   * worktree's. Ignored when the tree is a worktree, whose clone git names.
+   */
+  clone?: string;
 }
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders. */
@@ -62,6 +69,8 @@ export interface SandboxService {
   openHost(o: HostOpenOptions): Promise<SandboxSession>;
   /** Removes what a sandbox of an earlier process left (the app was killed). */
   purge(): void;
+  /** What a sandbox would have to test an interface with these settings: checked on this computer, never by starting anything. */
+  guiStatus(config: RunnerSandbox): SandboxGuiStatus;
 }
 
 export interface SandboxServiceOptions {
@@ -88,6 +97,24 @@ export function holdsRepository(folder: string): boolean {
   try {
     if (existsSync(join(folder, '.git'))) return true;
     return readdirSync(folder, { withFileTypes: true }).some((e) => e.isDirectory() && existsSync(join(folder, e.name, '.git')));
+  } catch {
+    return false;
+  }
+}
+
+/** The display program on the sandbox's own PATH: the `bin` of a listed folder (or the folder itself) first, then the system's. null: none, and the stage goes on without a display. */
+export function displayProgram(pathDirs: string[], exists: (path: string) => boolean = executable): string | null {
+  for (const dir of [...pathDirs, '/usr/local/bin', '/usr/bin']) {
+    const candidate = join(dir, 'Xvfb');
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+function executable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
   } catch {
     return false;
   }
@@ -183,14 +210,33 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           await copyTree(worktree, tree, opts.config.limits.copyMb * 1024 * 1024, opts.signal);
         }
         const git = gitMounts(worktree, tree ?? worktree, stageDir);
-        const deps = git.clone ? dependencyBinds(tree ?? worktree, worktree, git.clone) : { binds: [], outside: [] };
+        const clone = git.clone ?? opts.clone ?? null;
+        const deps = clone ? dependencyBinds(tree ?? worktree, worktree, clone) : { binds: [], outside: [] };
         for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
         const registry = opts.config.network === 'registry';
+        const openNet = opts.config.network === 'open';
         if (registry) {
           const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
         }
-        const roBinds: [string, string][] = [...git.binds, ...deps.binds, ...roFolders.map((p): [string, string] => [p, p])];
+        // The browsers folder answers to the guards of a read-only folder and is bound like one, but is not put on PATH: it holds browsers, not tools.
+        // A folder the guards refuse fails the stage, as a listed folder does; one that is gone only leaves the stage without browsers, and the app says so.
+        let browsersGone: string | undefined;
+        let browsers: string | null = null;
+        if (opts.config.browsersPath) {
+          try {
+            browsers = readOnlyFolders([opts.config.browsersPath], home, protect)[0];
+          } catch (e) {
+            if (!(e instanceof SandboxError && e.code === 'path-missing')) throw e;
+            browsersGone = opts.config.browsersPath;
+          }
+        }
+        const pathDirs = roFolders.flatMap((p) => [join(p, 'bin'), p]);
+        const askedDisplay = opts.display === true && opts.config.display === true;
+        const xvfb = askedDisplay ? displayProgram(pathDirs) : null;
+        // A shared network still needs to resolve names: the computer's own resolver configuration is bound in, read-only, and nothing else of it.
+        const resolver = openNet ? nameResolverBinds() : [];
+        const roBinds: [string, string][] = [...git.binds, ...deps.binds, ...roFolders.map((p): [string, string] => [p, p]), ...(browsers && !roFolders.includes(browsers) ? [[browsers, browsers] as [string, string]] : []), ...resolver];
         assertBindsSafe(roBinds, worktree, tree ?? worktree);
         const args = bwrapArgs({
           worktree,
@@ -198,12 +244,14 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           stageDir,
           system: systemLayout(),
           roBinds,
-          pathDirs: roFolders.flatMap((p) => [join(p, 'bin'), p]),
-          network: registry ? 'proxy' : 'off',
+          pathDirs,
+          network: registry ? 'proxy' : openNet ? 'open' : 'off',
           limits: opts.config.limits,
           tmpMb: 512,
+          ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),
         });
-        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup }, o.deps);
+        const gui = browsers || browsersGone || askedDisplay ? { browsers, ...(browsersGone ? { browsersGone } : {}), display: askedDisplay ? (xvfb ? ('start' as const) : ('missing' as const)) : null } : undefined;
+        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}) }, o.deps);
       } catch (e) {
         for (const c of cleanup) await Promise.resolve(c()).catch(() => undefined);
         removeTree(stageDir);
@@ -224,6 +272,26 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         throw e;
       }
       return openHostSession({ cwd: tree, limits: opts.config.limits, env: o.hostEnv ?? (() => loginEnv()), onExec: opts.onExec, approve: opts.approve, cleanup: [() => void removeTree(stageDir)] }, o.hostDeps);
+    },
+    guiStatus(config) {
+      let browsers: SandboxGuiStatus['browsers'] = 'unset';
+      if (config.browsersPath) {
+        try {
+          const dir = readOnlyFolders([config.browsersPath], home, protect)[0];
+          // Playwright keeps one folder per build (chromium-1234, chromium_headless_shell-1234, firefox-…): an empty folder offers nothing.
+          browsers = readdirSync(dir).some((n) => /^(chromium|chrome|firefox|webkit)/.test(n)) ? 'ready' : 'empty';
+        } catch (e) {
+          browsers = e instanceof SandboxError && e.code === 'path-refused' ? 'refused' : 'missing';
+        }
+      }
+      let pathDirs: string[] = [];
+      try {
+        pathDirs = readOnlyFolders(config.readOnlyPaths, home, protect).flatMap((p) => [join(p, 'bin'), p]);
+      } catch {
+        // A listed folder that is gone or refused already fails the stage on its own; the display is looked for on the system's path then.
+      }
+      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(pathDirs) ? 'ready' : 'missing';
+      return { browsers, display };
     },
     purge() {
       try {

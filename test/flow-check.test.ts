@@ -2,6 +2,7 @@
 // config validator, and what a stored config with a problem in its flow may and may not do.
 import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../src/shared/config';
+import { applyTemplate, docsFlow } from '../src/shared/cycles';
 import type { AgentDef, StageDef, WorkspaceConfig } from '../src/shared/config/types';
 import { createTranslator } from '../src/shared/i18n';
 import { FLOW_ERRORS, FLOW_WARNINGS, type FlowIssue, checkFlow, flowErrors, flowIssueText } from '../src/shared/runs';
@@ -209,5 +210,37 @@ describe('saving a config whose flow has a problem', () => {
     expect(agent(getConfig(), 'planner').stages).toEqual([]);
     expect(updateConfig((c) => { c.appearance.theme = 'dark'; return c; }).appearance.theme).toBe('dark');
     expect(() => updateConfig((c) => { byId(c, 'review').roundLimit = 3; return c; })).toThrow(/no agent/i);
+  });
+});
+
+describe('the flow of a documentation run', () => {
+  const withDocs = (edit: (c: WorkspaceConfig) => void = () => undefined): WorkspaceConfig => {
+    const c = applyTemplate(agentFlowConfig(), docsFlow);
+    edit(c);
+    return c;
+  };
+  const docsIssues = (c: WorkspaceConfig): FlowIssue[] => checkFlow({ stages: c.devCycle.flows!.docs, team: c.agents.team }, { asFlow: true });
+
+  it('has nothing to say: checked as a flow of its own, and with its stages known to the workspace\'s check', () => {
+    const c = withDocs();
+    expect(docsIssues(c)).toEqual([]);
+    // the workspace's own check, with the stages of the other flows around it: its agent is not idle and nothing is unknown
+    expect(checkFlow({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() })).toEqual([]);
+    expect(validateConfig(c).errors).toEqual([]);
+  });
+
+  it('says the writer is idle when no flow carries its stages, and that the stages have no one: the editor can tell the person', () => {
+    const c = withDocs((x) => {
+      x.agents.team.find((a) => a.id === 'docs-writer')!.stages = [];
+      for (const st of x.devCycle.flows!.docs) delete st.agentId;
+    });
+    expect(codes(checkFlow({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() }))).toContain('W:agent-idle:docs-writer');
+    expect(codes(docsIssues(c))).toEqual(['E:work-no-agent:docs-draft', 'E:work-no-agent:docs-publish', 'W:agent-idle:docs-writer']);
+  });
+
+  it('says what stops a run of it: a wait with no event, a gate that goes back to nowhere, an agent that left the team', () => {
+    expect(codes(docsIssues(withDocs((c) => delete c.devCycle.flows!.docs[3].waitsFor)))).toEqual(['E:wait-no-event:docs-ready']);
+    expect(codes(docsIssues(withDocs((c) => (c.devCycle.flows!.docs[1].returnsTo = 'docs-nowhere'))))).toContain('E:returns-nowhere:docs-gate');
+    expect(codes(docsIssues(withDocs((c) => (c.agents.team = c.agents.team.filter((a) => a.id !== 'docs-writer')))))).toEqual(['E:agent-unknown:docs-draft', 'E:agent-unknown:docs-publish']);
   });
 });

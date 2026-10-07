@@ -1,7 +1,7 @@
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
-import { type DenialCode, WRITE_TOOLS, checkPath, writeTarget } from '../engine/guard';
-import { noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
+import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
+import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
 
 // The hooks of an agent that changes files in its run's worktree. They are the same callbacks for both engines (the open engine runs them
 // through policyFromHooks), so a refusal reads the same on either. What they allow: read, search, write and edit inside the worktree, and
@@ -18,8 +18,20 @@ export interface Denial {
 
 export interface ConfineOptions {
   root: string;
+  /** The only folder inside `root` the agent may change; reading stays on the whole of `root`. */
+  writeRoot?: string;
+  /** Names directly under `writeRoot` that the app owns: the agent may not write them (a documentation run's ignore file and run folder). */
+  writeReserved?: readonly string[];
   /** The commands the agent may run, each exactly as typed. */
   commands: string[];
+  /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
+  onDenied?: (denial: Denial) => void;
+}
+
+export interface ReadConfinementOptions {
+  root: string;
+  /** Folders outside `root` a read may still reach: the documentation folders the config lists, and what `checkPath` is asked about after the worktree. */
+  roots?: string[];
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
 }
@@ -47,23 +59,9 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   const writeGuard: HookCallback = async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || !has(WRITE_TOOLS, input.tool_name)) return {};
     const target = writeTarget(input.tool_name, input.tool_input);
-    const check = checkPath(o.root, target, { isSecret: (p) => secretPath(p, o.root) });
+    // A narrow write folder must really be one inside the worktree: a `.coxia` that is a link would carry the writes away.
+    const check = checkPath(o.writeRoot ?? o.root, o.writeRoot ? anchored(o.root, target) : target, { isSecret: (p) => secretPath(p, o.root), ...(o.writeRoot ? { fence: o.root, reserved: o.writeReserved } : {}) });
     return check.ok ? {} : say(input.tool_name, target, check.code);
-  };
-
-  // Reading is confined too: the agent's own folder is all it needs, and a path elsewhere is somebody else's file.
-  const readGuard: HookCallback = async (input) => {
-    if (input.hook_event_name !== 'PreToolUse') return {};
-    const args = input.tool_input as { file_path?: unknown; path?: unknown; pattern?: unknown };
-    const wanted: unknown[] = [];
-    if (input.tool_name === 'Read') wanted.push(args.file_path);
-    else if (typeof args.path === 'string' && args.path.trim()) wanted.push(args.path);
-    if (input.tool_name === 'Glob' && typeof args.pattern === 'string' && /^[/~]|(^|\/)\.\.(\/|$)/.test(args.pattern)) wanted.push(globBase(args.pattern));
-    for (const p of wanted) {
-      const check = checkPath(o.root, p, { read: true });
-      if (!check.ok) return say(input.tool_name, p, check.code);
-    }
-    return {};
   };
 
   // The shell is the allow-list of the ceremonies with another list in it: only the commands the workspace named, character for character. The denial is the
@@ -82,9 +80,49 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   return {
     PreToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [writeGuard] },
-      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuard] },
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied })] },
       { matcher: 'Bash', hooks: [bashGuard] }, // i18n-ignore: the tool's name
       { matcher: 'WebFetch|WebSearch', hooks: [networkGuard] },
+    ],
+    PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
+  };
+}
+
+/**
+ * The guard over `Read`, `Grep` and `Glob`: the one path check, over the worktree and the extra roots a reading agent was given.
+ * Reading is confined too, because the agent's own folder is all it needs and a path elsewhere is somebody else's file.
+ */
+function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenied'>): HookCallback {
+  const say = (tool: string, target: unknown, code: RunnerDenialCode) => {
+    const what = typeof target === 'string' ? target.slice(0, 300) : '';
+    o.onDenied?.({ tool, target: what, code });
+    // The reason names what the agent tried, so it can correct itself instead of guessing; the wording of every code stays one catalog key.
+    return refuse(what ? `${cp(`runner.denied.${code}`)}: ${what}` : cp(`runner.denied.${code}`));
+  };
+  return async (input) => {
+    if (input.hook_event_name !== 'PreToolUse') return {};
+    const args = input.tool_input as { file_path?: unknown; path?: unknown; pattern?: unknown };
+    const wanted: unknown[] = [];
+    if (input.tool_name === 'Read') wanted.push(args.file_path);
+    else if (typeof args.path === 'string' && args.path.trim()) wanted.push(args.path);
+    if (input.tool_name === 'Glob' && typeof args.pattern === 'string' && /^[/~]|(^|\/)\.\.(\/|$)/.test(args.pattern)) wanted.push(globBase(args.pattern));
+    for (const p of wanted) {
+      const check = checkPath(o.root, p, { read: true, roots: o.roots });
+      if (!check.ok) return say(input.tool_name, p, check.code);
+    }
+    return {};
+  };
+}
+
+/**
+ * The hooks of an agent of a run that only reads: what a reader already had (the secret filter, the broad-search refusal and the
+ * secret result redaction) plus the path guard, never one instead of the other, so nothing that exists is loosened. Both engines run them.
+ */
+export function readConfinedHooks(o: ReadConfinementOptions): Hooks {
+  return {
+    PreToolUse: [
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf(o)] },
+      { matcher: 'Grep|Glob', hooks: [noBroadSearch] },
     ],
     PostToolUse: [{ matcher: 'Grep|Glob', hooks: [redactSecretResults] }],
   };

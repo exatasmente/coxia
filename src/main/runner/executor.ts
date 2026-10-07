@@ -1,13 +1,16 @@
+import { offersViewImage } from '../sandbox/tool';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
+import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
+import { type ModelRole } from '../../shared/settings';
 import { t } from '../../shared/i18n';
-import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushStageOf, readOutput } from '../../shared/runs';
+import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput } from '../../shared/runs';
 import { withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
-import { MaxTurnsError, ProviderBudgetError } from '../engine/contract';
+import { type AgentCall, extraReadRoots } from '../agents';
+import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -17,13 +20,19 @@ import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCo
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
-import { redact } from '../errorlog-core';
-import { type Denial, confinedHooks } from './hooks';
+import { redact, redactCode, redactDoc } from '../errorlog-core';
+import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type StageInput, stagePrompt, systemText } from './prompt';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
+import { prepareDocsFolder } from './docs';
+import { runDocsAsk } from '../harness/deliver';
+import { scanHarness } from '../harness/scan';
+import { behindOf } from '../harness/stale';
+import { STAMP_SUMMARY, finalizeHarness, stampHarness } from '../harness/finalize';
+import { HARNESS_DIR, HARNESS_OWN } from '../../shared/harness/format';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 
@@ -31,7 +40,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -53,6 +62,8 @@ export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ dat
 
 export interface ExecutorDeps {
   engine: StageEngine;
+  /** What the plugins that are on tell the agents; absent: nothing. */
+  pluginNotes?(): { name: string; note: string }[];
   config(): WorkspaceConfig;
   forum: ForumStore;
   /** The identity of a repository, when the workspace names none: its own `.git/config` by default (`repoIdentity`), never the global one. */
@@ -273,9 +284,22 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
+  const appendGui = (code: string, params: Record<string, string>): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params: { agent: agent.id, ...params }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+    }
+  };
   try {
     if (host) return await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal });
-    return await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal });
+    // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox.
+    const session = await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display: outputKindOf(stage.kind) === 'qa' });
+    const gui = session.gui;
+    // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
+    if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
+    if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
+    return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -330,8 +354,24 @@ function sendFromStage(d: ExecutorDeps, run: Run, stage: FlowStage, agent: Agent
  */
 function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, signal: AbortSignal, clock: StageClock): (command: string) => Promise<{ ok: boolean; note?: string }> {
   let trusted = false;
+  // The autonomy block of the run may let every command of a `shell: host` agent through; it is read when the stage opens its session, so a change applies from the next stage.
+  const auto = choiceOn(autonomyOf(d.config(), flowKeyOf(run.squad)), 'hostCommands');
+  // The command that ran under the autonomy is said as such, so the person keeps the mark that an agent had the machine's own shell without being asked.
+  let spotted = false;
+  const noteAuto = (command: string): void => {
+    if (spotted) return;
+    spotted = true;
+    try {
+      d.forum.append(runThreadId(run.id), { kind: 'system', author: { type: 'app' }, code: 'runner.command.autonomy', params: { agent: agent.id, n: 1, command: clipText(redact(command.replace(/\s+/g, ' ')), 300) }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record an autonomous command', e instanceof Error ? e.message : e);
+    }
+  };
   return async (command) => {
-    if (trusted || clock.allowed.has(command)) return { ok: true };
+    if (auto || trusted || clock.allowed.has(command)) {
+      if (auto && !trusted) noteAuto(command);
+      return { ok: true };
+    }
     if (!d.askCommand || signal.aborted) return { ok: false };
     const resume = clock.pause();
     try {
@@ -352,12 +392,16 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const writes = agent.permission === 'worktree';
+  // A documentation run's agent writes only in `.coxia/`, and only if that is a real folder of the worktree: a link committed in its place would take every write away.
+  if (writes && run.docs && !(await prepareDocsFolder(run.worktree))) throw new StageError('docs-folder-unsafe');
   // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too. It comes
   // before the sandbox is made, because the sandbox shares the folders those links point to.
-  if (writes || kind === 'qa') await ensureDependencies(d, run, stage.id);
+  // A documentation run reads and writes text: it runs no code, so it needs none of the repository's dependencies.
+  if ((writes || kind === 'qa') && !run.docs) await ensureDependencies(d, run, stage.id);
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
-  const session = agent.shell === 'sandbox' || agent.shell === 'host' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
+  // A documentation run's agent gets no command door at all, whatever its `shell` says: the shell tool does not pass the guard that keeps its writes inside `.coxia/`.
+  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
     return await runStage(d, run, flow, abort, usage, session, clock);
   } finally {
@@ -366,13 +410,24 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   }
 }
 
+/**
+ * The confinement of a reading agent of a run: the run's worktree and the documentation folders the config lists outside it. `undefined` when there is no
+ * worktree to be confined to (a call outside a run, or a stage whose worktree is gone): inventing a root would close the read over a folder that is not the run's.
+ */
+export function readConfinement(root: string, role: ModelRole, onDenied?: (denial: Denial) => void): ReadConfinement | undefined {
+  if (!existsSync(root)) return undefined;
+  const roots = extraReadRoots(root, role);
+  return { root, roots, hooks: readConfinedHooks({ root, roots, onDenied }) };
+}
+
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
   // The commands of the workspace's list, exactly as written: only for an agent that writes and is set to them (an agent saved before `shell` existed is).
-  const commands = writes && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
+  // A documentation run's agent runs none, whatever its `shell` says (no sandbox or host session is opened for it either): it reads with Read, Glob and Grep and writes only `.coxia/`.
+  const commands = writes && !run.docs && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;
@@ -394,14 +449,16 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   };
   const comment = askOf(stage.comment);
   // The first stage of a flow is where an issue comes in: the agent that works it may ask the person who reported it what is missing.
-  const reporter = kind === 'work' && flow[0]?.id === stage.id;
+  // A documentation run has no issue and so no one who reported it.
+  const reporter = kind === 'work' && flow[0]?.id === stage.id && !run.docs;
   // A stage before development (intake, refinement) may propose the priority, from the levels the workspace can write to the tracker.
   // Only the stage that owns the priority proposes it; the earlier ones are told the levels and may suggest one in their documents.
   const levels = stage.kind === 'backlog' && kind === 'work' ? writableLabels(config.devCycle.priority.labels) : [];
   const owns = priorityStageOf(flow)?.id === stage.id;
   const priority = levels.length && owns ? levels : undefined;
   const priorityHint = levels.length && !owns ? levels : undefined;
-  const pr = pushStageOf(config, flow)?.id === stage.id ? askOf('pr') : null;
+  // The description of a documentation run's pull request has its own template: it closes no issue and says what was left out of the import.
+  const pr = pushesAt(config, flow, stage.id) ? askOf(run.docs ? 'docs-pr' : 'pr') : null;
   // The front door of a run whose squad is not decided proposes it: the squads it may name, and why the scope rules left it open.
   const candidates = run.routing && flow[0]?.id === stage.id ? squadsOf(config).filter((q) => run.routing?.candidates.includes(q.id)) : [];
   const routing = run.routing && candidates.length ? { squads: candidates, why: run.routing.why } : undefined;
@@ -419,6 +476,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (missed) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.notRun', params: { list: missed.list }, stage: stage.id });
   }
 
+  // What a repository with documentation asks of a run that changes code (keep it true in the same change) and of its review (point at the rule the branch left behind).
+  // A repository with no `.coxia/` asks nothing, and a documentation run is the one that writes it.
+  const documented = (await scanHarness(wt).catch(() => null))?.entries.length ? !run.docs : false;
+  const behind = documented && kind === 'review' ? await behindOf(wt, run.base, run.cycleFolder).catch(() => []) : [];
+
   const input: StageInput = {
     run,
     stage,
@@ -429,6 +491,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commands,
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
+    docsKeep: documented && writes,
+    behind,
+    plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
     attempt,
     handoff: pendingHandoff(thread, agent.id),
@@ -444,7 +509,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
-    sandbox: session ? { network: config.runner.sandbox.network, reader: !writes, host: agent.shell === 'host' } : undefined,
+    sandbox: session
+      ? {
+          network: config.runner.sandbox.network,
+          reader: !writes,
+          host: agent.shell === 'host',
+          ...(session.gui ? { gui: session.gui, look: offersViewImage(session) && config.llm.providers.find((p) => p.id === config.llm.roles[agent.model.role ?? 'deep']?.provider)?.capabilities?.images !== false } : {}),
+        }
+      : undefined,
     diff: kind === 'review' ? { text: await branchDiff(wt, run.base, run.cycleFolder), stat: await branchStat(wt, run.base, run.cycleFolder), clipped: false } : null,
     // A release run says which version it is about, the state of its branch and what is aimed at it, as of the stage's start.
     release: run.subject ? releaseSection(run, await releaseStateOf(wt, run.subject.version), config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) : undefined,
@@ -459,13 +531,19 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
   };
 
+  // The agent of a documentation run reads the whole worktree and changes only `.coxia/`, which `executeStage` made sure exists as a real folder (a path guard needs its root to).
+  const writeRoot = writes && run.docs ? join(wt, HARNESS_DIR) : undefined;
+
   const call: AgentCall = {
     agent,
     prompt: stagePrompt(input),
     schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session }),
     system: systemText(input),
     cwd: wt,
-    confine: writes ? { root: wt, hooks: confinedHooks({ root: wt, commands, onDenied: denied }) } : undefined,
+    // The documentation of the repository (`.coxia/`) for this stage: chosen by the stage, the agent and the files the work touches. Nothing is read from git when there is none.
+    docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
+    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeReserved: HARNESS_OWN } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeReserved: writeRoot ? HARNESS_OWN : undefined, commands, onDenied: denied }) } : undefined,
+    readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
@@ -637,8 +715,16 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (noCodeChange) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.noCodeChange', params: { agent: agent.id }, stage: stage.id });
   // A stage that only writes documents never takes the agent's description for its commit: that describes code, and there is none.
   const code = writes && !noCodeChange;
-  const fallback = commitFallback(stage.label, code);
+  // i18n-ignore-next-line: the subject of a commit in the repository's history; a stage of the documentation flow is not "the draft the documentation changes"
+  const fallback = run.docs && code ? 'update the project documentation' : commitFallback(stage.label, code);
+  // The documentation the pass wrote (`.coxia/`) is checked before it is committed, so a local path or a credential never gets into the history; what was rewritten is told.
+  const docs = writes ? await finalizeHarness(wt, { redact: redactDoc, redactCode }) : null;
+  if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => t('main.runner.docs.checked.file', { file: f.file, paths: f.paths, secrets: f.secrets })).join('; ') }, stage: stage.id });
+  if (docs?.skipped.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.notAFile', params: { files: docs.skipped.join(', ') }, stage: stage.id });
+  for (const bad of docs?.invalid ?? []) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.invalidHeader', params: { file: bad.file, reason: bad.reason }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
+  // The files of the documentation this commit holds get the commit and the day they were checked, in a commit of their own: the agent cannot write a commit that does not exist yet.
+  if (commit && docs?.stamp.length && (await stampHarness(wt, docs.stamp, commit)).length) await commitAll(wt, commitMessage(config.runner.commitMessage, STAMP_SUMMARY, run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
 

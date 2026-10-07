@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type ForumMessage, type ThreadSummary, GENERAL_THREAD, SQUADS_CHANNEL } from '../src/shared/forum';
-import { applyMention, baselineSeen, forumLists, groupThread, markSeen, mentionAt, mentionOptions, mergeMessages, totalUnread, unreadOf } from '../src/shared/forumView';
+import { applyMention, baselineSeen, commandRound, forumLists, groupThread, markSeen, mentionAt, mentionOptions, mergeMessages, totalUnread, unreadOf } from '../src/shared/forumView';
 
 let seq = 0;
 const msg = (over: Partial<ForumMessage>): ForumMessage => ({
@@ -102,6 +102,40 @@ describe('the chain a question walks through the thread', () => {
     seq = 0;
     const list = [msg({ kind: 'post', author: dev }), msg({ kind: 'handoff', author: dev, to: 'qa' }), msg({ kind: 'decision', author: { type: 'person' } }), msg({ kind: 'request', author: lead, to: 'web-dev' })];
     expect(groupThread(list).map((r) => (r.type === 'message' ? r.message.kind : r.type))).toEqual(['post', 'handoff', 'decision', 'request']);
+  });
+});
+
+describe('the rounds of commands', () => {
+  const app = { type: 'app' } as const;
+  const line = (code: string, agent: string) => msg({ kind: 'system', author: app, code, params: { agent } });
+
+  it('folds the commands one agent ran one after the other into one round, the asks and the answers included', () => {
+    seq = 0;
+    const list = [
+      msg({ kind: 'post', author: { type: 'person' }, text: '@developer where is it?' }),
+      line('runner.command.ask', 'developer'),
+      line('runner.command.stage', 'developer'),
+      line('runner.exec.host', 'developer'),
+      line('runner.exec.host', 'developer'),
+      msg({ kind: 'post', author: dev, text: 'Here.' }),
+    ];
+    const rows = groupThread(list);
+    expect(rows.map((r) => r.type)).toEqual(['message', 'commands', 'message']);
+    const round = rows[1];
+    expect(round.type === 'commands' && round.agent).toBe('developer');
+    expect(round.type === 'commands' && round.messages.map((m) => m.seq)).toEqual([2, 3, 4, 5]);
+    expect(round.type === 'commands' && commandRound(round.messages)).toEqual({ ran: 2, waiting: false });
+  });
+
+  it('starts a new round for another agent, and after anything else is said', () => {
+    seq = 0;
+    const list = [line('runner.exec', 'developer'), line('runner.exec', 'qa'), msg({ kind: 'system', author: app, code: 'runner.partial', params: { agent: 'qa' } }), line('runner.exec', 'qa')];
+    expect(groupThread(list).map((r) => (r.type === 'commands' ? `${r.agent}:${r.messages.length}` : r.type))).toEqual(['developer:1', 'qa:1', 'message', 'qa:1']);
+  });
+
+  it('says a round whose last line is an ask still waits for the person', () => {
+    seq = 0;
+    expect(commandRound([line('runner.exec.host', 'developer'), line('runner.command.ask', 'developer')])).toEqual({ ran: 1, waiting: true });
   });
 });
 

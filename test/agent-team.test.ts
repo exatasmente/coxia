@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { addAgent, ensureSystemAgents, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, updateAgent } from '../src/shared/config/team';
+import { addAgent, ensureSystemAgents, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, toolsForAgent, updateAgent } from '../src/shared/config/team';
 import { LLM_ROLES, type WorkspaceConfig } from '../src/shared/config/types';
 import { CATALOGS } from '../src/shared/i18n';
 
@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 12, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: 16, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });
@@ -40,7 +40,7 @@ describe('the five system agents', () => {
 
   it('are seeded from agents.roles when they have to be added back', () => {
     const roles = neutralConfig().agents.roles;
-    const r = validateConfig({ schemaVersion: 12, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
+    const r = validateConfig({ schemaVersion: 16, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
     expect(r.config?.agents.team.find((a) => a.id === 'deep')).toMatchObject({ model: { role: 'turn' }, instructions: 'dig' });
   });
 
@@ -128,7 +128,7 @@ describe('validating the team', () => {
 
   it('describes every agent field in the schema', () => {
     const team = CONFIG_SCHEMA.properties?.agents.properties?.team;
-    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'autonomous', 'turnsTo', 'squad', 'instructions', 'system']);
+    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'tools', 'autonomous', 'turnsTo', 'squad', 'instructions', 'system']);
     expect(team?.items?.required).toEqual(['id', 'name']);
   });
 });
@@ -152,7 +152,7 @@ describe('the migration to schema 5', () => {
     );
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -173,7 +173,7 @@ describe('the migration to schema 5', () => {
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });
@@ -263,7 +263,7 @@ describe('autonomy of each agent', () => {
   it('is off for the system agents and for an agent nobody said anything about', () => {
     expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
     expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
-    const r = validateConfig({ schemaVersion: 12, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    const r = validateConfig({ schemaVersion: 16, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
   });
@@ -306,5 +306,42 @@ describe('autonomy of each agent', () => {
     const r = migrateConfig(old, { legacyInstall: false });
     expect(r.changed).toBe(false);
     expect(r.config.agents.team.every((a) => a.autonomous === false)).toBe(true);
+  });
+});
+
+describe('the tools an agent uses', () => {
+  it('follow the workspace when the agent names none, and override it field by field when it does', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.tools = { files: true, skills: true, trackerMcp: true, trackerMcpServer: '', vcsCli: true, subagents: true };
+    c.agents.team.push({ id: 'reader', name: 'Reader', tools: { files: true } });
+    const made = validateConfig(c).config!;
+    const up = made.agents.team.find((a) => a.id === 'reader')!;
+    const plain = made.agents.team.find((a) => !a.tools)!;
+    // Absent: the workspace's tools.
+    expect(toolsForAgent(made, plain)).toEqual(made.agents.tools);
+    // Present: what the agent said overrides, and what it left out falls back to the workspace's.
+    expect(toolsForAgent(made, up)).toMatchObject({ files: true, skills: true, vcsCli: true });
+    const off = { ...made.agents.tools, files: false };
+    const only = { ...made, agents: { ...made.agents, tools: off } };
+    // An agent may turn on a tool the workspace turned off, for itself alone.
+    expect(toolsForAgent(only, up).files).toBe(true);
+    expect(toolsForAgent(only, plain).files).toBe(false);
+  });
+
+  it('is accepted by the schema and the field is described', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.team.push({ id: 'reader', name: 'Reader', tools: { files: 'yes' } });
+    expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['agents.team[5].tools.files']);
+    expect(CONFIG_SCHEMA.properties?.agents.properties?.team.items?.properties?.tools.description).toMatch(/overrid/);
+  });
+
+  it('comes from the migration as absent for every agent, so nothing changes', () => {
+    const v12 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    v12.schemaVersion = 12;
+    for (const a of v12.agents.team) delete a.tools;
+    const r = migrateConfig(v12, { legacyInstall: false });
+    expect(r.config.schemaVersion).toBe(16);
+    expect(r.config.agents.team.some((a: { tools?: unknown }) => a.tools !== undefined)).toBe(false);
+    expect(r.notes.join(' ')).toContain('an agent may name the tools it uses');
   });
 });

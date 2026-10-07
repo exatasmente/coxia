@@ -9,6 +9,7 @@ import { crRef } from '../shared/vcs';
 import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '../shared/conflict';
 import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
+import { MEMORY_FILE } from '../shared/runs/output';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { runStore } from './runs';
@@ -20,6 +21,7 @@ import {
   conflictsDir,
   findClone,
   git,
+  mergeMessage,
   prepareWorktree,
   pushBranch,
   removeWorktree,
@@ -383,6 +385,7 @@ export async function previewAction(id: string): Promise<string> {
   if (isVcsAction(a)) return describe(a.command as VcsCommand);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
+  if (a.kind === 'plugin-write') return a.output ?? '';
   if (a.kind === 'conflict-push') return a.output ?? '';
   if (a.kind === 'run-push') return a.output ?? '';
   if (a.kind === 'release-git') return previewReleaseAction(a);
@@ -423,7 +426,7 @@ async function proposeQaComment(sync: ReleaseAction): Promise<void> {
 type AuditBase = Pick<AuditEntry, 'kind' | 'target' | 'via' | 'fields'>;
 
 /** Where a write came from, for the audit line: a proposal the person approved, or a write an agent's autonomy let go out. */
-interface AuditOrigin {
+export interface AuditOrigin {
   issue: number;
   actionId: string;
   kind: string;
@@ -484,6 +487,10 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   if (!a) throw new Error(t('main.actions.missing', { id }));
   if (a.state !== 'pending' && a.state !== 'failed') throw new Error(t('main.actions.handled'));
   if (a.kind === 'conflict') throw new Error(tv('err.conflictOpenCall'));
+  // A plugin's request is answered with how far the "yes" reaches, on the computer (plugins:answer); it is not a write to approve. An announced write goes
+  // out at its deadline, after the service checked the plugin is still on and still allowed: there is no way to send it earlier.
+  if (a.kind === 'plugin-ask') throw new Error(t('main.plugins.ask.answerHere'));
+  if (a.kind === 'plugin-write') throw new Error(t('main.plugins.write.atDeadline'));
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   if (a.kind === 'release-git') {
@@ -500,6 +507,10 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = await publishConflict(a);
     } else if (a.kind === 'run-push') {
       output = await publishRunBranch(a);
+    } else if (a.kind === 'suggest-agent') {
+      // Accepting creates an ordinary agent in the team: local work, nothing leaves the machine, so no `assertExternalWrite` here.
+      if (!suggestionHooks.accept) throw new Error(t('main.suggestions.noHook'));
+      output = suggestionHooks.accept(a).output;
     } else if (a.kind === 'release-git') {
       const r = await runRelease(originOf(a), a.unit);
       output = r.output;
@@ -547,12 +558,33 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   }
 }
 
+/** Tells `fn` after the person set a proposal aside ("not now", a refusal, a blocked plugin write). Returns the way to stop. */
+export type SkipListener = (action: ReleaseAction) => void;
+const skipListeners = new Set<SkipListener>();
+
+export function onActionSkipped(fn: SkipListener): () => void {
+  skipListeners.add(fn);
+  return () => void skipListeners.delete(fn);
+}
+
 export async function skipAction(id: string): Promise<ReleaseAction> {
   const a = read().actions.find((x) => x.id === id);
   if (a?.kind === 'conflict-push') throw new Error(t('main.actions.pushGoes'));
+  // A plugin's request or announced write is set aside only while it waits: one already answered, sent or blocked stays what it was.
+  if ((a?.kind === 'plugin-ask' || a?.kind === 'plugin-write') && a.state !== 'pending') throw new Error(t('main.actions.handled'));
   // Treated outside: the worktree this app made for it goes away too.
   if (a?.kind === 'conflict' && a.resolve && !a.resolve.publishedAt) await discardConflict(id);
-  return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString() }));
+  // A plugin's write set aside before its deadline is blocked: it never goes out, and the list says so.
+  const blocked = a?.kind === 'plugin-write' && a.state === 'pending' ? { output: t('main.plugins.write.blocked') } : {};
+  const done = update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), ...blocked }));
+  for (const fn of skipListeners) {
+    try {
+      fn(done);
+    } catch (e) {
+      console.error('[actions] listener', e);
+    }
+  }
+  return done;
 }
 
 function now(): string {
@@ -611,6 +643,10 @@ export const conflictHooks: {
   },
 };
 
+// What accepting a suggestion does: the suggestions module registers it (creating the agent and recording the decision), so Actions stays the door
+// and the module keeps the record. A test that approves one without the module registered gets a clear failure rather than a silent no-op.
+export const suggestionHooks: { accept: ((action: ReleaseAction) => { output: string; agentId: string }) | null } = { accept: null };
+
 function conflictOf(id: string): { a: ReleaseAction; r: ConflictResolve | null } {
   const a = read().actions.find((x) => x.id === id);
   if (!a || a.kind !== 'conflict') throw new Error(t('main.actions.conflictMissing', { id }));
@@ -658,8 +694,8 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   const { project, iid } = resolveMr(mrRef, card.mrPaths);
   const ref = crRef(primaryKind(), project, iid, { full: true });
   const prov = vcsProvider();
-  const [mr, repo, user] = await Promise.all([prov.getMr(project, iid), prov.getRepo(project), prov.currentUser()]);
-  assertResolvable(ref, mr, { me: user.username, defaultBranch: repo.defaultBranch });
+  const [mr, user] = await Promise.all([prov.getMr(project, iid), prov.currentUser()]);
+  assertResolvable(ref, mr, { me: user.username });
   const tgtSha = await prov.getBranchSha(project, mr.targetBranch);
 
   const key = `conflict:${ref}:${tgtSha}`;
@@ -693,7 +729,7 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
     issue,
     issueTitle: card.title,
     stage: card.stage ?? '',
-    release: t('main.actions.mrInConflict'),
+    release: t('main.actions.mrInConflict', { target: mr.targetBranch }),
     mrs: [{ ref, url: mr.webUrl, branch: mr.sourceBranch, behind: 0 }],
     files: [],
     unit: unit as unknown as Record<string, unknown>,
@@ -850,7 +886,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     const { a, r } = resolved(id);
     if (!r.appliedAt) throw new Error(t('main.actions.applyFirst'));
     if (r.commit) throw new Error(t('main.actions.alreadyCommitted'));
-    const sha = await commitMerge(r.worktree, r.branch, r.mainSha, await mergeIdentity(r.clone));
+    const sha = await commitMerge(r.worktree, r.branch, r.target, r.mainSha, await mergeIdentity(r.clone));
     const push = blank({
       key: `conflict-push:${a.id}:${sha}`,
       kind: 'conflict-push',
@@ -867,7 +903,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
         // i18n-ignore: a git command line shown as it runs
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
         // i18n-ignore: a git command line shown as it runs
-        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: `Merge branch 'main' into '${r.branch}'` }),
+        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: mergeMessage(r.branch, r.target) }),
         r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
     });
@@ -960,6 +996,66 @@ export function proposeRunPush(input: { key: string; issue: number; issueTitle?:
   return action;
 }
 
+/** Proposes a new agent the cycle suggested. Accepting creates the agent, so it writes nothing external: the person decides in Actions. */
+export function proposeAgentSuggestion(input: { key: string; summary: string; name: string; role: string; stage: string; draft: string; evidence: string; rejectedBefore?: { at: string; changed: string[] } | null; suggestionId: string; notify?: { title: string; body: string } }): ReleaseAction | null {
+  const store = read();
+  // Whether the suggestion may be raised at all was decided in `buildSuggestions` (a rejection only lets it back with evidence it never saw). Here
+  // only the card is deduplicated: the same proposal is not left in Actions twice while it still waits for its decision.
+  if (store.actions.some((a) => a.kind === 'suggest-agent' && a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const lines = [
+    t('main.suggestions.card.name', { value: input.name }),
+    t('main.suggestions.card.role', { value: input.role }),
+    t('main.suggestions.card.stage', { value: input.stage }),
+    t('main.suggestions.card.permission', { value: t('ui.team.permission.read') }),
+    '',
+    t('main.suggestions.card.draft'),
+    input.draft,
+    '',
+    t('main.suggestions.card.evidence'),
+    input.evidence,
+    ...(input.rejectedBefore ? ['', t('main.suggestions.card.rejectedBefore', { at: input.rejectedBefore.at, changed: input.rejectedBefore.changed.join(', ') || t('main.suggestions.card.rejectedNoChange') })] : []),
+  ];
+  const action = blank({
+    key: input.key,
+    kind: 'suggest-agent',
+    // The suggestion is not about one issue: the card reads neither a number nor a title.
+    issue: 0,
+    issueTitle: '',
+    stage: input.stage,
+    summary: input.summary,
+    unit: { purpose: 'suggest-agent', suggestionId: input.suggestionId, name: input.name, role: input.role, stage: input.stage, prompt: input.draft, evidence: input.evidence, rejectedBefore: input.rejectedBefore ?? null },
+    output: lines.join('\n'),
+  });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+/**
+ * Pushes a run's branch by itself, under the autonomy block's "push" choice: the same command and the same checks as the proposal a person approves, with one audit
+ * line of its own (the agent is who asked). The run's branch is read from the run's file here, never from the caller, so nothing can point the push anywhere else.
+ */
+export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: string): Promise<void> {
+  const run = runStore().get(runId);
+  if (!run || run.branch !== branch) throw new Error(t('main.actions.pushNoRun', { run: runId.slice(0, 40) }));
+  if (!existsSync(run.worktree)) throw new Error(t('main.conflictGit.worktreeGone'));
+  const here = (await git(run.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+  if (here !== run.branch) throw new Error(t('main.actions.pushWrongBranch', { branch: run.branch, here }));
+  // The same guard as the proposal: what the agents did is committed after each stage, and the cycle memory the next stage wrote is left for that stage's commit.
+  const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
+  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
+  const now = new Date().toISOString();
+  const a = blank({ key: w.key, kind: 'run-push', issue: w.issue, summary: w.summary, unit: { runId, branch } });
+  // A push of this run that still waited is replaced: what goes out is the branch as it is now, not the state the proposal was made for.
+  const store = read();
+  const replaced = store.actions.map((x) => (x.kind === 'run-push' && x.state === 'pending' && x.unit?.runId === runId ? { ...x, state: 'skipped' as const, finishedAt: now, output: t('main.actions.replaced') } : x));
+  write({ ...store, actions: replaced });
+  const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
+  await audited({ ...originOf(a), kind: 'auto', by: w.by }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+  // The branch is on the host: the same notice a person's "sim" gives, so the pull request follows the push by itself too.
+  told(a, []);
+}
+
 async function publishRunBranch(a: ReleaseAction): Promise<string> {
   const runId = String((a.unit ?? {}).runId ?? '');
   const run = runStore().get(runId);
@@ -967,8 +1063,11 @@ async function publishRunBranch(a: ReleaseAction): Promise<string> {
   if (!existsSync(run.worktree)) throw new Error(t('main.conflictGit.worktreeGone'));
   const here = (await git(run.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
   if (here !== run.branch) throw new Error(t('main.actions.pushWrongBranch', { branch: run.branch, here }));
-  // What the agents did is committed by the app after each stage: a change that is not committed would silently stay behind.
-  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no'])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
+  // What the agents did is committed by the app after each stage: a change that is not committed would silently stay behind. The cycle memory is the exception:
+  // the app writes the thread's handovers into it as the next stage starts, and that stage's commit carries them, so a push asked for while it works sends what
+  // is committed and leaves the memory for that commit.
+  const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
+  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
   // i18n-ignore: a git command line shown as it runs
   return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
@@ -1125,6 +1224,156 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
     output: t('main.actions.handResolved', { count: r?.files.length ?? 0, branch: r?.branch ?? '', files: a.files.join(', ') }),
   });
   return notes.length ? update(push.id, (x) => ({ ...x, output: [x.output, ...notes].join('\n') })) : read().actions.find((x) => x.id === push.id) ?? push;
+}
+
+// ---- what a plugin asks for, and the write it is allowed --------------------------------------------------------------------------------
+// A plugin never writes by itself and never widens what it reaches by itself. What it was not allowed becomes a request here, answered by the person on
+// the computer with how far the "yes" reaches; what it was allowed goes out through `audited`, like every other write. A test workspace widens nothing:
+// no request is opened there and no write goes out. The destination is the neutral one the plugin declared, an outbox of the workspace, never a
+// named third-party service.
+
+/** What a plugin's request carries: enough to make the call again once the person answers, even after the app was closed. */
+export interface PluginAskUnit {
+  plugin: string;
+  /** The plugin's name, as the list shows it. */
+  name: string;
+  need: 'network' | 'write';
+  /** For a write: whether it can be undone. An irreversible write may only be allowed always. */
+  reversible: boolean;
+  /** The run whose event called the plugin; null outside a run. */
+  runId: string | null;
+  event: string;
+  stage: string | null;
+  /** For the network: the destinations it declared. For a write: where it goes and what it would write. */
+  hosts: string[];
+  to: string | null;
+  text: string;
+  /** For a JavaScript plugin's write: the request it asked the app to make, carried out once the person allows it. */
+  request?: { id: string; path?: string; query?: Record<string, string>; body?: string; contentType?: string; target: string; reach?: string };
+}
+
+/** Opens the request of a plugin. Refused in a test workspace (it widens nothing); null when the same request already waits. */
+export function proposePluginAsk(input: { key: string; issue: number; issueTitle?: string; summary: string; unit: PluginAskUnit; notify?: { title: string; body: string } }): ReleaseAction | null {
+  assertExternalWrite(t('main.plugins.ask.title'));
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const u = input.unit;
+  const what = u.need === 'network' ? t('main.plugins.ask.network', { plugin: u.name, hosts: u.hosts.join(', ') }) : t(u.reversible ? 'main.plugins.ask.write' : 'main.plugins.ask.writeIrreversible', { plugin: u.name, to: u.to ?? '' });
+  const action = blank({ key: input.key, kind: 'plugin-ask', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...u }, output: [what, u.need === 'write' && u.text ? `\n${u.text}` : ''].filter(Boolean).join('\n') });
+  write({ ...store, actions: [action, ...store.actions] });
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+/** The plugin requests still waiting for the person, newest first. */
+export function pendingPluginAsks(): ReleaseAction[] {
+  return read().actions.filter((a) => a.kind === 'plugin-ask' && a.state === 'pending');
+}
+
+/** Closes a request with the person's answer: allowed (done) or refused (set aside), with the words the list keeps. */
+export function settlePluginAsk(id: string, allowed: boolean, words: string): ReleaseAction {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-ask') throw new Error(t('main.actions.missing', { id }));
+  if (a.state !== 'pending') throw new Error(t('main.actions.handled'));
+  return update(id, (x) => ({ ...x, state: allowed ? 'done' : 'skipped', finishedAt: new Date().toISOString(), output: [x.output, '', words].filter((l) => l !== null).join('\n') }));
+}
+
+/** The write of a plugin as an action keeps it. */
+export interface PluginWriteInput {
+  plugin: string;
+  to: string;
+  text: string;
+}
+
+const pluginWriteOf = (a: ReleaseAction): PluginWriteInput => ({ plugin: String((a.unit ?? {}).plugin ?? ''), to: String((a.unit ?? {}).to ?? ''), text: String((a.unit ?? {}).text ?? '') });
+
+/** Where a plugin's neutral destination lands: an outbox of this workspace, one file per destination the plugin declared. */
+export const pluginOutboxFile = (plugin: string, to: string): string => join(ATAS, 'plugins-out', plugin, `${to}.md`);
+
+const PLAIN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * The executor of a plugin's write: appends what the plugin returned to its outbox, through `audited`, so the line in the audit log is about what was
+ * written and a test workspace refuses before anything is. The names come from a validated declaration and are checked again here.
+ */
+async function writePluginOutbox(origin: AuditOrigin, input: PluginWriteInput): Promise<string> {
+  if (!PLAIN.test(input.plugin) || !PLAIN.test(input.to)) throw new Error(t('main.plugins.write.badDestination'));
+  const file = pluginOutboxFile(input.plugin, input.to);
+  return audited(origin, { kind: 'plugin-write', target: `${input.plugin}/${input.to}`, via: 'plugin', fields: { plugin: input.plugin, to: input.to, bytes: String(Buffer.byteLength(input.text)) } }, async () => {
+    mkdirSync(dirname(file), { recursive: true });
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    writeFileSync(file, `${before}${before ? '\n' : ''}## ${new Date().toISOString()} · #${origin.issue}\n\n${input.text.trim()}\n`);
+    return t('main.plugins.write.done', { plugin: input.plugin, to: input.to });
+  });
+}
+
+/**
+ * A plugin's write request to a service, made by the plugins service through `audited`: one line in the audit log about what was sent (never the
+ * secret or the body), and a test workspace refuses before anything goes out. `origin` names the announced action or, for a write that goes out at
+ * once, the plugin as who.
+ */
+export function auditPluginRequest(origin: AuditOrigin | { issue: number; key: string; summary: string; plugin: string }, target: string, fields: Record<string, string>, send: () => Promise<string>): Promise<string> {
+  const from: AuditOrigin = 'actionId' in origin ? origin : { issue: origin.issue, actionId: `auto:${origin.key}`, kind: 'plugin-write', key: origin.key, summary: origin.summary, by: origin.plugin };
+  return audited(from, { kind: 'plugin-write', target, via: 'plugin', fields }, send);
+}
+
+/** A plugin's write that goes out now (allowed and reversible): no card, the same door and the same audit log, with the plugin as who. */
+export function writePluginNow(w: { issue: number; key: string; summary: string; plugin: string }, input: PluginWriteInput): Promise<string> {
+  return writePluginOutbox({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'plugin-write', key: w.key, summary: w.summary, by: w.plugin }, input);
+}
+
+/** Announces a plugin's allowed irreversible write: it waits in Actions until `due`, and the person may block it meanwhile. */
+export function announcePluginWrite(input: { key: string; issue: number; issueTitle?: string; summary: string; runId: string | null; seconds: number; write: PluginWriteInput; request?: PluginAskUnit['request'] }): ReleaseAction | null {
+  assertExternalWrite(t('main.plugins.write.title'));
+  const store = read();
+  if (store.actions.some((a) => a.key === input.key && (a.state === 'pending' || a.state === 'running'))) return null;
+  const due = new Date(Date.now() + input.seconds * 1000).toISOString();
+  const action = blank({ key: input.key, kind: 'plugin-write', issue: input.issue, issueTitle: input.issueTitle ?? '', summary: input.summary, unit: { ...input.write, runId: input.runId, due, ...(input.request ? { request: input.request } : {}) }, output: [t('main.plugins.write.to', { to: input.write.to }), '', input.write.text].join('\n') });
+  write({ ...store, actions: [action, ...store.actions] });
+  return action;
+}
+
+/** Sets an announced write aside without telling anyone: the plugin was switched off or its permission taken back, and `words` say so in the list. */
+export function withdrawPluginWrite(id: string, words: string): ReleaseAction | null {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-write' || a.state !== 'pending') return null;
+  return update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: words }));
+}
+
+/** The person goes on without answering: the requests of `runId` stay in Actions and no longer hold the run. */
+export function releasePluginAsks(runId: string): void {
+  const store = read();
+  let changed = false;
+  const actions = store.actions.map((a) => {
+    if (a.kind !== 'plugin-ask' || a.state !== 'pending' || (a.unit ?? {}).runId !== runId) return a;
+    changed = true;
+    return { ...a, unit: { ...(a.unit ?? {}), holdsRun: false } };
+  });
+  if (changed) write({ ...store, actions });
+}
+
+/** The announced writes still waiting for their deadline. */
+export function pendingPluginWrites(): ReleaseAction[] {
+  return read().actions.filter((a) => a.kind === 'plugin-write' && a.state === 'pending');
+}
+
+/** Starts the deadline of an announced write again: after the app was closed, the person gets the whole interval before anything goes out. */
+export function rearmPluginWrite(id: string, seconds: number): ReleaseAction {
+  return update(id, (x) => ({ ...x, unit: { ...(x.unit ?? {}), due: new Date(Date.now() + seconds * 1000).toISOString() } }));
+}
+
+/** The deadline passed: the announced write goes out, unless the person blocked it meanwhile (then nothing happens). */
+export async function sendDuePluginWrite(id: string, execute?: (a: ReleaseAction, origin: AuditOrigin) => Promise<string>): Promise<ReleaseAction | null> {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'plugin-write' || a.state !== 'pending') return null;
+  update(id, (x) => ({ ...x, state: 'running' }));
+  try {
+    // A plugin's request to a service is made by the plugins service (it holds the declaration and the secret); the outbox write is this door's own.
+    const output = execute ? await execute(a, originOf(a)) : await writePluginOutbox(originOf(a), pluginWriteOf(a));
+    return update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output }));
+  } catch (e) {
+    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));
+  }
 }
 
 export function startActions(d: { notify(n: Notice): void; emit(ev: AppEvent): void }): void {

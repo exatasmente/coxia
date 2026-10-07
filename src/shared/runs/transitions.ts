@@ -5,7 +5,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
+import { HISTORY_DETAIL_MAX, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -31,7 +31,8 @@ const refsOf = (names: string[]): ArtifactRef[] => names.map((path) => ({ path }
 const unique = (list: string[]): string[] => [...new Set(list)];
 
 function log(run: Run, at: string, type: HistoryType, stage: string | null, by: string, detail: string | null = null): void {
-  const entry: HistoryEntry = { at, type, stage, by, detail };
+  // A long answer or reason must not make the file one the store refuses: the entry keeps its start, the thread keeps it whole.
+  const entry: HistoryEntry = { at, type, stage, by, detail: detail === null ? null : detail.slice(0, HISTORY_DETAIL_MAX) };
   run.history.push(entry);
   if (run.history.length > HISTORY_MAX) run.history.splice(1, run.history.length - HISTORY_MAX);
 }
@@ -63,7 +64,7 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
     run.stages.push(rec);
   }
   rec.agent = stage.agent;
-  rec.autonomous = stage.autonomous;
+  rec.autonomous = stage.cycleAutonomous || stage.autonomous;
   rec.attempts += 1;
   rec.startedAt = at;
   rec.endedAt = null;
@@ -173,6 +174,8 @@ export interface StartInput {
   base?: string | null;
   /** The run is a release of a version (its `issue` is the synthesized `release:X.Y.Z`). */
   subject?: RunSubject;
+  /** The run drafts the documentation of its repository (its `issue` is the synthesized `docs:<repo>`). */
+  docs?: RunDocs;
 }
 
 /** What keeps a run from starting: an empty flow, or a stage that must have an agent and has none. Throws the refusal `startRun` gives. */
@@ -211,6 +214,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     createdAt: at,
     updatedAt: at,
     ...(input.subject ? { subject: structuredClone(input.subject) } : {}),
+    ...(input.docs ? { docs: { ...input.docs } } : {}),
   };
   log(run, at, 'started', null, 'person');
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
@@ -317,13 +321,13 @@ function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDr
 }
 
 /** The person approves the gate: the run goes on to the next stage. `note` is optional and goes in the decision. */
-export function gateApprove(run: Run, flow: FlowStage[], at: string, note = ''): Transition {
+export function gateApprove(run: Run, flow: FlowStage[], at: string, note = '', by: 'person' | 'app' = 'person'): Transition {
   need(run, 'gate');
   const out = clone(run, at);
   freezeAtPlanGate(out, flow);
   finishStage(out, at, 'done');
-  log(out, at, 'gate-approved', run.stage, 'person', note.trim() || null);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
+  log(out, at, 'gate-approved', run.stage, by, note.trim() || null);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: by === 'app' ? app : person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
   advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
@@ -511,7 +515,7 @@ export function startStage(run: Run, flow: FlowStage[], at: string): Transition 
   const out = clone(run, at);
   const rec = record(out, run.stage) as StageRecord;
   rec.agent = stage.agent;
-  rec.autonomous = stage.autonomous;
+  rec.autonomous = stage.cycleAutonomous || stage.autonomous;
   rec.status = 'running';
   rec.startedAt = at;
   rec.endedAt = null;
@@ -769,6 +773,31 @@ export function stageWaitingOnBudget(run: Run, input: { provider: string; engine
   (record(out, run.stage) as StageRecord).status = 'waiting';
   log(out, at, 'wait-started', run.stage, 'app', `budget:${input.provider}`);
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.wait.budget', params: { stage: run.stage, provider: input.provider, engine: input.engine, detail: input.detail }, stage: run.stage }] };
+}
+
+/**
+ * A plugin of the run asked the person for something it was not allowed (its network, its write): the stage does not start until every request of the
+ * run is answered. A wait, not a failure: nothing of the stage ran, and the run goes on where it was held.
+ */
+export function stageWaitingOnPlugin(run: Run, input: { plugin: string; need: string }, at: string): Transition {
+  need(run, 'working');
+  const out = clone(run, at);
+  out.status = 'waiting';
+  out.wait = { kind: 'plugin', since: at, plugin: input.plugin, detail: input.need };
+  (record(out, run.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'wait-started', run.stage, 'app', `plugin:${input.plugin}`);
+  return { run: out, messages: [{ kind: 'system', author: app, code: `run.stage.wait.plugin.${input.need === 'write' ? 'write' : 'network'}`, params: { stage: run.stage, plugin: input.plugin }, stage: run.stage }] };
+}
+
+/** Every plugin request of the run was answered (allowed or refused): the held stage starts. */
+export function pluginWaitDone(run: Run, at: string): Transition {
+  need(run, 'waiting');
+  const out = clone(run, at);
+  log(out, at, 'wait-done', run.stage, 'app', 'plugin');
+  out.wait = null;
+  out.status = 'working';
+  (record(out, run.stage) as StageRecord).status = 'running';
+  return { run: out, messages: [{ kind: 'system', author: app, code: 'wait.done.plugin', params: { stage: run.stage }, stage: run.stage }] };
 }
 
 // What goes on after the event: a wait stage is done and the run follows it; an agent's own stage goes back to work, with what came as its answer.

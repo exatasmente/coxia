@@ -307,7 +307,7 @@ export function ConflictResolver({ action }: { action: ReleaseAction }) {
             {tNodes(
               'ui.resolver.publish.intro',
               { commit: <span className="mono">{r.commit?.slice(0, 9)}</span>, push: <span className="mono">git push origin HEAD:refs/heads/{r.branch}</span> }, // i18n-ignore: shell command
-              { branch: r.branch },
+              { branch: r.branch, target: r.target },
             )}
           </p>
           {push?.state === 'failed' && <div className="error" style={{ whiteSpace: 'pre-wrap' }}>{t('ui.resolver.publish.failed', { output: push.output ?? '' })}</div>}
