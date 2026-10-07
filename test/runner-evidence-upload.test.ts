@@ -10,10 +10,12 @@ import { neutralConfig } from '../src/shared/config';
 import { runnerConfig } from './helpers/runner';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
 import type { EvidenceUpload } from '../src/shared/evidence';
-import { readOutput, startRun } from '../src/shared/runs';
+import { readOutput, recordCommentDraft, startRun } from '../src/shared/runs';
+import { runThreadId } from '../src/shared/forum';
 import { flowOf } from '../src/shared/runs/flow';
 import type { FlowStage, Run } from '../src/shared/runs';
 import type { VcsCommand, VcsComment, VcsProvider, VcsWriteOp } from '../src/main/vcs/types';
+import type { ReleaseAction } from '../src/shared/types';
 
 // The evidence a comment cites going to the code host: the upload is planned and run through the door, the address the host answers with is embedded under the
 // text, and a host that cannot carry the file leaves the comment saying how many pieces there are. A fake provider and a recording door: no host, no network.
@@ -53,7 +55,8 @@ function fakeProvider(o: { upload?: boolean } = {}): VcsProvider {
       if (op.op === 'uploadAttachment') {
         return o.upload === false ? [] : [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'uploads.github.com/?repository_id=group%2Fproject&name=ev-1.png&content_type=image%2Fpng', fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: op.path }];
       }
-      const body = op.op === 'commentIssue' || op.op === 'commentMr' || op.op === 'editIssueNote' || op.op === 'editMrNote' ? op.body : '';
+      const body = op.op === 'commentIssue' || op.op === 'commentMr' || op.op === 'editIssueNote' || op.op === 'editMrNote' || op.op === 'createMr' ? op.body : '';
+      if (op.op === 'createMr') return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/pulls', fields: {}, json: JSON.stringify({ title: op.title, body }) }];
       return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/issues/101/comments', fields: {}, json: JSON.stringify({ body }) }];
     },
     async uploadToken() {
@@ -96,14 +99,16 @@ function world(dataDir: string): World {
 
 type Door = Parameters<typeof createPublisher>[0]['door'];
 
-function doorOf(provider: VcsProvider, posted: VcsCommand[][], proposed: VcsCommand[][] = [], metas: Record<string, unknown>[] = []): Door {
+function doorOf(provider: VcsProvider, posted: VcsCommand[][], proposed: VcsCommand[][] = [], metas: Record<string, unknown>[] = [], o: { refusal?: string; postMetas?: Record<string, unknown>[]; noAddress?: boolean } = {}): Door {
   return {
     provider: () => provider,
-    refusal: () => null,
-    post: async (_meta: unknown, commands: VcsCommand[]) => {
+    refusal: () => o.refusal ?? null,
+    post: async (meta: Record<string, unknown>, commands: VcsCommand[]) => {
       posted.push(commands);
+      o.postMetas?.push(meta);
       // One answer per command, in the order they ran: an upload answers where the file lives, a comment its note id.
       return commands.map((c) => {
+        if (c.bodyFile && o.noAddress) return {};
         if (c.bodyFile) return { url: `https://example.test/group/project/assets/${new URLSearchParams(c.endpoint.split('?')[1] ?? '').get('name') ?? 'file'}` };
         return { id: 9, html_url: 'https://example.test/group/project/issues/101#issuecomment-9' };
       });
@@ -195,5 +200,92 @@ describe('evidence and the code host', () => {
     // The upload is the first command of the group and the comment owns the body the address goes into once the group runs.
     expect(proposed[0].findIndex((c) => c.bodyFile)).toBe(0);
     expect(metas[0].evidence).toEqual({ titles: ['The screen'], positions: [0], bodyAt: 1 });
+  });
+});
+
+describe('the pull request an autonomous run opens', () => {
+  const ADDRESS = 'https://example.test/group/project/assets/ev-1.png';
+
+  /** A run at the point the push is done: its description is drafted (citing `ids`), and the pull request is next. */
+  function opened(o: { pullRequest: boolean; ids?: string[]; door?: Parameters<typeof doorOf>[4]; upload?: boolean }) {
+    const dataDir = make();
+    dirs.push(dataDir);
+    const { config, run, runs, forum } = world(dataDir);
+    config.runner.autonomy = { ...config.runner.autonomy, cycle: true, pullRequest: o.pullRequest };
+    runs.update(run.id, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: 'draft', body: 'Closes #101\n', headline: '', title: 'Add the thing', ...(o.ids ? { evidenceIds: o.ids } : {}) }, '2026-10-03T12:00:00Z'));
+    // The run's conversation exists by the time its pull request is next.
+    forum.ensureThread({ id: runThreadId(run.id), kind: 'run', runId: run.id, title: 'Add the thing' });
+    const posted: VcsCommand[][] = [];
+    const proposed: VcsCommand[][] = [];
+    const metas: Record<string, unknown>[] = [];
+    const postMetas: Record<string, unknown>[] = [];
+    const publisher = createPublisher({
+      runs,
+      forum,
+      config: () => config,
+      env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
+      door: doorOf(fakeProvider({ upload: o.upload }), posted, proposed, metas, { postMetas, ...(o.door ?? {}) }),
+      now: () => new Date('2026-10-03T12:00:00Z'),
+      evidenceUploads: uploads,
+    });
+    const go = () => publisher.actionDone({ kind: 'run-push', unit: { runId: run.id } } as unknown as ReleaseAction, []);
+    return { run, runs, forum, posted, proposed, metas, postMetas, go };
+  }
+
+  const prBody = (posted: VcsCommand[][]): string => {
+    const create = posted.flat().find((c) => c.endpoint === 'repos/group/project/pulls');
+    return create?.json ? (JSON.parse(create.json) as { body: string }).body : '';
+  };
+
+  it('does not wait because it cites images: they go up first, by themselves, and the description embeds the address', async () => {
+    const w = opened({ pullRequest: true, ids: ['ev-1'] });
+    await w.go();
+    expect(w.proposed).toEqual([]);
+    // Two calls through the door, under the same key: the upload, then the pull request.
+    expect(w.posted).toHaveLength(2);
+    expect(w.posted[0].every((c) => c.bodyFile)).toBe(true);
+    expect(w.posted[1].map((c) => c.endpoint)).toEqual(['repos/group/project/pulls']);
+    expect(w.postMetas.map((m) => [m.key, m.by])).toEqual([['pr:r-101-abcd', 'app'], ['pr:r-101-abcd', 'app']]);
+    expect(prBody(w.posted)).toContain(`![The screen](${ADDRESS})`);
+    // The run records the description that went out, not the draft without the images.
+    const rec = w.runs.get(w.run.id)!.comments.pr!;
+    expect(rec).toMatchObject({ status: 'published', noteId: 9 });
+    expect(rec.body).toContain(`![The screen](${ADDRESS})`);
+    expect(w.forum.read(runThreadId(w.run.id), 0, 100)?.messages.some((m) => m.code === 'runner.pr.created')).toBe(true);
+  });
+
+  it('counts an image the host gave no address for instead of losing it', async () => {
+    const w = opened({ pullRequest: true, ids: ['ev-1'], door: { noAddress: true } });
+    await w.go();
+    expect(w.proposed).toEqual([]);
+    expect(prBody(w.posted)).toContain('1 piece(s) of evidence stay in the app');
+    expect(prBody(w.posted)).not.toContain('![');
+    expect(w.runs.get(w.run.id)!.comments.pr!.body).toContain('1 piece(s) of evidence stay in the app');
+  });
+
+  it('opens by itself with no image to send, recording the description as it was', async () => {
+    const w = opened({ pullRequest: true });
+    await w.go();
+    expect(w.proposed).toEqual([]);
+    expect(w.posted).toHaveLength(1);
+    expect(w.runs.get(w.run.id)!.comments.pr).toMatchObject({ status: 'published', noteId: 9, body: 'Closes #101\n' });
+  });
+
+  it('still proposes, with the uploads inside the proposal group, when the choice is off', async () => {
+    const w = opened({ pullRequest: false, ids: ['ev-1'] });
+    await w.go();
+    expect(w.posted).toEqual([]);
+    expect(w.proposed).toHaveLength(1);
+    expect(w.proposed[0].findIndex((c) => c.bodyFile)).toBe(0);
+    expect(w.proposed[0][1].endpoint).toBe('repos/group/project/pulls');
+    expect(w.metas[0].evidence).toEqual({ titles: ['The screen'], positions: [0], bodyAt: 1 });
+  });
+
+  it('is still refused in a test workspace: nothing goes up and nothing is proposed', async () => {
+    const w = opened({ pullRequest: true, ids: ['ev-1'], door: { refusal: 'a test workspace writes nothing' } });
+    await w.go();
+    expect(w.posted).toEqual([]);
+    expect(w.proposed).toEqual([]);
+    expect(w.forum.read(runThreadId(w.run.id), 0, 100)?.messages.some((m) => m.code === 'runner.pr.refused')).toBe(true);
   });
 });

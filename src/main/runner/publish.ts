@@ -861,7 +861,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (created) say(run, 'runner.push.proposed', { branch: run.branch }, end.stage.id);
   }
 
-  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). The images its description cites go up in the same group, after that "sim". */
+  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). When it waits, the images its description cites go up in the same group, after that "sim"; when it goes by itself they go up first. */
   async function pullRequest(runId: string): Promise<void> {
     const run = need(runId);
     const provider = door.provider();
@@ -892,24 +892,39 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       placeUploads(uploads, 0);
       const uploadCommands = uploads.flatMap((u) => u.commands);
       const target = (await provider.getRepo(repo)).defaultBranch;
-      const commands = [...uploadCommands, ...(await provider.planWrite({ op: 'createMr', project: repo, title, body: plannedBody, sourceBranch: run.branch, targetBranch: target }))];
-      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out. A description that cites images
-      // still waits for its "sim": the host's answer to each upload is what the body embeds, and only the proposal's group reads it back.
-      if (chooses(run, 'pullRequest') && !uploads.length) {
-        dropUploads(dir);
+      const createMr = (body: string): Promise<VcsCommand[]> => provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
+      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out. The images the description
+      // cites go up first, by themselves, under the same autonomy; the pull request waits for their addresses and follows them, as an autonomous comment does.
+      // Nothing here is a group the person approved, so the upload and the pull request are two calls of one run: the audit log gets a line for each.
+      if (chooses(run, 'pullRequest')) {
         const refusal = door.refusal();
         if (refusal) {
+          dropUploads(dir);
           say(run, 'runner.pr.refused', { reason: refusal });
           return;
         }
         try {
-          const responses = await door.post({ key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' }, commands);
-          await pullRequestOpened(runId, responses, undefined);
+          const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' };
+          const uploaded: { title: string; url: string }[] = [];
+          if (uploadCommands.length) {
+            const answers = await door.post(meta, uploadCommands);
+            for (const u of uploads) {
+              const url = embedUrlOf(answers[u.at]);
+              if (url) uploaded.push({ title: u.title, url });
+            }
+          }
+          // The pieces no command carried were counted already; one the host took no address from is counted too instead of disappearing.
+          const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
+          const responses = await door.post(meta, await createMr(body));
+          await pullRequestOpened(runId, responses, undefined, body);
         } catch (e) {
           say(run, 'runner.pr.failed', { reason: message(e) });
+        } finally {
+          dropUploads(dir);
         }
         return;
       }
+      const commands = [...uploadCommands, ...(await createMr(plannedBody))];
       const evidence = uploads.length ? { titles: uploads.map((u) => u.title), positions: uploads.map((u) => u.at), bodyAt: uploadCommands.length } : undefined;
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: plannedBody, unit: { runId, purpose: 'run-pr' }, evidence, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
       moveRun(d, runId, (r) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: hashOf(plannedBody), body: plannedBody, title }, now()));
@@ -920,15 +935,16 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
   }
 
-  /** The proposal of the pull request was carried out: what the host answered for the pull request itself, with the addresses of the images it embedded. */
-  async function pullRequestOpened(runId: string, responses: unknown[], evidence: { titles: string[]; positions: number[]; bodyAt: number } | undefined): Promise<void> {
+  /** The pull request was opened, by a proposal carried out or by itself: what the host answered for the pull request itself, with the addresses of the images it embedded. */
+  async function pullRequestOpened(runId: string, responses: unknown[], evidence: { titles: string[]; positions: number[]; bodyAt: number } | undefined, posted?: string): Promise<void> {
     const run = need(runId);
     const made = prRefOf(responses[evidence ? evidence.bodyAt : 0]);
     if (made.iid === null) {
       say(run, 'runner.pr.failed', { reason: tr('main.runner.comment.noId') });
       return;
     }
-    const written = run.comments.pr?.body ?? '';
+    // An autonomous pull request records the description it posted (with its images already embedded); a proposal embeds them now, from the group's answers.
+    const written = posted ?? run.comments.pr?.body ?? '';
     const body = evidence ? evidenceBody(written, evidence, responses) : written;
     const after = moveRun(d, runId, (r) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: made.iid as number, url: made.url, bodyHash: hashOf(body), body }, now()));
     say(after, 'runner.pr.created', { url: made.url ?? '' });
