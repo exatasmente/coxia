@@ -4,41 +4,37 @@
 
 `changes`.
 
-O núcleo pedido na issue está construído e se sustenta na maior parte: um agente que trabalha numa etapa com sandbox ganha três ferramentas — guardar um arquivo da pasta de saída como comprovação, marcar uma imagem e olhar para o resultado —, a comprovação é publicada na conversa da execução como anexo de uma mensagem, aparece listada na etapa, pode ser citada por um cenário, é gravada num id estável no espaço de trabalho, e a escolha do espaço de trabalho decide se uma cópia entra no commit da etapa. As recusas que a spec exige foram exercitadas e acontecem com o motivo certo.
+A capacidade pedida está construída de ponta a ponta e se sustenta quase inteira: um agente numa etapa com sandbox guarda um arquivo que ele mesmo fez na pasta de saída como comprovação da etapa, marca a imagem (retângulo, seta, elipse, rótulo, marcador numerado e caixa de borrão) e olha para o resultado; a comprovação é publicada na conversa da execução como anexo, listada na etapa, citável por um cenário e pela saída de etapa, e a escolha do espaço de trabalho decide se uma cópia entra no commit da etapa. A comprovação citada num comentário ou na descrição do pedido de mudança é enviada ao host e embutida no texto, por provedor, com o texto de substituição onde o host não aceita o arquivo. A documentação e o changelog descrevem a capacidade.
 
-O que impede a aprovação é o resto da issue: **nada leva a comprovação ao host de código** e **nada foi escrito na documentação nem no changelog**. Sem o primeiro, os critérios de aceite 3 e 11 e as regras 22 a 27 da spec não têm código nenhum; sem o segundo, o `4_REVIEW.md` que a etapa da revisão produz seria o primeiro documento a falar da capacidade. São dois blocos ausentes, não defeitos de detalhe.
+O que impede a aprovação é uma trava de segurança **nova**, do diff desta rodada: a imagem citada sobe ao host pela via automática **antes** de qualquer "sim", mesmo quando o comentário que a cita está esperando em Ações (um agente não autônomo) e mesmo na descrição do pedido de mudança, que sempre espera. A promessa de que a pessoa vê cada imagem antes de um "sim" não se cumpre: a imagem já está no host quando a proposta aparece. Exercitado: com um agente não autônomo, o comentário é proposto e a imagem já subiu.
 
-Além disso, sete achados de menor porte estão anotados nas linhas do código, dos quais o mais relevante é que a pasta de saída não é uma redoma: os vínculos das dependências ficam dentro dela no host, então um caminho que não tem `..` e que termina num arquivo comum pode ainda assim atravessar um link.
+Os bloqueantes da rodada anterior foram atendidos e conferidos; o menor do vínculo de dependência está fechado. Nada disto reabre decisão aceita.
 
 ## O que foi conferido nesta etapa
 
-Nada foi implementado nem corrigido aqui. Esta revisão leu o código e a documentação da entrega e **exercitou** as partes que dão para exercitar sem sandbox, sem modelo e sem host:
+Nada foi implementado nem corrigido aqui. A revisão leu o código e a documentação da entrega, rodou as portas do repositório e **exercitou** a parte que dá para exercitar sem sandbox, sem modelo e sem host:
 
-- **As ferramentas de comprovação, pelos manipuladores que os motores chamam.** Uma pasta de saída de verdade e um armazenamento de verdade: guardar um arquivo próprio funciona e responde com `ev-1`; outro arquivo guardado na sequência responde `ev-2` e os dois ficam no disco; um caminho fora da pasta é recusado; `..` é recusado; um arquivo que se diz imagem e é texto é guardado como texto; um arquivo acima do teto é recusado dizendo o teto; um caminho que passa por um link é recusado sem seguir o link; uma pasta de leitura do computador (o `/etc` de um sistema com `/usr` e `/etc` montados) é recusada.
-- **Os caminhos e as marcas, pelo módulo puro.** Uma chave inexistente dentro da pasta de saída é recusada; `/coxia/out/algo.png` é a mesma coisa que o caminho real; a lista de marcas recusa cor fora da lista fixa.
-- **A cópia para o commit da etapa e o id.** A cópia do arquivo guardado vai para `docs/cycles/<n>-<slug>/evidence/<id>.<ext>` no worktree; o id da execução é o maior usado mais um.
-- **As portas do repositório.** O typecheck passa sem erro; o teste de tema passa; o teste de chaves de catálogo passa; o teste do que pode ser público passa; a suíte inteira passa com isolamento (3695 de 3696; a única falha é um teste de tempo de `update.sh` que não toca esta mudança — isolado, ele passa três vezes seguidas).
-- **A leitura do código da entrega.** As ferramentas são oferecidas só a uma etapa com sandbox, e a presença dos manipuladores é o que decide se o modelo é convidado a guardar; a comprovação não entra em `produces` nem em `reads`; o commit da etapa pega a pasta nova; o navegador pareado lê os bytes pelo mesmo canal de `runs:*` e não muda a escolha do espaço de trabalho, como `runner.identity`.
+- **As portas do repositório, todas verdes:** o typecheck passa sem erro; a suíte inteira passa (3702 de 3702, 228 arquivos); o teste de tema passa; o teste de chaves de catálogo passa (4106 chaves nos dois idiomas); a auditoria do que pode ser público passa (927 arquivos).
+- **O envio ao host, pelos testes que o exercitam e por um exercício próprio.** O upload de uma comprovação citada por um comentário sobe antes do comentário e o endereço que o host responde sai embutido sob o texto; um host que não planeja o upload faz o comentário sair sem a imagem e dizer quantas comprovações ficam no app. Exercitado com um agente **não autônomo**: o comentário entra em Ações (espera o "sim") e a imagem sobe na mesma hora, pela via automática — é o achado bloqueante.
+- **A raiz de leitura.** Um arquivo comum atrás de um vínculo de pasta (o caso `node_modules`) dentro da pasta de saída é recusado com o motivo do vínculo; um caminho escrito direto com link, um `..`, um caminho fora da pasta e um arquivo que não é arquivo continuam recusados.
+- **Os menores da rodada anterior:** a chave duplicada do catálogo português sumiu e a chave que faltava existe; o tamanho do arquivo na tela é montado por catálogo; o bloco da comprovação tem estilo; a linha do prompt da QA usa a presença da ferramenta; o id aparece na tela sem o sinal de número.
+- **A configuração.** O campo da escolha do espaço de trabalho aparece nos três arquivos do esquema (tipos, padrões e esquema) e no passo de migração, com o padrão seguro lido quando o campo falta.
 
 ### O que não foi verificado
 
-- **O envio ao host de código: não existe.** Não há operação de upload, e nada embute imagem em comentário nem na descrição do pedido de mudança.
-- Nenhum provedor real foi usado (nem por esta entrega nem pelo projeto): o que cada host aceita continua sendo o que a documentação diz.
+- **Nenhum host real foi usado.** O envio e o embutimento são exercitados contra provedores falsos. Que a hospedagem de arquivos do GitHub devolva o endereço esperado, que a subida de arquivo do GitLab funcione com o token e que o Bitbucket aceite a subida não foi visto.
+- A conversa, o navegador pareado e o telefone foram lidos no código, não abertos numa janela.
 - O desenho e o codec de PNG não foram julgados linha a linha; o que os testes cobrem é o que se sabe deles.
-- O comportamento em tela (lista da etapa, miniatura, abrir, baixar, apagar, anexo na conversa, citação no cenário) foi lido no código, não aberto numa janela.
-- A decodificação de JPEG, GIF e WebP para marcar não foi exercitada; a entrega diz que só PNG é decodificado, e o código confirma.
+- A decodificação de JPEG, GIF e WebP para marcar não foi exercitada: só PNG é decodificado, e o código confirma.
+- Um sandbox de verdade: a recusa do arquivo atrás do vínculo foi exercitada sobre o sistema de arquivos real, não dentro de uma sandbox.
 
-## O que falta da issue
+## O achado bloqueante
 
-**O bloco 4 não foi implementado.** A operação de upload não foi acrescentada ao conjunto de escritas do provedor nem aos planejadores dos três hosts, e o publicador não embute imagem nenhuma: nem no corpo do comentário de uma etapa, nem na descrição do pedido de mudança. É o item 4 da issue, as regras 22 a 27 da spec e os critérios de aceite 3 e 11. O que existe hoje é a porta de Ações para comentários comuns; a imagem não passa por ela porque não há imagem a passar.
+A imagem de uma comprovação citada sobe ao host **fora** da porta que espera o "sim", quando a escrita que a cita está esperando. O envio acontece pela mesma via automática das escritas que um agente autônomo publica sozinho, e ela roda no momento em que o comentário ou a descrição do pedido de mudança é montado — antes de a proposta ser criada. Com isso: num agente não autônomo, a pessoa vê a proposta do comentário e, ao mesmo tempo, a imagem já está no host; na descrição do pedido de mudança, a imagem sobe quando o push é proposto, enquanto o pedido de mudança ainda espera. A trava "a pessoa vê cada imagem antes de um sim" (a nota final da issue) e a regra 23 da spec ("a de qualquer outro agente espera um sim em Ações, **com as imagens à vista antes de confirmar**") não se cumprem. Num espaço de trabalho de teste a escrita é recusada, porque a via automática passa pela mesma guarda de escrita externa; o problema é só a ordem diante do "sim", não a recusa.
 
-**A documentação e o changelog não mencionam nada disto.** Nem a página do runner, nem a da configuração (o campo novo e o esquema 13), nem a seção de mudanças não lançadas. Quem lê a documentação do produto não descobre a capacidade.
-
-## Um ponto sobre a mudança como um todo
-
-A pasta de saída não é, por si só, um lugar seguro de onde só sai o que a etapa fez. No host, os vínculos das dependências do clone ficam **dentro** dessa pasta, e o sandbox monta a pasta de saída como ela é. A recusa de link cobre o caminho que o modelo escreve — conferido: um link escrito direto é recusado —, mas não cobre o arquivo que fica atrás de um vínculo de dependência: `node_modules/algo/x.txt` não tem `..`, não passa por link no texto e termina num arquivo comum, então é aceito. Não é um caminho de escalada alta para quem já trabalha na sandbox, mas é a porta que a spec quer fechada com "nunca um caminho que passe por um link", e a revisão da pasta de saída deveria cobrir o vínculo, e não só o caminho escrito.
+O caso é novo no diff desta rodada: o envio da imagem ao host é o que esta rodada acrescentou, e nem o teste do comentário nem o da descrição do pedido de mudança exercitam um agente não autônomo (os dois usam um agente autônomo), então nada no repositório pega isto hoje.
 
 ## O que não foi revisado
 
-- O diff completo do codec de PNG (leitura e escrita) e o desenho de cada marca: julgados pelo teste que os cobre, não linha a linha.
+- O diff completo do codec de PNG e o desenho de cada marca: julgados pelo teste que os cobre, não linha a linha.
 - O comportamento num sandbox de verdade, num host de verdade e numa janela: fora do alcance desta etapa.
