@@ -256,7 +256,7 @@ describe('the commit message', () => {
   });
 });
 
-const msg = (seq: number, m: Partial<ForumMessage>): ForumMessage => ({ v: 1, type: 'message', seq, thread: 'run-x', at: '2026-10-03T10:00:00Z', kind: 'post', author: { type: 'person' }, text: '', code: null, params: {}, mentions: [], refs: [], stage: null, to: null, replyTo: null, public: false, published: null, ...m });
+const msg = (seq: number, m: Partial<ForumMessage>): ForumMessage => ({ v: 1, type: 'message', seq, thread: 'run-x', at: '2026-10-03T10:00:00Z', kind: 'post', author: { type: 'person' }, text: '', code: null, params: {}, mentions: [], refs: [], stage: null, to: null, replyTo: null, public: false, waitsForAnswer: false, published: null, ...m });
 const agent = (id: string) => ({ type: 'agent', id }) as const;
 
 describe('what an agent is given from the thread', () => {

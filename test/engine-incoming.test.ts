@@ -9,7 +9,7 @@ import { SECRET_GLOBS, agentHooks, obj, secretPath, str } from '../src/main/agen
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
 import { installLegacyConfig } from './helpers/config';
-import { type Fake, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
+import { type Fake, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
 type Turn = object[];
 const sdkCalls: { prompt: unknown; options: Record<string, unknown> }[] = [];
@@ -176,6 +176,80 @@ describe('the open engine, a stage that talks while it works', () => {
     expect(r.data).toEqual(answer);
     expect((fake.chats()[1].body as Record<string, any>).messages.some((m: { content?: string }) => String(m.content ?? '').includes('olha isto'))).toBe(true);
   });
+
+  it('delivers a message already queued when the step answers the schema', async () => {
+    // The step is a good answer to the schema and there is a message waiting: the message is due all the same, so the door is asked when the step ends and not
+    // only when the text does not follow the schema. Without it the stage would end here, with the message never handed over nor announced.
+    fake = await fakeOpenAI([textStep(JSON.stringify(answer)), textStep(JSON.stringify({ texto: 'com o helper' }))]);
+    const delivered: string[] = [];
+    const queue = ['use o helper existente'];
+    const r = await runOpen<typeof answer>(
+      params(fake, {
+        incoming: async (d) => {
+          const next = queue.shift() ?? null;
+          if (next !== null) {
+            delivered.push(next);
+            d(next);
+          }
+          return next;
+        },
+      }),
+    );
+    expect(r.data).toEqual({ texto: 'com o helper' });
+    expect(delivered).toEqual(['use o helper existente']);
+    // Three calls: the step, the step that answered the message, and the closing one that asks for the result. The message went in before any closing call.
+    const chats = fake.chats();
+    expect(chats).toHaveLength(3);
+    expect((chats[1].body as Record<string, any>).messages.some((m: { content?: string }) => String(m.content ?? '').includes('use o helper existente'))).toBe(true);
+    expect((chats[2].body as Record<string, any>).tools).toBeUndefined();
+  });
+
+  it('asks the door once per step and never after the closing call', async () => {
+    fake = await fakeOpenAI(['a resposta', '{"texto": "feito"}']);
+    let asked = 0;
+    const r = await runOpen<typeof answer>(
+      params(fake, {
+        structured: 'prompt',
+        incoming: async () => {
+          asked++;
+          return null;
+        },
+      }),
+    );
+    expect(r.data).toEqual(answer);
+    // The closing call is the answer: the door is not asked again after it, so a message that arrives then cannot enter the session after the result was given.
+    expect(asked).toBe(1);
+    // The closing call carries the schema's format, and the last word of the dialog is the instruction to answer it.
+    const chats = fake.chats();
+    expect(chats).toHaveLength(2);
+    expect((chats[1].body as Record<string, any>).response_format).toBeDefined();
+    expect(((chats[1].body as Record<string, any>).messages as { content: string }[]).at(-1)!.content).toMatch(/resposta final/i);
+  });
+
+  it('gives the model one round to fix a text that did not follow the schema, before the stage fails', async () => {
+    // A stage on a server that refuses the response format: the closing call cannot force the shape, so the errors of the model's own text go back into the
+    // dialog and the next step has a chance to fix it. Without the round the stage would fail on whatever the model wrote first.
+    // The step and the closing answer carry a text that does not follow the schema, and only the third step has it.
+    fake = await fakeOpenAI(['prosa que não é o formato', 'ainda em prosa', '{"texto": "feito"}']);
+    const client = clientFor(fake);
+    client.learned.dropParams.add('response_format');
+    const r = await runOpen<typeof answer>(params(fake, { client, incoming: async () => null }));
+    expect(r.data).toEqual(answer);
+    const chats = fake.chats();
+    expect(chats).toHaveLength(3);
+    const last = chats.at(-1)!.body as Record<string, any>;
+    expect((last.messages as { content: string }[]).some((m) => /formato/i.test(m.content))).toBe(true);
+    // The closing call offers the tools of the stage again: it is the next step of the model, not the collection.
+    expect(last.tools).toBeDefined();
+  });
+
+  it('without the door the call is the one of today: no extra turn and no collection', async () => {
+    fake = await fakeOpenAI([finalCall()]);
+    const r = await runOpen<typeof answer>(params(fake));
+    expect(r.data).toEqual(answer);
+    expect(fake.chats()).toHaveLength(1);
+    expect((fake.chats()[0].body as Record<string, any>).tools).toBeDefined();
+  });
 });
 
 describe('the Claude SDK engine, a stage that talks while it works', () => {
@@ -232,6 +306,42 @@ describe('the Claude SDK engine, a stage that talks while it works', () => {
     const r = await runnerFor(request().target)<typeof answer>(request() as never);
     expect(r.data).toEqual(answer);
     expect(sdkCalls[0].prompt).toBe('Trabalhe a etapa.');
+  });
+
+  it('hands a queued message over when the turn already answered, and asks the door only while the session is open', async () => {
+    // The first turn answers in the schema and a message is waiting: it is handed over all the same, before any closing call, and the result is the answer of the
+    // turn that came after it. The door is not asked again once the closing call went in, so no message enters the session behind the stage's result.
+    const { runnerFor } = await import('../src/main/engine/registry');
+    await import('../src/main/agents');
+    sdkTurns = [
+      [
+        [init('s1'), result('success', 's1', answer)],
+        [result('success', 's1', { texto: 'com o helper' })],
+      ],
+    ];
+    const delivered: string[] = [];
+    const queue = ['use o helper existente'];
+    let asked = 0;
+    const r = await runnerFor(request().target)<typeof answer>(
+      request({
+        incoming: async (onDelivered: (t: string) => void) => {
+          asked++;
+          const next = queue.shift() ?? null;
+          if (next !== null) {
+            delivered.push(next);
+            onDelivered(next);
+          }
+          return next;
+        },
+      }) as never,
+    );
+    expect(r.data).toEqual({ texto: 'com o helper' });
+    expect(delivered).toEqual(['use o helper existente']);
+    expect(asked).toBe(2);
+    // The message went in before the closing instruction, in the same session.
+    const opened = sdkSeen.filter((t) => t.includes('use o helper existente') || t.includes('resposta final'));
+    expect(opened[0]).toContain('use o helper existente');
+    expect(sdkCalls).toHaveLength(1);
   });
 });
 

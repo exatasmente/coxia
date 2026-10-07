@@ -17,8 +17,11 @@ export interface StageInbox {
   /** Whether the stage is finishing: the tools may say so to the agent. */
   readonly isClosing: boolean;
   /** Queues a message for the agent without waiting for a step; false when the stage is already finishing (the message comes back in the closing line). */
-  post(text: string): boolean;
+  post(text: string, asked?: boolean): boolean;
 }
+
+/** The answer type of a message nobody expects an answer from: what a stage that closes says about it. */
+const SAY = { message: 'runner.message.afterClose', asks: 'runner.message.afterCloseAsk' } as const;
 
 /** The mailboxes of the stages that are working, by run id: what a message of the thread is routed to. */
 const live = new Map<string, StageInbox>();
@@ -49,6 +52,10 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
       console.error('[runner] could not record a message of the stage', runId, e instanceof Error ? e.message : e);
     }
   };
+  // A message that arrived while the stage was working and did not make it into the session: the thread says so, and says whether it asked something.
+  const missed = (text: string, asked: boolean): void => {
+    append({ kind: 'system', author: { type: 'app' }, code: asked ? SAY.asks : SAY.message, params: { agent, text: text.slice(0, 600) }, stage });
+  };
   const inbox: StageInbox = {
     async next() {
       for (;;) {
@@ -68,12 +75,14 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
       closing = true;
       // Whatever is still queued is not handed over; the stage ends with what it has and the thread says why.
       const left = queued.splice(0);
-      for (const text of left) {
-        append({ kind: 'system', author: { type: 'app' }, code: 'runner.message.afterClose', params: { agent, text: text.slice(0, 600) }, stage });
-      }
+      for (const text of left) missed(text, false);
     },
-    post(text) {
-      if (closing) return false;
+    post(text, asked = false) {
+      if (closing) {
+        // The stage is already finishing: the message enters no session, not even briefly, and the thread is where it is answered for.
+        missed(text, asked);
+        return false;
+      }
       queued.push(text);
       flush();
       return true;

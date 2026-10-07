@@ -111,6 +111,7 @@ const MESSAGE: JsonSchema = {
     to: { type: ['string', 'null'], maxLength: 48 },
     replyTo: { type: ['integer', 'null'] },
     public: { type: 'boolean' },
+    waitsForAnswer: { type: 'boolean' },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
   required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
@@ -259,6 +260,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       // An answer says which question or request it answers: the one it names when that one is open, else the latest nobody has answered.
       replyTo: d.kind === 'answer' ? (d.replyTo !== undefined && d.replyTo !== null && state.open.includes(d.replyTo) ? d.replyTo : (state.open[state.open.length - 1] ?? null)) : null,
       public: d.public === true,
+      // Only the person's own words are read for it (the guard does not touch them): a message that asks something and is not seen is told so in the thread.
+      waitsForAnswer: a.type === 'person' && d.kind === 'post' && /\?\s*$/.test(text.trim()),
       published: d.published ?? null,
     };
   }

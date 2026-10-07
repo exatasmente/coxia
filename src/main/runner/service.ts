@@ -908,9 +908,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (inbox && working && text) {
         for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
           if (id !== working || toStage >= 1) continue;
-          const queued = inbox.post(text);
+          const queued = inbox.post(text, message.waitsForAnswer);
           toStage++;
-          deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: queued ? 'runner.message.waiting' : 'runner.message.afterClose', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
+          // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
+          if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
         }
       }
       const call = toStage ? message.mentions.slice(toStage, MAX_MENTIONS) : message.mentions.slice(0, MAX_MENTIONS);
@@ -1065,7 +1066,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
-        const clock: StageClock = { pause: watch.pause, allowed: new Set() };
+        const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
         return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.

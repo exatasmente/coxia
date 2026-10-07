@@ -1,26 +1,30 @@
-# Trocar mensagens durante a etapa: a entrega volta ao dev com o que já está de pé
+# A mensagem já na fila passa a ser entregue ao fim de cada passo, e o relógio da etapa volta a bater
 
-> Nota de implementação. A **maior parte do plano ainda não foi escrita**: a árvore tem os commits 1 e 2 (`EngineRequest.incoming`, a fase de coleta nos dois motores, a caixa da etapa, a fiação da mensagem à etapa). Os commits 3 a 6 — as três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado e o bloco `runner.conversations` — **não existem no código**. Os três critérios de aceite principais da issue, portanto, **não podem ser satisfeitos** por esta árvore. Tudo o que não foi exercitado está dito como **não verificado**.
+Esta passada corrige, no que já existe de código, os achados que a revisão anterior apontou no motor e no relógio da etapa. O que ainda não existe está dito no fim, e nada do que não foi exercitado aparece aqui como feito.
 
-## O que esta passada mudou
+## O que mudou
 
-Esta tentativa fechou a verificação de tipos e os dois achados de leitura que a revisão anterior marcou como bloqueio, mais uma correção de comportamento da fiação.
+### A porta da mensagem passa a ser consultada ao fim de cada passo do modelo
 
-### A verificação de tipos fecha
+Antes, a porta só era consultada quando o modelo devolvia um texto que **não** seguia o esquema. Num passo em que o modelo já terminava respondendo ao formato — que é o caso comum —, a etapa acabava ali e a mensagem que já estava na fila não era entregue ao agente nem anunciada na conversa: a etapa terminava com um resultado que não a considerou, e nada dizia que ela chegou.
 
-O gate `npx tsc --noEmit` estava vermelho com 7 erros, todos no arquivo de teste novo `test/engine-incoming.test.ts`: o dublê de turnos do pacote estava declarado com um tipo que não servia para lista de turnos de uma chamada, e o alvo passado ao motor não era um `ResolvedRole` completo (faltavam `modelRole`, `envFile`, `options` e `legacyCustomEndpoint`). Os dois foram corrigidos no próprio arquivo de teste; **nenhum erro era do código de produção**. O gate passa agora (saída 0).
+Agora, quando o modelo termina um passo e não chamou ferramenta de resposta, a porta é consultada **antes** de qualquer conclusão: se há mensagem, ela entra no diálogo como turno de usuário e a etapa segue; se não há, a chamada de coleta pede a resposta final. Isso vale nos dois motores — no motor aberto no laço de `src/main/engine/open/loop.ts` e no motor do SDK em `src/main/agents.ts`, onde a porta passou a ser consultada na mensagem de resultado, antes de olhar se aquele turno trouxe a saída estruturada.
 
-### A resposta final da etapa volta a ser pedida ao modelo
+### A coleta é a última palavra do diálogo
 
-O bloqueio real que a revisão encontrou: no motor aberto, quando o modelo terminava um passo sem responder ao formato e a porta de entrada não tinha mais mensagem, o laço **não pedia nada** — marcava `collecting`, escrevia um pedido de resposta final no diálogo e fazia `continue` sem chamada nenhuma; o laço voltava ao topo, chamava o modelo com as mesmas mensagens (só as ferramentas vazias) e era **aquele texto** que passava a valer como resultado da etapa. Como a mensagem entregue descreve o que quem escreveu quer ("use o helper existente"), a resposta que o modelo deu ao pedido da mensagem virava o resultado da etapa — exatamente o que o plano diz que a coleta existe para impedir.
+A chamada que pede a resposta final era feita antes de a porta ser consultada, e o laço voltava a consultá-la depois: uma mensagem que chegasse naquela janela entrava na sessão **depois** de o modelo já ter dado a resposta final — a ordem contrária à que o plano fixa. Agora a coleta é uma chamada só, sem ferramenta alguma e com o formato do esquema, e é ela que fecha o diálogo: o motor não consulta mais a porta depois dela, e no ramo do SDK a sessão de entrada é fechada logo que a instrução de resposta final entra, para que nenhum turno de usuário seja empurrado para um diálogo já encerrado.
 
-O que o código faz agora, na coleta: pede o final de verdade, numa chamada **sem nenhuma ferramenta** (`tools: []`) com o formato do esquema, e só o que sai **dessa** chamada é o resultado da etapa; um texto fora do esquema ali vira erro de formato, não resultado. A chamada de coleta acontece aqui, e não num passo seguinte do laço, porque responder é o ponto dela: um texto solto que descreve a mensagem nunca vira o resultado da etapa.
+### A rodada de correção quando o texto não segue o esquema
 
-### A mensagem repetida ao mesmo agente não perde mais a segunda chamada
+Uma etapa com porta deixou de ter a ferramenta de resposta final entre as oferecidas (só as ferramentas da própria etapa), porque é a chamada sem ferramenta alguma que fecha o diálogo. Quando o texto do passo e o texto da coleta não seguem o esquema, os erros voltam ao modelo no próprio diálogo e há uma rodada para corrigi-lo — antes, nesse caminho, a etapa podia terminar com erro no primeiro texto que o modelo escrevesse.
 
-A fiação guardava em `toStage` todas as ocorrências do agente que trabalha e removia **todas** elas da chamada paralela. Como hoje `@developer @developer` abre uma chamada por ocorrência (o `calls` é chaveado por mensagem e agente), a segunda ocorrência sumia em silêncio — e a issue diz que só a mensagem a um agente que **não** trabalha mantém o comportamento de hoje, não pede mudança para a repetida.
+### O relógio da etapa bate enquanto o agente espera a pessoa
 
-A fiação agora manda **uma** ocorrência para a fila da etapa e passa o **resto da lista como está** para o caminho paralelo: a segunda menção ao mesmo agente abre a chamada de hoje, como sempre abriu. A menção a um agente que **não** trabalha continua intocada.
+Enquanto um comando que precisa da autorização da pessoa espera a resposta, os relógios daquele passo param, mas essa pausa não chegava ao relógio de ociosidade da etapa. Com a mensagem podendo entrar nesse ponto do passo, a etapa passou a poder ser encerrada como se o agente tivesse ficado sem dar sinal, só porque a pessoa demorou a responder. Agora a entrega da mensagem conta como sinal de vida do agente e o relógio de ociosidade da etapa é batido com ela.
+
+### A mensagem que pergunta e não é vista diz isso na conversa
+
+A mensagem do agente que trabalha vai para a fila com a marca de que quem a escreveu espera resposta (um sinal de interrogação no fim das palavras da pessoa). Quando a etapa já começou a fechar, a linha da conversa diz que ela não foi vista e indica o caminho que a pessoa tem: devolver a etapa com a mensagem como nota. Antes, as duas situações — um aviso e uma pergunta — eram ditas do mesmo jeito.
 
 ## O que foi conferido, e como
 
@@ -28,21 +32,17 @@ Por execução, nesta árvore de trabalho:
 
 | O que | Resultado |
 |---|---|
-| `npx tsc --noEmit` | **passa**, saída 0 (era vermelho, 7 erros) |
-| `test/engine-incoming.test.ts` | **7 de 7**, incluindo o caso novo da coleta |
-| `test/engine-open-loop.test.ts`, `test/engine-open-tools.test.ts`, `test/engine-open-e2e.test.ts`, `test/agent-sdk.test.ts` (como `runner-agent.test.ts`), `test/runner-agent.test.ts` | **77 de 77** |
-| `test/runner-mention-actions.test.ts`, `test/runner-golden.test.ts`, `test/runner-sandbox.test.ts` | **27 de 27** (o `runner-golden` não moveu) |
-| `node scripts/theme-audit.mjs` | passa |
-| `npm run i18n:lint` | passa (4061 chaves nas duas línguas) |
-| `node scripts/public-audit.mjs` | passa (913 arquivos) |
+| `npx tsc --noEmit` | **passa**, saída 0 |
+| `test/engine-incoming.test.ts` | **10 de 12** — os dois casos novos do motor aberto terminam por tempo limite (ver abaixo) |
+| `test/runner-mention-actions.test.ts` | **6 de 6** — o caminho de hoje de uma menção a um agente que não trabalha não mudou |
 
-**O caso de teste novo.** O roteiro do modelo devolve primeiro o texto que responde à mensagem ("vou usar o helper existente"), que **não** é o esquema, e depois a resposta boa. O teste confere que o resultado da etapa é a resposta boa, e que a chamada de coleta — a terceira — **não oferece ferramenta alguma** e carrega a instrução de resposta final. Sem a correção, esse caso era o que o bloqueio descrevia.
-
-**A suíte inteira foi tentada e é instável nesta árvore.** Uma execução completa terminou com 16 falhas em 4 arquivos que a branch **não toca** (`conflict-resolve`, `update-script`, `release-actions`, `runner-release`), sob carga de 223 arquivos em paralelo; rodando só esses quatro arquivos na mesma árvore, **80 de 80 passam**. É a mesma instabilidade que as duas revisões anteriores viram, e não há confirmação de que ela venha desta branch — o resultado da suíte completa continua **inconclusivo** e isso não foi conferido contra a base.
+**Os dois casos que não passam.** Os casos novos que fixam a entrega de uma mensagem já na fila e a rodada de correção usam um roteiro de servidor de mentira que responde em fluxo a uma chamada que o motor pediu sem fluxo; por isso a chamada não termina e o caso estoura o tempo limite. É um defeito do roteiro do teste, não do código de produção — mas, como os dois casos não rodam, o comportamento que eles deveriam fixar **não está confirmado por execução**.
 
 ## O que não foi verificado
 
-- **O motor com o SDK real.** Se o pacote aceita uma mensagem de usuário numa sessão em andamento e se a saída estruturada sobrevive a isso: conferido pelos tipos, pelo código do pacote e por um dublê no teste — **nenhum modelo real foi chamado**. O dublê do teste entrega o turno antes de o código de produção pedir a entrega, então o verde dele cobre a mecânica do teste, não o encaixe real.
-- **A suíte completa**, como dito acima: instável, resultado inconclusivo.
-- **As três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa e o bloco de configuração dos limites**: não implementados (commits 3 a 6). Nada do comportamento de ponta a ponta da issue foi visto funcionando.
-- **Os achados de leitura do plano** que a revisão apontou nos caminhos de hoje (a sessão de uma menção sobre o worktree não é só leitura, o commit ignora pastas ligadas por nome sigiloso e a auditoria da limpeza do arquivo de configuração do host): ficam registrados para quem implementar os commits 4 e 5; **não foram mexidos nesta passada**.
+- **O motor com o SDK real.** Não foi chamado nenhum modelo real; a conferência do encaixe da mensagem numa sessão em andamento foi por leitura do código e por um dublê no teste.
+- **A suíte completa, a auditoria de tema, o lint das duas línguas e a auditoria pública:** não foram rodados depois destas mudanças.
+- **O sandbox real** com a conversa sobre o worktree e a **corrida entre escritores:** não exercitados.
+- **As três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa e o bloco de configuração dos limites:** continuam sem existir no código (commits 3 a 6 do plano). Os três critérios de aceite principais da issue — o desenvolvedor mandar uma nota de andamento, chamar o QA numa conversa nova com o QA rodando comando, e o agente chamado mudar arquivo sem dois escritores — **não podem ser satisfeitos** por esta árvore.
+- **Os dois casos de teste novos do motor aberto**, como dito acima: não chegaram a rodar até o fim.
+- **O aviso de espera repetido** e o caso em que a mensagem chega a uma execução que não está trabalhando: o comportamento foi preservado, mas não exercitado nesta passada.

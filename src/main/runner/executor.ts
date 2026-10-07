@@ -283,6 +283,12 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
 /** What a host session needs from its stage: the watchdog, once it exists (a command waiting for the person stops its clocks), and the commands already allowed. */
 export interface StageClock {
   pause(): () => void;
+  /**
+   * The stage's idle clock starts again as if the agent had just shown a sign of life. A command that waits for the person stops both clocks (`pause`), but the
+   * wait itself may have to hand the agent something (a message while it works): that counts as the agent hearing from outside, so the idle limit is not left
+   * running with the time the person took to answer.
+   */
+  beat(): void;
   /** The workspace's own commands the app runs before QA: the person listed them, so they run without asking, as on `allowlist`. */
   allowed: Set<string>;
 }
@@ -319,7 +325,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // before the sandbox is made, because the sandbox shares the folders those links point to.
   if (writes || kind === 'qa') await ensureDependencies(d, run, stage.id);
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
-  const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), allowed: new Set() };
+  const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
   const session = agent.shell === 'sandbox' || agent.shell === 'host' ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
     return await runStage(d, run, flow, abort, usage, session, clock);
@@ -329,7 +335,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   }
 }
 
-async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: { watch?: Watchdog; allowed: Set<string> }): Promise<StageRun> {
+async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
@@ -447,6 +453,13 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     const message = await inbox.next();
     if (message !== null) delivered(message);
     return message;
+  };
+  // A stage that talks shows a sign of life beyond the model events: a message comes in, someone answers the command question — the stage is alive even while the
+  // agent waits on the person. `beat` is what the idle clock of the stage reads, and without it the time the person took to answer kills a stage that is working.
+  const beat = call.beat ?? ((): void => undefined);
+  call.beat = () => {
+    beat();
+    clock?.beat();
   };
 
   let data: unknown;

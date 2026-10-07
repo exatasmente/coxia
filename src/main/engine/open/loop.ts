@@ -280,13 +280,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const policy = policyFromHooks(p.hooks, sessionId);
 
   // --- structured output strategy
+  // A stage with a door has a strategy of its own: no final-answer tool (only the stage's own tools are offered), because a call with no tool at all is what
+  // closes the dialog — by the response format when the server has one, by the prompt otherwise. Everything else stays as it is.
+  const door = !!p.incoming && !!p.schema;
   const schemaObject = p.schema && (p.schema as { type?: unknown }).type === 'object';
   let strategy: OpenRunResult<T>['strategy'] = 'text';
   if (p.schema) {
     const asked = p.structured ?? 'auto';
     const auto = p.capabilities?.jsonSchema === true && !client.learned.dropParams.has('response_format') ? 'response_format' : toolsAllowed && schemaObject ? 'tool' : 'prompt';
     strategy = asked === 'auto' ? auto : asked;
-    if (strategy === 'tool' && (!toolsAllowed || !schemaObject)) strategy = 'prompt';
+    if (door) strategy = strategy === 'response_format' ? 'response_format' : 'prompt';
+    else if (strategy === 'tool' && (!toolsAllowed || !schemaObject)) strategy = 'prompt';
   }
   const finalDef: ToolDef | null =
     strategy === 'tool' && p.schema
@@ -397,17 +401,32 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   let nudges = 0;
   let repairs = 0;
   let forceFinal = finalDef !== null && impls.length === 0;
-  // The door of a stage that talks while it works: no message yet delivered, no collection pass asked for.
-  let collecting = false;
-  const deliver = (text: string): void => events.onInterim?.(`${t('main.engine.text.messageIn')}\n${text}`);
   const responseFormat: Json | undefined = p.schema ? { type: 'json_schema', json_schema: { name: 'answer', schema: p.schema, strict: false } } : undefined;
+
+  // A stage that talks while it works: the door is asked what the model has already said, never before it spoke. A pending message becomes a user turn of the same
+  // dialog and another step follows; when there is none, one closing call, with no tool at all and with the schema's format, asks for the result of the stage. Only
+  // what comes out of that call counts, so a message delivered in the middle never costs the stage its shape. Answering is the point of the closing call, so it
+  // happens here and not in a later turn of the loop: a text that merely described the message never becomes the result. False: the door had nothing to say.
+  const throughDoor = async (): Promise<boolean> => {
+    if (!p.incoming || !p.schema) return false;
+    const message = await p.incoming((text) => events.onInterim?.(`${t('main.engine.text.messageIn')}\n${text}`));
+    if (message !== null) {
+      write({ role: 'user', content: `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
+      return true;
+    }
+    write({ role: 'user', content: t('main.engine.text.collect') });
+    const last = await call({ tools: [], responseFormat });
+    const got = extractAnswer(last.text, p.schema as Json);
+    if (got.ok) return false;
+    throw new StructuredOutputError(describeErrors(got.errors));
+  };
+
   for (;;) {
     if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
     turns++;
     let c: Completion;
     try {
-      // The collection pass asks for the final answer with no tool at all, so a message delivered in the middle never costs the stage its shape.
-      c = await call({ tools: collecting ? [] : apiTools(), toolChoice: forceFinal && finalDef ? { type: 'function', function: { name: FINAL } } : undefined, responseFormat: collecting ? responseFormat : undefined });
+      c = await call({ tools: apiTools(), toolChoice: forceFinal && finalDef ? { type: 'function', function: { name: FINAL } } : undefined });
     } catch (e) {
       // A model that cannot do tools still answers from the prompt: switch to plain JSON instead of failing the ceremony.
       if (e instanceof EngineError && e.kind === 'no_tools' && turns === 1 && !prior && impls.length + (finalDef ? 1 : 0) > 0) {
@@ -416,7 +435,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       }
       throw e;
     }
-    if (c.toolCalls.length && !collecting) {
+    if (c.toolCalls.length) {
       const fin = finalDef ? c.toolCalls.find((t) => t.function.name === FINAL) : undefined;
       if (fin && p.schema) {
         const raw = parseToolArguments(fin.function.arguments);
@@ -436,39 +455,40 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i])));
       continue;
     }
-    if (!p.schema) return done(c.text, turns);
+    if (!p.schema) {
+      // A call without a schema has no shape to collect: the text is the answer, but the door is asked first, since the step just ended and a message that arrived
+      // meanwhile is still due.
+      if (await throughDoor()) continue;
+      return done(c.text, turns);
+    }
+
+    // The step ended without a tool call that answers, so the door's turn is now: whether the model followed the schema or not, a message that is waiting is
+    // delivered before anything of the stage is concluded. Asking the door only after a text outside the schema would leave a message already queued undelivered
+    // when the stage ends answering to the format.
+    if (await throughDoor()) continue;
+
     const parsed = extractAnswer(c.text, p.schema);
     if (parsed.ok) return done(parsed.value, turns);
 
-    // A stage that talks while it works: a message from outside entered between two steps and the model goes on with it in the same dialog. The stage did not
-    // restart; the work it did so far and its tool results are still here.
-    if (p.incoming && !collecting) {
-      const message = await p.incoming(deliver);
-      turns--;
-      if (message !== null) {
-        write({ role: 'user', content: `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
-        continue;
-      }
-      // No message left: ask for the final answer now, with no tool at all, and take it as the result of the stage. Answering is the point of this call, so it
-      // happens here and not in a later turn of the loop: a text that only described the message never becomes the result of the stage.
-      write({ role: 'user', content: t('main.engine.text.collect') });
-      const last = await call({ tools: [], responseFormat });
-      const got = extractAnswer(last.text, p.schema);
-      if (got.ok) return done(got.value, turns);
-      throw new StructuredOutputError(describeErrors(got.errors));
-    }
-
-    if (strategy === 'tool' && nudges < 2 && !collecting) {
+    if (strategy === 'tool' && nudges < 2) {
       nudges++;
       turns--;
       write({ role: 'user', content: t('main.engine.text.callFinal', { tool: FINAL }) });
       forceFinal = true;
       continue;
     }
-    if (strategy === 'tool' && !collecting) throw new StructuredOutputError(describeErrors(parsed.errors));
+    if (strategy === 'tool') throw new StructuredOutputError(describeErrors(parsed.errors));
 
     // response_format and prompt strategies: a closing call that asks for the JSON (with response_format when the server has it),
-    // then one correction round with the validation errors.
+    // then one correction round with the validation errors. A stage that talks lets the door ask for that JSON instead: it does so before the result is taken
+    // (whether the text followed the format or not), and the errors go back to the model in the dialog, with one round to fix them.
+    if (door) {
+      if (await throughDoor()) continue;
+      write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
+      if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
+      turns++;
+      continue;
+    }
     write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(parsed.errors) })}` });
     let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
     let fixed = extractAnswer(last.text, p.schema);

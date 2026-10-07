@@ -572,6 +572,21 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // A stage that talks while it works keeps the session open: the message a person or another agent sent enters as a user turn between two steps, and the
   // stage does not restart. The door decides; without one the call is a single prompt, exactly as before.
   const stream = req.incoming ? messageStream(req.prompt) : null;
+  // The door of a stage that talks while it works is asked what the model has already said, never before it spoke: a message that is waiting enters the session,
+  // and the collection asks for the final answer once the queue is empty. Asking it only on a turn that produced no final answer would leave a message already
+  // queued undelivered when the stage ends answering. Only while the stream is open: at the collection pass there is no message to wait for.
+  let open = stream !== null;
+  const throughDoor = async (): Promise<boolean> => {
+    if (!stream || !req.incoming || !open) return false;
+    const message = await req.incoming((text) => req.activity?.text(`${t('main.engine.text.messageIn')}\n${text}`));
+    if (message === null) {
+      open = false;
+      stream.push(t('main.engine.text.collect'));
+      return false;
+    }
+    stream.push(`${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}`);
+    return true;
+  };
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
@@ -610,13 +625,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
       if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
-      // A stage that talks while it works: the turn ended with no final answer, so the door may have a message for the session. The stage goes on in the same
-      // session; the collection pass (no message left) asks for the final answer with what the session already has.
-      if (stream && req.incoming && m.subtype === 'success' && m.structured_output == null) {
-        const message = await req.incoming((text) => req.activity?.text(`${t('main.engine.text.messageIn')}\n${text}`));
-        stream.push(message === null ? t('main.engine.text.collect') : `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}`);
-        continue;
-      }
+      // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
+      // the closing call asks for the final answer with what the session already has.
+      if (await throughDoor()) continue;
       if (m.subtype !== 'success' || m.structured_output == null) {
         // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
         const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
