@@ -1,5 +1,6 @@
 import { runThreadId } from '../shared/forum';
 import type { Run, Transition } from '../shared/runs';
+import { threadAnchor } from './forum';
 import type { ForumStore } from './forum-core';
 import type { RunStore } from './runs-core';
 
@@ -25,8 +26,15 @@ export function beginRun(d: RunForum, started: Transition): Run {
 export function moveRun(d: RunForum, id: string, move: (run: Run) => Transition): Run {
   const done = d.runs.update(id, move);
   d.forum.ensureThread({ id: runThreadId(id), kind: 'run', runId: id, title: titleOf(done.run) });
-  // What a move says a message carries rides on that message: the files a person attached to the answer stay on the answer the runner records.
-  const messages = done.messages.map((m, i) => (done.attachments?.[i]?.length ? { ...m, attachments: done.attachments[i] } : m));
+  // What a move says a message carries rides on that message: the files a person attached to the answer stay on the answer the runner records. The
+  // message also gets the conversation's anchor, the same one the forum module puts on a written post, so a message the runner records opens its own
+  // files (and the deletion of that message drops them) instead of being turned away as a message of another conversation.
+  const anchor = threadAnchor(runThreadId(id));
+  const messages = done.messages.map((m, i) => ({
+    ...m,
+    anchor: m.anchor ?? anchor,
+    ...(done.attachments?.[i]?.length ? { attachments: done.attachments[i] } : {}),
+  }));
   d.forum.append(runThreadId(id), messages);
   return done.run;
 }

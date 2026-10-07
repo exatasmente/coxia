@@ -115,7 +115,13 @@ export const forumModule: Module = (ctx) => {
   // come from the stored message, never from the caller, so a seq of another conversation cannot name a file here.
   ctx.handle('forum:attachment-delete', (thread: unknown, seq: unknown): boolean => {
     if (typeof thread !== 'string' || !Number.isInteger(seq)) return false;
-    const removed = forum.remove(thread, seq as number);
+    // A conversation this workspace does not know is nothing to delete, not an error the caller has to read a stack from.
+    let removed: ForumMessage | null = null;
+    try {
+      removed = forum.remove(thread, seq as number);
+    } catch {
+      return false;
+    }
     if (!removed || removed.anchor !== threadAnchor(thread)) return false;
     attachmentStore().dropAll(thread, removed.attachments ?? []);
     return true;

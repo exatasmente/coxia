@@ -4,7 +4,7 @@
 
 A caixa de escrita de qualquer conversa do fórum aceita arquivos — um botão, arrastar-e-soltar no computador, colar uma imagem e o seletor de arquivos do sistema. Vários arquivos cabem numa mensagem e cada um aparece antes do envio com o nome e o tamanho, e pode ser tirado dali. O aplicativo recusa, antes de enviar, o que passa dos limites ou não é de um tipo aceito, com o motivo; o tipo é decidido pelo conteúdo do arquivo, nunca pelo nome. Depois de enviada, uma imagem aparece como miniatura e abre em tamanho cheio, e qualquer outro arquivo aparece como um cartão com nome, tipo e tamanho que abre ou é salvo — na janela e no navegador pareado. Um agente chamado naquela conversa fica sabendo quais arquivos a mensagem carrega e os abre, somente leitura; uma imagem chega ao modelo como imagem e um texto como texto.
 
-Uma mensagem também pode ser apagada, e os arquivos que ela carregava vão junto: a mensagem pede confirmação, dizendo quantos arquivos serão apagados do disco, e some da conversa com eles. Quando a mensagem com arquivos é a resposta que uma execução espera, ela agora aparece como uma mensagem normal da conversa, com a miniatura e o cartão, e o agente que continua o trabalho recebe os arquivos.
+Uma mensagem também pode ser apagada, e os arquivos que ela carregava vão junto: a mensagem pede confirmação, dizendo quantos arquivos serão apagados do disco, e some da conversa com eles. Isso vale igual nas duas formas de mensagem de uma conversa de execução: a mensagem que a pessoa escreve à mão e a resposta que a execução registra quando a pessoa responde à pergunta dela. Na resposta, a miniatura e o cartão aparecem, os arquivos abrem e o agente que continua o trabalho os recebe.
 
 ## O que foi feito, por peça
 
@@ -16,21 +16,19 @@ Uma mensagem também pode ser apagada, e os arquivos que ela carregava vão junt
 
 ### A mensagem do fórum e os canais novos
 
-`src/shared/forum.ts` ganhou `attachments: AttachmentRef[]` na mensagem e um `anchor` interno. `src/main/forum-core.ts` valida os dois no esquema do `.jsonl` e tem `remove(thread, seq)`, que grava a remoção como linha própria e devolve a mensagem como ela era, com os arquivos que carregava. `src/main/forum.ts` serve cinco canais: `forum:attachment-put` (os bytes, base64, um arquivo por chamada), `forum:attachment-post` (a mensagem com os refs), `forum:attachment-drop` (remover antes de enviar), `forum:attachment-get` (os bytes de um arquivo que a mensagem carrega) e `forum:attachment-delete` (apagar a mensagem e os arquivos dela). O `forum:attachment-get` e o `forum:attachment-delete` só respondem quando a mensagem existe e a sua âncora é a da conversa pedida — é isso que faz "um agente chamado noutra conversa não abre esses arquivos" ser verdadeiro e testável sem tela.
+`src/shared/forum.ts` ganhou `attachments: AttachmentRef[]` na mensagem e um `anchor` interno. `src/main/forum-core.ts` valida os dois no esquema do `.jsonl` e tem `remove(thread, seq)`, que grava a remoção como linha própria e devolve a mensagem como ela era, com os arquivos que carregava. `src/main/forum.ts` serve cinco canais: `forum:attachment-put` (os bytes, base64, um arquivo por chamada), `forum:attachment-post` (a mensagem com os refs), `forum:attachment-drop` (remover antes de enviar), `forum:attachment-get` (os bytes de um arquivo que a mensagem carrega) e `forum:attachment-delete` (apagar a mensagem e os arquivos dela). O `forum:attachment-get` e o `forum:attachment-delete` só respondem quando a mensagem existe e a sua âncora é a da conversa pedida — é isso que faz "um agente chamado noutra conversa não abre esses arquivos" ser verdadeiro e testável sem tela. Os cinco canais entram na mesma lista aberta ao navegador pareado (`src/main/webPolicy.ts`), não são janela-exclusiva nem efeito externo, e as quatro chamadas de escrita entram na fila do telefone (`src/shared/outbox.ts`).
 
-Os cinco canais entram na mesma lista aberta ao navegador pareado (`src/main/webPolicy.ts`), não são janela-exclusiva nem efeito externo, e as quatro chamadas de escrita entram na fila do telefone (`src/shared/outbox.ts`) com o `isQueueable` que o teste do outbox já exige que a política permita.
+### A âncora da mensagem que a execução registra
+
+Toda mensagem que o runner grava na conversa de uma execução passa agora pela mesma âncora que o módulo do fórum põe numa mensagem escrita: `moveRun` (`src/main/runs-forum.ts`) calcula `threadAnchor(runThreadId(id))` e põe na mensagem, preservando a âncora que a própria mensagem já traga. Antes desta passada, a mensagem `answer` que o runner escreve ficava com `anchor: null`, e os dois canais de arquivo — que exigem a âncora da conversa — a recusavam: os anexos de uma resposta não abriam (sem miniatura, sem cartão, sem download) e apagá-la não removia os arquivos do disco. Com a âncora, os dois caminhos funcionam.
+
+Quando a mensagem é a resposta que a execução espera, os arquivos chegam à mensagem `answer`: o interceptor do fórum devolve a mensagem de resposta ao handler; a transição `answer()` (`src/shared/runs/transitions.ts`) prende os arquivos à mensagem (`Transition.attachments`, por índice); o `moveRun` põe esses arquivos e a âncora na mensagem que escreve; e o `answerPost` devolve a última mensagem `answer` lida do fórum, já com os refs. O mesmo turno guarda os arquivos por execução e etapa até o primeiro turno da etapa que retoma e os passa ao `executeStage`, que os prefere à lista de `pendingAnswer` enquanto o arquivo do fórum não tem a mensagem; depois disso a mensagem é a fonte.
 
 ### A limpeza: apagar a mensagem e a retenção
 
-Apagar uma mensagem apaga do disco os arquivos que ela carregava, que é o critério de aceite. O canal `forum:attachment-delete` lê os refs da mensagem que o armazenamento devolveu ao remover e entrega-os ao `dropAll` do registro — nunca usa um ref que venha de quem chamou, então um `seq` de outra conversa não nomeia nenhum arquivo aqui. É a pasta da mensagem, e não a da conversa, que é esvaziada: apagar uma mensagem no meio da conversa deixa os arquivos das vizinhas intactos, e um teste novo confere isso. Apagar uma mensagem que já não existe é nada a fazer.
+Apagar uma mensagem apaga do disco os arquivos que ela carregava. O canal `forum:attachment-delete` lê os refs da mensagem que o armazenamento devolveu ao remover e entrega-os ao `dropAll` do registro — nunca usa um ref que venha de quem chamou, então um `seq` de outra conversa não nomeia nenhum arquivo aqui. Uma conversa que este workspace não conhece devolve `false` em vez de estourar. Apagar uma mensagem que já não existe é nada a fazer, e os arquivos das mensagens vizinhas ficam intactos.
 
-`src/shared/retention.ts` conhece o grupo `anexos` e `src/main/retention.ts` varre as pastas de conversa: um arquivo que uma mensagem viva referencia fica (`referencedAttachments`), o resto é escolhido por idade como os outros dados, um registro que aponte para um arquivo já apagado não falha, e a pasta de conversa que ficou vazia é recolhida.
-
-### A resposta que uma execução espera
-
-Quando a mensagem com arquivos é a resposta que uma execução espera, os arquivos agora chegam à mensagem `answer` que o runner grava. O caminho é: o interceptor do fórum devolve a mensagem de resposta ao handler; a transição da resposta prende os arquivos à mensagem que ela grava (`Transition.attachments`, por índice da mensagem); o `moveRun` põe esses arquivos na mensagem que escreve no fórum; e o `answerPost` devolve a última mensagem `answer` lida do fórum, já com os refs. Assim a miniatura e o cartão aparecem nesse caminho e a varredura de retenção vê uma mensagem viva nomeando os arquivos.
-
-O mesmo turno guarda os arquivos por execução e etapa até o primeiro turno da etapa que retoma, e passa-os ao `executeStage`: o agente da etapa alcança os arquivos na primeira rodada depois da resposta, em vez de só quando a execução volta a rodar. Essa guarda só vence a lista que veio da mensagem `answer` enquanto o arquivo do fórum não a tem; depois disso a mensagem é a fonte, e nada fica preso entre turnos.
+`src/shared/retention.ts` conhece o grupo `anexos` e `src/main/retention.ts` varre as pastas de conversa: um arquivo que uma mensagem viva referencia fica (`referencedAttachments`, que lê `"attachments"` direto das linhas do `.jsonl` e por isso protege inclusive os de uma mensagem `answer`), o resto é escolhido por idade como os outros dados, um registro que aponte para um arquivo já apagado não falha, e a pasta de conversa que ficou vazia é recolhida.
 
 ### A tela
 
@@ -48,12 +46,14 @@ O mesmo turno guarda os arquivos por execução e etapa até o primeiro turno da
 
 Rodado nesta etapa, com o resultado que saiu:
 
-- `npx tsc --noEmit` — limpo.
+- `npx tsc --noEmit` — limpo, código de saída 0.
 - `npm run i18n:lint` — limpo (4127 chaves nos dois idiomas, 11 catálogos).
 - `node scripts/theme-audit.mjs` — limpo, 55 pares de contraste acima de 4.5:1, sem cor literal nova (as 8 de `api.ts` já existiam).
-- Testes novos desta passada, todos verdes: `forum-attachment-delete` (4, a exclusão da mensagem no meio da conversa, os arquivos das vizinhas intactos, o `seq` de outra conversa recusado, um `seq` já apagado sem erro) e `runner-answer-attachments` (3, os refs na mensagem `answer` do runner, os arquivos no primeiro turno da etapa que retoma, e a opção do espaço de trabalho que os tira do agente mas não do que a pessoa vê).
-- `test/runner-units.test.ts`, que uma rodada anterior da suíte deixou vermelho numa asserção de `pendingAnswer` (o campo `attachments` novo), foi corrigido e passou a verde.
-- Suíte inteira rodada duas vezes: a primeira rodada terminou com 1 falha, a de `runner-units`, já corrigida; a segunda rodada foi interrompida pelo tempo limite do terminal antes de imprimir o resumo. As suítes citadas acima e os caminhos tocados (`forum-policy`, `forum-store`, `forum-view`, `web-outbox`, `attachments-tool`, `attachments-retention`, `mentions-attachments`, `cycle-prompts`, `main-catalogs`, `ui-i18n`, `config-schema`) passaram. Não é possível afirmar que a suíte inteira ficou verde nesta passada.
+- `node scripts/public-audit.mjs` — limpo, 927 arquivos.
+- `npx electron-vite build` — construído, código de saída 0.
+- `npx vitest run` — a suíte inteira: 233 arquivos, 3734 testes. Duas das três execuções desta passada saíram inteiras verdes; numa delas um arquivo (`test/runner-flow.test.ts`) estourou o limite de 5 s por teste sob a carga de 233 processos e o arquivo saiu marcado como falho sem nenhum teste reprovado (os 3734 testes passaram nas três execuções). Rodado sozinho, `runner-flow.test.ts` passa (17 testes). É o mesmo estouro de tempo sob carga paralela que a passada anterior viu em 16 arquivos.
+- Teste novo `test/runner-answer-attachment-open.test.ts` (1): grava uma resposta como o runner a grava e confirma que os bytes dos dois arquivos são servidos pela mensagem `answer` e que apagar essa mensagem remove os dois arquivos do disco. É o caminho que a revisão apontou como bloqueante, agora coberto.
+- `test/runner-answer-attachments.test.ts` (3): os refs na mensagem `answer` do runner, os arquivos no primeiro turno da etapa que retoma, e a opção do espaço de trabalho que os tira do agente mas não do que a pessoa vê; a configuração montada à mão deixou de omitir `limits`.
 
 Não verificado nesta etapa:
 
@@ -64,6 +64,6 @@ Não verificado nesta etapa:
 
 ## Uma limitação honesta
 
-A guarda que leva os arquivos ao primeiro turno da etapa que retoma é por execução e etapa, e vive só neste processo. Os arquivos em si continuam na mensagem `answer` do fórum, que é a fonte que a retenção e a tela usam; se o aplicativo for fechado no instante entre a resposta e o primeiro turno, esse primeiro turno já recebe a etapa com a mensagem carregando os arquivos (o interceptor grava antes de retomar), e a lista do turno é uma cópia da mesma coisa. A guarda é, portanto, redundante depois da primeira vez, e não um segundo caminho de verdade.
+A guarda que leva os arquivos ao primeiro turno da etapa que retoma é por execução e etapa, e vive só neste processo. Os arquivos em si continuam na mensagem `answer` do fórum, que é a fonte que a retenção e a tela usam; se o aplicativo for fechado no instante entre a resposta e o primeiro turno, esse primeiro turno já recebe a etapa com a mensagem carregando os arquivos, e a lista do turno é uma cópia da mesma coisa. A guarda é, portanto, redundante depois da primeira vez, e não um segundo caminho de verdade.
 
 Na tela, o botão de apagar aparece em toda mensagem, mas não há neste momento uma verificação exaustiva de onde ele fica quando a mensagem é longa; a tela rodando segue não verificada.

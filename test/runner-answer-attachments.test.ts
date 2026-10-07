@@ -59,7 +59,7 @@ describe("the files of the message that answers a run's question", () => {
   });
 
   it('are left out of the agent call when the workspace turned attachments off for agents', async () => {
-    const b = await boot({ configure: (c) => void (c.attachments = { enabled: true, agents: false }) });
+    const b = await boot({ configure: (c) => void (c.attachments = { ...c.attachments!, agents: false }) });
     const id = await answerWithFiles(b);
     await b.settle();
     const refiner = b.engine.calls.filter((c) => c.agent.id === 'refiner').at(-1);
