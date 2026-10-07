@@ -488,11 +488,11 @@ export function createRunner(deps: RunnerDeps): Runner {
         return;
       }
       await step(run);
-      if (deps.runs.get(id)?.rev === run.rev) {
-        // The run reached a gate: with the autonomy block's "gates" choice on, the app approves it by itself and the run goes on; the reason says where the decision came from.
-        if (autoGate(id)) continue;
-        return;
-      }
+      // The step moved the run. A run sitting at a gate with the autonomy block's "gates" choice on is approved by the app itself and goes on; the reason says where
+      // the decision came from. `pump` already deferred the run while this drive ran (`inflight`), so the gate is looked at here, once, before the loop starts it again.
+      if (autoGate(id)) continue;
+      // A step that moved nothing (a stage the person has to start, a failure, a question) leaves the run where it is: there is nothing more to drive.
+      if (deps.runs.get(id)?.rev === run.rev) return;
     }
   }
 
