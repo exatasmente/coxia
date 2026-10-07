@@ -34,6 +34,7 @@ export function neutralDevCycle(): DevCycleConfig {
     ceremonyParams: defaultCeremonyParams(),
     stages: [],
     flows: {},
+    autonomy: {},
     stageMapping: [],
     meanings: defaultMeanings(),
     enrichment: { specFolder: true, cardFields: [...CARD_FIELDS], extraFiles: [] },

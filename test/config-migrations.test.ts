@@ -50,7 +50,7 @@ describe('migrateConfig', () => {
     expect(r.fromVersion).toBe(1);
     expect(r.changed).toBe(true);
     const c = r.config;
-    expect(c.schemaVersion).toBe(15);
+    expect(c.schemaVersion).toBe(16);
     expect(c.setupComplete).toBe(true);
     expect(c.llm.roles).toEqual({ turn: { provider: 'openrouter', model: 'a/b' }, reply: { provider: 'openrouter', model: 'c/d' }, deep: { provider: 'openrouter', model: 'e/f' }, teams: { provider: 'openrouter', model: 'g/h' }, fix: { provider: 'openrouter', model: 'c/d' } });
     expect(c.schedule.preDaily).toBe('10:15');
@@ -109,7 +109,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(v2, { legacyInstall: false });
     expect(r.fromVersion).toBe(2);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(15);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(['ref', 'title', 'blockers', 'priority', 'milestone']);
     expect(r.notes.join(' ')).toContain('priority, milestone');
@@ -131,7 +131,7 @@ describe('migrateConfig', () => {
 
   it('a v1 file ends at the current schema with the new fields in place', () => {
     const r = migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() });
-    expect(r.config.schemaVersion).toBe(15);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(expect.arrayContaining(['priority', 'milestone']));
   });
@@ -205,7 +205,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
       expect(r.fromVersion).toBe(8);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(15);
+      expect(r.config.schemaVersion).toBe(16);
       expect(r.config.runner).toMatchObject({ stageIdleMs: 600_000, stageMaxMs: 7_200_000 });
       expect(r.config.runner).not.toHaveProperty('stageTimeoutMs');
       expect(r.notes.join(' ')).toContain('became two limits');
@@ -246,7 +246,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v13(), { legacyInstall: false });
       expect(r.fromVersion).toBe(13);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(15);
+      expect(r.config.schemaVersion).toBe(16);
       expect(r.config.plugins).toEqual({ dir: null, list: [], confirmSeconds: 30 });
       expect(validateConfig(r.config).ok).toBe(true);
     });
@@ -264,20 +264,48 @@ describe('migrateConfig', () => {
       const doc = { ...neutralConfig(), schemaVersion: 14 } as Record<string, any>;
       doc.plugins = { dir: null, confirmSeconds: 30, list: [{ id: 'web-search', folder: '/p', enabled: true, allow: { network: true, write: false } }] };
       const r = migrateConfig(doc, { legacyInstall: false });
-      expect(r.config.schemaVersion).toBe(15);
+      expect(r.config.schemaVersion).toBe(16);
       expect(r.config.plugins.list[0]).toEqual({ id: 'web-search', folder: '/p', enabled: true, allow: { network: true, write: false }, settings: {} });
       expect(r.notes.join(' ')).toContain('asks once more');
       expect(validateConfig(r.config).ok).toBe(true);
     });
   });
 
-  it('leaves a current document alone and refuses a newer one', () => {
-    const c = neutralConfig();
+  describe('schema 15 to 16: the autonomy blocks', () => {
+    it('adds the workspace block with every field off and an empty map of flows, and leaves the sandbox network as it was', () => {
+      const doc = { ...neutralConfig(), schemaVersion: 15 } as Record<string, any>;
+      doc.runner = { ...neutralRunner(), sandbox: { ...neutralRunner().sandbox, network: 'registry' } };
+      delete doc.runner.autonomy;
+      doc.devCycle = { ...doc.devCycle };
+      delete doc.devCycle.autonomy;
+      const r = migrateConfig(doc, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(16);
+      expect(r.config.runner.autonomy).toEqual({ cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false });
+      expect(r.config.devCycle.autonomy).toEqual({});
+      expect(r.config.runner.sandbox.network).toBe('registry');
+      expect(r.notes.join(' ')).toContain('autonomy block');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a block already present, so the step is idempotent', () => {
+      const doc = { ...neutralConfig(), schemaVersion: 15 } as Record<string, any>;
+      doc.runner = { ...neutralRunner(), autonomy: { cycle: true, hostCommands: true, gates: false, push: false, pullRequest: false } };
+      doc.devCycle = { ...doc.devCycle, autonomy: { '': { useWorkspace: false, cycle: true, hostCommands: false, gates: false, push: false, pullRequest: false } } };
+      const once = migrateConfig(doc, { legacyInstall: false }).config;
+      expect(once.runner.autonomy.hostCommands).toBe(true);
+      expect(once.devCycle.autonomy?.['']).toMatchObject({ useWorkspace: false, cycle: true });
+      const twice = migrateConfig({ ...once, schemaVersion: 15 }, { legacyInstall: false }).config;
+      expect(twice.runner.autonomy).toEqual(once.runner.autonomy);
+      expect(twice.devCycle.autonomy).toEqual(once.devCycle.autonomy);
+    });
+  });
+
+  it('leaves a current document alone and refuses a newer one', () => {    const c = neutralConfig();
     c.language = 'en';
     const r = migrateConfig(c, { legacyInstall: true });
     expect(r.changed).toBe(false);
     expect(r.config.language).toBe('en');
-    expect(() => migrateConfig({ schemaVersion: 16 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 17 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });
 
@@ -290,7 +318,7 @@ describe('startup on the real current layout', () => {
     expect(boot.migrated).toEqual(['testes']);
     const dir = workspaceDir(root, 'testes');
     const config = readConfigFile(dir) as Record<string, unknown>;
-    expect(config.schemaVersion).toBe(15);
+    expect(config.schemaVersion).toBe(16);
     expect(validateConfig(config).ok).toBe(true);
     const v = validateConfig(config).config;
     expect(v?.vcs[0].host).toBe('git.acme.test');

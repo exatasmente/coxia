@@ -1,7 +1,8 @@
 import { ID } from '../../../../shared/config/schema';
 import { RUN_KIND_FLOW_KEYS } from '../../../../shared/config/squads';
 import { newAgent } from '../../../../shared/config/team';
-import { DEFAULT_ROUND_LIMIT, type AgentDef, type CommentTemplate, type StageDef, type StageKind, type StageType, type WorkspaceConfig } from '../../../../shared/config/types';
+import { DEFAULT_ROUND_LIMIT, type AgentDef, type CommentTemplate, type FlowAutonomy, type StageDef, type StageKind, type StageType, type WorkspaceConfig } from '../../../../shared/config/types';
+import { newFlowAutonomy } from '../../../../shared/config/autonomy';
 import { isWork } from '../../../../shared/runs/flow';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
@@ -23,6 +24,8 @@ export interface FlowDraft {
   workspace: StageDef[];
   /** The flows squads have of their own. A squad with no entry follows the workspace's. */
   flows: Record<string, StageDef[]>;
+  /** The autonomy block of each flow, by the flow's key (`''` for the workspace's, a squad id for a squad's). Absent: everything off and the workspace's block deciding. */
+  autonomy: Record<string, FlowAutonomy>;
   /** Agents made while editing (from a starter, a file or the stage panel): they join the team when the flow is saved. */
   newAgents: AgentDef[];
   /** Comment templates a starter or a file brought for stages that had none: they join the config when the flow is saved. */
@@ -32,7 +35,18 @@ export interface FlowDraft {
 }
 
 export function draftOfFlows(config: WorkspaceConfig): FlowDraft {
-  return { workspace: structuredClone(config.devCycle.stages), flows: structuredClone(config.devCycle.flows ?? {}), newAgents: [], comments: {}, renames: {} };
+  return { workspace: structuredClone(config.devCycle.stages), flows: structuredClone(config.devCycle.flows ?? {}), autonomy: structuredClone(config.devCycle.autonomy ?? {}), newAgents: [], comments: {}, renames: {} };
+}
+
+/** The flow key a target is stored under: `''` for the workspace's own flow, the squad id for a squad's. */
+export const flowKeyOfTarget = (target: Target): string => target ?? '';
+
+/** The autonomy block of a flow, filled out: a flow with none reads as one that follows the workspace, everything off. */
+export const autonomyOfTarget = (d: FlowDraft, target: Target): FlowAutonomy => newFlowAutonomy(d.autonomy[flowKeyOfTarget(target)]);
+
+/** The draft with one flow's autonomy block replaced. */
+export function withAutonomy(d: FlowDraft, target: Target, patch: Partial<FlowAutonomy>): FlowDraft {
+  return { ...d, autonomy: { ...d.autonomy, [flowKeyOfTarget(target)]: { ...autonomyOfTarget(d, target), ...patch } } };
 }
 
 export const stagesOfTarget = (d: FlowDraft, target: Target): StageDef[] => (target ? (d.flows[target] ?? d.workspace) : d.workspace);
@@ -202,6 +216,10 @@ export function applyFlows(config: WorkspaceConfig, d: FlowDraft): WorkspaceConf
   next.devCycle.stages = renumber(structuredClone(d.workspace));
   if (Object.keys(flows).length) next.devCycle.flows = flows;
   else delete next.devCycle.flows;
+  // The autonomy block of each flow this editor shows; the blocks of flows it does not show (a release, the documentation) stay as the config has them.
+  const autonomy = Object.fromEntries(Object.entries(d.autonomy).filter(([key]) => key === '' || (next.squads ?? []).some((q) => q.id === key)).map(([key, block]) => [key, { ...structuredClone(newFlowAutonomy(block)) }]));
+  if (Object.keys(autonomy).length) next.devCycle.autonomy = autonomy;
+  else delete next.devCycle.autonomy;
   for (const a of d.newAgents) if (!next.agents.team.some((x) => x.id === a.id)) next.agents.team.push(newAgent({ ...structuredClone(a), system: false }));
   const ids = new Set([...next.devCycle.stages, ...Object.values(flows).flat()].map((s) => s.id));
   // What listed a stage by its old id lists it by the new one, and every stage lists itself with the agent that works it.

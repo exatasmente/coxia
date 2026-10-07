@@ -11,13 +11,14 @@ import { Diagram } from '../Diagram';
 import { flowDiagram } from './flowDiagram';
 import {
   applyFlows, chainRename, checkFlows, draftOfFlows, dropOwnFlow, duplicateStage, giveOwnFlow, insertStage, moveStage, ownsFlow, patchStage, removeStage, renameStage,
-  stagesOfTarget, withStages, type FlowDraft, type Target,
+  stagesOfTarget, withAutonomy, withStages, autonomyOfTarget, type FlowDraft, type Target,
 } from './flowEdit';
 import { applyBundle, exportFlowText, readFlowText, STARTERS, type FlowBundle } from './flowFile';
 import { NEW_STAGE_LABEL, TYPE_LABEL, WAIT_LABEL } from './labels';
+import { AutonomyFields } from './AutonomyFields';
 import { StagePanel } from './StagePanel';
 import { agentName, shown, squadName } from './text';
-import { Confirm, Problems, type Problem, type SectionProps } from './ui';
+import { Confirm, Problems, Toggle, type Problem, type SectionProps } from './ui';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -85,6 +86,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
   );
   const current = stages.find((s) => s.id === selected) ?? null;
   const own = ownsFlow(draft, target);
+  const autonomy = autonomyOfTarget(draft, target);
   const targetName = target ? squadName(squads.find((s) => s.id === target) ?? { id: target, name: target }) : t('ui.flow.target.workspace');
 
   const edit = (next: StageDef[]) => {
@@ -217,6 +219,16 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
           <p className="small muted" style={{ flex: '1 1 240px' }}>{t('ui.flow.squadOwn', { name: targetName })}</p>
           {!confirmDrop && <button type="button" className="btn" onClick={() => setConfirmDrop(true)}>{t('ui.flow.squadDrop')}</button>}
         </div>
+      )}
+
+      {(!target || own) && (
+        <fieldset className="wz-fieldset">
+          <legend className="wz-label">{t('ui.autonomy.title')}</legend>
+          <p className="small muted">{t('ui.autonomy.flow.hint', { name: targetName })}</p>
+          <Toggle checked={autonomy.useWorkspace} onChange={(useWorkspace) => change(withAutonomy(draft, target, { useWorkspace }))} label={t('ui.autonomy.flow.useWorkspace')} />
+          <p className="small muted">{t('ui.autonomy.flow.useWorkspace.hint')}</p>
+          <AutonomyFields value={autonomy} onChange={(patch) => change(withAutonomy(draft, target, patch))} disabled={autonomy.useWorkspace} disabledHint={t('ui.autonomy.byWorkspace')} />
+        </fieldset>
       )}
       {confirmDrop && target && (
         <Confirm confirmLabel={t('ui.flow.squadDrop.confirm')} onConfirm={() => { change(dropOwnFlow(draft, target)); setConfirmDrop(false); setSelected(null); }} onCancel={() => setConfirmDrop(false)}>

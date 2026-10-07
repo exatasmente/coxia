@@ -2,7 +2,7 @@
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 15;
+export const CONFIG_SCHEMA_VERSION = 16;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -425,6 +425,11 @@ export interface DevCycleConfig {
    * squad's flow come from the one team, limited to the squad's members and the shared agents.
    */
   flows?: Record<string, StageDef[]>;
+  /**
+   * The autonomy block of each flow, by the flow's key: `''` for the main flow, the id of a squad for its own, and `release` for the release flow. A flow with no
+   * entry reads as one whose `useWorkspace` is on: the workspace's block decides. A config stored without it reads as an empty map.
+   */
+  autonomy?: Record<string, FlowAutonomy>;
   /** How a provider's states and labels map to the stages above, first match wins; StageDef.match is the fallback on free text. */
   stageMapping: StageMappingRule[];
   /** What blocker, question for me and ready for QA mean here. */
@@ -541,8 +546,9 @@ export interface AgentDef {
   /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
-   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
-   * wait for the person. The ceremonies ignore it. A change takes effect at the next stage start or publication, never in the middle of a stage.
+   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request are decided
+   * by the autonomy block of the run (see `AutonomyBlock`), not by this field. The ceremonies ignore it. A change takes effect at the next stage start or
+   * publication, never in the middle of a stage.
    */
   autonomous: boolean;
   /**
@@ -691,9 +697,37 @@ export interface RunnerTurns {
   write: number;
 }
 
-/** How far a sandbox reaches the network: nowhere, or only the listed package registries through the app's filtering proxy. */
-export const SANDBOX_NETWORKS = ['off', 'registry'] as const;
+/** How far a sandbox reaches the network: nowhere; only the listed package registries through the app's filtering proxy; or the computer's own network, shared whole. */
+export const SANDBOX_NETWORKS = ['off', 'registry', 'open'] as const;
 export type SandboxNetwork = (typeof SANDBOX_NETWORKS)[number];
+
+/** The five choices of autonomy of a run, all off by default. `cycle`: every stage starts by itself and hands its result on without waiting, whatever each agent's own
+ * `autonomous` is. The four below it only count while `cycle` is on. */
+export const AUTONOMY_CHOICES = ['hostCommands', 'gates', 'push', 'pullRequest'] as const;
+export type AutonomyChoice = (typeof AUTONOMY_CHOICES)[number];
+
+/**
+ * The autonomy block of a workspace or of one flow: what a run lets go on without the person. `cycle` is the general switch; the four below it are separate choices, each
+ * only meaningful while `cycle` is on. Every field is off by default and only the computer raises one: a paired browser may only turn them off.
+ */
+export interface AutonomyBlock {
+  /** Every stage starts when the run reaches it and hands its result on without waiting, whatever each agent's own `autonomous` is. */
+  cycle: boolean;
+  /** The commands of an agent set to `shell: host` run without the "Allow" question. */
+  hostCommands: boolean;
+  /** A gate of the flow is approved by the app, recorded as an automatic approval with its reason. */
+  gates: boolean;
+  /** The run's push goes through the door of Actions by itself, audited. A release run keeps waiting (the release's steps always wait for the person). */
+  push: boolean;
+  /** The pull request is opened by itself, audited. A release run keeps waiting. */
+  pullRequest: boolean;
+}
+
+/** The autonomy block of one flow: the workspace's block decides while `useWorkspace` is on (the default). */
+export interface FlowAutonomy extends AutonomyBlock {
+  /** On (the default): the workspace's block decides for this flow and the fields are shown disabled. Off: this block decides and the workspace's has no effect here. */
+  useWorkspace: boolean;
+}
 
 /** What one command and one stage of a sandbox may use. */
 export interface SandboxLimits {
@@ -713,6 +747,10 @@ export interface SandboxLimits {
 
 /** What the sandbox of an agent's commands may reach. Desktop only: a paired browser cannot change any of it. */
 export interface RunnerSandbox {
+  /**
+   * `off`: no network at all. `registry`: only HTTPS to `registryHosts`, through the app's filtering proxy. `open`: the computer's own network, shared whole, with no
+   * proxy and no host list (local services, the local network and the internet) — a choice of risk made on the computer, off by default.
+   */
   network: SandboxNetwork;
   /** Exact host names the registry switch lets through (HTTPS, port 443). */
   registryHosts: string[];
@@ -762,6 +800,8 @@ export interface RunnerConfig {
   turns: RunnerTurns;
   identity: RunnerIdentity;
   sandbox: RunnerSandbox;
+  /** The autonomy block of the workspace: what each flow follows while its "Use the workspace's setting" is on. */
+  autonomy: AutonomyBlock;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /**

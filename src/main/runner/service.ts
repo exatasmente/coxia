@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
-import { t } from '../../shared/i18n';
+import { createTranslator, t } from '../../shared/i18n';
 import {
   type FlowStage,
   type PendingQuestion,
@@ -81,6 +81,8 @@ import {
 import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
+import { autonomyOf, choiceOn, flowKeyOf, type EffectiveAutonomy } from '../../shared/config/autonomy';
+import { type RunAgentCommands, countCommands, groupCommands } from '../../shared/runCommands';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
@@ -384,6 +386,34 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- telling the person -----------------------------------------------------------------------------------------------------------
 
+  /** Whether this move is where the run ended: done, cancelled or failed, and it was not there before (so the closing list is posted once). */
+  const reachedEnd = (prior: Run | null, run: Run): boolean => isTerminal(run) || (run.status === 'failed' && prior?.status !== 'failed');
+
+  /**
+   * The one message the run's thread carries when it ends: the commands each agent ran, by agent and by stage, built from the `runner.exec` and `runner.exec.host`
+   * messages the run already wrote. Nothing new is recorded anywhere else by it, and nothing of it goes to the code host.
+   */
+  function postRunCommands(id: string): void {
+    try {
+      const thread = runThreadId(id);
+      const messages = deps.forum.read(thread, 0, 5000)?.messages ?? [];
+      if (messages.some((m) => m.code === 'runner.commands.list')) return;
+      const groups: RunAgentCommands[] = groupCommands(messages);
+      const total = countCommands(groups);
+      if (!total) return;
+      const runs = deps.runs.get(id);
+      if (!runs) return;
+      const lang = deps.config().language;
+      const tr = createTranslator(lang);
+      const text = groups
+        .map((g) => [tr('main.runner.commands.agent', { agent: g.agent, count: g.stages.reduce((k, s) => k + s.commands.length, 0) }), ...g.stages.flatMap((s) => [tr('main.runner.commands.stage', { stage: cycleText(s.stage, lang) }), ...s.commands.map((c) => `· ${tr('main.runner.commands.line', { n: c.n, command: c.command, where: tr(`main.runner.commands.where.${c.via}`), result: c.result, ms: Math.round(c.ms / 100) / 10 })}`)])].join('\n'))
+        .join('\n\n');
+      deps.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'runner.commands.list', params: { count: total, text }, stage: runs.stage });
+    } catch (e) {
+      console.error('[runner] could not post the commands of the run', id, e instanceof Error ? e.message : e);
+    }
+  }
+
   function tell(prior: Run | null, run: Run): void {
     // A run that was made for another's request has ended: the run that waits on it can go on.
     if (run.status === 'done' && prior?.status !== 'done') for (const l of run.links ?? []) if (l.role === 'origin' && l.run) trackLink(settleLinked(l.run).then(() => undefined));
@@ -401,6 +431,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
     if (!prior || prior.stage !== run.stage) void pluginDone('stage-entered', run);
     if (isTerminal(run) && (!prior || !isTerminal(prior))) void pluginDone('run-finished', run);
+    // The run reached its end (done, cancelled or failed): the app posts the list of the commands each agent ran, once, as the run's own record.
+    if (reachedEnd(prior, run)) postRunCommands(run.id);
     // A question that goes to another agent first starts walking its chain; the person is told only when it reaches them.
     if (run.status === 'question' && run.question?.kind === 'agent' && run.question.holder) startChain(run.id);
     const before = prior?.status ?? null;
@@ -456,7 +488,32 @@ export function createRunner(deps: RunnerDeps): Runner {
         return;
       }
       await step(run);
+      // The step moved the run. A run sitting at a gate with the autonomy block's "gates" choice on is approved by the app itself and goes on; the reason says where
+      // the decision came from. `pump` already deferred the run while this drive ran (`inflight`), so the gate is looked at here, once, before the loop starts it again.
+      if (autoGate(id)) continue;
+      // A step that moved nothing (a stage the person has to start, a failure, a question) leaves the run where it is: there is nothing more to drive.
       if (deps.runs.get(id)?.rev === run.rev) return;
+    }
+  }
+
+  /** The reason recorded on a gate the app approved by itself: in the app's words, saying what decided it and where that decision came from. */
+  function autonomyReason(a: EffectiveAutonomy): string {
+    const origin = a.from === 'flow' ? t('main.runner.gate.autonomy.flow', { flow: a.flow === '' ? t('main.runner.gate.autonomy.main') : (a.flow ?? '') }) : t('main.runner.gate.autonomy.workspace');
+    return t('main.runner.gate.autonomy', { origin });
+  }
+
+  /** Approves a gate the run is sitting on, when the autonomy block decides gates by themselves. True when it approved one. */
+  function autoGate(id: string): boolean {
+    const run = deps.runs.get(id);
+    if (!run || run.status !== 'gate') return false;
+    const a = autonomyOf(deps.config(), flowKeyOf(run.squad));
+    if (!(a.cycle && a.gates)) return false;
+    try {
+      gateBy(id, 'approve', autonomyReason(a), 'app');
+      return true;
+    } catch (e) {
+      console.error('[runner] could not approve a gate by itself', id, e instanceof Error ? e.message : e);
+      return false;
     }
   }
 
@@ -917,6 +974,27 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- what the person does ---------------------------------------------------------------------------------------------------------
 
+  /** Decides a gate of a run. `by` says who decided: the person, or the app under the autonomy block (an automatic approval, recorded as such). */
+  function gateBy(id: string, action: GateAction, reason: string, by: 'person' | 'app'): Run {
+    const before = need(id);
+    const flow = flowFor(before);
+    const gateStage = flow.find((s) => s.id === before.stage);
+    // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the decision was taken.
+    const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
+    const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
+    const decided = (run: Run): Run => {
+      if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
+      // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
+      if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
+      return run;
+    };
+    // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
+    if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason, by)));
+    if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
+    if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
+    throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
+  }
+
   const api: Runner = {
     list: () => deps.runs.list().map((r) => withCommand(r) as Run),
     get: (id) => withCommand(deps.runs.get(id)),
@@ -928,23 +1006,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
     returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
     gate(id, action, reason = '') {
-      const before = need(id);
-      const flow = flowFor(before);
-      const gateStage = flow.find((s) => s.id === before.stage);
-      // Whether the decision goes to the tracker by itself follows the agent whose work it judged, as that agent's stage stood when the person decided.
-      const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
-      const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
-      const decided = (run: Run): Run => {
-        if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
-        // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
-        if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);
-        return run;
-      };
-      // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
-      if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason)));
-      if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
-      if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
-      throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
+      return gateBy(id, action, reason, 'person');
     },
     answer: (id, text) => move(id, (r, f, at) => answerMove(r, f, text, at)),
     retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),

@@ -17,7 +17,7 @@ import { type ProxyDecision, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
 import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
 import { loginEnv } from '../loginPath';
-import { systemLayout } from './system';
+import { nameResolverBinds, systemLayout } from './system';
 
 export type { ExecResult, SandboxSession } from './session';
 export { SandboxError } from './errors';
@@ -214,6 +214,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const deps = clone ? dependencyBinds(tree ?? worktree, worktree, clone) : { binds: [], outside: [] };
         for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
         const registry = opts.config.network === 'registry';
+        const openNet = opts.config.network === 'open';
         if (registry) {
           const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
@@ -233,7 +234,9 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const pathDirs = roFolders.flatMap((p) => [join(p, 'bin'), p]);
         const askedDisplay = opts.display === true && opts.config.display === true;
         const xvfb = askedDisplay ? displayProgram(pathDirs) : null;
-        const roBinds: [string, string][] = [...git.binds, ...deps.binds, ...roFolders.map((p): [string, string] => [p, p]), ...(browsers && !roFolders.includes(browsers) ? [[browsers, browsers] as [string, string]] : [])];
+        // A shared network still needs to resolve names: the computer's own resolver configuration is bound in, read-only, and nothing else of it.
+        const resolver = openNet ? nameResolverBinds() : [];
+        const roBinds: [string, string][] = [...git.binds, ...deps.binds, ...roFolders.map((p): [string, string] => [p, p]), ...(browsers && !roFolders.includes(browsers) ? [[browsers, browsers] as [string, string]] : []), ...resolver];
         assertBindsSafe(roBinds, worktree, tree ?? worktree);
         const args = bwrapArgs({
           worktree,
@@ -242,7 +245,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           system: systemLayout(),
           roBinds,
           pathDirs,
-          network: registry ? 'proxy' : 'off',
+          network: registry ? 'proxy' : openNet ? 'open' : 'off',
           limits: opts.config.limits,
           tmpMb: 512,
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),

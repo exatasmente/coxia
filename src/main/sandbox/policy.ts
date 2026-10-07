@@ -27,7 +27,8 @@ export interface SandboxSpec {
   roBinds: [string, string][];
   /** Entries to put in front of PATH inside (the `bin` of a folder the workspace listed). */
   pathDirs: string[];
-  network: 'off' | 'proxy';
+  /** `off`: no network. `proxy`: the registry through the app's proxy. `open`: the computer's own network, shared whole, with the resolver configuration bound in. */
+  network: 'off' | 'proxy' | 'open';
   limits: SandboxLimits;
   /** The size of /tmp, in MiB. */
   tmpMb: number;
@@ -88,12 +89,12 @@ export function sandboxEnv(spec: SandboxSpec): Record<string, string> {
 export const SUPERVISOR_COMMAND = ['/bin/sh', `${CTL}/supervisor.sh`];
 
 /**
- * The options of `bwrap` (everything but the command, which goes on its command line after `--`: it takes the command only from there). Every flag is one the installed 0.9 knows. No `--share-net`: the sandbox has its own loopback and nothing else,
- * and the registry mode reaches the world only through a socket in the stage folder.
+ * The options of `bwrap` (everything but the command, which goes on its command line after `--`: it takes the command only from there). Every flag is one the installed 0.9 knows. In `off` and `proxy` the sandbox has its own loopback and nothing else (the registry mode reaches the world only through a socket in the stage folder);
+ * in `open` the network is the computer's own, shared whole.
  */
 export function bwrapArgs(spec: SandboxSpec): string[] {
-  // Spelled out instead of --unshare-all: --disable-userns needs --unshare-user itself, and the network is unshared on purpose, not by default.
-  const a: string[] = ['--unshare-user', '--unshare-ipc', '--unshare-pid', '--unshare-net', '--unshare-uts', '--unshare-cgroup-try', '--disable-userns', '--die-with-parent', '--new-session', '--clearenv'];
+  // Spelled out instead of --unshare-all: --disable-userns needs --unshare-user itself, and the network is unshared on purpose, not by default (except in open mode).
+  const a: string[] = ['--unshare-user', '--unshare-ipc', '--unshare-pid', ...(spec.network === 'open' ? [] : ['--unshare-net']), '--unshare-uts', '--unshare-cgroup-try', '--disable-userns', '--die-with-parent', '--new-session', '--clearenv'];
   for (const dir of spec.system.roDirs) a.push('--ro-bind', dir, dir);
   for (const [name, target] of spec.system.links) a.push('--symlink', target, name);
   // /dev is a memory filesystem too, as large as half the memory unless it is made read-only: it is, and /dev/shm gets a size of its own like /tmp.

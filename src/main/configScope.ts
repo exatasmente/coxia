@@ -13,6 +13,7 @@ export const WEB_EDITABLE = [
   'squads',
   'devCycle.stages',
   'devCycle.flows',
+  'devCycle.autonomy',
   'devCycle.comments',
   'devCycle.priority',
   'runner.enabled',
@@ -76,5 +77,23 @@ export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfi
 
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after)];
+  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...raisedAutonomy(before, after)];
+}
+
+const AUTONOMY_FIELDS = ['cycle', 'hostCommands', 'gates', 'push', 'pullRequest'] as const;
+
+/**
+ * What a paired browser may do with a flow's autonomy block: lower it, never raise it. `devCycle.autonomy` is one editable path (the phone may turn a choice off),
+ * so the field-by-field check is made here: any field that goes from off to on, and `useWorkspace` going from on to off (which hands the decision to the flow's own
+ * block), is refused by name. The workspace's block (`runner.autonomy`) is not in WEB_EDITABLE at all, so the browser can neither raise nor lower it.
+ */
+export function raisedAutonomy(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  const was = before.devCycle.autonomy ?? {};
+  const out: string[] = [];
+  for (const [key, block] of Object.entries(after.devCycle.autonomy ?? {})) {
+    const old = was[key];
+    for (const f of AUTONOMY_FIELDS) if (block[f] === true && old?.[f] !== true) out.push(`devCycle.autonomy.${key}.${f}`);
+    if (old?.useWorkspace !== false && block.useWorkspace === false) out.push(`devCycle.autonomy.${key}.useWorkspace`);
+  }
+  return out;
 }

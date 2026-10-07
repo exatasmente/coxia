@@ -41,6 +41,20 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.devCycle.priority = { labels: ['^p0$'] }; })).toEqual([]);
   });
 
+  it('takes a flow\'s autonomy block only downwards: it may be turned off from the phone, never on', () => {
+    const own = (c: WorkspaceConfig) => { c.devCycle.autonomy = { '': { useWorkspace: false, cycle: true, hostCommands: false, gates: true, push: false, pullRequest: false } }; };
+    // Turning a field off, or the switch on, is allowed; raising any field, or handing the flow its own block, is not.
+    expect(refused((c) => { own(c); })).toEqual(['devCycle.autonomy..cycle', 'devCycle.autonomy..gates', 'devCycle.autonomy..useWorkspace']);
+    const withOwn = edit(own);
+    expect(refusedPaths(withOwn, { ...withOwn, devCycle: { ...withOwn.devCycle, autonomy: { '': { useWorkspace: false, cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false } } } })).toEqual([]);
+    expect(refusedPaths(withOwn, { ...withOwn, devCycle: { ...withOwn.devCycle, autonomy: { '': { useWorkspace: false, cycle: true, hostCommands: true, gates: true, push: true, pullRequest: false } } } })).toEqual(['devCycle.autonomy..hostCommands', 'devCycle.autonomy..push']);
+  });
+
+  it('refuses the workspace autonomy block and its sandbox network by whole paths', () => {
+    expect(refused((c) => { c.runner.autonomy = { cycle: true, hostCommands: true, gates: false, push: false, pullRequest: false }; })).toEqual(['runner.autonomy.cycle', 'runner.autonomy.hostCommands']);
+    expect(refused((c) => { c.runner.sandbox = { ...c.runner.sandbox, network: 'open' }; })).toEqual(['runner.sandbox.network']);
+  });
+
   it('accepts the runner switches, the label, the cap, the turns, the timeouts and the commit message', () => {
     expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; })).toEqual([]);
     expect(refused((c) => { c.runner.turns.write = 120; })).toEqual([]);

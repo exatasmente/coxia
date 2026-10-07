@@ -1031,6 +1031,31 @@ export function proposeAgentSuggestion(input: { key: string; summary: string; na
   return action;
 }
 
+/**
+ * Pushes a run's branch by itself, under the autonomy block's "push" choice: the same command and the same checks as the proposal a person approves, with one audit
+ * line of its own (the agent is who asked). The run's branch is read from the run's file here, never from the caller, so nothing can point the push anywhere else.
+ */
+export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: string): Promise<void> {
+  const run = runStore().get(runId);
+  if (!run || run.branch !== branch) throw new Error(t('main.actions.pushNoRun', { run: runId.slice(0, 40) }));
+  if (!existsSync(run.worktree)) throw new Error(t('main.conflictGit.worktreeGone'));
+  const here = (await git(run.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+  if (here !== run.branch) throw new Error(t('main.actions.pushWrongBranch', { branch: run.branch, here }));
+  // The same guard as the proposal: what the agents did is committed after each stage, and the cycle memory the next stage wrote is left for that stage's commit.
+  const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
+  if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
+  const now = new Date().toISOString();
+  const a = blank({ key: w.key, kind: 'run-push', issue: w.issue, summary: w.summary, unit: { runId, branch } });
+  // A push of this run that still waited is replaced: what goes out is the branch as it is now, not the state the proposal was made for.
+  const store = read();
+  const replaced = store.actions.map((x) => (x.kind === 'run-push' && x.state === 'pending' && x.unit?.runId === runId ? { ...x, state: 'skipped' as const, finishedAt: now, output: t('main.actions.replaced') } : x));
+  write({ ...store, actions: replaced });
+  const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
+  await audited({ ...originOf(a), kind: 'auto', by: w.by }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+  // The branch is on the host: the same notice a person's "sim" gives, so the pull request follows the push by itself too.
+  told(a, []);
+}
+
 async function publishRunBranch(a: ReleaseAction): Promise<string> {
   const runId = String((a.unit ?? {}).runId ?? '');
   const run = runStore().get(runId);

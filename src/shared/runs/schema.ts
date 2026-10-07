@@ -150,6 +150,7 @@ const flowStage = object(
     type: enumOf('work, gate or wait.', STAGE_TYPES),
     agent: { type: ['string', 'null'], description: 'The agent that works it.', pattern: ID },
     autonomous: { type: 'boolean', description: 'Whether that agent was autonomous when the copy was made (the live value is read from the team).' },
+    cycleAutonomous: { type: 'boolean', description: 'Whether the run\'s autonomy block had its general switch on when the flow was resolved (the stage starts by itself regardless of the agent).' },
     artifacts: fileNames,
     reads: { ...fileNames, type: ['array', 'null'] },
     next: { type: ['string', 'null'], description: 'The stage that follows; null: the run ends after it.', pattern: ID },
@@ -159,7 +160,7 @@ const flowStage = object(
     comment: { type: ['string', 'null'], description: 'The comment template key.', maxLength: 48 },
     trackerStatus: { type: ['string', 'null'], description: 'The label the issue gets on entering.', maxLength: 200 },
   },
-  ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
+  ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'cycleAutonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
 );
 
 const link = object(

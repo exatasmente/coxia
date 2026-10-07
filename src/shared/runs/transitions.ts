@@ -64,7 +64,7 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
     run.stages.push(rec);
   }
   rec.agent = stage.agent;
-  rec.autonomous = stage.autonomous;
+  rec.autonomous = stage.cycleAutonomous || stage.autonomous;
   rec.attempts += 1;
   rec.startedAt = at;
   rec.endedAt = null;
@@ -321,13 +321,13 @@ function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDr
 }
 
 /** The person approves the gate: the run goes on to the next stage. `note` is optional and goes in the decision. */
-export function gateApprove(run: Run, flow: FlowStage[], at: string, note = ''): Transition {
+export function gateApprove(run: Run, flow: FlowStage[], at: string, note = '', by: 'person' | 'app' = 'person'): Transition {
   need(run, 'gate');
   const out = clone(run, at);
   freezeAtPlanGate(out, flow);
   finishStage(out, at, 'done');
-  log(out, at, 'gate-approved', run.stage, 'person', note.trim() || null);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
+  log(out, at, 'gate-approved', run.stage, by, note.trim() || null);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: by === 'app' ? app : person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
   advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
@@ -515,7 +515,7 @@ export function startStage(run: Run, flow: FlowStage[], at: string): Transition 
   const out = clone(run, at);
   const rec = record(out, run.stage) as StageRecord;
   rec.agent = stage.agent;
-  rec.autonomous = stage.autonomous;
+  rec.autonomous = stage.cycleAutonomous || stage.autonomous;
   rec.status = 'running';
   rec.startedAt = at;
   rec.endedAt = null;

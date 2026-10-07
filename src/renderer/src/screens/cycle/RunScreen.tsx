@@ -15,6 +15,8 @@ import { useActivity } from '../../useActivity';
 import { BackIcon } from '../icons';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
+import { CommandsSection } from './CommandsSection';
+import { AutonomyNote } from './AutonomyNote';
 import { CommandApproval } from './CommandApproval';
 import { RunActions } from './RunActions';
 import { RunBadge } from './RunBadge';
@@ -177,6 +179,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
                 <AgentActivity jobId={`run:${run.id}`} since={call ? call.since : startedAt} agent={call ? agentName(config?.agents.team, call.agent) : undefined} />
               ) : null}
               <StageTimeline run={run} flow={flow} config={config} go={go} />
+              <CommandsSection thread={runThreadId(run.id)} team={config?.agents.team} />
               <ReviewRounds run={run} config={config} />
             </div>
           )}

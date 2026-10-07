@@ -17,6 +17,7 @@ import { DISPLAY, SUPERVISOR_SH, bwrapArgs, sandboxEnv, type SandboxSpec } from 
 import { readOutputImage } from '../src/main/sandbox/session';
 import { offersViewImage } from '../src/main/sandbox/tool';
 import { probeSandbox } from '../src/main/sandbox/probe';
+import { redact } from '../src/main/errorlog-core';
 import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -226,8 +227,9 @@ maybe('a real sandbox with a browsers folder', () => {
     const s = await service.open({ worktree: wt, reader: false, config: { ...neutralSandbox(), browsersPath: browsers } });
     try {
       const r = await s.exec(`echo "$PLAYWRIGHT_BROWSERS_PATH"; ls "$PLAYWRIGHT_BROWSERS_PATH"; touch "$PLAYWRIGHT_BROWSERS_PATH/x" 2>/dev/null; echo "write=$?"; echo "display=$DISPLAY"`);
-      // The output is masked like any command's: the home folder shows as ~.
-      expect(r.output).toContain(browsers.replace(homedir(), '~'));
+      // The output is masked like any command's: the home folder shows as ~. The suite reads HOME as "~", so the expectation is the same masking applied to this folder with
+      // the same home the sandbox has, which is what comes back.
+      expect(r.output).toContain(redact(browsers, homedir()));
       expect(r.output).toContain('chromium-1');
       expect(r.output).toMatch(/write=[1-9]/);
       expect(r.output).toMatch(/display=\s*$/);

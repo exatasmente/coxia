@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A cycle can run on its own, and the sandbox can share the computer's network.** A new autonomy block — one for the workspace (Settings › Runner) and one for each flow (Settings › Team and cycle), every field off and only the computer raising one — has a general switch (**Autonomous cycle**: every stage starts by itself and hands its result on without waiting, whatever each agent's own autonomy is) and four separate choices under it: **Host commands without asking** (the commands of a `shell: host` agent run without the "Allow" question, and the thread keeps a line saying they ran here under the cycle's autonomy), **Gates pass by themselves** (a gate is approved by the app, recorded as an automatic approval with its reason and where it came from), **Push without a "yes"** and **Open the change request without a "yes"** (the run's push goes out through the door of Actions by itself, audited, and the change request is opened right after it). The rule of the runner changes accordingly: the push and the change request wait for a "yes" unless the choice that covers them is on, and a release run (its cuts and sends: `beta`, `stable`, `push-branch`, `push-tag`) is never reached. The sandbox's network gains a third value, **open**: it shares the computer's whole network, with no proxy and no host list (the machine's own services, the local network and the internet), with the system's name resolver bound in read-only. Desktop only, off by default, and a paired browser can neither raise any autonomy field nor choose `open`.
+- **The commands each agent ran, in the run's screen and in one message when it ends.** The run's screen lists every command by agent and, inside each agent, by stage: the number, the command, where it ran (the sandbox or this computer), how it ended (the exit code, the timeout, the refusal) and how long it took; it follows the run live and stays afterwards. When the run ends — done, cancelled or failed —, the app posts one message in its thread with the same list, by agent. It is built from what the run already records and never goes to the code host.
+
 ## [0.7.0] - 2026-10-06
 
 ### Added

@@ -70,7 +70,7 @@ describe('a stage with shell: host', () => {
     expect(sandbox.opened.map((o) => o.host)).toEqual([true]);
     expect(results).toMatchObject([{ exitCode: 0 }, { refused: 'denied', output: 'not the build folder' }]);
     const codes = b.thread(run).map((m) => m.code).filter((c) => c?.startsWith('runner.command') || c?.startsWith('runner.exec'));
-    expect(codes).toEqual(['runner.command.ask', 'runner.command.once', 'runner.exec.host', 'runner.command.ask', 'runner.command.deny', 'runner.exec.host']);
+    expect(codes).toEqual(['runner.command.ask', 'runner.command.once', 'runner.exec.host', 'runner.command.ask', 'runner.command.deny', 'runner.exec.host', 'runner.commands.list']);
     const audit = listAudit().filter((e) => e.kind === 'exec');
     expect(audit.map((e) => [e.target, e.via])).toEqual([['npm test', 'host']]);
   });
@@ -118,6 +118,35 @@ describe('a stage with shell: host', () => {
     expect(qa.host).toBe(true);
     expect(qa.session.asked).toEqual(['npm test', 'npm run e2e']);
     expect(b.thread(run).filter((m) => m.code === 'runner.command.ask').map((m) => m.params?.command)).toEqual(['npm run e2e']);
+  });
+
+  it('runs every command without asking under the autonomy block, and says so in the thread and in the list the run posts at its end', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { hostFor(c, 'developer'); c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, hostCommands: true }; } });
+    easy(b);
+    const seen: number[] = [];
+    b.engine.script('developer', async (c, tools) => {
+      seen.push((await c.exec!.exec('npm test')).exitCode ?? -1);
+      seen.push((await c.exec!.exec('npm run build')).exitCode ?? -1);
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('done');
+    expect(seen).toEqual([0, 0]);
+    // never waited for the person, and the thread marks the commands as run under the cycle's autonomy
+    expect(b.runner.get(run.id)!.command).toBeUndefined();
+    expect(b.thread(run).filter((m) => m.code === 'runner.command.ask')).toHaveLength(0);
+    const marks = b.thread(run).filter((m) => m.code === 'runner.command.autonomy');
+    expect(marks).toHaveLength(1);
+    expect(marks[0].params).toMatchObject({ agent: 'developer', command: 'npm test' });
+    // the run ended: one message carries the list of the commands, by agent
+    const list = b.thread(run).filter((m) => m.code === 'runner.commands.list');
+    expect(list).toHaveLength(1);
+    expect(list[0].params?.count).toBe(2);
+    expect(String(list[0].params?.text)).toContain('developer (2 commands)');
+    expect(String(list[0].params?.text)).toContain('npm test');
+    expect(String(list[0].params?.text)).toContain('on this computer');
   });
 
   it('opens on a machine that cannot make a sandbox, and refuses an answer to a command that no longer waits', async () => {
