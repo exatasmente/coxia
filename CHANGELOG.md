@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0-beta.5] - 2026-10-07
+
 ### Fixed
 
 - **A stage on the open engine ends as soon as its agent answered.** When the agent of a stage that talks while it works wrote its final answer in the shape asked for and no message was waiting, the app still asked it for the answer once more, and the model wrote the whole of it a second time: minutes and thousands of tokens at the end of every such stage (a long review took about five minutes to close). That answer is now the result.
@@ -293,7 +295,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.5...HEAD
+[0.8.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.4...v0.8.0-beta.5
 [0.8.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.3...v0.8.0-beta.4
 [0.8.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.2...v0.8.0-beta.3
 [0.8.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.1...v0.8.0-beta.2
