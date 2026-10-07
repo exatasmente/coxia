@@ -499,9 +499,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
           if (url) uploaded.push({ title: u.title, url });
         }
       }
-      // The comment was written with the count of the pieces no command carries; here only the uploads that were planned matter, and one the host took no
-      // address from is counted too instead of disappearing.
-      const body = uploads.length ? withEvidenceImages(planned.body, uploaded, uploads.length - uploaded.length) : plannedBody;
+      // The body is rebuilt from the text without any count, so the pieces no command carries are counted again here, and one the host took no address
+      // from is counted too instead of disappearing.
+      const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
       responses = await door.post({ ...meta, key: `comment:${runId}:${x.key}` }, await commandOf(body));
       dropUploads(dir);
       await afterPosted(runId, { ...x, body, hash: hashOf(body), details: { ...details, body }, noteId, responses, where, provider, previous: had?.headline ?? null });

@@ -174,6 +174,29 @@ describe('evidence and the code host', () => {
     expect(posted.flat().some((c) => c.bodyFile)).toBe(false);
   });
 
+  it('still counts the pieces no command carries when an autonomous comment uploads the others', async () => {
+    const dataDir = make();
+    dirs.push(dataDir);
+    const { config, run, runs, forum, stage, agent } = world(dataDir);
+    const posted: VcsCommand[][] = [];
+    // Two pieces cited, one the host can take: the other is counted in the text, next to the image that went up.
+    const oneOfTwo = (r: Run, ids: readonly string[]): { images: EvidenceUpload[]; total: number } => ({ images: uploads(r, ids.slice(0, 1)).images, total: ids.length });
+    const publisher = createPublisher({
+      runs,
+      forum,
+      config: () => config,
+      env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
+      door: doorOf(fakeProvider(), posted),
+      now: () => new Date('2026-10-03T12:00:00Z'),
+      evidenceUploads: oneOfTwo,
+    });
+    const output = readOutput({ summary: 'Looked.', comment: { sections: [{ heading: 'What I saw', body: 'The field.' }], technical: '' }, evidence: ['ev-1', 'ev-2'] }, 'qa');
+    const end = { stage, agent, kind: 'qa', output, autonomous: true } as StageEnd;
+    await publisher.stageEnded(run.id, end);
+    expect(commentBodyOf(posted)).toContain('![The screen](https://example.test/group/project/assets/ev-1.png)');
+    expect(commentBodyOf(posted)).toContain('1 piece(s) of evidence stay in the app');
+  });
+
   it('sends no image before the "sim" of an agent that waits', async () => {
     const dataDir = make();
     dirs.push(dataDir);
