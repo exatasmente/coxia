@@ -27,6 +27,7 @@ import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import { t } from '../../../shared/i18n';
+import { incomingActivity, incomingText } from '../incoming';
 
 /** Steps in a row of nothing but notes after which a model is taken as done (see `ToolImpl.note`). */
 const NOTE_STEPS_MAX = 3;
@@ -434,13 +435,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // closing call went in the door is never asked again: a message that arrives after the result was given cannot enter the session behind it.
   type DoorTurn = { took: 'none' } | { took: 'message' } | { took: 'answer'; value: Json } | { took: 'bad'; errors: string };
   let doorClosed = false;
+  // A message waiting for the stage enters the dialog as a user turn: after any step, so the agent hears it while it works, not only when it stops.
+  const deliver = async (): Promise<boolean> => {
+    if (!p.incoming || doorClosed) return false;
+    const message = await p.incoming((text) => events.onInterim?.(incomingActivity(text)));
+    if (message === null) return false;
+    write({ role: 'user', content: incomingText(message) });
+    return true;
+  };
   const throughDoor = async (): Promise<DoorTurn> => {
     if (!p.incoming || !p.schema || doorClosed) return { took: 'none' };
-    const message = await p.incoming((text) => events.onInterim?.(`${t('main.engine.text.messageIn')}\n${text}`));
-    if (message !== null) {
-      write({ role: 'user', content: `${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}` });
-      return { took: 'message' };
-    }
+    if (await deliver()) return { took: 'message' };
     doorClosed = true;
     write({ role: 'user', content: t('main.engine.text.collect') });
     const last = await call({ tools: [], responseFormat });
@@ -487,6 +492,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
       const images = results.flatMap((r) => r.images ?? []);
       if (images.length) write(imageMessage(images));
+      // A message that arrived while the tools ran is handed over now, with their results: the agent hears it on its next step, whatever it is doing.
+      if (await deliver()) {
+        noteSteps = 0;
+        continue;
+      }
       const onlyNotes = c.toolCalls.every((tc) => impls.find((i) => i.name === tc.function.name)?.note === true);
       noteSteps = onlyNotes ? noteSteps + 1 : 0;
       // A model that only posts notes for a few steps has finished and is announcing it: the step ends here and the answer is asked for, as after a plain text.

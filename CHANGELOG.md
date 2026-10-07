@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A message to an agent that is working reaches it while it works.** A message written in the run's conversation to the agent of a working stage used to wait until the agent stopped using its tools, which in practice was the end of the stage. It now enters right after the agent's current step, with the results of its tools, on both engines (on the Claude Agent SDK, after each batch of tools), and the agent is told it can answer with *SendMessage* and carry on.
+
 ## [0.8.0-beta.3] - 2026-10-07
 
 ### Fixed
