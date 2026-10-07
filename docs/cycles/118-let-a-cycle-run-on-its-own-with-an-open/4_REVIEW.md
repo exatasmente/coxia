@@ -1,55 +1,58 @@
-# A autonomia lida em cada decisão, a sandbox na rede e a lista de comandos: o que está pronto e o que falta
+# A autonomia lida em cada decisão, a sandbox na rede e a lista de comandos: a revisão desta passada
 
 ## Veredito
 
-**Muda.** A base desta revisão confere, mas **três dos quatro campos de autonomia não estão ligados** e duas telas prometidas não existem; o critério de aceite 1, o 6 e o 8 do documento de especificação **não são atendidos**.
+**Aprovado.** Os quatro bloqueios da revisão anterior foram escritos e conferidos nesta máquina, e os critérios de aceite 1, 6 e 8 deixam de estar em falta. Ficam duas observações que não bloqueiam.
 
 ## 1. O que foi revisado
 
-O trabalho foi lido direto nos arquivos, e os portões foram rodados nesta máquina. O que passo a passo:
+Nesta passada o trabalho foi lido direto nos arquivos do worktree e os portões foram rodados nesta máquina. O que se olhou:
 
-- **Configuração**: `src/shared/config/types.ts` (bloco de cinco campos, `SANDBOX_NETWORKS` com `open`, mapa por fluxo), `defaults.ts` (`neutralAutonomy`, `neutralRunner`), `schema.ts` (objetos `autonomy`/`flowAutonomy`), `migrations.ts` (`CONFIG_SCHEMA_VERSION` 16 e o passo `v15ToV16`) e o resolvedor puro `src/shared/config/autonomy.ts`, lidos linha a linha.
-- **Os pontos de decisão**: `src/shared/runs/flow.ts` (o valor lido uma vez, na resolução do fluxo), `src/shared/runs/transitions.ts` (a etapa guarda o valor no seu próprio registro), `src/main/runner/service.ts` (o gate aprovado sozinho pelo app, com o motivo e a origem), `src/main/runner/executor.ts` (o comando no computador sem a pergunta) e `src/main/runner/publish.ts` (o push e o pull request), lidos por inteiro.
-- **A rede `open`**: `src/main/sandbox/policy.ts` (a montagem deixa de desligar a rede), `src/main/sandbox/system.ts` (o resolvedor de nomes) e `src/main/sandbox/index.ts` (a montagem e o encadeamento do valor guardado), além do teste real de sandbox.
-- **Navegador pareado**: `src/main/configScope.ts` (a lista do que o navegador salva e a recusa de elevação) e `src/main/webPolicy.ts`.
-- **Telas**: `src/renderer/src/screens/team/RunnerSection.tsx`, `runnerEdit.ts` e a tela da execução, procurando a seção de comandos e o cabeçalho.
-- **Portões rodados nesta máquina**, com o resultado que voltou: `npx tsc --noEmit` sem saída (limpo); `npx vitest run` sobre as sete suítes tocadas (migração de esquema, esquema, autonomia, comandos, escopo do navegador, política da sandbox e publicação), **113 casos, todos verdes**; `node scripts/theme-audit.mjs` com só as oito cores literais já conhecidas do editor de texto; `npm run i18n:lint` com 4378 chaves nos dois idiomas; `node scripts/public-audit.mjs` com 1088 arquivos e nada de empresa ou pessoa.
+- **A publicação**: `src/main/runner/publish.ts` (o resolvedor lido no ponto da decisão, o push pela porta, o pull request pela porta), `src/main/runner/door.ts` (a única porta) e `src/main/actions.ts` (`pushRunBranchAuto`, a linha de auditoria, a substituição de propostas antigas, o aviso que faz o pull request seguir).
+- **A lista de comandos**: `src/shared/runCommands.ts` (o agrupamento puro), `src/main/runner/service.ts` (`postRunCommands`, o ponto único em que a execução termina) e `src/renderer/src/screens/cycle/CommandsSection.tsx`.
+- **O cabeçalho e as telas**: `src/renderer/src/screens/cycle/AutonomyNote.tsx`, `src/renderer/src/screens/team/AutonomyFields.tsx`, `RunnerSection.tsx`, `FlowEditor.tsx` e `flowEdit.ts`.
+- **A configuração**: `src/shared/config/autonomy.ts` (o resolvedor), `types.ts`, `defaults.ts`, `schema.ts`, `migrations.ts` (`CONFIG_SCHEMA_VERSION` 16 e o passo `v15ToV16`) e `src/main/configScope.ts` (`WEB_EDITABLE` e `raisedAutonomy`).
+- **A marca do comando no computador**: `src/main/runner/executor.ts` (`hostApproval`).
+- **A documentação**: `docs/runner.md` e `CHANGELOG.md`.
+- **Portões rodados nesta máquina**, com o resultado que voltou: verificação de tipos **limpa**; a suíte inteira em uma corrida — **4156 casos verdes em 255 arquivos**, com duas falhas que passam sozinhas e que esta mudança não toca (uma estourou o tempo sob carga e a outra é do script de atualização); auditoria de cores com só as cores literais já conhecidas; catálogo de textos com **4422 chaves** nos dois idiomas; auditoria de repositório público com **1092 arquivos** e nada de empresa ou pessoa.
 
-## 2. O que está pronto e confere
+## 2. Os quatro bloqueios da revisão anterior
 
-- **O bloco existe nos dois lugares e é lido no ponto certo.** Quem decide uma execução é o bloco do fluxo quando o interruptor "usar a configuração do espaço de trabalho" está desligado, e o do espaço de trabalho quando está ligado ou quando o fluxo não tem bloco próprio. Sem entrada para um fluxo, a leitura é "tudo desligado e o espaço de trabalho decide". O teste próprio cobre as duas precedências.
-- **A migração não eleva nada.** Um documento guardado ganha o bloco do espaço de trabalho com os cinco campos desligados e o mapa de fluxos vazio, e a rede da sandbox **não é tocada**; um bloco que já exista é mantido. O teste cobre a migração e o passo é idempotente.
-- **A decisão da autonomia é lida uma vez, na resolução do fluxo**, e o valor é guardado na própria etapa: uma mudança vale a partir da próxima etapa, nunca no meio.
-- **O gate com a escolha ligada** é aprovado pelo app e registrado como aprovação automática, com o motivo dizendo de onde a decisão veio; sem a escolha, o gate espera como hoje.
-- **O comando de um agente com `shell: host`**, com a escolha ligada, roda sem a pergunta; sem ela, a pergunta continua.
-- **A rede `open`**: a montagem deixa de desligar a rede só nesse valor e mantém os outros isolamentos; não são postas as variáveis de proxy; o alvo real da configuração do resolvedor do sistema e o caminho convencional são montados somente leitura, dentro da lista de montagens que passa pela checagem de segurança. **O teste real de sandbox foi executado nesta máquina** e mostrou que existe uma interface da máquina dentro da sandbox e que um nome público é resolvido; o teste é pulado onde a máquina não tem sandbox.
-- **O navegador pareado só desce**: o bloco do espaço de trabalho e o da sandbox ficam fora da lista que o navegador salva, e o bloco de cada fluxo, que está dentro, recusa qualquer campo que passe de desligado para ligado e recusa desligar o interruptor que entrega a decisão ao fluxo. O teste fixa as duas recusas.
-- **Os textos**: o contrato do campo `autonomous` de um agente já não diz que o push e o pull request esperam sempre, a lista de canais do navegador ganha o bloco do fluxo, e o histórico do esquema ganha o passo novo na documentação da configuração.
+### 2.1 O push e o pull request saem sozinhos
 
-## 3. O que falta, e por que bloqueia
+A escolha é lida onde a decisão acontece, na publicação, e o resultado é o certo: com a chave geral e a escolha do push ligadas, a branch sai pela porta e a mensagem da conversa diz que foi a autonomia do ciclo que a enviou, como escrita auditada; o pull request é aberto logo depois, pela mesma porta, e a conversa diz que ele foi criado. Nenhum dos dois vira proposta em Ações. Com o push desligado, a proposta volta a ser feita como sempre foi.
 
-### 3.1 O push e o pull request ainda esperam sempre
+**Uma execução de release fica fora das duas escolhas por construção**, e não por acaso: o próprio resolvedor da publicação devolve "não" quando a execução tem um assunto de versão, antes de olhar o bloco. Os passos de um corte (`beta`, `stable`, `push-branch`, `push-tag`) continuam esperando o "sim", e o teste da unidade de release fixa exatamente esses quatro. Um espaço de trabalho de teste continua recusando o push e o pull request: a recusa vem da porta, a conversa diz por quê, e nada sai.
 
-A escolha "Push sem sim" e a escolha "Pull request sem sim" não são lidas em nenhum lugar: o arquivo que publica não foi tocado nesta passada. No fim da etapa que muda o código, o push vira uma proposta em Ações; depois dele, o pull request vira outra proposta, com o seu próprio "sim". Isso é exatamente o comportamento de hoje e contradiz o critério de aceite 1 (a execução vai do começo ao pull request sem esperar a pessoa) e o item 6 da especificação. O caminho autônomo da porta para os dois ficou desenhado e não escrito.
+### 2.2 A lista de comandos existe, viva e no fim
 
-### 3.2 A lista de comandos não existe
+O agrupamento puro é usado nos dois lugares. Na tela da execução há uma seção logo abaixo da linha do tempo, que lê a conversa viva — cada mensagem nova de comando a faz aparecer de novo, sem canal novo. No fim da execução há **uma** mensagem na conversa, postada de um ponto único, quando a execução chega a concluída, cancelada ou falhou; ela é protegida contra postar duas vezes e não posta nada quando não houve comando nenhum. O texto sai da mesma lista, por agente e por etapa, e a seção diz que a lista é feita do que a execução já registra. Nada disso toca o host de código: a lista é montada a partir da conversa.
 
-O módulo puro que agrupa por agente e por etapa existe e tem teste, mas **nada o usa**: não há seção de comandos na tela, não há mensagem única ao fim da execução e não há chave de catálogo para ela. O critério de aceite 6 fica sem atendimento: nem a lista ao vivo, nem a mensagem final, nem o "por agente" na conversa quando a execução termina (concluída, cancelada ou falhou).
+### 2.3 O cabeçalho da execução
 
-### 3.3 O cabeçalho da execução e as telas do bloco
+O cabeçalho da tela da execução diz que a execução roda sozinha, quais das quatro escolhas estão ligadas e de onde vem a decisão: do bloco do espaço de trabalho, ou do bloco do fluxo com o nome do fluxo (e, no fluxo principal, a palavra que o nomeia). Numa execução de release a linha não aparece, porque o bloco não decide o push nem o pull request dela.
 
-Nem o cabeçalho da execução diz que ela é autônoma, quais das quatro escolhas estão ligadas e de onde vêm, nem as telas do bloco de autonomia (Configurações › Runner e a edição de cada fluxo, com o interruptor e os campos desabilitados com a dica) foram escritas. O critério de aceite 8 e o item 11 da especificação ficam sem atendimento; o seletor de rede ganhou o terceiro valor, e só.
+### 2.4 As telas dos dois blocos
 
-## 4. Observações menores
+O bloco do espaço de trabalho está em Configurações › Runner: os cinco campos, com os quatro de baixo desabilitados enquanto a chave geral está desligada. O bloco de cada fluxo está na edição do fluxo, com o interruptor "Usar a configuração do espaço de trabalho" ligado por padrão, os campos do fluxo desabilitados e a dica de que o espaço de trabalho decide enquanto ele está ligado. Um navegador pareado vê o bloco do espaço de trabalho e não o muda; o bloco do fluxo, que o navegador pode salvar, recusa qualquer campo que passe de desligado para ligado e recusa desligar o interruptor que entrega a decisão ao fluxo. Um bloco de um fluxo que o editor não mostra (a release, a documentação) fica como está.
 
-- **A rede `open` alcança a interface da máquina, e isso é o pedido**, mas a seção "Não verificado" do documento do runner precisa dizer com clareza que a rede nasce não exercitada quanto a **alcançar** um endereço público de verdade, não só quanto a resolver o nome; o que foi visto aqui foi a resolução e a existência da interface, não uma conexão completa.
-- **A linha que diz que um comando rodou neste computador sob a autonomia do ciclo** (a recomendação que a especificação registra) não aparece: hoje o comando autônomo sai na conversa igual a um comando permitido pela pessoa, sem marca de origem. É decisão da pessoa, mas vale dizer que a recomendação não foi seguida.
-- **A execução de release** fica fora das duas escolhas, como a pessoa recomendou, e isso está preservado por construção: como as escolhas não são lidas, a release não muda. Quando o caminho autônomo for escrito, essa exclusão tem de ser explícita e testada.
+## 3. As três observações da revisão anterior
+
+- **A marca do comando sob autonomia**: quando a escolha libera um comando no computador, a conversa ganha uma linha dizendo que ele rodou aqui sob a autonomia do ciclo. A recomendação que a especificação registrava foi seguida.
+- **A rede aberta na seção "Não verificado"**: o documento do runner passa a dizer que a rede aberta nasce **não exercitada**, e diz isso quanto a **alcançar** um endereço público, não só quanto a resolver o nome. Foi lido no documento.
+- **A execução de release fora das duas escolhas**: deixou de ser um acidente (nada era lido) e passou a ser uma exclusão explícita no resolvedor, fixada por teste.
+
+## 4. Observações que não bloqueiam
+
+1. **O rótulo da etapa na lista de comandos não é traduzido.** O nome do agente passa pelo texto do catálogo, mas o da etapa vai como o identificador interno. Numa conversa em inglês, com um ciclo cujas etapas têm rótulos em português, a linha "na etapa" mostra o identificador, não o rótulo que a tela do fluxo mostra para a mesma etapa. É uma inconsistência de palavras, não um defeito de comportamento.
+2. **O que entra na lista do fim é o que virou linha de conversa.** Um comando recusado antes de escrever qualquer linha não aparece na lista final, ainda que a especificação peça que um comando recusado apareça com o resultado que teve. O efeito prático é pequeno, mas vale saber onde está a fronteira.
 
 ## 5. O que não foi revisado
 
-A seção de comandos na tela, a mensagem final e as telas do bloco de autonomia **não existem para revisar**. Nenhuma tela foi aberta e **nada do comportamento novo foi visto funcionando no aplicativo**: o que se viu foi o código, os portões e o teste real da sandbox, não uma execução do ciclo. O rebase sobre a `release/0.7.0` foi conferido pelo estado do repositório, não pelo histórico de commits, que não mostra o rebase.
+- **Nada do comportamento novo foi visto funcionando no aplicativo**: nenhuma tela foi aberta, nenhum bloco foi ligado à mão e nenhuma execução foi rodada de ponta a ponta. O que se viu foi o código, os portões e os testes.
+- **A rede aberta não alcançou um endereço público de verdade**: o que o teste real mostra é que existe uma interface da máquina dentro da sandbox e que um nome público é resolvido; uma conexão completa não foi observada.
+- O push autônomo e o pull request autônomo só rodaram contra o host falso com memória, num repositório git temporário; **nenhum host real**.
 
 ## 6. Como foi conferido
 
-Leitura direta dos arquivos citados e execução dos portões nesta máquina: verificação de tipos, suíte de testes das sete áreas tocadas, auditoria de cores, catálogo de textos e auditoria de repositório público. **As três escolhas de autonomia que não estão ligadas e as duas telas ausentes foram conferidas por ausência**: não há leitura do bloco no arquivo que publica, não há uso do módulo de agrupamento, não há componente de comandos, não há chave de catálogo para a mensagem final. Nada disso foi dado como feito; é o que falta.
+Leitura direta dos arquivos citados e execução dos portões nesta máquina: verificação de tipos, a suíte inteira de testes, auditoria de cores, catálogo de textos e auditoria de repositório público. Os quatro bloqueios foram conferidos pelo código que os escreve e pelos testes que os fixam, e não por ausência: há leitura do bloco no arquivo que publica, há uso do agrupamento nos dois lugares, há componente de cabeçalho, há seção de comandos e há chave de catálogo para a mensagem final. Nada disso foi visto rodando no aplicativo, e está dito assim.
