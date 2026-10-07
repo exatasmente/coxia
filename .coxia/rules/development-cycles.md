@@ -1,6 +1,6 @@
 ---
-checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
-checked-date: 2026-10-06
+checked-commit: 272546b959dc8ca7cbd065281050bf807a7f73e7
+checked-date: 2026-10-07
 evidence: [src/shared/cycles/index.ts:1-29, src/shared/cycles/types.ts, src/shared/cycles/templates/agentFlow.ts:14-70, src/shared/runs/flowCheck.ts:10-11, src/shared/runs/flow.ts:29-82, src/shared/config/team.ts:66-75, src/shared/runs/squadCheck.ts:10-11, test/cycle-templates.test.ts, docs/cycles.md:1-130]
 summary: The cycle templates, the devCycle section, stages, the agent flow and its teams
 stages: [development, review]
