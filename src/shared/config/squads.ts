@@ -45,16 +45,37 @@ export const effectiveTeam = (c: TeamView): AgentDef[] => c.agents.team.map((a) 
 export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => effectiveTeam(c).filter((a) => a.squad === squadId || isShared(a));
 
 /**
- * The key of `devCycle.flows` that holds the flow of a release run (a run whose subject is a version, not an issue). It is a flow per run kind next to the flows of
- * the squads, so a squad cannot be called this.
+ * The keys of `devCycle.flows` that hold the flow of a kind of run that is not an issue's: a release run (a run whose subject is a version) and a documentation run (a
+ * run that drafts the `.coxia/` of a repository). They are flows per run kind next to the flows of the squads, so a squad cannot be called either.
  */
 export const RELEASE_FLOW_KEY = 'release';
+export const DOCS_FLOW_KEY = 'docs';
+export const RUN_KIND_FLOW_KEYS = [RELEASE_FLOW_KEY, DOCS_FLOW_KEY] as const;
+export type RunKind = 'release' | 'docs';
+
+/** Whether a key of `devCycle.flows` is the flow of a kind of run, and so no squad's. */
+export const isRunKindFlowKey = (key: string): boolean => (RUN_KIND_FLOW_KEYS as readonly string[]).includes(key);
 
 /** The comments the app writes by itself on the tracking issue of a release: the activities of the version, a beta published, the stable published. */
 export const RELEASE_COMMENT_EVENTS = ['activities', 'beta-published', 'stable-published'] as const;
 
+/** The comment of a documentation run: the description of its pull request, in place of the issue flow's `pr`. */
+export const DOCS_COMMENT_EVENTS = ['docs-pr'] as const;
+
 /** The stages a release run follows, when the workspace has the release flow (the `release-flow` template puts it there); null otherwise. */
 export const releaseFlowOf = (c: Pick<CycleView, 'devCycle'>): StageDef[] | null => c.devCycle.flows?.[RELEASE_FLOW_KEY] ?? null;
+
+/** The stages a documentation run follows, when the workspace has the docs flow (the `docs-flow` template puts it there); null otherwise. */
+export const docsFlowOf = (c: Pick<CycleView, 'devCycle'>): StageDef[] | null => c.devCycle.flows?.[DOCS_FLOW_KEY] ?? null;
+
+/** Which kind of run a run is, by what it carries: a release (`subject`), documentation (`docs`), or null for an issue's. */
+export const runKindOf = (run: { subject?: unknown; docs?: unknown }): RunKind | null => (run.subject ? 'release' : run.docs ? 'docs' : null);
+
+/** The stages the flow of a run's own kind has in this workspace; null for an issue run, and for a kind whose template was not applied. */
+export const runKindFlowOf = (c: Pick<CycleView, 'devCycle'>, run: { subject?: unknown; docs?: unknown }): StageDef[] | null => {
+  const kind = runKindOf(run);
+  return kind === 'release' ? releaseFlowOf(c) : kind === 'docs' ? docsFlowOf(c) : null;
+};
 
 /** The stages a squad's runs follow: its own flow when it has one, the workspace's otherwise. `null`: the workspace's. */
 export const flowStagesOf = (c: Pick<CycleView, 'devCycle'>, squadId: string | null | undefined): StageDef[] => (squadId ? (c.devCycle.flows?.[squadId] ?? c.devCycle.stages) : c.devCycle.stages);

@@ -7,7 +7,7 @@ import { conflictMrs } from '../dashboard';
 import { useT } from '../i18n';
 import { jobs, useJobs } from '../useJobs';
 
-export type ConflictPlace = 'deep' | 'need' | 'act';
+export type ConflictPlace = 'need' | 'act';
 
 /** One "Resolver conflito" button per MR of the card that the report blocks for conflicts. Creates (or reuses) the resolution and opens it. */
 export function ResolveConflict({ card, go, place, only, className = 'btn btn-amber' }: { card: Card; go: (s: Screen) => void; place: ConflictPlace; only?: string; className?: string }) { // i18n-ignore: class name

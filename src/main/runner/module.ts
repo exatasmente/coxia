@@ -14,10 +14,14 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
+import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
 import { createPublisher } from './publish';
+import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
+import { docsStatus } from '../harness/status';
+import { docsFlowOf } from '../../shared/config/squads';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
 // The runner of the running workspace, and its channels. What a paired browser may call is decided in webPolicy.ts: reading runs and answering a
@@ -103,8 +107,24 @@ export const runsModule: Module = (ctx) => {
     }),
     updateConfig,
     notify: (n) => ctx.notify(n),
+    // An event of the fixed catalog happened in the run (a stage was entered or finished, a gate was decided, the run finished): the plugins that
+    // observe it are called, each inside the stage sandbox, with what the person granted it and writing its document into the run's cycle folder. The
+    // app reads the run's own state here, never a stored one; a plugin that fails is not the run's to know, and the stage of a run is not started beside
+    // another sandbox over the same worktree.
+    pluginEvent: async (event, { run }) => void (await firePluginEvent(event, liveContext(run))),
+    // A plugin's request waits for the person: the run does not start another stage until it is answered.
+    pluginHold: (runId) => pluginHold(runId),
+    pluginRelease: (runId) => releasePluginAsks(runId),
+    pluginNotes: () => pluginNotes(),
   });
   current = r;
+  pluginRunHooks.settled = (id, note) => {
+    try {
+      r.pluginSettled(id, note);
+    } catch (e) {
+      console.error('[runner] a plugin request was answered', id, e instanceof Error ? e.message : e);
+    }
+  };
   // A comment, a review, the push or the pull request that waited in Actions was approved: the run learns what the host made.
   onRunnerActionDone((action, responses) => r.actionDone(action, responses));
   // A "sim" on a step of a release was refused before it ran (a step it needs is not done): the run's thread says why.
@@ -116,8 +136,9 @@ export const runsModule: Module = (ctx) => {
   forumStore().subscribe((m) => r.onMessage(m));
 
   // Whether this computer can make a sandbox, for the team editor to offer the option; `probe` asks again. Neither changes anything.
-  ctx.handle('sandbox:status', () => sandbox.status());
-  ctx.handle('sandbox:probe', () => sandbox.status(true));
+  // The pieces for testing an interface come with it, read from the saved settings: they never make the sandbox unavailable.
+  ctx.handle('sandbox:status', async () => ({ ...(await sandbox.status()), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
+  ctx.handle('sandbox:probe', async () => ({ ...(await sandbox.status(true)), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
   // A document a stage produced, for the run screen to show: read only, from the run's own cycle folder, and open to a paired browser like the thread beside it.
@@ -129,6 +150,11 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
   // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
   ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));
+  // The documentation run of a repository: it writes only in its own worktree, and its push and pull request wait in Actions like every other. The desktop window's:
+  // webPolicy.ts denies docs:* to a paired browser. `apply` is the person's yes to adding the docs flow and its agent when the workspace has none.
+  // What Settings › Documentation shows: per repository, the `.coxia/` found, what is not checked, and whether a documentation run is going.
+  ctx.handle('docs:status', () => docsStatus({ repos: rc().repos, runs: r.list(), flow: !!docsFlowOf(getConfig())?.length }));
+  ctx.handle('docs:start', (repo: unknown, mode: unknown, apply?: unknown) => startDocsRun({ runner: r, config: getConfig, applyFlow: applyDocsFlow }, text(repo), text(mode), apply === true));
   ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run)));
   ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note)));
   ctx.handle('runs:return', (run: unknown, note: unknown) => r.returnStage(id(run), text(note)));

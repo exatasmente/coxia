@@ -31,6 +31,7 @@ O token vem do cofre de segredos (`secretRef`: `stored`, `command` ou `env`, ver
 | Issues | issues do projeto, com status do work item | issues (sem status próprio: o estágio vem das labels e dos PRs) | rastreador de issues (opcional por repositório), o estado é o status |
 | Issues do projeto ("todas" e "por label") | `projects/<id>/issues?scope=all&state=opened`; por label, uma leitura por label (o filtro "qualquer uma" é de plano pago), reunidas pelo número | busca `is:issue is:open repo:<r>` e, por label, `label:"a","b"` (a vírgula é OU); a busca deixa os PRs fora da conta de páginas | `issues?q=` com os estados abertos, sem filtro de responsável; por label, não existe (o rastreador não tem labels) |
 | Lista "minhas" | `issues?scope=assigned_to_me`, `merge_requests?scope=created_by_me` e `reviewer_username` | `issues?filter=assigned`, busca `is:pr author:` e `review-requested:` | `pullrequests/{uuid}`; revisão pedida e issues nos repositórios configurados |
+| O gatilho do runner | A leitura que alimenta o gatilho é a das issues **abertas atribuídas à pessoa** com o rótulo `runner.triggerLabel`: `issues?scope=assigned_to_me` (o `state=opened` da própria leitura), `merge_requests?scope=created_by_me` e `reviewer_username` | A mesma leitura "minhas": `issues?filter=assigned` (com um projeto de issues, `repos/<proj>/issues?assignee=<usuário>&state=open`) e, por label, a busca `is:issue is:open assignee:@me` | Issues do rastreador com o meu usuário na consulta: `assignee.uuid="<uuid do meu usuário>"`, com os estados abertos |
 
 ### Permissões do token
 
@@ -55,7 +56,7 @@ Com o login do CLI (`cliPreference: cli`) valem as permissões da sessão do CLI
 | Efeitos da pré-daily (`efeitos.ts`) | MR, commits, pipelines, jobs, comentários, labels, estado da issue | n/d |
 | Vigias (`watchers.ts`) | issue, MRs ligados, labels de versão | n/d |
 | Radar (`radar.ts`) | arquivos e diffs de cada MR aberto | n/d |
-| Conflito a partir de um MR (`actions.ts`) | MR, branch padrão, sha da branch alvo | o push é outra ação, com seu "sim" |
+| Conflito a partir de um MR (`actions.ts`) | MR, sha da branch alvo | o push é outra ação, com seu "sim" |
 | Comentário do QA (`actions.ts`) | comentários da issue | editar a nota |
 | Agentes das cerimônias | ver "Leitura dos agentes" | nada |
 
@@ -175,6 +176,7 @@ The token comes from the secrets store (`secretRef`: `stored`, `command` or `env
 | Issues | project issues, with the work item status | issues (no status of their own: the stage comes from labels and PRs) | issue tracker (optional per repository), the state is the status |
 | Project issues ("all" and "by label") | `projects/<id>/issues?scope=all&state=opened`; by label, one read per label (the "any of" filter is a paid-tier feature), merged by number | search `is:issue is:open repo:<r>` and, by label, `label:"a","b"` (the comma is OR); the search keeps PRs out of the page count | `issues?q=` with the open states and no assignee filter; by label, none (the tracker has no labels) |
 | "Mine" lists | `issues?scope=assigned_to_me`, `merge_requests?scope=created_by_me` and `reviewer_username` | `issues?filter=assigned`, searches `is:pr author:` and `review-requested:` | `pullrequests/{uuid}`; requested reviews and issues in the configured repositories |
+| The runner trigger | The read that feeds the trigger is the one of the **open issues assigned to the person** that carry the `runner.triggerLabel` label: `issues?scope=assigned_to_me` (with the `state=opened` of the read itself), `merge_requests?scope=created_by_me` and `reviewer_username` | The same "mine" read: `issues?filter=assigned` (with an issue project, `repos/<proj>/issues?assignee=<user>&state=open`) and, by label, the search `is:issue is:open assignee:@me` | Tracker issues with my user in the query: `assignee.uuid="<my user's uuid>"`, with the open states |
 
 ### Token permissions
 
@@ -199,7 +201,7 @@ With the CLI login (`cliPreference: cli`) the CLI session's permissions apply. T
 | Pre-daily effects (`efeitos.ts`) | MR, commits, pipelines, jobs, comments, labels, issue state | n/a |
 | Watchers (`watchers.ts`) | issue, linked MRs, version labels | n/a |
 | Radar (`radar.ts`) | files and diffs of every open MR | n/a |
-| Conflict from an MR (`actions.ts`) | MR, default branch, target branch sha | the push is another action, with your "yes" |
+| Conflict from an MR (`actions.ts`) | MR, target branch sha | the push is another action, with your "yes" |
 | QA comment (`actions.ts`) | issue comments | edit the note |
 | Ceremony agents | see "What agents may read" | nothing |
 

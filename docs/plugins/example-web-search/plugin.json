@@ -1,0 +1,14 @@
+{
+  "id": "web-search",
+  "name": "Web search",
+  "contract": 1,
+  "offers": {
+    "events": ["stage-finished"],
+    "documents": [
+      { "name": "7_WEB_SEARCH.md", "label": "Web search" }
+    ],
+    "network": ["search.example.com"],
+    "write": { "to": "results", "reversible": true },
+    "entry": "search.sh"
+  }
+}

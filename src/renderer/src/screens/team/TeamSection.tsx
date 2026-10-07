@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { squadsOf } from '../../../../shared/config/squads';
 import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
-import { errorText } from '../../api';
+import { errorText, api } from '../../api';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { applyAgent, agentProblems, blankAgent, draftOf, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
@@ -24,12 +24,37 @@ export function modelText(config: WorkspaceConfig, a: AgentDef, t: Translate): s
 }
 
 /** Settings › Team: who is on the team, what each one does, and the switch that lets it run by itself. */
-export function TeamSection(props: SectionProps) {
-  const { config, save, reload } = props;
+export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentDraft; suggestionId: string } }) {
+  const { config, save, reload, suggestion } = props;
   const t = useT();
-  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean } | null>(null);
+  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean; suggestionId?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
   const squads = squadsOf(config);
+
+  // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from. The request is kept in a ref (not only
+  // in the prop) so the same draft does not reopen the panel every time the section re-renders for another reason.
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!suggestion || handled.current === suggestion.suggestionId) return;
+    handled.current = suggestion.suggestionId;
+    setEditing({ draft: suggestion.draft, isNew: true, suggestionId: suggestion.suggestionId });
+  }, [suggestion]);
+
+  const suggest = async () => {
+    setSuggesting(true);
+    setError(null);
+    setSaid(null);
+    try {
+      const r = await api.invoke<{ actions: unknown[]; reason?: string }>('suggestions:suggest');
+      setSaid(r.reason ?? t('ui.team.suggest.done', { count: r.actions.length }));
+      reload();
+    } catch (e) {
+      setError(errorText(e));
+    }
+    setSuggesting(false);
+  };
 
   const toggle = async (a: AgentDef, on: boolean) => {
     setError(null);
@@ -46,8 +71,12 @@ export function TeamSection(props: SectionProps) {
       <div className="wz-stack">
         <div className="row spread">
           <p className="small muted" style={{ flex: '1 1 240px' }}>{t('ui.team.hint')}</p>
-          <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
+          <div className="row">
+            <button type="button" className="btn" disabled={suggesting || isWeb()} onClick={() => void suggest()}>{suggesting ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.team.suggest.button')}</button>
+            <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
+          </div>
         </div>
+        {said && <p className="small muted">{said}</p>}
         {error && <div className="error" role="alert">{error}</div>}
         {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
@@ -89,6 +118,7 @@ export function TeamSection(props: SectionProps) {
           config={config}
           initial={editing.draft}
           isNew={editing.isNew}
+          suggestionId={editing.suggestionId}
           save={save}
           onClose={() => setEditing(null)}
         />
@@ -97,7 +127,7 @@ export function TeamSection(props: SectionProps) {
   );
 }
 
-function AgentPanel({ config, initial, isNew, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; save: SectionProps['save']; onClose: () => void }) {
+function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; suggestionId?: string; save: SectionProps['save']; onClose: () => void }) {
   const t = useT();
   const [draft, setDraft] = useState<AgentDraft>(initial);
   const [idTouched, setIdTouched] = useState(false);
@@ -127,6 +157,8 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
     setError(null);
     try {
       await save(make());
+      // An agent saved from a suggestion: the decision is recorded as "edited", with the id the editor gave it.
+      if (suggestionId) await api.invoke('suggestions:edited', suggestionId, draft.id).catch(() => undefined);
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -180,6 +212,7 @@ function AgentPanel({ config, initial, isNew, save, onClose }: { config: Workspa
         <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
+        <ToolsFields config={config} draft={draft} set={set} />
 
         <Labeled label={t('ui.team.f.squad')} hint={t('ui.team.f.squadHint')}>
           {(id) => (
@@ -277,6 +310,34 @@ function PermissionFields({ config, initial, draft, isNew, set, error }: { confi
       {status && !status.available && !web && <p className="small muted">{t('ui.team.shell.noSandbox', { reason: t(SANDBOX_REASON_LABEL[status.reason ?? 'platform']) })}</p>}
       {status && !status.available && web && <p className="small muted">{t('ui.team.shell.noSandboxWeb')}</p>}
     </>
+  );
+}
+
+/** The tools this agent uses: absent, it follows the workspace's; present, it overrides them field by field, so an agent may use one the workspace turned off. */
+function ToolsFields({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const own = draft.tools;
+  const effective = own ?? config.agents.tools;
+  const setTool = <K extends keyof AgentToolsConfig>(key: K, value: AgentToolsConfig[K]) => set({ tools: { ...effective, [key]: value } });
+  return (
+    <fieldset className="wz-fieldset">
+      <legend className="wz-label">{t('ui.team.tools')}</legend>
+      <p className="small muted">{t('ui.team.tools.hint')}</p>
+      <div role="group" aria-label={t('ui.team.tools')} className="wz-pills">
+        <button type="button" aria-pressed={!own} className={`filter ${!own ? 'on' : ''}`} onClick={() => set({ tools: null })}>{t('ui.team.tools.inherit')}</button>
+        <button type="button" aria-pressed={!!own} className={`filter ${own ? 'on' : ''}`} onClick={() => own || set({ tools: { ...config.agents.tools } })}>{t('ui.team.tools.own')}</button>
+      </div>
+      <Toggle checked={effective.files} onChange={(files) => setTool('files', files)} label={t('ui.team.tools.files')} hint={t('ui.team.tools.files.hint')} />
+      <Toggle checked={effective.skills} onChange={(skills) => setTool('skills', skills)} label={t('ui.team.tools.skills')} hint={t('ui.team.tools.skills.hint')} />
+      <Toggle checked={effective.vcsCli} onChange={(vcsCli) => setTool('vcsCli', vcsCli)} label={t('ui.team.tools.vcsCli')} hint={t('ui.team.tools.vcsCli.hint')} />
+      <Toggle checked={effective.trackerMcp} onChange={(trackerMcp) => setTool('trackerMcp', trackerMcp)} label={t('ui.team.tools.trackerMcp')} hint={t('ui.team.tools.trackerMcp.hint')} />
+      <Toggle checked={effective.subagents} onChange={(subagents) => setTool('subagents', subagents)} label={t('ui.team.tools.subagents')} hint={t('ui.team.tools.subagents.hint')} />
+      {effective.trackerMcp && (
+        <Labeled label={t('ui.team.tools.trackerMcpServer')} hint={t('ui.team.tools.trackerMcpServer.hint')}>
+          {(id) => <input id={id} className="text-input mono" maxLength={100} spellCheck={false} value={effective.trackerMcpServer} onChange={(e) => setTool('trackerMcpServer', e.target.value)} />}
+        </Labeled>
+      )}
+    </fieldset>
   );
 }
 

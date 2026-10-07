@@ -76,8 +76,11 @@ export interface ForumMessage {
   published: PublishedRef | null;
 }
 
-/** run: the thread of a run. general: a thread a person opened. channel: the channel of a squad, and the channel the squads talk in. */
-export const THREAD_KINDS = ['run', 'general', 'channel'] as const;
+/**
+ * run: the thread of a run. general: a thread a person opened. channel: the channel of a squad, and the channel the squads talk in.
+ * agent: the direct conversation of one agent of the team, which is carried in `squad` with the agent's id.
+ */
+export const THREAD_KINDS = ['run', 'general', 'channel', 'agent'] as const;
 export type ThreadKind = (typeof THREAD_KINDS)[number];
 
 export interface ThreadHeader {
@@ -87,7 +90,7 @@ export interface ThreadHeader {
   kind: ThreadKind;
   /** The run a `run` thread belongs to. */
   runId: string | null;
-  /** The squad a channel belongs to; null for any other thread and for the channel the squads talk in. */
+  /** The squad a channel belongs to, or the agent an `agent` thread belongs to; null for any other thread and for the channel the squads talk in. */
   squad?: string | null;
   title: string;
   createdAt: string;
@@ -99,6 +102,8 @@ export interface ThreadSummary {
   runId: string | null;
   /** The squad the thread is listed under: a squad's channel is its own; a run's thread is its run's squad (filled by the module that knows the runs); null otherwise. */
   squad?: string | null;
+  /** The agent an `agent` thread belongs to; null for any other thread. */
+  agent?: string | null;
   title: string;
   createdAt: string;
   count: number;
@@ -133,6 +138,8 @@ export const runThreadId = (runId: string): string => `run-${runId}`;
 export const SQUADS_CHANNEL = 'squads';
 /** The channel of a squad: its general talk. Its runs' threads are listed under it. */
 export const squadChannelId = (squadId: string): string => `squad-${squadId}`;
+/** The direct conversation of an agent of the team: one per agent, and where what a person writes goes to it without an `@`. */
+export const agentThreadId = (agentId: string): string => `agent-${agentId}`;
 
 /** The text of a message as a person reads it: what the author wrote, or the app's own wording of its `code`. */
 export function messageText(m: { text?: string; code?: string | null; params?: Record<string, ParamValue> }): string {

@@ -99,12 +99,22 @@ export function producerOf(flow: FlowStage[], stageId: string): FlowStage | null
   return null;
 }
 
-/** The stage that ends with the push: the last one whose agent changes the worktree. Its work is what the pull request carries. */
-export function pushStageOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage | null {
+/**
+ * The stages that end with a push. The first is the last stage before the first review whose agent changes the worktree: the pull request opens with that work,
+ * so the review lands on it rather than on the issue. Every later stage whose agent changes the worktree (a QA that writes tests, the implementation a review sent
+ * back to) pushes again, which only updates the pull request. A flow with no review, or none after a writer, pushes once, at its last writing stage.
+ */
+export function pushStagesOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage[] {
   const writes = new Set(config.agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
-  const found = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
-  return found.length ? found[found.length - 1] : null;
+  const writers = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
+  if (!writers.length) return [];
+  const review = flow.findIndex((s) => s.type === 'work' && s.kind === 'review');
+  const first = review < 0 ? -1 : flow.slice(0, review).findLastIndex((s) => writers.includes(s));
+  return first < 0 ? [writers[writers.length - 1]] : writers.filter((s) => flow.indexOf(s) >= first);
 }
+
+/** Whether the stage ends with a push (`pushStagesOf`). */
+export const pushesAt = (config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[], stageId: string): boolean => pushStagesOf(config, flow).some((s) => s.id === stageId);
 
 /**
  * The stage that owns the issue's priority: the last work stage of the backlog that has an agent (the product owner's refinement; a flow with one backlog

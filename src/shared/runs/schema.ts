@@ -2,7 +2,7 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -37,6 +37,7 @@ const stageRecord = object(
         cachedTokens: { type: 'integer', description: 'Of the tokens sent, the ones the provider served from its cache.', minimum: 0 },
         calls: { type: 'integer', description: 'Model calls.', minimum: 0 },
         costUsd: { type: ['number', 'null'], description: 'What a provider or the SDK said it cost; null when none did.', minimum: 0 },
+        costEstimated: { type: 'boolean', description: 'The cost is an estimate: no provider reported what the calls were charged. Absent: charged.' },
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),
@@ -46,7 +47,7 @@ const stageRecord = object(
 
 const history = object(
   'One transition of the run.',
-  { at: time('When.'), type: enumOf('What happened.', HISTORY_TYPES), stage: { type: ['string', 'null'], description: 'The stage it concerns.', maxLength: 48 }, by: string('An agent id, "person" or "app".', { maxLength: 48 }), detail: nullableString('A reason or a name.') },
+  { at: time('When.'), type: enumOf('What happened.', HISTORY_TYPES), stage: { type: ['string', 'null'], description: 'The stage it concerns.', maxLength: 48 }, by: string('An agent id, "person" or "app".', { maxLength: 48 }), detail: { type: ['string', 'null'], description: 'A reason or a name.', maxLength: HISTORY_DETAIL_MAX } },
   ['at', 'type', 'stage', 'by', 'detail'],
 );
 
@@ -228,6 +229,8 @@ const subject = object(
   ['kind', 'version', 'from', 'tracking', 'activities'],
 );
 
+const docsRun = object('What the run is about when it drafts the documentation of its repository.', { mode: enumOf('Whether the documentation is made or brought up to date.', ['create', 'update']) }, ['mode']);
+
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
@@ -249,7 +252,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     },
     pending,
     returns: { type: 'object', description: 'How many times each stage sent the work back (review and QA count apart), by that stage, since the person last answered its limit.', additionalProperties: { type: 'integer', minimum: 0, maximum: 1000 } },
-    wait: { ...object('What the run waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time.', minimum: 1, maximum: 525_600 }, since: time('Since when.'), by: string('The agent that asked.', { maxLength: 48 }), provider: string('For budget: the provider whose key ran out.', { maxLength: 48 }), detail: string('For budget: the reason, with the provider text.', { maxLength: 1000 }) }, ['kind', 'since']), type: ['object', 'null'] },
+    wait: { ...object('What the run waits for.', { kind: enumOf('The event.', WAIT_KINDS), label: string('For label.', { maxLength: 200 }), minutes: { type: 'integer', description: 'For time.', minimum: 1, maximum: 525_600 }, since: time('Since when.'), by: string('The agent that asked.', { maxLength: 48 }), provider: string('For budget: the provider whose key ran out.', { maxLength: 48 }), detail: string('For budget: the reason, with the provider text. For plugin: what the plugin asks for.', { maxLength: 1000 }), plugin: string('For plugin: the plugin whose request waits for the person.', { maxLength: 200 }) }, ['kind', 'since']), type: ['object', 'null'] },
     squad: { type: ['string', 'null'], description: 'The squad the run works in; absent or null: none.', pattern: ID },
     routedBy: { type: ['string', 'null'], description: 'How the run came to be in its squad.', enum: [...ROUTED_BY, null] },
     routing,
@@ -266,6 +269,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     qa: { type: 'array', description: 'Every QA pass with its scenarios.', items: qaRecord, maxItems: 100 },
     base: { type: ['string', 'null'], description: 'The commit the branch was cut from.', maxLength: 80 },
     subject,
+    docs: docsRun,
     createdAt: time('When the run started.'),
     updatedAt: time('When it last changed.'),
   },
