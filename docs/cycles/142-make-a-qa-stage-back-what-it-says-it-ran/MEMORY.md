@@ -3,41 +3,38 @@
 ## Decisões
 
 - Triagem da #142: **bug**, confirmada por leitura de código. Sem pergunta ao repórter; o que a issue deixava em aberto era decisão de projeto.
-- Refinamento: a spec está em `1_SPEC.md`. As três decisões de projeto que ela fecha:
-  1. **Uma rodada de reparo** por etapa de QA com sandbox, para os cenários afirmados como executados e sem respaldo: uma segunda chamada ao mesmo agente, dentro da mesma etapa e da mesma sandbox, antes do fecho, com as saídas guardar-a-comprovação-e-apontar-o-comando, apontar-o-comando, assumir-lido ou assumir-não-rodado. O rebaixamento só depois dela, com linha na conversa, e a etapa não gira (uma rodada, não duas).
-  2. **O registro manda no que se publica:** os cenários gravados depois da rodada e das conferências alimentam de uma só vez o registro da execução, o `5_TEST_PLAN.md` e o comentário; citar comprovação nunca faz um cenário valer como executado.
-  3. **A imagem olhada e não guardada é guardada automaticamente no fecho da etapa**, antes de a pasta da etapa sumir; o que não puder ser guardado é dito como visto-não-guardado, com o motivo. Justificativa: a outra opção perde exatamente o que a issue relata (o que o agente olhou some e o cenário fica sem comprovação).
-- **Um cenário rebaixado não reprova a etapa nem vira pendência:** a severidade do cenário continua sendo o único gatilho de devolução. Respondida a pendência que a triagem deixou.
-- Etapa de QA sem sandbox fica como hoje: todo cenário lido, nenhuma rodada extra.
-- Prioridade proposta: a mais alta dos níveis configurados (a issue veio com `priority:high`). Nenhum marco proposto: esta etapa não leu a lista de marcos do host e a mudança é correção de comportamento, sem capacidade nem configuração nova.
+- Refinamento: a spec está em `1_SPEC.md`. As três decisões de projeto que ela fecha: (1) **uma rodada de reparo** por etapa de QA com sandbox, para os cenários afirmados como executados e sem respaldo, com as saídas guardar-a-comprovação-e-apontar-o-comando, apontar-o-comando, assumir-lido ou assumir-não-rodado, e o rebaixamento só depois dela, com linha na conversa; (2) **o registro manda no que se publica** — os cenários gravados depois da rodada alimentam de uma só vez o registro da execução, o `5_TEST_PLAN.md` e o comentário; (3) **a imagem olhada e não guardada é guardada automaticamente no fecho**, e o que não puder ser guardado é dito como visto-não-guardado, com o motivo.
+- **Um cenário rebaixado não reprova a etapa nem vira pendência**; a severidade do cenário continua sendo o único gatilho de devolução. Etapa de QA sem sandbox fica como hoje.
+- Prioridade proposta: a mais alta dos níveis configurados (a issue veio com `priority:high`). Nenhum marco proposto.
+- **Plano (`2_PLAN.md`)**, com os quatro pontos que a spec deixou fechados: (a) a rodada de reparo cabe dentro do `try` de `runStage`, com a sandbox aberta, o que **obriga a adiar o fecho da sessão** — hoje ele fecha antes de o app ler a resposta (`executor.ts:721-735`, leitura na 737); as duas chamadas ao motor correm dentro do mesmo trabalho vigiado pelo `watchdog`, para o teto de relógio não valer duas vezes. (b) O app sabe qual imagem foi olhada por um gancho em `lookAtImage` (`sandbox/tool.ts:115-125`), único ponto por onde as duas engines veem imagem (lido `sandbox/engineTool.ts` e `agents.ts:501-505`); reconhecimento por conteúdo foi descartado. (c) Fonte única: `output.scenarios` calculado uma vez e o mesmo vetor dado a `recordQa`, ao `5_TEST_PLAN.md` (reescrito por função pura antes do `tidyArtifact`) e ao comentário. (d) Chaves de catálogo novas nas duas famílias (`prompt.sdd.runner.repair.unbacked`, `main.forum.code.runner.qa.repair`, `...qa.unbacked`, `...qa.lookNotKept`, `...qa.lookKept`, `main.evidence.keptByApp`).
 
 ## Restrições
 
-- Achados desta etapa são por **leitura de código**, não por execução: nada foi rodado, nenhuma tela aberta, nenhum run reproduzido. A execução real citada pela issue não foi refeita nem conferida.
+- Achados por **leitura de código**, não por execução: nada foi rodado, nenhuma tela aberta, nenhum run reproduzido. A execução real citada pela issue não foi refeita nem conferida.
 - A guarda automática não pode ler caminho fora da pasta de saída da etapa; o tipo continua sendo lido do conteúdo e o teto de tamanho continua valendo.
-- O que já foi publicado no host não é apagado nem mudado.
+- O que já foi publicado no host não é apagado nem mudado. Nada de fora do escopo da spec.
+- A conferência pública: sem nome real, host, número de issue ou credencial em código, teste, mensagem de commit ou nome de ramo.
 
 ## Tentado e descartado
 
-- Perguntar ao repórter: descartado na triagem; a issue tem comportamento, esperado, critério e pontos no código.
-- Tratar a #142 como duplicata da #121 ou da #120: descartado; a #121 entregou a ferramenta e o `ViewImage`, esta cobra o comportamento em volta deles.
-- Fazer o rebaixamento reprovar a etapa: descartado; mudaria o que a etapa significa e poderia travar uma entrega por um erro de anotação no fim do run.
-- Só listar "visto, não guardado" em vez de guardar (a segunda opção que a issue oferecia): descartado, com o motivo escrito na spec.
-- Abrir pergunta à pessoa nesta etapa: descartado; as duas escolhas de projeto são do produto e a spec as faz com justificativa.
+- Perguntar ao repórter: descartado na triagem.
+- Duplicata da #121 ou da #120: descartado; a #121 entregou a ferramenta e o `ViewImage`.
+- Fazer o rebaixamento reprovar a etapa: descartado.
+- Só listar "visto, não guardado" em vez de guardar: descartado, com o motivo na spec.
+- Reconhecer a imagem olhada pelo conteúdo (varredura da pasta de saída): descartado no plano; guardaria imagem que ninguém olhou e não separa repetida de nova.
+- Abrir pergunta à pessoa: descartado; as escolhas de projeto são do produto e a spec as faz com justificativa.
 
 ## Perguntas abertas
 
-- **Como o app sabe qual imagem o agente olhou** (para a guarda do fecho): por um registro que a ferramenta deixe, ou pelo conteúdo. Está na spec como ponto a confirmar no plano; se a guarda automática se revelar impossível, a saída aceitável é a outra opção da issue (dizer na conversa o que foi olhado e não guardado), nunca deixar sumir em silêncio.
-- Fica para o plano: onde a segunda chamada cabe no ciclo de vida da sandbox da etapa, nos dois motores, e o que os dois tetos de tempo contam.
-- Fica para o plano: o cabeçalho normalizado de um documento de etapa pode engolir uma lista de cenários escrita logo abaixo do título.
-- Fica para o plano: as chaves de catálogo novas e se algum teste de catálogo trava a lista.
+- **Não verificado, a confirmar no desenvolvimento:** se a segunda chamada cabe no `guard` sem contar o teto duas vezes e com o fecho da sandbox ainda garantido no caminho de falha; se o gancho em `lookAtImage` cobre todos os caminhos de imagem das duas engines; se o cabeçalho normalizado do documento engole uma lista de cenários logo abaixo do título; se as chaves de catálogo novas bastam para a conferência.
+- Se a guarda automática se revelar impossível, a saída aceitável é a outra opção da issue (dizer na conversa o que foi olhado e não guardado), nunca deixar sumir em silêncio — dizer na entrega.
 
 ## Onde o trabalho está
 
-- Triagem e refinamento concluídos; `0_TRIAGE.md` e `1_SPEC.md` na pasta do ciclo. Nenhum código tocado: o campo de commit do refinamento vai vazio.
-- O que a spec conferiu por leitura: `backEvidence` (`src/shared/runs/output.ts:204-214`) rebaixa e marca sem respaldo, chamado em `src/main/runner/executor.ts:747-752`, sem avisar o agente nem escrever na conversa; o reparo de hoje é só de formato e só no motor aberto (`src/main/engine/open/loop.ts:460-462,543-549`); o plano de teste e o comentário saem do texto do agente (`executor.ts:758-767`, `src/shared/runs/comment.ts:56-78`, `src/main/runner/publish.ts:574-597`); ver imagem não guarda (`src/main/evidence/handlers.ts:145-155`) e guardar é chamada separada com tipo pelo conteúdo; a pasta da etapa some com a sandbox (`src/main/sandbox/session.ts:214`); os testes atuais cobrem só o rebaixamento (`test/runs-scenario.test.ts:126-144`).
-- Correções de leitura anotadas na spec: o trecho 82-119 do arquivo compartilhado é a descrição que acompanha o esquema, e o trecho 204-214 que a triagem cita como leitura da resposta é outro caminho (a leitura de comentário e da descrição do pull request, 222-237).
-- Regra da pasta `.coxia` corrigida nesta mudança: `.coxia/rules/development-cycles.md` afirmava que a resposta de uma etapa não é verificada pelo app — falso no caso estreito da conferência do respaldo de um cenário de QA. A regra agora diz que o app confere o respaldo contra os comandos da etapa e marca quem não tem respaldo, e que ele não julga a verdade do texto.
-- Não verificado: nada foi exercitado; e tudo o que a spec marca como "não verificado" (o ciclo de vida da sandbox para a segunda chamada, o registro da imagem olhada, o cabeçalho do documento, as chaves de catálogo).
-- Passagem refine -> plan: usar `1_SPEC.md` (seções de regras 1 a 4 e "Para quem programa") para o plano técnico, resolvendo os pontos acima.
+- Triagem, refinamento e plano concluídos; `0_TRIAGE.md`, `1_SPEC.md` e `2_PLAN.md` na pasta do ciclo. Nenhum código tocado: o campo de commit desta etapa vai vazio.
+- O que foi conferido por leitura no plano: o fecho da sandbox está no `finally` de `runStage` antes da leitura da resposta (`executor.ts:721-735,737`); a `ViewImage` das duas engines passa por `lookAtImage`; `backEvidence` rebaixa e marca sem respaldo (`src/shared/runs/output.ts:204-214`, chamada em `executor.ts:752`); o plano de teste é gravado como o agente o escreveu (`executor.ts:765`, `cycleFolder.ts:113-134,137-145`); ver imagem não guarda (`evidence/handlers.ts:145-155`); a pasta da etapa some com a sandbox (`sandbox/session.ts:214`); `recordQa` e o comentário leem o mesmo objeto da resposta (`service.ts:643-708`, `publish.ts:574-597`, `comment.ts:56-78`); os testes de catálogo conferem as chaves nos dois idiomas (`test/i18n.test.ts:61-87`).
+- **Regra `.coxia` a corrigir na entrega:** `.coxia/rules/runner.md:65-67` afirma que o app não confere se a afirmação de um agente é verdadeira — falso já hoje no caso estreito do respaldo de um cenário de QA, e mais falso com a rodada de reparo. Lida no arquivo; é corrigida nesta mesma mudança. Outras duas correções de passagem anotadas: um erro de digitação no comentário sobre a classificação de um comando, e um teto divergente no comentário do módulo de comprovação.
+- Não verificado: nada foi exercitado; e tudo o que o plano marca como não verificado (o lugar da segunda chamada no `guard` e o fecho adiado, o gancho da imagem, o cabeçalho do documento, as chaves de catálogo).
+- Passagem plan → implement: usar `2_PLAN.md`, seções "Decisões de desenho" e "Ordem de implementação"; implementar em cinco passos com teste cada, seguindo `test/runner-evidence.test.ts` e `test/runs-scenario.test.ts`, e resolver os pontos não verificados com teste.
 - Passagem support → product-owner: Refinamento do produto: transformar a correção em spec funcional a partir de 0_TRIAGE.md. O que a spec precisa fixar: (1) a rodada de reparo de um cenário `executed` sem comando e sem id de comprovação — quando ela acontece, o que se pede ao agente e o que ele pode responder (guardar a comprovação, citar comandos, ou virar `read`/`not-run`), e que o rebaixamento automático só ocorra depois dela, com linha na conversa; (2) o que o `5_TEST_PLAN.md` e o comentário de QA passam a dizer quando divergem do registro — qual é a fonte da verdade (os cenários gravados depois de `backEvidence`) e como um… <!-- handoff:7 -->
+- Passagem product-owner → pessoa: Plano técnico (tech-lead) a partir de 1_SPEC.md. O que a spec fixa e o plano precisa resolver: (a) ONDE cabe a rodada de reparo — uma segunda chamada ao mesmo agente, dentro da etapa, entre a resposta e o fecho da sandbox, com o mesmo conjunto de ferramentas e sem virar etapa nova; hoje a sandbox é fechada quando a etapa termina (src/main/runner/executor.ts:434-439 e 727-735), e o reparo de formato que existe morre dentro do loop do motor aberto (src/main/engine/open/loop.ts:460-462,543-549). Ler o ciclo de vida da chamada nos dois motores e o que os dois tetos de tempo da etapa contam. (b) O … <!-- handoff:34 -->
