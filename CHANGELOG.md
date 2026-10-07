@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **A stage that runs again is told why and what is already done.** When the person sends the work back, a review or QA returns it, a failed stage is retried or the app restarts under it, the agent's prompt now opens with why the stage runs again, the request of this attempt said once (not repeated in the conversation and at the end), the documents of the stage already in the cycle folder, the evidence it already kept and its last report. It is told to do what was asked and only that, to leave a document it does not change out of its answer (the app keeps the one in the folder) and to keep the cycle memory with an empty string; a QA pass repeats the scenarios it does not check again as the test plan records them.
+- **The person's note comes first when sending work back.** What the review and QA left open follows it as context, so a note that narrows the work ("only redo the evidence") is not undone by the list.
+- **Every stage is told how to work.** Know what the stage delivers before exploring, read a file once, ask only what the documents and the code cannot answer, and give the final answer once the work is ready. A stage with the evidence tools is told to keep each file right after making it, since what is not kept is deleted when the stage ends.
+
+### Fixed
+
+- **An agent gets the notes of its own role, not of every role.** The role notes of the repository's documentation were marked for every development stage, so planning, implementation, review and QA were handed the notes of triage, refinement, development and the release note alike; each role note now names its own stage.
+
 ## [0.8.0-beta.6] - 2026-10-07
 
 ### Added

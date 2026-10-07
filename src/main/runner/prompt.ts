@@ -34,6 +34,8 @@ export interface StageInput {
   attempt: number;
   /** A note the previous stage left for this agent. */
   handoff: { from: string; text: string } | null;
+  /** This attempt picks the stage up again: why, and what the earlier attempts left done. Absent on a first attempt and while an answer resumes the stage. */
+  resume?: StageResume | null;
   /** The person's answer to what this agent asked before. */
   answer: { question: string; text: string; by: string; attachments: AttachmentRef[] } | null;
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
@@ -74,6 +76,19 @@ export interface StageInput {
   docsKeep?: boolean;
   /** A review: the rules of `.coxia/` the branch left behind (they cite code it changed and it did not bring them up to date), to be raised as findings. Empty or absent: none. */
   behind?: { file: string; changed: string[] }[];
+}
+
+/** Why a stage runs again: the person sent the work back, a review or QA returned it, the person retried a failure, or the app restarted under it. */
+export type ResumeWhy = 'sent-back' | 'returned' | 'retried' | 'restarted';
+
+export interface StageResume {
+  why: ResumeWhy;
+  /** The documents of this stage already in the cycle folder. */
+  done: string[];
+  /** The evidence this stage already kept in the run. */
+  evidence: { id: string; title: string }[];
+  /** The last report this agent gave in this stage. */
+  previous: string | null;
 }
 
 const MESSAGE_MAX = 1500;
@@ -134,6 +149,7 @@ export function systemText(i: StageInput): string {
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
+    cp('runner.rules.focus'),
     i.evidence ? cp('runner.rules.evidence') : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
     agents.persona.trim(),
@@ -183,8 +199,43 @@ export function roundsText(rounds: ReviewRecord[]): string {
     .join('\n\n');
 }
 
+/** Why the stage runs again, in words; each id is named at its call so the catalog check finds it. */
+function whyText(why: ResumeWhy): string {
+  switch (why) {
+    case 'sent-back':
+      return cp('runner.resume.why.sentBack');
+    case 'returned':
+      return cp('runner.resume.why.returned');
+    case 'retried':
+      return cp('runner.resume.why.retried');
+    case 'restarted':
+      return cp('runner.resume.why.restarted');
+  }
+}
+
+const senderOf = (from: string): string => (from === 'person' ? t('main.runner.author.person') : from === 'app' ? t('main.runner.author.app') : from);
+
+/**
+ * What a stage that runs again is told before anything else: why it runs again, the request of this attempt (the handoff, said once), and what the earlier
+ * attempts left done, so the agent works on what was asked instead of starting the stage over.
+ */
+export function resumeSection(i: StageInput, r: StageResume): string {
+  const none = cp('runner.resume.none');
+  return cp('runner.section.resume', {
+    why: whyText(r.why),
+    request: i.handoff ? cp('runner.resume.request', { from: senderOf(i.handoff.from), text: fence(i.handoff.text) }) : cp('runner.resume.noRequest'),
+    done: r.done.length ? r.done.join(', ') : none,
+    evidence: r.evidence.length ? r.evidence.map((e) => `${e.id} (${e.title})`).join(', ') : none,
+    previous: r.previous ? cp('runner.resume.previous', { text: fence(clip(r.previous, MESSAGE_MAX)) }) : '',
+    rules: [cp('runner.resume.rules'), i.kind === 'qa' ? cp('runner.resume.rules.qa') : ''].filter(Boolean).join(' '),
+  });
+}
+
 export function stagePrompt(i: StageInput): string {
   const sections: string[] = [];
+  // A stage that runs again opens with why and what was asked; the handoff is said there, so it is not repeated in the thread or at the end.
+  const resume = i.resume && !i.answer ? i.resume : null;
+  if (resume) sections.push(resumeSection(i, resume));
   for (const f of i.files) {
     sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
     if (f.name === MEMORY_FILE && i.memory?.over) sections.push(cp('runner.section.memoryOver', { max: i.memory.max }));
@@ -198,9 +249,10 @@ export function stagePrompt(i: StageInput): string {
   if (i.behind?.length) sections.push(cp('runner.section.docsBehind', { text: fence(i.behind.map((b) => `- ${b.file}: ${b.changed.join(', ')}`).join('\n')) }));
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
-  const thread = threadText(i.thread);
+  const said = resume && i.handoff ? i.handoff.text : null;
+  const thread = threadText(said === null ? i.thread : i.thread.filter((m) => !(m.kind === 'handoff' && m.to === i.agent.id && m.text === said)));
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
-  if (i.handoff) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
+  if (i.handoff && !resume) sections.push(cp('runner.section.handoff', { from: i.handoff.from, text: fence(i.handoff.text) }));
   if (i.answer) sections.push(cp('runner.section.answer', { question: i.answer.question, text: fence(i.answer.text), from: i.answer.by }));
   // When the answer the stage waits for carries files, the agent is told which ones and opens them with the read-only tool.
   if (i.answer?.attachments?.length) sections.push(cp('runner.section.attachments', { text: fence(attachmentsList(i.answer.attachments)) }));

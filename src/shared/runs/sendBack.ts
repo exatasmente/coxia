@@ -42,7 +42,7 @@ export function commandState(c: Pick<QaCommand, 'exitCode' | 'timedOut'> & { not
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s);
 
 /**
- * What the agent that gets the work back is told: the person's note, then what the review and QA left open that has not been worked on since the stage last
+ * What the agent that gets the work back is told: the person's note, then, as context for it, what the review and QA left open that has not been worked on since the stage last
  * started (the latest review's findings, blocking or only suggestions, and the scenarios QA did not pass or could not check, with the commands that did not
  * pass). Empty when there is neither a note nor anything open.
  */
@@ -50,7 +50,6 @@ export function sendBackText(run: Run, toStage: string, note: string): string {
   const since = run.stages.find((s) => s.stage === toStage)?.startedAt ?? null;
   const fresh = (at: string): boolean => since === null || at > since;
   const parts: string[] = [];
-  if (note.trim()) parts.push(note.trim());
   const review = run.reviews.at(-1);
   if (review && fresh(review.at) && review.findings.length) {
     const order = [...review.findings].sort((a, b) => Number(b.severity === 'blocking') - Number(a.severity === 'blocking'));
@@ -64,7 +63,9 @@ export function sendBackText(run: Run, toStage: string, note: string): string {
     ];
     if (lines.length) parts.push([t('main.runner.sendBack.qa'), ...lines].join('\n'));
   }
-  return parts.join('\n\n');
+  // With a note, the note is the request and what review and QA left open is context for it: said apart, so a note that narrows the work is not undone by the list.
+  if (!note.trim()) return parts.join('\n\n');
+  return [note.trim(), ...(parts.length ? [t('main.runner.sendBack.context'), ...parts] : [])].join('\n\n');
 }
 
 // Words of a request to go back, in the languages of the catalogs.
