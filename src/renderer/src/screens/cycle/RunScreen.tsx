@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import { effectiveTeam, releaseFlowOf, squadView } from '../../../../shared/config/squads';
+import { effectiveTeam, runKindFlowOf, squadView } from '../../../../shared/config/squads';
 import { runThreadId } from '../../../../shared/forum';
 import { unreadOf } from '../../../../shared/forumView';
 import { type Run, flowOf, flowOfRun, snapshotOf } from '../../../../shared/runs';
@@ -16,6 +16,8 @@ import { BackIcon } from '../icons';
 import { EvidenceBlock, useEvidenceList } from './Evidence';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
+import { CommandsSection } from './CommandsSection';
+import { AutonomyNote } from './AutonomyNote';
 import { CommandApproval } from './CommandApproval';
 import { RunActions } from './RunActions';
 import { RunBadge } from './RunBadge';
@@ -101,9 +103,9 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
   const flow = useMemo(() => (run && config ? flowOfRun(run, config) : (run?.flow?.stages ?? [])), [run, config]);
   const currentHash = useMemo(() => {
     if (!run || !config) return '';
-    // A release run follows the release flow, not the flow of the issues.
-    const release = run.subject ? releaseFlowOf(config) : null;
-    return snapshotOf(release ? flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages: release } }, release) : flowOf(squadView(config, run.squad))).hash;
+    // A release run and a documentation run follow the flow of their own kind, not the flow of the issues.
+    const own = runKindFlowOf(config, run);
+    return snapshotOf(own ? flowOf({ agents: { team: effectiveTeam(config) }, devCycle: { stages: own } }, own) : flowOf(squadView(config, run.squad))).hash;
   }, [run, config]);
 
   const activity = useActivity(run ? `run:${run.id}` : undefined);
@@ -181,6 +183,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
               ) : null}
               <StageTimeline run={run} flow={flow} config={config} go={go} />
               <EvidenceBlock runId={run.id} stage={run.stage} list={evidence.list} onRemoved={evidence.remove} />
+              <CommandsSection thread={runThreadId(run.id)} team={config?.agents.team} />
               <ReviewRounds run={run} config={config} evidence={evidence.list} />
             </div>
           )}

@@ -47,6 +47,8 @@ export interface StageUsage {
   /** Model calls. */
   calls: number;
   costUsd: number | null;
+  /** The cost is an estimate: no provider reported what the calls were charged (outside Anthropic's own API the SDK's figure is only a list price). Absent: charged. */
+  costEstimated?: boolean;
 }
 
 export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;
@@ -89,6 +91,9 @@ export interface RunFailure {
 
 export const HISTORY_TYPES = ['link', 'link-updated', 'squad-routed', 'squad-asked', 'review', 'qa', 'evidence', 'evidence-removed', 'comment', 'flow-migrated', 'wait-started', 'wait-done', 'wait-skipped', 'started', 'stage-waiting', 'stage-ready', 'stage-accepted', 'stage-returned', 'stage-started', 'stage-done', 'question-passed', 'gate-approved', 'gate-rejected', 'gate-skipped', 'question', 'answer', 'handback', 'sent-back', 'memory-edited', 'reopened', 'failed', 'retried', 'interrupted', 'cancelled', 'completed'] as const;
 export type HistoryType = (typeof HISTORY_TYPES)[number];
+
+/** Longest `HistoryEntry.detail` a run file holds: the history is a log, the whole text (an answer, a reason) is in the run's thread. */
+export const HISTORY_DETAIL_MAX = 4000;
 
 export interface HistoryEntry {
   at: string;
@@ -409,8 +414,19 @@ export interface Run {
   base: string | null;
   /** What the run is about when it is not an issue: a release. Absent for an issue run. */
   subject?: RunSubject;
+  /** The run drafts the documentation of its repository. Absent for an issue run. */
+  docs?: RunDocs;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A run that drafts or updates the documentation of a repository (`.coxia/`): it starts from a repository and not from an issue (its `issue` is the synthesized
+ * `docs:<repo>`, number 0, which keeps "one at a time" per repository), writes only inside `.coxia/` and ends in a pull request that closes nothing. A run with no
+ * `docs` is an issue run (or a release run: see `subject`).
+ */
+export interface RunDocs {
+  mode: 'create' | 'update';
 }
 
 /** What a run in status `waiting` waits for, and since when. */
@@ -423,8 +439,10 @@ export interface WaitState {
   by?: string;
   /** For `budget`: the provider whose key ran out of budget, as the workspace names it in `llm.providers`. */
   provider?: string;
-  /** For `budget`: the reason in words, with the provider's own (already masked) text. */
+  /** For `budget`: the reason in words, with the provider's own (already masked) text. For `plugin`: what the plugin asks for (network, write). */
   detail?: string;
+  /** For `plugin`: the plugin whose request the person has not answered yet. */
+  plugin?: string;
 }
 
 /** A stage of the flow a run follows, resolved from the config: every default filled in. */
@@ -438,6 +456,8 @@ export interface FlowStage {
   agent: string | null;
   /** The agent runs by itself (`AgentDef.autonomous`); false when there is no agent. */
   autonomous: boolean;
+  /** The autonomy block of the run has its general switch on: the stage starts by itself whatever the agent's own `autonomous` is. */
+  cycleAutonomous: boolean;
   /** The files the stage must produce. */
   artifacts: string[];
   /** The artifacts the stage is given; null: every earlier one. */

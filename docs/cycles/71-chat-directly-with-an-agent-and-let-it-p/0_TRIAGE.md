@@ -1,0 +1,39 @@
+# Triagem: conversa direta com um agente do time e propostas de escrita no rastreador
+
+## Tipo
+
+Pedido de funcionalidade (enhancement). Não relata defeito, não é pergunta e não repete outra issue. Pede duas coisas que hoje não existem: uma conversa que pertence a um agente do time (todas as mensagens da pessoa vão para ele, sem precisar de `@`, com a conversa como contexto), e que a resposta de um agente, em qualquer lugar onde ele responde, possa carregar propostas de escrita no host de código (comentar uma issue, pôr ou tirar rótulos, mudar o estado ou fechar com um comentário), decididas em lote em Ações, com autonomia opcional por agente para as escritas de baixo risco.
+
+## Dá para entender como está escrita
+
+Dá para entender. É um pedido de comportamento novo e a descrição do estado atual confere com o código lido. Não há defeito a reproduzir; nada foi executado e o comportamento pedido não foi visto funcionando.
+
+O que foi conferido por leitura:
+
+- **Fora de uma execução o agente não propõe nada.** A resposta de uma menção só leva uma issue quando o lugar é a thread de uma execução e existe um publicador: `proposesIssue` devolve `false` quando `place.kind !== 'run'` (`src/main/mentions/answer.ts:77-81`, usado em `:141` e `:154`), e o publicador só é passado ao núcleo de menções pelo runner (`src/main/runner/service.ts:1052`; o módulo que atende os outros lugares não passa nenhum, `src/main/mentions/module.ts:38-44`). Fora da execução, o que fica é a resposta em texto, interna (`public: false`, `src/main/mentions/answer.ts:152`).
+- **A única coisa que um agente pode propor é uma issue nova.** Em toda a árvore, `planWrite` só é chamado com a operação `createIssue` em três lugares: a issue de um pedido entre squads (`src/main/runner/publish.ts:959`, pela operação `requestIssue`), a issue de uma resposta de menção (`src/main/runner/publish.ts:990-992`) e a melhoria da retro (`src/main/retroIssues.ts:87-98`) — esta última fora do runner e sem número de issue. A operação `createIssue` existe nos três provedores (`src/main/vcs/gitlab.ts:546`, `src/main/vcs/github.ts:516`, `src/main/vcs/bitbucket.ts:489`, neste sem rótulos).
+- **As escritas que a issue supõe existentes existem na porta.** No tipo das operações de escrita estão `commentIssue` (`src/main/vcs/types.ts:191`), `setIssueLabels` (`:196`) e `setIssueStatus` (`:198`), além de `closeIssue` (`:220`), que a issue não menciona. Os quatro passam pelo mesmo caminho de hoje: o plano da escrita (`planWrite`), a proposta em Ações (por `proposeVcsAction`/`proposeVcsGroup`), a validação da forma do comando na proposta e de novo na aprovação (`src/main/vcs/validate.ts:24`) e a execução auditada (`src/main/actions.ts:481-548`; a auditoria em `src/main/actions.ts:439-459`, um registro por escrita).
+- **O que cada host suporta de fato.** Os rótulos de uma issue não existem no Bitbucket: `setIssueLabels` é recusado ali com `unsupported` (`src/main/vcs/bitbucket.ts:463-464`; `issueLabels: false` nos dados do host, `src/shared/vcsCaps.ts`). Comentar uma issue, mudar o estado e fechar existem nos três (`bitbucket.ts:447`,`:465`,`:487`; `github.ts:516`,`:538`; `gitlab.ts:500`,`:516`,`:543-544`). Mudar o estado é diferente do que "fechar" significa em cada host: no Bitbucket o estado só aceita os estados de issue (`bitbucket.ts:465-467`); no GitHub só `open` ou `closed` (`github.ts:538-540`, e `issueStatus: false`); no GitLab só os ids numéricos dos estados da instância, por uma mutação em GraphQL que precisa do id global do item de trabalho (`src/main/vcs/gitlab.ts:516-528`).
+- **Hoje a mudança de estado de uma issue só existe atrás de uma regra de configuração do GitLab.** `quickTransitions` é lido só quando a integração primária é GitLab (`src/main/gitlabQuick.ts:29-30`), e o rótulo de etapa que acompanha cada transição é gravado junto (`gitlabQuick.ts:159-173`); o runner usa `setIssueLabels` para o rótulo de etapa e nunca `setIssueStatus` (nenhuma ocorrência fora dos provedores, de `types.ts` e de `gitlabQuick.ts:155`). A lista de estados que o app oferece na interface depende de `showTransitions`, que exige as duas capacidades (`src/shared/cycles/view.ts:85`).
+- **Não há conversa direta com um agente.** As threads que existem são a de uma execução (`run-<id>`), um canal de squad (`squad-<id>`), o canal em que os squads conversam (`squads`), a conversa geral (`general`) e uma thread geral que a pessoa cria com um título (`src/main/mentions/place.ts:29-46`; a criação gera um id `g-<título>` e tipo `general`, `src/main/forum-core.ts:278-286`; os tipos são `run`, `general` e `channel`, `src/shared/forum.ts:80-81`). Nada numa thread pertence a um agente, e o tipo da thread não é escolhido pela pessoa.
+- **O que um agente lê numa menção.** O texto de sistema diz o lugar e as capacidades (`src/main/mentions/call.ts:59-89`), a conversa é a thread do lugar (as últimas 40 mensagens, `:90`), o rastreador é lido pela ferramenta `VcsRead` quando o agente lê o host (`src/main/agents.ts:446-457`) e os repositórios do lugar entram como pasta de trabalho quando o agente roda comandos (`src/main/mentions/answer.ts:182-191`), a missão do squad só nos canais (`place.ts:42`). Foi por leitura; não exerci nenhuma chamada de agente.
+- **A issue pede cada agente com o seu próprio interruptor, e o que existe é a autonomia do agente.** O `autonomous` de um agente hoje só governa o que o runner publica por ele dentro de uma execução (`src/shared/config/schema.ts:203`; `publish.ts:953-961`, `:628`, `:1011`) e as escritas diretas auditadas (`runVcsAuto`, `src/main/actions.ts:461-476`); o desenho pedido é esse mesmo interruptor usado fora de uma execução, por agente.
+
+Não verificado (não lido nesta etapa): se a proposta ou a escrita passa pelo telefone pareado, isto é, a política do navegador (`src/main/webPolicy.ts`) e as regras de alvo de notificação para escritas do rastreador (`src/shared/push.ts`, `src/renderer/src/pushTarget.ts`). Só foi lido que a criação de threads e o post no fórum são abertos ao telefone (`src/main/webPolicy.ts:22-25`).
+
+## O que falta
+
+Nada que só quem abriu possa dizer:
+
+- A observação da pessoa sobre a lista de issues (a conversa geral que devolveu cinco fechamentos, duas prioridades etc.) é ilustração de uma necessidade, não um caso a reproduzir.
+- Decidir qual valor de autonomia cobre "fechar uma issue sempre espera o sim" — se é um campo novo, ou se basta a regra de "escritas de baixo risco" que o agente pode rodar sozinho (comentar, rotular).
+- O que lê uma conversa direta além da conversa (o rastreador, os repositórios, o squad do agente), se ela guarda memória entre conversas e como ela aparece no telefone: a própria issue marca isso como decisão de refino.
+
+## Issues relacionadas
+
+- **#53 — pode falar com um agente com `@` onde quer que escreva.** Este pedido se apoia nela: `@` já funciona fora de uma execução, e o novo é a conversa que pertence a um agente (sem `@` por mensagem). Não é duplicata.
+- **#29 — mostrar que um agente chamado está trabalhando.** É a peça da espera durante a resposta, não é a conversa nem as propostas. Não é duplicata.
+- **#52 — memória do ciclo.** As duas issues tocam "sobreviver à janela de 40 mensagens": a 52 resolve isso dentro de uma execução, por um arquivo; a 71 pergunta se uma conversa direta guarda memória entre conversas. Não é duplicata.
+- **#58 — dizer quando a chave do provedor está sem orçamento.** Trata do mesmo estado "o agente não consegue responder", mas por outro motivo (cota) e outro caminho. Não é duplicata.
+- **#16 — a melhoria da retro como tarefa de um agente.** A melhoria da retro já vira uma proposta de issue (por `proposeRetroIssues`), mas por um caminho próprio e sem número de issue; não é a resposta de um agente conversando. Não é duplicata.
+- Nenhuma issue parece duplicar esta.

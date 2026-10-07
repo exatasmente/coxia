@@ -1,4 +1,5 @@
 export * from './types';
+export * from './autonomy';
 export * from './defaults';
 export * from './legacy';
 export * from './migrations';

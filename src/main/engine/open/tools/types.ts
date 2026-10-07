@@ -12,12 +12,24 @@ export interface ToolContext {
   signal?: AbortSignal;
   // The folder a Write or Edit may change (the run's worktree). null: the call is read-only and those tools refuse.
   writeRoot?: string | null;
+  // Names directly under writeRoot that Write and Edit refuse: what the app itself keeps there.
+  writeReserved?: readonly string[];
   outputMax: number;
   env: Record<string, string>;
   // Bash(<prefix>:*) rules from the allowed tools; empty means the hook policy alone decides.
   bashPrefixes: string[];
   // 'auto' tries ripgrep and falls back to the JS walker.
   ripgrep: 'auto' | 'off';
+  // Whether the model takes images now: false when the provider says it does not, or a call with one was refused. Absent: it does not.
+  seesImages?: () => boolean;
+}
+
+/** An image a tool read, for the model to see: the loop sends it in a message of its own, since a tool message carries text only. */
+export interface ToolImage {
+  path: string;
+  mediaType: string;
+  /** The file's bytes, base64. */
+  data: string;
 }
 
 // What a tool returns. `response` has the same shape as the Claude tool's, so the shared PostToolUse hooks can rewrite it;
@@ -25,11 +37,8 @@ export interface ToolContext {
 export interface ToolResult {
   response: unknown;
   render: (response: unknown) => string;
-  /**
-   * An image the tool produced (the image tool of the evidence): the tool message stays text (the API disapproves of a tool result as an array) and the image
-   * is sent as a part of the user turn right after it, which is how a model reads an image on this engine.
-   */
-  image?: { data: Uint8Array; media: string };
+  /** Images the model should see along with the text (Read of a picture). */
+  images?: ToolImage[];
 }
 
 export interface ToolImpl {

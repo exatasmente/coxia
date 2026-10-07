@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 11): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 13): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 13;
+export const CONFIG_SCHEMA_VERSION = 17;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -40,6 +40,8 @@ export interface ProviderCapabilities {
   reasoning: boolean;
   /** Context window in tokens, when the server reports it. */
   contextWindow: number | null;
+  /** The model takes an image in a message (what an agent's Read of a screenshot needs). Absent: not known, and the engine tries. */
+  images?: boolean;
 }
 
 export interface LlmProvider {
@@ -187,7 +189,7 @@ export type StageType = (typeof STAGE_TYPES)[number];
  * `beta-out`: the latest beta is on the host: its tag on the remote and its pre-release published. `stable-out`: the stable's `vX.Y.Z` tag is on the remote, on its main.
  * `budget`: the provider of the run's role refused the call because the key ran out of budget (a wait a run enters on its own; the sweep probes the provider).
  */
-export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget'] as const;
+export const WAIT_KINDS = ['pr-merged', 'reporter-reply', 'label', 'linked-done', 'time', 'release-approved', 'beta-age', 'beta-out', 'stable-out', 'budget', 'plugin'] as const;
 export type WaitKind = (typeof WAIT_KINDS)[number];
 
 export interface WaitFor {
@@ -423,6 +425,11 @@ export interface DevCycleConfig {
    * squad's flow come from the one team, limited to the squad's members and the shared agents.
    */
   flows?: Record<string, StageDef[]>;
+  /**
+   * The autonomy block of each flow, by the flow's key: `''` for the main flow, the id of a squad for its own, and `release` for the release flow. A flow with no
+   * entry reads as one whose `useWorkspace` is on: the workspace's block decides. A config stored without it reads as an empty map.
+   */
+  autonomy?: Record<string, FlowAutonomy>;
   /** How a provider's states and labels map to the stages above, first match wins; StageDef.match is the fallback on free text. */
   stageMapping: StageMappingRule[];
   /** What blocker, question for me and ready for QA mean here. */
@@ -532,10 +539,16 @@ export interface AgentDef {
    */
   allowedCommands?: string[];
   /**
+   * The tools this agent may use, when the person said so for this agent alone: it overrides the workspace's `agents.tools` field by field, so an agent may use a tool
+   * the workspace turned off. Absent: the agent uses the workspace's tools. This is a permission of tools, never of confinement: a mention never gets Edit or Write.
+   */
+  tools?: AgentToolsConfig;
+  /**
    * Whether the agent runs by itself. Autonomous: its stage starts when the run reaches it, its tracker comments and reviews are posted
    * automatically (and audited), and its result goes to the next stage without waiting. Not autonomous: the stage waits for the person to start it,
-   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request always
-   * wait for the person. The ceremonies ignore it. A change takes effect at the next stage start or publication, never in the middle of a stage.
+   * its comments wait in Actions for a "yes", and its result waits for the person to accept it. Pushing the branch and opening the pull request are decided
+   * by the autonomy block of the run (see `AutonomyBlock`), not by this field. The ceremonies ignore it. A change takes effect at the next stage start or
+   * publication, never in the middle of a stage.
    */
   autonomous: boolean;
   /**
@@ -684,9 +697,37 @@ export interface RunnerTurns {
   write: number;
 }
 
-/** How far a sandbox reaches the network: nowhere, or only the listed package registries through the app's filtering proxy. */
-export const SANDBOX_NETWORKS = ['off', 'registry'] as const;
+/** How far a sandbox reaches the network: nowhere; only the listed package registries through the app's filtering proxy; or the computer's own network, shared whole. */
+export const SANDBOX_NETWORKS = ['off', 'registry', 'open'] as const;
 export type SandboxNetwork = (typeof SANDBOX_NETWORKS)[number];
+
+/** The five choices of autonomy of a run, all off by default. `cycle`: every stage starts by itself and hands its result on without waiting, whatever each agent's own
+ * `autonomous` is. The four below it only count while `cycle` is on. */
+export const AUTONOMY_CHOICES = ['hostCommands', 'gates', 'push', 'pullRequest'] as const;
+export type AutonomyChoice = (typeof AUTONOMY_CHOICES)[number];
+
+/**
+ * The autonomy block of a workspace or of one flow: what a run lets go on without the person. `cycle` is the general switch; the four below it are separate choices, each
+ * only meaningful while `cycle` is on. Every field is off by default and only the computer raises one: a paired browser may only turn them off.
+ */
+export interface AutonomyBlock {
+  /** Every stage starts when the run reaches it and hands its result on without waiting, whatever each agent's own `autonomous` is. */
+  cycle: boolean;
+  /** The commands of an agent set to `shell: host` run without the "Allow" question. */
+  hostCommands: boolean;
+  /** A gate of the flow is approved by the app, recorded as an automatic approval with its reason. */
+  gates: boolean;
+  /** The run's push goes through the door of Actions by itself, audited. A release run keeps waiting (the release's steps always wait for the person). */
+  push: boolean;
+  /** The pull request is opened by itself, audited. A release run keeps waiting. */
+  pullRequest: boolean;
+}
+
+/** The autonomy block of one flow: the workspace's block decides while `useWorkspace` is on (the default). */
+export interface FlowAutonomy extends AutonomyBlock {
+  /** On (the default): the workspace's block decides for this flow and the fields are shown disabled. Off: this block decides and the workspace's has no effect here. */
+  useWorkspace: boolean;
+}
 
 /** What one command and one stage of a sandbox may use. */
 export interface SandboxLimits {
@@ -706,11 +747,22 @@ export interface SandboxLimits {
 
 /** What the sandbox of an agent's commands may reach. Desktop only: a paired browser cannot change any of it. */
 export interface RunnerSandbox {
+  /**
+   * `off`: no network at all. `registry`: only HTTPS to `registryHosts`, through the app's filtering proxy. `open`: the computer's own network, shared whole, with no
+   * proxy and no host list (local services, the local network and the internet) — a choice of risk made on the computer, off by default.
+   */
   network: SandboxNetwork;
   /** Exact host names the registry switch lets through (HTTPS, port 443). */
   registryHosts: string[];
   /** Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands): a toolchain installed in the home, say. */
   readOnlyPaths: string[];
+  /**
+   * The folder Playwright keeps its browsers in ("~/" expands): every sandbox gets it read-only at its own path, with `PLAYWRIGHT_BROWSERS_PATH` pointing at it. It goes
+   * through the guards of `readOnlyPaths`. null: none. A config stored without it reads as null.
+   */
+  browsersPath: string | null;
+  /** The sandbox of a QA stage starts a virtual display (Xvfb, from the sandbox's own PATH) and sets `DISPLAY`. A config stored without it reads as false. */
+  display: boolean;
   limits: SandboxLimits;
 }
 
@@ -752,6 +804,8 @@ export interface RunnerConfig {
   turns: RunnerTurns;
   identity: RunnerIdentity;
   sandbox: RunnerSandbox;
+  /** The autonomy block of the workspace: what each flow follows while its "Use the workspace's setting" is on. */
+  autonomy: AutonomyBlock;
   /**
    * Where a stage's evidence is kept: only with the run, in the workspace's data (the default, so nothing goes into a commit), or also copied into the cycle
    * folder and committed with the stage, which is how it reaches the pull request. Only the computer changes it, because it decides what enters a commit.
@@ -791,6 +845,45 @@ export interface ClaudeSdkConfig {
 export const USER_ARTICLES = ['', 'o', 'a'] as const;
 export type UserArticle = (typeof USER_ARTICLES)[number];
 
+/**
+ * What the person allowed a plugin "always": durable, kept in the workspace until the person takes it back, and kept when the plugin is switched off
+ * and on again. "Once" and "for the session" never reach the configuration: they live with the request and with the running app.
+ */
+export interface PluginAllow {
+  /** The plugin may reach the destinations it declared. */
+  network: boolean;
+  /** The plugin's declared external write may go out (an irreversible one still waits for the warning with a deadline). */
+  write: boolean;
+}
+
+/** A plugin of the workspace and what the person decided about it. Everything else is read again from its folder. */
+export interface PluginConfig {
+  /** Stable identity the declaration announces. */
+  id: string;
+  /** Folder of the plugin as it was last read; null when the plugin is listed but was not read. */
+  folder: string | null;
+  /** The person switched it on; off means nothing of it is offered and no hook of it runs. */
+  enabled: boolean;
+  allow: PluginAllow;
+  /**
+   * What the plugin declared it reaches when the person allowed it always (a digest of its hosts, requests and write). A declaration that changed since
+   * reaches somewhere else: the permission does not hold for it, and the plugin asks again.
+   */
+  allowedFor?: string;
+  /** The values of the plugin's `text` and `url` settings, by key. A `secret` setting is never here: it lives in the secrets store (`plugin.<id>.<key>`). */
+  settings: Record<string, string>;
+}
+
+/** The plugins of the workspace: where they live, which ones are on and what each was allowed. They are the team's own code; nothing is downloaded. */
+export interface PluginsConfig {
+  /** Folder that holds one folder per plugin ("~/" expands). null: the `plugins` folder of the workspace's data folder. */
+  dir: string | null;
+  /** What the person decided about each plugin, by identity. */
+  list: PluginConfig[];
+  /** Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile. */
+  confirmSeconds: number;
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -817,6 +910,7 @@ export interface WorkspaceConfig {
   claudeSdk: ClaudeSdkConfig;
   externalTools: ExternalToolsConfig;
   runner: RunnerConfig;
+  plugins: PluginsConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

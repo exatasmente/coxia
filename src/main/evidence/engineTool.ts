@@ -17,8 +17,8 @@ import {
 } from './tool';
 
 // The three evidence tools in the shapes the two engines take them: ToolImpls for the open engine, one in-process MCP server for the Claude Agent SDK. Both call
-// the handlers the executor gave; a refusal comes back as text for the model, never as a crash. `ViewImage` returns the image itself: the open engine gets it as a
-// part of the turn after the tool message, the SDK as an image block.
+// the handlers the executor gave; a refusal comes back as text for the model, never as a crash. `ViewImage` returns the image itself: the open engine sends it in a
+// message after the tool results (`images`), the SDK as an image block.
 
 const text = (a: ToolAnswer): { content: [{ type: 'text'; text: string }] } => ({ content: [{ type: 'text' as const, text: a.text }] });
 
@@ -48,7 +48,11 @@ export function evidenceToolImpls(tools: EvidenceTools): ToolImpl[] {
       parameters: VIEW_IMAGE_SCHEMA as unknown as Json,
       async run(input, ctx) {
         const a = await tools.view(input);
-        return { response: a.text, render: (r) => clip(String(r), ctx.outputMax), ...(a.image ? { image: a.image } : {}) };
+        // The same delivery as the sandbox's ViewImage: the loop sends the picture in a message of its own after the tool results, unless the model takes no images.
+        const source = typeof (input as { source?: unknown } | null)?.source === 'string' ? (input as { source: string }).source : 'image';
+        const sees = !ctx.seesImages || ctx.seesImages();
+        const images = a.image && sees ? [{ path: source, mediaType: a.image.media, data: Buffer.from(a.image.data).toString('base64') }] : [];
+        return { response: a.text, render: (r) => clip(String(r), ctx.outputMax), ...(images.length ? { images } : {}) };
       },
     },
   ];

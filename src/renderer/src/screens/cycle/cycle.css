@@ -31,9 +31,13 @@
 .cy-now-panel { padding: 18px; gap: 12px; }
 .cy-now { font-size: 16px; font-weight: 600; line-height: 1.4; }
 .cy-question { margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--blue-line); background: var(--blue-soft); color: var(--blue-ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
-.cy-command { display: grid; gap: 8px; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
-.cy-command-text { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.cy-command { display: grid; gap: 8px; min-width: 0; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.cy-command-text { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 30vh; overflow: auto; }
 .cy-command-actions { gap: 8px; flex-wrap: wrap; }
+.cy-command .cy-question-by { overflow-wrap: anywhere; }
+.cy-command-actions .btn { flex: 1 1 auto; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.25; padding-top: 8px; padding-bottom: 8px; }
+.cy-command .text-input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 600px) { .cy-command-actions .btn { flex-basis: 100%; } }
 .cy-question-by { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .cy-proposals { padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
 .cy-proposals .cy-link { color: inherit; font-weight: 600; }
@@ -154,6 +158,10 @@
 .cy-msg-person .faint, .cy-msg-person .cy-msg-time { color: var(--blue-ink); opacity: 0.8; }
 .cy-msg-system { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 8px; border: 0; background: transparent; }
 .cy-msg-system-text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.cy-cmds { display: block; }
+.cy-cmds-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; cursor: pointer; }
+.cy-cmds-head::marker { color: var(--muted); }
+.cy-cmds .cy-msgs-inner { margin: 4px 0 0 14px; }
 /* A call a message made to an agent, still going: a quiet line under the message, not a message of its own. */
 .cy-call { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
 .cy-call-agent { color: var(--ink); font-weight: 600; }

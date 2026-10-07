@@ -488,6 +488,57 @@ describe('a test workspace', () => {
 });
 
 describe('the push and the pull request', () => {
+  it('go out by themselves when the autonomy block decides them, audited, and never as proposals', async () => {
+    forge = makeForge({ pr: null, linked: false });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    // nothing waited: no proposal was ever made, and the pull request exists on the host
+    expect(actions.listActions().filter((a) => a.kind === 'run-push')).toEqual([]);
+    expect(actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'run-pr')).toEqual([]);
+    expect(forge.pr).toMatchObject({ base: 'main' });
+    // the branch is on the remote: the push really left the machine
+    expect(git(b.repo.clone, 'ls-remote', '--heads', 'origin', end.branch).trim()).not.toBe('');
+    expect(end.comments.pr).toMatchObject({ status: 'published', noteId: 7 });
+    // both writes are audited, and the push is recorded as the push of this run's branch
+    const audit = listAudit();
+    expect(audit.some((a) => a.kind === 'push' && a.target === `git push origin HEAD:refs/heads/${end.branch}` && a.ok)).toBe(true);
+    expect(audit.some((a) => a.target === 'POST repos/group/project/pulls' && a.origin.kind === 'auto')).toBe(true);
+    expect(b.thread(end).some((m) => m.code === 'runner.push.pushed')).toBe(true);
+    expect(b.thread(end).some((m) => m.code === 'runner.pr.created')).toBe(true);
+  });
+
+  it('still proposes the push when only the pull request choice is on, and the pull request waits for its own yes', async () => {
+    forge = makeForge({ pr: null, linked: false });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, pullRequest: true }; } });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    expect(actions.listActions().filter((a) => a.kind === 'run-push').map((a) => a.state)).toEqual(['pending']);
+    expect(forge.pr).toBeNull();
+  });
+
+  it('keeps the push and the pull request of a test workspace refused even with both choices on', async () => {
+    forge = makeForge({ pr: null, linked: false });
+    setVcsRuntimeForTests(forge.runtime());
+    asReal(true);
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    expect(actions.listActions().filter((a) => a.kind === 'run-push')).toEqual([]);
+    expect(forge.pr).toBeNull();
+    expect(git(b.repo.clone, 'branch', '-r')).not.toContain(end.branch);
+    expect(listAudit()).toEqual([]);
+    expect(b.thread(end).some((m) => m.code === 'runner.push.refused')).toBe(true);
+  });
+
   it('are proposals only; approving the push pushes the branch and proposes the pull request, approving that opens it and the review that waited goes out', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
@@ -599,6 +650,29 @@ describe('the push and the pull request', () => {
     expect((await actions.approveAction(lost.id)).output).toMatch(/not in this workspace any more/);
     expect(existsSync(end.worktree)).toBe(true);
     expect(readFileSync(join(end.worktree, 'src/feature.ts'), 'utf8')).toBe('export const feature = 1;\n');
+  });
+});
+
+describe('the push asked for while the next stage works', () => {
+  it('sends what is committed and leaves the cycle memory the next stage wrote for that stage to commit', async () => {
+    forge = makeForge({ pr: null });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    script(b);
+    const run = await start(b);
+    const end = await through(b, run);
+    const push = actions.listActions().find((a) => a.kind === 'run-push')!;
+    // the app wrote a handover into the memory as the next stage started; that stage has not committed yet
+    const { appendFileSync } = await import('node:fs');
+    const memory = join(end.worktree, end.cycleFolder, 'MEMORY.md');
+    appendFileSync(memory, '- Handover: next.\n');
+    const head = git(end.worktree, 'rev-parse', 'HEAD').trim();
+    const pushed = await actions.approveAction(push.id);
+    expect(pushed.state).toBe('done');
+    expect(git(b.repo.clone, 'rev-parse', `refs/heads/${end.branch}`).trim()).toBe(head);
+    // the memory is still there, uncommitted, for the stage's own commit
+    expect(readFileSync(memory, 'utf8')).toContain('- Handover: next.');
+    expect(git(end.worktree, 'status', '--porcelain')).toContain('MEMORY.md');
   });
 });
 

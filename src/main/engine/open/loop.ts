@@ -24,8 +24,8 @@ import { type McpServerConfig, loadMcpConfigs, mcpTools } from './tools/mcp';
 import { readTool } from './tools/read';
 import { editTool, writeTool } from './tools/write';
 import { globTool, grepTool } from './tools/search';
-import { type ToolContext, type ToolImpl, ToolError } from './tools/types';
-import type { ChatMessage, Completion, Json, ToolCall, ToolChoice, ToolDef } from './types';
+import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
+import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import { t } from '../../../shared/i18n';
 
 export type StructuredStrategy = 'auto' | 'response_format' | 'tool' | 'prompt';
@@ -36,6 +36,8 @@ export interface Capabilities {
   // true: response_format json_schema works (from the probe).
   jsonSchema?: boolean;
   contextWindow?: number;
+  // false: the model does not take images, so Read says so instead of attaching one. Unknown (undefined) is tried, and a refusal is learned.
+  images?: boolean;
 }
 
 export interface RunEvents {
@@ -69,6 +71,7 @@ export interface OpenRunParams {
   noTools?: boolean;
   // The folder an agent that writes may change: with it, Write and Edit are offered when allowed, and the commands run with a scrubbed environment.
   writeRoot?: string;
+  writeReserved?: readonly string[];
   hooks?: SdkHooks;
   // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
   extraTools?: ToolImpl[];
@@ -180,9 +183,22 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   return tools;
 }
 
+/** The message that shows the model the images its tools read: one line naming them, then each picture. */
+function imageMessage(images: ToolImage[]): ChatMessage {
+  const parts: ContentPart[] = [{ type: 'text', text: t('main.engine.text.images', { paths: images.map((i) => i.path).join(', ') }) }];
+  for (const i of images) parts.push({ type: 'image_url', image_url: { url: `data:${i.mediaType};base64,${i.data}` } });
+  return { role: 'user', content: parts };
+}
+
 function compact(messages: ChatMessage[], keepLast = 2, limit = 1200): boolean {
   const toolIdx = messages.flatMap((m, i) => (m.role === 'tool' ? [i] : []));
   let changed = false;
+  // An image weighs most: every one but the latest message of them is replaced by a line that says it was there.
+  const imageIdx = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url') ? [i] : []));
+  for (const i of imageIdx.slice(0, -1)) {
+    messages[i] = { ...messages[i], content: (messages[i].content as ContentPart[]).map((c) => (c.type === 'image_url' ? { type: 'text' as const, text: t('main.engine.text.oldImage') } : c)) };
+    changed = true;
+  }
   for (const i of toolIdx.slice(0, Math.max(0, toolIdx.length - keepLast))) {
     const c = messages[i].content;
     if (typeof c === 'string' && c.length > limit) {
@@ -270,10 +286,12 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     secretGlobs: p.secretGlobs ?? [],
     signal: p.signal,
     writeRoot: p.writeRoot ?? null,
+    writeReserved: p.writeReserved,
     outputMax,
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),
     ripgrep: p.ripgrep ?? 'auto',
+    seesImages: () => p.capabilities?.images !== false && client.learned.noImages !== true,
   };
   const policy = policyFromHooks(p.hooks, sessionId);
 
@@ -361,7 +379,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     }
   };
 
-  const execute = async (tc: ToolCall): Promise<{ text: string; image?: { data: Uint8Array; media: string } }> => {
+  const execute = async (tc: ToolCall): Promise<{ text: string; images?: ToolImage[] }> => {
     const impl = byApi.get(tc.function.name);
     const input = parseToolArguments(tc.function.arguments);
     const name = impl?.name ?? tc.function.name;
@@ -380,7 +398,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       const r = await impl.run(input, ctx);
       const rewritten = await policy.post(impl.name, input, r.response, p.cwd);
       events.onToolResult?.(name, false);
-      return { text: r.render(rewritten ?? r.response), ...(r.image ? { image: r.image } : {}) };
+      return { text: r.render(rewritten ?? r.response), ...(r.images?.length ? { images: r.images } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
       return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
@@ -389,7 +407,6 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
 
   const done = (data: unknown, turns: number): OpenRunResult<T> => ({ data: data as T, sessionId, sources, usage, turns, strategy });
   const toolMessage = (tc: ToolCall, content: string): ChatMessage => ({ role: 'tool', tool_call_id: tc.id, content });
-  const dataUrl = (image: { data: Uint8Array; media: string }): string => `data:${image.media};base64,${Buffer.from(image.data).toString('base64')}`;
 
   // --- the loop
   let turns = 0;
@@ -429,9 +446,9 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       if (c.text.trim()) events.onInterim?.(c.text);
       const results = await Promise.all(c.toolCalls.map(execute));
       c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i].text)));
-      // An image a tool produced (the evidence tool) follows its tool message as a part of a user turn: this engine's tool results are text, and the API
-      // disapproves of a tool message whose content is an array.
-      for (const r of results) if (r.image) write({ role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl(r.image) } }, { type: 'text', text: t('main.engine.text.toolImage') }] });
+      // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
+      const images = results.flatMap((r) => r.images ?? []);
+      if (images.length) write(imageMessage(images));
       continue;
     }
     if (!p.schema) return done(c.text, turns);

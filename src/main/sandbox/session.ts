@@ -6,7 +6,8 @@ import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { tail } from '../runner/commands';
-import { FORWARDER_JS, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
+import { MAX_IMAGE_BYTES, imageMediaType } from '../imageType';
+import { CTL, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
 import { SandboxError } from './errors';
 import { removeTree } from './remove';
 
@@ -30,11 +31,39 @@ export interface ExecResult {
   refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied';
 }
 
+/** What a stage's sandbox offers to test an interface. */
+export interface SandboxGui {
+  /** The browsers folder, bound read-only with `PLAYWRIGHT_BROWSERS_PATH` pointing at it; null: none was set, or it is gone. */
+  browsers: string | null;
+  /** The folder the workspace names for the browsers no longer exists: the stage goes on without them. */
+  browsersGone?: string;
+  /** The virtual display: on, asked for and no display program found (`missing`), started and never came up (`failed`); null: not asked for. */
+  display: 'on' | 'missing' | 'failed' | null;
+}
+
+/** An image the stage saved in its output folder, read for the model, or why it was not. */
+export type ImageRead = { ok: true; path: string; mediaType: string; data: string } | { ok: false; why: 'outside' | 'missing' | 'not-file' | 'too-big' | 'not-image' };
+
 export interface SandboxSession {
   /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
   readonly description?: string;
   /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
   readonly stageDir?: string;
+  /** What the sandbox offers to test an interface; absent: nothing was asked for (a host session, a sandbox with neither setting on). */
+  readonly gui?: SandboxGui;
+  /** Reads an image the stage saved in its output folder (`/coxia/out` inside); absent where there is no such folder (a host session). */
+  readImage?(path: string): ImageRead;
+  /**
+   * Hands a file to the inside, read-only, without a command: the app writes it into the stage's control folder, which the sandbox sees at `/coxia/ctl`.
+   * Returns the path inside. For what is too big for a command (a plugin's code, the responses the app fetched for it). Absent where there is no such
+   * folder (a host session).
+   */
+  put?(name: string, content: string): string;
+  /**
+   * Reads a text file a command left in the stage's output folder (`/coxia/out` inside), whole, never through a link and up to `max` bytes; null when it
+   * is not there, is not a plain file or is bigger. For a result too long for a command's output (a plugin's). Absent where there is no such folder.
+   */
+  take?(name: string, max: number): string | null;
   /** Runs one command; one at a time per stage (calls queue). Never throws for a command that fails. */
   exec(command: string): Promise<ExecResult>;
   /** Every command of the stage, in order, with what it did. */
@@ -59,6 +88,8 @@ export interface SessionOptions {
   cleanup?: (() => Promise<void> | void)[];
   /** How long to wait for the supervisor to say it is ready (ms). */
   readyMs?: number;
+  /** What was asked for to test an interface: the browsers folder, and the display (`start`: a program to start was found; `missing`: none was). */
+  gui?: { browsers: string | null; browsersGone?: string; display: 'start' | 'missing' | null };
 }
 
 export interface SessionDeps {
@@ -181,14 +212,17 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
     removeTree(o.stageDir);
   };
 
-  // The supervisor says "ready" (after starting the forwarder, when there is one), or the program that builds the sandbox says why it could not.
+  // The supervisor says "ready" (after starting the forwarder and the display, when there are), "ready-nodisplay" when the display did not come up, or the program
+  // that builds the sandbox says why it could not.
+  let noDisplay = false;
   const ready = await new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => resolve(stderr.trim() || 'timeout'), o.readyMs ?? 10_000);
     const onLine = (line: string): void => {
-      if (line === 'ready' || line === 'no-node' || line === 'no-forwarder') {
+      if (line === 'ready' || line === 'ready-nodisplay' || line === 'no-node' || line === 'no-forwarder') {
         clearTimeout(timer);
         lines.splice(lines.indexOf(onLine), 1);
-        resolve(line === 'ready' ? null : line);
+        noDisplay = line === 'ready-nodisplay';
+        resolve(line === 'ready' || line === 'ready-nodisplay' ? null : line);
       }
     };
     lines.push(onLine);
@@ -248,8 +282,18 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
       child.stdin?.write(`${n} ${token} ${secs}\n`);
     });
 
+  const gui: SandboxGui | undefined = o.gui ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display === 'start' ? (noDisplay ? 'failed' : 'on') : o.gui.display === 'missing' ? 'missing' : null } : undefined;
   return {
     stageDir: o.stageDir,
+    ...(gui ? { gui } : {}),
+    readImage: (path) => readOutputImage(out, path),
+    take: (name, max) => readOutputText(out, name, max),
+    put: (name, content) => {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) throw new SandboxError('path-refused', { path: name });
+      mkdirSync(join(ctl, 'files'), { recursive: true, mode: 0o700 });
+      writeFileSync(join(ctl, 'files', name), content, { mode: 0o600 });
+      return `${CTL}/files/${name}`;
+    },
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
@@ -260,4 +304,65 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
     },
     close,
   };
+}
+
+/** Where the stage's output folder shows up inside the sandbox: the only place the agent saves images it wants to look at. */
+export const OUTPUT_DIR = OUT;
+
+/** A plain text file of the output folder, read without following a link; null when missing, not a file, or over `max` bytes. */
+export function readOutputText(outDir: string, name: string, max: number): string | null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) return null;
+  let fd: number | null = null;
+  try {
+    fd = openSync(join(outDir, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > max) return null;
+    const buf = Buffer.alloc(st.size);
+    let got = 0;
+    while (got < st.size) {
+      const n = readSync(fd, buf, got, st.size - got, got);
+      if (n <= 0) break;
+      got += n;
+    }
+    return buf.subarray(0, got).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
+/**
+ * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside
+ * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
+ * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
+ */
+export function readOutputImage(outDir: string, path: string): ImageRead {
+  const rel = path.startsWith(`${OUT}/`) ? path.slice(OUT.length + 1) : path.startsWith('/') ? null : path;
+  if (!rel || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
+  let fd: number | null = null;
+  try {
+    try {
+      fd = openSync(join(outDir, rel), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch {
+      return { ok: false, why: 'missing' };
+    }
+    const st = fstatSync(fd);
+    if (!st.isFile()) return { ok: false, why: 'not-file' };
+    if (st.size > MAX_IMAGE_BYTES) return { ok: false, why: 'too-big' };
+    const buf = Buffer.alloc(st.size);
+    let got = 0;
+    while (got < st.size) {
+      const n = readSync(fd, buf, got, st.size - got, got);
+      if (n <= 0) break;
+      got += n;
+    }
+    const mediaType = imageMediaType(buf.subarray(0, Math.min(got, 12)));
+    if (!mediaType) return { ok: false, why: 'not-image' };
+    return { ok: true, path: `${OUT}/${rel}`, mediaType, data: buf.subarray(0, got).toString('base64') };
+  } catch {
+    return { ok: false, why: 'not-file' };
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }

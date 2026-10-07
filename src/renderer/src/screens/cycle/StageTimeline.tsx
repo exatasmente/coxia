@@ -99,11 +99,12 @@ function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 }
 
-/** What the stage's model calls used, over its attempts: calls and tokens, and the cost when a provider reported one (a token count never becomes a price here). */
+/** What the stage's model calls used, over its attempts: calls and tokens, and the cost when a provider reported one, said apart from an estimate (a token count never becomes a price here). */
 function Usage({ usage }: { usage: StageUsage }) {
   const t = useT();
   const p = usageParams(usage, intlLocale());
-  return <p className="faint small cy-usage">{t(p.cost === null ? 'ui.cycle.stage.usage' : 'ui.cycle.stage.usageCost', { ...p, cost: p.cost ?? '' })}</p>;
+  const key = p.cost === null ? 'ui.cycle.stage.usage' : p.estimated ? 'ui.cycle.stage.usageCostEstimated' : 'ui.cycle.stage.usageCost';
+  return <p className="faint small cy-usage">{t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' })}</p>;
 }
 
 function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; go: (s: Screen) => void; view: (name: string) => void }) {

@@ -1,6 +1,6 @@
 {
   "name": "cerimonias",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Coxia: cerimônias por voz com agentes por atividade",
   "main": "./out/main/index.js",
   "scripts": {
@@ -31,6 +31,7 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "playwright-core": "1.62.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^5.0.3"

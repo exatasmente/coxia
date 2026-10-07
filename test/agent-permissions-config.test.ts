@@ -4,7 +4,7 @@ import { migrateConfig } from '../src/shared/config/migrations';
 import { RECOMMENDED, applyRecommendations, newAgent, recommendations, withoutSandbox } from '../src/shared/config/team';
 import { validateConfig } from '../src/shared/config/validate';
 import { collectCommands, collectPaths } from '../src/shared/config/transfer';
-import { agentFlow, agentFlowEngineering, agentFlowTeam, applyTemplate, engineeringTeam, releaseManager } from '../src/shared/cycles';
+import { agentFlow, agentFlowEngineering, agentFlowTeam, applyTemplate, docsWriter, engineeringTeam, releaseManager } from '../src/shared/cycles';
 import { mergeTemplateTeam } from '../src/shared/cycles/apply';
 import { cycleOf } from '../src/shared/cycles';
 import type { WorkspaceConfig } from '../src/shared/config/types';
@@ -33,7 +33,7 @@ describe('the migration to schema 10', () => {
   it('raises nothing: an agent that writes keeps the commands of the runner, one that only reads runs none', () => {
     const r = migrate(v9());
     expect(r.fromVersion).toBe(9);
-    expect(r.config.schemaVersion).toBe(13);
+    expect(r.config.schemaVersion).toBe(17);
     expect(agent(r.config, 'dev')).toMatchObject({ shell: 'allowlist', tracker: 'none' });
     expect(agent(r.config, 'po')).toMatchObject({ shell: 'none' });
     for (const a of r.config.agents.team) expect(a.shell).not.toBe('sandbox');
@@ -79,9 +79,11 @@ describe('the defaults of an agent', () => {
     const by = (list: { id: string; tracker: string; shell: string }[]) => Object.fromEntries(list.map((a) => [a.id, `${a.tracker}/${a.shell}`]));
     expect(by(agentFlowTeam())).toEqual({ support: 'none/none', 'product-owner': 'read/none', 'tech-lead': 'read/sandbox', developer: 'none/sandbox', qa: 'none/sandbox', 'customer-success': 'none/none' });
     expect(by(engineeringTeam())).toEqual({ refiner: 'read/none', planner: 'read/sandbox', developer: 'none/sandbox', reviewer: 'read/sandbox', qa: 'none/sandbox' });
-    expect(Object.keys(RECOMMENDED).sort()).toEqual([...agentFlowTeam(), ...engineeringTeam(), releaseManager()].map((a) => a.id).filter((x, i, l) => l.indexOf(x) === i).sort());
+    expect(Object.keys(RECOMMENDED).sort()).toEqual([...agentFlowTeam(), ...engineeringTeam(), releaseManager(), docsWriter()].map((a) => a.id).filter((x, i, l) => l.indexOf(x) === i).sort());
     // the Release manager of the release flow reads the host and runs nothing
     expect(by([releaseManager()])).toEqual({ 'release-manager': 'read/none' });
+    // the Documentation writer changes files in .coxia, runs nothing and reads no tracker
+    expect(by([docsWriter()])).toEqual({ 'docs-writer': 'none/none' });
   });
 
   it('only keep the sandbox where one works: an agent a template brings is lowered otherwise', () => {

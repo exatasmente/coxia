@@ -30,7 +30,8 @@ function Request({ item, onDone }: { item: CeremonyCommand; onDone: (id: string)
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const agent = t(`cycle.team.system.${item.agent}.name`);
+  const system = t(`cycle.team.system.${item.agent}.name`);
+  const agent = item.name ?? (system === `cycle.team.system.${item.agent}.name` ? item.agent : system);
   const answer = (decision: CeremonyDecision) => {
     setBusy(true);
     setError(null);
@@ -44,7 +45,7 @@ function Request({ item, onDone }: { item: CeremonyCommand; onDone: (id: string)
   };
   return (
     <section className={`cc-item ${item.write ? 'cc-write' : ''}`} aria-labelledby={`cc-${item.id}`}>
-      <h2 id={`cc-${item.id}`} className="cc-title">{t('ui.ceremonyCommand.title', { agent: agent === `cycle.team.system.${item.agent}.name` ? item.agent : agent })}</h2>
+      <h2 id={`cc-${item.id}`} className="cc-title">{t('ui.ceremonyCommand.title', { agent })}</h2>
       <pre className="cc-command">{item.command}</pre>
       {item.write && <p className="small">{t('ui.ceremonyCommand.writeNote')}</p>}
       <label className="small" htmlFor={`cc-note-${item.id}`}>{t('ui.ceremonyCommand.note')}</label>

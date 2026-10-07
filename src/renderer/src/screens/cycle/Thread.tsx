@@ -1,8 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
-import { type QuestionChain, applyMention, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
+import { type QuestionChain, applyMention, commandRound, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
+import { mentionJob } from '../../../../shared/activity';
 import { type CallGroup, callGroups } from '../../activity';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
@@ -120,6 +121,32 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
           {m.published.url ? <a href={m.published.url} target="_blank" rel="noreferrer">{t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}</a> : t('ui.forum.published', { target: t(m.published.target === 'mr' ? 'ui.forum.target.mr' : 'ui.forum.target.issue') })}
         </p>
       )}
+    </li>
+  );
+}
+
+/**
+ * A round of commands, folded: one line that says who ran how many, opened to read each command and its output. It opens by itself while the last command still
+ * waits for the person, so what is asked of them is never hidden.
+ */
+function Commands({ agent, messages, ctx }: { agent: string; messages: ForumMessage[]; ctx: Ctx }) {
+  const t = useT();
+  const { ran, waiting } = commandRound(messages);
+  const last = messages[messages.length - 1];
+  return (
+    <li className="cy-msg cy-msg-system cy-cmds" id={`msg-${messages[0].seq}`}>
+      <details open={waiting}>
+        <summary className="cy-cmds-head">
+          <span className="cy-msg-system-text">
+            {ran ? t('ui.forum.commands.summary', { agent: agentName(ctx.team, agent), count: ran }) : t('ui.forum.commands.none', { agent: agentName(ctx.team, agent) })}
+            {waiting ? ` · ${t('ui.forum.commands.waiting')}` : ''}
+          </span>
+          <time className="faint small" dateTime={last.at}>{stamp(last.at)}</time>
+        </summary>
+        <ol className="cy-msgs cy-msgs-inner">
+          {messages.map((m) => <Message key={m.seq} m={m} ctx={ctx} />)}
+        </ol>
+      </details>
     </li>
   );
 }
@@ -290,7 +317,8 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
   const t = useT();
   const live = useThread(thread);
   const runId = run?.id ?? null;
-  const activity = useActivity(runId ? `run:${runId}` : undefined);
+  // A run's thread reads the run's activity; any other conversation reads its own, where the mentions module keeps its calls.
+  const activity = useActivity(runId ? `run:${runId}` : mentionJob(thread));
   const [viewing, setViewing] = useState<string | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
@@ -339,7 +367,15 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {rows.map((row) => (row.type === 'chain' ? <Chain key={`c${row.messages[0].seq}`} chain={row.chain} messages={row.messages} ctx={ctx} /> : <Message key={row.message.seq} m={row.message} ctx={ctx} />))}
+        {rows.map((row) =>
+          row.type === 'chain' ? (
+            <Chain key={`c${row.messages[0].seq}`} chain={row.chain} messages={row.messages} ctx={ctx} />
+          ) : row.type === 'commands' ? (
+            <Commands key={`x${row.messages[0].seq}`} agent={row.agent} messages={row.messages} ctx={ctx} />
+          ) : (
+            <Message key={row.message.seq} m={row.message} ctx={ctx} />
+          ),
+        )}
       </ol>
       <Composer
         thread={thread}

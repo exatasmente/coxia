@@ -15,9 +15,11 @@ import { VoiceControls } from './VoiceControls';
 import { BackIcon } from './icons';
 import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
+import { PluginsSection } from './PluginsSection';
 import { PushSection } from './PushSection';
 import { WebAccessSection } from './WebAccessSection';
 import { UpdateSection } from './UpdateSection';
+import { DocsSection } from './DocsSection';
 import { ConfigWorkspacesSection } from './ConfigWorkspacesSection';
 import { TeamSettings } from './team/TeamSettings';
 
@@ -131,6 +133,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <ConfigWorkspacesSection go={go} />
         <TeamSettings />
+        <DocsSection go={go} />
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
@@ -330,6 +333,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <RetentionSection value={s.retention} onChange={(retention) => set((p) => ({ ...p, retention }))} />
         <ConflictVerifySection />
+        <PluginsSection />
         <section className="panel" style={{ padding: 20, gap: 14 }}>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.language.title')}</h2>

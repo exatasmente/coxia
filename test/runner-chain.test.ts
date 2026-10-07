@@ -73,6 +73,9 @@ describe('a question between agents', () => {
     // the one who answered read only, whatever its own permission
     const call = b.engine.calls[4];
     expect(call.confine).toBeUndefined();
+    // and its reading stays inside the run's worktree
+    expect(call.readRoot?.root).toBe(run.worktree);
+    expect(call.readRoot?.hooks).toBeTruthy();
     expect(call.prompt).toContain('Where does the helper live?');
     // a gate is the person's: nothing an agent said decided one
     expect(end.history.filter((h) => h.type === 'gate-approved').every((h) => h.by === 'person')).toBe(true);

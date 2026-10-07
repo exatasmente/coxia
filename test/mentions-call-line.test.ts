@@ -97,4 +97,24 @@ describe('the call line of a mention', () => {
     expect(released).toEqual(['turn']);
     expect(forum.read('squads', 0, 50)?.messages.find((x) => x.code === 'runner.mention.budget')?.params).toMatchObject({ agent: 'turn', provider: 'anthropic', reason: 'no credit' });
   });
+
+  it('takes the read root the caller gives the call, and none when the caller has no worktree to give', async () => {
+    const engine = fakeEngine();
+    engine.script('turn', () => ({ text: 'Here.' }));
+    const [m] = forum.append('squads', { kind: 'post', author: { type: 'person' }, text: '@turn look', mentions: ['turn'] });
+    const hooks = { PreToolUse: [{ matcher: 'Read', hooks: [] }] };
+    await answerMentions(place, m, {
+      forum,
+      config,
+      engine,
+      env: () => ({ fallbackCwd: root }),
+      readRoot: () => ({ root, roots: [], hooks: hooks as never }),
+    });
+    expect(engine.calls[0].readRoot?.root).toBe(root);
+    // a place with no worktree: the caller answers `undefined` and the mention keeps the policy of the ceremonies
+    engine.script('reply', () => ({ text: 'Here too.' }));
+    const [m2] = forum.append('squads', { kind: 'post', author: { type: 'person' }, text: '@reply look', mentions: ['reply'] });
+    await answerMentions(place, m2, { forum, config, engine, env: () => ({ fallbackCwd: root }), readRoot: () => undefined });
+    expect(engine.calls[1].readRoot).toBeUndefined();
+  });
 });

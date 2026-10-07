@@ -22,11 +22,26 @@ describe('probeOpenAIProvider', () => {
     expect(r.reachable).toBe(true);
     expect(r.ok).toBe(true);
     expect(r.models).toMatchObject({ ok: true, ids: ['fake-model', 'other'], modelListed: true });
-    expect(r.capabilities).toEqual({ chat: true, tools: true, jsonSchema: true, streaming: true, reasoning: false, contextWindow: 32768 });
+    expect(r.capabilities).toEqual({ chat: true, tools: true, jsonSchema: true, streaming: true, reasoning: false, contextWindow: 32768, images: true });
     expect(r.chat.ok && r.tools.ok && r.jsonSchema.ok).toBe(true);
     expect(r.messages.join('\n')).toContain('2 modelo(s) listado(s)');
     expect(r.messages.join('\n')).toContain('Chamada de ferramenta ok');
-    expect(fake.chats()).toHaveLength(3);
+    // The fourth call shows the model a picture.
+    expect(fake.chats()).toHaveLength(4);
+    expect(JSON.stringify(fake.chats()[3].body)).toContain('data:image/png;base64,');
+  });
+
+  it('says a server that refuses an image does not take images, and leaves it unknown when the call fails for another reason', async () => {
+    const noImages = (req: FakeRequest) => (JSON.stringify(req.body).includes('image_url') ? errorStep(400, 'Image input is not supported by this model') : capable(req));
+    fake = await fakeOpenAI(noImages);
+    const refused = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(refused.capabilities.images).toBe(false);
+    expect(refused.images.ok).toBe(false);
+    await fake.close();
+    const down = (req: FakeRequest) => (JSON.stringify(req.body).includes('image_url') ? errorStep(401, 'bad key') : capable(req));
+    fake = await fakeOpenAI(down);
+    const unknown = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(unknown.capabilities.images).toBeUndefined();
   });
 
   it('accepts the bare origin a user types for a local server', async () => {

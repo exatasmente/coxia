@@ -200,8 +200,10 @@ const uniq = (list: string[]): string[] => [...new Set(list)];
 /**
  * The documentation sources the agents can use: what the config lists, plus (autoDetect) what Claude Code itself would load:
  * ~/.claude (CLAUDE.md, skills, agents, commands), and per project root and repo CLAUDE.md, .claude/{skills,agents,rules} and .mcp.json.
+ * With `claude: false` autoDetect adds only the .mcp.json of each project: what belongs to Claude Code is left to Claude Code.
  */
-export function resolveDocs(c: WorkspaceConfig, ctx: ResolveContext, exists: (path: string) => boolean): ResolvedDocs {
+export function resolveDocs(c: WorkspaceConfig, ctx: ResolveContext, exists: (path: string) => boolean, opts: { claude?: boolean } = {}): ResolvedDocs {
+  const claude = opts.claude ?? true;
   const x = (p: string): string => expandHome(p, ctx.home);
   const out: ResolvedDocs = {
     claudeMdRoots: c.docs.claudeMdRoots.map(x),
@@ -220,16 +222,20 @@ export function resolveDocs(c: WorkspaceConfig, ctx: ResolveContext, exists: (pa
       }
     };
     const userClaude = join(ctx.home, '.claude');
-    found(out.skillsDirs, join(userClaude, 'skills'));
-    found(out.agentsDirs, join(userClaude, 'agents'));
-    if (exists(join(userClaude, 'CLAUDE.md'))) found(out.claudeMdRoots, userClaude);
+    if (claude) {
+      found(out.skillsDirs, join(userClaude, 'skills'));
+      found(out.agentsDirs, join(userClaude, 'agents'));
+      if (exists(join(userClaude, 'CLAUDE.md'))) found(out.claudeMdRoots, userClaude);
+    }
     const projects = [...c.projects.roots.map(x), ...c.projects.repos.map((r) => x(r.path))];
     for (const dir of uniq(projects)) {
-      if (exists(join(dir, 'CLAUDE.md'))) found(out.claudeMdRoots, dir);
-      found(out.skillsDirs, join(dir, '.claude/skills'));
-      found(out.agentsDirs, join(dir, '.claude/agents'));
-      found(out.rulesDirs, join(dir, '.claude/rules'));
-      found(out.knowledgeDirs, join(dir, '.claude/knowledge-base'));
+      if (claude) {
+        if (exists(join(dir, 'CLAUDE.md'))) found(out.claudeMdRoots, dir);
+        found(out.skillsDirs, join(dir, '.claude/skills'));
+        found(out.agentsDirs, join(dir, '.claude/agents'));
+        found(out.rulesDirs, join(dir, '.claude/rules'));
+        found(out.knowledgeDirs, join(dir, '.claude/knowledge-base'));
+      }
       found(out.mcpConfigFiles, join(dir, '.mcp.json'));
     }
   }

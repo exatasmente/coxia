@@ -320,7 +320,7 @@
   "ui.resolver.publish.confirm": "Confirm: push to {branch}",
   "ui.resolver.publish.failed": "The push failed: {output}",
   "ui.resolver.publish.go": "Go ahead with the push",
-  "ui.resolver.publish.intro": "Merge committed in the worktree ({commit}): “Merge branch 'main' into '{branch}'”. Publishing runs {push}, fast-forward only, no force. Before pushing, the branch is fetched again and the push is refused if it changed since the preparation.",
+  "ui.resolver.publish.intro": "Merge committed in the worktree ({commit}): “Merge branch '{target}' into '{branch}'”. Publishing runs {push}, fast-forward only, no force. Before pushing, the branch is fetched again and the push is refused if it changed since the preparation.",
   "ui.resolver.publish.title": "Publish",
   "ui.resolver.published": "Published to {branch}. The worktree was removed. The QA comment update shows up in Release actions, with its own “yes”.",
   "ui.resolver.reopen": "Reopen the resolution",

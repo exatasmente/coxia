@@ -1,5 +1,5 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import type { LlmRole } from '../../shared/config/types';
+import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -56,9 +56,26 @@ export interface ShellPolicy {
 
 /** What an agent that writes is confined to: only a stage of a run whose agent has the `worktree` permission carries one. */
 export interface Confinement {
-  /** The run's worktree: the only folder the agent may change, and its working directory. */
+  /** The run's worktree: its working directory, which it may read whole, and the only folder it may change unless `writeRoot` narrows that. */
   root: string;
+  /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
+  writeRoot?: string;
+  /** Names directly under `writeRoot` the app owns and the agent may not write (the ignore file and the run folder of a documentation run). */
+  writeReserved?: readonly string[];
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
+  hooks: NonNullable<Options['hooks']>;
+}
+
+/**
+ * What a reading agent of a run is confined to: the run's worktree and the documentation folders it was given. Only a call of a run
+ * carries one, and it never opens a tool: it says where the file tools may look, so a reader stays a reader.
+ */
+export interface ReadConfinement {
+  /** The run's worktree: the only folder a file tool may touch, besides `roots`. */
+  root: string;
+  /** Absolute folders the config lists as documentation outside the worktree, which the reader may still reach. */
+  roots: string[];
+  /** The hooks that enforce it (runner/hooks.ts, `readConfinedHooks`): the read policy plus the path guard, never one instead of the other. */
   hooks: NonNullable<Options['hooks']>;
 }
 
@@ -86,14 +103,26 @@ export interface EngineRequest {
   shell: ShellPolicy;
   /** Per-call options of the Claude Agent SDK: resume, maxTurns, tools. Other engines read maxTurns and resume and may ignore the rest. */
   extra: Partial<Options>;
+  /** The tools the agent of this call uses: its own when it names them, else the workspace's. Absent: the workspace's. */
+  tools?: AgentToolsConfig;
   /** Set for an agent that may change files; read-only calls leave it out and keep the policy of the ceremonies. */
   confine?: Confinement;
+  /**
+   * Set for an agent of a run that only reads: its file tools (`Read`, `Grep`, `Glob`) are confined to `root` and `roots`, and it is offered no `Edit`, no `Write` and no shell.
+   * A call with `confine` leaves this out, and so does every call outside a run (a ceremony, a channel): neither has a worktree to be confined to.
+   */
+  read?: ReadConfinement;
   /**
    * How much of the code host the call may read. `workspace` (the default, what the ceremonies and a reader with `tracker: read` get): the host CLI allow-list, the `VcsRead`
    * tool and the tracker MCP tools the workspace switched on. `tool`: only the `VcsRead` tool (an agent that writes with `tracker: read`: no CLI, no MCP server).
    * `none`: nothing of the host.
    */
   tracker?: 'workspace' | 'tool' | 'none';
+  /**
+   * The call reads no documentation of Claude Code: neither the `CLAUDE.md` and `.claude/` of the working directory or the home, nor its settings and its automatic
+   * memory. Set for the agents of the team (`runAgent`); the ceremonies leave it off and read what they read.
+   */
+  isolated?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
