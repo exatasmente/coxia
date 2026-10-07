@@ -958,7 +958,7 @@
   "main.runner.tools.unknownAgent": "\"{to}\" não é agente do time. Os agentes são: {list}.",
   "main.runner.tools.emptyText": "A mensagem não tinha texto.",
   "main.runner.tools.emptyTopic": "A conversa precisa de um assunto.",
-  "main.runner.tools.sent": "Mensagem entregue na conversa da execução.",
+  "main.runner.tools.sent": "Mensagem entregue na conversa da execução. Ela não encerra a sua etapa: quando o trabalho estiver feito, pare de chamar ferramentas e dê a sua resposta final.",
   "main.runner.tools.notInTime": "A etapa já estava terminando: a mensagem não chegou ao agente e o texto foi registrado na conversa.",
   "main.runner.tools.conversationOpened": "Conversa aberta com {called}: ela acontece em {thread}. O que você disser entra lá.",
   "main.runner.tools.callRefusedCycle": "{called} já está na cadeia de chamadas desta execução: um ciclo de agentes que se chamam não é aberto.",

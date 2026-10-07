@@ -98,13 +98,66 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: scripts/verify-release-origin.sh "$VERSION" "$GITHUB_SHA"
 
+  # ---- The draft: made once, before any build ------------------------------------------------------------------------------------------
+  # Every platform job uploads into this one draft, so they build at the same time: each electron-builder finds the draft by its tag instead of
+  # making its own. A real release only; a dry run creates nothing and the platform jobs run without it.
+  draft:
+    name: Make the draft release
+    needs: prepare
+    if: needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # creates the draft release
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Release notes from CHANGELOG.md
+        env:
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if scripts/release-notes.sh "$VERSION" > release-notes.md; then
+            echo "Using the CHANGELOG.md entry for $VERSION"
+          elif [ "$PRERELEASE" = true ]; then
+            echo "::warning::CHANGELOG.md has no entry for $VERSION; using a one-line note"
+            printf 'Pre-release %s. See CHANGELOG.md for what changed.\n' "$TAG" > release-notes.md
+          else
+            echo "::error::CHANGELOG.md has no entry for $VERSION: a final release needs one (scripts/release.sh writes it)"
+            exit 1
+          fi
+
+      - name: Make the draft, linked to its tag, a pre-release when the version has a suffix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # A re-run finds the draft its first attempt made, by name: a second draft would split the files between the two.
+          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
+          if [ -z "$id" ]; then
+            id="$(gh api --method POST "repos/$REPOSITORY/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=true -F prerelease="$PRERELEASE" -f body="$(cat release-notes.md)" --jq '.id')"
+          fi
+          # GitHub has answered a draft with tag_name "untagged-<hash>" and target_commitish main (v0.5.0-beta.2): publishing that draft would
+          # create a tag literally named untagged-<hash> on main's head instead of linking the pushed tag. So tag_name is set again, and checked.
+          linked="$(gh api --method PATCH "repos/$REPOSITORY/releases/$id" -f tag_name="$TAG" -F prerelease="$PRERELEASE" --jq '.tag_name')"
+          [ "$linked" = "$TAG" ] || { echo "::error::the draft release is linked to the tag $linked, not $TAG"; exit 1; }
+          echo "draft $id: tag_name=$linked prerelease=$PRERELEASE"
+
   linux:
     name: Linux (AppImage and deb)
-    needs: prepare
+    needs: [prepare, draft]
+    # The draft job is skipped in a dry run: that is not a failure.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write # creates the draft release and uploads the files
+      contents: write # uploads the files to the draft
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
@@ -163,24 +216,6 @@ jobs:
       - name: Check the files
         run: scripts/verify-release-files.sh "$VERSION" dist
 
-      - name: Link the draft to its tag, and keep it a pre-release when the version has a suffix
-        if: needs.prepare.outputs.dry_run != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-        run: |
-          set -euo pipefail
-          # electron-builder creates the draft with tag_name=$TAG, yet GitHub answered with tag_name "untagged-<hash>" and target_commitish main
-          # (v0.5.0-beta.2): publishing that draft would create a tag literally named untagged-<hash> on main's head instead of linking the pushed
-          # tag. So the draft is found by its name (the tag, set with releaseName) and its tag_name is set here. A stable's draft is created by the
-          # same call, so it gets the same treatment. electron-builder creates either a draft or a published pre-release; GitHub allows both flags,
-          # so the second one is set here too.
-          id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
-          [ -n "$id" ] || { echo "::error::no draft release for $TAG"; exit 1; }
-          gh api --method PATCH "repos/$REPOSITORY/releases/$id" -f tag_name="$TAG" -F prerelease="$PRERELEASE" \
-            --jq '"tag_name=\(.tag_name) draft=\(.draft) prerelease=\(.prerelease)"'
-
       - name: Check what the draft release holds
         if: needs.prepare.outputs.dry_run != 'true'
         env:
@@ -189,7 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           feed="$CHANNEL-linux.yml"
-          # By name, as above: GitHub may show the draft as untagged-<hash>. The newest one wins (the API lists newest first).
+          # By name, as the draft job does: GitHub may show the draft as untagged-<hash>. The newest one wins (the API lists newest first).
           id="$(gh api "repos/$REPOSITORY/releases" --paginate --jq '.[] | select(.draft and (.name == $ENV.TAG or .tag_name == $ENV.TAG)) | .id' | sed -n 1p)"
           [ -n "$id" ] || { echo "::error::no draft release named $TAG"; exit 1; }
           # Publishing creates the tag named in tag_name when it does not exist: anything but $TAG would put a stray tag on the draft's target.
@@ -219,12 +254,13 @@ jobs:
           retention-days: 7
 
   # ---- Windows: on every tag, unsigned -----------------------------------------------------------------------------------------------
-  # The NSIS installer is built for every tag and attached to the same draft as the Linux files, after the Linux job made and linked it. It is UNSIGNED:
+  # The NSIS installer is built for every tag, alongside the Linux files, and attached to the same draft the draft job made. It is UNSIGNED:
   # Windows shows a SmartScreen warning and automatic updates may be blocked until code signing is configured (docs/updates.md). The feed is the
   # channel's own (latest.yml, or beta.yml for a beta), so a beta never moves the Windows installs on the stable channel.
   windows:
     name: Windows NSIS (unsigned)
-    needs: [prepare, linux]
+    needs: [prepare, draft]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -255,7 +291,7 @@ jobs:
           PUBLISH: ${{ needs.prepare.outputs.dry_run == 'true' && 'never' || 'always' }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
-        # The release name is the tag, as in the Linux job: electron-builder then uploads into the draft that job linked to the tag instead of making another.
+        # The release name is the tag, as in the Linux job: electron-builder then uploads into the draft the draft job linked to the tag instead of making another.
         run: |
           npx electron-vite build
           npx electron-builder --config electron-builder.public.yml --win nsis --publish "$PUBLISH" -c.publish.channel="$CHANNEL" -c.publish.owner="$OWNER" -c.publish.repo="$REPO" -c.releaseInfo.releaseName="$TAG"
@@ -296,8 +332,8 @@ jobs:
   # (docs/updates.md). Attached to the same draft release when asked for.
   macos:
     name: macOS dmg and zip (experimental, unsigned)
-    if: inputs.experimental_platforms == true
-    needs: [prepare, linux]
+    needs: [prepare, draft]
+    if: ${{ !failure() && !cancelled() && inputs.experimental_platforms == true }}
     runs-on: macos-latest
     timeout-minutes: 60
     permissions:

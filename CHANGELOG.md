@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stage on the open engine no longer keeps posting that it is done instead of ending.** A model that finished its work and kept announcing it with *SendMessage*, step after step, never closed its stage. The message tool now tells the model that it does not end the stage, and three steps in a row of nothing but messages end the step: the app asks for the final answer, as after a plain reply.
+- **The runs made before 0.8.0 are back on the runs screen.** 0.8.0-beta.1 refused every run file written by an earlier version, because each stage of the run's flow now records whether the cycle's autonomy switch was on; a run without it reads as having it off. The files themselves were never changed.
+
 ## [0.8.0-beta.1] - 2026-10-07
 
 ### Added

@@ -47,6 +47,11 @@ export interface ToolImpl {
   description: string;
   parameters: Json;
   run(input: Json, ctx: ToolContext): Promise<ToolResult>;
+  /**
+   * A tool that only talks (posts a note) and moves no work forward. A model that calls nothing else for a few steps in a row is taken as done and asked for its
+   * final answer: a model that keeps announcing the end with notes would otherwise never end its step.
+   */
+  note?: boolean;
 }
 
 // A failure the model should read and recover from, not a crash.

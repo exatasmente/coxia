@@ -958,7 +958,7 @@
   "main.runner.tools.unknownAgent": "\"{to}\" is not an agent of the team. The agents are: {list}.",
   "main.runner.tools.emptyText": "The message had no text.",
   "main.runner.tools.emptyTopic": "The conversation needs a topic.",
-  "main.runner.tools.sent": "Message delivered in the conversation of the run.",
+  "main.runner.tools.sent": "Message delivered in the conversation of the run. It does not end your stage: when your work is done, stop calling tools and give your final answer.",
   "main.runner.tools.notInTime": "The stage was already finishing: the message did not reach the agent and its text was recorded in the conversation.",
   "main.runner.tools.conversationOpened": "Conversation opened with {called}: it happens in {thread}. What you say goes there.",
   "main.runner.tools.callRefusedCycle": "{called} is already in the call chain of this run: a loop of agents calling each other is not opened.",

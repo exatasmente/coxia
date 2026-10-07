@@ -28,6 +28,9 @@ import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './to
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import { t } from '../../../shared/i18n';
 
+/** Steps in a row of nothing but notes after which a model is taken as done (see `ToolImpl.note`). */
+const NOTE_STEPS_MAX = 3;
+
 export type StructuredStrategy = 'auto' | 'response_format' | 'tool' | 'prompt';
 
 export interface Capabilities {
@@ -418,6 +421,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   let turns = 0;
   let nudges = 0;
   let repairs = 0;
+  // Steps in a row whose every tool call was a note (`ToolImpl.note`): at NOTE_STEPS_MAX the step is taken as the end of the work.
+  let noteSteps = 0;
   let forceFinal = finalDef !== null && impls.length === 0;
   const responseFormat: Json | undefined = p.schema ? { type: 'json_schema', json_schema: { name: 'answer', schema: p.schema, strict: false } } : undefined;
 
@@ -482,7 +487,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
       const images = results.flatMap((r) => r.images ?? []);
       if (images.length) write(imageMessage(images));
-      continue;
+      const onlyNotes = c.toolCalls.every((tc) => impls.find((i) => i.name === tc.function.name)?.note === true);
+      noteSteps = onlyNotes ? noteSteps + 1 : 0;
+      // A model that only posts notes for a few steps has finished and is announcing it: the step ends here and the answer is asked for, as after a plain text.
+      if (noteSteps < NOTE_STEPS_MAX) continue;
+      noteSteps = 0;
     }
     if (!p.schema) {
       // A call without a schema has no shape to collect: the text is the answer, but the door is asked first, since the step just ended and a message that arrived
