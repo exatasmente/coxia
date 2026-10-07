@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stage no longer stands still after its agent answered.** In 0.8.0-beta.1 and beta.2, a stage whose agent ended a step with plain text (common on the open engine) waited for a message that was not coming instead of asking for the final answer, and sat there until its idle limit or until the run was cancelled. The stage now asks for the answer at once when nothing is waiting for it.
+
 ## [0.8.0-beta.2] - 2026-10-07
 
 ### Fixed
