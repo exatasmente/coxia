@@ -45,6 +45,16 @@ describe('a path of the stage output folder', () => {
     expect(resolveOutputPath(stageDir, '/coxia/out/link.txt')).toMatchObject({ ok: false, problem: 'link' });
   });
 
+  it('refuses a common file that ends behind a link of a dependency inside the folder', () => {
+    // The clone's dependency links live inside the output folder on the host, and the sandbox mounts it as it is: a `node_modules` link with a common file
+    // behind it walks through no link in the written path and still leaves the folder.
+    mkdirSync(join(stageDir, 'deps'), { recursive: true });
+    writeFileSync(join(stageDir, 'deps', 'x.txt'), 'x');
+    symlinkSync(join(stageDir, 'deps'), join(stageDir, 'out', 'node_modules'));
+    expect(resolveOutputPath(stageDir, 'node_modules/x.txt')).toMatchObject({ ok: false, problem: 'link' });
+    expect(resolveOutputPath(stageDir, '/coxia/out/node_modules/x.txt')).toMatchObject({ ok: false, problem: 'link' });
+  });
+
   it('says when the file is not there, or is not a file', () => {
     expect(resolveOutputPath(stageDir, 'nope.png')).toMatchObject({ ok: false, problem: 'missing' });
     expect(resolveOutputPath(stageDir, 'shots')).toMatchObject({ ok: false, problem: 'not-file' });

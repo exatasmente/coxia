@@ -170,6 +170,12 @@ describe('planWrite', () => {
     await expect(plan({ op: 'setIssueLabels', project: 'acme/app', iid: 12, add: ['a'], remove: [] })).rejects.toMatchObject({ code: 'unsupported' });
     await expect(plan({ op: 'playJob', project: 'acme/app', jobId: 1 })).rejects.toMatchObject({ code: 'unsupported' });
   });
+
+  it('plans the upload of a piece of evidence as a file of the repository downloads', async () => {
+    const out = await plan({ op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' });
+    expect(out).toEqual([{ vcs: 'bitbucket', via: 'api', method: 'POST', endpoint: 'repositories/acme/app/downloads', fields: {}, headers: { 'Content-Type': 'image/png', 'X-File-Name': 'ev-1.png' }, bodyFile: '/tmp/ev-1.png' }]);
+    for (const c of out) expect(() => validateBitbucketCommand(c)).not.toThrow();
+  });
 });
 
 describe('validateCommand: what a Bitbucket write may look like', () => {

@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { autonomousOf } from '../../shared/config/squads';
 import type { AgentDef, CommentTemplate, WorkspaceConfig } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
+import { EVIDENCE_KIND_MEDIA, type EvidenceUpload, isUploadable, uploadNameOf, withEvidenceImages } from '../../shared/evidence';
 import { type ForumMessage, type PublishedRef, runThreadId } from '../../shared/forum';
 import { createTranslator } from '../../shared/i18n';
 import { crMarkOf } from '../../shared/i18n/terms';
@@ -37,9 +41,10 @@ import {
 import type { ReleaseAction, VcsCommand } from '../../shared/types';
 import { priorityOf, resolvePriority } from '../../shared/priority';
 import { redact } from '../errorlog-core';
-import type { ForumStore } from '../forum-core';
+import { type ForumStore } from '../forum-core';
 import type { RunStore } from '../runs-core';
 import { moveRun } from '../runs-forum';
+import { VcsError } from '../vcs/errors';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
 import { type BranchState, type MilestoneIssue, type ReleaseBrief, type RemoteRelease, activitiesText, releaseRecord, releaseTitle } from './release';
 import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
@@ -123,6 +128,11 @@ export interface PublisherDeps {
   env(): PublisherEnv;
   door: Door;
   now?(): Date;
+  /**
+   * The images of the evidence a stage cites, ready to be sent to the code host. Filled in the process that holds the evidence bytes (the app); without it
+   * a comment that cites evidence says how many pieces there are instead of embedding them. Never carries more than the images under the upload ceiling.
+   */
+  evidenceUploads?(run: Run, ids: readonly string[]): { images: EvidenceUpload[]; total: number };
   /** The tags of the repository of a release run, as the local clone has them (a release run reads the beta it waits for from there). Without it the beta waits never end by themselves. */
   localTags?(run: Run): Promise<string[]>;
   /** What the remote of a release run's repository has of its version right now (null when it could not be read). Without it the waits for the host never end by themselves. */
@@ -211,6 +221,30 @@ function prRefOf(response: unknown): { iid: number | null; url: string | null } 
   return { iid: typeof n === 'number' ? n : typeof n === 'string' && /^\d+$/.test(n) ? Number(n) : null, url };
 }
 
+/**
+ * Fills what only the caller of an upload can know and the proposal never stores: the file it reads and the headers it sends. On GitHub that is the
+ * credential and the User-Agent of the upload host; a transport that cannot carry a file is refused here, so a comment that cannot embed an image says so.
+ */
+async function prepareUpload(provider: VcsProvider, commands: VcsCommand[], media: string): Promise<VcsCommand[]> {
+  if (!commands.some((c) => c.bodyFile)) return commands;
+  const token = await provider.uploadToken();
+  if (!token) throw new VcsError('no_token', { id: '', ref: '-' });
+  return commands.map((c) =>
+    c.bodyFile
+      ? provider.kind === 'github'
+        ? { ...c, headers: { ...(c.headers ?? {}), 'Content-Type': media, 'User-Agent': 'Coxia', Authorization: `Bearer ${token}` } }
+        : { ...c, headers: { ...(c.headers ?? {}), 'Content-Type': media } }
+      : c,
+  );
+}
+
+/** Where the host says an uploaded piece of evidence lives: the address a comment embeds it by. */
+function embedUrlOf(response: unknown): string | null {
+  const r = rec(response);
+  const url = [r.url, r.web_url, r.html_url, r.href, r.links && rec(r.links)?.html && rec(rec(r.links).html).href, r.download && rec(r.download)?.link].find((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u));
+  return url ?? (typeof r.markdown === 'string' ? /\((https?:\/\/[^)]+)\)/.exec(r.markdown)?.[1] ?? null : null);
+}
+
 interface Delivery {
   key: string;
   /** The stage of the run the thread's message about it belongs to, and which kinds of message it is. */
@@ -226,6 +260,8 @@ interface Delivery {
   autonomous: boolean;
   /** The first line of the previous version is compared with this one to tell whether the edit changes what the comment says. */
   announce: boolean;
+  /** The stage this comment belongs to, when it has one: what tells the evidence a comment cites beside its text. */
+  end?: StageEnd;
 }
 
 export function createPublisher(deps: PublisherDeps): Publisher {
@@ -261,6 +297,52 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   const titleOf = (tpl: CommentTemplate): string => cycleText(tpl.title, lang());
   const stageAutonomy = (run: Run, stage: string): boolean => run.stages.find((s) => s.stage === stage)?.autonomous ?? false;
   const problemsText = (problems: { code: string; sample: string }[]): string => problems.map((p) => (p.sample ? `${p.code} (${p.sample})` : p.code)).join(', ');
+
+  // ---- the evidence a comment carries -----------------------------------------------------------------------------------------------
+
+  /** The ids a stage's own output cites, in order and each once. */
+  const citedEvidence = (end: StageEnd | undefined): string[] => {
+    if (!end) return [];
+    const ids = [...end.output.evidence, ...(end.output.scenarios ?? []).flatMap((s) => s.evidenceIds ?? [])];
+    return [...new Set(ids)];
+  };
+
+  /** The pieces the run still has and may send up: an image under the ceiling, in the order the stage cited them; `total` counts every citation. */
+  const uploadableEvidence = (run: Run, ids: readonly string[]): { images: EvidenceUpload[]; total: number } => {
+    const given = deps.evidenceUploads?.(run, ids) ?? { images: [], total: ids.length };
+    return { images: given.images.filter(isUploadable), total: Math.max(given.total, given.images.length) };
+  };
+
+  /**
+   * Sends the pieces of evidence a comment cites to the code host just before the comment goes up, and returns the comment with them embedded. The files
+   * are written to a throwaway folder (this process holds the bytes; the executable that carries out the commands does not), the address each host answers
+   * with is embedded under the text, and a piece the host refused, was too big or was not an image is counted in a line instead of being dropped silently.
+   */
+  async function withEvidence(run: Run, provider: VcsProvider, body: string, ids: readonly string[]): Promise<string> {
+    const { images, total } = uploadableEvidence(run, ids);
+    if (!images.length) return total > 0 ? withEvidenceImages(body, [], total) : body;
+    const dir = mkdtempSync(join(tmpdir(), 'coxia-evidence-'));
+    try {
+      const places: { title: string; url: string }[] = [];
+      for (const image of images) {
+        const at = join(dir, uploadNameOf({ id: image.id, media: image.media }));
+        writeFileSync(at, image.bytes, { mode: 0o600 });
+        const op: VcsWriteOp = { op: 'uploadAttachment', project: projects(run).repo, path: at, name: uploadNameOf({ id: image.id, media: image.media }), media: image.media };
+        const commands = await provider.planWrite(op);
+        // A host that plans nothing for the file is one that cannot take it: the piece is counted as missing, never embedded, and the comment goes on.
+        if (!commands.some((c) => c.bodyFile)) return withEvidenceImages(body, places, total - places.length);
+        const filled = await prepareUpload(provider, commands, image.media);
+        const responses = await door.post({ issue: trackIid(run), key: `evidence:${run.id}:${image.id}`, summary: image.title, by: 'app' }, filled);
+        const at0 = filled.findIndex((c) => c.bodyFile !== undefined);
+        const url = embedUrlOf(at0 >= 0 ? responses[at0] : undefined);
+        if (url) places.push({ title: image.title, url });
+        else return withEvidenceImages(body, places, total - places.length);
+      }
+      return withEvidenceImages(body, places, total - places.length);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   // ---- the forum links to what was posted ------------------------------------------------------------------------------------------
 
@@ -336,10 +418,21 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const marked = findMarked(await commentsOf(provider, run, x.target, x.target === 'mr' ? (where as { project: string; iid: number }) : null), run.id, x.key);
       if (marked) noteId = marked.id;
     }
+    // The evidence the comment cites goes up just before it: the pieces the host takes are embedded, and the rest are counted in the text. A host that
+    // cannot take any of them leaves the comment as it was written.
+    let body = x.body;
+    const ids = citedEvidence(x.end);
+    if (ids.length) {
+      try {
+        body = await withEvidence(run, provider, body, ids);
+      } catch (e) {
+        say(run, 'runner.evidence.uploadFailed', { title: x.title, reason: message(e) });
+      }
+    }
     const op: VcsWriteOp =
       noteId === null
-        ? { op: x.target === 'issue' ? 'commentIssue' : 'commentMr', project: where.project, iid: where.iid, body: x.body }
-        : { op: x.target === 'issue' ? 'editIssueNote' : 'editMrNote', project: where.project, iid: where.iid, noteId, body: x.body };
+        ? { op: x.target === 'issue' ? 'commentIssue' : 'commentMr', project: where.project, iid: where.iid, body }
+        : { op: x.target === 'issue' ? 'editIssueNote' : 'editMrNote', project: where.project, iid: where.iid, noteId, body };
     const commands = await provider.planWrite(op);
 
     const meta = { issue: trackIid(run), summary: x.title, by: x.by, bodyHash: hash };
@@ -452,7 +545,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const marker = markerOf(run.id, end.stage.id);
     const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary, tail: [notesTail(end), evidenceTail(end)].filter(Boolean).join('\n\n') || undefined });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
-    await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true });
+    await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true, end });
   }
 
   async function question(runId: string, e: { stage: FlowStage; agent: AgentDef; question: string; autonomous: boolean }): Promise<void> {
@@ -670,8 +763,18 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const closes = closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
+      // The description carries the evidence the stage cites the same way a comment does; without a host it stays as it was written.
+      const provider = door.provider();
+      let body = checked.body;
+      if (provider && citedEvidence(end).length && !door.refusal()) {
+        try {
+          body = await withEvidence(run, provider, body, citedEvidence(end));
+        } catch (e) {
+          say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
+        }
+      }
       const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
-      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
+      moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(body), body, headline: rendered.status, title }, now()));
     }
     // Each time the stage ends is a new state of the branch: a push of an earlier one that still waits is replaced.
     const attempt = run.stages.find((s) => s.stage === end.stage.id)?.attempts ?? 1;

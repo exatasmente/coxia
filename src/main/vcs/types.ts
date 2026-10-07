@@ -219,7 +219,13 @@ export type VcsWriteOp =
   /** An issue closed (what a tracking issue becomes when its work is done). */
   | { op: 'closeIssue'; project: string; iid: number }
   /** A pull request from a branch of the same repository. */
-  | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string };
+  | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string }
+  /**
+   * One image of evidence sent up so a comment can embed it: the host answers where it lives. `path` is the file on disk (the executor reads it, the
+   * planner never does); `name` is the name the host is told, `media` its content type. GitHub takes it as a file on its own upload host, GitLab as an
+   * upload of the project, Bitbucket as a multipart attachment of the repository — the provider says the one its host supports.
+   */
+  | { op: 'uploadAttachment'; project: string; path: string; name: string; media: string };
 
 export type VcsWriteName = VcsWriteOp['op'];
 
@@ -300,6 +306,11 @@ export interface VcsProvider {
 
   /** Describes a write as the commands that would run, reading what it needs to be exact. Runs nothing. */
   planWrite(op: VcsWriteOp): Promise<VcsCommand[]>;
+  /**
+   * The credential an upload of evidence carries in its own headers, right before the call (the proposal itself never holds it). Null when the provider
+   * talks to its host through a CLI instead (GitLab's `glab` posts the file itself, with its own login).
+   */
+  uploadToken(): Promise<string | null>;
   /** Checks that a command (possibly read back from disk) has a shape this provider may run. Throws the reason. */
   validateCommand(command: VcsCommand): void;
 }

@@ -685,6 +685,8 @@
   "cycle.agentFlow.comment.pr.s3.heading": "Achados extras",
   "cycle.agentFlow.comment.pr.s3.guidance": "Qualquer coisa encontrada fora do escopo da issue; cada item diz se entra nesta mudança ou vira outra issue. Deixe vazio quando não houver.",
   "vcs.write.aboutFile": "Este comentário é sobre o arquivo inteiro.",
+  "vcs.write.evidenceUpload": "enviar uma comprovação ao host de código",
+  "vcs.write.evidenceUploadName": "comprovacao",
   "vcs.write.reviewNoRefs": "o {crLong} ainda não tem diff, então não dá para colocar uma revisão nele",
   "cycle.agentFlowEngineering.name": "Ciclo de agentes: engenharia",
   "cycle.agentFlowEngineering.description": "Só a parte de engenharia do ciclo de agentes: refinar, planejar, implementar, revisar e QA, com você nos dois portões, terminando em pronto. Para um time que tem seus próprios papéis de suporte e produto.",

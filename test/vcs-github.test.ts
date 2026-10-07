@@ -269,6 +269,12 @@ describe('planWrite', () => {
     await expect(plan({ op: 'playJob', project: 'acme/app', jobId: 1 })).rejects.toMatchObject({ code: 'unsupported' });
   });
 
+  it('plans the upload of a piece of evidence: a file on GitHub\'s uploads host, with its own type', async () => {
+    const out = await plan({ op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' });
+    expect(out).toEqual([{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'uploads.github.com/?repository_id=acme%2Fapp&name=ev-1.png&content_type=image%2Fpng', fields: {}, headers: { 'Content-Type': 'image/png', 'User-Agent': 'Coxia' }, bodyFile: '/tmp/ev-1.png' }]);
+    for (const c of out) expect(() => validateGitHubCommand(c)).not.toThrow();
+  });
+
   it('refuses a thread id that is not a node id', async () => {
     await expect(plan({ op: 'resolveThread', project: 'acme/app', iid: 7, threadId: 'x"}){y' })).rejects.toBeInstanceOf(VcsError);
   });

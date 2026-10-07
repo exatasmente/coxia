@@ -90,7 +90,7 @@ describe('the runner writes to a code host through one door', () => {
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
     const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
     expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
-    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl', 'listMrsByTarget', 'getRelease', 'listIssues', 'issueUrl']));
+    expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'uploadToken', 'noteUrl', 'listMrsByTarget', 'getRelease', 'listIssues', 'issueUrl']));
     for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });
 });

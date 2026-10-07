@@ -34,6 +34,16 @@ export const GITHUB_CAPS: VcsCaps = VCS_CAPS.github;
 export const GITHUB_MUTATION =
   /^mutation \{ (?:resolveReviewThread\(input: \{ threadId: "[\w=-]{8,}" \}\) \{ thread \{ isResolved \} \}|(?:markPullRequestReadyForReview|convertPullRequestToDraft)\(input: \{ pullRequestId: "[\w=-]{8,}" \}\) \{ pullRequest \{ isDraft \} \}) \}$/;
 
+/**
+ * Why an upload of evidence to GitHub did not happen: it is refused before anything runs when the transport cannot carry a file, so the comment is sent
+ * without the image and says so instead of failing halfway. The check reads only the shape of the credential, never its value or the call.
+ */
+export function assertEvidenceUploadOk(c: VcsCommand): void {
+  const bearer = /^Bearer\s+\S+/i.test(c.headers?.Authorization ?? '');
+  const userAgent = !!(c.headers?.['User-Agent'] ?? '').trim();
+  if (c.via !== 'api' || !c.bodyFile || !bearer || !userAgent) throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') });
+}
+
 interface GhUser {
   id: number;
   login: string;
@@ -118,6 +128,8 @@ export interface GitHubOptions {
   id: string;
   host: string;
   transport: RestTransport;
+  /** The API credential an upload of evidence carries; null on the CLI transport, which is refused for an upload. */
+  token?: () => string | null;
 }
 
 /** How many pages of open pull requests of one branch are read (100 each): more than a release can have. */
@@ -577,10 +589,20 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
         case 'createMr':
           return [call('POST', `${repo(op.project)}/pulls`, { title: op.title, head: checkBranch(op.sourceBranch), base: checkBranch(op.targetBranch), body: op.body })];
+        case 'uploadAttachment': {
+          // GitHub has no "attach a file to an issue" call: its own editor sends the image to the repository's uploads host, which answers the address a
+          // comment embeds (`https://github.com/user-attachments/assets/...`). The token and the User-Agent go in the headers; the body is the file itself.
+          const name = /^[\w.-]{1,120}$/.test(op.name) ? op.name : t('vcs.write.evidenceUploadName');
+          const [owner, project] = op.project.split('/');
+          const q = `?repository_id=${enc(`${owner}/${project}`)}&name=${enc(name)}&content_type=${enc(op.media)}`;
+          return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: `uploads.github.com/${q}`, fields: {}, headers: { 'Content-Type': op.media, 'User-Agent': 'Coxia' }, bodyFile: op.path }];
+        }
       }
     },
 
     validateCommand: validateGitHubCommand,
+    // Only the API transport can carry a file to the uploads host; the CLI one is refused when an upload is planned.
+    uploadToken: async () => (tr.kind === 'api' ? (o.token?.() ?? null) : null),
   };
   return provider;
 }
@@ -622,6 +644,18 @@ function reviewCommentOk(c: unknown): boolean {
 
 /** What a GitHub write may look like: the listed REST calls with only the listed body keys, and the three GraphQL mutations. */
 export function validateGitHubCommand(c: VcsCommand): void {
+  // An upload of evidence is its own shape: a POST of a file to the uploads host, with no body fields and only its own headers.
+  if (c.endpoint.startsWith('uploads.github.com/')) {
+    if (c.method !== 'POST' || c.via !== 'api' || Object.keys(c.fields).length || !c.bodyFile || !/^uploads\.github\.com\/\?repository_id=[\w%./-]+&name=[\w%.-]+&content_type=[\w%./+-]+$/.test(c.endpoint)) {
+      throw new Error(t('vcs.validate.endpoint', { endpoint: c.endpoint }));
+    }
+    const keys = Object.keys(c.headers ?? {});
+    if (keys.some((k) => k !== 'Content-Type' && k !== 'User-Agent')) throw new Error(t('vcs.validate.body'));
+    if (!(c.headers?.['Content-Type'] ?? '').startsWith('image/')) throw new Error(t('vcs.validate.body'));
+    if (c.json !== undefined) throw new Error(t('vcs.validate.body'));
+    return;
+  }
+  if (c.headers || c.bodyFile) throw new Error(t('vcs.validate.endpoint', { endpoint: c.endpoint }));
   if (c.endpoint === 'graphql') {
     if ((c.via !== 'gh' && c.via !== 'api') || c.method !== 'POST' || Object.keys(c.fields).join() !== 'query' || c.json !== undefined || !GITHUB_MUTATION.test(c.fields.query ?? '')) {
       throw new Error(t('vcs.validate.githubGraphql'));

@@ -8,7 +8,9 @@ import { runsApi } from './runsApi';
 // The evidence a run kept, as the person handles it: the list of a stage with a thumbnail or a card, opening it in full and downloading it, and deleting it. Reading the
 // bytes goes through the runner's channel; the screen never touches the disk.
 
-const size = (bytes: number): string => (bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+/** The bytes as the person reads them: the unit comes from the catalog, never a bare "KB" in the code. */
+const size = (t: (key: string, params?: Record<string, string | number>) => string, bytes: number): string =>
+  bytes >= 1024 * 1024 ? t('ui.cycle.evidenceBlock.mb', { n: (bytes / (1024 * 1024)).toFixed(1) }) : t('ui.cycle.evidenceBlock.kb', { n: Math.max(1, Math.round(bytes / 1024)) });
 
 const stamp = (iso: string): string => new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -83,7 +85,7 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
         {record.inCycle && <span className="badge cy-tone-done">{t('ui.cycle.evidenceBlock.inCycle')}</span>}
       </div>
       {record.description && <p className="small cy-evidence-desc">{record.description}</p>}
-      <p className="faint small mono">{record.id} · {record.name} · {size(record.bytes)}{record.from ? ` · ${t('ui.cycle.evidenceBlock.from', { from: record.from })}` : ''}</p>
+      <p className="faint small mono">{record.id} · {record.name} · {size(t, record.bytes)}{record.from ? ` · ${t('ui.cycle.evidenceBlock.from', { from: record.from })}` : ''}</p>
       {open && image && (
         <div className="cy-evidence-view">
           {readFailed && <p className="small error">{t('ui.cycle.evidenceBlock.failed')}</p>}
@@ -177,7 +179,7 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
   return (
     <span className="cy-evidence-attach">
       <button type="button" className="cy-evidence-link" aria-pressed={open} onClick={() => setOpen((v) => !v)}>{t('ui.cycle.evidence.attachment')}: {attachment.name || attachment.id}</button>
-      <span className="faint small"> · {size(attachment.bytes)}</span>
+      <span className="faint small"> · {size(t, attachment.bytes)}</span>
       <button type="button" className="btn cy-mini" onClick={() => void download()}>{t('ui.cycle.evidenceBlock.download')}</button>
       {open && image && url && <img className="cy-evidence-thumb" src={url} alt={attachment.name} />}
       {failed && <span className="small error">{t('ui.cycle.evidenceBlock.failed')}</span>}

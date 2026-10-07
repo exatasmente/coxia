@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -117,7 +117,8 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
           return JSON.stringify(r.body).slice(0, RESULT_MAX);
         }
         if (!d.client) throw new VcsError('not_configured', { kind: 'GitLab' });
-        const r = await d.client.request(c.method, c.endpoint, { form: c.fields });
+        // An upload of evidence sends the file itself, with its own content type, rather than a form field.
+        const r = c.bodyFile ? await d.client.request(c.method, c.endpoint, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} }) : await d.client.request(c.method, c.endpoint, { form: c.fields });
         meta.code = r.status;
         meta.response = r.body;
         return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
@@ -171,7 +172,10 @@ export function githubExecutor(d: GitHubExecDeps): VcsExecutor {
           return JSON.stringify(r.body).slice(0, RESULT_MAX);
         }
         if (!d.client) throw new VcsError('not_configured', { kind: 'GitHub' });
-        const r = await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
+        // An upload of evidence goes to GitHub's own uploads host with the file as the body, not through the API root: the absolute call is made here.
+        const r = c.bodyFile
+          ? await d.client.absolute(`https://${c.endpoint}`, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} })
+          : await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
         meta.code = r.status;
         meta.response = r.body;
         return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);
@@ -185,7 +189,8 @@ export function bitbucketExecutor(d: { client: HttpClient; validate: (c: VcsComm
   return {
     async run(c, meta = {}) {
       d.validate(c);
-      const r = await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
+      // An upload of evidence goes to the repository's downloads with the file as the body; every other write carries a JSON body.
+      const r = c.bodyFile ? await d.client.absolute(`https://${c.endpoint}`, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} }) : await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
       meta.code = r.status;
       meta.response = r.body;
       return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);

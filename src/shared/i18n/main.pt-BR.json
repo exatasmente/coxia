@@ -1017,6 +1017,7 @@
   "main.forum.code.runner.pr.created": "{CrLong} aberto. {url}",
   "main.forum.code.runner.pr.failed": "Não deu para preparar o {crLong}: {reason}",
   "main.forum.code.runner.publish.failed": "A publicação no host de código falhou: {reason}",
+  "main.forum.code.runner.evidence.uploadFailed": "A comprovação citada em \"{title}\" não pôde ser enviada ao host: {reason}",
   "main.runner.comment.heldDetail": "Conferido antes de postar e retido: {problems}. Leia antes de dizer sim.",
   "main.runner.comment.proposalTitle": "{ref}: algo espera o seu sim em Ações",
   "main.runner.comment.noId": "o host de código não disse o que criou",

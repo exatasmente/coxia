@@ -253,7 +253,6 @@
   "ui.runner.saved": "Configuração das execuções salva.",
   "ui.runner.soleMaintainer": "Só eu mantenho o repositório",
   "ui.runner.soleMaintainerHint": "Para quando ninguém mais pode revisar: o host não deixa você aprovar um {crLong} que você abriu, e uma release nunca conseguiria integrá-lo. Ligado, o seu sim em Ações numa integração da release vale como a revisão de um {crLong} aberto pela conta que o app usa no host, em que ninguém pediu mudanças; toda integração da release passa a esperar esse sim, mesmo com um agente que roda sozinho. Um {crLong} que outra pessoa abriu continua precisando de uma aprovação no host. Desligado quando o repositório tem outras pessoas para revisar.",
-  "ui.runner.evidenceHint": "O que um agente guarda como comprovação do que viu (uma captura, uma imagem marcada, um registro) fica guardado com a execução. Esta escolha decide se uma cópia também vai para a pasta do ciclo e entra no commit da etapa. Só o computador muda: ela decide o que entra num commit. Vale para as comprovações novas a partir de agora.",
   "ui.runner.soleMaintainerOff": "Desligado: uma integração da release precisa de uma aprovação no host",
   "ui.runner.soleMaintainerOn": "Ligado: o seu sim numa integração da release vale como a revisão dos seus {crLongs}",
   "ui.runner.trigger": "Rótulo que pede uma execução",

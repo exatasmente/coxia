@@ -491,6 +491,9 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), content: { raw: op.body } })];
         case 'createMr':
           return [call('POST', `${repo(op.project)}/pullrequests`, { title: op.title, description: op.body, source: { branch: { name: op.sourceBranch } }, destination: { branch: { name: op.targetBranch } } })];
+        case 'uploadAttachment':
+          // Bitbucket attaches a file to a comment by its own call (`.../attachments`); it answers where the file lives and that address is embedded.
+          return [{ vcs: 'bitbucket', via: 'api', method: 'POST', endpoint: `${repo(op.project)}/downloads`, fields: {}, headers: { 'Content-Type': op.media, 'X-File-Name': op.name }, bodyFile: op.path }];
         case 'submitReview': {
           const n = checkIid(op.iid);
           const url = `${repo(op.project)}/pullrequests/${n}`;
@@ -512,14 +515,15 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     },
 
     validateCommand: validateBitbucketCommand,
+    // Bitbucket's upload carries the same Basic credential the client already sends on every call.
+    uploadToken: async () => null,
   };
   return provider;
 }
 
 const R = '[\\w.-]+/[\\w.-]+';
 const WRITES: { method: VcsCommand['method']; re: RegExp; allowed: string[]; required: string[] }[] = [
-  { method: 'POST', re: new RegExp(`^repositories/${R}/issues/\\d+/comments$`), allowed: ['content'], required: ['content'] },
-  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments$`), allowed: ['content', 'parent', 'inline'], required: ['content'] },
+  { method: 'POST', re: new RegExp(`^repositories/${R}/issues/\\d+/comments$`), allowed: ['content'], required: ['content'] },  { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments$`), allowed: ['content', 'parent', 'inline'], required: ['content'] },
   { method: 'PUT', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/comments/\\d+$`), allowed: ['content'], required: ['content'] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/pullrequests/\\d+/request-changes$`), allowed: [], required: [] },
   { method: 'POST', re: new RegExp(`^repositories/${R}/issues$`), allowed: ['title', 'content'], required: ['title', 'content'] },
@@ -534,6 +538,15 @@ const WRITES: { method: VcsCommand['method']; re: RegExp; allowed: string[]; req
 
 /** What a Bitbucket write may look like: the listed REST calls with only the listed body keys. */
 export function validateBitbucketCommand(cmd: VcsCommand): void {
+  // An upload of evidence: a POST of a file to the repository's downloads, with its own type and its name in a header; there is no body field.
+  if (/^repositories\/[\w.-]+\/[\w.-]+\/downloads$/.test(cmd.endpoint)) {
+    const keys = Object.keys(cmd.headers ?? {});
+    if (cmd.via !== 'api' || cmd.method !== 'POST' || Object.keys(cmd.fields).length || !cmd.bodyFile || cmd.json !== undefined || keys.some((k) => k !== 'Content-Type' && k !== 'X-File-Name') || !(cmd.headers?.['Content-Type'] ?? '').startsWith('image/')) {
+      throw new Error(t('vcs.validate.endpoint', { endpoint: cmd.endpoint }));
+    }
+    return;
+  }
+  if (cmd.headers || cmd.bodyFile) throw new Error(t('vcs.validate.endpoint', { endpoint: cmd.endpoint }));
   const rule = WRITES.find((w) => w.method === cmd.method && w.re.test(cmd.endpoint));
   if (!rule || /\.\.|%2e/i.test(cmd.endpoint) || cmd.via !== 'api' || Object.keys(cmd.fields).length) throw new Error(t('vcs.validate.endpoint', { endpoint: cmd.endpoint }));
   let body: Record<string, unknown> = {};

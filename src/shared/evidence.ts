@@ -63,6 +63,39 @@ export interface EvidenceView extends EvidenceRecord {
 
 export const evidenceViewOf = (r: EvidenceRecord): EvidenceView => ({ ...r, media: EVIDENCE_KIND_MEDIA[r.kind] });
 
+/** What the code host is told about one piece of the evidence an agent cited: the bytes go up, the title reads underneath. */
+export interface EvidenceUpload {
+  id: string;
+  name: string;
+  media: string;
+  bytes: Uint8Array;
+  title: string;
+}
+
+/** The largest piece of evidence an upload to the code host carries; above it the piece stays in the app and the comment says how many there are. */
+export const EVIDENCE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
+
+const EVIDENCE_KIND_OF_MEDIA: Record<string, EvidenceKind> = Object.fromEntries(Object.entries(EVIDENCE_KIND_MEDIA).map(([k, v]) => [v, k as EvidenceKind]));
+
+/** The name an upload carries: the evidence id and the extension the kind was stored under, so the host is never told a name the agent made up. */
+export const uploadNameOf = (e: Pick<EvidenceUpload, 'id' | 'media'>): string => {
+  const kind = EVIDENCE_KIND_OF_MEDIA[e.media];
+  return kind ? `${e.id}.${EVIDENCE_EXT[kind]}` : e.id;
+};
+
+/** Whether an upload is small enough and honest enough to be sent: only images the app accepted, under the ceiling. */
+export const isUploadable = (e: Pick<EvidenceUpload, 'media' | 'bytes'>): boolean => e.media.startsWith('image/') && e.bytes.length > 0 && e.bytes.length <= EVIDENCE_UPLOAD_MAX_BYTES;
+
+/**
+ * The body a comment is sent with when it cites pieces of evidence: every uploaded image is embedded under the text, in the order it was cited, and the
+ * pieces the host could not take are counted in a line instead of being dropped without a word.
+ */
+export function withEvidenceImages(body: string, uploaded: readonly { title: string; url: string }[], missing: number): string {
+  const embed = uploaded.map((u) => `![${u.title}](${u.url})`);
+  const tail = missing > 0 ? `_${missing} piece(s) of evidence stay in the app._` : '';
+  return [body, ...embed, tail].filter(Boolean).join('\n\n');
+}
+
 /** The marks the marking tool draws, in pixels of the image. */
 export const MARK_KINDS = ['rectangle', 'arrow', 'ellipse', 'label', 'marker', 'blur'] as const;
 export type MarkKind = (typeof MARK_KINDS)[number];

@@ -214,6 +214,17 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
       if (meta) meta.code = forge.failWith.status;
       throw new Error(forge.failWith.message);
     }
+    // An upload of evidence: the forge answers the address a comment embeds the image by; its body is the file on disk, never a JSON field.
+    if (command.bodyFile) {
+      forge.writes.push({ method: command.method, endpoint: command.endpoint, json: { headers: command.headers ?? {} } });
+      const name = new URLSearchParams(command.endpoint.split('?')[1] ?? '').get('name') ?? 'file';
+      const response = { url: `https://example.test/${PROJECT}/assets/${name}` };
+      if (meta) {
+        meta.code = 201;
+        meta.response = response;
+      }
+      return JSON.stringify(response).slice(0, 2000);
+    }
     const json = command.json ? (JSON.parse(command.json) as Record<string, any>) : {};
     forge.writes.push({ method: command.method, endpoint: command.endpoint, json: command.endpoint === 'graphql' ? { query: command.fields.query } : json });
     let response: unknown = {};
@@ -283,6 +294,6 @@ export function makeForge(over: { pr?: Partial<ForgePr> | null; linked?: boolean
   };
 
   const settings: VcsSettings = { id: 'gh', kind: 'github', host: 'example.test', apiUrl: '', user: 'runner-bot', secretRef: null, cli: 'gh', preference: 'api', repos: [PROJECT] };
-  const runtime: VcsRuntime = { settings, provider: createGitHubProvider({ id: 'gh', host: 'example.test', transport }), exec: { run } };
+  const runtime: VcsRuntime = { settings, provider: createGitHubProvider({ id: 'gh', host: 'example.test', transport, token: () => 'TESTTOKEN-not-real-0001' }), exec: { run } };
   return forge;
 }

@@ -332,10 +332,17 @@ describe('planWrite: the commands are the ones the app always proposed', () => {
       { op: 'resolveThread', project: 'acme/app', iid: 1, threadId: 'abcdef12' },
       { op: 'setIssueLabels', project: '1', iid: 1, add: ['a'], remove: ['b'] },
       { op: 'playJob', project: '1', jobId: 3 },
+      { op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' },
     ];
     for (const op of ops) {
       for (const c of await plan(true, op)) expect(() => validateGitLabCommand(c), op.op).not.toThrow();
     }
+  });
+
+  it('plans the upload of a piece of evidence as an upload of the project', async () => {
+    const out = await plan(false, { op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' });
+    expect(out).toEqual([{ vcs: 'gitlab', via: 'api', method: 'POST', endpoint: `projects/${P}/uploads`, fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: '/tmp/ev-1.png' }]);
+    for (const c of out) expect(() => validateGitLabCommand(c)).not.toThrow();
   });
 });
 

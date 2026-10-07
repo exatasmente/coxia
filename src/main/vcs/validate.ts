@@ -31,7 +31,7 @@ export function auditKindOf(c: VcsCommand): AuditKind {
   return c.endpoint === 'graphql' ? 'graphql' : commandKind(c);
 }
 
-/** The fields the audit log keeps: the form fields plus the JSON body when there is one. */
+/** The fields the audit log keeps: the form fields plus the JSON body when there is one. An upload's header (filled with the credential right before the call) and its file body never reach the log. */
 export function auditFieldsOf(c: VcsCommand): Record<string, string> {
   return c.json === undefined ? c.fields : { ...c.fields, body: c.json };
 }

@@ -685,6 +685,8 @@
   "cycle.agentFlow.comment.pr.s3.heading": "Extra findings",
   "cycle.agentFlow.comment.pr.s3.guidance": "Anything found outside the issue's scope; each item says whether it enters this change or becomes another issue. Leave empty when there is none.",
   "vcs.write.aboutFile": "This comment is about the whole file.",
+  "vcs.write.evidenceUpload": "sending a piece of evidence to the code host",
+  "vcs.write.evidenceUploadName": "evidence",
   "vcs.write.reviewNoRefs": "the {crLong} has no diff yet, so a review cannot be placed on it",
   "cycle.agentFlowEngineering.name": "Agent cycle: engineering",
   "cycle.agentFlowEngineering.description": "Only the engineering part of the agent cycle: refine, plan, implement, review and QA, with you at the two gates, ending at ready. For a team that has its own support and product roles.",

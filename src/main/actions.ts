@@ -290,6 +290,21 @@ async function runVcs(c: VcsCommand, meta: ExecMeta = {}): Promise<string> {
   return runtimeFor(c).exec.run(c, meta);
 }
 
+/**
+ * Fills the headers an upload of evidence sends but a proposal never stores (the credential of the host, resolved at the moment it runs) and rejects one
+ * whose host or transport cannot carry a file: the proposal stays for the person to see, and the write says why instead of running half of it.
+ */
+async function withUploadHeaders(c: VcsCommand): Promise<VcsCommand> {
+  if (!c.bodyFile) return c;
+  const runtime = runtimeFor(c);
+  const token = await runtime.provider.uploadToken();
+  if (!token && runtime.provider.kind === 'github') throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') });
+  const headers = token ? { ...(c.headers ?? {}), Authorization: `Bearer ${token}` } : (c.headers ?? {});
+  const filled: VcsCommand = { ...c, headers };
+  runtime.provider.validateCommand(filled);
+  return filled;
+}
+
 const isVcsAction = (a: ReleaseAction): boolean => (a.kind === 'gitlab' || a.kind === 'vcs') && !!a.command;
 
 export function listActions(): ReleaseAction[] {
@@ -509,7 +524,8 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       const all = a.commands ?? [a.command as VcsCommand];
       const outputs: string[] = [];
       for (let i = a.done ?? 0; i < all.length; i++) {
-        const c = all[i];
+        // An upload of evidence carries its header only at the moment it runs: the proposal never stores the credential.
+        const c = await withUploadHeaders(all[i]);
         let response: unknown;
         outputs.push(
           await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {

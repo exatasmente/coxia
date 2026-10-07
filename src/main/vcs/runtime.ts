@@ -110,7 +110,7 @@ export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
     return {
       settings: s,
       api: client,
-      provider: createGitHubProvider({ id: s.id, host: s.host, transport }),
+      provider: createGitHubProvider({ id: s.id, host: s.host, transport, token: () => ((deps.hasToken ?? ((x: VcsSettings) => !!x.secretRef))(s) ? deps.token(s) : null) }),
       exec: githubExecutor({ host: s.host, command: s.cli, env, run: deps.run, client, graphqlClient, validate: validateGitHubCommand }),
     };
   }

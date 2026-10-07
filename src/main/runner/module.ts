@@ -15,6 +15,7 @@ import { getConfig, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
 import { readArtifact } from './cycleFolder';
+import { uploadsOf } from '../evidence/store';
 import { realDoor, onRunnerActionDone, onRunnerActionRefused } from './door';
 import { remoteReleaseOf } from './release';
 import { createPublisher } from './publish';
@@ -90,6 +91,13 @@ export const runsModule: Module = (ctx) => {
       config: getConfig,
       env: () => ({ issueProject: rc().issues.project ?? '', repos: rc().repos.map((x) => ({ id: x.id, projectPath: x.projectPath })) }),
       door: realDoor,
+      // The evidence a comment cites, ready to go up: read here, where the workspace's data folder is; the executable that runs the command never sees the file until the throwaway copy is written.
+      evidenceUploads: (run, ids) => {
+        const dataDir = ATAS;
+        const all = uploadsOf(dataDir, run, [...ids]);
+        const present = ids.filter((id) => run.evidence?.[id]);
+        return { images: all, total: present.length || ids.length };
+      },
       // The tags of the repository of a release run: what the wait for its beta reads (the clone's own, never a path from the run's file but its worktree, which shares them).
       localTags: async (run) => {
         const at = existsSync(run.worktree) ? run.worktree : rc().repos.find((x) => x.id === run.repo)?.path;

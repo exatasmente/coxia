@@ -394,6 +394,13 @@ export interface VcsCommand {
   fields: Record<string, string>;
   /** Request body as JSON text, for the providers that take one (GitHub and Bitbucket). */
   json?: string;
+  /**
+   * Extra request headers of an upload, filled by the caller that holds the bytes right before the call and never stored with the proposal (GitHub wants
+   * its own file upload host and a User-Agent next to the Authorization it is already sent). Never carries a secret that is not already the credential.
+   */
+  headers?: Record<string, string>;
+  /** An upload whose body is a file on disk rather than a string: the executor reads it and sends it as it is, never through a text field. */
+  bodyFile?: string;
 }
 
 /** The name the type had when GitLab was the only host. */

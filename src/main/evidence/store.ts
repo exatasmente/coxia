@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { constants, openSync, closeSync, readSync } from 'node:fs';
 import { join } from 'node:path';
-import { EVIDENCE_EXT, isEvidenceImage, type EvidenceKind, type EvidenceRecord } from '../../shared/evidence';
+import { EVIDENCE_EXT, EVIDENCE_KIND_MEDIA, isEvidenceImage, uploadNameOf, type EvidenceKind, type EvidenceRecord, type EvidenceUpload } from '../../shared/evidence';
 import type { Run } from '../../shared/runs';
 import { checkPath } from '../engine/guard';
 import { detectKind, type KindProblem } from './type';
@@ -145,3 +145,17 @@ export function copyToCycleFolder(run: Run, record: Pick<EvidenceRecord, 'id' | 
 
 /** Whether a record is of an image, the only ones the marking tool draws on. */
 export const isImageRecord = (record: Pick<EvidenceRecord, 'kind'>): boolean => isEvidenceImage(record.kind as EvidenceKind);
+
+/** The evidence a run kept, ready to be sent to the code host: what the agent cited, in the order it cited it, with the records it still has. */
+export function uploadsOf(dataDir: string, run: Run, ids: readonly string[]): EvidenceUpload[] {
+  const out: EvidenceUpload[] = [];
+  for (const id of ids) {
+    const record = run.evidence?.[id];
+    if (!record) continue;
+    const bytes = readEvidence(dataDir, run.id, record);
+    if (!bytes) continue;
+    const media = EVIDENCE_KIND_MEDIA[record.kind];
+    out.push({ id: record.id, name: uploadNameOf({ id: record.id, media }), media, bytes, title: record.title });
+  }
+  return out;
+}

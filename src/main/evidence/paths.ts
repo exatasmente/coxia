@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { checkPath } from '../engine/guard';
 import { OUT } from '../sandbox/policy';
 
@@ -57,6 +57,8 @@ export function resolveOutputPath(stageDir: string, input: unknown): ResolvedOut
   if (candidate.split(/[\\/]+/).includes('..')) return { ok: false, problem: 'traversal' };
   // A link on the way (a component of the path, or the file itself) is the thing this refuses most often, so it is looked for first and said as such: a link the
   // sandbox left behind is a way to hang anything of the person's on the evidence.
+  // A link on the way (a component of the path, or the file itself) is the thing this refuses most often, so it is looked for first and said as such: a link the
+  // sandbox left behind is a way to hang anything of the person's on the evidence.
   if (hasLink(root, candidate)) return { ok: false, problem: 'link' };
   const check = checkPath(root, candidate, { read: true });
   if (!check.ok) return { ok: false, problem: check.code === 'traversal' ? 'traversal' : check.code === 'dangling' ? 'link' : 'outside' };
@@ -68,5 +70,22 @@ export function resolveOutputPath(stageDir: string, input: unknown): ResolvedOut
   } catch {
     return { ok: false, problem: 'missing' };
   }
+  // The written path may walk through no link and still end up outside the folder: the clone's dependency links (`node_modules`, `.venv`) sit inside the
+  // output folder on the host, and the sandbox mounts that folder as it is, so a common file behind such a link would otherwise pass. The real path of the
+  // file and of the folder are compared, and a file that lands anywhere but under the folder is refused as one that passes through a link.
+  if (!stillInside(root, check.path)) return { ok: false, problem: 'link' };
   return { ok: true, path: check.path, rel: check.rel.split('\\').join('/') };
+}
+
+/** Whether the real path of a file is still under the real path of the output folder (a link of a dependency would take it out). */
+function stillInside(root: string, path: string): boolean {
+  try {
+    const realRoot = realpathSync(root);
+    const real = realpathSync(path);
+    if (real === realRoot) return false;
+    const rel = relative(realRoot, real);
+    return !!rel && !rel.startsWith('..') && !rel.includes(`..${sep}`);
+  } catch {
+    return false;
+  }
 }
