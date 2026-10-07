@@ -1,7 +1,7 @@
 // The two tools of a stage that talks while it works: `SendMessage` posts in the run's conversation without ending the stage, and `CallAgent` opens a conversation
 // with another agent of the team, refusing what the issue's limits refuse (an agent outside the team, a call chain that comes back to an agent already in it, and
 // the attempt's cap of conversations).
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
@@ -113,5 +113,37 @@ describe('a conversation started by a stage', () => {
     const linked = b.thread(run).find((m) => m.code === 'runner.conversation.linked');
     expect(linked).toBeDefined();
     expect(linked?.params.thread).toContain(runThreadId(run.id));
+  });
+
+  it('lets a called agent that writes change a file and run a command, committed with the calling stage', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({
+      sandbox,
+      configure: (c) => {
+        const qa = c.agents.team.find((a) => a.id === 'qa')!;
+        qa.permission = 'worktree';
+        qa.shell = 'sandbox';
+      },
+    });
+    easy(b);
+    // The developer calls the QA while it works; the QA (written to be able to) changes a file and runs a command, and the change is committed with the calling stage.
+    b.engine.script('refiner', async (call) => {
+      const open = toolOf(call, CALL_AGENT_TOOL)!;
+      await open.run({ to: 'qa', topic: 'Reproduce the failing scenario?', place: 'run' }, {} as never);
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    b.engine.script('qa', async (call, tools) => {
+      await tools.write('src/app.ts', 'export const app = 2;\n');
+      await call.exec?.exec('npm test');
+      return { texto: 'the fixture now matches the scenario' };
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    // The called writer changed the file over the run's worktree, and its command ran in its own session.
+    expect(readFileSync(join(run.worktree, 'src/app.ts'), 'utf8')).toContain('2');
+    const qaSessions = sandbox.opened.filter((o) => o.options && o.options.worktree === run.worktree);
+    expect(qaSessions.some((o) => o.session.asked.includes('npm test'))).toBe(true);
+    // The thread says the command under the called agent, and the change was committed with the calling stage.
+    expect(b.thread(run).some((m) => m.code === 'runner.exec' && m.params.agent === 'qa' && m.params.command === 'npm test')).toBe(true);
   });
 });

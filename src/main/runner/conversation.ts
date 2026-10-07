@@ -7,6 +7,8 @@ import type { ForumStore } from '../forum-core';
 import type { SandboxSession } from '../sandbox';
 import type { StageEngine } from './executor';
 import { type RunnerTools, calledAgentTools } from './tools';
+import { confinedHooks } from './hooks';
+import type { Denial } from './hooks';
 
 // A conversation between two agents of the team, started by a stage that is working: the caller asks about a point, the called agent answers, and the two go
 // back and forth inside a limit of rounds. The called agent starts as a reader and, when the point needs it, uses its own permissions in the team (commands per
@@ -55,6 +57,11 @@ export interface ConversationDeps {
   commands: string[];
   /** What the conversation's model calls used: counted on the calling stage. */
   onUsage?: (usage: Parameters<NonNullable<AgentCall['onUsage']>>[0]) => void;
+  /**
+   * Commits what the called agent changed in the worktree, with the identity of the calling stage, at the conversation's close. Absent or null
+   * return: the conversation commits nothing (the called agent changed nothing, or the caller does not commit for it).
+   */
+  commit?: (message: string) => Promise<string | null>;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
@@ -70,6 +77,10 @@ export interface ConversationResult {
   thread: string;
   rounds: number;
   reason: 'ended' | 'rounds';
+  /** The head of the branch after the conversation committed the called agent's work; null when nothing was committed. */
+  head?: string | null;
+  /** Every command the called agent ran in its session, in order (the refused ones left out, as a stage's are). */
+  log?: SandboxSession['log'];
 }
 
 /** The two directions of one conversation: what the caller says, and where each answer of the called agent goes. */
@@ -81,6 +92,11 @@ export interface ConversationExchange {
 }
 
 const clipped = (text: string, max = 2000): string => (text.length > max ? `${text.slice(0, max)}…` : text);
+
+/** The message of the commit a conversation makes of the called agent's work, in the repository's history (English by design). */
+function conversationCommitMessage(caller: string, called: string): string {
+  return `apply the conversation between ${caller} and ${called}`;
+}
 
 /**
  * Runs one conversation. The caller's first message opens it; the called agent answers and, by calling its `AskConversation` tool, asks for the next message of
@@ -149,8 +165,14 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   } finally {
     await session?.close().catch(() => undefined);
   }
+  // A called agent that writes owns the worktree while it works here; what it changed is committed with the calling stage before the stage commits its own
+  // work, so the reviewer reads it as the stage's. A conversation that changed nothing commits nothing (`commit` answers null).
+  let head: string | null | undefined;
+  if (deps.commit && deps.called.permission === 'worktree') {
+    head = await deps.commit(conversationCommitMessage(deps.caller.id, deps.called.id)).catch(() => null);
+  }
   deps.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'runner.conversation.ended', params: { caller: deps.caller.id, called: deps.called.id, why: t(`main.runner.conversation.reason.${reason}`) }, stage });
-  return { thread, rounds, reason };
+  return { thread, rounds, reason, head, log: session?.log.filter((e) => !e.refused) };
 }
 
 /**
@@ -183,12 +205,21 @@ async function turnOf(
     },
     team: { ids: [deps.caller.id, deps.called.id], caller: deps.called.id },
   };
+  const writes = deps.called.permission === 'worktree';
+  const denied = (den: Denial): void => {
+    try {
+      say({ kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: deps.called.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: deps.stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a refusal of a called agent', deps.run.id, e instanceof Error ? e.message : e);
+    }
+  };
   const call: AgentCall = {
     agent: deps.called,
-    prompt: deps.called.permission === 'worktree' ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }),
+    prompt: writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }),
     schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
     system: t('main.runner.conversation.role', { called: deps.called.name }),
     cwd: deps.run.worktree,
+    confine: writes ? { root: deps.run.worktree, hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
     maxTurns: 12,

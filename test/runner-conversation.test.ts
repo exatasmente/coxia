@@ -90,7 +90,7 @@ describe('a conversation between two agents', () => {
         place: 'new',
         title: 'A talk about the scenario',
       },
-      exchange(['how do I reproduce it?']),
+      exchange(['how do I reproduce it?']).ex,
     );
     expect(r.thread).not.toBe(runThreadId('r1'));
     expect(forum.summary(r.thread)?.title).toBe('A talk about the scenario');
@@ -125,5 +125,71 @@ describe('a conversation between two agents', () => {
     expect(seen[0].runnerTools?.map((x) => x.name)).toContain(ASK_CONVERSATION_TOOL);
     // A turn with no answer ends the conversation: nothing else is asked.
     expect(seen).toHaveLength(1);
+  });
+
+  it('lets a called agent that writes change a file, and commits its work with the calling stage at the close', async () => {
+    const committed: string[] = [];
+    const seen: AgentCall[] = [];
+    const engine = async (call: AgentCall) => {
+      seen.push(call);
+      return { data: { texto: 'the file now matches the scenario' } };
+    };
+    const ex = exchange(['could you change the fixture?']);
+    const r = await runConversation(
+      {
+        run,
+        stage: { id: 'implement' } as never,
+        caller: agent('developer'),
+        called: agent('qa', { permission: 'worktree' }),
+        forum,
+        config: () => neutralConfig(),
+        engine,
+        commands: [],
+        commit: async (message) => {
+          committed.push(message);
+          return 'abc123';
+        },
+        abort: new AbortController(),
+        chain: ['developer'],
+        place: 'run',
+        title: 'talk',
+      },
+      ex.ex,
+    );
+    // The called writer is confined to the run's worktree so it can change a file, and its work is committed with the calling stage once the conversation closes.
+    expect(seen[0].confine).toBeDefined();
+    expect(committed).toHaveLength(1);
+    expect(committed[0]).toContain('developer');
+    expect(committed[0]).toContain('qa');
+    expect(r.head).toBe('abc123');
+  });
+
+  it('counts the model use of a conversation on the calling stage', async () => {
+    const used: Parameters<NonNullable<AgentCall['onUsage']>>[0][] = [];
+    const engine = async (call: AgentCall) => {
+      call.onUsage?.({ promptTokens: 10, completionTokens: 5, cachedTokens: 0 });
+      return { data: { texto: 'ok' } };
+    };
+    await runConversation(
+      {
+        run,
+        stage: { id: 'implement' } as never,
+        caller: agent('developer'),
+        called: agent('qa'),
+        forum,
+        config: () => neutralConfig(),
+        engine,
+        commands: [],
+        onUsage: (u) => used.push(u),
+        abort: new AbortController(),
+        chain: ['developer'],
+        place: 'run',
+        title: 'talk',
+      },
+      exchange(['tell me more']).ex,
+    );
+    // Every model call of the conversation reports on the same accumulator the calling stage reads, so the sums happen by construction.
+    expect(used.length).toBeGreaterThan(0);
+    expect(used[0]).toMatchObject({ promptTokens: 10, completionTokens: 5 });
   });
 });

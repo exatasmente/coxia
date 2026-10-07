@@ -491,6 +491,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const chain = [agent.id];
   const conversationOf = new Map<string, { thread: string; say: (text: string) => void }>();
   const teamIds = config.agents.team.map((a) => a.id);
+  // Every command a called agent that writes ran in its session, as the run's list of commands under that agent.
+  const conversationCommands: CommandResult[] = [];
   const toolset: RunnerTools = {
     team: { ids: teamIds, caller: agent.id },
     sendMessage: (to, text) => (sendFromStage(d, run, stage, agent, inbox, to, text) ? t('main.runner.tools.sent') : t('main.runner.tools.notInTime')),
@@ -527,32 +529,48 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         },
       };
       conversationOf.set(to, entry);
-      // The conversation runs beside the stage: its answers enter the stage as messages, and the stage goes on without waiting for it.
-      void runConversation(
-        {
-          run,
-          stage,
-          caller: agent,
-          called: called,
-          forum: d.forum,
-          config: d.config,
-          engine: d.engine,
-          openSession: (def, writes, clock) => (d.sandbox ? openStageSandbox(d, run, stage, def, writes, abort.signal, clock) : Promise.resolve(null)),
-          commands,
-          onUsage: usage,
-          abort,
-          chain,
-          place,
-          title: t('main.runner.conversation.title', { caller: agent.id, called: to, ref: run.issue.ref }),
-        },
-        { fromCaller: incoming, answered: (text) => inbox.post(text) },
-      )
-        .then((r) => {
-          conversationOf.set(to, { thread: r.thread, say: entry.say });
-        })
-        .catch((e: unknown) => {
-          console.error('[runner] the conversation failed', run.id, to, e instanceof Error ? e.message : e);
-        });
+      const writes = called.permission === 'worktree';
+      const conversation: Parameters<typeof runConversation>[0] = {
+        run,
+        stage,
+        caller: agent,
+        called,
+        forum: d.forum,
+        config: d.config,
+        engine: d.engine,
+        openSession: (def, wr, clock) => (d.sandbox ? openStageSandbox(d, run, stage, def, wr, abort.signal, clock) : Promise.resolve(null)),
+        commands,
+        onUsage: usage,
+        // A called agent that writes changes the worktree: what it changed is committed with the calling stage before the stage commits its own work.
+        commit: writes
+          ? async (message) => {
+              const identity = await commitIdentity(config.runner.identity, wt, d.identity);
+              if (!identity) return null;
+              return commitAll(wt, message, identity);
+            }
+          : undefined,
+        abort,
+        chain,
+        place,
+        title: t('main.runner.conversation.title', { caller: agent.id, called: to, ref: run.issue.ref }),
+      };
+      // A conversation with a writer is the only writer of the worktree while it runs: the stage waits for it (its answers still come as messages), so the two
+      // never write together, and the called agent's commands join the run's list under its name. A reader's conversation runs beside the stage as before.
+      if (writes) {
+        const r = await runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) });
+        conversationOf.set(to, { thread: r.thread, say: entry.say });
+        for (const e of r.log ?? []) {
+          conversationCommands.push({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: 'agent' });
+        }
+      } else {
+        void runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) })
+          .then((r) => {
+            conversationOf.set(to, { thread: r.thread, say: entry.say });
+          })
+          .catch((e: unknown) => {
+            console.error('[runner] the conversation failed', run.id, to, e instanceof Error ? e.message : e);
+          });
+      }
       return t('main.runner.tools.conversationOpened', { called: to, thread: entry.thread });
     },
   };
@@ -586,8 +604,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
   if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), !!session);
-  // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's.
-  const ranInSandbox: CommandResult[] | undefined = session ? session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })) : undefined;
+  // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
+  // the same worktree, and its commands join the list under its name.
+  const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];

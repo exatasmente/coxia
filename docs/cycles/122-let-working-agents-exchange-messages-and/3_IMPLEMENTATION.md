@@ -1,36 +1,28 @@
-# A etapa ganha as duas ferramentas de conversa, e a verificação de tipos volta a passar
+# A verificação de tipos volta a passar, e o agente chamado que escreve agora tem o trabalho commitado com a etapa que o chamou
 
-Esta passada fecha o gate vermelho que a revisão apontou no arquivo do motor e acrescenta as duas ferramentas pelas quais a etapa fala enquanto trabalha, mais os limites da conversa na configuração. O que não ficou pronto está dito no fim, e nada do que não foi exercitado aparece aqui como feito.
+Esta passada fecha os dois gates vermelhos que a revisão apontou — o defeito de tipo no teste da conversa e o teste do padrão da configuração — e acrescenta o pedaço central que faltava: o agente chamado que tem `permission: worktree` passa a poder mudar arquivos, o trabalho dele é commitado com a etapa que o chamou, e os comandos dele entram na lista da execução e na thread sob o nome dele. O que não ficou pronto está dito no fim, e nada do que não foi exercitado aparece aqui como feito.
 
 ## O que mudou
 
-### A chamada de coleta entrega a resposta final, e um texto fora do esquema tem uma rodada de correção
+### A verificação de tipos volta a passar
 
-No motor aberto, a porta da mensagem passou a devolver o que aconteceu no fim do passo: a mensagem que entrou, a resposta final pedida pela chamada de coleta, ou os erros de um texto que não segue o esquema. Antes, a chamada de coleta acontecia mas o valor dela era descartado, e o laço seguia comparando o texto do passo anterior — o que fazia um texto fora do esquema falhar a etapa no primeiro texto que o modelo escrevesse, e impedia o caso de teste que fixa a coleta de rodar. Agora a coleta é uma chamada só, sem ferramenta alguma, com o formato do esquema; quando o texto dela não segue o esquema, os erros voltam ao diálogo e o passo seguinte do laço (com as ferramentas da etapa) tem uma rodada para corrigir, e a segunda falha encerra a etapa. A porta deixa de ser consultada depois de a coleta entrar, para que nenhuma mensagem entre na sessão depois do resultado.
+O caso de teste da conversa que abria uma conversa numa thread nova passava o retorno inteiro de um auxiliar de apoio — que traz a lista de respostas — no lugar da função que as recebe, e a verificação de tipos do repositório falhava nessa linha. Corrigido: o caso passa a usar a parte do auxiliar que devolve a função. O teste existente do padrão da configuração quebrou quando o bloco novo `conversations` entrou nos padrões do runner; o objeto padrão esperado passou a incluir o bloco.
 
-O desenho da estratégia `prompt` (o texto do passo é um candidato a resultado e a coleta é pedida antes de qualquer conclusão) ficou escrito em comentário junto do caso de teste que o cobra.
+### O agente chamado que escreve
 
-### Os dois roteiros de teste que estavam em texto puro
+Antes, um agente chamado pela etapa só tinha a ferramenta de continuar a conversa; mesmo com `permission: worktree`, ele não podia mudar um arquivo. Agora:
 
-Os dois casos novos do motor aberto passavam o roteiro do servidor de mentira como texto puro (`fakeOpenAI(['a resposta', ...])`), e cada posição do roteiro tem de ser um passo do servidor. O servidor estourava ao receber esse roteiro, e os dois casos não chegavam a exercitar o que deviam fixar. Os dois passaram a usar `textStep(...)`, o auxiliar que o arquivo já importava.
+- **Um agente chamado com `permission: worktree` recebe a confinação da escrita**: as ferramentas de ler, procurar e escrever dentro do worktree da execução, e a regra de cada comando, exatamente como uma etapa que escreve as tem. Uma recusa é dita na thread sob o nome dele, como numa etapa.
+- **O trabalho dele é commitado com a etapa que o chamou, no fecho da conversa**: quando a conversa encerra, o que o agente chamado mudou é commitado com a identidade da etapa que o chamou, antes de a própria etapa commit o que ela fez. Uma conversa que não mudou nada não commita. Assim o trabalho do agente chamado entra na contabilidade da etapa e aparece no diff que a revisão lê (a revisão segue lendo a mudança da branch de sempre).
+- **Uma conversa com um agente que escreve é a única dona do worktree enquanto roda**: a etapa espera a conversa terminar antes de seguir, em vez de rodar ao lado dela, então os dois nunca escrevem no mesmo worktree ao mesmo tempo. A resposta de uma conversa com um leitor segue chegando enquanto a etapa trabalha, como antes.
 
-### As duas ferramentas da etapa e a do agente chamado
+### Os comandos do agente chamado
 
-Um arquivo novo reúne as três ferramentas como ferramentas neutras de motor, para os dois motores oferecerem os mesmos nomes e a mesma política:
+Os comandos que um agente chamado roda na sessão dele entram na lista de comandos que a etapa devolve, junto dos da própria etapa. Na thread da execução, eles já apareciam `runner.exec` sob o nome do agente chamado (o caminho que já registrava cada comando de um agente), e a auditoria também os registra sob o nome dele.
 
-- **`SendMessage`** deixa o agente que trabalha publicar na conversa da execução (para a pessoa, para um agente do time ou para todos) sem terminar a etapa. O texto é um post interno do agente; um nome que não é do time é recusado com a lista dos agentes. Uma mensagem para outro agente que está trabalhando entra na etapa dele como entraria uma mensagem da pessoa.
-- **`CallAgent`** abre uma conversa com outro agente do time, na conversa da execução ou numa conversa nova do fórum ligada à execução, e devolve ao chamador onde ela acontece. É recusada quando o nome não é do time, quando o agente já está na cadeia de chamadas (o ciclo) ou quando a tentativa já abriu o teto de conversas.
-- **`AskConversation`** é a ferramenta do agente chamado: entrega o que ele diz e devolve a próxima mensagem do outro lado. Sem ela, a conversa termina.
+### O que se provou
 
-Uma etapa que trabalha recebe as duas primeiras; a chamada sem ferramenta alguma (a coleta) não recebe nenhuma.
-
-### A conversa entre dois agentes
-
-Um arquivo novo conduz a conversa: a mensagem do chamador abre, o agente chamado responde, e os dois vão e voltam dentro do teto de rodadas por conversa. Cada mensagem é um post do agente que a disse na thread da conversa; o agente chamado roda pelo mesmo motor, sobre o worktree da execução, e o resultado é devolvido ao chamador pela caixa da etapa, para entrar na sessão dele como uma mensagem. Ao bater o teto, a conversa encerra, escreve na thread por quê e a etapa de quem chamou segue. Quando a conversa acontece numa conversa nova do fórum, a thread da execução ganha uma linha apontando para ela.
-
-### Os limites na configuração
-
-A seção `runner` ganhou `conversations.roundsPerConversation` (padrão 6, faixa 1–50) e `conversations.perStage` (padrão 3, faixa 1–20), nos três arquivos do esquema e no documento da configuração nas duas línguas. O campo é opcional e lido com padrão quando ausente: um arquivo guardado sem o bloco abre com o comportamento novo, **sem** passo de migração — a mesma escolha que `runner.linkDependencies` e `release` já usaram. A tela dos limites do runner transporta o bloco de ida e volta, sem campo próprio.
+Os casos novos cobrem: o commit do trabalho de um agente chamado que escreve com a etapa que o chamou; a confinação do agente chamado ao worktree da execução; o uso do modelo de uma conversa contado na etapa de quem chamou; e, no caminho inteiro de uma execução, um agente chamado que escreve mudando um arquivo e rodando um comando, com a mudança no worktree e o comando sob o nome dele na thread.
 
 ## O que foi conferido, e como
 
@@ -38,23 +30,20 @@ Por execução, nesta árvore de trabalho:
 
 | O que | Resultado |
 |---|---|
-| `npx tsc --noEmit` | **passa** (antes falhava com 5 erros no arquivo do motor) |
-| `test/engine-incoming.test.ts` | **12 de 12** (antes 10 de 12) |
-| `test/runner-send-call.test.ts` (novo) | **5 de 5** |
-| `test/config-schema.test.ts` e `test/team-runner-edit.test.ts` | **34 de 34** |
+| `npx tsc --noEmit` | **passa** (antes falhava no teste da conversa) |
+| Suíte inteira (`npx vitest run`) | **3688 de 3688**, 225 arquivos |
+| `test/runner-conversation.test.ts` | **5 de 5** (antes 2 de 3 e o gate de tipos vermelho) |
+| `test/runner-config.test.ts` | **passa** (antes 1 caso vermelho pelo bloco novo) |
+| `test/engine-incoming.test.ts` | **12 de 12** |
+| `test/runner-send-call.test.ts` | **6 de 6** (o novo caso do agente chamado que escreve) |
+| `node scripts/theme-audit.mjs` | **passa** (8 cores literais num arquivo que a branch não toca) |
 | `npm run i18n:lint` | **passa**: 4080 chaves nas duas línguas |
-| `node scripts/theme-audit.mjs` | **passa** |
-| `node scripts/public-audit.mjs` | **passa**: 916 arquivos |
-
-Os casos novos cobrem: o `SendMessage` publicando na conversa da execução com a etapa seguindo e o post sendo interno; a recusa de um nome fora do time; a decisão pura de destino de mensagem; a recusa do ciclo e a do teto de conversas; e uma conversa aberta por uma etapa com outro agente do time, com o agente chamado rodando pelo motor e a thread nova ligada à execução.
+| `node scripts/public-audit.mjs` | **passa**: 917 arquivos |
 
 ## O que não foi verificado
 
-- **Um caso do teste novo da conversa não passa.** O caso que abre uma conversa numa conversa nova do fórum falha na montagem do próprio teste (a rotina de apoio devolve a resposta registrada no lugar da função que a recebe), então o comportamento que ele deveria fixar **não está confirmado por execução**; os dois outros casos do arquivo passam.
-- **A suíte completa, a auditoria de tema e a auditoria pública depois destas mudanças:** a suíte inteira foi rodada antes destas últimas alterações e ficou 3674 de 3676 (duas falhas de tempo, alheias a esta issue); depois delas, não foi rodada de novo.
-- **O motor com o SDK real:** não foi chamado nenhum modelo real; o encaixe da mensagem numa sessão em andamento e a saída estruturada seguem conferidos só por leitura e por dublê.
-- **O dono único do worktree**, com a etapa largando o worktree entre passos e a conversa de um chamado que escreve sendo a única dona: **não existe no código**.
-- **O commit do trabalho do agente chamado com a etapa que chamou**, e a revisão lendo a mudança por um `head` anotado: **não existem no código**; a revisão continua lendo pelo caminho de hoje.
-- **O uso do modelo da conversa somado ao da etapa de quem chamou:** o campo que o recebe está ligado, mas nenhum teste prova a soma, e a tela do uso não foi aberta.
-- **O agente chamado com permissão de escrever mudando um arquivo sem dois escritores ao mesmo tempo:** não exercitado.
-- **Os critérios de aceite 3, 4 e 5 da issue** (o QA rodando comando na conversa, o agente chamado mudando arquivo, e o ciclo com o teto de rodadas encerrando e dizendo por quê na tela): o teto de rodadas está exercitado no teste da conversa, mas o comando do agente chamado aparecendo sob o nome dele na lista da execução e a mudança de arquivo **não** estão.
+- **A leitura da revisão por `git diff <from>..<head>`**: a revisão continua lendo a mudança da branch pelo caminho de hoje; o diff estreito "só o que a etapa fez" não foi implementado. O que garante que a revisão veja o trabalho do agente chamado é o commit dele junto com a etapa que o chamou, que hoje existe — e não foi rodado contra a tela da revisão.
+- **O `lend`/`take` literal de fechar e reabrir a sessão da etapa entre passos**: o que impede dois escritores ao mesmo tempo é a etapa esperar a conversa que escreve, não o fechamento da sessão ao fim de cada passo. O desenho do plano de largar e reassumir a sessão entre passos não existe; o comportamento de "um escritor por vez" foi alcançado de outra forma.
+- **O comando do agente chamado "sob o nome dele" na lista persistida da execução**: o registro da lista guarda só se foi a pessoa ou um agente, sem o id; o nome do agente aparece na thread e na auditoria (o caminho que o plano chamou de "o sob o QA"), não no campo da lista persistida.
+- **O modelo real, a saída estruturada sobrevivendo à mensagem no meio, o sandbox real (bubblewrap) e a corrida dos escritores com o app em execução**: nada disso foi exercitado; os comandos rodaram num sandbox de mentira e nenhum modelo real foi chamado.
+- **A tela do uso**: a soma do uso da conversa na etapa de quem chamou está provada por teste e por construção (mesma função acumuladora), mas a tela que mostra o uso não foi aberta.
