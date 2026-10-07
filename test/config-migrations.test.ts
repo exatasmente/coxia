@@ -50,7 +50,7 @@ describe('migrateConfig', () => {
     expect(r.fromVersion).toBe(1);
     expect(r.changed).toBe(true);
     const c = r.config;
-    expect(c.schemaVersion).toBe(18);
+    expect(c.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(c.setupComplete).toBe(true);
     expect(c.llm.roles).toEqual({ turn: { provider: 'openrouter', model: 'a/b' }, reply: { provider: 'openrouter', model: 'c/d' }, deep: { provider: 'openrouter', model: 'e/f' }, teams: { provider: 'openrouter', model: 'g/h' }, fix: { provider: 'openrouter', model: 'c/d' } });
     expect(c.schedule.preDaily).toBe('10:15');
@@ -109,7 +109,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(v2, { legacyInstall: false });
     expect(r.fromVersion).toBe(2);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(['ref', 'title', 'blockers', 'priority', 'milestone']);
     expect(r.notes.join(' ')).toContain('priority, milestone');
@@ -131,7 +131,7 @@ describe('migrateConfig', () => {
 
   it('a v1 file ends at the current schema with the new fields in place', () => {
     const r = migrateConfig(V1_SETTINGS, { legacyInstall: true, profile: exampleProfile() });
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
     expect(r.config.devCycle.enrichment.cardFields).toEqual(expect.arrayContaining(['priority', 'milestone']));
   });
@@ -205,7 +205,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
       expect(r.fromVersion).toBe(8);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(18);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner).toMatchObject({ stageIdleMs: 600_000, stageMaxMs: 7_200_000 });
       expect(r.config.runner).not.toHaveProperty('stageTimeoutMs');
       expect(r.notes.join(' ')).toContain('became two limits');
@@ -246,7 +246,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v13(), { legacyInstall: false });
       expect(r.fromVersion).toBe(13);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(18);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.plugins).toEqual({ dir: null, list: [], confirmSeconds: 30 });
       expect(validateConfig(r.config).ok).toBe(true);
     });
@@ -264,7 +264,7 @@ describe('migrateConfig', () => {
       const doc = { ...neutralConfig(), schemaVersion: 14 } as Record<string, any>;
       doc.plugins = { dir: null, confirmSeconds: 30, list: [{ id: 'web-search', folder: '/p', enabled: true, allow: { network: true, write: false } }] };
       const r = migrateConfig(doc, { legacyInstall: false });
-      expect(r.config.schemaVersion).toBe(18);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.plugins.list[0]).toEqual({ id: 'web-search', folder: '/p', enabled: true, allow: { network: true, write: false }, settings: {} });
       expect(r.notes.join(' ')).toContain('asks once more');
       expect(validateConfig(r.config).ok).toBe(true);
@@ -279,7 +279,7 @@ describe('migrateConfig', () => {
       doc.devCycle = { ...doc.devCycle };
       delete doc.devCycle.autonomy;
       const r = migrateConfig(doc, { legacyInstall: false });
-      expect(r.config.schemaVersion).toBe(18);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner.autonomy).toEqual({ cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false });
       expect(r.config.devCycle.autonomy).toEqual({});
       expect(r.config.runner.sandbox.network).toBe('registry');
@@ -312,7 +312,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v16((runner) => (runner.commitMessage = 'fix: {summary}')), { legacyInstall: false });
       expect(r.fromVersion).toBe(16);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(18);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner.commitMessage).toBe('fix: {summary} #{iid}');
       expect(r.config.runner.prTitle).toBe('{title} #{iid}');
       expect(r.notes.join(' ')).toContain('prTitle');
@@ -342,7 +342,7 @@ describe('migrateConfig', () => {
     });
 
     it('keeps a current file with no title template valid: the default fills in before the check', () => {
-      const c = { ...neutralConfig(), schemaVersion: 18 } as Record<string, any>;
+      const c = { ...neutralConfig(), schemaVersion: CONFIG_SCHEMA_VERSION } as Record<string, any>;
       delete c.runner.prTitle;
       expect(migrateConfig(c, { legacyInstall: false }).changed).toBe(false);
       const r = migrateConfig(c, { legacyInstall: false });
@@ -357,7 +357,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(c, { legacyInstall: true });
     expect(r.changed).toBe(false);
     expect(r.config.language).toBe('en');
-    expect(() => migrateConfig({ schemaVersion: 19 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 
   it('schema 17 to 18: the runner gets where evidence is kept, defaulting to the app\'s own data', () => {
@@ -368,10 +368,30 @@ describe('migrateConfig', () => {
     const r = migrateConfig(v17, { legacyInstall: false });
     expect(r.fromVersion).toBe(17);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.runner.evidence).toBe('app');
     expect(r.notes.join(' ')).toContain('runner.evidence');
     expect(validateConfig(r.config).ok).toBe(true);
+  });
+
+  it('schema 18 to 19: nothing moves, an agent without the mark is still an agent of the team', () => {
+    const v18 = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+    v18.schemaVersion = 18;
+    const r = migrateConfig(v18, { legacyInstall: false });
+    expect(r.fromVersion).toBe(18);
+    expect(r.changed).toBe(true);
+    expect(r.config).toEqual(neutralConfig());
+    expect(r.config.agents.team.some((a) => 'draft' in a)).toBe(false);
+    expect(r.notes.join(' ')).toContain('draft');
+    expect(validateConfig(r.config).ok).toBe(true);
+  });
+
+  it('a file that carries a draft agent is current as it is, and the mark survives', () => {
+    const c = neutralConfig();
+    c.agents.team.push({ ...c.agents.team[0], id: 'trial', name: 'Trial', system: false, draft: true });
+    const r = migrateConfig(JSON.parse(JSON.stringify(c)), { legacyInstall: false });
+    expect(r.changed).toBe(false);
+    expect(r.config.agents.team.find((a) => a.id === 'trial')?.draft).toBe(true);
   });
 
   it('schema 17 to 18 keeps a placement the person chose', () => {
@@ -392,7 +412,7 @@ describe('startup on the real current layout', () => {
     expect(boot.migrated).toEqual(['testes']);
     const dir = workspaceDir(root, 'testes');
     const config = readConfigFile(dir) as Record<string, unknown>;
-    expect(config.schemaVersion).toBe(18);
+    expect(config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(validateConfig(config).ok).toBe(true);
     const v = validateConfig(config).config;
     expect(v?.vcs[0].host).toBe('git.acme.test');

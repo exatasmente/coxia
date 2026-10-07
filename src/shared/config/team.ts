@@ -53,10 +53,18 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
+    // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
+    ...(partial.draft === true ? { draft: true } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };
 }
+
+/** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
+export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
+
+/** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
+export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);
 
 /** The team with whichever system agent is missing added back (seeded from the roles), so a file can never lose one. */
 export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRole, RoleSeed>> = {}): AgentDef[] {

@@ -1,7 +1,7 @@
 // The comment templates of the cycle (schema 7, then 8): what the agent cycle brings, what the other cycles do not, validation and the migration.
 import { describe, expect, it } from 'vitest';
 import { migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { COMMENT_EVENT_KEYS, type CommentTemplate, type WorkspaceConfig } from '../src/shared/config/types';
+import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, type CommentTemplate, type WorkspaceConfig } from '../src/shared/config/types';
 import { BUILT_IN_TEMPLATES, applyTemplate, builtInTemplate, exportTemplateText, parseTemplate, templateFromConfig } from '../src/shared/cycles';
 import { cycleText } from '../src/shared/cycles/text';
 import { CATALOGS } from '../src/shared/i18n';
@@ -127,7 +127,7 @@ describe('the migration to schema 7', () => {
     const r = migrateConfig(v6((c) => (c.devCycle.templateId = 'agent-flow')), { legacyInstall: false });
     expect(r.fromVersion).toBe(6);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.devCycle.comments).toEqual(agentFlow().devCycle.comments);
     expect(r.notes.join(' ')).toContain('comment templates');
     expect(validateConfig(r.config).ok).toBe(true);
@@ -149,8 +149,8 @@ describe('the migration to schema 7', () => {
 
   it('carries an old file all the way, and does not open one from a newer app', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en', devCycle: { templateId: 'agent-flow' } }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(Object.keys(r.config.devCycle.comments)).toContain('review');
-    expect(() => migrateConfig({ schemaVersion: 19 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

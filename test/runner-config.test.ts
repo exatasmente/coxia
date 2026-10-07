@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, collectCommands, collectPaths, migrateConfig, neutralConfig, neutralRunner, validateConfig, withConfigDefaults } from '../src/shared/config';
-import type { RunnerConfig, WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type RunnerConfig, type WorkspaceConfig } from '../src/shared/config/types';
 
 type Doc = Record<string, any>;
 
@@ -120,7 +120,7 @@ describe('the migration to schema 6', () => {
     const r = migrateConfig(before, { legacyInstall: false });
     expect(r.fromVersion).toBe(5);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -134,12 +134,12 @@ describe('the migration to schema 6', () => {
 
   it('carries a v3 file through every step', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 19 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

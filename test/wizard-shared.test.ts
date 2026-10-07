@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
-import type { LlmProvider } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type LlmProvider } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { type ProviderDraft, OPEN_PRESETS, SKIPPABLE_STEPS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
 
@@ -129,7 +129,7 @@ describe('userName', () => {
     const { legacyConfigFixture } = await import('./helpers/config');
     expect(neutralConfig().userName).toBe('');
     expect(legacyConfigFixture().userName).toBe('Bruno');
-    expect(validateConfig({ schemaVersion: 18, userName: 'Ana' }).config?.userName).toBe('Ana');
+    expect(validateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, userName: 'Ana' }).config?.userName).toBe('Ana');
   });
 });
 
