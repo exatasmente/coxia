@@ -413,6 +413,8 @@ export interface Run {
   evidence?: RunEvidence;
   /** The commit the branch was cut from; what the review's diff starts at. Null for a run made before it was recorded. */
   base: string | null;
+  /** The branch the run was cut from (the open release, or the default branch), which its pull request aims at. Absent in a run made before it was recorded. */
+  baseBranch?: string;
   /** What the run is about when it is not an issue: a release. Absent for an issue run. */
   subject?: RunSubject;
   /** The run drafts the documentation of its repository. Absent for an issue run. */

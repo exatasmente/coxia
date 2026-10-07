@@ -43,6 +43,30 @@ export async function defaultBranch(clone: string): Promise<string> {
   return (await git(clone, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { fail: false })).stdout.trim() || 'main';
 }
 
+/**
+ * The open release: the highest `release/X.Y.Z` the remote has whose stable tag `vX.Y.Z` does not exist yet, or null. While a version is in beta its work lands
+ * on that branch (RELEASING.md), so a run cut from the default branch would start behind it and open its pull request against the wrong branch.
+ */
+export async function openReleaseBranch(clone: string): Promise<string | null> {
+  // A read: the release branches (pruned, so a deleted one is gone) and the version tags. A fetch that fails leaves what the clone already knows.
+  await git(clone, [...SAFE, 'fetch', '--quiet', '--prune', 'origin', '+refs/heads/release/*:refs/remotes/origin/release/*', 'refs/tags/v*:refs/tags/v*'], { fail: false });
+  const listed = (await git(clone, ['for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/release/'], { fail: false })).stdout.split('\n').map((s) => s.trim());
+  const versions = listed
+    .map((name) => /^release\/(\d+)\.(\d+)\.(\d+)$/.exec(name))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ name: m[0], v: [Number(m[1]), Number(m[2]), Number(m[3])] }))
+    .sort((a, b) => b.v[0] - a.v[0] || b.v[1] - a.v[1] || b.v[2] - a.v[2]);
+  for (const r of versions) {
+    if (!(await ok(clone, ['show-ref', '--verify', '--quiet', `refs/tags/v${r.v.join('.')}`]))) return r.name;
+  }
+  return null;
+}
+
+/** The branch a new run is cut from and its pull request aims at: the open release when there is one, else the repository's default branch. */
+export async function workBase(clone: string): Promise<string> {
+  return (await openReleaseBranch(clone)) ?? defaultBranch(clone);
+}
+
 export interface WorktreeRequest {
   clone: string;
   dest: string;
@@ -52,6 +76,8 @@ export interface WorktreeRequest {
 }
 
 export interface Worktree {
+  /** The branch it was cut from. */
+  base: string;
   baseRef: string;
   /** The commit the branch starts at. */
   baseSha: string;
@@ -73,7 +99,7 @@ export async function createWorktree(w: WorktreeRequest): Promise<Worktree> {
   const baseRef = (await ok(w.clone, ['rev-parse', '--verify', '--quiet', remote])) ? remote : (await ok(w.clone, ['rev-parse', '--verify', '--quiet', `refs/heads/${base}`])) ? `refs/heads/${base}` : 'HEAD';
   mkdirSync(dirname(w.dest), { recursive: true });
   await git(w.clone, [...SAFE, 'worktree', 'add', '--no-track', '-b', branch, w.dest, baseRef]);
-  return { baseRef, baseSha: await out(w.dest, ['rev-parse', 'HEAD']) };
+  return { base, baseRef, baseSha: await out(w.dest, ['rev-parse', 'HEAD']) };
 }
 
 /**

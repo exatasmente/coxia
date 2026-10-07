@@ -174,6 +174,8 @@ export interface StartInput {
   cycleId: string;
   /** The commit the branch was cut from. */
   base?: string | null;
+  /** The branch it was cut from, which its pull request aims at. */
+  baseBranch?: string;
   /** The run is a release of a version (its `issue` is the synthesized `release:X.Y.Z`). */
   subject?: RunSubject;
   /** The run drafts the documentation of its repository (its `issue` is the synthesized `docs:<repo>`). */
@@ -213,6 +215,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     reviews: [],
     qa: [],
     base: input.base ?? null,
+    ...(input.baseBranch ? { baseBranch: input.baseBranch } : {}),
     createdAt: at,
     updatedAt: at,
     ...(input.subject ? { subject: structuredClone(input.subject) } : {}),

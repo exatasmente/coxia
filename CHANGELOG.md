@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **A stage no longer stands still after its agent answered.** In 0.8.0-beta.1 and beta.2, a stage whose agent ended a step with plain text (common on the open engine) waited for a message that was not coming instead of asking for the final answer, and sat there until its idle limit or until the run was cancelled. The stage now asks for the answer at once when nothing is waiting for it.
+- **A new run starts from the open release.** While a version is in beta, a run is cut from its release branch (the highest `release/X.Y.Z` whose stable tag does not exist yet) and its pull request aims at that branch; with no release open, both are the default branch as before. A run made before this keeps aiming at the default branch.
 
 ## [0.8.0-beta.2] - 2026-10-07
 

@@ -56,7 +56,7 @@ function fakeProvider(o: { upload?: boolean } = {}): VcsProvider {
         return o.upload === false ? [] : [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'uploads.github.com/?repository_id=group%2Fproject&name=ev-1.png&content_type=image%2Fpng', fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: op.path }];
       }
       const body = op.op === 'commentIssue' || op.op === 'commentMr' || op.op === 'editIssueNote' || op.op === 'editMrNote' || op.op === 'createMr' ? op.body : '';
-      if (op.op === 'createMr') return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/pulls', fields: {}, json: JSON.stringify({ title: op.title, body }) }];
+      if (op.op === 'createMr') return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/pulls', fields: {}, json: JSON.stringify({ title: op.title, body, base: op.targetBranch }) }];
       return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/issues/101/comments', fields: {}, json: JSON.stringify({ body }) }];
     },
     async uploadToken() {
@@ -230,11 +230,12 @@ describe('the pull request an autonomous run opens', () => {
   const ADDRESS = 'https://example.test/group/project/assets/ev-1.png';
 
   /** A run at the point the push is done: its description is drafted (citing `ids`), and the pull request is next. */
-  function opened(o: { pullRequest: boolean; ids?: string[]; door?: Parameters<typeof doorOf>[4]; upload?: boolean }) {
+  function opened(o: { pullRequest: boolean; ids?: string[]; door?: Parameters<typeof doorOf>[4]; upload?: boolean; baseBranch?: string }) {
     const dataDir = make();
     dirs.push(dataDir);
     const { config, run, runs, forum } = world(dataDir);
     config.runner.autonomy = { ...config.runner.autonomy, cycle: true, pullRequest: o.pullRequest };
+    if (o.baseBranch) runs.update(run.id, (r) => ({ run: { ...r, baseBranch: o.baseBranch }, messages: [] }));
     runs.update(run.id, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: 'draft', body: 'Closes #101\n', headline: '', title: 'Add the thing', ...(o.ids ? { evidenceIds: o.ids } : {}) }, '2026-10-03T12:00:00Z'));
     // The run's conversation exists by the time its pull request is next.
     forum.ensureThread({ id: runThreadId(run.id), kind: 'run', runId: run.id, title: 'Add the thing' });
@@ -275,6 +276,16 @@ describe('the pull request an autonomous run opens', () => {
     expect(rec).toMatchObject({ status: 'published', noteId: 9 });
     expect(rec.body).toContain(`![The screen](${ADDRESS})`);
     expect(w.forum.read(runThreadId(w.run.id), 0, 100)?.messages.some((m) => m.code === 'runner.pr.created')).toBe(true);
+  });
+
+  it('aims at the branch the run was cut from, and at the default branch for a run that did not record one', async () => {
+    const base = (posted: VcsCommand[][]): string => (JSON.parse(posted.flat().find((c) => c.endpoint === 'repos/group/project/pulls')!.json!) as { base: string }).base;
+    const cut = opened({ pullRequest: true, baseBranch: 'release/0.8.0' });
+    await cut.go();
+    expect(base(cut.posted)).toBe('release/0.8.0');
+    const older = opened({ pullRequest: true });
+    await older.go();
+    expect(base(older.posted)).toBe('main');
   });
 
   it('counts an image the host gave no address for instead of losing it', async () => {

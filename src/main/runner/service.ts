@@ -112,7 +112,7 @@ import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../sh
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { inboxOf } from './inbox';
-import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree } from './git';
+import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
 import { type ChainRequest, chainCall, readChain } from './chain';
@@ -806,7 +806,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `${iid}-${slug}`);
     const folder = cycleFolderOf(iid, issue.title);
 
-    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path) }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
@@ -815,7 +815,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(dest, commitMessage(config.runner.commitMessage, 'add the issue record', iid), identity);
       const started = startRun(
-        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, squad, origin: force?.origin ?? null, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
+        { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, baseBranch: made.base, squad, origin: force?.origin ?? null, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
         startFlow,
         now(),
       );
@@ -958,7 +958,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const day = dayStamp(today);
     const branch = docsBranch(repo.id, today);
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `docs-${day}`);
-    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path) }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
@@ -985,6 +985,7 @@ export function createRunner(deps: RunnerDeps): Runner {
           cycleFolder: DOCS_RUN_FOLDER,
           cycleId: 'docs-flow',
           base: made.baseSha,
+          baseBranch: made.base,
           docs: { mode },
         },
         flow,
