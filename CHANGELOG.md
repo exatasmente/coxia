@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0-beta.7] - 2026-10-07
+
 ### Changed
 
 - **A stage that runs again is told why and what is already done.** When the person sends the work back, a review or QA returns it, a failed stage is retried or the app restarts under it, the agent's prompt now opens with why the stage runs again, the request of this attempt said once (not repeated in the conversation and at the end), the documents of the stage already in the cycle folder, the evidence it already kept and its last report. It is told to do what was asked and only that, to leave a document it does not change out of its answer (the app keeps the one in the folder) and to keep the cycle memory with an empty string; a QA pass repeats the scenarios it does not check again as the test plan records them.
@@ -311,7 +313,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.6...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...HEAD
+[0.8.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.6...v0.8.0-beta.7
 [0.8.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.5...v0.8.0-beta.6
 [0.8.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.4...v0.8.0-beta.5
 [0.8.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.3...v0.8.0-beta.4
