@@ -80,14 +80,14 @@ a gate and a wait never have one.
 
 ## The shipped agent team
 
-`agent-flow` describes a product team: `triage → refine → gate1 → plan → gate2 → implement →
-review → qa → ready → communicate`. The stages name their agent (`agentId`) and the files
-they must produce (`0_TRIAGE.md` … `6_RELEASE_NOTE.md`, straight in the cycle folder, no
-subfolder). The two gates wait for the person; `ready` is a wait; `communicate` runs after
-the pull request is merged. `agent-flow-engineering` is the same flow with the engineering
-roles only (`refine → gate1 → plan → gate2 → implement → review → qa → ready`); its review is
-worked by `tech-lead` and its runs end at the wait, so an engineering run posts no release
-note.
+`agent-flow` describes a product team: `triage -> refine -> gate1 -> plan -> gate2 ->
+implement -> review -> qa -> ready -> communicate`. The stages name their agent (`agentId`)
+and the files they must produce (`0_TRIAGE.md` ... `6_RELEASE_NOTE.md`, straight in the
+cycle folder, no subfolder). The two gates wait for the person; `ready` is a wait;
+`communicate` runs after the pull request is merged. `agent-flow-engineering` is the same
+flow with the engineering roles only (`refine -> gate1 -> plan -> gate2 -> implement ->
+review -> qa -> ready`); its review is worked by `tech-lead` and its runs end at the wait,
+so an engineering run posts no release note.
 
 The shipped team, one row per agent (see `docs/cycles.md` for the permissions and the
 escalation chain; the recommended `tracker` and `shell` come from `RECOMMENDED` in
@@ -110,7 +110,7 @@ each agent's stage list.
 
 ## Squads
 
-Agents work in **squads** (optional; a workspace without them is one team). A squad is
+Agents work in **squads**; a workspace without them is one team. A squad is
 `{ id, name, mission, scope, liaison, autonomy, label }`. An agent belongs to **one** squad
 (or to none: it is shared and works for everyone). The squad's flow is
 `devCycle.flows[<id>]`, or the workspace's. `checkSquads`
@@ -118,3 +118,4 @@ Agents work in **squads** (optional; a workspace without them is one team). A sq
 squad through its scope (repository, then labels, then path prefixes), and an issue no scope
 claims goes to triage or to the `unclaimed` squad. Between squads, only the liaisons talk,
 by request. Read `docs/cycles.md` for the full rules.
+
