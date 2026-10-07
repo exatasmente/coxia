@@ -13,7 +13,7 @@ vi.mock('../src/main/agents', async (importOriginal) => ({
   rewriteQaComment: vi.fn(),
 }));
 
-const { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictHooks, conflictPrepare, conflictPropose, conflictReopen, listActions, skipAction } = await import('../src/main/actions');
+const { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictHooks, conflictMergeMessage, conflictPrepare, conflictPropose, conflictReopen, listActions, skipAction } = await import('../src/main/actions');
 const { saveVerifyCommands } = await import('../src/main/conflictVerify');
 const { ATAS } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
@@ -254,7 +254,8 @@ describe('apply, verify and commit', () => {
     expect(r?.commit).toBeTruthy();
 
     const wt = r?.worktree as string;
-    expect(git(wt, 'log', '-1', '--format=%s')).toBe("Merge branch 'main' into 'release/bugfix/1234'");
+    // The commit of the conflict carries the issue number like every other commit of that run (the issue of the action), through the runner's template.
+    expect(git(wt, 'log', '-1', '--format=%s')).toBe("feat: Merge branch 'main' into 'release/bugfix/1234' #15526");
     expect(git(wt, 'log', '-1', '--format=%B')).not.toMatch(/Co-Authored|Generated/i);
     expect(git(wt, 'log', '-1', '--format=%an <%ae>|%cn <%ce>')).toBe('Runner Test <runner@example.test>|Runner Test <runner@example.test>');
     expect(git(wt, 'rev-parse', 'HEAD^2')).toBe(r?.mainSha);
@@ -351,6 +352,15 @@ describe('apply, verify and commit', () => {
       expect(git(wt, 'log', '-1', '--format=%an <%ae>|%cn <%ce>')).toBe('Clone Owner <owner@example.test>|Clone Owner <owner@example.test>');
       expect(git(wt, 'log', '-1', '--format=%ae %ce')).not.toContain(MACHINE.email);
     });
+  });
+
+  it('names the merge after the runner\'s template, with the issue of the action, and falls back to the plain merge when it has none', () => {
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 456, 'feat: {summary} #{iid}')).toBe("feat: Merge branch 'main' into 'release/bugfix/1234' #456");
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 456, 'chore({iid}): {summary}')).toBe("chore(456): Merge branch 'main' into 'release/bugfix/1234'");
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 0, 'feat: {summary} #{iid}')).toBe("Merge branch 'main' into 'release/bugfix/1234'");
+    // the branch merged in is the pull request's target, as in the plain merge message
+    expect(conflictMergeMessage('feat-x', 'release/9.9.0', 7, 'feat: {summary} #{iid}')).toBe("feat: Merge branch 'release/9.9.0' into 'feat-x' #7");
+    expect(conflictMergeMessage('feat-x', 'release/9.9.0', 0, 'feat: {summary} #{iid}')).toBe("Merge branch 'release/9.9.0' into 'feat-x'");
   });
 });
 

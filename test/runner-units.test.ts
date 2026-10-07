@@ -6,7 +6,7 @@ import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
 import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, ensureMemory, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord, writeMemory } from '../src/main/runner/cycleFolder';
 import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
-import { WorktreeError, branchDiff, branchStat, commitAll, commitIdentity, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, repoIdentity } from '../src/main/runner/git';
+import { WorktreeError, branchDiff, branchStat, commitAll, commitIdentity, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, pullRequestTitle, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
 import { MACHINE, git, withMachineIdentity } from './helpers/conflictRepos';
 import { comment, issue, makeRepo } from './helpers/runner';
@@ -229,6 +229,29 @@ describe('the commit message', () => {
     expect(commitSummary('y'.repeat(100), 'x')).toHaveLength(72);
     expect(commitMessage('feat: {summary} #{iid}', 'add it', 12)).toBe('feat: add it #12');
     expect(commitMessage('fix: {summary} (#{iid})', 'add it', 12)).toBe('fix: add it (#12)');
+  });
+
+  it('builds the pull request title from the repository\'s own template', () => {
+    expect(pullRequestTitle('{title} #{iid}', 'Add accent folding', 456)).toBe('Add accent folding #456');
+    expect(pullRequestTitle('#{iid} {title}', 'Add accent folding', 456)).toBe('#456 Add accent folding');
+  });
+
+  it('keeps a title that already carries the number, at the end or at the start', () => {
+    expect(pullRequestTitle('{title} #{iid}', 'Add accent folding #456', 456)).toBe('Add accent folding #456');
+    expect(pullRequestTitle('{title} #{iid}', '#456 Add accent folding', 456)).toBe('#456 Add accent folding');
+    expect(pullRequestTitle('{title} #{iid}', 'Add #456 folding', 456)).toBe('Add #456 folding');
+  });
+
+  it('caps the title the agent wrote and never cuts the number', () => {
+    const long = pullRequestTitle('{title} #{iid}', 'y'.repeat(200), 456);
+    expect(long).toBe(`${'y'.repeat(120)} #456`);
+    expect(long.endsWith('#456')).toBe(true);
+  });
+
+  it('drops the number and the # with it when the run has no issue, leaving no dangling #', () => {
+    expect(pullRequestTitle('{title} #{iid}', 'Release 9.9.9', 0)).toBe('Release 9.9.9');
+    expect(pullRequestTitle('#{iid} {title}', 'Add the documents', 0)).toBe('Add the documents');
+    expect(pullRequestTitle('{title} (#{iid})', 'x', 0)).toBe('x');
   });
 
   it('drops a type prefix and an issue reference the agent added, since the template says both', () => {

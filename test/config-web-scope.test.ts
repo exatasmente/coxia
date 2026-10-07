@@ -55,8 +55,8 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.runner.sandbox = { ...c.runner.sandbox, network: 'open' }; })).toEqual(['runner.sandbox.network']);
   });
 
-  it('accepts the runner switches, the label, the cap, the turns, the timeouts and the commit message', () => {
-    expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; })).toEqual([]);
+  it('accepts the runner switches, the label, the cap, the turns, the timeouts and the two message templates', () => {
+    expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; c.runner.prTitle = '#{iid} {title}'; })).toEqual([]);
     expect(refused((c) => { c.runner.turns.write = 120; })).toEqual([]);
     expect(refused((c) => { c.runner.linkDependencies = false; })).toEqual([]);
   });
@@ -128,9 +128,11 @@ describe('config:cycle-save, end to end', () => {
     const ok = structuredClone(stored);
     ok.agents.team[0].instructions = 'Answer in two lines.';
     ok.runner.enabled = true;
+    ok.runner.prTitle = '#{iid} {title}';
     call(ok);
     expect(getConfig().agents.team[0].instructions).toBe('Answer in two lines.');
     expect(getConfig().runner.enabled).toBe(true);
+    expect(getConfig().runner.prTitle).toBe('#{iid} {title}');
 
     const sneaky = structuredClone(getConfig());
     sneaky.runner.commands = ['npm test'];

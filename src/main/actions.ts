@@ -42,7 +42,7 @@ import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
 import { auditFieldsOf, auditKindOf, commandKind, validateVcsCommand } from './vcs/validate';
-import { type Identity, commitIdentity } from './runner/git';
+import { type Identity, commitIdentity, commitMessage } from './runner/git';
 import { getConfig, issueProjectKey, primaryKind, qaNoteMarker, rc, requireVcsHost } from './workspaceConfig';
 import { tv } from '../shared/i18n';
 
@@ -738,6 +738,13 @@ export async function conflictFromMr(card: Pick<Card, 'iid' | 'title' | 'stage' 
   return action;
 }
 
+// The message of the merge that resolves a conflict of a run's branch: the message of the app's commits with the merge as the summary, so it carries the
+// issue number like every other commit of that run. It comes whole (`commitMessage`) so a stored message without `{iid}` cannot leave the number out; with
+// no issue (a conflict of a branch nobody ran) the plain merge message stays.
+export function conflictMergeMessage(branch: string, target: string, issue: number, template: string): string {
+  return issue > 0 ? commitMessage(template, mergeMessage(branch, target), issue) : mergeMessage(branch, target);
+}
+
 // Who the merge of a conflict is made as: the identity the runner's commits use, or the clone's own; never the global one, which may be another
 // job's address. Asked when the merge starts, so a missing one stops the work before the person resolves anything, and again at the commit.
 async function mergeIdentity(clone: string): Promise<Identity> {
@@ -886,7 +893,8 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
     const { a, r } = resolved(id);
     if (!r.appliedAt) throw new Error(t('main.actions.applyFirst'));
     if (r.commit) throw new Error(t('main.actions.alreadyCommitted'));
-    const sha = await commitMerge(r.worktree, r.branch, r.target, r.mainSha, await mergeIdentity(r.clone));
+    const message = conflictMergeMessage(r.branch, r.target, a.issue, getConfig().runner.commitMessage);
+    const sha = await commitMerge(r.worktree, r.branch, r.target, r.mainSha, await mergeIdentity(r.clone), message);
     const push = blank({
       key: `conflict-push:${a.id}:${sha}`,
       kind: 'conflict-push',
@@ -903,7 +911,7 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
         // i18n-ignore: a git command line shown as it runs
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
         // i18n-ignore: a git command line shown as it runs
-        t('main.actions.commitNote', { sha: sha.slice(0, 9), message: mergeMessage(r.branch, r.target) }),
+        t('main.actions.commitNote', { sha: sha.slice(0, 9), message }),
         r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
     });

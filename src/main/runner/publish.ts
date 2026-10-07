@@ -44,6 +44,7 @@ import { moveRun } from '../runs-forum';
 import type { VcsComment, VcsProvider, VcsThread, VcsWriteOp } from '../vcs/types';
 import { type BranchState, type MilestoneIssue, type ReleaseBrief, type RemoteRelease, activitiesText, releaseRecord, releaseTitle } from './release';
 import { type Placed, commentText, generalFindings, lineCountText, placeFindings, reviewComments, sameFinding, withTail, withoutRepeats } from './review';
+import { pullRequestTitle } from './git';
 
 // What the runner leaves on the code host: the comment of each stage on the issue, the decision of each gate, the questions of the agents, the review of
 // the pull request on its lines, and the proposals of the push and the pull request. It decides what goes out by itself (the agent is autonomous and the
@@ -679,7 +680,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const closes = run.docs ? undefined : closesOf(run);
       const rendered = renderComment(pr, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label) }, end.output.pr, { marker, fallback: end.output.summary, tail: closes });
       const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: pr.technicalDetail });
-      const title = (end.output.pr?.title || run.issue.title).trim().slice(0, 120);
+      const title = pullRequestTitle(config.runner.prTitle, end.output.pr?.title || run.issue.title, run.issue.iid);
       moveRun(d, runId, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: hashOf(checked.body), body: checked.body, headline: rendered.status, title }, now()));
     } else if (run.docs) {
       // No template for it (the person removed it): the description is what the stage said it did, still checked like any text that leaves the machine.
@@ -718,7 +719,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (await prOf(run, provider)) return;
       const draft = run.comments.pr;
       const { repo } = projects(run);
-      const title = (draft?.title || run.issue.title).trim();
+      const title = pullRequestTitle(deps.config().runner.prTitle, draft?.title?.trim() || run.issue.title, run.issue.iid);
       // The description comes from the template; a cycle with none still says which issue the pull request closes (a documentation run closes none).
       const body = draft?.body ? draft.body : run.docs ? '' : `${closesOf(run)}\n`;
       const target = (await provider.getRepo(repo)).defaultBranch;

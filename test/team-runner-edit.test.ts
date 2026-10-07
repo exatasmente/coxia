@@ -9,7 +9,7 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, commitMessage: 'fix: {summary} {iid}', linkDependencies: true, release: { soleMaintainer: true } };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true } };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
     expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
   });
@@ -89,9 +89,9 @@ describe('the problems of the runner draft', () => {
   });
 
   it('wants {summary} in one line of at most 200 characters', () => {
-    expect(keys({ ...base(), commitMessage: 'feat: stuff' })).toEqual(['error:commitSummary']);
-    expect(keys({ ...base(), commitMessage: 'feat: {summary}\nmore' })).toEqual(['error:commitLine']);
-    expect(keys({ ...base(), commitMessage: `{summary}${'x'.repeat(200)}` })).toEqual(['error:commitLong']);
+    expect(keys({ ...base(), commitMessage: 'feat: stuff' })).toEqual(['error:commitSummary', 'error:commitIssue']);
+    expect(keys({ ...base(), commitMessage: 'feat: {summary}\nmore' })).toEqual(['error:commitIssue', 'error:commitLine']);
+    expect(keys({ ...base(), commitMessage: `{summary}${'x'.repeat(200)}` })).toEqual(['error:commitIssue', 'error:commitLong']);
   });
 
   it('warns that the runner works only with a flow cycle', () => {
@@ -114,6 +114,10 @@ describe('the problems of the runner draft', () => {
       { identityName: 'x', identityEmail: 'bad' },
       { commitMessage: 'nope' },
       { commitMessage: '{summary}\nx' },
+      { commitMessage: 'fix: {summary}' },
+      { prTitle: 'nope' },
+      { prTitle: '{title}' },
+      { prTitle: '{title} {iid}\nx' },
       { maxConcurrentRuns: 0 },
       { idleMinutes: 0.01 },
       { maxMinutes: 0.01 },

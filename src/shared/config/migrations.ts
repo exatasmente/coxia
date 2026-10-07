@@ -32,6 +32,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v13 plugins: the folder that holds the workspace's plugins, which ones are on and what each was allowed "always", empty by default. Nothing stored changes.
 //   v16 runner.autonomy and devCycle.autonomy: the autonomy blocks (the workspace's and one per flow), every field off and every flow following the workspace.
 //       Nothing is raised and the sandbox network of a stored workspace is left exactly as it was.
+//   v17 `runner.prTitle` (the template of the pull request title, `{title}` and `{iid}`) and `{iid}` in `runner.commitMessage`, which is
+//       appended when a stored message leaves the number out. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -298,7 +300,17 @@ function v15ToV16(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 16, runner: { ...runner, autonomy }, devCycle: { ...cycle, autonomy: flows } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16 };
+// A v16 file has no pull request title template, and its commit message may leave the issue number out. The stored commit message gets ` #{iid}`
+// appended when it has none, and the title template takes the default. Nothing else of the file moves.
+function v16ToV17(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  if (!Object.keys(runner).length) return { ...old, schemaVersion: 17 };
+  const commitMessage = typeof runner.commitMessage === 'string' && !runner.commitMessage.includes('{iid}') ? `${runner.commitMessage.trimEnd()} #{iid}` : runner.commitMessage;
+  notes.push('runner.prTitle is the template of the pull request title ({title} and {iid}); a runner.commitMessage without {iid} got the number appended');
+  return { ...old, schemaVersion: 17, runner: { ...runner, commitMessage, prTitle: runner.prTitle ?? neutralRunner().prTitle } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
