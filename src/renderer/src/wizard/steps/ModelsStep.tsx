@@ -51,6 +51,7 @@ function TestResultView({ p, state }: { p: LlmProvider; state: TestState }) {
           <Chip ok={r.capabilities.tools}>{t('wizard.cap.tools')}</Chip>
           <Chip ok={r.capabilities.jsonSchema}>{t('wizard.cap.jsonSchema')}</Chip>
           <Chip ok={r.capabilities.streaming}>{t('wizard.cap.streaming')}</Chip>
+          {r.engine === 'open' && <Chip ok={r.capabilities.images ?? null}>{t('wizard.cap.images')}</Chip>}
           <Chip ok={null}>{r.capabilities.contextWindow ? t('wizard.cap.context', { tokens: r.capabilities.contextWindow.toLocaleString(intlLocale()) }) : t('wizard.cap.contextUnknown')}</Chip>
         </div>
       )}
@@ -221,6 +222,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
   return (
     <div className="wz-stack">
       <Notice tone="info">{t('wizard.models.noSubscription')}</Notice>
+      <Notice tone="info">{t('wizard.models.noModelNoAgent')}</Notice>
       {error && <div className="error" role="alert">{error}</div>}
 
       <section className="wz-stack" aria-labelledby="wz-providers">

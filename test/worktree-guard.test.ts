@@ -9,25 +9,29 @@ import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
 import { policyFromHooks } from '../src/main/engine/open/policy';
 import { editTool, writeTool } from '../src/main/engine/open/tools/write';
 import type { ToolContext } from '../src/main/engine/open/tools/types';
-import { type Denial, confinedHooks } from '../src/main/runner/hooks';
+import { type Denial, confinedHooks, readConfinedHooks } from '../src/main/runner/hooks';
 import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
 
 let base: string;
 let root: string;
 let outside: string;
+let docs: string;
 
 beforeAll(() => {
   base = mkdtempSync(join(tmpdir(), 'guard-'));
   root = join(base, 'wt');
   outside = join(base, 'elsewhere');
+  docs = join(base, 'docs');
   mkdirSync(join(root, 'src'), { recursive: true });
   mkdirSync(join(root, '.git/hooks'), { recursive: true });
   mkdirSync(join(root, 'sub/.git'), { recursive: true });
   mkdirSync(join(root, '.husky'));
   mkdirSync(outside);
+  mkdirSync(docs);
   writeFileSync(join(root, 'src/a.ts'), 'export const a = 1;\n');
   writeFileSync(join(root, '.env'), 'KEY=1\n');
   writeFileSync(join(outside, 'target.txt'), 'outside\n');
+  writeFileSync(join(docs, 'guide.md'), '# guide\n');
   symlinkSync(join(outside, 'target.txt'), join(root, 'file-link'));
   symlinkSync(outside, join(root, 'dir-link'));
   symlinkSync(join(outside, 'nowhere.txt'), join(root, 'dangling'));
@@ -102,6 +106,78 @@ describe('the path guard for a write', () => {
   });
 });
 
+describe('the path guard of a reading agent of a run', () => {
+  const denials: Denial[] = [];
+  const hooks = (roots: string[] = []) => readConfinedHooks({ root, roots, onDenied: (d) => denials.push(d) });
+  beforeEach(() => (denials.length = 0));
+  const pre = (tool: string, input: Record<string, unknown>, roots: string[] = []) => policyFromHooks(hooks(roots), 's1').pre(tool, input, root);
+
+  it('lets a reader look inside the worktree and refuses every way out, naming the reason to the agent and telling the runner', async () => {
+    expect(await pre('Read', { file_path: 'src/a.ts' })).toBeNull();
+    expect(await pre('Read', { file_path: '.' })).toBeNull();
+    expect(await pre('Glob', { pattern: 'src/**/*.ts' })).toBeNull();
+    expect(await pre('Grep', { pattern: 'a', path: 'src' })).toBeNull();
+    expect(await pre('Read', { file_path: '/etc/passwd' })).toMatch(/fora da pasta|outside/i);
+    expect(await pre('Read', { file_path: '../elsewhere/target.txt' })).toMatch(/\.\./);
+    expect(await pre('Read', { file_path: '~/.bashrc' })).toMatch(/fora da pasta|outside/i);
+    expect(await pre('Read', { file_path: 'file-link' })).toMatch(/fora da pasta|outside/i);
+    expect(await pre('Read', { file_path: '.git/config' })).toMatch(/\.git/);
+    // a secret name is refused by the ceremony filter that runs in front of the guard, so the guard records no denial of its own for it
+    expect(await pre('Read', { file_path: '.env' })).toMatch(/segredo|secret/i);
+    expect(denials.map((d) => d.code)).toEqual(['outside', 'traversal', 'outside', 'outside', 'git']);
+    expect(denials.every((d) => d.tool.startsWith('Read'))).toBe(true);
+    expect(denials[4].target).toBe('.git/config');
+  });
+
+  it('refuses nothing of the ceremony policy a reader already had: a secret name, a broad search, an over-wide result', async () => {
+    // the secret filter of the ceremonies still refuses before the guard
+    expect(await pre('Grep', { pattern: 'x', path: '.env' })).not.toBeNull();
+    // and the guard composes with it instead of replacing it: a secret reached from inside is refused by name, not by path
+    expect(await pre('Read', { file_path: 'config/secrets.yml' })).toMatch(/segredo|secret/i);
+  });
+
+  it('lets a reader reach the documentation folders it was given, and no other folder outside the worktree', async () => {
+    expect(await pre('Read', { file_path: join(docs, 'guide.md') }, [docs])).toBeNull();
+    expect(await pre('Read', { file_path: join(docs, 'guide.md') })).not.toBeNull();
+    expect(await pre('Read', { file_path: join(outside, 'target.txt') }, [docs])).not.toBeNull();
+    // a folder that does not exist is not a root
+    expect(await pre('Read', { file_path: join(base, 'ghost', 'x.md') }, [join(base, 'ghost')])).not.toBeNull();
+  });
+
+  it('through the loop of the open engine, the model reads the refusal of a reading agent with the path and the folders', async () => {
+    const fake = await fakeOpenAI((req) =>
+      req.n === 1 ? toolStep([{ id: 'r1', name: 'Read', args: { file_path: join(outside, 'target.txt') } }]) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'ok' } }]),
+    );
+    try {
+      const collected: Denial[] = [];
+      const hooksForReader = readConfinedHooks({ root, roots: [docs], onDenied: (d) => collected.push(d) });
+      const r = await runOpen<{ fala: string }>({
+        role: 'dev',
+        prompt: 'read',
+        schema: obj({ fala: str }),
+        client: new ChatClient({ baseUrl: fake.url, model: 'fake-model', retryDelayMs: 0 }),
+        cwd: root,
+        allowedTools: ['Read'],
+        hooks: hooksForReader,
+        isSecret: (q) => secretPath(q, root),
+        secretGlobs: SECRET_GLOBS,
+        docs: {},
+        maxTurns: 3,
+        sessionsDir: null,
+        ripgrep: 'off',
+      });
+      expect(r.data.fala).toBe('ok');
+      const second = fake.chats()[1].body as { messages: { role: string; content: string }[] };
+      const content = second.messages.filter((m) => m.role === 'tool').map((m) => m.content).join('\n');
+      // the model reads the path it tried, so it can correct itself
+      expect(content).toMatch(/target\.txt/);
+      expect(collected.map((d) => d.code)).toEqual(['outside']);
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
 describe('the environment of the commands of an agent that writes', () => {
   it('drops what looks like a credential and keeps what a test run needs', () => {
     const env = scrubbedEnv({ PATH: '/bin', HOME: '/h', LANG: 'C', GITHUB_TOKEN: 'x', MY_API_KEY: 'y', AWS_PROFILE: 'z', SSH_AUTH_SOCK: '/s', ANTHROPIC_BASE_URL: 'u', NPM_CONFIG_USERCONFIG: 'q', DB_PASSWORD: 'p' });
@@ -161,6 +237,17 @@ describe('the hooks of the confinement', () => {
     expect(await pre('Grep', { pattern: 'a', path: outside })).not.toBeNull();
     expect(await pre('Glob', { pattern: '/etc/*' })).not.toBeNull();
     expect(await pre('Glob', { pattern: '../**/*' })).not.toBeNull();
+  });
+
+  it('tells the run about a refused read of an agent that writes too, as it does for a write', async () => {
+    expect(await pre('Read', { file_path: 'src/a.ts' })).toBeNull();
+    expect(await pre('Read', { file_path: '/etc/hostname' })).not.toBeNull();
+    expect(await pre('Glob', { pattern: '../**/*' })).not.toBeNull();
+    // the same callback the runner posts its thread line through: a reader's refusal must not be silent to the runner
+    expect(denials.map((d) => [d.tool, d.code])).toEqual([
+      ['Read', 'outside'],
+      ['Glob', 'traversal'],
+    ]);
   });
 });
 

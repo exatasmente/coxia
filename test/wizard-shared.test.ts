@@ -2,9 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
 import type { LlmProvider } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
-import { type ProviderDraft, OPEN_PRESETS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
+import { type ProviderDraft, OPEN_PRESETS, SKIPPABLE_STEPS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
 
 describe('wizard steps', () => {
+  it('opens on language and name and asks for the model provider right after it', () => {
+    expect([...WIZARD_STEPS]).toEqual(['language', 'models', 'sdk', 'projects', 'integrations', 'docs', 'cycle', 'voice', 'review']);
+  });
+
+  // Derived from the order, so a later shuffle cannot silently make the opening step skippable or the model step unskippable.
+  it('lets every step between the opening one and the review be skipped, the model choice included', () => {
+    expect([...SKIPPABLE_STEPS]).toEqual(WIZARD_STEPS.slice(1, -1));
+    expect(SKIPPABLE_STEPS).toContain('models');
+    expect(SKIPPABLE_STEPS).not.toContain('language');
+    expect(SKIPPABLE_STEPS).not.toContain('review');
+  });
+
   it('shows the SDK step only when a provider runs on the SDK engine', () => {
     const c = neutralConfig();
     expect(needsSdk(c)).toBe(true);
@@ -59,6 +71,12 @@ describe('providers', () => {
     for (const p of OPEN_PRESETS) if (p.id !== 'custom') expect(p.baseUrl).toMatch(/^https?:\/\//);
     expect(OPEN_PRESETS.find((p) => p.id === 'ollama')).toMatchObject({ baseUrl: 'http://localhost:11434/v1', local: true, keyRequired: false });
     expect(OPEN_PRESETS.find((p) => p.id === 'lmstudio')).toMatchObject({ baseUrl: 'http://localhost:1234/v1', local: true });
+    const deepinfra = OPEN_PRESETS.find((p) => p.id === 'deepinfra');
+    expect(deepinfra).toMatchObject({ baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true, keyUrl: 'https://deepinfra.com/dash/api_keys', headers: {} });
+    expect(deepinfra?.suggestedModels.length).toBeGreaterThan(0);
+    expect(Object.keys(deepinfra ?? {})).toEqual(Object.keys(OPEN_PRESETS[0]));
+    expect(OPEN_PRESETS.map((p) => p.id)).toEqual(['openai', 'openrouter', 'groq', 'deepseek', 'deepinfra', 'ollama', 'lmstudio', 'custom']);
+    expect(new Set(OPEN_PRESETS.map((p) => p.id)).size).toBe(OPEN_PRESETS.length);
   });
 });
 
@@ -111,7 +129,7 @@ describe('userName', () => {
     const { legacyConfigFixture } = await import('./helpers/config');
     expect(neutralConfig().userName).toBe('');
     expect(legacyConfigFixture().userName).toBe('Bruno');
-    expect(validateConfig({ schemaVersion: 12, userName: 'Ana' }).config?.userName).toBe('Ana');
+    expect(validateConfig({ schemaVersion: 16, userName: 'Ana' }).config?.userName).toBe('Ana');
   });
 });
 

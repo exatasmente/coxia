@@ -1,12 +1,12 @@
 // The same agent on the open engine, through runAgent: the engine is picked from the agent's own provider, an agent that writes gets Write and Edit
 // inside its worktree and nothing else, and what the guard refuses shows up in the live activity.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { activityLog, withActivityContext } from '../src/main/activity';
 import { obj, runAgent, str } from '../src/main/agents';
-import { confinedHooks, type Denial } from '../src/main/runner/hooks';
+import { confinedHooks, readConfinedHooks, type Denial } from '../src/main/runner/hooks';
 import { newProvider } from '../src/shared/config/defaults';
 import { newAgent } from '../src/shared/config/team';
 import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
@@ -14,11 +14,18 @@ import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
 let fake: Fake;
 let root: string;
 let outside: string;
+let docs: string;
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'agent-open-'));
   outside = mkdtempSync(join(tmpdir(), 'agent-open-out-'));
+  docs = mkdtempSync(join(tmpdir(), 'agent-open-docs-'));
   mkdirSync(join(root, '.git/hooks'), { recursive: true });
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'src/a.ts'), 'export const a = 1;\n');
+  writeFileSync(join(root, '.env'), 'KEY=1\n');
+  writeFileSync(join(outside, 'away.txt'), 'outside\n');
+  writeFileSync(join(docs, 'guide.md'), '# guide\n');
   fake = await fakeOpenAI((req) =>
     req.n === 1
       ? toolStep([
@@ -132,5 +139,84 @@ describe('runAgent on the open engine', () => {
     expect(names).not.toContain('Write');
     expect(names).not.toContain('Edit');
     expect(names).not.toContain('Bash');
+  });
+});
+
+describe('a reading agent of a run on the open engine', () => {
+  let providerSeq = 0;
+  /** A call of a reader confined to the worktree, with a script of tool calls; the engine is a fresh local provider of the test. */
+  const readerRun = async (calls: { id: string; name: string; args: object }[], opts: { roots?: string[] } = {}) => {
+    const live = await fakeOpenAI((req) => (req.n === 1 ? toolStep(calls) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }])));
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      const provider = `readeropen${providerSeq++}`;
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: provider, kind: 'openai-compatible', baseUrl: live.url, structured: 'tool' }));
+        return c;
+      });
+      const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider, model: 'qwen3:8b' } });
+      const denials: Denial[] = [];
+      await withActivityContext('run:r-reader-0001', () =>
+        runAgent(
+          {
+            agent: reader,
+            prompt: 'p',
+            schema: obj({ fala: str }),
+            system: 'sys',
+            cwd: root,
+            label: 'reviewer',
+            maxTurns: 4,
+            readRoot: { root, roots: opts.roots ?? [], hooks: readConfinedHooks({ root, roots: opts.roots ?? [], onDenied: (d) => denials.push(d) }) },
+          },
+          [],
+        ),
+      );
+      return { denials, chats: live.chats() };
+    } finally {
+      await live.close();
+    }
+  };
+
+  it('offers no Write, no Edit and no Bash to a confined reader, and refuses a read outside the worktree, telling the runner and the activity', async () => {
+    activityLog.clear();
+    const { denials, chats } = await readerRun([
+      { id: 'r1', name: 'Read', args: { file_path: 'src/a.ts' } },
+      { id: 'r2', name: 'Read', args: { file_path: join(outside, 'away.txt') } },
+      { id: 'r3', name: 'Read', args: { file_path: '../elsewhere/x' } },
+      { id: 'r4', name: 'Read', args: { file_path: '~/.bashrc' } },
+      { id: 'r5', name: 'Read', args: { file_path: '.git/config' } },
+    ]);
+    const names = (chats[0].body?.tools as { function: { name: string } }[]).map((t) => t.function.name).sort();
+    expect(names).not.toContain('Write');
+    expect(names).not.toContain('Edit');
+    expect(names).not.toContain('Bash');
+    expect(names).toContain('Read');
+    // the read inside the worktree ran, the four ways out were refused
+    expect(denials.map((d) => d.code)).toEqual(['outside', 'traversal', 'outside', 'git']);
+    expect(denials.map((d) => d.tool)).toEqual(['Read', 'Read', 'Read', 'Read']);
+    const blocked = activityLog.get('run:r-reader-0001').filter((e) => e.state === 'blocked');
+    expect(blocked).toHaveLength(4);
+    expect(blocked.every((e) => e.role === 'reviewer')).toBe(true);
+    // the model reads the path it tried, so it can correct itself
+    const results = (chats[1].body?.messages as { role: string; content: string }[]).filter((m) => m.role === 'tool').map((m) => m.content);
+    expect(results[1]).toContain('away.txt');
+  });
+
+  it('keeps the secret filter, the broad-search refusal and the secret result redaction of a reader: the guard composes with them', async () => {
+    const { denials, chats } = await readerRun([
+      { id: 'r1', name: 'Read', args: { file_path: '.env' } },
+      { id: 'r2', name: 'Glob', args: { pattern: '**/*.env' } },
+    ]);
+    // the secret name is refused by the filter that runs in front of the guard, so the guard records no denial of its own
+    expect(denials).toEqual([]);
+    const results = (chats[1].body?.messages as { role: string; content: string }[]).filter((m) => m.role === 'tool').map((m) => m.content);
+    expect(results.join('\n')).toMatch(/segredo|secret/i);
+  });
+
+  it('lets a confined reader reach a documentation folder it was given as a root, and not one it was not', async () => {
+    const inside = await readerRun([{ id: 'r1', name: 'Read', args: { file_path: join(docs, 'guide.md') } }], { roots: [docs] });
+    expect(inside.denials).toEqual([]);
+    const refused = await readerRun([{ id: 'r1', name: 'Read', args: { file_path: join(docs, 'guide.md') } }]);
+    expect(refused.denials.map((d) => d.code)).toEqual(['outside']);
   });
 });

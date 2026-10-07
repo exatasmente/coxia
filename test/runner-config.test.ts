@@ -9,7 +9,7 @@ const errorsOf = (c: WorkspaceConfig): string[] => validateConfig(c).errors.map(
 
 describe('the runner section', () => {
   it('is off by default, with the label "coxia", one run at a time, the repository\'s own commands and no identity of its own', () => {
-    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: { network: 'off', registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'], readOnlyPaths: [], limits: { commandMs: 300_000, stageMs: 1_800_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 } }, commitMessage: 'feat: {summary} #{iid}', linkDependencies: true, release: { soleMaintainer: false } });
+    expect(neutralConfig().runner).toEqual({ enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 600_000, stageMaxMs: 7_200_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: { network: 'off', registryHosts: ['registry.npmjs.org', 'registry.yarnpkg.com'], readOnlyPaths: [], browsersPath: null, display: false, limits: { commandMs: 300_000, stageMs: 1_800_000, memoryMb: 2048, processes: 256, fileMb: 256, copyMb: 2048 } }, autonomy: { cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false }, commitMessage: 'feat: {summary} #{iid}', linkDependencies: true, release: { soleMaintainer: false } });
     expect(validateConfig(neutralConfig()).ok).toBe(true);
   });
 
@@ -101,7 +101,7 @@ describe('the migration to schema 6', () => {
     const r = migrateConfig(before, { legacyInstall: false });
     expect(r.fromVersion).toBe(5);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.language).toBe('en');
     expect(r.notes.join(' ')).toContain('runner');
@@ -115,12 +115,12 @@ describe('the migration to schema 6', () => {
 
   it('carries a v3 file through every step', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(16);
     expect(r.config.runner).toEqual(neutralRunner());
     expect(r.config.agents.team).toHaveLength(5);
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 13 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 17 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

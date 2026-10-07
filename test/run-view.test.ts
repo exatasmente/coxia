@@ -301,9 +301,18 @@ describe('the list of runs', () => {
 describe('what a stage used, as the timeline says it', () => {
   it('formats the numbers in the reader\'s locale and shows a cost only when one was reported', () => {
     const u = { promptTokens: 1_234_567, completionTokens: 8_900, cachedTokens: 400_000, calls: 12, costUsd: null };
-    expect(usageParams(u, 'en')).toEqual({ calls: '12', prompt: '1,234,567', cached: '400,000', completion: '8,900', cost: null });
+    expect(usageParams(u, 'en')).toEqual({ calls: '12', prompt: '1,234,567', cached: '400,000', completion: '8,900', cost: null, estimated: false });
     expect(usageParams(u, 'pt-BR').prompt).toBe('1.234.567');
     expect(usageParams({ ...u, costUsd: 0.0318 }, 'en').cost).toBe('$0.0318');
     expect(usageParams({ ...u, costUsd: 2 }, 'en').cost).toBe('$2.00');
+  });
+
+  it('says whether the cost shown is the charged one or an estimate', () => {
+    const u = { promptTokens: 1_000, completionTokens: 100, cachedTokens: 0, calls: 2, costUsd: 0.5 };
+    expect(usageParams(u, 'en').estimated).toBe(false);
+    expect(usageParams({ ...u, costEstimated: true }, 'en').estimated).toBe(true);
+    // no cost at all: nothing to call an estimate
+    expect(usageParams({ ...u, costUsd: null }, 'en').estimated).toBe(false);
+    expect(usageParams({ ...u, costUsd: null, costEstimated: true }, 'en').estimated).toBe(true);
   });
 });

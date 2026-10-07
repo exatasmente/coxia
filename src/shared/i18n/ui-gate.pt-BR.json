@@ -320,7 +320,7 @@
   "ui.resolver.publish.confirm": "Confirmar: fazer push em {branch}",
   "ui.resolver.publish.failed": "O envio falhou: {output}",
   "ui.resolver.publish.go": "Seguir com o push",
-  "ui.resolver.publish.intro": "Merge commitado na worktree ({commit}): “Merge branch 'main' into '{branch}'”. Publicar faz {push}, só fast-forward, sem force. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou desde o preparo.",
+  "ui.resolver.publish.intro": "Merge commitado na worktree ({commit}): “Merge branch '{target}' into '{branch}'”. Publicar faz {push}, só fast-forward, sem force. Antes de enviar, a branch é buscada de novo e o envio é recusado se ela mudou desde o preparo.",
   "ui.resolver.publish.title": "Publicar",
   "ui.resolver.published": "Publicado em {branch}. A worktree foi removida. A atualização do comentário do QA aparece em Ações de release, com o seu próprio “sim”.",
   "ui.resolver.reopen": "Reabrir a resolução",

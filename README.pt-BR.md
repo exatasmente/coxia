@@ -107,7 +107,7 @@ Notas honestas:
 
 - **Login de assinatura do claude.ai não é oferecido.** Use uma chave de API ou as credenciais da sua nuvem.
 - **Modelos locais e pequenos precisam de duas coisas:** *tool calling* de verdade e uma janela de contexto de **pelo menos 10 mil tokens** (16 mil ou mais é confortável). O prompt do agente (regras, skills, definições de ferramentas) já passa de 10 mil tokens. O Ollama vem com 4096: aumente o `num_ctx`. Modelos de poucos bilhões de parâmetros erram argumentos de ferramentas com frequência; use o teste de conexão do assistente e prefira modelos treinados para ferramentas.
-- **O motor aberto só foi testado contra um servidor falso roteirizado**, ainda não contra um Ollama ou modelo hospedado de verdade. Conte o que encontrar.
+- **O motor aberto rodou contra um modelo de verdade em quatro execuções**, no runner e contra um host de código falso; nenhum provedor local (Ollama, LM Studio) foi testado ainda. Conte o que encontrar.
 - Os dois motores mantêm sessões separadas, e o motor aberto não calcula custo em dólar, só tokens.
 
 Tabela do que foi testado e as limitações conhecidas: [`docs/llm-providers.md`](docs/llm-providers.md).

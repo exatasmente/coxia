@@ -70,6 +70,16 @@ describe('the argument list of the sandbox', () => {
     expect(bwrapArgs(spec({ network: 'proxy' }))).toContain('--unshare-net');
   });
 
+  it('shares the computer network in open mode: no --unshare-net, no proxy, the other unshares kept', () => {
+    const a = bwrapArgs(spec({ network: 'open' }));
+    expect(a).not.toContain('--unshare-net');
+    for (const f of ['--unshare-user', '--unshare-ipc', '--unshare-pid', '--unshare-uts', '--unshare-cgroup-try', '--disable-userns', '--clearenv']) expect(a).toContain(f);
+    const env = sandboxEnv(spec({ network: 'open' }));
+    expect(env.HTTPS_PROXY).toBeUndefined();
+    expect(env.COXIA_PROXY).toBeUndefined();
+    expect(bwrapArgs(spec({ network: 'off' }))).toContain('--unshare-net');
+  });
+
   it('limits each command by program, with a hard limit', () => {
     expect(SUPERVISOR_SH).toContain('prlimit --data=');
     expect(SUPERVISOR_SH).toContain('timeout -k 3');

@@ -61,7 +61,9 @@ export function attachmentToolImpl(thread: string, refs: readonly AttachmentRef[
       // The file on disk carries the id and the extension only: the name and the kind the message lists are the ones the agent reads.
       const named: AttachmentRead = { ...read, ref };
       const response = ref.kind === 'image' ? { type: 'attachment_image', name: ref.name, url: `data:${mediaType(got.bytes)};base64,${Buffer.from(got.bytes).toString('base64')}` } : attachmentTextAnswer(named, id);
-      return { response, render: () => clip(attachmentTextAnswer(named, id), ctx.outputMax) };
+      // The image rides as a ToolImage: the loop shows it to the model in the message it writes for every tool's pictures (the tool result stays text).
+      const images = ref.kind === 'image' ? [{ path: ref.name, mediaType: mediaType(got.bytes), data: Buffer.from(got.bytes).toString('base64') }] : undefined;
+      return { response, render: () => clip(attachmentTextAnswer(named, id), ctx.outputMax), ...(images ? { images } : {}) };
     },
   };
 }

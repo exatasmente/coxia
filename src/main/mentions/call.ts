@@ -1,5 +1,6 @@
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
+import { writableLabels } from '../../shared/priority';
 import type { ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { AgentCall } from '../agents';
@@ -28,9 +29,11 @@ export interface MentionInput {
   /** Where the person wrote: the place text changes with it. */
   place: 'run' | 'channel' | 'general' | 'ceremony';
   /** The agent's commands run in a session over a copy of the code: what it is told about it. Absent: no commands. */
-  shell?: { host: boolean; network: 'off' | 'registry' };
-  /** The agent may propose an issue (it reads the code host): the answer gets an `issue` field. */
-  issue?: boolean;
+  shell?: { host: boolean; network: 'off' | 'registry' | 'open' };
+  /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
+  proposals?: boolean;
+  /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
+  autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
 }
@@ -51,14 +54,87 @@ export function readProposedIssue(raw: unknown): ProposedIssue | null {
   return { title, body, labels };
 }
 
-const ISSUE_SCHEMA = {
-  type: ['object', 'null'],
-  properties: { title: { type: 'string' }, body: { type: 'string' }, labels: { type: 'array', items: { type: 'string' } } },
-  required: ['title', 'body', 'labels'],
+/** One write on the code host the answer proposes: the operations the app already writes, read leniently from the answer. */
+export type ProposedWrite =
+  | { op: 'comment'; issue: number; body: string }
+  | { op: 'labels'; issue: number; add: string[]; remove: string[] }
+  | { op: 'status'; issue: number; status: string }
+  | { op: 'close'; issue: number; body: string }
+  | { op: 'createIssue'; title: string; body: string; labels: string[] };
+
+const strList = (raw: unknown): string[] =>
+  Array.isArray(raw) ? raw.filter((l): l is string => typeof l === 'string' && !!l.trim()).map((l) => l.trim().slice(0, 200)).slice(0, 10) : [];
+const iidOf = (raw: unknown): number | null => (typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null);
+
+/**
+ * The proposals of an answer, read leniently: a `proposals` array where each entry names an operation the app can write. An entry that does not name one, or is
+ * missing what its operation needs, is dropped without discarding the rest of the answer.
+ */
+export function readProposedWrites(raw: unknown): ProposedWrite[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProposedWrite[] = [];
+  for (const entry of raw) {
+    const r = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+    if (!r) continue;
+    const op = typeof r.op === 'string' ? r.op : '';
+    const body = typeof r.body === 'string' ? r.body.trim().slice(0, 20_000) : '';
+    if (op === 'comment') {
+      const issue = iidOf(r.issue);
+      if (issue !== null && body) out.push({ op: 'comment', issue, body });
+    } else if (op === 'labels') {
+      const issue = iidOf(r.issue);
+      const add = strList(r.add);
+      const remove = strList(r.remove);
+      if (issue !== null && (add.length || remove.length)) out.push({ op: 'labels', issue, add, remove });
+    } else if (op === 'status') {
+      const issue = iidOf(r.issue);
+      const status = typeof r.status === 'string' ? r.status.trim().slice(0, 100) : '';
+      if (issue !== null && status) out.push({ op: 'status', issue, status });
+    } else if (op === 'close') {
+      const issue = iidOf(r.issue);
+      if (issue !== null) out.push({ op: 'close', issue, body });
+    } else if (op === 'createIssue') {
+      const issue = readProposedIssue({ title: r.title, body: r.body, labels: r.labels });
+      if (issue) out.push({ op: 'createIssue', ...issue });
+    }
+  }
+  return out;
+}
+
+const PROPOSAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    op: { type: 'string', enum: ['comment', 'labels', 'status', 'close', 'createIssue'] },
+    issue: { type: ['integer', 'string'] },
+    body: { type: 'string' },
+    status: { type: 'string' },
+    add: { type: 'array', items: { type: 'string' } },
+    remove: { type: 'array', items: { type: 'string' } },
+    title: { type: 'string' },
+    labels: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['op'],
   additionalProperties: false,
 };
 
+const PROPOSALS_SCHEMA = { type: ['array', 'null'], items: PROPOSAL_SCHEMA };
+
 /** The line that says where the person wrote and what the agent may read there. */
+/**
+ * The labels the workspace gives a meaning to, for an agent that may write labels: the one that starts the agents' cycle on an issue and the priority levels it can
+ * write. Without them the agent can only guess a name, and a guessed label is a write the host takes as it is.
+ */
+function labelsLine(config: WorkspaceConfig): string {
+  const trigger = config.runner.triggerLabel.trim();
+  const levels = writableLabels(config.devCycle.priority.labels);
+  return [
+    trigger ? cp('runner.mention.labels.trigger', { label: trigger }) : '',
+    levels.length ? cp('runner.mention.labels.priority', { labels: levels.map((l) => `\`${l}\``).join(', ') }) : cp('runner.mention.labels.noPriority'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 function placeLine(i: MentionInput): string {
   const repos = (i.repos ?? []).map((r) => r.trim()).filter(Boolean);
   const repoList = repos.length ? repos.join(', ') : cp('runner.mention.place.noRepos');
@@ -86,9 +162,10 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
     placeLine(i),
-    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'open' ? cp('runner.rules.shell.open') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.issue ? cp('runner.mention.issue') : '',
+    i.proposals ? (i.autonomous ? cp('runner.mention.proposalsAuto') : cp('runner.mention.proposals')) : '',
+    i.proposals ? labelsLine(i.config) : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
     agents.persona.trim(),
@@ -106,7 +183,9 @@ export function mentionCall(i: MentionInput): AgentCall {
   return {
     agent: i.agent,
     prompt: cp('runner.mention.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') }),
-    schema: i.issue ? { type: 'object', properties: { text: { type: 'string' }, issue: ISSUE_SCHEMA }, required: ['text', 'issue'], additionalProperties: false } : { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+    schema: i.proposals
+      ? { type: 'object', properties: { text: { type: 'string' }, proposals: PROPOSALS_SCHEMA }, required: ['text', 'proposals'], additionalProperties: false }
+      : { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
     system,
     cwd: i.cwd,
     label: i.agent.id,

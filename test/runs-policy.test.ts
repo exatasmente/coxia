@@ -79,12 +79,13 @@ describe('the runner writes to a code host through one door', () => {
     expect(files.filter((f) => /externalRefusal|assertExternalWrite|isTestWorkspace/.test(source(f)))).toEqual([DOOR]);
   });
 
-  it('has no git push anywhere: not a command it runs, and not a function it imports (the door proposes it, Actions runs it)', () => {
+  it('has no git push anywhere: the door asks for it and Actions runs it, the publisher only chooses that it does', () => {
     for (const f of files) {
       const text = source(f);
-      expect(text, f).not.toMatch(/'push'/);
-      expect(text, f).not.toMatch(/pushBranch|assertPlainPush/);
+      // `'push'` as a value is the name of the door's call (and the choice of the autonomy block), never an option of git: the command line lives in Actions.
+      expect(text, f).not.toMatch(/git .*'push'|'push', 'origin|pushBranch|assertPlainPush/);
     }
+    expect(source(DOOR)).toMatch(/\.push\(/);
   });
 
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {

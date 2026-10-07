@@ -241,7 +241,7 @@ describe('the migration to schema 12', () => {
 
   it('gives the system agents the code host read the ceremonies had, and nothing else', () => {
     const r = migrateConfig(v11({ vcsCli: true }), { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(12);
+    expect(r.config.schemaVersion).toBe(16);
     const team = r.config.agents.team;
     expect(team.find((a) => a.id === 'deep')).toMatchObject({ tracker: 'read', shell: 'none' });
     expect(team.find((a) => a.id === 'writer')).toMatchObject({ tracker: 'none', shell: 'none' });

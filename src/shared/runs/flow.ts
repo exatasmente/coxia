@@ -1,4 +1,5 @@
 import { DEFAULT_ROUND_LIMIT, type DevCycleConfig, type StageDef, type WorkspaceConfig } from '../config/types';
+import { autonomyOf, choiceOn, flowKeyOf } from '../config/autonomy';
 import { squadView, type CycleView } from '../config/squads';
 import { stageAgent } from '../config/team';
 import type { FlowSnapshot, FlowStage, Run } from './types';
@@ -21,12 +22,13 @@ const nearestWork = (stages: StageDef[], i: number): string | null => {
   return null;
 };
 
-/**
- * The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
+/** The stages of the cycle in the order a run goes through them (as listed), each with its agent and every default of the flow filled in.
  * `next` is null where the run ends: after the last stage, or after a stage that says so. `stages` is the list to read when it is not the cycle's own: the
  * seam for a squad that has a flow of its own (the agents still come from the one team).
+ * `cycleAutonomous` is read once, when the flow is resolved: a change of the block applies from the next stage.
  */
-export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.stages): FlowStage[] {
+export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.stages, flowKey = ''): FlowStage[] {
+  const cycle = cycleOn(config, flowKey);
   return stages.map((s, i) => {
     const type = s.type ?? 'work';
     const who = type === 'work' ? stageAgent(config.agents.team, stages, s.id) : null;
@@ -38,6 +40,7 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       type,
       agent: who?.id ?? null,
       autonomous: who?.autonomous ?? false,
+      cycleAutonomous: cycle,
       artifacts: [...(s.produces ?? [])],
       reads: s.reads ? [...s.reads] : null,
       next: s.next === undefined ? (stages[i + 1]?.id ?? null) : s.next,
@@ -48,6 +51,13 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       trackerStatus: s.trackerStatus?.trim() || null,
     };
   });
+}
+
+/** Whether the autonomy block of a run of `flowKey` has its general switch on (its stage starts by themselves). */
+function cycleOn(config: FlowConfig, flowKey: string): boolean {
+  const c = config as Partial<WorkspaceConfig>;
+  if (!c.runner || !c.devCycle) return false;
+  return autonomyOf(c as WorkspaceConfig, flowKey).cycle;
 }
 
 // A short, stable hash of a flow (FNV-1a over its structure): it says which version a run follows. What the agents are doing (autonomy) is not part of the
@@ -72,12 +82,14 @@ export const snapshotOf = (stages: FlowStage[]): FlowSnapshot => ({ hash: flowHa
 export function flowOfRun(run: Pick<Run, 'flow' | 'squad'>, config: CycleView): FlowStage[] {
   // A run in a squad reads its agents from the squad's members and the shared ones, and the stages of the squad's flow.
   const view = squadView(config, run.squad);
-  if (!run.flow) return flowOf(view, view.devCycle.stages);
+  const key = flowKeyOf(run.squad);
+  const cycle = cycleOn(view as unknown as FlowConfig, key);
+  if (!run.flow) return flowOf(view as unknown as FlowConfig, view.devCycle.stages, key);
   const team = view.agents.team;
   return run.flow.stages.map((s) => {
-    if (s.type !== 'work' || !s.agent) return s;
+    if (s.type !== 'work' || !s.agent) return { ...s, cycleAutonomous: cycle };
     const agent = team.find((a) => a.id === s.agent) ?? stageAgent(team, view.devCycle.stages, s.id);
-    return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false };
+    return { ...s, agent: agent?.id ?? null, autonomous: agent?.autonomous ?? false, cycleAutonomous: cycle };
   });
 }
 
@@ -99,12 +111,22 @@ export function producerOf(flow: FlowStage[], stageId: string): FlowStage | null
   return null;
 }
 
-/** The stage that ends with the push: the last one whose agent changes the worktree. Its work is what the pull request carries. */
-export function pushStageOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage | null {
+/**
+ * The stages that end with a push. The first is the last stage before the first review whose agent changes the worktree: the pull request opens with that work,
+ * so the review lands on it rather than on the issue. Every later stage whose agent changes the worktree (a QA that writes tests, the implementation a review sent
+ * back to) pushes again, which only updates the pull request. A flow with no review, or none after a writer, pushes once, at its last writing stage.
+ */
+export function pushStagesOf(config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[]): FlowStage[] {
   const writes = new Set(config.agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
-  const found = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
-  return found.length ? found[found.length - 1] : null;
+  const writers = flow.filter((s) => s.type === 'work' && s.agent && writes.has(s.agent));
+  if (!writers.length) return [];
+  const review = flow.findIndex((s) => s.type === 'work' && s.kind === 'review');
+  const first = review < 0 ? -1 : flow.slice(0, review).findLastIndex((s) => writers.includes(s));
+  return first < 0 ? [writers[writers.length - 1]] : writers.filter((s) => flow.indexOf(s) >= first);
 }
+
+/** Whether the stage ends with a push (`pushStagesOf`). */
+export const pushesAt = (config: Pick<WorkspaceConfig, 'agents'>, flow: FlowStage[], stageId: string): boolean => pushStagesOf(config, flow).some((s) => s.id === stageId);
 
 /**
  * The stage that owns the issue's priority: the last work stage of the backlog that has an agent (the product owner's refinement; a flow with one backlog

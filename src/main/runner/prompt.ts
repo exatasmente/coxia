@@ -1,3 +1,4 @@
+import type { SandboxGui } from '../sandbox/session';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
 import { type ForumMessage, messageText } from '../../shared/forum';
@@ -38,7 +39,7 @@ export interface StageInput {
   /** What the app ran in the worktree before this stage (QA): undefined when the stage is not given any; an empty list when the workspace lists none. */
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
-  sandbox?: { network: 'off' | 'registry'; reader: boolean; host?: boolean };
+  sandbox?: { network: 'off' | 'registry' | 'open'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The review passes of this stage that came before this one, for a review that is not the first. */
@@ -63,8 +64,14 @@ export interface StageInput {
   priorityHint?: string[];
   /** A release run: the section that says which version, the state of its branch and the activities as last read (already fenced). */
   release?: string;
+  /** What the plugins that are on tell the agents, each under its name: the plugin's words, material and never the person's instruction. */
+  plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
+  /** The stage changes the branch and the repository keeps documentation in `.coxia/`: the agent is told to keep it true in the same change. */
+  docsKeep?: boolean;
+  /** A review: the rules of `.coxia/` the branch left behind (they cite code it changed and it did not bring them up to date), to be raised as findings. Empty or absent: none. */
+  behind?: { file: string; changed: string[] }[];
 }
 
 const MESSAGE_MAX = 1500;
@@ -93,6 +100,21 @@ export function threadText(messages: ForumMessage[]): string {
 
 export const DIFF_LIMIT = DIFF_MAX;
 
+/**
+ * How to test an interface in this stage's sandbox: the general way, then one line for each piece the person switched on, saying whether the stage has it. Absent when
+ * the person switched neither on, so such a stage's prompt is what it was.
+ */
+function guiRules(gui: SandboxGui, look: boolean): string {
+  return [
+    cp('runner.rules.gui'),
+    gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
+    gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
+    look ? cp('runner.rules.gui.look') : cp('runner.rules.gui.noLook'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function systemText(i: StageInput): string {
   const folder = i.run.cycleFolder;
   const rules = i.writes
@@ -103,11 +125,13 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
-    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true) : '',
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
+    i.docsKeep ? cp('runner.docs.keep') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),
@@ -167,6 +191,8 @@ export function stagePrompt(i: StageInput): string {
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   if (i.release) sections.push(i.release);
+  if (i.behind?.length) sections.push(cp('runner.section.docsBehind', { text: fence(i.behind.map((b) => `- ${b.file}: ${b.changed.join(', ')}`).join('\n')) }));
+  if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const thread = threadText(i.thread);
   if (thread) sections.push(cp('runner.section.thread', { text: fence(thread) }));
@@ -181,6 +207,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : '', i.behind?.length ? cp('runner.output.docsBehind') : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

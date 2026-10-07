@@ -209,7 +209,19 @@ function stateOf(p: Parsed & { header: ThreadHeader }): State {
   return { header: p.header, lastSeq, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
 }
 
-const summaryOf = (s: State): ThreadSummary => ({ id: s.header.id, kind: s.header.kind, runId: s.header.runId, ...(s.header.kind === 'channel' ? { squad: s.header.squad ?? null } : {}), title: s.header.title, createdAt: s.header.createdAt, count: s.count, lastAt: s.lastAt, lastKind: s.lastKind, openQuestion: s.open.length > 0 });
+const summaryOf = (s: State): ThreadSummary => ({
+  id: s.header.id,
+  kind: s.header.kind,
+  runId: s.header.runId,
+  ...(s.header.kind === 'channel' || s.header.kind === 'agent' ? { squad: s.header.squad ?? null } : {}),
+  ...(s.header.kind === 'agent' ? { agent: s.header.squad ?? null } : {}),
+  title: s.header.title,
+  createdAt: s.header.createdAt,
+  count: s.count,
+  lastAt: s.lastAt,
+  lastKind: s.lastKind,
+  openQuestion: s.open.length > 0,
+});
 
 const slug = (title: string): string =>
   title
@@ -304,7 +316,7 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       const have = load(input.id);
       if (have) return have.header;
       if (input.title.length > MAX_TITLE) throw new ForumError('bad-title');
-      const header: ThreadHeader = { v: 1, type: 'thread', id: input.id, kind: input.kind, runId: input.runId ?? null, ...(input.kind === 'channel' ? { squad: input.squad ?? null } : {}), title: input.title.trim(), createdAt: now().toISOString() };
+      const header: ThreadHeader = { v: 1, type: 'thread', id: input.id, kind: input.kind, runId: input.runId ?? null, ...(input.kind === 'channel' || input.kind === 'agent' ? { squad: input.squad ?? null } : {}), title: input.title.trim(), createdAt: now().toISOString() };
       mkdirSync(dir, { recursive: true });
       // 'wx': a thread another call created in the meantime is not overwritten.
       writeFileSync(path(input.id), `${JSON.stringify(header)}\n`, { flag: 'wx' });
