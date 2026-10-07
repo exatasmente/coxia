@@ -193,7 +193,7 @@ describe('what an import refuses', () => {
     expect(parseImport('[]').ok).toBe(false);
     expect(parseImport(JSON.stringify({ ...good(), formatVersion: 7 })).errors[0].message).toMatch(/newer/);
     const newer = good();
-    newer.config.schemaVersion = 18;
+    newer.config.schemaVersion = 19;
     expect(parseImport(JSON.stringify(newer)).errors[0].message).toMatch(/newer app/);
   });
 

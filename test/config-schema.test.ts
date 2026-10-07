@@ -87,7 +87,7 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 18 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: 19 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
   });

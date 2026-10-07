@@ -151,6 +151,6 @@ describe('the migration to schema 7', () => {
     const r = migrateConfig({ schemaVersion: 3, language: 'en', devCycle: { templateId: 'agent-flow' } }, { legacyInstall: false });
     expect(r.config.schemaVersion).toBe(18);
     expect(Object.keys(r.config.devCycle.comments)).toContain('review');
-    expect(() => migrateConfig({ schemaVersion: 18 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 19 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });

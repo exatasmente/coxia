@@ -272,3 +272,26 @@ describe('the channels of the squads and the requests between them', () => {
     expect(make().summary('squads')).toMatchObject({ count: 5, openQuestion: false });
   });
 });
+
+describe('the files a message carries', () => {
+  it('keeps the evidence of a stage apart from the files a person attached, and reads a message written before either as carrying none', () => {
+    store.ensureThread({ id: 'run-r-abc-1234', kind: 'run', runId: 'r-abc-1234', title: 't' });
+    store.append('run-r-abc-1234', {
+      kind: 'post',
+      author: agent('qa'),
+      text: 'Saw it.',
+      evidence: [
+        { id: 'ev-1', name: 'screen.png', media: 'image/png', bytes: 12 },
+        { id: '../x', name: 'bad', media: 'image/png', bytes: 1 },
+      ],
+    });
+    // a line written before attachments and evidence existed has neither field
+    const legacy = { v: 1, type: 'message', seq: 2, thread: 'run-r-abc-1234', at: '2026-10-03T10:00:30.000Z', kind: 'post', author: { type: 'app' }, text: 'old', code: null, params: {}, mentions: [], refs: [], stage: null, to: null, replyTo: null, public: false, published: null };
+    appendFileSync(join(dir, 'run-r-abc-1234.jsonl'), `${JSON.stringify(legacy)}\n`);
+    const [first, old] = make().read('run-r-abc-1234')!.messages;
+    expect(first.evidence).toEqual([{ id: 'ev-1', name: 'screen.png', media: 'image/png', bytes: 12 }]);
+    expect(first.attachments).toEqual([]);
+    expect(old).toMatchObject({ text: 'old', attachments: [] });
+    expect(old.evidence).toBeUndefined();
+  });
+});

@@ -140,6 +140,6 @@ describe('the migration to schema 6', () => {
   });
 
   it('does not open a file written by a newer app', () => {
-    expect(() => migrateConfig({ schemaVersion: 18 }, { legacyInstall: false })).toThrow(/newer app/);
+    expect(() => migrateConfig({ schemaVersion: 19 }, { legacyInstall: false })).toThrow(/newer app/);
   });
 });
