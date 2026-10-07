@@ -49,6 +49,12 @@ const RENAMED: Record<string, string> = {
 const MASCULINE = 'pt-BR gender normalisation: the text said "a MR", the noun is masculine everywhere now';
 type Intended = { reason: string; language?: 'pt-BR' | 'both'; replace?: [string, string][] };
 const INTENDED: Record<string, Intended> = {
+  // The wizard opens on language and name and every step after it, up to the review, can be skipped: the old subtitle promised the setup
+  // could be picked up in Settings, which is no longer how a fresh install leaves the wizard.
+  'wizard.subtitle.first': {
+    reason: 'the wizard opens on language and name, and the steps that can be skipped come after it, up to the review',
+    language: 'both',
+  },
   'sameDay.change.mrAdded': { reason: MASCULINE, replace: [['MR nova', 'MR novo']] },
   'main.watchers.shippedMr': { reason: MASCULINE, replace: [['mergeada', 'mergeado']] },
   'main.radar.recommendation.same-fix': { reason: MASCULINE, replace: [['nas duas MRs', 'nos dois MRs']] },
@@ -106,6 +112,14 @@ const INTENDED: Record<string, Intended> = {
       ['paired devices, the glossary and the conflict verification commands.', 'paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification).'],
     ],
   },
+  'main.engine.text.read.outside': {
+    reason: 'the same refusal now serves a ceremony and a reading agent of a run, and it names the path tried and the folders allowed',
+    language: 'both',
+    replace: [
+      ['Path outside the folders allowed for this ceremony.', 'Path outside the folders this call may read: {path}. Allowed: {folders}.'],
+      ['Caminho fora das pastas permitidas para esta cerimônia.', 'Caminho fora das pastas que esta chamada pode ler: {path}. Permitidas: {folders}.'],
+    ],
+  },
   'ui.webAccess.effects.hint': {
     reason: 'a paired browser may start a release when this switch is on, so the switch says it',
     language: 'both',
@@ -116,11 +130,42 @@ const INTENDED: Record<string, Intended> = {
       ['Desligado, só a janela do app aprova.', 'Desligado, só a janela do app faz isso.'],
     ],
   },
+  'wizard.docs.autoDetectHint': {
+    reason: 'the agents of runs, mentions and conversations read the .coxia folder of each repository and no longer the Claude Code files, so autoDetect only reaches the ceremonies and the .mcp.json (#91)',
+    language: 'both',
+    replace: [
+      [
+        'Adds to what is listed whatever Claude Code would load by itself: ~/.claude and each project\'s .claude folder.',
+        'Adds to what is listed what the ceremonies\' agents would load from Claude Code by itself (~/.claude and the .claude folder and CLAUDE.md of each project), and the .mcp.json of each project for every agent. The agents of runs, mentions and conversations do not read the Claude Code files: they read the .coxia folder of each repository.',
+      ],
+      [
+        'Soma ao que está listado o que o Claude Code carregaria sozinho: ~/.claude e a pasta .claude de cada projeto.',
+        'Soma ao que está listado o que os agentes das cerimônias carregariam do Claude Code sozinhos (~/.claude e a pasta .claude e o CLAUDE.md de cada projeto), e o .mcp.json de cada projeto para todos os agentes. Os agentes das execuções, das menções e das conversas não leem os arquivos do Claude Code: leem a pasta .coxia de cada repositório.',
+      ],
+    ],
+  },
+  // The conflict of an MR is resolved against the branch it targets, which may be a release branch: the texts name it instead of main.
+  'main.actions.mrInConflict': {
+    reason: 'the conflict of an MR is resolved against the branch it targets, not always main',
+    language: 'both',
+    replace: [
+      ['com a main', 'com a {target}'],
+      ['with main', 'with {target}'],
+    ],
+  },
+  'ui.resolver.publish.intro': {
+    reason: 'the merge commit names the branch it merged in, the target of the MR, not always main',
+    language: 'both',
+    replace: [["Merge branch 'main'", "Merge branch '{target}'"]],
+  },
+  // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
+  'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 
 // Keys of main that this change takes out of the catalogs for good: what they said no longer happens. Each one must be gone from CATALOGS.
 const REMOVED: Record<string, string> = {
+  'main.conflictMr.notMain': 'the conflict of an MR is resolved against whatever branch it targets, a release branch included, so nothing refuses a target other than main',
   'ui.retro.improvements.title': 'the retro has no section of proposed improvements any more (rule 1)',
   'ui.retro.improvements.hint': 'the retro no longer offers the IMPROVEMENTS.md flow to take by hand (decision 5)',
   'ui.retro.improvements.hintPlain': 'the retro no longer offers the team improvements record to take by hand (decision 5)',

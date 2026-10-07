@@ -4,7 +4,7 @@
 import { constants } from 'node:fs';
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { checkPath } from '../../guard';
+import { anchored, checkPath } from '../../guard';
 import { type ToolContext, type ToolImpl, ToolError } from './types';
 import { t } from '../../../../shared/i18n';
 
@@ -12,7 +12,9 @@ const MAX_WRITE = 2 * 1024 * 1024;
 
 function confined(input: unknown, ctx: ToolContext): string {
   if (!ctx.writeRoot) throw new ToolError(t('main.engine.text.write.readOnly'));
-  const check = checkPath(ctx.writeRoot, input, { isSecret: ctx.isSecret });
+  // A write folder below the working directory (a documentation run's `.coxia/`): the path is the working directory's, as the SDK's tool reads it too.
+  const narrow = ctx.writeRoot !== ctx.cwd;
+  const check = checkPath(ctx.writeRoot, narrow ? anchored(ctx.cwd, input) : input, { isSecret: ctx.isSecret, ...(narrow ? { fence: ctx.cwd } : {}), reserved: ctx.writeReserved });
   if (!check.ok) throw new ToolError(t(`main.engine.text.write.denied.${check.code}`));
   return check.path;
 }

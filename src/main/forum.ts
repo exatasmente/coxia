@@ -4,7 +4,7 @@ import { t } from '../shared/i18n';
 import { ATAS } from './env';
 import { redact } from './errorlog-core';
 import { ForumError, type ForumStore, createForumStore } from './forum-core';
-import { ensureSquadChannels } from './forum-channels';
+import { ensureAgentThread, ensureSquadChannels } from './forum-channels';
 import { runStore } from './runs';
 import type { Module } from './module';
 import { getConfig } from './workspaceConfig';
@@ -53,6 +53,8 @@ export const forumModule: Module = (ctx) => {
     ensureGeneral(forum);
     const config = getConfig();
     ensureSquadChannels(forum, config.squads ?? [], config.language);
+    // One direct conversation per agent of the team, made as soon as the forum is listed, like the general thread and the channels.
+    for (const a of config.agents.team) ensureAgentThread(forum, a, config.language);
     const runs = runStore();
     const all = forum.list().map((s) => (s.kind === 'run' && s.runId ? { ...s, squad: runs.get(s.runId)?.squad ?? null } : s));
     return typeof squad === 'string' && squad ? all.filter((s) => s.squad === squad) : all;

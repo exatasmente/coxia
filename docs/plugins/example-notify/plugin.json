@@ -1,0 +1,20 @@
+{
+  "id": "example-notify",
+  "name": "Notify when a gate is decided",
+  "contract": 1,
+  "offers": {
+    "events": ["gate-decided"],
+    "entry": "index.mjs",
+    "settings": [{ "key": "token", "label": "Webhook key", "kind": "secret", "required": true }],
+    "requests": [
+      {
+        "id": "notify",
+        "method": "POST",
+        "url": "https://hooks.example.com/notify",
+        "secret": { "setting": "token", "in": "header", "name": "Authorization", "format": "Bearer {secret}" },
+        "write": true,
+        "reversible": false
+      }
+    ]
+  }
+}

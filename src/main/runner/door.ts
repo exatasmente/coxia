@@ -1,4 +1,4 @@
-import { onActionDone, onActionRefused, proposeRelease, proposeRunPush, proposeVcsGroup, runReleaseAuto, runVcsAuto } from '../actions';
+import { onActionDone, onActionRefused, proposeRelease, proposeRunPush, proposeVcsGroup, pushRunBranchAuto, runReleaseAuto, runVcsAuto } from '../actions';
 import { vcsProvider } from '../vcs';
 import { externalRefusal } from '../workspace';
 import { t } from '../../shared/i18n';
@@ -23,6 +23,9 @@ export const realDoor: Door = {
   },
   propose: (meta, commands) => proposeVcsGroup({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, detail: meta.detail, unit: meta.unit, notify: meta.notify }, commands) !== null,
   proposePush: (meta) => proposeRunPush({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, runId: meta.runId, branch: meta.branch, notify: meta.notify }) !== null,
+  push: async (meta, by) => {
+    await pushRunBranchAuto({ issue: meta.issue, key: meta.key, summary: meta.summary, by }, meta.runId, meta.branch);
+  },
   proposeRelease: (meta) => proposeRelease({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, unit: meta.unit, group: meta.group, notify: meta.notify }) !== null,
   release: (meta, unit) => runReleaseAuto(meta, unit),
 };

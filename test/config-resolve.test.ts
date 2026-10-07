@@ -233,4 +233,54 @@ describe('documentation sources', () => {
     c.docs.autoDetect = false;
     expect(resolveDocs(c, { home, env: {}, fallbackCwd: home }, exists).skillsDirs).toEqual([]);
   });
+
+  it('with claude: false, autoDetect adds only the .mcp.json of each project and never anything of Claude Code', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cerimonias-docs-'));
+    const proj = join(home, 'work/app');
+    for (const d of [join(home, '.claude/skills'), join(home, '.claude/agents'), join(proj, '.claude/skills'), join(proj, '.claude/rules'), join(proj, '.claude/knowledge-base')]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(home, '.claude/CLAUDE.md'), '#');
+    writeFileSync(join(proj, 'CLAUDE.md'), '#');
+    writeFileSync(join(proj, '.mcp.json'), '{}');
+    const c = neutralConfig();
+    c.projects.repos = [{ id: 'app', path: proj, remoteUrl: null, vcsId: null, projectPath: null }];
+    c.docs.skillsDirs = ['~/mine/skills'];
+    c.docs.knowledgeDirs = ['~/kb'];
+    const d = resolveDocs(c, { home, env: {}, fallbackCwd: home }, existsSync, { claude: false });
+    expect(d.mcpConfigFiles).toEqual([join(proj, '.mcp.json')]);
+    expect(d.detected).toEqual([join(proj, '.mcp.json')]);
+    expect(d.claudeMdRoots).toEqual([]);
+    expect(d.agentsDirs).toEqual([]);
+    expect(d.rulesDirs).toEqual([]);
+    // what the person listed on purpose stays, whatever the option
+    expect(d.skillsDirs).toEqual([join(home, 'mine/skills')]);
+    expect(d.knowledgeDirs).toEqual([join(home, 'kb')]);
+  });
+
+  it('keeps the lists of the config with claude: false even when autoDetect is off, and finds no .mcp.json in a repository that has none', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cerimonias-docs-'));
+    const proj = join(home, 'work/app');
+    mkdirSync(join(proj, '.claude/rules'), { recursive: true });
+    const c = neutralConfig();
+    c.projects.repos = [{ id: 'app', path: proj, remoteUrl: null, vcsId: null, projectPath: null }];
+    c.docs.rulesDirs = [join(home, 'rules')];
+    const ctx = { home, env: {}, fallbackCwd: home };
+    expect(resolveDocs(c, ctx, existsSync, { claude: false })).toEqual({ claudeMdRoots: [], skillsDirs: [], rulesDirs: [join(home, 'rules')], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], detected: [] });
+    c.docs.autoDetect = false;
+    expect(resolveDocs(c, ctx, existsSync, { claude: false }).rulesDirs).toEqual([join(home, 'rules')]);
+  });
+
+  it('keeps today\'s result when the option is not given or says claude: true', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cerimonias-docs-'));
+    const proj = join(home, 'work/app');
+    mkdirSync(join(proj, '.claude/rules'), { recursive: true });
+    mkdirSync(join(home, '.claude/skills'), { recursive: true });
+    writeFileSync(join(proj, 'CLAUDE.md'), '#');
+    const c = neutralConfig();
+    c.projects.repos = [{ id: 'app', path: proj, remoteUrl: null, vcsId: null, projectPath: null }];
+    const ctx = { home, env: {}, fallbackCwd: home };
+    const today = resolveDocs(c, ctx, existsSync);
+    expect(today).toMatchObject({ claudeMdRoots: [proj], rulesDirs: [join(proj, '.claude/rules')], skillsDirs: [join(home, '.claude/skills')] });
+    expect(resolveDocs(c, ctx, existsSync, { claude: true })).toEqual(today);
+    expect(resolveDocs(c, ctx, existsSync, {})).toEqual(today);
+  });
 });

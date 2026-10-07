@@ -93,6 +93,16 @@ describe('the config of an agent role', () => {
     expect((await ask('deep')).extraDirs).toHaveLength(5);
   });
 
+  it('gives a reading agent of a run the documentation folders outside its worktree as the roots of its guard, and none when cwd is not absolute', () => {
+    const work = cfg.getConfig().projects.roots[0];
+    // The same folders the call is handed as additional directories, filtered to the absolute ones outside the worktree.
+    expect(agents.extraReadRoots(work, 'deep').sort()).toEqual([join(other, 'agents'), join(other), join(other, 'kb'), join(other, 'rules'), join(other, 'skills')].sort());
+    expect(agents.extraReadRoots('', 'deep')).toEqual([]);
+    expect(agents.extraReadRoots('relative/folder', 'deep')).toEqual([]);
+    // A documentation folder inside the worktree, or the worktree itself, is not an extra root.
+    expect(agents.extraReadRoots(work, 'deep')).not.toContain(work);
+  });
+
   it('can send a role to another model role, and says which tools it may use', async () => {
     cfg.updateConfig((c) => {
       c.agents.roles.reply.modelRole = 'deep';

@@ -5,13 +5,14 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
-import type { AgentDef } from '../shared/config/types';
+import type { AgentDef, AgentToolsConfig } from '../shared/config/types';
+import { toolsForAgent } from '../shared/config/team';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, clipProviderText } from './engine/budget';
@@ -29,14 +30,15 @@ import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
+import { type DocsAsk, harnessDirs, harnessSection } from './harness/deliver';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
-import { shellMcpServer, shellToolImpl } from './sandbox/engineTool';
-import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME } from './sandbox/tool';
+import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engineTool';
+import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
@@ -47,19 +49,19 @@ export function workspaceProjects(): string[] {
   return [...new Set([...(issues ? [issues] : []), ...rc().repos.flatMap((r) => (r.projectPath ? [r.projectPath] : []))])];
 }
 
-function trackerMcpTools(): string[] {
-  const server = getConfig().agents.tools.trackerMcpServer.trim();
+function trackerMcpTools(tools: AgentToolsConfig): string[] {
+  const server = tools.trackerMcpServer.trim();
   return server ? [`mcp__${server}__get_issue_details_and_comments`, `mcp__${server}__get_merge_request_details_and_changes`] : [];
 }
 
-// Tools pre-approved for a role, from the workspace config; dontAsk denies everything else.
-export function allowedFor(role: ModelRole, host = true): string[] {
+// Tools pre-approved for a role, from the workspace config (or the agent's own when it names them); dontAsk denies everything else.
+export function allowedFor(role: ModelRole, host = true, tools?: AgentToolsConfig): string[] {
   if (role === 'teams') return [];
-  const t = getConfig().agents.tools;
+  const t = tools ?? getConfig().agents.tools;
   return [
     ...(t.files ? ['Read', 'Grep', 'Glob'] : []),
     ...(t.skills ? ['Skill'] : []),
-    ...(host && t.trackerMcp ? trackerMcpTools() : []),
+    ...(host && t.trackerMcp ? trackerMcpTools(t) : []),
     ...(host ? vcsReadPolicy().rules : []),
     ...(t.subagents && role === 'deep' ? ['Agent'] : []),
   ];
@@ -361,8 +363,8 @@ function systemPrompt(role: ModelRole): string {
 }
 
 // Which documentation sources of the config a role may read (agents.roles[role].docs): all of them unless the workspace narrowed it.
-function docsFor(role: ModelRole): ResolvedDocs {
-  const d = docsSources();
+function docsFor(role: ModelRole, opts: { claude?: boolean } = {}): ResolvedDocs {
+  const d = docsSources(opts);
   const pick = getConfig().agents.roles[role].docs;
   return {
     ...d,
@@ -376,23 +378,37 @@ function docsFor(role: ModelRole): ResolvedDocs {
 }
 
 // Folders the config lists as documentation but that sit outside the working directory: the agent may read them too.
-function extraDirs(cwd: string, role: ModelRole): string[] {
-  const d = docsFor(role);
+function extraDirs(cwd: string, role: ModelRole, opts: { claude?: boolean } = {}): string[] {
+  const d = docsFor(role, opts);
   const listed = [...d.claudeMdRoots, ...d.skillsDirs, ...d.rulesDirs, ...d.agentsDirs, ...d.knowledgeDirs].filter((p) => !d.detected.includes(p));
   return [...new Set(listed.filter((p) => p !== cwd && !p.startsWith(`${cwd}/`)))];
+}
+
+/**
+ * The documentation folders outside the working directory that a reading agent of a run may still reach: the same list the engine is given as
+ * additional directories, so what the engine sees and what the guard allows cannot diverge. Empty when the working directory is empty or relative:
+ * a relative root is not a root to confine anything to.
+ */
+export function extraReadRoots(cwd: string, role: ModelRole): string[] {
+  if (!isAbsolute(cwd)) return [];
+  return extraDirs(cwd, role, { claude: false }).filter((p) => isAbsolute(p) && p !== cwd && !p.startsWith(`${cwd}/`));
 }
 
 // The call as SDK options, which is also the shape the open engine takes: the permissions, hooks and limits are one policy for both engines.
 // A call with `confine` is an agent that changes files inside its run's worktree: it gets Edit and Write, the hooks of the confinement
 // instead of the read-only ones, and a shell only for the exact commands it was given. Everything else stays denied.
+// A call with `read` instead is an agent of a run that only reads: the hooks that confine its file tools, and its documentation folders added
+// to the directories the engine may look at. It opens no tool: `Edit`/`Write`, the shell and the VCS read are decided by `confine` alone.
 function sdkOptions(req: EngineRequest): Options {
   const confine = req.confine;
+  const read = req.read;
   // A call with no code host read has no CLI to allow either: its shell is whatever commands it was given.
   const host = (req.tracker ?? 'workspace') === 'workspace';
-  const hooks = confine ? confine.hooks : agentHooks(req.shell.patterns, host, req.ask);
+  const hooks = confine ? confine.hooks : read ? read.hooks : agentHooks(req.shell.patterns, host, req.ask);
   // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
   const asks = !confine && !!req.ask;
   const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
+  const dirs = [...req.extraDirs, ...(read?.roots ?? [])];
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -410,21 +426,25 @@ function sdkOptions(req: EngineRequest): Options {
     hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
     outputFormat: { type: 'json_schema', schema: req.schema },
     maxTurns: 8,
-    ...(req.extraDirs.length ? { additionalDirectories: req.extraDirs } : {}),
+    // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
+    // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
+    ...(req.isolated ? { settingSources: [], settings: { autoMemoryEnabled: false } } : {}),
+    ...(dirs.length ? { additionalDirectories: dirs } : {}),
     ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
   };
 }
 
-// Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist.
-function openDocs(cwd: string, role: ModelRole): DocSources {
-  const d = docsFor(role);
+// Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist. An isolated call never
+// falls back to them: its lists are the ones the person wrote (and the project's `.mcp.json`), always defined, because an empty list is not an absent one.
+function openDocs(cwd: string, role: ModelRole, isolated = false): DocSources {
+  const d = docsFor(role, isolated ? { claude: false } : {});
   const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
-  return Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
+  return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
 /** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
-export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection {
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false): OpenEngineSelection {
   const c = t.capabilities;
   return {
     provider: {
@@ -437,9 +457,9 @@ export function openSelection(t: ResolvedRole, cwd: string): OpenEngineSelection
       ...(t.temperature !== null ? { temperature: t.temperature } : {}),
       ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
     },
-    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}) } } : {}),
+    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}), ...(c.images !== undefined ? { images: c.images } : {}) } } : {}),
     structured: t.structured,
-    docs: openDocs(cwd, t.role),
+    docs: openDocs(cwd, t.role, isolated),
   };
 }
 
@@ -448,9 +468,10 @@ function wantsVcsTool(req: EngineRequest): boolean {
   if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
-  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the workspace's host-read switches on.
+  // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the host-read switches of the agent on. The
+  // workspace's own read path decides every other call: an agent naming its tools may turn a tool off, never move the read of the host to another path.
   if (mode === 'tool') {
-    const tools = getConfig().agents.tools;
+    const tools = req.tools ?? getConfig().agents.tools;
     return (tools.vcsCli || tools.trackerMcp) && vcsReady();
   }
   return !req.confine && vcsReadPolicy().via === 'tool';
@@ -463,11 +484,13 @@ async function commandPath(): Promise<Record<string, string>> {
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
-  // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read.
-  const selection = openEngineFromEnv() ?? openSelection(req.target, req.cwd);
+  // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read. The hook carries no
+  // `docs`, which the bridge would fill with the defaults (CLAUDE.md up the tree, ~/.claude): an isolated call gets its own lists whichever way the selection came.
+  const hook = openEngineFromEnv();
+  const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(offersViewImage(req.exec) && req.exec ? [viewImageToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(offersViewImage(req.exec) ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -478,7 +501,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
     shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
-    writeRoot: req.confine?.root,
+    writeRoot: req.confine?.writeRoot ?? req.confine?.root,
+    writeReserved: req.confine?.writeReserved,
     signal: req.abort?.signal,
     describeTool: source,
     events: {
@@ -508,6 +532,12 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   }
 }
 
+// The SDK prices a call as if it went to Anthropic's own API, whatever provider the role is mapped to: outside it, that list price says nothing about what was
+// charged, so the figure the result carries is kept as an estimate and marked as one. Same test the environment uses to decide how to authenticate.
+function isAnthropicApi(target: EngineRequest['target']): boolean {
+  return target.kind === 'anthropic' && /^https:\/\/api\.anthropic\.com\/?$/.test(target.baseUrl);
+}
+
 async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const sources: string[] = [];
   let sessionId = '';
@@ -529,7 +559,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,
@@ -571,7 +601,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (m.type === 'result') {
       sessionId = m.session_id;
       // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
-      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd });
+      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
       if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
       if (m.subtype !== 'success' || m.structured_output == null) {
         // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
@@ -636,7 +666,8 @@ async function runOnce<T>(
   const reads = (agent?.tracker ?? 'read') === 'read';
   const id = agent?.id ?? role;
   const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', ask });
+  const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
+  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask });
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -976,6 +1007,10 @@ export interface AgentCall {
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
   cwd: string;
   confine?: Confinement;
+  /** The confinement of a reading agent of a run: its file tools stay inside it, and it is offered no Edit, no Write and no shell. */
+  readRoot?: ReadConfinement;
+  /** What the call works on, for the documentation of the repositories (`.coxia/`) it is handed. Absent: it gets none (and still reads nothing of Claude Code). */
+  docs?: DocsAsk;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
   exec?: SandboxSession;
   /** What the live activity calls it (the agent's id). */
@@ -995,12 +1030,13 @@ export interface AgentCall {
   onUsage?: (usage: UsageReport) => void;
 }
 
-// What a reader of a run may use: the tools the workspace allows its agents, as the ceremonies get them, and no shell beyond the code host reads.
-// An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given.
-function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']> } {
+// What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
+// code host reads. An agent that writes gets the read tools, Edit and Write, and a rule for each command it was given. A mention never gets Edit or Write.
+function toolsOf(call: AgentCall): { allowedTools: string[]; shell: ShellPolicy; tracker: NonNullable<EngineRequest['tracker']>; tools: AgentToolsConfig } {
   const tracker = trackerOf(call.agent);
-  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace'), shell: { rules: [], patterns: [] }, tracker };
-  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker };
+  const tools = call.confine ? getConfig().agents.tools : toolsForAgent(getConfig(), call.agent);
+  if (!call.confine) return { allowedTools: allowedFor(call.agent.model.role ?? 'deep', tracker === 'workspace', tools), shell: { rules: [], patterns: [] }, tracker, tools };
+  return { allowedTools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], shell: { rules: [], patterns: [] }, tracker, tools };
 }
 
 /**
@@ -1041,23 +1077,33 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
   if (!call.activity) activity.status('started');
   try {
-    const { allowedTools, shell, tracker } = toolsOf(call);
+    const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
+    // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
+    const docs = call.docs ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
+      console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
+      return '';
+    }) : '';
+    const outside = (dir: string): boolean => dir !== call.cwd && !dir.startsWith(`${call.cwd}/`);
     const request: EngineRequest = {
       role: target.role,
       prompt: call.prompt,
       schema: call.schema,
       target,
-      system: call.system,
+      system: [call.system, docs].filter(Boolean).join('\n\n'),
       cwd: call.cwd,
       allowedTools: [...allowedTools, ...rules],
-      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole),
+      // The folders of the project's own documentation that sit outside the working directory (a conversation at the root of the projects) are readable too.
+      extraDirs: call.confine ? [] : [...extraDirs(call.cwd, modelRole, { claude: false }), ...harnessDirs(call.docs).filter(outside)],
+      isolated: true,
       shell: { rules, patterns: shell.patterns },
       extra: { maxTurns: call.maxTurns },
       activity,
       confine: call.confine,
+      read: call.readRoot,
       tracker,
+      tools,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
       release: call.release,
       abort: call.abort,
@@ -1096,6 +1142,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       extraDirs: [],
       shell: { rules: [], patterns: request.shell.patterns },
       extra: { maxTurns: 2, resume: e.sessionId, tools: [], allowedTools: [] },
+      // No tool of any kind, so no read confinement to carry either: the answer can only come from what was already read.
+      read: undefined,
       exec: undefined,
       release: undefined,
     });

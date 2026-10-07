@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 13). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 17). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -52,6 +52,7 @@ const provider = object(
           streaming: boolean('Server-sent events work.'),
           reasoning: boolean('The model returns its reasoning separately.'),
           contextWindow: { type: ['integer', 'null'], description: 'Context window in tokens, when the server reports it.', minimum: 256 },
+          images: boolean('The model takes an image in a message; absent when not known.'),
         },
         ['chat', 'tools', 'jsonSchema'],
       ),
@@ -153,6 +154,21 @@ const quickTransition = object(
   ['to', 'id', 'label', 'from', 'removable'],
 );
 
+/** The five choices of autonomy, all off by default; the four below `cycle` only count while it is on. */
+const autonomy = object('What a run lets go on without the person.', {
+  cycle: boolean('Every stage starts when the run reaches it and hands its result on without waiting, whatever each agent\'s own autonomy is.'),
+  hostCommands: boolean('The commands of an agent set to `shell: host` run without the "Allow" question. Only meaningful while cycle is on.'),
+  gates: boolean('A gate of the flow is approved by the app, recorded as an automatic approval with its reason. Only meaningful while cycle is on.'),
+  push: boolean('The run\'s push goes through the door of Actions by itself, audited; steps that always wait for the person are not reached. Only meaningful while cycle is on.'),
+  pullRequest: boolean('The pull request is opened by itself, audited; a step that always waits for the person is not reached. Only meaningful while cycle is on.'),
+});
+
+/** A flow's autonomy block, the workspace's block deciding while `useWorkspace` is on (the default). */
+const flowAutonomy = object(
+  'The autonomy block of one flow: the workspace\'s decides while useWorkspace is on.',
+  { useWorkspace: boolean('On: the workspace\'s block decides for this flow and the fields here are shown disabled. Off: this block decides.'), ...autonomy.properties } as Record<string, JsonSchema>,
+);
+
 const gateFiles = object(
   'Where the artifact of a gate lives.',
   {
@@ -188,6 +204,16 @@ const agentModel = object('Which model an agent uses.', {
   model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
 });
 
+/** The tools pre-approved for agents, at the workspace and (overriding it field by field) per agent. */
+const agentTools = object('Tools pre-approved for agents. Writes, web and secret files are always blocked.', {
+  files: boolean('Read, Grep and Glob.'),
+  skills: boolean('Claude Code skills.'),
+  trackerMcp: boolean('Issue tracker MCP tools.'),
+  trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
+  vcsCli: boolean('Read-only use of the VCS CLI.'),
+  subagents: boolean('Subagents in the unblock ceremony.'),
+});
+
 const agentDef = object(
   'A member of the agent team.',
   {
@@ -200,6 +226,7 @@ const agentDef = object(
     tracker: enumOf('none: no code host reads in a run; read: reads issues, comments and pull requests (never a write). Absent: none.', AGENT_TRACKERS),
     shell: enumOf('none: no commands; allowlist: the commands of runner.commands exactly as written (agents that write only); sandbox: any command inside a sandbox built for the stage; host: any command on this computer, unsandboxed. Absent: allowlist for an agent that writes, else none.', AGENT_SHELLS),
     allowedCommands: list('Commands the person allowed this agent always in a ceremony: "prefix:*" allows the prefix and anything after a space, anything else only that exact command. Never a command that writes to the code host.', string('A rule.', { minLength: 1, maxLength: 200 }), { maxItems: 200, uniqueItems: true }),
+    tools: { ...agentTools, description: 'The tools this agent may use, overriding the workspace\'s agents.tools field by field (an agent may use one the workspace turned off). Absent: the workspace\'s tools.' },
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
@@ -295,6 +322,38 @@ const promptOverride = {
 
 const command = { enabled: boolean('The integration is on.'), command: string('Executable ("~/" expands); never run through a shell.') };
 
+const pluginAllow = object(
+  'What the person allowed the plugin "always": kept until taken back, and kept when the plugin is switched off and on.',
+  {
+    network: boolean('The plugin may reach the destinations it declared.'),
+    write: boolean('The plugin\'s declared external write may go out; an irreversible one is still announced with a deadline first.'),
+  },
+  ['network', 'write'],
+);
+
+const plugin = object(
+  'A plugin of the workspace and what the person decided about it; everything else is read again from its folder.',
+  {
+    id: string('Stable identity the plugin announces.', { pattern: ID }),
+    folder: nullableString('Folder of the plugin as it was last read; null: listed but not read.'),
+    enabled: boolean('The person switched it on. Off: nothing of it is offered and no hook of it runs.'),
+    allow: pluginAllow,
+    allowedFor: string('A digest of what the plugin declared it reaches when it was allowed always; another declaration asks again.', { maxLength: 64 }),
+    settings: { type: 'object', description: 'The values of the plugin\'s text and url settings, by key; a secret setting is never here.', additionalProperties: { type: 'string', maxLength: 2000 }, maxProperties: 40 } as JsonSchema,
+  },
+  ['id', 'enabled', 'allow'],
+);
+
+const plugins = object(
+  'The plugins of the workspace: the team\'s own code, read from a folder. Nothing is downloaded or installed.',
+  {
+    dir: nullableString('Folder that holds one folder per plugin ("~/" expands); null: the plugins folder of the workspace data folder.'),
+    list: list('What the person decided about each plugin, by identity.', plugin, { maxItems: 100 }),
+    confirmSeconds: integer('Seconds an allowed irreversible write is announced before it goes out; the person may block it or take the permission back meanwhile.', 5, 3600),
+  },
+  ['list', 'confirmSeconds'],
+);
+
 export const CONFIG_SCHEMA: JsonSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   $id: 'urn:coxia:schema:workspace-config:6',
@@ -340,7 +399,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       }),
       vcs: list('Integrations with a git host.', vcs, { maxItems: 20 }),
       docs: object('Where the agents find their context (Claude Code layout).', {
-        autoDetect: boolean('Add ~/.claude, <project>/.claude, CLAUDE.md and .mcp.json when present.'),
+        autoDetect: boolean('For the ceremonies, add ~/.claude, <project>/.claude and CLAUDE.md when present; for every agent, add the .mcp.json of each project. The agents of runs, mentions and conversations read the .coxia folder of the repositories, not the Claude Code files.'),
         claudeMdRoots: strings('Folders whose CLAUDE.md is part of the context.'),
         skillsDirs: strings('Skills folders.'),
         rulesDirs: strings('Rules folders.'),
@@ -354,7 +413,8 @@ export const CONFIG_SCHEMA: JsonSchema = {
         ceremonies: object('Which ceremonies are on.', Object.fromEntries(CEREMONY_IDS.map((c) => [c, boolean(`The ${c} ceremony is on.`)])), [...CEREMONY_IDS]),
         ceremonyParams,
         stages: list('Stages of the flow and how to recognise them.', stage, { maxItems: 60 }),
-        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
+        flows: { type: 'object', description: 'The flow of a squad that has one of its own, by squad id: the stages its runs follow. A squad with no entry follows stages. The keys release and docs are no squad\'s: they hold the flow of a release run and the flow of a documentation run.', additionalProperties: list('Stages of the squad\'s flow.', stage, { maxItems: 60 }) },
+        autonomy: { type: 'object', description: 'The autonomy block of each flow, by the flow\'s key: \'\' for the main flow, the id of a squad for its own, and "release" for the release flow. A flow with no entry follows the workspace\'s block.', additionalProperties: flowAutonomy },
         stageMapping: list('How a provider state or label maps to a stage; the first match wins.', stageRule, { maxItems: 300 }),
         meanings,
         enrichment: object('What the agent is given about each card.', {
@@ -380,14 +440,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         qa: object('QA hand-off.', { user: nullableString('Login whose issue notes carry the release branch and pipelines.') }),
       }),
       agents: object('How the agents behave.', {
-        tools: object('Tools pre-approved for agents. Writes, web and secret files are always blocked.', {
-          files: boolean('Read, Grep and Glob.'),
-          skills: boolean('Claude Code skills.'),
-          trackerMcp: boolean('Issue tracker MCP tools.'),
-          trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
-          vcsCli: boolean('Read-only use of the VCS CLI.'),
-          subagents: boolean('Subagents in the unblock ceremony.'),
-        }),
+        tools: { ...agentTools, description: 'Tools pre-approved for every agent, unless the agent overrides them. Writes, web and secret files are always blocked.' },
         extraInstructions: string('Appended to every agent.', { maxLength: 20_000 }),
         persona: string('Persona or tone shared by every agent.', { maxLength: 2000 }),
         roles: byRole('Per agent role.', agentRole),
@@ -434,10 +487,13 @@ export const CONFIG_SCHEMA: JsonSchema = {
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
         turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
+        autonomy,
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
-          network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy. "Localhost" inside the sandbox is the sandbox\'s own.', SANDBOX_NETWORKS),
+          network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy; open: the computer\'s own network, shared whole, with no proxy and no host list (desktop only, a choice of risk). "Localhost" inside the sandbox is the sandbox\'s own except in open mode.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
           readOnlyPaths: list('Folders outside the worktree every sandbox of the workspace may read, read-only ("~/" expands). Nothing that looks like a secret location is accepted.', string('A folder.', { minLength: 2, maxLength: 1000, pattern: NO_NUL }), { maxItems: 20 }),
+          browsersPath: { type: ['string', 'null'], description: 'The folder Playwright keeps its browsers in ("~/" expands), bound read-only in every sandbox with PLAYWRIGHT_BROWSERS_PATH; the guards of readOnlyPaths apply. null: none.', minLength: 2, maxLength: 1000, pattern: NO_NUL },
+          display: boolean('The sandbox of a QA stage starts a virtual display (Xvfb, from the sandbox\'s PATH) and sets DISPLAY.'),
           limits: object('What one command and one stage may use.', {
             commandMs: integer('Longest one command may run (ms).', 5_000, 3_600_000),
             stageMs: integer('Total command time of one stage (ms).', 60_000, 28_800_000),
@@ -455,6 +511,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
           soleMaintainer: boolean('The person is the repository\'s only maintainer: their "yes" in Actions on a merge-pr stands for the host\'s approval of a pull request opened by the account the app uses on the host, with no changes asked; every merge-pr then waits for that "yes". Optional: absent reads as false.'),
         }),
       }),
+      plugins,
     },
     ['schemaVersion'],
   ),

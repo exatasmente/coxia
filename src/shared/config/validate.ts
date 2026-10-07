@@ -12,7 +12,7 @@ import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegist
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
-import { RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY } from './squads';
+import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isSystemId } from './team';
 import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
@@ -92,13 +92,14 @@ function flowRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     // A stored config is never refused for the problems of its flow (the runner will not start on them and the editor shows them), only a saved one is.
     (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path, message: flowIssueText(issue, en) });
   }
-  // The flow of a release run is checked as a flow of its own, over the whole team.
-  const release = c.devCycle.flows?.[RELEASE_FLOW_KEY];
-  if (release?.length) {
-    for (const issue of checkFlow({ stages: release, team: c.agents.team }, { asFlow: true })) {
+  // The flow of a release run and the one of a documentation run are each checked as a flow of its own, over the whole team.
+  for (const key of RUN_KIND_FLOW_KEYS) {
+    const own = c.devCycle.flows?.[key];
+    if (!own?.length) continue;
+    for (const issue of checkFlow({ stages: own, team: c.agents.team }, { asFlow: true })) {
       if (issue.agent) continue;
-      const i = issue.stage ? release.findIndex((s) => s.id === issue.stage) : -1;
-      (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path: i >= 0 ? `devCycle.flows.${RELEASE_FLOW_KEY}[${i}].${issue.field}` : `devCycle.flows.${RELEASE_FLOW_KEY}`, message: flowIssueText(issue, en) });
+      const i = issue.stage ? own.findIndex((s) => s.id === issue.stage) : -1;
+      (issue.severity === 'error' && !tolerate ? errors : warnings).push({ path: i >= 0 ? `devCycle.flows.${key}[${i}].${issue.field}` : `devCycle.flows.${key}`, message: flowIssueText(issue, en) });
     }
   }
 }
@@ -110,7 +111,7 @@ function squadRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigI
   const flows = c.devCycle.flows ?? {};
   for (const key of Object.keys(flows)) if (!new RegExp(ID).test(key)) errors.push({ path: `devCycle.flows.${key}`, message: 'the key must be a squad id' });
   squads.forEach((s, i) => {
-    if (s.id === RELEASE_FLOW_KEY) errors.push({ path: `squads[${i}].id`, message: `the id "${RELEASE_FLOW_KEY}" is the key of the flow of a release run: choose another` });
+    if (isRunKindFlowKey(s.id)) errors.push({ path: `squads[${i}].id`, message: `the id "${s.id}" is the key of the flow of a ${s.id === DOCS_FLOW_KEY ? 'documentation' : 'release'} run: choose another` });
   });
   const repos = c.projects.autoDiscover ? undefined : c.projects.repos.map((r) => r.id);
   for (const issue of checkSquads({ squads, team: c.agents.team, stages: c.devCycle.stages, flows, repos }, { checkSharedFlow: isFlowCycle(c.devCycle.stages) })) {
@@ -162,10 +163,13 @@ function sandboxRules(s: WorkspaceConfig['runner']['sandbox'], errors: ConfigIss
   if (s.registryHosts.length > MAX_REGISTRY_HOSTS) errors.push({ path: 'runner.sandbox.registryHosts', message: `at most ${MAX_REGISTRY_HOSTS} hosts` });
   for (const h of duplicates(s.registryHosts)) warnings.push({ path: 'runner.sandbox.registryHosts', message: `"${h}" is listed twice` });
   if (s.network === 'registry' && !s.registryHosts.length) warnings.push({ path: 'runner.sandbox.network', message: 'the registry switch is on and no host is listed: nothing can be reached' });
-  s.readOnlyPaths.forEach((p, i) => {
+  const folderProblem = (path: string, p: string): void => {
     const why = readOnlyPathProblem(p);
-    if (why) errors.push({ path: `runner.sandbox.readOnlyPaths[${i}]`, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings) or belongs to the system (/proc, /sys, /dev, /run, /var, /tmp): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
-  });
+    if (why) errors.push({ path, message: why === 'secret' ? 'looks like a place that holds secrets (keys, tokens, settings) or belongs to the system (/proc, /sys, /dev, /run, /var, /tmp): a sandbox never gets it' : why === 'relative' ? 'must be absolute or start with "~/"' : why === 'home' || why === 'root' ? 'cannot be the home folder or the root of the disk' : why === 'dots' ? 'must not contain ".."' : 'is not a folder path' });
+  };
+  s.readOnlyPaths.forEach((p, i) => folderProblem(`runner.sandbox.readOnlyPaths[${i}]`, p));
+  // The browsers folder is bound like a read-only folder, so it answers to the same guards.
+  if (s.browsersPath !== null && s.browsersPath !== undefined) folderProblem('runner.sandbox.browsersPath', s.browsersPath);
   if (s.readOnlyPaths.length > MAX_READ_ONLY_PATHS) errors.push({ path: 'runner.sandbox.readOnlyPaths', message: `at most ${MAX_READ_ONLY_PATHS} folders` });
   for (const p of duplicates(s.readOnlyPaths)) warnings.push({ path: 'runner.sandbox.readOnlyPaths', message: `"${p}" is listed twice` });
   for (const [key, [min, max]] of Object.entries(SANDBOX_LIMIT_RANGES)) {
@@ -181,10 +185,12 @@ const COMMENT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 // The templates of the comments the runner leaves on the tracker. A key names a stage or an event; a template for anything else is kept (a template file may
 // travel between cycles) but said so, because nothing will ever use it.
 function commentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
-  // The stages of the release flow are stages too, and the comments the app writes itself on a release's tracking issue are its events.
+  // The stages of the release and documentation flows are stages too, and the comments the app writes itself on a release's tracking issue, and the description
+  // of a documentation run's pull request, are their events.
   const release = c.devCycle.flows?.[RELEASE_FLOW_KEY] ?? [];
-  const stages = new Map([...c.devCycle.stages, ...release].map((s) => [s.id, s]));
-  const events = new Set<string>([...COMMENT_EVENT_KEYS, ...(release.length ? RELEASE_COMMENT_EVENTS : [])]);
+  const docs = c.devCycle.flows?.[DOCS_FLOW_KEY] ?? [];
+  const stages = new Map([...c.devCycle.stages, ...release, ...docs].map((s) => [s.id, s]));
+  const events = new Set<string>([...COMMENT_EVENT_KEYS, ...(release.length ? RELEASE_COMMENT_EVENTS : []), ...(docs.length ? DOCS_COMMENT_EVENTS : [])]);
   for (const [key, tpl] of Object.entries(c.devCycle.comments)) {
     const at = (field: string) => `devCycle.comments.${key}.${field}`;
     if (!COMMENT_KEY.test(key)) {

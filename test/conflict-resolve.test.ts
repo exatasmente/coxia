@@ -355,9 +355,12 @@ describe('apply, verify and commit', () => {
   });
 
   it('names the merge after the runner\'s template, with the issue of the action, and falls back to the plain merge when it has none', () => {
-    expect(conflictMergeMessage('release/bugfix/1234', 456, 'feat: {summary} #{iid}')).toBe("feat: Merge branch 'main' into 'release/bugfix/1234' #456");
-    expect(conflictMergeMessage('release/bugfix/1234', 456, 'chore({iid}): {summary}')).toBe("chore(456): Merge branch 'main' into 'release/bugfix/1234'");
-    expect(conflictMergeMessage('release/bugfix/1234', 0, 'feat: {summary} #{iid}')).toBe("Merge branch 'main' into 'release/bugfix/1234'");
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 456, 'feat: {summary} #{iid}')).toBe("feat: Merge branch 'main' into 'release/bugfix/1234' #456");
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 456, 'chore({iid}): {summary}')).toBe("chore(456): Merge branch 'main' into 'release/bugfix/1234'");
+    expect(conflictMergeMessage('release/bugfix/1234', 'main', 0, 'feat: {summary} #{iid}')).toBe("Merge branch 'main' into 'release/bugfix/1234'");
+    // the branch merged in is the pull request's target, as in the plain merge message
+    expect(conflictMergeMessage('feat-x', 'release/9.9.0', 7, 'feat: {summary} #{iid}')).toBe("feat: Merge branch 'release/9.9.0' into 'feat-x' #7");
+    expect(conflictMergeMessage('feat-x', 'release/9.9.0', 0, 'feat: {summary} #{iid}')).toBe("Merge branch 'release/9.9.0' into 'feat-x'");
   });
 });
 

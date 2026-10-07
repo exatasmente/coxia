@@ -21,6 +21,8 @@ export interface ProbeCapabilities {
   streaming: boolean;
   reasoning: boolean;
   contextWindow?: number;
+  // The model took an image in a message. Absent: the probe could not tell (another failure), and the engine tries at run time.
+  images?: boolean;
 }
 
 export interface ProbeResult {
@@ -32,6 +34,7 @@ export interface ProbeResult {
   chat: ProbeStep;
   tools: ProbeStep;
   jsonSchema: ProbeStep;
+  images: ProbeStep;
   capabilities: ProbeCapabilities;
   // Human readable lines for the wizard, in the requested language.
   messages: string[];
@@ -55,6 +58,9 @@ const ECHO_TOOL = {
     parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
   },
 };
+
+// A 16×16 red square: the smallest picture that tells whether the model takes one.
+const PROBE_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mO4I2JDEmIY1TCqYfhqAAAeBCwQ81sZJgAAAABJRU5ErkJggg==';
 
 const PROBE_SCHEMA: Json = {
   type: 'object',
@@ -88,6 +94,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     chat: { ok: false },
     tools: { ok: false },
     jsonSchema: { ok: false },
+    images: { ok: false },
     capabilities: { chat: false, tools: false, jsonSchema: false, streaming: false, reasoning: false },
     messages,
     ms: 0,
@@ -215,6 +222,23 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     result.capabilities.jsonSchema = ok;
   } catch (e) {
     result.jsonSchema = { ok: false, detail: (e as Error).message };
+  }
+
+  // 5. an image in a message (a screenshot an agent reads back)
+  try {
+    const startedAt = Date.now();
+    const out = await client.complete({
+      // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'What color is this square? Answer with one word.' }, { type: 'image_url', image_url: { url: PROBE_IMAGE } }] }],
+      maxTokens: 64,
+      signal: opts.signal,
+    });
+    // A server that refused the image had it replaced by a line and answered that: the model does not take images.
+    const ok = client.learned.noImages !== true;
+    result.images = { ok, ms: Date.now() - startedAt, ...(ok ? (/red|vermelh/i.test(out.text) ? {} : { detail: out.text.trim().slice(0, 80) }) : { detail: t('main.engine.text.imagesRefused') }) };
+    result.capabilities.images = ok;
+  } catch (e) {
+    result.images = { ok: false, detail: (e as Error).message };
   }
   return finish();
 }
