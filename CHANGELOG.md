@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stage on the open engine ends as soon as its agent answered.** When the agent of a stage that talks while it works wrote its final answer in the shape asked for and no message was waiting, the app still asked it for the answer once more, and the model wrote the whole of it a second time: minutes and thousands of tokens at the end of every such stage (a long review took about five minutes to close). That answer is now the result.
+
 ## [0.8.0-beta.4] - 2026-10-07
 
 ### Added

@@ -443,10 +443,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     write({ role: 'user', content: incomingText(message) });
     return true;
   };
-  const throughDoor = async (): Promise<DoorTurn> => {
+  const throughDoor = async (stepText?: string): Promise<DoorTurn> => {
     if (!p.incoming || !p.schema || doorClosed) return { took: 'none' };
     if (await deliver()) return { took: 'message' };
     doorClosed = true;
+    // Nothing is waiting and the step already wrote the answer in the shape asked for: that is the result. Asking for it again only made the model write the
+    // whole answer a second time (minutes and thousands of tokens on a long review).
+    const ready = stepText === undefined ? null : extractAnswer(stepText, p.schema as Json);
+    if (ready?.ok) return { took: 'answer', value: ready.value as Json };
     write({ role: 'user', content: t('main.engine.text.collect') });
     const last = await call({ tools: [], responseFormat });
     const got = extractAnswer(last.text, p.schema as Json);
@@ -512,8 +516,9 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
 
     // The step ended without a tool call that answers, so the door's turn is now: whether the model followed the schema or not, a message that is waiting is
     // delivered before anything of the stage is concluded. Asking the door only after a text outside the schema would leave a message already queued undelivered
-    // when the stage ends answering to the format. With no message the closing call asks for the result, and only what it returned can be the result.
-    const doorTurn = await throughDoor();
+    // when the stage ends answering to the format. With no message, a step text that already is the result ends the stage; otherwise the closing call asks for it,
+    // and only what it returned can be the result.
+    const doorTurn = await throughDoor(c.text);
     if (doorTurn.took === 'message') continue;
     if (doorTurn.took === 'answer') return done(doorTurn.value, turns);
 

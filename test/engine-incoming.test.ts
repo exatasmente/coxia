@@ -202,11 +202,18 @@ describe('the open engine, a stage that talks while it works', () => {
     );
     expect(r.data).toEqual({ texto: 'com o helper' });
     expect(delivered).toEqual(['use o helper existente']);
-    // Three calls: the step, the step that answered the message, and the closing one that asks for the result. The message went in before any closing call.
+    // Two calls: the step, then the step that answered the message. That one already is the result and nothing else is waiting, so no closing call asks for it again.
     const chats = fake.chats();
-    expect(chats).toHaveLength(3);
+    expect(chats).toHaveLength(2);
     expect((chats[1].body as Record<string, any>).messages.some((m: { content?: string }) => String(m.content ?? '').includes('use o helper existente'))).toBe(true);
-    expect((chats[2].body as Record<string, any>).tools).toBeUndefined();
+  });
+
+  it('takes a step that already wrote the answer as the result, without asking for it a second time', async () => {
+    // A real model wrote its whole review as the step's text (thousands of tokens), and the closing call made it write all of it again.
+    fake = await fakeOpenAI([textStep('```json\n' + JSON.stringify(answer) + '\n```'), textStep(JSON.stringify({ texto: 'de novo' }))]);
+    const r = await runOpen<typeof answer>(params(fake, { incoming: async () => null }));
+    expect(r.data).toEqual(answer);
+    expect(fake.chats()).toHaveLength(1);
   });
 
   it('hands a message over after a step with tools, while the agent is still working', async () => {
