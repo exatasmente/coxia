@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Labeled issues without an assignee appear on the runs screen.** The runs screen lists the open issues of the project that carry the trigger label and have no assignee, each with a button that starts a run for it by hand. Nothing starts by itself from that list.
+
 ## [0.7.0] - 2026-10-06
 
 ### Added

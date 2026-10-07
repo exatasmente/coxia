@@ -50,3 +50,5 @@ the TypeScript check over the renderer passed.
   from that list" holds by construction and is covered by a test.
 - The shared sparse shape returned to the screen is the existing `RunIssue` (number, ref, title,
   address), so no new shared type was invented.
+- The changelog gained a line under `## [Unreleased]` for this user-visible change, closing the
+  review's blocking finding.
