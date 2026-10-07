@@ -1,49 +1,57 @@
-# A verificação de tipos e o teste novo do motor ainda não passam, e a conversa durante a etapa segue sem existir
+# A verificação de tipos continua vermelha, o teste do padrão da configuração quebrou e a conversa ainda escreve sobre o mesmo worktree que a etapa
 
 ## O que se pede e o que existe
 
-A issue pede três coisas: uma mensagem escrita para o agente que trabalha chega a ele durante a etapa, sem recomeçá-la; o agente que trabalha manda mensagem sem terminar a etapa; e ele chama outro agente, que responde e discute com ele.
+A issue pede três comportamentos: uma mensagem escrita para o agente que trabalha chega a ele durante a etapa sem recomeçá-la; o agente manda mensagem sem terminar a etapa; e ele chama outro agente, que responde e discute, podendo, quando o ponto exige, rodar comando e mudar arquivo com as próprias permissões, sem dois escritores ao mesmo tempo no mesmo worktree.
 
-O que existe na árvore:
+O que existe na árvore nesta rodada:
 
-- A porta pela qual o motor recebe uma mensagem entre dois passos do modelo, e o pedido de resposta final que a acompanha.
-- A caixa da etapa, que guarda a fila de mensagens, avisa que a etapa começou a fechar e escreve na conversa as linhas de espera, de entrega e de "não deu tempo".
-- A entrada da mensagem que cita o agente que trabalha na fila daquela etapa, com a linha de espera na mensagem.
-- O enquadramento da mensagem entre as marcas de material, com o lembrete de que o resultado continua sendo o da etapa, nos dois motores.
+- A porta pela qual o motor recebe uma mensagem entre dois passos do modelo, e o pedido de resposta final sem ferramentas que a acompanha, nos dois motores.
+- A caixa da etapa, que guarda a fila, avisa que a etapa começou a fechar e escreve as linhas de espera, de entrega e de "não deu tempo".
+- A entrada na fila da etapa da mensagem que cita o agente que trabalha, mantendo a chamada paralela para todo agente que não trabalha.
+- As duas ferramentas da etapa (`SendMessage` e `CallAgent`), a ferramenta do agente chamado (`AskConversation`) e a conversa entre os dois agentes, com o teto de rodadas encerrando a conversa e dizendo por quê.
+- O bloco `runner.conversations` nos três arquivos do esquema e no documento da configuração, sem passo de migração.
 
-O que não existe no código, e é a maior parte do que a issue pede: as três ferramentas, a conversa do agente chamado, o dono único do worktree, o uso contado na etapa de quem chamou e o bloco de limites na configuração. Os três critérios de aceite principais (o desenvolvedor manda a nota de andamento; o desenvolvedor chama o QA numa conversa nova e o QA roda comando; o agente chamado com permissão de escrever muda arquivo sem dois escritores ao mesmo tempo) **não podem ser satisfeitos** por esta árvore.
+O que continua sem código, e é parte central do pedido:
+
+- **O dono único do worktree.** A conversa abre a sessão de comandos do agente chamado sobre o worktree da execução e roda em paralelo com a etapa, sem nenhuma guarda de "um escritor por vez": uma etapa que escreve mantém a sessão dela aberta enquanto uma conversa de um agente chamado que escreve também abre a sessão dela. É exatamente o cenário que o critério de aceite 4 proíbe ("sem dois escritores ao mesmo tempo").
+- **O commit do trabalho do agente chamado com a etapa que chamou, e a revisão lendo a mudança por `git diff <from>..<head>`.** A conversa não commita nada no fecho; o que o agente chamado mudou fica solto no worktree e, se a etapa conclui a tempo, é varrido pelo commit da própria etapa — que acontece mesmo antes de a conversa terminar, porque a conversa roda solta. A revisão continua lendo o diff sobre a base da branch, não sobre o instante em que a etapa começou.
+- **O comando do agente chamado na lista de comandos da execução sob o nome dele.** A lista de comandos que a etapa devolve lê só o log da sessão da própria etapa; o log da sessão da conversa não entra na lista e nenhuma linha leva o nome do agente chamado.
+
+Os critérios de aceite 1 e 2 (receber durante o trabalho e mandar mensagem sem terminar) têm código e teste; os critérios 3, 4 e 5 não podem ser satisfeitos por esta árvore.
 
 ## O que foi conferido, e como
 
 Por execução, nesta cópia de trabalho:
 
-- A verificação de tipos **falha**: saída 1, com 5 erros, todos em `test/engine-incoming.test.ts`, todos do mesmo tipo — um texto simples passado onde o roteiro do servidor de mentira exige um passo.
-- O teste novo do motor fica **10 de 12**: os dois casos que não passam estouram no próprio servidor de mentira, ao receber esse roteiro em texto puro (o código de produção não é exercitado por eles).
-- A **suíte completa fica 3674 de 3676** em 223 arquivos, com as duas mesmas falhas; nenhuma outra falha apareceu nesta execução.
-- A auditoria de tema **passa** (55 pares de contraste em cada tema, 8 cores literais, todas em um arquivo que a branch não toca).
-- O lint das duas línguas **passa**: 4061 chaves em cada uma.
-- A auditoria pública **passa**: 913 arquivos, nada de empresa ou de pessoa.
+- A **verificação de tipos falha**: saída de erro em `test/runner-conversation.test.ts:93`, no caso novo da conversa que a rodada anterior pediu para corrigir.
+- O teste novo da conversa fica **2 de 3**: o caso "abre uma thread própria, ligada da execução" estoura em `TypeError: ex.answered is not a function` — o mesmo defeito de teste que a rodada anterior apontou.
+- O **teste existente do padrão da configuração quebra**: `test/runner-config.test.ts` espera o objeto padrão exato do runner sem o bloco de conversas, e o bloco entrou em `defaults.ts` nesta rodada, então o teste fica vermelho por regressão desta mudança.
+- O teste do motor fica **12 de 12**; o teste das ferramentas **5 de 5**; os testes de esquema e de edição do runner **19 de 19**.
+- As auditorias **passam**: lint das duas línguas (4080 chaves), tema (8 cores literais, todas num arquivo que a branch não toca) e pública (917 arquivos).
+- A suíte inteira não terminou dentro do tempo de uma passada; numa rodada agrupada das regiões de runner e engine (40 arquivos) ficou **496 de 499**, com as duas falhas de configuração e de conversa acima e uma falha de tempo que não se repetiu rodando os arquivos sozinhos.
 
-Por leitura: o código que a branch mudou, o que a mudança atravessa (o laço dos dois motores, a sessão, a caixa da etapa, a fiação da mensagem, o executor, o sandbox e o relógio da etapa) e o pacote do modelo instalado. Nenhum modelo real foi chamado.
+Por leitura: o caminho da conversa no executor (a sessão sobre o worktree, o paralelismo com a etapa, o fecho sem commit) e o cálculo da lista de comandos da etapa. Nenhum modelo real foi chamado.
 
 ## O que a rodada anterior pediu, e como ficou
 
-1. **Uma mensagem já na fila pode não ser entregue nem anunciada**: atendido no código de produção. A porta é consultada ao fim de cada passo do modelo, antes de qualquer conclusão, nos dois motores, e a mensagem que está na fila entra na sessão e é anunciada antes de a etapa fechar. O caso de teste que fixa isso não roda (ver abaixo), então o comportamento não ficou confirmado por execução.
-2. **A coleta também pedia à porta uma mensagem**: atendido. A coleta é uma chamada só, sem ferramenta alguma, com o formato do esquema, e é ela que fecha o diálogo; o laço não consulta mais a porta depois dela, e no ramo do motor do SDK a sessão de entrada é fechada quando a instrução de resposta final entra.
-3. **O relógio de ociosidade da etapa não era batido na espera do "sim"**: atendido. A entrega de uma mensagem bate o relógio do passo e o relógio de ociosidade da etapa; um comando que espera a pessoa pausa os dois e a pausa volta a valer no fim da espera (conferido por leitura do relógio e do embrulho do sinal de vida).
-4. **A etapa podia terminar sem formato**: em parte. No motor aberto, quando o texto não segue o esquema, erro nenhum é lançado dentro da coleta: os erros voltam ao modelo no diálogo, com uma rodada para corrigir, e a chamada seguinte traz o formato na própria requisição. Resta a questão do passo seguinte contar para o teto de rodadas (apontada como sugestão, porque o teto zero já existia).
-5. **A linha de entrega gravava o texto do usuário**: atendido no que a linha é; o texto continua voltando ao prompt na tentativa seguinte. Por decisão registrada na memória, isso fica como está nesta fase de escopo, e o custo (janela de 40 mensagens) segue anotado para quem escrever a conversa.
-
-As duas sugestões sobre o plano (onde a sessão de uma menção com comandos realmente abre, e o que fica fora do commit por nome de pasta) nunca foram bloqueantes e continuam valendo para quem implementar os commits 4 e 5.
+1. **Corrigir o caso que falha no teste da conversa e rodar a suíte inteira**: não atendido. O defeito continua no lugar, a verificação de tipos continua vermelha e o teste fica 2 de 3.
+2. **O dono único do worktree (`lend`/`take`)**: não atendido. Não existe guarda de um escritor por vez; a conversa e a etapa podem escrever juntas no mesmo worktree.
+3. **O commit do trabalho do agente chamado no fecho da conversa e a revisão por `git diff <from>..<head>`**: não atendido. Não há commit de conversa e a revisão continua lendo sobre a base da branch.
+4. **O uso do modelo da conversa somado ao da etapa de quem chamou**: ligado nos dois caminhos para a mesma função acumuladora, então a soma acontece por construção; nenhum teste a prova e a tela do uso não foi aberta.
+5. **O teste do agente chamado com `permission: worktree` mudando arquivo e o comando dele sob o nome dele**: não atendido. Não há teste de escrita do chamado e o comando dele não entra na lista de comandos da etapa.
 
 ## O que a entrega precisa antes de voltar
 
-1. **A verificação de tipos não passa, e todos os 5 erros estão no arquivo de teste novo.** Nenhum deles é no código de produção, mas o gate do repositório fica vermelho e a entrega não pode seguir assim. O mesmo roteiro malformado derruba os dois casos novos do motor aberto, que é justamente o teste que fixa os dois primeiros achados da rodada anterior — enquanto ele não rodar, esses dois consertos seguem sem confirmação por execução.
-2. **A maior parte da issue continua sem código.** As três ferramentas (`SendMessage`, `CallAgent` e a do agente chamado), a conversa do agente chamado, o dono único do worktree com o trabalho do chamado commitado com a etapa, o uso contado na etapa de quem chamou e o bloco de limites na configuração não existem. Sem eles, os critérios de aceite principais não podem ser satisfeitos.
+1. **A verificação de tipos não passa, e o defeito é justamente o caso de teste que a rodada anterior pediu para corrigir.** É o caso que abre uma conversa numa thread nova: o teste passa o valor de retorno inteiro do auxiliar (que traz a lista de respostas) no lugar da função que as recebe, então a conversa chama `answered` como função e recebe um vetor. Enquanto isso não fechar, o gate do repositório fica vermelho e a entrega não pode seguir.
+2. **O teste existente do padrão da configuração quebrou nesta rodada.** O bloco `conversations` entrou nos padrões do runner sem que o teste que afirma o objeto padrão exato fosse atualizado.
+3. **O dono único do worktree continua sem existir, e sem ele o critério de aceite 4 não pode ser cumprido.** A conversa do agente chamado que escreve deve ser a única dona do worktree, com a etapa largando-o ao fim de cada passo de escrita e esperando a conversa, como o plano descreve.
+4. **O commit do trabalho do agente chamado no fecho da conversa e a leitura da revisão por `git diff <from>..<head>` continuam sem existir.** Sem eles, o trabalho do agente chamado some na contabilidade da etapa e a revisão não o vê.
+5. **O comando do agente chamado não aparece na lista de comandos da execução sob o nome dele**, e não há teste do chamado com `permission: worktree` mudando arquivo.
 
 ## O que não foi verificado
 
-- Se o modelo real aceita uma mensagem numa sessão em andamento e se a saída estruturada sobrevive: não verificado. A conferência foi a documentação e o código do pacote instalado; nenhum modelo real foi chamado. O teste do motor do SDK usa um dublê cuja forma não corresponde exatamente à forma do pacote que o código usa, então o verde dele cobre a mecânica do arquivo de teste, não o encaixe real.
-- O dono único do worktree, a execução de comandos do agente chamado, a corrida entre escritores, o uso contado na etapa e os limites de rodadas e de conversas: não existem no código, então não há o que exercitar.
-- O comportamento que os dois casos de teste que não rodam deveriam fixar (a mensagem já na fila entregue ao fim do passo que responde ao formato, e a rodada de correção): lidos no código, não exercitados.
-- O relógio da etapa no meio de um passo em que o agente espera o "sim" da pessoa: lido no código, não exercitado.
+- Se o modelo real aceita uma mensagem numa sessão em andamento e se a saída estruturada sobrevive: não verificado, por nenhum modelo real ter sido chamado; o teste do motor do SDK usa um dublê.
+- O dono único do worktree, o commit de conversa, o comando do agente chamado na lista e a soma visível do uso: não existem no código, então não há o que exercitar.
+- A corrida entre a etapa e o trabalho do agente chamado com o app em execução e o sandbox real (bubblewrap): não verificado.
+- A suíte inteira: não terminou a tempo nesta rodada, então o resultado dela como um todo não foi confirmado; numa rodada agrupada das regiões tocadas ficaram duas falhas reais e uma de tempo que não se repetiu.
