@@ -7,6 +7,7 @@ import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { AgentDef, AgentToolsConfig } from '../shared/config/types';
 import { toolsForAgent } from '../shared/config/team';
+import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
@@ -39,6 +40,8 @@ import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
 import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engineTool';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
+import { ATTACHMENT_TOOL } from '../shared/attachments';
+import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
 import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
@@ -489,8 +492,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const hook = openEngineFromEnv();
   const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
   const tool = wantsVcsTool(req);
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(offersViewImage(req.exec) && req.exec ? [viewImageToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(offersViewImage(req.exec) ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(offersViewImage(req.exec) && req.exec ? [viewImageToolImpl(req.exec)] : []), ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(offersViewImage(req.exec) ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -551,7 +554,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
   const release = req.release ? await releaseMcpServer(keepAlive(req.release, req.beat)) : null;
   if (req.release && !release) throw new Error(t('main.release.toolMissing'));
-  const mcp = vcs || shell || release ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}) } : null;
+  // The files a called agent may open, scoped to its conversation: an image comes back as an image block for the model.
+  const attachment = req.attachments ? await attachmentMcpServer(req.attachments.thread, req.attachments.refs) : null;
+  const mcp = vcs || shell || release || attachment ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
@@ -559,7 +564,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const q = query({
     prompt: req.prompt,
     options: {
-      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : [])], confine }),
+      ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : [])], confine }),
       ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
       model: req.target.model,
       env,
@@ -1000,6 +1005,11 @@ export interface AgentCall {
   agent: AgentDef;
   /** The `ReleaseAction` tool of an agent of a release run: one step of the release, answered in text for the model. */
   release?: (input: unknown) => Promise<string>;
+  /**
+   * The conversation the agent was called in and the files the message carries: with them the call gets the read-only `ConversationAttachment` tool,
+   * scoped to that conversation. Absent: the call has no attachment tool (a stage's own agent reads the files through the message section instead).
+   */
+  attachments?: { thread: string; refs: readonly AttachmentRef[] };
   prompt: string;
   schema: Schema;
   /** The agent's system text: its job, its instructions and the rules of the stage (built by the runner). */
@@ -1106,6 +1116,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       tools,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
       release: call.release,
+      attachments: call.attachments,
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,

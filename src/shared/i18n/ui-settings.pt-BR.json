@@ -93,6 +93,7 @@
   "ui.retention.deleted_other": "Apagados {count} arquivos ({size}).{failure}",
   "ui.retention.failure": " Não consegui apagar {failed}: {name} ({error}).",
   "ui.retention.hint": "Apaga o que o app guardou e já passou do prazo: sessões dos agentes, histórico, gates, passagens para o QA, retros e reentradas. Atas em .md e as suas sessões do Claude Code nunca são apagadas.",
+  "ui.retention.kind.anexos": "Arquivos anexados às conversas",
   "ui.retention.kind.atividade": "Atividade do dia",
   "ui.retention.kind.feedback": "Reentradas e revisões",
   "ui.retention.kind.gates": "Gates",

@@ -1,4 +1,5 @@
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
 import { writableLabels } from '../../shared/priority';
 import type { ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
@@ -33,6 +34,8 @@ export interface MentionInput {
   proposals?: boolean;
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
   autonomous?: boolean;
+  /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
+  attachments?: { thread: string; refs: readonly AttachmentRef[] };
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -147,6 +150,13 @@ function placeLine(i: MentionInput): string {
   }
 }
 
+/** The files a message carries, as an agent reads them: id, name, kind and size, never a path on the computer. */
+export function attachmentsSection(refs: readonly AttachmentRef[]): string {
+  if (!refs.length) return '';
+  const lines = refs.map((r) => `- ${r.id}: "${r.name}", ${t(kindLabelKey(r.kind))}, ${formatBytes(r.bytes)}`);
+  return t('main.attachment.tool.list', { count: refs.length }) + '\n' + lines.join('\n');
+}
+
 export function mentionCall(i: MentionInput): AgentCall {
   const agents = i.config.agents;
   const system = [
@@ -164,7 +174,12 @@ export function mentionCall(i: MentionInput): AgentCall {
   ]
     .filter(Boolean)
     .join('\n\n');
-  const sections = [...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })), threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : ''].filter(Boolean);
+  const sections = [
+    ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
+    // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
+    i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',
+    threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : '',
+  ].filter(Boolean);
   return {
     agent: i.agent,
     prompt: cp('runner.mention.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') }),
@@ -176,5 +191,6 @@ export function mentionCall(i: MentionInput): AgentCall {
     label: i.agent.id,
     maxTurns: i.config.runner.turns.read,
     wrapUp: true,
+    attachments: i.attachments,
   };
 }

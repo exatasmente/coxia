@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateSchema, type JsonSchema } from '../shared/config/jsonSchema';
+import { ATTACHMENT_KINDS, type AttachmentRef } from '../shared/attachments';
 import {
   MAX_TEXT,
   MAX_TITLE,
@@ -51,6 +52,12 @@ export interface ForumStore {
   append(thread: string, drafts: ForumDraft | ForumDraft[]): ForumMessage[];
   /** Records that a message was mirrored to the tracker. */
   markPublished(thread: string, seq: number, published: PublishedRef): ForumMessage;
+  /**
+   * Deletes one message of a thread and returns it, or null when there is no such message. The thread file is append-only, so the deletion is
+   * recorded as its own line and reading folds it in: a torn write never loses a message, and the message comes back with the files it carried,
+   * so the caller can delete them from disk.
+   */
+  remove(thread: string, seq: number): ForumMessage | null;
   list(): ThreadSummary[];
   /** Messages after `afterSeq` (at most `limit`), or null when the thread does not exist. */
   read(thread: string, afterSeq?: number, limit?: number): ThreadRead | null;
@@ -107,19 +114,30 @@ const MESSAGE: JsonSchema = {
     params: { type: 'object', additionalProperties: { type: ['string', 'number'] } },
     mentions: { type: 'array', items: { type: 'string', maxLength: 48 } },
     refs: { type: 'array', items: { type: 'object', properties: { path: { type: 'string', maxLength: 200 }, label: { type: 'string', maxLength: 200 } }, required: ['path'], additionalProperties: false } },
+    attachments: {
+      type: 'array',
+      items: { type: 'object', properties: { id: { type: 'string', maxLength: 32 }, name: { type: 'string', maxLength: 200 }, kind: { type: 'string', enum: ['image', 'text', 'pdf', 'json', 'csv'] }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'kind', 'bytes'], additionalProperties: false },
+    },
+    anchor: { type: ['string', 'null'], maxLength: 80 },
     stage: { type: ['string', 'null'], maxLength: 48 },
     to: { type: ['string', 'null'], maxLength: 48 },
     replyTo: { type: ['integer', 'null'] },
     public: { type: 'boolean' },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
-  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
+  required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'attachments', 'stage', 'to', 'replyTo', 'public', 'published'],
   additionalProperties: false,
 };
 const ANNOTATION: JsonSchema = {
   type: 'object',
   properties: { v: { type: 'integer', const: 1 }, type: { type: 'string', const: 'published' }, seq: { type: 'integer', minimum: 1 }, published: publishedSchema },
   required: ['v', 'type', 'seq', 'published'],
+  additionalProperties: false,
+};
+const REMOVAL: JsonSchema = {
+  type: 'object',
+  properties: { v: { type: 'integer', const: 1 }, type: { type: 'string', const: 'removed' }, seq: { type: 'integer', minimum: 1 } },
+  required: ['v', 'type', 'seq'],
   additionalProperties: false,
 };
 
@@ -129,11 +147,12 @@ interface Parsed {
   endsClean: boolean;
 }
 
-/** The thread file as it stands: header, messages in sequence order with their `published` link folded in, and whether the last line is closed. */
+/** The thread file as it stands: header, messages in sequence order (already-removed ones left out) with their `published` link folded in, and whether the last line is closed. */
 function parse(text: string): Parsed {
   let header: ThreadHeader | null = null;
   const messages = new Map<number, ForumMessage>();
   const published = new Map<number, PublishedRef>();
+  const removed = new Set<number>();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let raw: unknown;
@@ -150,9 +169,14 @@ function parse(text: string): Parsed {
     } else if (kind === 'published' && !validateSchema(raw, ANNOTATION).length) {
       const a = raw as { seq: number; published: PublishedRef };
       published.set(a.seq, a.published);
+    } else if (kind === 'removed' && !validateSchema(raw, REMOVAL).length) {
+      removed.add((raw as { seq: number }).seq);
     }
   }
-  const sorted = [...messages.values()].sort((a, b) => a.seq - b.seq).map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
+  const sorted = [...messages.values()]
+    .filter((m) => !removed.has(m.seq))
+    .sort((a, b) => a.seq - b.seq)
+    .map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
   return { header, messages: sorted, endsClean: text === '' || text.endsWith('\n') };
 }
 
@@ -180,7 +204,9 @@ function stateOf(p: Parsed & { header: ThreadHeader }): State {
   let open: number[] = [];
   for (const m of p.messages) open = settle(open, m);
   const last = p.messages[p.messages.length - 1];
-  return { header: p.header, lastSeq: last?.seq ?? 0, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
+  // `lastSeq` is the highest sequence number ever used: it does not go back when a message is removed, and a number is never handed out twice.
+  const lastSeq = p.messages.reduce((n, m) => Math.max(n, m.seq), 0);
+  return { header: p.header, lastSeq, count: p.messages.length, lastAt: last?.at ?? null, lastKind: last?.kind ?? null, open, endsClean: p.endsClean };
 }
 
 const summaryOf = (s: State): ThreadSummary => ({
@@ -243,6 +269,14 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
   const cleanRefs = (refs: ArtifactRef[] | undefined): ArtifactRef[] =>
     (refs ?? []).filter((r) => typeof r?.path === 'string' && REF_PATH.test(r.path) && !r.path.split('/').some((seg) => seg === '..' || seg === '.')).map((r) => ({ path: r.path, ...(typeof r.label === 'string' && r.label ? { label: r.label.slice(0, 200) } : {}) }));
 
+  // The attachments of a message are already clean when they arrive (main/attachments.ts made the id and read the kind from the content):
+  // the store only drops what does not hold its own shape, so a hand-written line cannot smuggle a path into the message.
+  const cleanAttachments = (list: AttachmentRef[] | undefined): AttachmentRef[] =>
+    (list ?? [])
+      .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && ATTACHMENT_KINDS.includes(a.kind) && typeof a.name === 'string' && Number.isFinite(a.bytes) && a.bytes >= 0)
+      .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Math.floor(a.bytes) }))
+      .slice(0, 50);
+
   function build(state: State, d: ForumDraft, seq: number): ForumMessage {
     const a = d.author;
     if (!a || (a.type !== 'agent' && a.type !== 'person' && a.type !== 'app') || (a.type === 'agent' && !AGENT_ID.test(a.id))) throw new ForumError('bad-author');
@@ -266,6 +300,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       params,
       mentions: [...new Set((d.mentions ?? []).filter((m) => typeof m === 'string' && AGENT_ID.test(m)))],
       refs: cleanRefs(d.refs),
+      attachments: cleanAttachments(d.attachments),
+      anchor: typeof d.anchor === 'string' && d.anchor ? d.anchor.slice(0, 80) : null,
       stage: d.stage ?? null,
       to: d.to ?? null,
       // An answer says which question or request it answers: the one it names when that one is open, else the latest nobody has answered.
@@ -327,6 +363,18 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       cache.set(thread, { ...state, endsClean: true });
       const message = (store.read(thread, seq - 1, 1)?.messages[0]) as ForumMessage;
       return message;
+    },
+    remove(thread, seq) {
+      const state = load(thread);
+      if (!state) throw new ForumError('unknown-thread', { id: thread });
+      if (!Number.isInteger(seq) || seq < 1 || seq > state.lastSeq) return null;
+      // What is read back is what stood before the removal: a message already removed is gone, and the deletion is never recorded twice.
+      const before = parse(readFileSync(path(thread), 'utf8'));
+      const found = before.messages.find((m) => m.seq === seq) ?? null;
+      if (!found) return null;
+      appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${JSON.stringify({ v: 1, type: 'removed', seq })}\n`);
+      cache.set(thread, stateOf({ ...before, header: before.header as ThreadHeader, endsClean: true }));
+      return found;
     },
     list() {
       if (!existsSync(dir)) return [];

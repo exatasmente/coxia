@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
@@ -79,6 +80,12 @@ const draftDir = (thread: string, seq: number, agent: string): string => join(AT
 
 /** The repository titles of a place on disk, in the config's order. */
 const repoTitles = (place: MentionPlace): string[] => reposOnDisk(place).map((r) => r.id);
+
+/** The files a message carries, for the agent called in its conversation: the refs stay in the message, the tool resolves them by the conversation's folder. */
+function attachmentsFor(deps: MentionDeps, thread: string, message: ForumMessage): { thread: string; refs: readonly AttachmentRef[] } | null {
+  if (!message.attachments.length) return null;
+  return { thread, refs: message.attachments };
+}
 
 /** The files a run's thread gives the agent (the cycle folder, the issue record first). */
 function runFiles(run: Run): FolderFile[] {
@@ -159,6 +166,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         }
       }
       const info = inputOf(place);
+      // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
+      const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
       const call: AgentCall = mentionCall({
         agent: reader,
         config,
@@ -174,7 +183,12 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined,
         proposals: mayPropose(def, deps, place),
         autonomous: autonomyOf(config, def),
+        attachments: attachments ?? undefined,
       });
+      if (attachments === null && message.attachments.length) {
+        // The workspace turned attachments to agents off: the conversation says so, once per answer, so the person knows why the agent did not read them.
+        deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
+      }
       call.docs = await docsAskOf(place, config, info.files);
       if (made) call.activity = made.activity;
       if (session) call.exec = session;

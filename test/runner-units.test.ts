@@ -279,7 +279,7 @@ describe('the commit message', () => {
   });
 });
 
-const msg = (seq: number, m: Partial<ForumMessage>): ForumMessage => ({ v: 1, type: 'message', seq, thread: 'run-x', at: '2026-10-03T10:00:00Z', kind: 'post', author: { type: 'person' }, text: '', code: null, params: {}, mentions: [], refs: [], stage: null, to: null, replyTo: null, public: false, published: null, ...m });
+const msg = (seq: number, m: Partial<ForumMessage>): ForumMessage => ({ v: 1, type: 'message', seq, thread: 'run-x', at: '2026-10-03T10:00:00Z', kind: 'post', author: { type: 'person' }, text: '', code: null, params: {}, mentions: [], refs: [], attachments: [], stage: null, to: null, replyTo: null, public: false, published: null, ...m });
 const agent = (id: string) => ({ type: 'agent', id }) as const;
 
 describe('what an agent is given from the thread', () => {
@@ -302,7 +302,7 @@ describe('what an agent is given from the thread', () => {
     const asked = msg(1, { kind: 'question', author: agent('planner'), text: 'Which?', stage: 'plan' });
     expect(pendingAnswer([asked], 'planner', 'plan')).toBeNull();
     const answered = [asked, msg(2, { kind: 'answer', text: 'This one.', stage: 'plan' })];
-    expect(pendingAnswer(answered, 'planner', 'plan')).toEqual({ question: 'Which?', text: 'This one.', by: expect.any(String) });
+    expect(pendingAnswer(answered, 'planner', 'plan')).toEqual({ question: 'Which?', text: 'This one.', by: expect.any(String), attachments: [] });
     expect(pendingAnswer(answered, 'planner', 'refine')).toBeNull();
     expect(pendingAnswer([...answered, msg(3, { kind: 'post', author: agent('planner'), text: 'ok' })], 'planner', 'plan')).toBeNull();
   });

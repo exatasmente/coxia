@@ -4,6 +4,7 @@ import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent, probeProviderBudget } from '../agents';
 import { forumStore, interceptPosts } from '../forum';
 import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
+import type { AttachmentRef } from '../../shared/attachments';
 import { createdIssueOf } from '../../shared/runs/links';
 import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
@@ -132,7 +133,8 @@ export const runsModule: Module = (ctx) => {
   // The issue a retro improvement asked for was created: the task on it starts by itself, without another "sim".
   onRunnerActionDone((action, responses) => retroIssueDone(action, responses, (ref) => r.start(ref)));
   // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, which never writes to the run.
-  interceptPosts((thread, body) => r.answerPost(thread, body));
+  // The files the message carries ride on that answer: the runner writes them on the answer message it records.
+  interceptPosts((thread, body, attachments) => r.answerPost(thread, body, attachments));
   forumStore().subscribe((m) => r.onMessage(m));
 
   // Whether this computer can make a sandbox, for the team editor to offer the option; `probe` asks again. Neither changes anything.
@@ -159,7 +161,15 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note)));
   ctx.handle('runs:return', (run: unknown, note: unknown) => r.returnStage(id(run), text(note)));
   ctx.handle('runs:gate', (run: unknown, action: unknown, reason?: unknown) => r.gate(id(run), action as GateAction, text(reason)));
-  ctx.handle('runs:answer', (run: unknown, answer: unknown) => r.answer(id(run), text(answer)));
+  // The files of the answer travel with it: the person attaches them to the message that answers the run's question, and the answer carries the refs.
+  ctx.handle('runs:answer', (run: unknown, answer: unknown, attachments?: unknown) =>
+    r.answer(
+      id(run),
+      text(answer),
+      Array.isArray(attachments)
+        ? attachments.filter((a): a is AttachmentRef => !!a && typeof (a as AttachmentRef).id === 'string').map((a) => ({ id: a.id, name: String(a.name ?? ''), kind: a.kind, bytes: Number(a.bytes) || 0 }))
+        : undefined,
+    ));
   ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
   ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
   // Lets a `shell: host` agent run a command on this computer: from a paired browser only with the same switch as approving a proposal (webPolicy.ts).

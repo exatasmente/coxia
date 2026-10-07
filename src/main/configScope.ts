@@ -25,6 +25,7 @@ export const WEB_EDITABLE = [
   'runner.commitMessage',
   'runner.prTitle',
   'runner.linkDependencies',
+  'attachments',
 ] as const;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

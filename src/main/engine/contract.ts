@@ -1,4 +1,5 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { AttachmentRef } from '../../shared/attachments';
 import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
@@ -124,6 +125,11 @@ export interface EngineRequest {
   isolated?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
+  /**
+   * The conversation the agent was called in and the files the message carries: with them the call gets the read-only `ConversationAttachment` tool,
+   * scoped to that conversation. Absent: no attachment tool (a stage's own agent opens the files through the message section instead).
+   */
+  attachments?: { thread: string; refs: readonly AttachmentRef[] };
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
   /**

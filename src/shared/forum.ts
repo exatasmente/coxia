@@ -1,4 +1,5 @@
 import { withStageName } from './cycles/text';
+import type { AttachmentRef } from './attachments';
 import { t } from './i18n';
 
 // The forum: one thread per run plus general threads. Messages are what agents and people say about an activity; the stores are in
@@ -40,6 +41,10 @@ export interface ForumDraft {
   /** Agent ids named in the text. */
   mentions?: string[];
   refs?: ArtifactRef[];
+  /** Files the person attached to this message: their bytes live in the workspace's own data, by conversation (main/attachments.ts). */
+  attachments?: AttachmentRef[];
+  /** Internal: the anchor of the conversation, so a message of another conversation never opens a file here (filled by the forum module). */
+  anchor?: string | null;
   /** The stage of the run the message belongs to. */
   stage?: string | null;
   /** Handoff: the agent id that takes over, or "person". */
@@ -66,6 +71,10 @@ export interface ForumMessage {
   params: Record<string, ParamValue>;
   mentions: string[];
   refs: ArtifactRef[];
+  /** The files this message carries. Empty for every message the app words itself. */
+  attachments: AttachmentRef[];
+  /** Internal: the anchor of the conversation this message is in, so a message id from another conversation never opens a file here. */
+  anchor?: string | null;
   stage: string | null;
   to: string | null;
   /** An answer: the `seq` of the question or request it answers. */

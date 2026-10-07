@@ -154,6 +154,17 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   sandboxRules(r.sandbox, errors, warnings);
 }
 
+// The attachment limits: a per-message total smaller than the per-file limit, or one over the total, would leave every file of that kind refused.
+function attachmentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const a = c.attachments;
+  if (!a) return;
+  const { imageBytes, otherBytes, messageBytes, perMessage } = a.limits;
+  if (imageBytes > messageBytes) warnings.push({ path: 'attachments.limits.imageBytes', message: 'is larger than the total of one message: an image at this size could never be sent' });
+  if (otherBytes > messageBytes) warnings.push({ path: 'attachments.limits.otherBytes', message: 'is larger than the total of one message: a file at this size could never be sent' });
+  if (messageBytes < otherBytes) errors.push({ path: 'attachments.limits.messageBytes', message: 'must be at least the limit of one file' });
+  if (perMessage < 1) errors.push({ path: 'attachments.limits.perMessage', message: 'must be at least 1' });
+}
+
 // What a sandbox may reach: the hosts of the registry switch, the folders it may read, and the limits. The facts that need the machine (the data folder, the home
 // folder itself) are checked where a sandbox is built.
 function sandboxRules(s: WorkspaceConfig['runner']['sandbox'], errors: ConfigIssue[], warnings: ConfigIssue[]): void {
@@ -224,6 +235,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   flowRules(c, errors, warnings, tolerateFlow);
   squadRules(c, errors, warnings, tolerateFlow);
   runnerRules(c, errors, warnings);
+  attachmentRules(c, errors, warnings);
   commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));
   for (const id of duplicates(c.vcs.map((v) => v.id))) errors.push({ path: 'vcs', message: `duplicate integration id "${id}"` });

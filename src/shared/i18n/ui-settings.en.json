@@ -93,6 +93,7 @@
   "ui.retention.deleted_other": "Deleted {count} files ({size}).{failure}",
   "ui.retention.failure": " Could not delete {failed}: {name} ({error}).",
   "ui.retention.hint": "Deletes what the app stored that is past its deadline: agent sessions, history, gates, QA handoffs, retros and re-entries. Minutes in .md and your own Claude Code sessions are never deleted.",
+  "ui.retention.kind.anexos": "Files attached to the conversations",
   "ui.retention.kind.atividade": "Activity of the day",
   "ui.retention.kind.feedback": "Re-entries and reviews",
   "ui.retention.kind.gates": "Gates",

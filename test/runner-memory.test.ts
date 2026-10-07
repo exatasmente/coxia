@@ -16,6 +16,7 @@ const message = (over: Partial<ForumMessage>): ForumMessage => ({
   params: {},
   mentions: [],
   refs: [],
+  attachments: [],
   stage: null,
   to: null,
   replyTo: null,

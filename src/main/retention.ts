@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join, basename, dirname, sep } from 'node:path';
 import {
   retentionLabel,
   RETENTION_MAX_DAYS,
@@ -12,6 +12,7 @@ import {
   type RetentionResult,
 } from '../shared/retention';
 import { getSettings } from './config';
+import { createAttachmentStore } from './attachments';
 import { purgeTrash } from './minutesStore';
 import { firstPromptOf } from './custo-core';
 import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
@@ -38,6 +39,59 @@ const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const DATA_FILE = /^[\w.-]+\.json$/;
 const HEAD_BYTES = 256 * 1024;
 const LOG = join(ATAS, 'retencao.log');
+
+// Every attachment id a live forum message still references, by conversation: what the sweep must never delete. Read from the append-only thread
+// files, so a message that was deleted takes its files out of the keep set (and the folder of that message was emptied when it was deleted).
+export function referencedAttachments(base = ATAS): Set<string> {
+  const keep = new Set<string>();
+  const dir = join(base, 'forum');
+  if (!existsSync(dir)) return keep;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.jsonl')) continue;
+    const thread = name.slice(0, -6);
+    for (const line of readFileSync(join(dir, name), 'utf8').split('\n')) {
+      if (!line.includes('"attachments"')) continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const list = (raw as { attachments?: { id?: unknown }[] }).attachments;
+      if (!Array.isArray(list)) continue;
+      for (const a of list) if (typeof a?.id === 'string') keep.add(`${thread}/${a.id}`);
+    }
+  }
+  return keep;
+}
+
+/** The workspace's attachment store, over ATAS: the sweep removes a file it selected through the store, which refuses a name that is not one of ours. */
+const attachmentFilesStore = createAttachmentStore();
+
+/** The attachment files: one folder per conversation under <workspace>/anexos, one file per attachment. A file a live message references is kept; the
+ * rest is selected by age like the other data. A file that is already gone when the sweep reaches it is nothing to do, not a failure. */
+export function attachmentFiles(base = ATAS): RetentionFile[] {
+  const dir = join(base, 'anexos');
+  if (!existsSync(dir)) return [];
+  const keep = referencedAttachments(base);
+  const files: RetentionFile[] = [];
+  for (const conversation of readdirSync(dir, { withFileTypes: true })) {
+    if (!conversation.isDirectory()) continue;
+    const folder = join(dir, conversation.name);
+    for (const name of readdirSync(folder)) {
+      const path = join(folder, name);
+      try {
+        const st = statSync(path);
+        if (!st.isFile()) continue;
+        const id = name.split('.')[0];
+        files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
+      } catch {
+        // the file went away between the listing and the stat (a message deleted, a person took the file out): nothing to select
+      }
+    }
+  }
+  return files;
+}
 
 function head(path: string): string {
   const fd = openSync(path, 'r');
@@ -136,7 +190,7 @@ function otherWorkspaceRefs(): RetentionRef[] {
 export function scan(days: number, now = Date.now()): Selection {
   const actions = actionRefs();
   const refs = [...(actions ?? []), ...otherWorkspaceRefs()];
-  const files = [...dataFiles(refs), ...sessionFiles()];
+  const files = [...dataFiles(refs), ...attachmentFiles(), ...sessionFiles()];
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {
     const sessions = selection.remove.filter((v) => v.file.kind === 'sessoes');
@@ -193,6 +247,20 @@ function inside(path: string, root: string): boolean {
 }
 
 function removeOne(file: RetentionFile): void {
+  // An attachment is removed by its own door (the store resolves the name inside the conversation's folder): the sweep walks the folder and has no ref for
+  // what it found. A file that went away before this point is nothing to do, not a failure.
+  if (file.kind === 'anexos') {
+    const conversation = basename(dirname(file.path));
+    const name = basename(file.path);
+    if (!existsSync(file.path)) return;
+    attachmentFilesStore.dropFile(conversation, name);
+    try {
+      if (!readdirSync(dirname(file.path)).length) rmSync(dirname(file.path), { recursive: true, force: true });
+    } catch {
+      // a folder that cannot be removed yet is harmless; the next sweep finds it empty and tries again
+    }
+    return;
+  }
   const st = lstatSync(file.path);
   if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
   if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));

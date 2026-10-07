@@ -53,6 +53,7 @@ export function neutralConfig(): WorkspaceConfig {
     notifications: true,
     closeToTray: true,
     retention: { enabled: false, days: 30 },
+    attachments: { enabled: true, limits: { imageBytes: 5 * 1024 * 1024, otherBytes: 1024 * 1024, messageBytes: 10 * 1024 * 1024, perMessage: 10 }, agents: true },
     schedule: { preDaily: '09:40', days: [1, 2, 3, 4, 5], statusEveryMin: 30, from: '08:00', to: '19:00', retroDay: 5, retroTime: '16:00' },
     llm: {
       providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null, options: {}, capabilities: null, structured: 'auto', headers: {}, maxOutputTokens: null, temperature: null, timeoutMs: null, legacyCustomEndpoint: false }],

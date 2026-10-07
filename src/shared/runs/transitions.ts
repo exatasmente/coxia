@@ -1,3 +1,4 @@
+import type { AttachmentRef } from '../attachments';
 import type { ArtifactRef, ForumDraft } from '../forum';
 import { withStageName } from '../cycles/text';
 import { t } from '../i18n';
@@ -413,7 +414,7 @@ export function answerByAgent(run: Run, input: { by: string; text: string }, at:
  * The person answers. A question from an agent resumes the same attempt of the stage. The review limit sends the run back to the stage
  * that produced the work, with the answer as the handoff and a fresh budget of review rounds.
  */
-export function answer(run: Run, flow: FlowStage[], text: string, at: string): Transition {
+export function answer(run: Run, flow: FlowStage[], text: string, at: string, attachments: AttachmentRef[] = []): Transition {
   need(run, 'question');
   const said = text.trim();
   if (!said) throw new RunError('empty-text');
@@ -423,7 +424,10 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
   const out = clone(run, at);
   out.question = null;
   log(out, at, 'answer', run.stage, 'person', said);
-  const messages: ForumDraft[] = [{ kind: 'answer', author: person, text: said, stage: run.stage, public: true }];
+  // The files the person attached to the message answer with it: they stay on the answer message, so it shows them and the retention sees a live message.
+  const messages: ForumDraft[] = [{ kind: 'answer', author: person, text: said, attachments, stage: run.stage, public: true }];
+  // The move hands the same files to the turn that runs the stage: the answer message is what shows them, and the agent of the stage reads them through its tool.
+  const carried = attachments.length ? { attachments: { 0: attachments } } : {};
   if (q?.kind === 'review-limit') {
     const producer = producerOf(flow, run.stage);
     if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
@@ -434,7 +438,7 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string): T
     out.status = 'working';
     (record(out, run.stage) as StageRecord).status = 'running';
   }
-  return { run: out, messages };
+  return { run: out, messages, ...carried };
 }
 
 // The work goes back to an earlier stage. A review pass counts toward the limit of the stage that sends it back (the review and QA each have their own
