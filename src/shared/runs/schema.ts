@@ -183,7 +183,8 @@ const flowStage = object(
     comment: { type: ['string', 'null'], description: 'The comment template key.', maxLength: 48 },
     trackerStatus: { type: ['string', 'null'], description: 'The label the issue gets on entering.', maxLength: 200 },
   },
-  ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'cycleAutonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
+  // `cycleAutonomous` is not required: a run written before the autonomy block existed reads as having it off (parseRun fills it in).
+  ['id', 'label', 'kind', 'type', 'agent', 'autonomous', 'artifacts', 'reads', 'next', 'returnsTo', 'roundLimit', 'waitsFor', 'comment', 'trackerStatus'],
 );
 
 const link = object(
@@ -314,5 +315,6 @@ export function parseRun(raw: unknown): RunParse {
   if (badKey) return { ok: false, reason: 'invalid', errors: [`comments.${badKey}: not a stage id`] };
   // A file written before these fields existed reads as having none.
   const { review: _superseded, ...run } = raw as Run & { review?: unknown };
-  return { ok: true, run: { ...run, reviews: run.reviews ?? [], qa: run.qa ?? [], base: run.base ?? null, returns: run.returns ?? {}, wait: run.wait ?? null } };
+  const flow = run.flow && { ...run.flow, stages: run.flow.stages.map((st) => ({ ...st, cycleAutonomous: st.cycleAutonomous ?? false })) };
+  return { ok: true, run: { ...run, ...(flow ? { flow } : {}), reviews: run.reviews ?? [], qa: run.qa ?? [], base: run.base ?? null, returns: run.returns ?? {}, wait: run.wait ?? null } };
 }
