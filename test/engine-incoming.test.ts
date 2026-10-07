@@ -31,7 +31,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
       let i = 0;
       for await (const message of prompt as AsyncIterable<{ message: { content: string } }>) {
         sdkSeen.push(message.message.content);
-        yield* ((turns[i] ?? []) as object[]);
+        // A function in a turn stands for the SDK running the call's hooks at that point (after a batch of tools); everything else is a message.
+        for (const item of (turns[i] ?? []) as unknown[]) {
+          if (typeof item === 'function') await (item as (o: Record<string, unknown>) => Promise<void>)(options);
+          else yield item;
+        }
         i++;
       }
     })();
@@ -205,6 +209,36 @@ describe('the open engine, a stage that talks while it works', () => {
     expect((chats[2].body as Record<string, any>).tools).toBeUndefined();
   });
 
+  it('hands a message over after a step with tools, while the agent is still working', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'conteúdo');
+    const read = (n: number) => toolStep([{ id: `call_read_${n}`, name: 'Read', args: { file_path: join(dir, 'a.txt') } }]);
+    fake = await fakeOpenAI([read(1), read(2), textStep('terminei'), textStep(JSON.stringify(answer))]);
+    const queue = ['como está o progresso?'];
+    const delivered: string[] = [];
+    const r = await runOpen<typeof answer>(
+      params(fake, {
+        incoming: async (onDelivered) => {
+          const next = queue.shift() ?? null;
+          if (next !== null) {
+            delivered.push(next);
+            onDelivered(next);
+          }
+          return next;
+        },
+      }),
+    );
+    expect(r.data).toEqual(answer);
+    expect(delivered).toEqual(['como está o progresso?']);
+    // The second call — the agent's next step, still with its tools — already carries the message, right after the result of the first read.
+    const second = fake.chats()[1].body as Record<string, any>;
+    expect(second.tools).toBeDefined();
+    const msgs = second.messages as { role: string; content: string }[];
+    expect(msgs.at(-2)!.role).toBe('tool');
+    expect(msgs.at(-1)!.role).toBe('user');
+    expect(msgs.at(-1)!.content).toContain('como está o progresso?');
+    expect(msgs.at(-1)!.content).toContain('SendMessage');
+  });
+
   it('takes a model that only posts notes for three steps as done, and asks for the answer with no tool', async () => {
     // A real model behind the open engine finished its work and kept announcing it with SendMessage, step after step, never ending the stage.
     const notes: string[] = [];
@@ -328,6 +362,34 @@ describe('the Claude SDK engine, a stage that talks while it works', () => {
     // The message went in as a user message of the same session, after the first turn.
     expect(sdkSeen[0]).toContain('Trabalhe a etapa.');
     expect(sdkSeen.at(-1)).toContain('use o helper existente');
+  });
+
+  it('hands a message over after a batch of tools through the PostToolBatch hook, while the turn goes on', async () => {
+    const { runnerFor } = await import('../src/main/engine/registry');
+    await import('../src/main/agents');
+    const answers: unknown[] = [];
+    const batch = async (options: Record<string, unknown>) => {
+      const matchers = (options.hooks as Record<string, { hooks: ((input: unknown) => Promise<unknown>)[] }[]>).PostToolBatch;
+      for (const m of matchers) for (const h of m.hooks) answers.push(await h({ hook_event_name: 'PostToolBatch', tool_calls: [] }));
+    };
+    sdkTurns = [[[init('s1'), batch, batch, result('success', 's1', answer)]]];
+    const queue = ['como está o progresso?'];
+    const r = await runnerFor(request().target)<typeof answer>(
+      request({
+        incoming: async (onDelivered: (t: string) => void) => {
+          const next = queue.shift() ?? null;
+          if (next !== null) onDelivered(next);
+          return next;
+        },
+      }) as never,
+    );
+    expect(r.data).toEqual(answer);
+    // The first batch carried the message to the model; the second had nothing to hand over.
+    expect(answers[0]).toMatchObject({ hookSpecificOutput: { hookEventName: 'PostToolBatch' } });
+    expect((answers[0] as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext).toContain('como está o progresso?');
+    expect(answers[1]).toEqual({});
+    // Delivered in the turn, the message is not sent again as a user message of its own.
+    expect(sdkSeen.some((m) => m.includes('como está o progresso?'))).toBe(false);
   });
 
   it('without the door the SDK call is the one of today, with the prompt as a string', async () => {

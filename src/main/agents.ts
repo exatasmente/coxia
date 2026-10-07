@@ -44,6 +44,7 @@ import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engi
 import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
+import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
 import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
@@ -626,15 +627,30 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   let open = stream !== null;
   const throughDoor = async (): Promise<boolean> => {
     if (!stream || !req.incoming || !open) return false;
-    const message = await req.incoming((text) => req.activity?.text(`${t('main.engine.text.messageIn')}\n${text}`));
+    const message = await req.incoming((text) => req.activity?.text(incomingActivity(text)));
     if (message === null) {
       open = false;
       stream.push(t('main.engine.text.collect'));
       return false;
     }
-    stream.push(`${t('main.engine.text.messageIn')}\n<data>\n${message}\n</data>\n\n${t('main.engine.text.messageInNote')}`);
+    stream.push(incomingText(message));
     return true;
   };
+  // While the session is open, a message that arrived as the tools ran reaches the model with their results (the SDK's PostToolBatch, once per batch, before
+  // the next request), so the agent hears it while it works and not only when its turn ends.
+  if (stream && req.incoming) {
+    const incoming = req.incoming;
+    const between = {
+      hooks: [
+        async () => {
+          if (!open) return {};
+          const message = await incoming((text) => req.activity?.text(incomingActivity(text)));
+          return message === null ? {} : { hookSpecificOutput: { hookEventName: 'PostToolBatch' as const, additionalContext: incomingText(message) } };
+        },
+      ],
+    };
+    options.hooks = { ...options.hooks, PostToolBatch: [...(options.hooks?.PostToolBatch ?? []), between] };
+  }
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.

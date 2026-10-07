@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent calls another agent in a conversation.** An agent answering in a conversation (its direct conversation, a squad channel, the general conversation or a run's thread) can bring another agent of the team in with *CallAgent*: a product owner talking with you can ask the tech lead or support, a developer the tech lead, QA the developer. The question and the answer are posted in the same conversation, the called agent only reads, and its answer goes back to the caller, who finishes its own. A call back to an agent already in the exchange is refused, and one answer makes at most as many calls as a stage may open (`runner.conversations.perStage`, 3 by default).
+
+### Fixed
+
+- **A message to an agent that is working reaches it while it works.** A message written in the run's conversation to the agent of a working stage used to wait until the agent stopped using its tools, which in practice was the end of the stage. It now enters right after the agent's current step, with the results of its tools, on both engines (on the Claude Agent SDK, after each batch of tools), and the agent is told it can answer with *SendMessage* and carry on.
+
 ## [0.8.0-beta.3] - 2026-10-07
 
 ### Fixed
