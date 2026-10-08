@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { type BoardCard, type BoardPatch, type BoardTarget, type HostChange, type HostRead, type HostRequest, type HostSent, type HostState, type Waiting, boardColumns, boardId, boardPriorities, boardSquadChoices, columnLabel, columnOf, squadLabel } from '../shared/board';
+import { SEND_ALL_MAX, type BoardCard, type BoardPatch, type BoardTarget, type SendAllResult, type HostChange, type HostRead, type HostRequest, type HostSent, type HostState, type Waiting, boardColumns, boardId, boardPriorities, boardSquadChoices, columnLabel, columnOf, squadLabel } from '../shared/board';
 import { writtenLabel } from '../shared/boardHost';
 import type { VcsKind } from '../shared/config/types';
 import { squadsOf } from '../shared/config/squads';
@@ -107,6 +107,7 @@ export async function boardView(refresh = false) {
     projects: read?.projects ?? [],
     noProject: read?.noProject ?? false,
     items,
+    sendable: ready && !reason ? sendableCards().length : 0,
     columns: boardColumns(cycle().stages).map((s) => ({ id: s.id, label: columnLabel(s.label, s.kind, language()), writes: columnWrite(s.id) })),
     priorities: boardPriorities(cycle().priority.labels),
     squads: boardSquadChoices(squadsOf(config), config.language),
@@ -186,40 +187,60 @@ function itemReady(): void {
 
 const inFlight = new Set<string>();
 
+/** The outcome of sending one card, and the reason when it did not go. */
+interface Sending {
+  outcome: 'sent' | 'proposed' | 'failed';
+  reason: string | null;
+}
+
 /** Sends one card that has no issue yet and leaves the outcome on the card (a link, or a note with the reason). Never throws: the card exists whatever the host does. */
-async function sendCard(id: string): Promise<'sent' | 'proposed' | 'failed'> {
+async function sendCard(id: string, batch?: HostRequest['batch']): Promise<Sending> {
   const store = boardStore();
   const why = host.cannotSend();
   if (why) {
     store.note(id, { kind: 'unsupported', text: why });
-    return 'failed';
+    return { outcome: 'failed', reason: why };
   }
-  if (inFlight.has(id)) return 'failed';
+  if (inFlight.has(id)) return { outcome: 'failed', reason: t('main.board.inFlight') };
   inFlight.add(id);
   try {
-    const sent = await host.send({ target: id, change: { kind: 'create' } });
+    const sent = await host.send({ target: id, change: { kind: 'create' }, ...(batch ? { batch } : {}) });
     if (sent.mode === 'proposed') {
       store.note(id, null);
-      return 'proposed';
+      return { outcome: 'proposed', reason: null };
     }
-    if (sent.link) store.link(id, sent.link);
-    else store.note(id, { kind: 'unlinked', text: t('main.board.host.unlinked') });
-    return sent.link ? 'sent' : 'failed';
+    if (sent.link) {
+      store.link(id, sent.link);
+      return { outcome: 'sent', reason: null };
+    }
+    const text = t('main.board.host.unlinked');
+    store.note(id, { kind: 'unlinked', text });
+    return { outcome: 'failed', reason: text };
   } catch (e) {
-    store.note(id, { kind: 'failed', text: (e as Error).message });
-    return 'failed';
+    const text = (e as Error).message;
+    store.note(id, { kind: 'failed', text });
+    return { outcome: 'failed', reason: text };
   } finally {
     inFlight.delete(id);
   }
 }
 
 /** Whether a card can be sent now: open, no issue, nothing waiting for it, and not being sent. The reason when not. */
-function sendable(card: BoardCard): string | null {
+function sendable(card: BoardCard, waiting: Map<string, Waiting> = host.waiting()): string | null {
   if (card.host) return t('main.board.alreadySent', { ref: `${card.host.project}#${card.host.iid}` });
   if (card.state !== 'open') return t('main.board.sendClosed');
-  if (host.waiting().get(card.id)) return t('main.board.waiting');
+  if (waiting.get(card.id)) return t('main.board.waiting');
   if (inFlight.has(card.id)) return t('main.board.inFlight');
   return null;
+}
+
+/** The cards "Send all" would send, oldest first. */
+function sendableCards(): BoardCard[] {
+  const waiting = host.waiting();
+  return boardStore()
+    .list()
+    .filter((c) => sendable(c, waiting) === null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 // ---- the writes that change a card, planned (checked) before the guard and run after it
@@ -279,6 +300,25 @@ export const register: Module = (ctx: ModuleContext) => {
     assertExternalWrite(t('main.board.what'));
     await sendCard(card.id);
     return changed(boardStore().get(card.id) ?? card);
+  });
+  ctx.handle('board:sendAll', async (): Promise<SendAllResult> => {
+    assertExternalWrite(t('main.board.what'));
+    if (!host.ready()) throw new Error(t('main.board.host.notReady'));
+    const cannot = host.cannotSend();
+    if (cannot) throw new Error(cannot);
+    const all = sendableCards();
+    const chosen = all.slice(0, SEND_ALL_MAX);
+    const batch = `board-send-${Date.now().toString(36)}`;
+    const result: SendAllResult = { sent: 0, proposed: 0, failed: [], remaining: all.length - chosen.length };
+    // One after the other, never in parallel: the audit stays in order and a host's rate limit is not hit by a burst. One that fails does not stop the rest.
+    for (const [i, card] of chosen.entries()) {
+      const { outcome, reason } = await sendCard(card.id, { id: batch, notify: i === 0 });
+      if (outcome === 'sent') result.sent++;
+      else if (outcome === 'proposed') result.proposed++;
+      else result.failed.push({ id: card.id, reason: reason ?? '' });
+    }
+    changed(null);
+    return result;
   });
   ctx.handle('board:update', async (targetArg: unknown, patch: unknown) => {
     const target = targetOf(targetArg);

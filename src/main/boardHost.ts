@@ -167,8 +167,10 @@ async function runNow(p: Planned): Promise<HostSent> {
 
 function propose(p: Planned, req: HostRequest): HostSent {
   exclusive(p);
-  const unit = { purpose: `${PURPOSE}${p.op}`, cardId: p.cardId, project: p.project, iid: p.iid, effect: req.effect ?? null };
-  const action = proposeVcsGroup({ key: p.key, issue: p.iid, issueTitle: p.issueTitle, summary: p.summary, unit, notify: { title: t('main.board.host.notifyTitle'), body: p.summary } }, p.commands);
+  const unit = { purpose: `${PURPOSE}${p.op}`, cardId: p.cardId, project: p.project, iid: p.iid, effect: req.effect ?? null, ...(req.batch ? { batch: req.batch.id } : {}) };
+  // The proposals of one "Send all" are one batch in Actions and one notification, from the first.
+  const notify = req.batch && !req.batch.notify ? undefined : { title: t('main.board.host.notifyTitle'), body: p.summary };
+  const action = proposeVcsGroup({ key: p.key, issue: p.iid, issueTitle: p.issueTitle, summary: p.summary, unit, ...(notify ? { notify } : {}) }, p.commands);
   if (!action) throw new Error(t('main.board.host.alreadyWaiting', { ref: p.iid ? refOf(p.project, p.iid) : p.issueTitle }));
   return { mode: 'proposed', summary: p.summary, actionId: action.id };
 }

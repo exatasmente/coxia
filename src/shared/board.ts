@@ -316,6 +316,19 @@ export interface HostRequest {
   change: HostChange;
   /** What the card's copy becomes once the host has it; absent for a listed issue, which has no copy. */
   effect?: BoardPatch;
+  /** Proposals of one action of the person wait in Actions as one batch; only the first of them tells the person (`notify`). */
+  batch?: { id: string; notify: boolean };
+}
+
+/** The most cards "Send all" sends in one call. */
+export const SEND_ALL_MAX = 50;
+
+/** What "Send all" did: how many cards went to the host at once, how many wait in Actions, which failed and why, and how many were left for another call. */
+export interface SendAllResult {
+  sent: number;
+  proposed: number;
+  failed: { id: string; reason: string }[];
+  remaining: number;
 }
 
 /** How a request left the board: sent at once (the board's autonomy is on, or there was nothing to send) or waiting in Actions for the person's "yes". */

@@ -325,6 +325,103 @@ describe('with the board\'s autonomy off', () => {
   });
 });
 
+/** Cards made before the host was connected: in the board's file and nowhere else. */
+function localCards(n: number): string[] {
+  return Array.from({ length: n }, (_, i) => {
+    const id = `old${String(i + 1).padStart(5, '0')}`;
+    boardStore().create({ id, title: `Old card ${i + 1}`, body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
+    return id;
+  });
+}
+
+describe('send all', () => {
+  it('with the autonomy on makes one issue per card, one after the other, with a line of audit for each', async () => {
+    const ids = localCards(3);
+    const result = await call('board:sendAll');
+    expect(result).toEqual({ sent: 3, proposed: 0, failed: [], remaining: 0 });
+    expect(host.issues.map((i) => i.title)).toEqual(['Old card 1', 'Old card 2', 'Old card 3']);
+    expect(ids.every((id) => boardStore().get(id)?.host)).toBe(true);
+    expect(listAudit()).toHaveLength(3);
+    expect(listAudit().every((l) => l.by === 'board' && l.ok)).toBe(true);
+    // Sending again sends none of them: all are linked.
+    expect(await call('board:sendAll')).toEqual({ sent: 0, proposed: 0, failed: [], remaining: 0 });
+    expect(host.issues).toHaveLength(3);
+  });
+
+  it('does not stop at the card that fails: it keeps its note and the rest still go', async () => {
+    const ids = localCards(3);
+    host.failNext = 'the host said no';
+    const result = await call('board:sendAll');
+    expect(result.sent).toBe(2);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]).toMatchObject({ id: ids[0] });
+    expect(result.failed[0].reason).toContain('the host said no');
+    expect(boardStore().get(ids[0])).toMatchObject({ hostNote: { kind: 'failed' } });
+    expect(boardStore().get(ids[1])?.host).toBeTruthy();
+    expect(boardStore().get(ids[2])?.host).toBeTruthy();
+  });
+
+  it('sends at most fifty at a time, oldest first, and says how many are left', async () => {
+    const ids = localCards(52);
+    const result = await call('board:sendAll');
+    expect(result).toMatchObject({ sent: 50, remaining: 2 });
+    expect(boardStore().get(ids[49])?.host).toBeTruthy();
+    expect(boardStore().get(ids[50])?.host).toBeUndefined();
+    expect(await call('board:sendAll')).toMatchObject({ sent: 2, remaining: 0 });
+  });
+
+  it('with the autonomy off leaves one proposal per card in one batch, sends nothing, and notifies once', async () => {
+    configure(false);
+    const ids = localCards(3);
+    const result = await call('board:sendAll');
+    expect(result).toEqual({ sent: 0, proposed: 3, failed: [], remaining: 0 });
+    expect(host.commands).toEqual([]);
+    const list = actions.listActions();
+    expect(list).toHaveLength(3);
+    expect(new Set(list.map((a) => a.unit?.batch)).size).toBe(1);
+    expect(list.every((a) => a.state === 'pending' && a.unit?.purpose === 'board-create')).toBe(true);
+    expect(list.map((a) => a.unit?.cardId).sort()).toEqual([...ids].sort());
+    const view = await boardView();
+    expect(view.sendable).toBe(0);
+    // Each can still be set aside on its own: that card says declined and the others keep waiting.
+    await actions.skipAction(list.find((a) => a.unit?.cardId === ids[1])!.id);
+    expect(boardStore().get(ids[1])?.hostNote).toMatchObject({ kind: 'declined' });
+    expect(boardStore().get(ids[0])?.hostNote).toBeUndefined();
+    expect(actions.listActions().filter((a) => a.state === 'pending')).toHaveLength(2);
+    // Approving the rest links them.
+    for (const a of actions.listActions().filter((x) => x.state === 'pending')) await actions.approveAction(a.id);
+    expect(boardStore().get(ids[0])?.host).toBeTruthy();
+    expect(boardStore().get(ids[2])?.host).toBeTruthy();
+    expect(boardStore().get(ids[1])?.host).toBeUndefined();
+    expect(host.issues).toHaveLength(2);
+  });
+
+  it('leaves out a card that is linked, closed, waiting or being sent, and counts what it would send', async () => {
+    configure(false);
+    const [waits, closed, plain] = localCards(3);
+    boardStore().close(closed);
+    const linked = linkedCard([]);
+    await call('board:send', waits);
+    const view = await boardView();
+    expect(view.sendable).toBe(1);
+    const result = await call('board:sendAll');
+    expect(result).toEqual({ sent: 0, proposed: 1, failed: [], remaining: 0 });
+    expect(actions.listActions().find((a) => a.unit?.cardId === plain)).toBeTruthy();
+    expect(actions.listActions().filter((a) => a.unit?.cardId === waits)).toHaveLength(1);
+    expect(boardStore().get(linked)?.host).toBeTruthy();
+  });
+
+  it('is refused, with the reason, when the workspace has no issue project', async () => {
+    localCards(2);
+    configure(true, (c) => {
+      c.projects.issues.project = null;
+    });
+    await expect(call('board:sendAll')).rejects.toThrow(/no issue project/);
+    expect(host.commands).toEqual([]);
+    expect((await boardView()).sendable).toBe(0);
+  });
+});
+
 describe('an issue the host lists that no card holds', () => {
   const target = () => ({ project: PROJECT, iid: 7 });
 
@@ -401,6 +498,7 @@ describe('a workspace of test', () => {
     const writes: [string, unknown[]][] = [
       ['board:create', [{ title: 'New', column: 'backlog' }]],
       ['board:send', [free.id]],
+      ['board:sendAll', []],
       ['board:update', [id, { column: 'doing' }]],
       ['board:update', [free.id, { column: 'doing' }]],
       ['board:update', [issue, { column: 'doing' }]],

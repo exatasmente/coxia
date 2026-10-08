@@ -27,10 +27,10 @@ const SHARED = join(import.meta.dirname, '../src/shared');
 const FILE = join(MAIN, 'board.ts');
 const source = readFileSync(FILE, 'utf8');
 
-// The board's seven channels change the workspace's own file or, through the door, a code host; a paired browser may use them, and the guard that refuses a
+// The board's eight channels change the workspace's own file or, through the door, a code host; a paired browser may use them, and the guard that refuses a
 // workspace of test lives in each handler, not in this policy. The door (`boardHost.ts`) is the one board file that reaches the host and Actions.
 
-const CHANNELS = ['board:list', 'board:create', 'board:send', 'board:update', 'board:comment', 'board:close', 'board:reopen'];
+const CHANNELS = ['board:list', 'board:create', 'board:send', 'board:sendAll', 'board:update', 'board:comment', 'board:close', 'board:reopen'];
 /** The channels that change a card: everything but the read. */
 const WRITES = CHANNELS.filter((c) => c !== 'board:list');
 
@@ -205,6 +205,7 @@ describe('a workspace of test with a host that is ready', () => {
       const writes: [string, unknown[]][] = [
         ['board:create', [{ title: 'New', column: 'backlog' }]],
         ['board:send', [card.id]],
+        ['board:sendAll', []],
         ['board:update', [card.id, { column: 'doing' }]],
         ['board:update', [issue, { column: 'doing' }]],
         ['board:comment', [card.id, 'x']],
