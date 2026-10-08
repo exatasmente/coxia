@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
@@ -205,7 +206,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         const chain = [...(deps.chain ?? []), id];
         call.runnerTools = [
           conversationCallTool({
-            team: config.agents.team.map((a) => a.id),
+            team: workingTeam(config.agents.team).map((a) => a.id),
             chain,
             cap: config.runner.conversations.perStage,
             ask: async (to, topic) => {

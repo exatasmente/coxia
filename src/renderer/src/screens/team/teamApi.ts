@@ -4,6 +4,7 @@ import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { Run } from '../../../../shared/runs';
 import { api, errorText, moduleEvents } from '../../api';
 import { isWeb } from '../../platform';
+import type { AssistChannelInput, DraftInput, ReviewResult, RoundResult } from './assistEdit';
 
 // What the team and cycle screens call. A paired browser reads the configuration and saves it through config:cycle-save, which refuses anything but the team, the
 // squads, the flow, the comment templates and the runner's plain settings (configScope.ts); the window keeps the whole config:save.
@@ -14,6 +15,15 @@ export const teamApi = {
   setSquadAutonomous: (squad: string, on: boolean) => api.invoke<boolean>('runs:setSquadAutonomous', squad, on),
   removeSquad: (squad: string, confirm: boolean) => api.invoke<{ removed: boolean; runs: string[] }>('runs:removeSquad', squad, confirm),
   runs: () => api.invoke<Run[]>('runs:list'),
+};
+
+// The agent assistant's channels: the window's alone (a paired browser is refused), and what they throw is already worded for the person.
+export const assistApi = {
+  round: (input: AssistChannelInput) => api.invoke<RoundResult>('agentAssist:round', input),
+  review: (input: AssistChannelInput) => api.invoke<ReviewResult>('agentAssist:review', input),
+  saveDraft: (input: DraftInput) => api.invoke<{ id: string }>('agentAssist:saveDraft', input),
+  conclude: (id: string) => api.invoke<{ id: string }>('agentAssist:conclude', id),
+  discard: (id: string) => api.invoke<{ id: string }>('agentAssist:discard', id),
 };
 
 /** The configuration as the screens last knew it: loaded once, kept current by the `config` event (a save or an import, anywhere). */

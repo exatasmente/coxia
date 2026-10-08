@@ -1,5 +1,5 @@
 import type { AgentDef } from '../../shared/config/types';
-import { MAX_MENTIONS, parseMentions, type Author, type ForumMessage } from '../../shared/forum';
+import { MAX_MENTIONS, mentionableIds, parseMentions, type Author, type ForumMessage } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import { partialHint } from '../../shared/partial';
 import { runAgent } from '../agents';
@@ -44,7 +44,7 @@ function asThread(msgs: { who: string; text: string }[]): ForumMessage[] {
  */
 export async function answerCeremonyMentions(text: string, ctx: CeremonyContext): Promise<CeremonyMention[]> {
   const config = getConfig();
-  const ids = parseMentions(text, config.agents.team.map((a) => a.id)).slice(0, MAX_MENTIONS);
+  const ids = parseMentions(text, mentionableIds(config.agents.team)).slice(0, MAX_MENTIONS);
   if (!ids.length) return [];
   const thread = asThread(ctx.msgs);
   const message: ForumMessage = { ...asThread([{ who: 'me', text }])[0], thread: ctx.thread };

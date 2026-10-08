@@ -2,6 +2,7 @@ import { cycleText } from '../shared/cycles/text';
 import type { AgentDef, Language, SquadDef } from '../shared/config/types';
 import { MAX_TITLE, SQUADS_CHANNEL, agentThreadId, squadChannelId } from '../shared/forum';
 import { createTranslator } from '../shared/i18n';
+import type { AttachmentStore } from './attachments';
 import type { ForumStore } from './forum-core';
 
 // The channels of the squads: one per squad (its general talk; its runs' threads are listed under it) and the one the squads talk to each other in. They are
@@ -20,4 +21,17 @@ export function ensureAgentThread(forum: ForumStore, agent: Pick<AgentDef, 'id' 
   const tr = createTranslator(language);
   const name = cycleText(agent.name || agent.id, language).slice(0, MAX_TITLE);
   forum.ensureThread({ id: agentThreadId(agent.id), kind: 'agent', squad: agent.id, title: tr('main.forum.agentTitle', { agent: name }) });
+}
+
+/**
+ * Deletes the direct conversation of an agent and the files it holds. Only a conversation of kind `agent` goes: the store can delete any thread, and this is the
+ * door that keeps a run's thread, a general one and a channel out of its reach. The files go first, so a call that was cut short is finished by the next one. True when
+ * there was a conversation to delete.
+ */
+export function deleteAgentThread(forum: ForumStore, attachments: Pick<AttachmentStore, 'dropThread'>, agentId: string): boolean {
+  const id = agentThreadId(agentId);
+  if (forum.summary(id)?.kind !== 'agent') return false;
+  attachments.dropThread(id);
+  forum.deleteThread(id);
+  return true;
 }

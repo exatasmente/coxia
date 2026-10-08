@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { ID } from './schema';
+import { workingTeam } from './team';
 import type { AgentDef, DevCycleConfig, SquadDef, SquadScope, StageDef, WorkspaceConfig } from './types';
 
 // Squads: the pure reads and edits over `squads`, `AgentDef.squad` and `devCycle.flows`. Everything takes a config and returns a new one; validation is
@@ -32,14 +33,15 @@ export function newSquad(partial: Pick<SquadDef, 'id'> & Partial<Omit<SquadDef, 
 /** An agent with no squad is shared: it works for every squad. */
 export const isShared = (a: Pick<AgentDef, 'squad'>): boolean => !a.squad;
 
-/** The agents that belong to a squad. */
-export const membersOf = (c: TeamView, squadId: string): AgentDef[] => c.agents.team.filter((a) => a.squad === squadId);
+/** The agents that belong to a squad. A draft is none, even when a file gives it a squad: it takes no part in a run. */
+export const membersOf = (c: TeamView, squadId: string): AgentDef[] => workingTeam(c.agents.team).filter((a) => a.squad === squadId);
 
 /**
  * The team as the switches of the squads leave it: a member of a squad that is switched off is not autonomous, whatever its own switch says (the squad's switch
  * holds every member; the agent's own applies when the squad's is on). What the runner reads the agents from, so a stage captures the combined value.
+ * A draft is not in it: it takes no part in a run.
  */
-export const effectiveTeam = (c: TeamView): AgentDef[] => c.agents.team.map((a) => (a.autonomous && !autonomousOf(c, a) ? { ...a, autonomous: false } : a));
+export const effectiveTeam = (c: TeamView): AgentDef[] => workingTeam(c.agents.team).map((a) => (a.autonomous && !autonomousOf(c, a) ? { ...a, autonomous: false } : a));
 
 /** The agents a squad's runs may use: its members and the shared ones. */
 export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => effectiveTeam(c).filter((a) => a.squad === squadId || isShared(a));
@@ -96,7 +98,8 @@ export const squadOfAgent = (c: TeamView, agent: Pick<AgentDef, 'squad'>): Squad
 export function liaisonFor(c: TeamView, agent: Pick<AgentDef, 'id' | 'squad'>): string | null {
   const squad = squadOf(c, agent.squad);
   if (!squad?.liaison || squad.liaison === agent.id) return null;
-  return c.agents.team.some((a) => a.id === squad.liaison && a.squad === squad.id) ? squad.liaison : null;
+  // A draft is no liaison, even when a file names one.
+  return workingTeam(c.agents.team).some((a) => a.id === squad.liaison && a.squad === squad.id) ? squad.liaison : null;
 }
 
 /**
@@ -107,10 +110,10 @@ export const autonomousOf = (c: TeamView, agent: Pick<AgentDef, 'autonomous' | '
 
 /**
  * Who a question of `agent` goes to first: the agent it turns to, when that is another agent of the team; else, for a member of a squad that is not its
- * liaison, the liaison (a member that turns to the person goes through the liaison first); else the person (null).
+ * liaison, the liaison (a member that turns to the person goes through the liaison first); else the person (null). A draft is no one to turn to.
  */
 export function turnTarget(c: TeamView, agent: AgentDef): string | null {
-  if (agent.turnsTo && agent.turnsTo !== agent.id && c.agents.team.some((a) => a.id === agent.turnsTo)) return agent.turnsTo;
+  if (agent.turnsTo && agent.turnsTo !== agent.id && workingTeam(c.agents.team).some((a) => a.id === agent.turnsTo)) return agent.turnsTo;
   return liaisonFor(c, agent);
 }
 
