@@ -262,6 +262,8 @@ describe('the editor the assistant opens', () => {
     const html = panel(c, { initial: toAgentDraft(state()), isNew: false, assisted: true, promote: { id: 'trial' } });
     expect(html).toContain('Id: @trial');
     expect(html).not.toContain('maxLength="48"');
+    // The name takes what the configuration takes, no more: a longer one would be refused on save.
+    expect(html).toMatch(/class="text-input" maxLength="80" value="Triager"/);
     expect(buttonLabels(html)).not.toContain('Delete');
     expect(buttonLabels(html)).toEqual(expect.arrayContaining(['Save', 'Cancel']));
     expect(html).toContain('The test agent becomes a member of the team when you save');

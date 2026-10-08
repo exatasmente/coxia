@@ -283,7 +283,8 @@ export function AgentPanel({ config, initial, isNew, suggestionId, assisted, pro
             <input
               id={id}
               className="text-input"
-              maxLength={100}
+              // What the configuration takes (`agentDef.name`): a longer name was typed here and then refused on save.
+              maxLength={80}
               value={shown(draft.name)}
               onChange={(e) => {
                 const name = e.target.value;
