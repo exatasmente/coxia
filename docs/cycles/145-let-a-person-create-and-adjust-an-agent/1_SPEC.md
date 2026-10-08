@@ -99,7 +99,7 @@ Não verificado nesta etapa (não lido): como o assistente fica no painel latera
 ### Prioridade e marco propostos
 
 - **Prioridade: P2.** Motivo: tira atrito de uma tarefa que a pessoa faz de vez em quando e que hoje se faz à mão, sem perder dado e sem tocar numa fronteira de segurança. Sobe para P1 se a criação de agentes for o principal caminho de adoção do ciclo de agentes.
-- **Marco: a 0.8.0, em beta** (decisão da pessoa no gate 2). A funcionalidade traz um campo novo na configuração (o esquema sobe de 18 para 19) e uma capacidade nova do fórum, que é mais do que costuma entrar numa beta; a pessoa aceitou o custo: quem salvar com a build nova não volta à beta anterior.
+- **Marco: a próxima versão menor.** No gate 2 a pessoa escolheu a 0.8.0, em beta; a 0.8.0 estável foi lançada em 2026-10-08, durante a implementação, e a `release/0.8.0` deixou de existir. O trabalho passou a partir da `main` e entra na versão seguinte. O esquema da configuração sobe de 18 para 19 ali: quem salvar com a build nova não volta à anterior.
 
 ### Decisões do refino
 
@@ -115,7 +115,7 @@ Respostas da pessoa ao plano técnico; as três primeiras foram contra a recomen
 
 4. **O assistente pode propor `permission: worktree`**, com motivo e botão de voltar como qualquer valor acima do mínimo. Uma conversa nunca escreve em arquivo, então o teste não mostra o que o agente faz com isso, e a revisão diz isso ao lado do valor (regras 8 e 10).
 5. **Concluir mantém o rascunho no time até a pessoa salvar no editor**; cancelar o editor volta ao assistente (regra 14, critério 18).
-6. **O trabalho entra na 0.8.0, em beta** (marco acima).
+6. **O trabalho entraria na 0.8.0, em beta.** A 0.8.0 foi lançada durante a implementação; ele entra na versão menor seguinte (marco acima).
 7. **A tela de Custo e a limpeza de transcrições contam as chamadas do assistente.**
 
 ### Perguntas para o plano técnico, não para a pessoa

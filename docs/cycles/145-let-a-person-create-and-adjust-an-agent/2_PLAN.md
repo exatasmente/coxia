@@ -6,8 +6,8 @@ comportamento: as 18 regras, os critérios de aceite e as três decisões do ref
 Tudo abaixo vem da leitura do código desta árvore (`release/0.8.0`, 0.8.0-beta.7); nada foi executado.
 
 **Revisado no gate 2 (2026-10-07).** O mantenedor respondeu a quatro perguntas (duas das sete do primeiro texto, a 2 e a 7, e duas
-novas: a release e o que Concluir faz) e três das respostas mudaram o plano em relação a ele: (a) o trabalho entra **na 0.8.0, em beta**, com o
-esquema 19 ali (D1, risco 3); (b) o assistente **pode propor `permission: worktree`**, com motivo e botão de voltar
+novas: a release e o que Concluir faz) e três das respostas mudaram o plano em relação a ele: (a) o trabalho entraria **na 0.8.0, em beta**, com o
+esquema 19 ali (D1, risco 3; a 0.8.0 foi lançada durante a implementação, ver 2.1); (b) o assistente **pode propor `permission: worktree`**, com motivo e botão de voltar
 (2.4, D7); (c) **Concluir mantém o rascunho no time até a pessoa salvar no editor**, e cancelar o editor volta ao
 assistente (2.5, D4, 2.9); (d) o uso do assistente **entra** na tela de custo e na retenção (commit 11, já não
 opcional). As outras cinco perguntas (1, 3, 4, 5 e 6) não foram feitas: ficou a recomendação do plano, que o
@@ -75,9 +75,10 @@ anterior ler um arquivo com `draft`:
 em 19 nem tem `v18ToV19`; as que estão em 18 são a `release/0.8.0`, esta, as já mescladas e duas de ciclos
 que só têm documentos (nenhuma toca `src/shared/config`; o plano de uma delas diz "sem config nova"); a branch
 da única PR aberta também não toca. **Refazer a conferência antes de abrir a PR** (o mantenedor já teve colisão).
-O mantenedor decidiu que o trabalho entra **na 0.8.0, em beta**: o esquema 19 nasce ali, a PR tem como base
-`release/0.8.0`, e quem salvar com a build nova não volta à beta.7 (o app anterior recusa o arquivo, em vez de perder o
-time).
+O mantenedor decidiu que o trabalho entraria **na 0.8.0, em beta**. A 0.8.0 estável foi lançada em 2026-10-08, durante a
+implementação, e a `release/0.8.0` deixou de existir: a branch recebeu a `main` (merge, ainda no esquema 18) e a PR tem
+como base a `main`, para a versão menor seguinte. Quem salvar com a build nova não volta à anterior (o app anterior
+recusa o arquivo, em vez de perder o time).
 
 **Testes que mudam por causa da subida.** Doze arquivos fixam o número 18 (em `config-migrations` e `config-schema`, o 19 é o "esquema mais novo", que passa a ser 20):
 `config-migrations`, `config-schema`, `agent-team`, `agent-permissions-config`, `wizard-shared`,
@@ -584,7 +585,7 @@ para o plano de teste humano (`5_TEST_PLAN.md`): o fluxo inteiro num espaço de 
 |---|---|---|
 | 1 | O tamanho e a qualidade de uma rodada (e a forma estruturada) **não foram medidos** nos dois motores; servidores do motor aberto podem recusar o esquema, e `maxTurns: 2` não foi testado com um modelo | esquema mínimo, sem limites de tamanho; o leitor leniente; erro dito com "Tentar de novo"; verificar no teste humano nos dois motores |
 | 2 | `strictMcpConfig`/`settingSources` num SDK local de versão diferente (`locateSdk`) podem ser ignorados | a garantia de "nenhuma ferramenta" é `tools: []` (documentado no SDK instalado) e `allowedTools: []`; o resto reduz exposição |
-| 3 | Subir o esquema para 19 numa release em beta: quem salvar com 0.8.0-beta.8 não volta à beta.7 | o app anterior recusa em vez de perder o time; **decidido pelo mantenedor no gate 2**: entra na 0.8.0, em beta; conferir de novo a colisão de versão antes da PR |
+| 3 | Subir o esquema para 19 numa release em beta: quem salvar com 0.8.0-beta.8 não volta à beta.7 | o app anterior recusa em vez de perder o time; **decidido pelo mantenedor no gate 2** (0.8.0 em beta); a 0.8.0 foi lançada durante a implementação e o alvo passou a ser a `main`; conferir de novo a colisão de versão antes da PR |
 | 4 | Outro ciclo subir o esquema antes deste chegar à `release` | conferir de novo antes da PR; o passo é de uma linha |
 | 5 | Descartar com uma resposta em andamento; fechar o painel com uma chamada no ar | o erro cai na cadeia; custo de uma chamada; sem cancelamento (o IPC não tem) |
 | 6 | O app fecha no meio, ou com o editor aberto sobre o rascunho: rascunho órfão | visível, descartável com confirmação; sem varredura automática (regra 14). Como o rascunho agora vive até o salvar, a janela em que ele existe é maior (do teste até o salvar) |
@@ -634,7 +635,7 @@ recomendação e podem ser trocadas.
 | 5 | Remover um agente de verdade deve apagar a conversa direta dele? | **Ciclo à parte**, com a confirmação dizendo isso; este plano só evita que um rascunho a herde | recomendação do plano, não perguntada |
 | 6 | O controle de etapas do editor aparece só vindo do assistente, ou para todo agente? | **Só vindo do assistente** nesta entrega | recomendação do plano, não perguntada |
 | 7 | A tela de custo e a retenção contam as chamadas do assistente (commit 11)? | **Sim**: o commit 11 entra | mantenedor |
-| 8 | Em qual release entra? | **Na 0.8.0, em beta**; esquema 19 ali | mantenedor (contra a recomendação do plano, que era a próxima versão menor) |
+| 8 | Em qual release entra? | **Na 0.8.0, em beta**; esquema 19 ali. A 0.8.0 foi lançada durante a implementação: passa a ser a versão menor seguinte, pela `main` | mantenedor (contra a recomendação do plano, que era a próxima versão menor) |
 | 9 | Concluir apaga o rascunho ou o mantém até salvar? | **Mantém até salvar**; cancelar o editor volta ao assistente (2.5, D4) | mantenedor (contra a recomendação do plano) |
 
 ## 11. O que fica fora deste plano, de propósito
