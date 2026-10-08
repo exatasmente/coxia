@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ASSIST_LIMITS, type AssistDraft } from '../../../../shared/agentAssist';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { agentThreadId } from '../../../../shared/forum';
@@ -66,6 +66,14 @@ export function AgentAssist({
 }) {
   const t = useT();
   const [busy, setBusy] = useState<Action | null>(null);
+  // A new step or a new round starts at the top of the panel: the person would otherwise land in the middle of it, where the last one was scrolled to.
+  const top = useRef<HTMLOListElement>(null);
+  const seen = useRef<string | null>(null);
+  const place = `${state.step}:${roundNumber(state)}`;
+  useEffect(() => {
+    if (seen.current !== null && seen.current !== place) top.current?.scrollIntoView?.({ block: 'nearest' });
+    seen.current = place;
+  }, [place]);
   const [failure, setFailure] = useState<{ action: Action; message: string } | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const session = state.session;
@@ -142,7 +150,7 @@ export function AgentAssist({
 
   return (
     <SidePanel label={title} onClose={requestClose}>
-      <ol className="tm-assist-steps" aria-label={t('ui.team.assist.stepsAria')}>
+      <ol ref={top} className="tm-assist-steps" aria-label={t('ui.team.assist.stepsAria')}>
         {STEPS.map((id) => (
           <li key={id} className="tm-assist-step" aria-current={state.step === id ? 'step' : undefined}>{t(ASSIST_STEP_LABEL[id])}</li>
         ))}
