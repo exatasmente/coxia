@@ -10,20 +10,21 @@ export const activity: ActivityStore = createActivityStore();
 moduleEvents.addEventListener(ACTIVITY_EVENT, (e) => activity.add((e as CustomEvent<ActivityEntry>).detail));
 jobs.onStart((job) => activity.reset(job.key));
 
-/** Asks the main process for what it still holds (a screen opened mid-run, a browser that reconnected). '' is the runs no job asked for. */
-export async function backfillActivity(jobId: string): Promise<void> {
+/** Asks the main process for what it still holds (a screen opened mid-run, a browser that reconnected). '' is the runs no job asked for.
+ * After a reconnect (`live`), the entries are narrowed to what the screen already holds: no lines of an earlier run stitched in. */
+export async function backfillActivity(jobId: string, live = false): Promise<void> {
   try {
     const entries = await api.invoke<ActivityEntry[]>(ACTIVITY_GET, jobId || null);
-    if (Array.isArray(entries)) activity.backfill(jobId, entries);
+    if (Array.isArray(entries)) (live ? activity.backfillLive : activity.backfill)(jobId, entries);
   } catch {
     // the live lines keep coming; a missed backfill only leaves the timeline shorter
   }
 }
 
-// After the event stream dropped and came back, whatever was said in the gap is fetched again.
+// After the event stream dropped and came back, whatever was said in the gap is fetched again — narrowed, so the timeline keeps only this run's lines.
 window.addEventListener(EVENTS_RECONNECTED, () => {
   const keys = new Set(['', ...jobs.snapshot().filter((j) => j.status === 'running').map((j) => j.key), ...activity.snapshot().keys()]);
-  for (const key of keys) void backfillActivity(key);
+  for (const key of keys) void backfillActivity(key, true);
 });
 
 /** The lines of one job's runs; a job that is running is backfilled once when the screen asks. */

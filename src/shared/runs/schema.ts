@@ -28,6 +28,7 @@ const stageRecord = object(
     agent: { type: ['string', 'null'], description: 'The agent that works it; null for a gate.', pattern: ID },
     status: enumOf('Where the stage is.', STAGE_STATUSES),
     artifacts: { type: 'array', description: 'Files of the cycle folder it produced.', items: string('File name.', { pattern: FILE, maxLength: 100 }), maxItems: 50 },
+    artifactAttempts: { type: 'object', description: 'The attempt each artifact was produced in, by name. Optional: a run written before it was recorded has none.', additionalProperties: { type: 'integer', description: 'The attempt that produced it.', minimum: 1, maximum: 10_000 } },
     startedAt: { type: ['string', 'null'], description: 'Start of the latest attempt.', maxLength: 40 },
     endedAt: { type: ['string', 'null'], description: 'End of the latest attempt.', maxLength: 40 },
     attempts: { type: 'integer', description: 'How many times the stage was entered.', minimum: 0, maximum: 10_000 },

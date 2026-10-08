@@ -97,6 +97,41 @@ describe('the activity store', () => {
     registry.launch('deep:#1:other', { label: 'y', screen: null }, async () => 2);
     expect(store.entries('deep:#1:ask')).toHaveLength(1);
   });
+
+  describe('after the stream reconnects', () => {
+    it('keeps a run the timeline already holds and a run still going, and drops a finished run it never had', () => {
+      const store = createActivityStore();
+      store.add(entry({ runId: 'live' }));
+      const gap = [
+        status('started', { runId: 'old' }),
+        status('finished', { runId: 'old' }),
+        status('started', { runId: 'fresh' }),
+        entry({ runId: 'fresh' }),
+        entry({ runId: 'live' }),
+      ];
+      store.backfillLive('deep:#1:ask', gap);
+      expect(store.entries('deep:#1:ask').map((e) => e.runId)).toEqual(['live', 'fresh', 'fresh', 'live']);
+    });
+
+    it('keeps nothing when the packet holds only runs the timeline never had, and merges into what is there', () => {
+      const store = createActivityStore();
+      const gap = [status('started', { runId: 'past' }), status('finished', { runId: 'past' })];
+      store.backfillLive('deep:#1:ask', gap);
+      expect(store.entries('deep:#1:ask')).toEqual([]);
+      const live = status('started', { runId: 'now' });
+      store.add(live);
+      store.backfillLive('deep:#1:ask', [...gap, entry({ runId: 'past2' }), entry({ runId: 'now' })]);
+      // `past2` has no status in the packet or the bucket: a run that is not shown as going is not stitched in
+      expect(store.entries('deep:#1:ask').map((e) => e.runId)).toEqual(['now', 'now']);
+    });
+
+    it('a screen opened fresh still gets every entry it asks for', () => {
+      const store = createActivityStore();
+      const gap = [status('started', { runId: 'old' }), status('finished', { runId: 'old' }), entry({ runId: 'old' })];
+      store.backfill('deep:#1:ask', gap);
+      expect(store.entries('deep:#1:ask')).toEqual(gap);
+    });
+  });
 });
 
 describe('running runs and the latest step', () => {

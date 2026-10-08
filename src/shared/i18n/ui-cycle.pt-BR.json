@@ -267,6 +267,7 @@
   "ui.cycle.squad.pick": "Squad {squad}",
   "ui.cycle.squad.proposal": "A triagem propôs o squad {squad}: {reason}",
   "ui.cycle.stage.artifacts": "Documentos da etapa",
+  "ui.cycle.stage.attemptOf": "tentativa {count}",
   "ui.cycle.stage.attempts": "tentativa {count}",
   "ui.cycle.stage.autonomous": "age sozinho",
   "ui.cycle.stage.cancelled": "cancelada",
