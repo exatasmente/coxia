@@ -2,109 +2,104 @@
 
 ## O que foi conferido, e como
 
-Esta revisão leu o diff da branch, a issue, a spec (`1_SPEC.md`), o plano (`2_PLAN.md`) e
-o documento da implementação (`3_IMPLEMENTATION.md`), e rodou as portas nesta cópia de trabalho.
-Nenhum run real, nenhum modelo e nenhum host foram usados.
+Esta rodada leu o diff da branch contra a issue, a spec (`1_SPEC.md`), o plano
+(`2_PLAN.md`) e o documento da implementação (`3_IMPLEMENTATION.md`), e conferiu o
+bloqueante da rodada anterior contra o código desta cópia. Nenhum run real, nenhum modelo
+e nenhum host foram usados; nenhuma tela foi conduzida.
 
-Rodado nesta cópia, com o Node do `.nvmrc`:
+O que se conferiu do bloqueante anterior, por leitura do código:
 
-- `npx tsc --noEmit` — sem erro.
-- `npx vitest run` — 283 arquivos, 4390 testes, todos passando. As portas de i18n que os
-testes imprimem (uma string não traduzida e um escopo desconhecido) já existiam antes desta
-mudança e não vieram dela.
-- `npm run i18n:lint` — 4598 chaves nos dois idiomas, 0 problema.
-- `node scripts/public-audit.mjs` — 1214 arquivos, nada que pertença a uma empresa ou a uma pessoa.
-- Os testes do assunto, rodados isoladamente: `test/runner-qa-repair.test.ts` (8),
-  `test/runner-publish.test.ts`, `test/runner-agent-open.test.ts`.
+- A guarda do fecho passa o caminho que o gancho da imagem recebeu pelo mesmo resolvedor da
+  pasta de saída antes de ler qualquer coisa (`src/main/runner/executor.ts:624`), e o
+  caminho recusado vira a linha `runner.qa.lookNotKept` com o motivo (`executor.ts:625-628`).
+  O texto da recusa é o mesmo que o modelo lê na ferramenta (`outputProblemText`/
+  `evidenceProblemText`, exportados em `src/main/evidence/handlers.ts:34,50`).
+- O id e o registro de uma peça só entram nas listas da etapa depois de a guarda dar certo
+  (`executor.ts:635-639`), e o `keptNames` evita guardar duas vezes o mesmo arquivo, tanto
+  pelo caminho do fecho (`executor.ts:621,639`) quanto pela ferramenta (`executor.ts:661`).
+- O `looked` só sai para uma imagem de verdade (PNG, JPEG, GIF ou WebP, lido dos bytes),
+  nunca de um id de comprovação (`src/main/evidence/handlers.ts:161`).
+- Os testes acrescentados nesta rodada cobrem o link e o caminho fora da pasta
+  (`test/runner-qa-repair.test.ts`, o caso novo) e o cenário que continua executado no
+  registro, no plano gravado e no comentário (`test/runner-publish.test.ts`, o caso novo).
+
+Nenhum comando foi rodado por esta etapa: as portas foram exercitadas pela implementação e o
+que esta revisão afirma vem da leitura do código e dos testes nesta cópia. A corrida completa
+da suíte depois destas mudanças não foi lida por esta etapa.
 
 ## O veredito
 
-**changes.** Um achado bloqueante, sobre o caminho que guarda e publica uma imagem que o app
-não conferiu; as demais são sugestões.
-
-## O que a entrega cumpre
-
-- A rodada de reparo vive dentro do `try` de `runStage`, antes do `finally` que fecha a sandbox
-  (`src/main/runner/executor.ts:793-830`), com no máximo uma volta por tentativa; a leitura da
-  resposta e a conferência dos cenários passaram para dentro do `try`, e o fecho da sessão
-  continua acontecendo também no caminho de falha. As duas chamadas ao motor correm sob o mesmo
-  `guard` do `watchdog` (`executor.ts:794` e `repairRound`, `executor.ts:483`), então o teto de
-  relógio da etapa continua contando a etapa uma vez.
-- A guarda automática roda depois da resposta final e antes do fecho (`executor.ts:817`), pelo
-  mesmo caminho de guarda de hoje.
-- O plano de teste é reescrito a partir do registro por `testPlanWithResults`
-  (`src/shared/runs/testPlan.ts:51`) antes da normalização do cabeçalho (`executor.ts:857,863`),
-  e o comentário de QA tira as linhas de cenário que o agente escreveu e acrescenta a seção de
-  resultados vinda do registro (`src/main/runner/publish.ts:618-632`).
-- O gancho da imagem está no ponto por onde as duas engines mostram imagem
-  (`src/main/sandbox/tool.ts` via `src/main/sandbox/engineTool.ts:32,59`), e a rodada de reparo
-  continua a sessão da primeira resposta no motor que a abriu (`src/main/agents.ts:1186,1223`).
-- A regra `.coxia/rules/runner.md` foi corrigida e o `CHANGELOG.md` ganhou a linha sob
-  `## [Unreleased]`.
+**changes.** Nada do bloqueante anterior permanece em aberto. O que bloqueia agora é uma regra
+do `.coxia` que a própria branch alterou, ficou falsa contra o código que ela mesma mudou e
+não foi corrigida.
 
 ## Achados
 
 ### Bloqueante
 
-1. **A imagem olhada é guardada e publicada a partir de um caminho que o app não conferiu, e
-   esse mesmo conteúdo vai para o comentário do host.** O gancho entrega a artefato o caminho
-   devolvido por `lookAtImage` (`src/main/sandbox/tool.ts:127`), e a guarda chama
-   `putEvidence` direto com esse caminho (`src/main/runner/executor.ts:618`). Diferente do
-   caminho que guarda uma comprovação a pedido do agente, que passa por `resolveOutputPath`
-   (`src/main/evidence/handlers.ts:70`), a guarda não confere que o caminho está na pasta de
-   saída da etapa, não recusa link e não compara o caminho real com o da pasta. O caminho que
-   chega ali tanto pode ser o que a sessão leu (o arquivo real) quanto o texto que o agente
-   escreveu (a sessão de host devolve a fonte como caminho, e o `ImageRead` do caso de
-   comprovação aponta para a evidência). O `putEvidence` lê o arquivo por `statSync` +
-   `readFileSync`, que seguem link, e devolve um registro comum da execução — que é publicado
-   na conversa e enviado ao código host quando alguém o cita (`publish.ts`, `uploadsOf`). A
-   promessa de que nada fora da pasta de saída é lido (`2_PLAN.md`, seção 3, e o comentário do
-   próprio arquivo) não se sustenta nesse caminho. Correção sugerida: conferir o caminho com o
-   mesmo resolvedor de hoje (`resolveOutputPath(session.stageDir, path)`) e guardar só quando
-   ele estiver dentro da pasta, sem link e ainda dentro depois do `realpath` — o que a guarda
-   precisa é de um caminho confiável, não de uma leitura nova.
+1. **`.coxia/rules/runner.md` afirma que o `5_TEST_PLAN.md` é gravado como o agente o
+escreveu, e a branch mudou exatamente isso sem corrigir a regra.** O arquivo foi tocado pelo
+commit desta branch que atualiza a conferência de documentação, e o parágrafo "What a QA
+stage says it ran" também foi escrito nesta branch; a linha do `5_TEST_PLAN.md` ficou de fora.
+A regra afirma que o resultado de um cenário é reescrito no documento a partir do registro,
+mas não diz em lugar nenhum que o documento deixa de ser o texto integral do agente — e o
+código de agora o reescreve: `testPlanWithResults` monta as linhas de cenário a partir do
+registro (`src/shared/runs/testPlan.ts:51-63`) e o executor o aplica antes da normalização do
+cabeçalho (`src/main/runner/executor.ts:873`). Quem seguir a regra vai supor que as demais
+seções do plano, e a seção de cenários que o agente escreveu, chegam intactas ao arquivo; as
+linhas de cenário do agente não chegam. É a mesma classe do bloqueante da rodada anterior, mas
+sobre um arquivo de regra em vez do código: a entrega muda um comportamento e não ajusta o
+texto que o descreve, e este é o arquivo que os agentes do app leem. O que falta é uma frase,
+além da atualização do `checked-commit`/`checked-date` que o app escreve no commit.
 
 ### Sugestões
 
-2. **O caminho recusado é guardado como se fosse bom.** Quando `putEvidence` recusa, a guarda
-   marca como guardado e conta os ids (`executor.ts:617-625`) antes de saber o resultado; a
-   linha `runner.qa.lookKept` só é escrita quando alguma coisa foi guardada, mas `keptIds` e
-   `keptRecords` já receberam a recusa. Ordem trocada depois do `if`, e o mesmo vale para a
-   imagem que o agente guardou por conta própria, que entra no conjunto de caminhos olhados e
-   depois é reconferida no fecho.
+2. **`docs/runner.md` documenta a QA sem a rodada de reparo e sem a imagem guardada no
+gancho.** O documento para pessoas não foi tocado por esta branch (o diff dele desde o ponto
+de ramificação não tem nenhuma linha); ele segue dizendo que a QA que afirma execução sem
+respaldo é apenas registrada como lida, num único "QA's evidence" bullet, e a função
+`backEvidence` aparece como uma conferência só. Nada no texto dele ficou falso — o que ele
+descreve continua acontecendo —, mas ele omite a volta que passou a existir e a guarda da
+imagem olhada, e é o documento que a pessoa lê. Não é bloqueante porque nada dele leva a um
+comando errado nem a um limite errado.
 
-3. **A recusa por tipo e por tamanho não tem teste próprio.** O `3_IMPLEMENTATION.md` diz que
-   os dois caminhos vêm do mesmo `putEvidence` de hoje mas não foram exercitados; o critério de
-   aceitação pede que uma imagem acima do teto e um arquivo que não é imagem terminem como
-   "visto, não guardado", e nenhum teste cobre isso.
+3. **`.coxia/rules/model-providers.md` e `.coxia/skills/add-a-model-provider.md` citam
+`src/main/engine/contract.ts`, que a branch mudou, sem atualizar o cabeçalho.** A branch
+acrescentou `EngineRequest.resume` e `EngineRequest.onLooked` ao arquivo. Lido contra o
+código novo, o texto das duas regras continua verdadeiro: `resume` é a mesma costura que as
+cerimônias já usavam e `onLooked` não muda o contrato que elas descrevem. Só o marcador ficou
+atrás do código; a atualização é do app no commit.
 
-4. **Nenhum teste cobre um cenário que continue executado depois da rodada.** O teste do plano
-   de teste só olha um cenário rebaixado e um `not-run`; o critério 2 da aceitação (o agente
-   guarda a comprovação e aponta o comando, e o plano e o comentário dizem o mesmo) fica sem
-   cobertura.
+4. **`.coxia/rules/runner.md` cita `src/main/runner/executor.ts`, que a branch mudou, e o
+`checked-commit` do arquivo aponta para um commit que não contém esta mudança.** O cabeçalho
+diz `checked-commit` na revisão da conferência; o executor mudou de novo depois dela (a
+guarda do fecho). Nada do texto ficou falso por causa só dessa mudança além do achado 1,
+que é o que bloqueia; este é o mesmo conserto de marcador.
 
-5. **Nenhum teste cobre o motor que devolve resposta sem id de sessão.** O `answered` cai em
-   `{ sessionId: null }` (as duas leituras de `executor.ts` que montam o `answered`) e a rodada roda como chamada nova
-   (`repairRound`, `executor.ts:480`): o agente perde o que leu e a rodada pode não trazer a
-   comprovação.
+5. **`.coxia/rules/releasing.md` cita `CHANGELOG.md`, que a branch mudou, sem atualizar o
+cabeçalho.** A branch acrescentou a entrada sob `## [Unreleased]`. Lido contra ela, o texto
+da regra continua verdadeiro ("A user-visible change gets a line under `## [Unreleased]`").
+O marcador ficou atrás; a atualização é do app no commit.
 
-6. **O contrato da rodada não diz o que acontece quando ela falha.** Em `repairRound`
-   (`executor.ts:481-487`) qualquer erro é engolido e a resposta original fica; o caso do
-   motor aberto é diferente (o teto de turnos sobe como falha da etapa), e a decisão não está
-   escrita no plano nem na spec.
+6. **`.coxia/roles/customer-success.md` e `.coxia/roles/support.md` citam
+`src/main/runner/publish.ts`, que a branch mudou, sem atualizar o cabeçalho.** O `publish.ts`
+ganhou a reescrita das linhas de cenário do comentário de QA e a seção de resultados vinda do
+registro (`src/main/runner/publish.ts:64-74,618-632`). Lido contra o código novo, o que as
+duas notas de papel afirmam continua verdadeiro: a nota de lançamento diz o que mudou sem a
+referência interna, o comentário sai pela mesma porta. Nada ficou falso; só o marcador.
 
-7. **Duas notas de rodapé de limpeza ficaram como estavam.** O erro de digitação no comentário
-   do shell de host (`src/main/sandbox/host.ts:47`, "an artefato") e o teto divergente do
-   comentário do módulo de comprovação (`src/main/evidence/store.ts:54-57`, que fala de um teto
-   que não está em uso ali) — o plano os citava e não os tratava como comportamento errado.
-
-8. **`.coxia/rules/releasing.md` e `.coxia/rules/model-providers.md` continuam marcadas contra
-   código que esta branch mudou** (o `CHANGELOG.md` e `src/main/engine/contract.ts`); a
-   conferida de cada arquivo precisa ser refeita, mesmo que nada no texto tenha ficado falso.
+7. **A regra do `.coxia` fala da rodada de reparo mas não do que acontece quando ela falha.**
+As duas regras do produto (o `7_` da spec e o verbete do `.coxia`) dizem que a etapa pede uma
+volta e que o cenário que continua sem respaldo é gravado como lido; não dizem que uma volta
+que falha por dentro (tempo, passos, orçamento) é engolida e a primeira resposta é a que fica
+(`repairRound`, `src/main/runner/executor.ts:485-488`). É a mesma decisão em aberto que a
+rodada anterior deixou como sugestão, e ela não foi tomada; escrevê-la ou mudá-la é do
+desenvolvimento, não de uma correção de texto.
 
 ## O que esta revisão não fez
 
-Não reproduziu o run real citado pela issue nem exercitou modelo, host ou sandbox; a verificação
-é de leitura de código e de testes com os ajudantes falsos. Não julgou o caminho de uma
-imagem acima do teto por execução, e nenhuma linha do diff fora dos arquivos citados foi
-conferida linha a linha.
+Não reproduziu o run real citado pela issue, não exercitou modelo, host nem sandbox, e não
+conduziu nenhuma tela. Não rodou a suíte completa nem as portas: o que está dito como
+verificado vem da leitura do código e dos testes nesta cópia. Não conferi linha a linha o
+diff fora dos arquivos citados, e não julguei por execução o caminho de uma imagem acima do
+teto nem o de um arquivo que não é imagem.
