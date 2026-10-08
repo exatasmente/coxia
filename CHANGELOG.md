@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stage whose agent runs commands on the computer can keep its evidence.** What that stage produced to test an interface (screenshots, traces, reports) is no longer lost with the temporary folder when the stage ends: the agent is offered the same evidence tools as a stage with a sandbox, the run shows what it kept, a QA scenario can cite it, and an image the agent looked at and did not keep is kept as evidence of the stage before the folder goes away.
+
 ## [0.8.0-beta.9] - 2026-10-08
 
 ### Added

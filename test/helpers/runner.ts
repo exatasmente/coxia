@@ -255,8 +255,9 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
             readImage: (path: string): ImageRead => {
               const known = o.images?.[path];
               if (known) return known;
-              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one.
-              const rel = path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path;
+              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one. The folder is named two
+              // ways: `/coxia/out` (the sandbox's own name, which its tools hand over) and the real path a host stage saves in.
+              const rel = path === '/coxia/out' || path === outDir ? '' : path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path.startsWith(`${outDir}/`) ? path.slice(outDir.length + 1) : path;
               const file = join(outDir, rel);
               try {
                 const bytes = readFileSync(file);

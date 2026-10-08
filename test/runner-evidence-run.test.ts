@@ -174,9 +174,10 @@ describe('evidence of a stage whose commands run on the computer', () => {
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
     const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
     // Nothing to keep: no tools, no `evidence` field in the answer the agent is asked for, and no evidence recorded.
+    // The schema is not looked at: a QA scenario carries the `evidence` field (`executed`/`read`) whether the stage keeps evidence or not.
     expect(qa.evidence).toBeUndefined();
     expect(Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa')).toHaveLength(0);
-    expect(JSON.stringify(qa.schema)).not.toContain('"evidence"');
+    expect((qa.schema as { properties?: Record<string, unknown> }).properties?.evidence).toBeUndefined();
     expect(qa.system).not.toContain('SaveEvidence');
   });
 
@@ -194,6 +195,8 @@ describe('evidence of a stage whose commands run on the computer', () => {
     const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
     expect(qa.system).toContain('SaveEvidence');
     expect(qa.system).toContain(out);
-    expect(qa.system).not.toContain('Save screenshots and traces in /coxia/out');
+    // No `/coxia/out` in any of the texts the stage is given about its output folder: the sandbox path does not exist on this computer, so reading it there
+    // sends the agent nowhere. The real folder is named by both the rules of the stage and the tool's own description.
+    expect(qa.system).not.toContain('/coxia/out');
   });
 });

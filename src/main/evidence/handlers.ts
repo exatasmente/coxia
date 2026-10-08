@@ -19,7 +19,11 @@ export interface EvidenceContext {
   dataDir: string;
   /** The output folder of this stage, the only one the tools read: `out` inside a sandbox's stage folder, the output folder of a host session that tests an interface. */
   outputDir: string;
-  run: Run;
+  /**
+   * The run as this stage sees it, read afresh for every piece: the ids are derived from what the run already holds, and a stage that keeps a second piece must
+   * not be handed the id its first one took. A getter, not a snapshot: the caller counts what the stage itself has kept on top of the stored run.
+   */
+  run: Run | (() => Run);
   stage: string;
   by: string;
   /** Called when a piece of evidence is kept: the caller records it in the run and publishes it in the conversation. */
@@ -65,6 +69,9 @@ export const evidenceProblemText = (p: PutProblem): string =>
     { max: Math.round(EVIDENCE_MAX_BYTES / (1024 * 1024)) },
   );
 
+/** The run as this context reads it: the caller may hand a getter, so the ids are derived from what the run holds right now. */
+const runOf = (ctx: EvidenceContext): Run => (typeof ctx.run === 'function' ? ctx.run() : ctx.run);
+
 /** Keeps a file of the output folder as evidence. */
 async function save(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   const args = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
@@ -73,7 +80,7 @@ async function save(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   if (!title) return { text: t('main.evidence.refused.title') };
   const resolved = resolveOutputPath(ctx.outputDir, raw);
   if (!resolved.ok || !resolved.path) return { text: outputProblemText(resolved.problem ?? 'path') };
-  const put = putEvidence(ctx.dataDir, ctx.run, {
+  const put = putEvidence(ctx.dataDir, runOf(ctx), {
     path: resolved.path,
     name: basename(resolved.path),
     title,
@@ -90,10 +97,11 @@ async function save(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
 /** The bytes of the source of a mark or a look: an evidence image of this stage, or an image path in the output folder. */
 function sourceOf(ctx: EvidenceContext, source: string): { ok: true; bytes: Uint8Array; from: string | null } | { ok: false; text: string } {
   if (isEvidenceId(source)) {
-    const record = ctx.run.evidence?.[source];
+    const run = runOf(ctx);
+    const record = run.evidence?.[source];
     if (!record || record.stage !== ctx.stage) return { ok: false, text: t('main.evidence.refused.otherStage', { id: source }) };
     if (!isImageRecord(record)) return { ok: false, text: t('main.evidence.refused.notImage', { id: source }) };
-    const bytes = readEvidence(ctx.dataDir, ctx.run.id, record);
+    const bytes = readEvidence(ctx.dataDir, run.id, record);
     if (!bytes) return { ok: false, text: t('main.evidence.refused.gone', { id: source }) };
     return { ok: true, bytes, from: source };
   }
@@ -130,7 +138,7 @@ async function annotate(ctx: EvidenceContext, input: unknown): Promise<ToolAnswe
   } catch {
     return { text: t('main.evidence.refused.write') };
   }
-  const put = putEvidence(ctx.dataDir, ctx.run, {
+  const put = putEvidence(ctx.dataDir, runOf(ctx), {
     path: target,
     name: `${source.replace(/^ev-/, 'marked-')}.png`,
     title: typeof args.title === 'string' && args.title.trim() ? args.title.trim() : t('main.evidence.markedTitle', { source }),

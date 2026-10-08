@@ -15,7 +15,8 @@ export interface ResolvedOutput {
   ok: boolean;
   problem?: OutputProblem;
   /** The real path under the stage's output folder, only when `ok`. */
-  path?: string;  /** The path relative to the output folder, with forward slashes, for a message. */
+  path?: string;
+  /** The path relative to the output folder, with forward slashes, for a message. */
   rel?: string;
 }
 

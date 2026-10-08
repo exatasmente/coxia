@@ -24,6 +24,14 @@ export type PutProblem = KindProblem | 'write';
 
 const dirOf = (dataDir: string, runId: string): string => join(dataDir, EVIDENCE_DIR, runId);
 
+/**
+ * What `putEvidence` needs of a run to name the next piece: the run as a stage sees it, with the pieces it has just kept counted on top of the stored ones. A stage
+ * is handed a run that does not change under it, so its second piece would otherwise take the id of the first.
+ */
+export function withRecordedEvidence(run: Run, records: readonly EvidenceRecord[]): Run {
+  return { ...run, evidence: { ...(run.evidence ?? {}), ...Object.fromEntries(records.map((r) => [r.id, r])) } };
+}
+
 /** The next id of a run: the highest it has used, plus one. The run keeps the count, so an id is never reused across attempts. */
 export function nextEvidenceId(run: Pick<Run, 'evidence'>): string {
   const used = Object.keys(run.evidence ?? {})

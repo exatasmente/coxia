@@ -26,7 +26,7 @@ import { type ExecResult, type SandboxService, type SandboxSession, SandboxError
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
 import { resolveOutputPath } from '../evidence/paths';
-import { copyToCycleFolder, putEvidence } from '../evidence/store';
+import { copyToCycleFolder, putEvidence, withRecordedEvidence } from '../evidence/store';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
@@ -641,6 +641,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const lookedPaths = new Set<string>();
   const keptNames = new Set<string>();
   const onLooked = (path: string): void => void lookedPaths.add(path);
+  // The ids are derived from the run, and the run this attempt was given never changes: every piece of a stage would otherwise be handed the id the first one
+  // took. What the stage keeps is counted on top of it, so its second piece is ev-2 like the run's own store would name it.
+  const runSoFar = (): Run => withRecordedEvidence(run, keptRecords);
   /**
    * Keeps what the agent looked at and did not keep, before the sandbox takes the stage folder away: every picture of the output folder it opened with `ViewImage`
    * is kept as evidence of the stage, and what cannot be kept is said in the conversation with the reason. An evidence id it looked at is already kept.
@@ -659,7 +662,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         continue;
       }
       const shown = resolved.path;
-      const put = putEvidence(d.dataDir(), run, { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      const put = putEvidence(d.dataDir(), runSoFar(), { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
       if (!put.ok) {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(shown), reason: evidenceProblemText(put.problem) }, stage: stage.id });
         continue;
@@ -682,7 +685,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       ? evidenceToolsOf({
           dataDir: d.dataDir(),
           outputDir: evidenceRoot,
-          run,
+          run: runSoFar,
           stage: stage.id,
           by: agent.id,
           onKept: (record) => {
