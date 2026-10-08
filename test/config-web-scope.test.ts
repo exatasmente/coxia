@@ -65,8 +65,14 @@ describe('what a browser may change', () => {
   });
 
   it('refuses the workspace autonomy block and its sandbox network by whole paths', () => {
-    expect(refused((c) => { c.runner.autonomy = { cycle: true, hostCommands: true, gates: false, push: false, pullRequest: false }; })).toEqual(['runner.autonomy.cycle', 'runner.autonomy.hostCommands']);
+    expect(refused((c) => { c.runner.autonomy = { cycle: true, hostCommands: true, gates: false, push: false, pullRequest: false, board: false }; })).toEqual(['runner.autonomy.cycle', 'runner.autonomy.hostCommands']);
     expect(refused((c) => { c.runner.sandbox = { ...c.runner.sandbox, network: 'open' }; })).toEqual(['runner.sandbox.network']);
+  });
+
+  it('refuses the board\'s autonomy choice by name, turned on or off', () => {
+    expect(refused((c) => { c.runner.autonomy.board = true; })).toEqual(['runner.autonomy.board']);
+    const on = edit((c) => { c.runner.autonomy.board = true; });
+    expect(refusedPaths(on, edit((c) => { c.runner.autonomy.board = false; }))).toEqual(['runner.autonomy.board']);
   });
 
   it('accepts the runner switches, the label, the cap, the turns, the timeouts and the two message templates', () => {

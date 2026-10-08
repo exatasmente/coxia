@@ -280,7 +280,7 @@ describe('migrateConfig', () => {
       delete doc.devCycle.autonomy;
       const r = migrateConfig(doc, { legacyInstall: false });
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
-      expect(r.config.runner.autonomy).toEqual({ cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false });
+      expect(r.config.runner.autonomy).toEqual({ cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false, board: false });
       expect(r.config.devCycle.autonomy).toEqual({});
       expect(r.config.runner.sandbox.network).toBe('registry');
       expect(r.notes.join(' ')).toContain('autonomy block');
@@ -400,6 +400,57 @@ describe('migrateConfig', () => {
     v17.runner.evidence = 'cycle';
     const r = migrateConfig(v17, { legacyInstall: false });
     expect(r.config.runner.evidence).toBe('cycle');
+  });
+
+  describe('schema 19 to 20: the board\'s own autonomy', () => {
+    const v19 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 19;
+      delete c.runner.autonomy.board;
+      return c;
+    };
+
+    it('sets the choice off, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v19(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(19);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(20);
+      expect(r.config.runner.autonomy.board).toBe(false);
+      expect(r.notes.join(' ')).toContain('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a stored true and raises nothing else', () => {
+      const c = v19();
+      c.runner.autonomy.board = true;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.runner.autonomy.board).toBe(true);
+      expect(r.config.runner.autonomy).toEqual({ ...neutralConfig().runner.autonomy, board: true });
+      expect(r.notes.join(' ')).not.toContain('runner.autonomy.board');
+    });
+
+    it('turns a value that is not a boolean into off, and is idempotent', () => {
+      const c = v19();
+      c.runner.autonomy.board = 'yes';
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.runner.autonomy.board).toBe(false);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('does not touch the five fields of a run, nor any flow\'s block', () => {
+      const c = v19();
+      c.runner.autonomy = { cycle: true, hostCommands: false, gates: true, push: false, pullRequest: false };
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.runner.autonomy).toEqual({ cycle: true, hostCommands: false, gates: true, push: false, pullRequest: false, board: false });
+      expect(r.config.devCycle.autonomy).toEqual(neutralConfig().devCycle.autonomy);
+    });
+
+    it('is the newest step: 20 is current and 21 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(20);
+      expect(() => migrateConfig({ schemaVersion: 21 }, { legacyInstall: false })).toThrow(/newer app/);
+    });
   });
 });
 

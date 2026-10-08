@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 19). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 20). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -167,6 +167,12 @@ const autonomy = object('What a run lets go on without the person.', {
 const flowAutonomy = object(
   'The autonomy block of one flow: the workspace\'s decides while useWorkspace is on.',
   { useWorkspace: boolean('On: the workspace\'s block decides for this flow and the fields here are shown disabled. Off: this block decides.'), ...autonomy.properties } as Record<string, JsonSchema>,
+);
+
+/** The workspace's block: a flow's five fields and the board's own choice, which is not a step of a run and so does not depend on `cycle`. */
+const workspaceAutonomy = object(
+  'What a run lets go on without the person, and whether the board writes to the code host by itself.',
+  { ...autonomy.properties, board: boolean('A write of the board (a card sent to the code host, moved, commented, closed) goes through the door executed and audited, with no "yes" in Actions. Independent of cycle; a test workspace still refuses it.') } as Record<string, JsonSchema>,
 );
 
 const gateFiles = object(
@@ -498,7 +504,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
         turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
-        autonomy,
+        autonomy: workspaceAutonomy,
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
           network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy; open: the computer\'s own network, shared whole, with no proxy and no host list (desktop only, a choice of risk). "Localhost" inside the sandbox is the sandbox\'s own except in open mode.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),

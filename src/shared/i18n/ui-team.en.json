@@ -1,4 +1,7 @@
 {
+  "ui.autonomy.board": "Board writes go to the host without a yes",
+  "ui.autonomy.board.heading": "The board",
+  "ui.autonomy.board.hint": "A card sent to the code host, moved, commented, closed or reopened reaches the issue by itself, as an audited write. Off, each of those waits in Actions for your yes. It does not depend on \"Autonomous cycle\": the board is not a run. A test workspace still refuses it.",
   "ui.autonomy.byWorkspace": "The workspace's setting decides for this flow: what is chosen here has no effect while \"Use the workspace's setting\" is on.",
   "ui.autonomy.choice.gates": "Gates pass by themselves",
   "ui.autonomy.choice.gates.hint": "A gate is approved by the app, recorded as an automatic approval with the reason and where the decision came from.",

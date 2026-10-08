@@ -33,6 +33,8 @@ export interface Card {
   // The project the issue lives in, needed to write a label back.
   project?: string;
   priority?: CardPriority | null;
+  /** Set on a card that stands for a card of the board, and only where the workspace has a usable code host: where the card stands in relation to it. */
+  board?: { id: string; host: 'linked' | 'notSent' | 'waiting' | 'missing' | 'unread' };
 }
 
 export interface CardsResult {

@@ -1,4 +1,7 @@
 {
+  "ui.autonomy.board": "As escritas do quadro vão ao host sem um sim",
+  "ui.autonomy.board.heading": "O quadro",
+  "ui.autonomy.board.hint": "Um cartão enviado ao host de código, movido, comentado, fechado ou reaberto chega à issue sozinho, como escrita auditada. Desligado, cada um deles espera o seu sim em Ações. Não depende de \"Ciclo autônomo\": o quadro não é uma execução. Um espaço de trabalho de teste continua recusando.",
   "ui.autonomy.byWorkspace": "A configuração do espaço de trabalho decide neste fluxo: o que for escolhido aqui não tem efeito enquanto \"Usar a configuração do espaço de trabalho\" estiver ligado.",
   "ui.autonomy.choice.gates": "Gates passam sozinhos",
   "ui.autonomy.choice.gates.hint": "Um gate é aprovado pelo app, registrado como aprovação automática com o motivo e de onde veio a decisão.",
