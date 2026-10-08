@@ -4,8 +4,8 @@
 // answers exactly what it answered before.
 import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
-import { effectiveTeam, membersOf, scopedTeam, squadView, turnTarget } from '../src/shared/config/squads';
-import { isDraft, newAgent, stageAgent, workingTeam } from '../src/shared/config/team';
+import { effectiveTeam, liaisonFor, membersOf, scopedTeam, squadView, turnTarget } from '../src/shared/config/squads';
+import { isDraft, newAgent, recommendations, stageAgent, workingTeam } from '../src/shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
 import { templateFromConfig } from '../src/shared/cycles';
 import { agentThreadId, mentionableIds, parseMentions } from '../src/shared/forum';
@@ -72,6 +72,22 @@ describe('the team the runner reads', () => {
     // Without the mark the same agent is a member: the filter is the mark, not the id.
     const real = withSquads(neutralConfig(), (x) => x.agents.team.unshift(loud({ squad: 'a', draft: undefined })));
     expect(membersOf(real, 'a').map((a) => a.id)).toContain('trial');
+  });
+
+  it('recommends no permission to a draft whose id is a role\'s by chance', () => {
+    const c = withSquads(neutralConfig(), (x) => x.agents.team.push(newAgent({ id: 'qa', name: 'QA', draft: true })));
+    expect(recommendations(c, true).map((r) => r.id)).not.toContain('qa');
+    // The same agent without the mark gets the recommendation of its role.
+    const real = withSquads(neutralConfig(), (x) => x.agents.team.push(newAgent({ id: 'qa', name: 'QA' })));
+    expect(recommendations(real, true).map((r) => r.id)).toContain('qa');
+  });
+
+  it('takes no draft as the liaison of a squad, even when a file names one', () => {
+    const c = withSquads(neutralConfig(), (x) => {
+      x.agents.team.push(loud({ id: 'trial', squad: 'a' }));
+      x.squads = (x.squads ?? []).map((q) => (q.id === 'a' ? { ...q, liaison: 'trial' } : q));
+    });
+    expect(liaisonFor(c, agent(c, 'dev-a'))).toBeNull();
   });
 
   it('sends a question that turns to a draft where it would go with no one named', () => {

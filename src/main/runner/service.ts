@@ -1479,7 +1479,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
       // The liaison of a squad may answer with a request to another squad's liaison, when there is one to receive it.
       const own = squadOf(config, holder.squad);
-      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && config.agents.team.some((a) => a.id === o.liaison && a.squad === o.id));
+      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && workingTeam(config.agents.team).some((a) => a.id === o.liaison && a.squad === o.id));
       const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
@@ -1548,7 +1548,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const run = need(id);
     const from = squadOf(config, holder.squad);
     const to = request ? squadOf(config, request.squad) : null;
-    const target = to?.liaison ? config.agents.team.find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
+    const target = to?.liaison ? workingTeam(config.agents.team).find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
     if (!offered || !request || !from || from.liaison !== holder.id || !to || to.id === from.id || !target) return handUp(id, holder.id, 'failed', t('main.runner.request.invalid'));
     ensureSquadChannels(deps.forum, squadsOf(config), config.language);
     const toName = squadName(config, to);

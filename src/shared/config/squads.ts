@@ -98,7 +98,8 @@ export const squadOfAgent = (c: TeamView, agent: Pick<AgentDef, 'squad'>): Squad
 export function liaisonFor(c: TeamView, agent: Pick<AgentDef, 'id' | 'squad'>): string | null {
   const squad = squadOf(c, agent.squad);
   if (!squad?.liaison || squad.liaison === agent.id) return null;
-  return c.agents.team.some((a) => a.id === squad.liaison && a.squad === squad.id) ? squad.liaison : null;
+  // A draft is no liaison, even when a file names one.
+  return workingTeam(c.agents.team).some((a) => a.id === squad.liaison && a.squad === squad.id) ? squad.liaison : null;
 }
 
 /**

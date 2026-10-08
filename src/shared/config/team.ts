@@ -209,7 +209,8 @@ export interface Recommendation {
  */
 export function recommendations(config: WorkspaceConfig, sandbox: boolean): Recommendation[] {
   const out: Recommendation[] = [];
-  for (const a of config.agents.team) {
+  // A draft is left out: its permissions are the assistant's review to propose, with a reason, and its id may be a role's by chance (`qa`, `reviewer`).
+  for (const a of workingTeam(config.agents.team)) {
     const want = RECOMMENDED[a.id];
     if (!want || a.system) continue;
     const shell = sandbox ? want.shell : withoutSandbox(want.shell, a.permission);
