@@ -318,9 +318,10 @@ export function mirrorOf(card: BoardCard, seen: HostSeen, ctx: MirrorContext): M
   const out: MirrorChanges = {};
   if (seen.title && seen.title !== card.title) out.title = seen.title;
   if (seen.state !== card.state) out.state = seen.state;
-  const labels = [...new Set(seen.labels.filter((l) => !has(ctx.ownLabels, l)))];
-  if (!sameSet(labels, card.labels)) out.labels = labels;
   if (ctx.labelsOnHost) {
+    // A host with no labels on issues says none: the card's own labels (the squad's among them) are not wiped by an empty answer.
+    const labels = [...new Set(seen.labels.filter((l) => !has(ctx.ownLabels, l)))];
+    if (!sameSet(labels, card.labels)) out.labels = labels;
     if (seen.stageId && seen.stageId !== card.column && ctx.stages.some((s) => s.id === seen.stageId)) out.column = seen.stageId;
     const derived = derivedFields(seen.labels, ctx);
     if (derived.priority !== card.priority) out.priority = derived.priority;

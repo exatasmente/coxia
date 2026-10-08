@@ -202,6 +202,11 @@ describe('what the host says of a card (mirrorOf)', () => {
     expect(r).toEqual({ title: 'Renamed', state: 'closed' });
   });
 
+  it('keeps the card\'s own labels when the host has none to say', () => {
+    const c = card({ labels: ['core', 'bug'], squad: 'core' });
+    expect(mirrorOf(c, seen({ labels: [] }), { ...CTX, labelsOnHost: false })).toEqual({});
+  });
+
   it('takes the host\'s update time only when it is later', () => {
     expect(mirrorOf(card(), seen({ updatedAt: '2026-10-07T12:00:00Z' }), CTX)).toEqual({ updatedAt: '2026-10-07T12:00:00.000Z' });
     expect(mirrorOf(card(), seen({ updatedAt: '2026-10-07T09:00:00Z' }), CTX)).toEqual({});
