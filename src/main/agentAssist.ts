@@ -44,7 +44,8 @@ class AssistError extends Error {}
 /** Whatever went wrong, as text a person can act on: the budget of a provider, a model that ran out of steps, or the reason redacted and cut. */
 function explain(e: unknown): Error {
   if (e instanceof AssistError) return e;
-  if (e instanceof ProviderBudgetError) return new AssistError(t('main.assist.error.budget', { provider: e.provider, detail: e.detail.slice(0, 300) }));
+  // The open engine's detail is its own worded message (it says the app retries by itself, which the assistant does not): only the SDK's is the provider's own text.
+  if (e instanceof ProviderBudgetError) return new AssistError(t('main.assist.error.budget', { provider: e.provider, detail: e.engine === 'claude-sdk' ? e.detail.slice(0, 300) : '' }).trim());
   if (e instanceof MaxTurnsError) return new AssistError(t('main.assist.error.turns'));
   return new AssistError(t('main.assist.error.failed', { reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }));
 }

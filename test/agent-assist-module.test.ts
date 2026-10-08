@@ -288,6 +288,11 @@ describe('what fails', () => {
     asked.fail = new ProviderBudgetError('anthropic', 'claude-sdk', 'credit balance is too low');
     await expect(assist.assistRound(base)).rejects.toThrow(/budget of the anthropic key is exhausted.*credit balance is too low/);
     await expect(assist.assistReview(base)).rejects.toThrow(/budget of the anthropic key is exhausted/);
+    // The open engine's detail is already its own sentence, which promises a retry the assistant does not make: it is not repeated.
+    asked.fail = new ProviderBudgetError('local', 'open', 'The budget of the 127.0.0.1:4000 key is exhausted: the provider refused the call. Add credit, then the app tries again on its own.');
+    const said = await assist.assistRound(base).then(() => '', (e: Error) => e.message);
+    expect(said).toMatch(/budget of the local key is exhausted/);
+    expect(said).not.toMatch(/tries again on its own|127\.0\.0\.1/);
   });
 
   it('says a model that ran out of steps', async () => {
