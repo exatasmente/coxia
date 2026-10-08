@@ -16,7 +16,6 @@
   "ui.board.create.title": "Title",
   "ui.board.create.titlePlaceholder": "What has to be done",
   "ui.board.empty": "No card on the board yet.",
-  "ui.board.hostNote": "This workspace has a code host: the board is the one there, and nothing here changes.",
   "ui.board.nav": "Board",
   "ui.board.open": "Reopen",
   "ui.board.title": "Board",

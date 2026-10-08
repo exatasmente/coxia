@@ -22,7 +22,7 @@ import { announceRunning, flushRenderer, forgetRunning, terminateChildren, track
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
 import { setBoardHost } from './board';
-import { realBoardHost } from './boardHost';
+import { realBoardHost, startBoardHost } from './boardHost';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
 import { onConfigChange } from './workspaceConfig';
@@ -287,6 +287,7 @@ if (!app.requestSingleInstanceLock()) {
     startActions({ notify, emit });
     // The board reaches the code host through one door, handed in once and never handed back to a module.
     setBoardHost(realBoardHost);
+    startBoardHost();
     for (const register of MODULES) {
       register({ handle, notify, emit, job: registerJob });
     }

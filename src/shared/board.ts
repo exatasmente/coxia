@@ -300,7 +300,35 @@ export interface HostRead {
 }
 
 /** Where a card stands in relation to the host: `none` with no usable host; the rest, in the order the screen gives them precedence. */
-export type HostState = 'none' | 'waiting' | 'linked' | 'missing' | 'unread' | 'notSent';
+export type HostState = 'none' | 'waiting' | 'failed' | 'linked' | 'missing' | 'unread' | 'notSent';
+
+/** What the board asks of the host for a target. A `labels` change names only the fields being changed. */
+export type HostChange =
+  | { kind: 'create' }
+  | { kind: 'labels'; column?: string; priority?: string | null; squad?: string | null }
+  | { kind: 'comment'; text: string }
+  | { kind: 'close' }
+  | { kind: 'reopen' };
+
+export interface HostRequest {
+  /** A card of the board (for `create`, one with no issue yet) or an issue the host lists that no card holds. */
+  target: BoardTarget;
+  change: HostChange;
+  /** What the card's copy becomes once the host has it; absent for a listed issue, which has no copy. */
+  effect?: BoardPatch;
+}
+
+/** How a request left the board: sent at once (the board's autonomy is on, or there was nothing to send) or waiting in Actions for the person's "yes". */
+export type HostSent =
+  | { mode: 'ran'; summary: string; /** The issue a `create` made. Absent when the host answered with no number. */ link?: BoardHostLink }
+  | { mode: 'proposed'; summary: string; actionId: string };
+
+/** What waits in Actions for a target: the kinds of change, and whether every one of them failed when approved. */
+export interface Waiting {
+  kinds: string[];
+  failed: boolean;
+  actionId: string;
+}
 
 /** The squads the board offers for a card being given to one: every configured squad that names a label, which is how the card is claimed. */
 export function squadsForCard(squads: readonly SquadDef[]): SquadDef[] {

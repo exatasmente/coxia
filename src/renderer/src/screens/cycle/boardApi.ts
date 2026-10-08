@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { BoardCard } from '../../../../shared/board';
+import type { BoardCard, BoardItem, BoardProjectLine, BoardTarget, HostState, Waiting } from '../../../../shared/board';
 import { api, moduleEvents } from '../../api';
 
 // The board of the running workspace, as the screens see it: the file's own channels (`board:*`) and one shared copy of what they answered.
@@ -7,9 +7,17 @@ import { api, moduleEvents } from '../../api';
 
 export const BOARD_EVENT = 'board:changed';
 
+/** Where a column is written on the host: the label, and whether it is the mapping's, the app's own default, or cannot be written. */
+export interface ColumnWrite {
+  label: string | null;
+  by: 'mapping' | 'default' | 'refused';
+}
+
 export interface BoardColumn {
   id: string;
   label: string;
+  /** Null where the host keeps no labels or there is no host. */
+  writes: ColumnWrite | null;
 }
 
 export interface BoardSquad {
@@ -18,8 +26,28 @@ export interface BoardSquad {
   label: string;
 }
 
+/** A card, and where it stands in relation to the host. */
+export type BoardCardView = BoardCard & { hostState: HostState; waiting: Waiting | null };
+
+/** An issue the host lists that no card holds, and what waits in Actions for it. */
+export type BoardItemView = BoardItem & { waiting: Waiting | null };
+
+export interface BoardHostView {
+  name: string | null;
+  /** The host's issues have labels: a column, a priority and a squad can be written there. */
+  labels: boolean;
+  readAt: string | null;
+  error: string | null;
+  /** Why a card cannot become an issue now, else null. */
+  cannotSend: string | null;
+}
+
 export interface BoardView {
-  available: boolean;
+  /** Null where the workspace has no usable code host: the board is then only the workspace's own. */
+  host: BoardHostView | null;
+  projects: BoardProjectLine[];
+  noProject: boolean;
+  items: BoardItemView[];
   columns: BoardColumn[];
   priorities: string[];
   /** The squads a card may go to: the ones that name a label. */
@@ -27,7 +55,7 @@ export interface BoardView {
   /** How many squads the workspace has, so the screen can say why one is missing as a destination. */
   squadCount: number;
   repos: { id: string; label: string }[];
-  cards: BoardCard[];
+  cards: BoardCardView[];
 }
 
 export interface BoardCreate {
@@ -50,12 +78,13 @@ export interface BoardUpdate {
 }
 
 export const boardApi = {
-  list: () => api.invoke<BoardView>('board:list'),
+  list: (refresh = false) => api.invoke<BoardView>('board:list', refresh),
   create: (input: BoardCreate) => api.invoke<BoardCard>('board:create', input),
-  update: (id: string, patch: BoardUpdate) => api.invoke<BoardCard>('board:update', id, patch),
-  comment: (id: string, text: string) => api.invoke<BoardCard>('board:comment', id, text),
-  close: (id: string) => api.invoke<BoardCard>('board:close', id),
-  reopen: (id: string) => api.invoke<BoardCard>('board:reopen', id),
+  send: (id: string) => api.invoke<BoardCard>('board:send', id),
+  update: (target: BoardTarget, patch: BoardUpdate) => api.invoke<BoardCard | null>('board:update', target, patch),
+  comment: (target: BoardTarget, text: string) => api.invoke<BoardCard | null>('board:comment', target, text),
+  close: (target: BoardTarget) => api.invoke<BoardCard | null>('board:close', target),
+  reopen: (target: BoardTarget) => api.invoke<BoardCard | null>('board:reopen', target),
 };
 
 let view: BoardView | null = null;

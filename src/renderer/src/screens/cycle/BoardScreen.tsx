@@ -1,19 +1,18 @@
 import { useState } from 'react';
 import { cardRef } from '../../../../shared/board';
-import type { BoardCard } from '../../../../shared/board';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { BackIcon } from '../icons';
-import { boardApi, reloadBoard, useBoard, type BoardView } from './boardApi';
+import { boardApi, reloadBoard, useBoard, type BoardCardView, type BoardView } from './boardApi';
 import './cycle.css';
 
-// The board of a workspace with no code host: its columns are the cycle's stages, and one card can be opened, moved, prioritised, commented,
-// given to a squad and closed without leaving the machine. Nothing here points at a host, and the screen says so when the workspace has one.
+// The board of the workspace: its columns are the cycle's stages, and one card can be opened, moved, prioritised, commented, given to a squad, closed and
+// reopened. With no code host the card never leaves the machine; with one, the card is the host's issue and the board follows what the host says.
 
 const NONE = '';
 
-function Card({ card, board }: { card: BoardCard; board: BoardView }) {
+function Card({ card, board }: { card: BoardCardView; board: BoardView }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState('');
@@ -183,8 +182,7 @@ export function BoardScreen({ go }: { go: (s: Screen) => void }) {
           </div>
         </header>
         {!board && <span className="spinner" aria-label={t('ui.board.title')} />}
-        {board && !board.available && <p className="dash-calm">{t('ui.board.hostNote')}</p>}
-        {board && board.available && (
+        {board && (
           <>
             <OpenCard board={board} />
             {/* A squad that names no label is not offered as a destination: the board says why instead of pretending the card moved. */}
