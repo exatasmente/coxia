@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Evidence a stage keeps no longer overwrites itself.** Every `SaveEvidence` in one stage answered `ev-1`, wrote over the same file and replaced the same record, so a QA pass that saved five screenshots kept only the last one, and a scenario had no distinct id to cite (nothing was attached to the issue comment and the app showed a single piece). Each piece now gets its own id, a piece kept a moment ago can be marked with `AnnotateImage` in the same stage, and a stored file is never written over.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added

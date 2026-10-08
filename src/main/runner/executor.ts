@@ -632,6 +632,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The evidence a stage keeps while it works: each one is recorded with the run and published in its conversation, and the ids are what the stage output cites.
   const keptIds: string[] = [];
   const keptRecords: EvidenceRecord[] = [];
+  // The `run` of this function is the run as the stage started: a new piece is numbered after the ones the run has and a piece to mark is found among them, so what
+  // this stage has kept so far is added (the store records it on the live run, which this object does not follow).
+  const withKept = (): Run => (keptRecords.length ? { ...run, evidence: { ...run.evidence, ...Object.fromEntries(keptRecords.map((r) => [r.id, r])) } } : run);
   // The images of the stage's output folder the agent looked at with `ViewImage` and did not keep, by path: kept (or said as looked and not kept) while the
   // sandbox is still open. An evidence id it looked at is not here: that piece is already kept. A file the agent kept itself is not kept twice: its name is
   // remembered when it is kept, by whichever route (the tool or the guard at the close).
@@ -656,7 +659,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         continue;
       }
       const shown = resolved.path;
-      const put = putEvidence(d.dataDir(), run, { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      const put = putEvidence(d.dataDir(), withKept(), { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
       if (!put.ok) {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(shown), reason: evidenceProblemText(put.problem) }, stage: stage.id });
         continue;
@@ -679,7 +682,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       ? evidenceToolsOf({
           dataDir: d.dataDir(),
           stageDir: session.stageDir,
-          run,
+          get run(): Run {
+            return withKept();
+          },
           stage: stage.id,
           by: agent.id,
           onKept: (record) => {
