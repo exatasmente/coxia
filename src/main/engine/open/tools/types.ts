@@ -14,6 +14,8 @@ export interface ToolContext {
   writeRoot?: string | null;
   // Names directly under writeRoot that Write and Edit refuse: what the app itself keeps there.
   writeReserved?: readonly string[];
+  // Exact relative file paths a single-output task may change.
+  writeAllow?: readonly string[];
   outputMax: number;
   env: Record<string, string>;
   // Bash(<prefix>:*) rules from the allowed tools; empty means the hook policy alone decides.

@@ -25,6 +25,8 @@ export interface CheckOptions {
   fence?: string;
   /** Names directly under `root` the app keeps for itself: a write to one (or under it) is refused, whatever the case it is spelled in. */
   reserved?: readonly string[];
+  /** Relative file paths an agent may write; when set, every other destination is refused. */
+  writeAllow?: readonly string[];
   home?: string;
   /** Absolute folders outside `root` a read may still reach (the documentation the config lists); ignored for a write, and for a root that is not a folder. */
   roots?: string[];
@@ -124,6 +126,11 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   const written = relative(judge, abs).split(sep);
   const code = segmentsCode(rel.split(sep), !!options.read) ?? segmentsCode(written, !!options.read);
   if (code) return { ok: false, code };
+  if (!options.read && options.writeAllow) {
+    const resolved = rel.split(sep).join('/');
+    const lexical = written.join('/');
+    if (!options.writeAllow.includes(resolved) || !options.writeAllow.includes(lexical)) return { ok: false, code: 'reserved' };
+  }
   if (options.reserved?.length && !options.read) {
     const own = new Set(options.reserved.map((n) => n.toLowerCase()));
     if (own.has((rel.split(sep)[0] ?? '').toLowerCase()) || own.has((written[0] ?? '').toLowerCase())) return { ok: false, code: 'reserved' };

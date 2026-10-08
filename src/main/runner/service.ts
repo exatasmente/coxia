@@ -251,7 +251,7 @@ export interface Runner {
    */
   startRelease(version: string, from?: string, repoId?: string): Promise<Run>;
   /**
-   * Starts the run that drafts (`create`) or brings up to date (`update`) the documentation of a repository: it has no issue, writes only inside `.coxia/` of its own
+   * Starts the run that drafts (`create`) or brings up to date (`update`) the repository's root AGENTS.md: it has no issue and writes only that file
    * worktree, and ends in a push and a pull request that wait for the person's "sim" like every other.
    */
   startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run>;
@@ -806,7 +806,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `${iid}-${slug}`);
     const folder = cycleFolderOf(iid, issue.title);
 
-    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path) }).catch((e) => {
+    // The branch and the folder are the issue's, so a run of it that ended without cleaning up is taken over: refusing it would block the issue forever.
+    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path), takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
@@ -873,7 +874,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       ? await deps.publisher.releaseBrief({ version, repo: repo.id, branch: state, from })
       : { brief: { version, from, branch: state, activities: [], milestone: [], read: false }, text: releaseRecord({ version, from, branch: state, activities: [], milestone: [], read: false }, config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) };
 
-    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+    // The branch and the folder are the version's, so a release that ended without cleaning up is taken over: refusing it would block that version forever.
+    const made = await createWorktree({ clone: repo.path, dest, branch, takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
@@ -963,10 +965,9 @@ export function createRunner(deps: RunnerDeps): Runner {
     });
     let run: Run;
     try {
-      // What `.coxia/` holds is read before the run puts anything in it. The run's own folder is inside `.coxia/` and ignored by git, so the pull request carries the
-      // documentation and nothing of the run; the ignore file is committed before anything is written there.
+      // AGENTS.md is read before the run changes it. The run's private state stays under the ignored `.coxia/.run` folder.
       const record = await docsRecord(dest, { ref, title: docsTitle(repo.id), mode });
-      // A repository whose `.coxia` (or whose ignore file, or run folder) is a link would take these writes, and the agent's, out of the worktree: no run is made.
+      // A non-directory `.coxia` path or a non-regular AGENTS.md could redirect writes outside the worktree.
       if (!(await ensureRunIgnore(dest))) throw new RunnerError('docs-folder-unsafe');
       try {
         writeIssueRecord(dest, DOCS_RUN_FOLDER, record);

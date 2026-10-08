@@ -59,10 +59,12 @@ export interface ShellPolicy {
 export interface Confinement {
   /** The run's worktree: its working directory, which it may read whole, and the only folder it may change unless `writeRoot` narrows that. */
   root: string;
-  /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
+  /** A folder inside `root` that is the only place the agent may change; absent: the whole of `root`. Reads stay on `root`. */
   writeRoot?: string;
-  /** Names directly under `writeRoot` the app owns and the agent may not write (the ignore file and the run folder of a documentation run). */
+  /** Names directly under `writeRoot` the app owns and the agent may not write. */
   writeReserved?: readonly string[];
+  /** Exact relative file paths the agent may write, when a task has a single-file output. */
+  writeAllow?: readonly string[];
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }

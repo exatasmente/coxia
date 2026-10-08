@@ -1,4 +1,4 @@
-// The agents of the team read the documentation of the project (`.coxia/`) the app hands them and nothing of Claude Code's: not the CLAUDE.md or the .claude/ of the
+// The agents of the team read the project instructions (the root AGENTS.md) the app hands them and nothing of Claude Code's: not the CLAUDE.md or the .claude/ of the
 // working directory or the home, not the settings, not the automatic memory. The ceremonies read what they read before. Both engines, with fakes only: the SDK is
 // mocked (its options are captured) and the open engine talks to a local fake server.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +18,7 @@ const sandbox = vi.hoisted(() => {
   write(path.join(home, '.claude', 'CLAUDE.md'), 'MARK-HOME-NOTES');
   write(path.join(repo, 'CLAUDE.md'), 'MARK-REPO-NOTES');
   write(path.join(repo, '.claude', 'rules', 'mark-claude-rule.md'), 'MARK-CLAUDE-RULE');
-  write(path.join(repo, '.coxia', 'README.md'), ['---', 'checked-commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'checked-date: 2026-10-06', '---', '', 'MARK-COXIA-OVERVIEW'].join('\n'));
+  write(path.join(repo, 'AGENTS.md'), '# Project instructions\n\nMARK-COXIA-OVERVIEW\n');
   process.env.HOME = home;
   return { root, home, repo };
 });

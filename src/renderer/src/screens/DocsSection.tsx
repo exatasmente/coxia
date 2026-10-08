@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DocsConfig } from '../../../shared/config/types';
-import { type DocsRepoStatus, type DocsStatus, type UncheckedFile, isClaudeSource } from '../../../shared/harness/status';
+import { type DocsRepoStatus, type DocsStatus, isClaudeSource } from '../../../shared/harness/status';
 import { docsListsOf, withDocsSources } from '../../../shared/harness/sources';
 import type { DocsKey } from '../../../shared/wizard';
 import type { Screen } from '../App';
@@ -11,24 +11,9 @@ import { isWeb } from '../platform';
 import { DocsSourceLists } from '../wizard/DocsSourceLists';
 import { wizardApi } from '../wizard/wizardApi';
 
-// The tables hold catalog keys, written whole so the key checks find them; they are translated at render.
-const UNVERIFIED: Record<string, string> = {
-  git: 'ui.settings.docs.unverified.git',
-  timeout: 'ui.settings.docs.unverified.timeout',
-  'outside-history': 'ui.settings.docs.unverified.outside-history',
-};
-const INVALID: Record<string, string> = {
-  'no-header': 'ui.settings.docs.invalid.no-header',
-  'bad-commit': 'ui.settings.docs.invalid.bad-commit',
-  'bad-date': 'ui.settings.docs.invalid.bad-date',
-  'no-evidence': 'ui.settings.docs.invalid.no-evidence',
-  'bad-evidence': 'ui.settings.docs.invalid.bad-evidence',
-};
-
 type Mode = 'create' | 'update';
 
-// Settings › Documentation, desktop only: what each repository holds of the documentation of the app, what is not checked, the button that starts the run that
-// drafts or updates it, and the extra sources the setup wizard edits too.
+// Settings › Documentation, desktop only: root AGENTS.md status, the documentation run, and extra sources.
 export function DocsSection({ go }: { go: (s: Screen) => void }) {
   const t = useT();
   const web = isWeb();
@@ -102,46 +87,22 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
     }
   };
 
-  const reason = (f: UncheckedFile): string => {
-    if (f.state === 'stale') return t('ui.settings.docs.stale', { count: f.total, commit: f.commit ?? '', date: f.date ?? '', names: f.changed.join(', ') });
-    if (f.state === 'unverified') return t(UNVERIFIED[f.reason] ?? UNVERIFIED.git, { commit: f.commit ?? '', date: f.date ?? '' });
-    return t(INVALID[f.reason] ?? INVALID['no-header']);
-  };
-
   const repoBlock = (r: DocsRepoStatus) => (
     <li key={r.repo} className="panel" style={{ padding: 14, gap: 10 }}>
       <div className="row spread">
         <strong className="mono">{r.repo}</strong>
         {r.head ? <span className="small muted">{t('ui.settings.docs.head', { commit: r.head.commit, date: r.head.date })}</span> : <span className="small muted">{t('ui.settings.docs.head.none')}</span>}
       </div>
-      {!r.exists ? (
-        <p className="small muted">{t('ui.settings.docs.none')}</p>
-      ) : (
+      {!r.ready ? (
         <>
-          <p className="small">
-            <span className={`badge ${r.overview ? 'badge-quiet' : 'badge-block'}`}>{t(r.overview ? 'ui.settings.docs.overview.yes' : 'ui.settings.docs.overview.no')}</span>{' '}
-            {t('ui.settings.docs.counts', { rules: r.rules, skills: r.skills, roles: r.roles })}
-          </p>
-          {r.unchecked.length === 0 ? (
-            <p className="small muted">{t('ui.settings.docs.allChecked')}</p>
-          ) : (
-            <div className="wz-stack">
-              <div>
-                <strong className="small">{t('ui.settings.docs.unchecked.title')}</strong>
-                <p className="small muted">{t('ui.settings.docs.unchecked.hint')}</p>
-              </div>
-              <ul className="wz-cards">
-                {r.unchecked.map((f) => (
-                  <li key={f.path} className="wz-card-item">
-                    <span className="mono small wz-wrap-anywhere">{`.coxia/${f.path}`}</span>
-                    <span className="small muted">{reason(f)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        <p className="small muted">{t('ui.settings.docs.none')}</p>
+          {r.exists && <p className="small muted">{t('ui.settings.docs.blocked')}</p>}
           {r.ignored.length > 0 && <p className="small muted wz-wrap-anywhere">{t('ui.settings.docs.ignored', { names: r.ignored.slice(0, 10).join(', ') })}</p>}
         </>
+      ) : (
+        <p className="small">
+          <span className="badge badge-quiet">{t('ui.settings.docs.present')}</span>
+        </p>
       )}
       {r.claude && <p className="small muted">{t('ui.settings.docs.claude')}</p>}
       {r.run ? (
@@ -150,7 +111,7 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
           <button type="button" className="btn" onClick={() => go({ name: 'run', id: (r.run as { id: string }).id })}>{t('ui.settings.docs.run.open')}</button>
         </div>
       ) : (
-        (!r.exists || r.unchecked.length > 0) && (
+        (!r.exists || r.ready) && (
           <div className="row" style={{ gap: 10 }}>
             <button type="button" className="btn btn-dark" disabled={busy !== null} onClick={() => click(r.repo, r.exists ? 'update' : 'create')}>
               {busy === r.repo ? <span className="spinner" aria-hidden="true" /> : null} {t(r.exists ? 'ui.settings.docs.update' : 'ui.settings.docs.create')}
