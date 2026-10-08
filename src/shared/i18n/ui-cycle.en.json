@@ -433,5 +433,7 @@
   "ui.runs.squad": "Squad",
   "ui.runs.squad.all": "Every squad",
   "ui.runs.squad.none": "No squad",
-  "ui.runs.title": "Cycle runs"
+  "ui.runs.title": "Cycle runs",
+  "ui.runs.unassigned.start": "Start",
+  "ui.runs.unassigned.title": "Labeled, unassigned issues"
 }

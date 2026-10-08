@@ -146,6 +146,8 @@ export interface IssueSource {
   get(iid: number): Promise<{ issue: VcsIssue; comments: VcsComment[] }>;
   /** Open issues carrying `label` that are assigned to the person. */
   triggered(label: string): Promise<VcsIssue[]>;
+  /** Open issues of the project carrying `label` that have no assignee; the manual-start list of the runs screen. */
+  unassigned(label: string): Promise<VcsIssue[]>;
   /** The code host can be read right now. */
   ready(): boolean;
 }

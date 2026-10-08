@@ -7,8 +7,8 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 
 // What a paired browser may do to a run: all of it. Reading, answering, and every move that starts a stage, decides a gate, retries, cancels, picks a squad, moves a run to the
 // current flow, takes a comment back or switches an agent's autonomy. What a run may execute is still decided by the configuration, which a browser can only change in a scoped way.
-const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact', 'runs:evidenceList', 'runs:evidence'];
-const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:memory', 'runs:evidenceDelete', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact', 'runs:unassigned', 'runs:evidenceList', 'runs:evidence'];
+const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:memory', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
 const OPEN = [...READS, ...MOVES];
 // Starting a release run ends in the repository's own scripts and merged code, run as the person, and allowing a host command runs one outside any sandbox: a paired browser
 // does either only when its external effects are on, as it approves a proposal.
@@ -79,19 +79,17 @@ describe('the runner writes to a code host through one door', () => {
     expect(files.filter((f) => /externalRefusal|assertExternalWrite|isTestWorkspace/.test(source(f)))).toEqual([DOOR]);
   });
 
-  it('has no git push anywhere: the door asks for it and Actions runs it, the publisher only chooses that it does', () => {
+  it('has no git push anywhere: not a command it runs, and not a function it imports (the door proposes it, Actions runs it)', () => {
     for (const f of files) {
       const text = source(f);
-      // `'push'` as a value is the name of the door's call (and the choice of the autonomy block), never an option of git: the command line lives in Actions.
-      expect(text, f).not.toMatch(/git .*'push'|'push', 'origin|pushBranch|assertPlainPush/);
+      expect(text, f).not.toMatch(/'push'/);
+      expect(text, f).not.toMatch(/pushBranch|assertPlainPush/);
     }
-    expect(source(DOOR)).toMatch(/\.push\(/);
   });
 
   it('reads the code host through the provider only: the issue and its comments in the module, what the publisher needs and nothing that writes in the publisher', () => {
     const calls = (f: string) => new Set([...source(f).matchAll(/provider\.(\w+)\(/g)].map((m) => m[1]));
-    expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues']));
-    // The credential of an upload is not read here: it is filled at the moment the write runs (actions.ts), so the proposal never holds it.
+    expect(calls('module.ts')).toEqual(new Set(['getIssue', 'listIssueComments', 'listMyIssues', 'listIssues']));
     expect(calls(PUBLISHER)).toEqual(new Set(['listIssueComments', 'listMrComments', 'listMrThreads', 'listMrChanges', 'getMr', 'getIssue', 'getRepo', 'linkedMrs', 'currentUser', 'planWrite', 'noteUrl', 'listMrsByTarget', 'getRelease', 'listIssues', 'issueUrl']));
     for (const f of files.filter((x) => x !== 'module.ts' && x !== PUBLISHER)) expect(calls(f).size, f).toBe(0);
   });

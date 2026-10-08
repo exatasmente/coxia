@@ -81,10 +81,13 @@ export interface FakeIssues extends IssueSource {
   reads: number[];
 }
 
-/** A code host that can only be read, and records what was read. */
+/** A code host that can only be read, and records what was read. `triggered` is the person's own issues (`listMyIssues`): what carries `label` and is open and that
+ * this person opened or was assigned, so an unassigned issue of another author never reaches the automatic scan — exactly the real host. */
 export function fakeIssues(): FakeIssues {
   const items = new Map<number, { issue: VcsIssue; comments: VcsComment[] }>();
   const reads: number[] = [];
+  const ME = 'ana';
+  const mine = (i: VcsIssue): boolean => i.author === ME || i.assignees.includes(ME);
   return {
     items,
     reads,
@@ -97,7 +100,10 @@ export function fakeIssues(): FakeIssues {
       return found;
     },
     async triggered(label) {
-      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()));
+      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()) && mine(i));
+    },
+    async unassigned(label) {
+      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()) && i.assignees.length === 0);
     },
   };
 }
