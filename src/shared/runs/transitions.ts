@@ -49,7 +49,13 @@ function finishStage(run: Run, at: string, status: StageRecord['status'], artifa
   const r = record(run, run.stage) as StageRecord;
   r.status = status;
   r.endedAt = at;
+  const previous = new Set(r.artifacts);
   r.artifacts = unique([...r.artifacts, ...artifacts]);
+  // The timeline marks which attempt a shown artifact belongs to; a name produced again keeps its first attempt, so the badge never moves.
+  if (artifacts.length) {
+    const attempts = r.artifactAttempts ?? (r.artifactAttempts = {});
+    for (const name of artifacts) if (!previous.has(name)) attempts[name] = r.attempts;
+  }
   return r;
 }
 

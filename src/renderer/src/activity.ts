@@ -101,6 +101,18 @@ export function createActivityStore(options: ActivityStoreOptions = {}) {
     if (next !== prev) publish(new Map(byJob).set(jobId, next));
   }
 
+  /**
+   * What came back after the event stream dropped and reconnected, narrowed: an entry stays only when its run was already here or is still going, so lines of an
+   * earlier run of the same work are not stitched into the timeline. The plain `backfill` stands for a screen opened fresh.
+   */
+  function backfillLive(jobId: string, entries: readonly ActivityEntry[]): void {
+    const prev = byJob.get(jobId) ?? NONE;
+    const kept = entries.filter((e) => prev.some((p) => p.runId === e.runId) || runActive(entries as ActivityEntry[], e.runId));
+    if (!kept.length) return;
+    const next = mergeEntries(prev, kept, cap);
+    if (next !== prev) publish(new Map(byJob).set(jobId, next));
+  }
+
   /** A job starts over: what an earlier run of the same key did is no longer its story. */
   function reset(jobId: string): void {
     if (!byJob.has(jobId)) return;
@@ -117,6 +129,7 @@ export function createActivityStore(options: ActivityStoreOptions = {}) {
   return {
     add,
     backfill,
+    backfillLive,
     reset,
     subscribe,
     entries: (jobId: string): readonly ActivityEntry[] => byJob.get(jobId) ?? NONE,

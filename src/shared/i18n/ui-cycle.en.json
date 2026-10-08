@@ -267,6 +267,7 @@
   "ui.cycle.squad.pick": "Squad {squad}",
   "ui.cycle.squad.proposal": "Triage proposed the squad {squad}: {reason}",
   "ui.cycle.stage.artifacts": "Documents of the stage",
+  "ui.cycle.stage.attemptOf": "attempt {count}",
   "ui.cycle.stage.attempts": "attempt {count}",
   "ui.cycle.stage.autonomous": "runs by itself",
   "ui.cycle.stage.cancelled": "cancelled",
