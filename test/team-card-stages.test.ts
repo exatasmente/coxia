@@ -15,6 +15,8 @@ vi.hoisted(() => {
 });
 // useT subscribes with useSyncExternalStore, which has no server snapshot: a static render reads the translator directly.
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
+// The agent assistant's conversation reads the activity of the app from the window while it loads; the cards do not show it.
+vi.mock('../src/renderer/src/screens/cycle/Thread', () => ({ Thread: () => null }));
 const { TeamSection } = await import('../src/renderer/src/screens/team/TeamSection');
 
 afterEach(() => setLanguage('pt-BR'));
