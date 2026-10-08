@@ -45,7 +45,7 @@
   "ui.board.refresh": "Refresh",
   "ui.board.send": "Send to the host",
   "ui.board.sendAll": "Send all to the host ({count})",
-  "ui.board.sendAll.result": "{sent} sent, {proposed} waiting for your yes in Actions, {failed} failed, {remaining} left for another call.",
+  "ui.board.sendAll.result": "{sent} sent, {proposed} waiting for your yes in Actions, {failed} failed, {remaining} left for the next Send all.",
   "ui.board.title": "Board",
   "ui.board.truncated": "Showing the {count} most recently updated of {project}; older issues are not on the board.",
   "ui.ceremony.squad.label": "For which squad",

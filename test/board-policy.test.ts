@@ -202,7 +202,13 @@ describe('a workspace of test with a host that is ready', () => {
       const card = boardStore().create({ id: `host000${autonomy ? 1 : 2}`, title: 'Not sent', body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
       setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
       const issue = { project: 'acme/app', iid: 7 };
+      const linked = boardStore().create({ id: `link000${autonomy ? 1 : 2}`, title: 'Sent', body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
+      boardStore().link(linked.id, { vcs: 'gitlab', project: 'acme/app', iid: 7, url: 'https://git.acme.test/acme/app/-/issues/7', linkedAt: '2026-10-07T09:00:00.000Z' });
       const writes: [string, unknown[]][] = [
+        ['board:update', [linked.id, { column: 'doing' }]],
+        ['board:comment', [linked.id, 'x']],
+        ['board:close', [linked.id]],
+        ['board:reopen', [linked.id]],
         ['board:create', [{ title: 'New', column: 'backlog' }]],
         ['board:send', [card.id]],
         ['board:sendAll', []],

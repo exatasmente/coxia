@@ -311,7 +311,10 @@ export const register: Module = (ctx: ModuleContext) => {
     const batch = `board-send-${Date.now().toString(36)}`;
     const result: SendAllResult = { sent: 0, proposed: 0, failed: [], remaining: all.length - chosen.length };
     // One after the other, never in parallel: the audit stays in order and a host's rate limit is not hit by a burst. One that fails does not stop the rest.
-    for (const [i, card] of chosen.entries()) {
+    for (const [i, first] of chosen.entries()) {
+      // Looked at again right before it goes: the person may have sent it by hand, or something may be waiting for it, since the cards were chosen.
+      const card = boardStore().get(first.id);
+      if (!card || sendable(card) !== null) continue;
       const { outcome, reason } = await sendCard(card.id, { id: batch, notify: i === 0 });
       if (outcome === 'sent') result.sent++;
       else if (outcome === 'proposed') result.proposed++;

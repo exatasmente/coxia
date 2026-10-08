@@ -197,6 +197,7 @@ export function issueRefOfAnswer(answer: unknown): { iid: number | null; url: st
 /** Whether a card's link and a listed issue are the same issue: the number, and the project too when both sides name it as a path (a numeric project id is not one). */
 export function sameIssue(link: { project: string; iid: number }, item: { project: string; iid: number }): boolean {
   if (link.iid !== item.iid) return false;
-  const paths = link.project.includes('/') && item.project.includes('/');
+  // A report item from a card source command is parsed JSON: one that names no project is matched by its number alone.
+  const paths = link.project.includes('/') && typeof item.project === 'string' && item.project.includes('/');
   return !paths || lower(link.project) === lower(item.project);
 }

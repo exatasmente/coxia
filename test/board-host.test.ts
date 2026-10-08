@@ -422,6 +422,22 @@ describe('send all', () => {
     expect(host.issues).toHaveLength(2);
   });
 
+  it('looks at each card again right before sending it: one sent by hand meanwhile is neither sent twice nor counted as a failure', async () => {
+    const [first, second] = localCards(2);
+    const run = host.runtime.exec.run;
+    host.runtime.exec.run = async (command, meta) => {
+      // While the first card is going out, the person sends the second one by hand.
+      boardStore().link(second, { vcs: 'gitlab', project: PROJECT, iid: 900, url: 'https://git.acme.test/acme/app/-/issues/900', linkedAt: '2026-10-07T09:00:00.000Z' });
+      return run(command, meta);
+    };
+    const result = await call('board:sendAll');
+    expect(result).toEqual({ sent: 1, proposed: 0, failed: [], remaining: 0 });
+    expect(boardStore().get(first)?.host?.iid).toBe(101);
+    expect(boardStore().get(second)).toMatchObject({ host: { iid: 900 } });
+    expect(boardStore().get(second)?.hostNote).toBeUndefined();
+    expect(host.issues).toHaveLength(1);
+  });
+
   it('leaves out a card that is linked, closed, waiting or being sent, and counts what it would send', async () => {
     configure(false);
     const [waits, closed, plain] = localCards(3);

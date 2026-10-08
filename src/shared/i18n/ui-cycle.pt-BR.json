@@ -45,7 +45,7 @@
   "ui.board.refresh": "Atualizar",
   "ui.board.send": "Enviar ao host",
   "ui.board.sendAll": "Enviar todos ao host ({count})",
-  "ui.board.sendAll.result": "{sent} enviados, {proposed} esperando o seu \"sim\" em Ações, {failed} com falha, {remaining} para outra chamada.",
+  "ui.board.sendAll.result": "{sent} enviados, {proposed} esperando o seu \"sim\" em Ações, {failed} com falha, {remaining} para o próximo Enviar todos.",
   "ui.board.title": "Quadro",
   "ui.board.truncated": "Mostrando as {count} atualizadas mais recentemente de {project}; as issues mais antigas não estão no quadro.",
   "ui.ceremony.squad.label": "Para qual squad",

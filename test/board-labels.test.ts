@@ -195,6 +195,11 @@ describe('issueRefOfAnswer', () => {
 });
 
 describe('sameIssue', () => {
+  it('does not throw on an item that names no project, and matches it by number', () => {
+    expect(sameIssue({ project: 'group/project', iid: 4 }, { iid: 4 } as never)).toBe(true);
+    expect(sameIssue({ project: 'group/project', iid: 4 }, { iid: 5 } as never)).toBe(false);
+  });
+
   it('needs the same number, and the same project when both are paths, ignoring case', () => {
     expect(sameIssue({ project: 'Group/Project', iid: 4 }, { project: 'group/project', iid: 4 })).toBe(true);
     expect(sameIssue({ project: 'group/project', iid: 4 }, { project: 'group/other', iid: 4 })).toBe(false);

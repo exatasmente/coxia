@@ -113,6 +113,9 @@ describe('the default stage vocabulary', () => {
     expect(stageOf(issue({ labels: ['board:todo', 'urgent'] }), [], stages, mapping, 'gitlab')?.id).toBe('todo');
     // an id nobody has names nothing, and the patterns decide as they always did
     expect(stageOf(issue({ labels: ['board:gone', 'doing'] }), [], stages)?.id).toBe('doing');
+    // a board label no stage has changes nothing: the issue reads as it would without it
+    expect(stageOf(issue({ labels: ['board:gone'] }), [], stages)?.id).toBe(stageOf(issue({ labels: [] }), [], stages)?.id);
+    expect(stageOf(issue({ labels: ['board:gone', 'review'] }), [], stages)?.id).toBe('review');
     // an issue with no such label reads exactly as before
     expect(stageOf(issue({ labels: ['review'] }), [], stages)?.id).toBe('review');
     expect(stageOf(issue({ labels: ['bug'] }), [], stages)?.id).toBe('todo');
