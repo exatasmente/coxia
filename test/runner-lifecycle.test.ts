@@ -423,13 +423,15 @@ describe('a stage that goes wrong', () => {
   it('fails, without taking a half answer for a finished stage, when the documents are missing, the answer is empty or the turns ran out', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('No document.'), () => ({ summary: '', question: null }), async () => {
+    // The answer with no document is asked once for it (the round answers without it too) before the stage fails for it.
+    b.engine.script('refiner', () => work('No document.'), () => work('Still none.'), () => ({ summary: '', question: null }), async () => {
       const { MaxTurnsError } = await import('../src/main/engine/contract');
       throw new MaxTurnsError('s', []);
     });
     const run = await b.runner.start('app#101');
     await b.settle();
     expect(b.runner.get(run.id)!.error?.detail).toContain('1_SPEC.md');
+    expect(b.thread(run).filter((m) => m.code === 'runner.artifacts.repair')).toHaveLength(1);
     b.runner.retry(run.id);
     await b.settle();
     expect(b.runner.get(run.id)!.error?.detail).toMatch(/sem dizer o que fez/);
