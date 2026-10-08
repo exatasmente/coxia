@@ -84,7 +84,7 @@ não conferiu; as demais são sugestões.
    cobertura.
 
 5. **Nenhum teste cobre o motor que devolve resposta sem id de sessão.** O `answered` cai em
-   `{ sessionId: null }` (`executor.ts:792,797`) e a rodada roda como chamada nova
+   `{ sessionId: null }` (as duas leituras de `executor.ts` que montam o `answered`) e a rodada roda como chamada nova
    (`repairRound`, `executor.ts:480`): o agente perde o que leu e a rodada pode não trazer a
    comprovação.
 

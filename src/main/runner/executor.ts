@@ -23,9 +23,10 @@ import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCo
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
-import { evidenceToolsOf } from '../evidence/handlers';
+import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
+import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
+import { resolveOutputPath } from '../evidence/paths';
 import { copyToCycleFolder, putEvidence } from '../evidence/store';
-import { evidencePlacementOf, type EvidenceRecord } from '../../shared/evidence';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
@@ -637,8 +638,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const keptIds: string[] = [];
   const keptRecords: EvidenceRecord[] = [];
   // The images of the stage's output folder the agent looked at with `ViewImage` and did not keep, by path: kept (or said as looked and not kept) while the
-  // sandbox is still open. An evidence id it looked at is not here: that piece is already kept.
+  // sandbox is still open. An evidence id it looked at is not here: that piece is already kept. A file the agent kept itself is not kept twice: its name is
+  // remembered when it is kept, by whichever route (the tool or the guard at the close).
   const lookedPaths = new Set<string>();
+  const keptNames = new Set<string>();
   const onLooked = (path: string): void => void lookedPaths.add(path);
   /**
    * Keeps what the agent looked at and did not keep, before the sandbox takes the stage folder away: every picture of the output folder it opened with `ViewImage`
@@ -649,14 +652,25 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (!dir || !d.keepEvidence) return;
     let keptCount = 0;
     for (const path of lookedPaths) {
-      const put = putEvidence(d.dataDir(), run, { path, name: basename(path), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      if (keptNames.has(basename(path))) continue;
+      // What the hook received is the word of the session or of the agent, never a checked path: it goes through the same resolver that guards a piece of evidence
+      // asked for by hand, so the guard reads only the stage's output folder, follows no link and lands nowhere else.
+      const resolved = resolveOutputPath(dir, path);
+      if (!resolved.ok || !resolved.path) {
+        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(path), reason: outputProblemText(resolved.problem ?? 'path') }, stage: stage.id });
+        continue;
+      }
+      const shown = resolved.path;
+      const put = putEvidence(d.dataDir(), run, { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
       if (!put.ok) {
-        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(path), reason: t(`main.evidence.refused.${put.problem}`) }, stage: stage.id });
+        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(shown), reason: evidenceProblemText(put.problem) }, stage: stage.id });
         continue;
       }
       keptCount++;
+      // The id enters the list of what this stage kept only once the piece really was kept: a failed attempt is not an id the answer may cite.
       keptIds.push(put.record.id);
       keptRecords.push(put.record);
+      keptNames.add(basename(shown));
       try {
         d.keepEvidence(run.id, put.record);
       } catch (e) {
@@ -676,7 +690,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
           onKept: (record) => {
             keptIds.push(record.id);
             keptRecords.push(record);
-            if (!record.from) lookedPaths.add(record.name);
+            // A piece the agent kept itself is done with: the closing guard is about what it looked at and did not keep, and the file behind this name is not
+            // to be read again (a name only says which file of the folder it was, and a later look at another file of the same name means another file).
+            if (!record.from) keptNames.add(record.name);
             try {
               d.keepEvidence?.(run.id, record);
             } catch (e) {

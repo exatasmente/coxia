@@ -363,6 +363,28 @@ describe('a QA scenario the app recorded as read', () => {
     expect(qa[0][1]).toContain('a: passed (read)');
     expect(qa[0][1]).not.toContain('passed (executed)');
   });
+
+  it('is called executed in the comment, and in the written test plan, when a command of the stage backs it', async () => {
+    forge = makeForge();
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
+    script(b);
+    // The round ends with the command the scenario is about, and the document and the comment are written from the record.
+    b.engine.script('qa', async (call) => {
+      await call.exec?.exec('node probe.js');
+      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md', '# Test plan\n\n## Scenarios\n\n- a: passed (executed)\n')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [1] }], comment: comment([['Scenarios verified and their result', 'a: passed.']]) });
+    });
+    const run = await start(b);
+    const end = await through(b, run);
+    expect(end.status).toBe('done');
+    expect(end.qa[0].scenarios[0]).toMatchObject({ evidence: 'executed', commands: [1] });
+    const qa = issueNotes().filter(([, body]) => body.includes('stage=qa -->'));
+    expect(qa).toHaveLength(1);
+    expect(qa[0][1]).toContain('a: passed (executed in the sandbox)');
+    expect(qa[0][1]).toContain('1 of 1 scenarios were executed');
+    const plan = readFileSync(join(end.worktree, end.cycleFolder, '5_TEST_PLAN.md'), 'utf8');
+    expect(plan).toContain('a: passed (executed in the sandbox)');
+  });
 });
 
 describe('what waits for the person', () => {

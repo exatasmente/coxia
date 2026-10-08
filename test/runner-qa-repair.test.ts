@@ -1,8 +1,10 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentCall } from '../src/main/agents';
 import { encodePng } from '../src/main/evidence/png';
+import { EVIDENCE_MAX_BYTES } from '../src/shared/evidence';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { backEvidence, testPlanWithResults } from '../src/shared/runs';
@@ -189,6 +191,56 @@ describe('what the agent looked at is not lost', () => {
     expect(said[0].params?.name).toBe('shot.png');
     expect(b.thread(done).filter((m) => m.code === 'runner.qa.lookKept')).toHaveLength(0);
     expect(Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa')).toHaveLength(0);
+  });
+
+  it('says "looked at, not kept" for a link out of the folder and for a path outside it, and keeps no such thing', async () => {
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        const stageDir = call.exec?.stageDir as string;
+        mkdirSync(join(stageDir, 'out'), { recursive: true });
+        // A link the sandbox left in the output folder, and a path of another folder of this machine: the app was told it looked at both and keeps neither.
+        symlinkSync(tmpdir(), join(stageDir, 'out', 'elsewhere'));
+        const seen = [join(stageDir, 'out', 'elsewhere'), '/etc/hostname'];
+        for (const one of seen) call.onLooked?.(one);
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    const said = b.thread(done).filter((m) => m.code === 'runner.qa.lookNotKept');
+    const names = said.map((m) => m.params?.name).sort();
+    // Both are said with the reason, and the path outside the folder is never followed: no piece of evidence comes out of it.
+    expect(names).toEqual(['elsewhere', 'hostname']);
+    expect(Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa')).toHaveLength(0);
+    expect(String(said.find((m) => m.params?.name === 'elsewhere')?.params?.reason)).toMatch(/link/i);
+    expect(String(said.find((m) => m.params?.name === 'hostname')?.params?.reason)).toMatch(/output folder/i);
+    expect(b.thread(done).filter((m) => m.code === 'runner.qa.lookKept')).toHaveLength(0);
+  });
+
+  it('keeps a picture looked at by name whatever it is called, and never reads outside the stage folder', async () => {
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        const stageDir = call.exec?.stageDir as string;
+        mkdirSync(join(stageDir, 'out'), { recursive: true });
+        // A picture whose name says it is text, and a text file of the folder above the stage folder (never the stage's own output).
+        writeFileSync(join(stageDir, 'out', 'shot.txt'), PNG());
+        writeFileSync(join(stageDir, '..', 'notes-outside.md'), '# notes\n');
+        const { viewImageToolImpl } = await import('../src/main/sandbox/engineTool');
+        const tool = viewImageToolImpl(call.exec!, call.evidence, call.onLooked);
+        await tool.run({ source: '/coxia/out/shot.txt' }, lookCtx);
+        await call.onLooked?.(join(stageDir, '..', 'notes-outside.md'));
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    // What the stage looked at is kept: the kind is read from the bytes, never from the name, and the piece keeps the name the file has.
+    const kept = Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa');
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ kind: 'png', name: 'shot.txt', title: expect.stringContaining('app') });
+    const said = b.thread(done).filter((m) => m.code === 'runner.qa.lookNotKept');
+    expect(said.map((m) => m.params?.name)).toEqual(['notes-outside.md']);
+    expect(String(said[0].params?.reason)).toMatch(/output folder/i);
   });
 });
 

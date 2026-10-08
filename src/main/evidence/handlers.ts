@@ -8,6 +8,7 @@ import { drawMarks } from './draw';
 import { resolveOutputPath, type OutputProblem } from './paths';
 import { decodePng, encodePng } from './png';
 import { isImageRecord, putEvidence, readEvidence, type PutProblem } from './store';
+import { detectKind } from './type';
 import type { EvidenceTools, ToolAnswer } from './tool';
 
 // What the three evidence tools do when a model calls them: read the file from the stage's output folder, keep it, mark an image and look at the result. Every
@@ -26,9 +27,11 @@ export interface EvidenceContext {
   now(): string;
 }
 
+/** The words of a file kind, for the model and for the person. */
 const KIND_TEXT: Record<EvidenceRecord['kind'], string> = { png: 'PNG', jpeg: 'JPEG', gif: 'GIF', webp: 'WebP', pdf: 'PDF', text: 'text' };
 
-const outputProblemText = (p: OutputProblem): string =>
+/** The wording of a path refused by the output-folder resolver, for the model and for the person. */
+export const outputProblemText = (p: OutputProblem): string =>
   t(
     p === 'path'
       ? 'main.evidence.refused.path'
@@ -43,7 +46,8 @@ const outputProblemText = (p: OutputProblem): string =>
               : 'main.evidence.refused.notFile',
   );
 
-const kindProblemText = (p: PutProblem): string =>
+/** The wording of a refusal to keep a file, for the model and for the person: the same sentence in the tool's answer and in the stage's conversation. */
+export const evidenceProblemText = (p: PutProblem): string =>
   t(
     p === 'too-long'
       ? 'main.evidence.refused.tooLong'
@@ -78,7 +82,7 @@ async function save(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
     by: ctx.by,
     at: ctx.now(),
   });
-  if (!put.ok) return { text: kindProblemText(put.problem as PutProblem) };
+  if (!put.ok) return { text: evidenceProblemText(put.problem as PutProblem) };
   await ctx.onKept(put.record);
   return { text: t('main.evidence.kept', { id: put.record.id, title: put.record.title, kind: KIND_TEXT[put.record.kind] }) };
 }
@@ -136,7 +140,7 @@ async function annotate(ctx: EvidenceContext, input: unknown): Promise<ToolAnswe
     from: found.from,
     at: ctx.now(),
   });
-  if (!put.ok) return { text: kindProblemText(put.problem as PutProblem) };
+  if (!put.ok) return { text: evidenceProblemText(put.problem as PutProblem) };
   await ctx.onKept(put.record);
   return { text: t('main.evidence.marked', { id: put.record.id, from: found.from ?? source, count: checked.marks.length }) };
 }
@@ -152,7 +156,9 @@ async function view(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   const media = imageMediaType(Buffer.from(found.bytes.subarray(0, 12)));
   if (!media) return { text: t('main.evidence.refused.notPicture') };
   // A file of the output folder is reported back: the stage looked at it and did not keep it, and the app has to say so (or keep it) before the sandbox goes.
-  const looked = found.from ? undefined : resolveOutputPath(ctx.stageDir, source);
+  // Only a picture comes back as looked at: what the app keeps of it as evidence takes the kinds of a piece of evidence (a text file counts, a video does not), so
+  // saying a video was seen and not kept would be reading a file the app would never keep. Here the bytes are already read and the kind is known.
+  const looked = found.from || detectKind(found.bytes, found.bytes.length).kind !== 'png' ? undefined : resolveOutputPath(ctx.stageDir, source);
   return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media, ...(looked?.ok && looked.path ? { looked: looked.path } : {}) } };
 }
 
