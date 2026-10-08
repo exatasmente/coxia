@@ -806,7 +806,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `${iid}-${slug}`);
     const folder = cycleFolderOf(iid, issue.title);
 
-    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path) }).catch((e) => {
+    // The branch and the folder are the issue's, so a run of it that ended without cleaning up is taken over: refusing it would block the issue forever.
+    const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path), takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
@@ -873,7 +874,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       ? await deps.publisher.releaseBrief({ version, repo: repo.id, branch: state, from })
       : { brief: { version, from, branch: state, activities: [], milestone: [], read: false }, text: releaseRecord({ version, from, branch: state, activities: [], milestone: [], read: false }, config.language, () => null, crMarkOf(primaryIntegration(config)?.kind ?? null)) };
 
-    const made = await createWorktree({ clone: repo.path, dest, branch }).catch((e) => {
+    // The branch and the folder are the version's, so a release that ended without cleaning up is taken over: refusing it would block that version forever.
+    const made = await createWorktree({ clone: repo.path, dest, branch, takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
     });
     let run: Run;
