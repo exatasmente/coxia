@@ -7,7 +7,7 @@ import { collectCommands, collectPaths } from '../src/shared/config/transfer';
 import { agentFlow, agentFlowEngineering, agentFlowTeam, applyTemplate, docsWriter, engineeringTeam, releaseManager } from '../src/shared/cycles';
 import { mergeTemplateTeam } from '../src/shared/cycles/apply';
 import { cycleOf } from '../src/shared/cycles';
-import type { WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../src/shared/config/types';
 
 type Doc = Record<string, any>;
 
@@ -33,7 +33,7 @@ describe('the migration to schema 10', () => {
   it('raises nothing: an agent that writes keeps the commands of the runner, one that only reads runs none', () => {
     const r = migrate(v9());
     expect(r.fromVersion).toBe(9);
-    expect(r.config.schemaVersion).toBe(19);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(agent(r.config, 'dev')).toMatchObject({ shell: 'allowlist', tracker: 'none' });
     expect(agent(r.config, 'po')).toMatchObject({ shell: 'none' });
     for (const a of r.config.agents.team) expect(a.shell).not.toBe('sandbox');

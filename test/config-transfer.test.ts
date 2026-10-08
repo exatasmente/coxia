@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { newProvider, neutralConfig } from '../src/shared/config/defaults';
 import { EXPORT_FORMAT, buildExport, diffConfig, parseImport } from '../src/shared/config/transfer';
-import type { WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../src/shared/config/types';
 import { collectSecretRequirements, validateConfig } from '../src/shared/config/validate';
 import { CONFIG_FILE, bootstrapConfigs, readConfigFile, writeConfigFile } from '../src/main/config-bootstrap';
 import { applyImport, exportText, previewImport, type TransferDeps } from '../src/main/config-transfer';
@@ -56,7 +56,7 @@ describe('export', () => {
     const file = JSON.parse(text);
     expect(file).toMatchObject({ format: EXPORT_FORMAT, formatVersion: 1, app: { name: 'coxia', version: '1.2.3' }, workspace: { name: 'Acme' }, exportedAt: '2026-10-02T12:00:00.000Z' });
     expect(file.requiredSecrets.map((s: { ref: string }) => s.ref).sort()).toEqual(['llm.anthropic', 'vcs.github']);
-    expect(file.config.schemaVersion).toBe(19);
+    expect(file.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(file.config.vcs[0].secretRef).toBe('vcs.github');
     expect(text).not.toMatch(/"(apiKey|token|password|secret)"/i);
   });
@@ -193,7 +193,7 @@ describe('what an import refuses', () => {
     expect(parseImport('[]').ok).toBe(false);
     expect(parseImport(JSON.stringify({ ...good(), formatVersion: 7 })).errors[0].message).toMatch(/newer/);
     const newer = good();
-    newer.config.schemaVersion = 20;
+    newer.config.schemaVersion = CONFIG_SCHEMA_VERSION + 1;
     expect(parseImport(JSON.stringify(newer)).errors[0].message).toMatch(/newer app/);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
-import { addAgent, ensureSystemAgents, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, toolsForAgent, updateAgent } from '../src/shared/config/team';
-import { LLM_ROLES, type WorkspaceConfig } from '../src/shared/config/types';
+import { addAgent, ensureSystemAgents, isDraft, isSystemId, newAgent, pruneAgentStages, removeAgent, stageAgent, systemAgents, toolsForAgent, updateAgent, workingTeam } from '../src/shared/config/team';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type WorkspaceConfig } from '../src/shared/config/types';
 import { CATALOGS } from '../src/shared/i18n';
 
 type Doc = Record<string, any>;
@@ -32,7 +32,7 @@ describe('the five system agents', () => {
   });
 
   it('are added back when a file leaves them out, and a file keeps its own agents', () => {
-    const r = validateConfig({ schemaVersion: 19, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
+    const r = validateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, agents: { team: [{ id: 'writer', name: 'Writer' }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.map((a) => a.id)).toEqual(['writer', ...LLM_ROLES]);
     expect(r.config?.agents.team[0]).toMatchObject({ job: '', permission: 'read', stages: [], system: false, model: { role: 'deep', provider: '', model: '' } });
@@ -40,7 +40,7 @@ describe('the five system agents', () => {
 
   it('are seeded from agents.roles when they have to be added back', () => {
     const roles = neutralConfig().agents.roles;
-    const r = validateConfig({ schemaVersion: 19, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
+    const r = validateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, agents: { roles: { ...roles, deep: { ...roles.deep, modelRole: 'turn', extraInstructions: 'dig' } }, team: [] } });
     expect(r.config?.agents.team.find((a) => a.id === 'deep')).toMatchObject({ model: { role: 'turn' }, instructions: 'dig' });
   });
 
@@ -128,7 +128,7 @@ describe('validating the team', () => {
 
   it('describes every agent field in the schema', () => {
     const team = CONFIG_SCHEMA.properties?.agents.properties?.team;
-    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'tools', 'autonomous', 'turnsTo', 'squad', 'instructions', 'system']);
+    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'tools', 'autonomous', 'turnsTo', 'squad', 'draft', 'instructions', 'system']);
     expect(team?.items?.required).toEqual(['id', 'name']);
   });
 });
@@ -152,7 +152,7 @@ describe('the migration to schema 5', () => {
     );
     expect(r.fromVersion).toBe(4);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(19);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
     expect(r.config.agents.team.find((a) => a.id === 'deep')).toMatchObject({ system: true, model: { role: 'turn' }, instructions: 'dig deep' });
     expect(r.notes.join(' ')).toContain('agent team');
@@ -173,7 +173,7 @@ describe('the migration to schema 5', () => {
       delete c.devCycle.priority;
     });
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(19);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.agents.team).toHaveLength(5);
   });
 });
@@ -263,7 +263,7 @@ describe('autonomy of each agent', () => {
   it('is off for the system agents and for an agent nobody said anything about', () => {
     expect(systemAgents().map((a) => a.autonomous)).toEqual([false, false, false, false, false]);
     expect(newAgent({ id: 'writer' }).autonomous).toBe(false);
-    const r = validateConfig({ schemaVersion: 19, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
+    const r = validateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, agents: { team: [{ id: 'writer', name: 'Writer' }, { id: 'scribe', name: 'Scribe', autonomous: true }] } });
     expect(r.errors).toEqual([]);
     expect(r.config?.agents.team.filter((a) => !a.system).map((a) => [a.id, a.autonomous])).toEqual([['writer', false], ['scribe', true]]);
   });
@@ -340,8 +340,63 @@ describe('the tools an agent uses', () => {
     v12.schemaVersion = 12;
     for (const a of v12.agents.team) delete a.tools;
     const r = migrateConfig(v12, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(19);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.agents.team.some((a: { tools?: unknown }) => a.tools !== undefined)).toBe(false);
     expect(r.notes.join(' ')).toContain('an agent may name the tools it uses');
+  });
+});
+
+describe('a draft agent', () => {
+  it('carries the mark only when it is true, so every other agent keeps the shape it had', () => {
+    expect(newAgent({ id: 'writer', draft: true }).draft).toBe(true);
+    expect('draft' in newAgent({ id: 'writer' })).toBe(false);
+    expect('draft' in newAgent({ id: 'writer', draft: false })).toBe(false);
+    expect(neutralConfig().agents.team.some((a) => 'draft' in a)).toBe(false);
+  });
+
+  it('survives validation and the defaults, and the schema describes the field', () => {
+    const c = neutralConfig();
+    c.agents.team.push(newAgent({ id: 'trial', draft: true }), newAgent({ id: 'writer' }));
+    const r = validateConfig(c);
+    expect(r.errors).toEqual([]);
+    expect(r.config?.agents.team.find((a) => a.id === 'trial')?.draft).toBe(true);
+    expect(r.config?.agents.team.find((a) => a.id === 'writer') && 'draft' in r.config.agents.team.find((a) => a.id === 'writer')!).toBe(false);
+    expect(withConfigDefaults(JSON.parse(JSON.stringify(c))).agents.team.find((a) => a.id === 'trial')?.draft).toBe(true);
+    expect(CONFIG_SCHEMA.properties?.agents.properties?.team.items?.properties?.draft.description).toMatch(/AI assistant/);
+  });
+
+  it('is refused when the mark is not a boolean', () => {
+    const c = neutralConfig() as unknown as Doc;
+    c.agents.team.push({ id: 'trial', name: 'Trial', draft: 'sim' });
+    expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['agents.team[5].draft']);
+  });
+
+  it('is told apart by isDraft, and workingTeam leaves it out', () => {
+    const team = [...systemAgents(), newAgent({ id: 'trial', draft: true }), newAgent({ id: 'writer' })];
+    expect(team.filter(isDraft).map((a) => a.id)).toEqual(['trial']);
+    expect(workingTeam(team).map((a) => a.id)).toEqual([...LLM_ROLES, 'writer']);
+    // Without a draft the very same list comes back: nothing is copied for the common case.
+    const plain = [...systemAgents(), newAgent({ id: 'writer' })];
+    expect(workingTeam(plain)).toBe(plain);
+  });
+
+  it('loses the mark when the editor saves it as undefined, and keeps the rest', () => {
+    const c = neutralConfig();
+    c.agents.team.push(newAgent({ id: 'trial', draft: true, job: 'tests things' }));
+    const saved = updateAgent(c, 'trial', { draft: undefined, name: 'Trial' });
+    const a = saved.agents.team.find((x) => x.id === 'trial')!;
+    expect('draft' in a).toBe(false);
+    expect(a).toMatchObject({ name: 'Trial', job: 'tests things' });
+    expect(validateConfig(saved).errors).toEqual([]);
+  });
+
+  it('comes from the migration as absent for every agent, so nothing changes', () => {
+    const v18 = JSON.parse(JSON.stringify(neutralConfig())) as Doc;
+    v18.schemaVersion = 18;
+    v18.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: 'deep', provider: '', model: '' }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+    const r = migrateConfig(v18, { legacyInstall: false });
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    expect(r.config.agents.team.some((a) => a.draft !== undefined)).toBe(false);
+    expect(r.notes.join(' ')).toContain('marked as a draft');
   });
 });

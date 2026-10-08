@@ -21,6 +21,7 @@ import { isHostWrite, ruleAllows, suggestRule } from '../src/shared/ceremonyComm
 import { CommandGone, createCommandStore } from '../src/main/ceremonyCommands-core';
 import { askAgent, obj, shellAllowlist, str } from '../src/main/agents';
 import { migrateConfig } from '../src/shared/config/migrations';
+import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
 import { installEnvSecret, installLegacyConfig } from './helpers/config';
 
 await installLegacyConfig();
@@ -241,7 +242,7 @@ describe('the migration to schema 12', () => {
 
   it('gives the system agents the code host read the ceremonies had, and nothing else', () => {
     const r = migrateConfig(v11({ vcsCli: true }), { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(19);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     const team = r.config.agents.team;
     expect(team.find((a) => a.id === 'deep')).toMatchObject({ tracker: 'read', shell: 'none' });
     expect(team.find((a) => a.id === 'writer')).toMatchObject({ tracker: 'none', shell: 'none' });

@@ -10,6 +10,7 @@ const { ATAS, HOME } = await import('../src/main/env');
 const { specInfo } = await import('../src/main/cards');
 const { stageWeight } = await import('../src/main/radar');
 const { installLegacyConfig } = await import('./helpers/config');
+const { CONFIG_SCHEMA_VERSION } = await import('../src/shared/config/types');
 
 describe('a fresh install', () => {
   it('starts with the neutral defaults and the wizard flag off', () => {
@@ -84,6 +85,6 @@ describe('after the previous app profile is applied', () => {
 
   it('the config file of the workspace is at the current schema on disk', async () => {
     const { readConfigFile } = await import('../src/main/config-bootstrap');
-    expect((readConfigFile(ATAS) as { schemaVersion: number }).schemaVersion).toBe(19);
+    expect((readConfigFile(ATAS) as { schemaVersion: number }).schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
   });
 });

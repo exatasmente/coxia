@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { type ThreadSummary, agentThreadId } from '../../../../shared/forum';
-import { forumLists, totalUnread, unreadOf } from '../../../../shared/forumView';
+import { chatAgents, forumLists, totalUnread, unreadOf } from '../../../../shared/forumView';
 import { isActive } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
@@ -60,7 +60,7 @@ export function ForumScreen({ go, thread }: { go: (s: Screen) => void; thread?: 
   const open = (id: string) => go({ name: 'forum', thread: id });
   const unread = totalUnread(all ?? [], seen);
   // The direct conversation of an agent is a thread of the forum with an id of its own, made when the forum is listed: the team list only offers the way in.
-  const team = config?.agents.team ?? [];
+  const team = chatAgents(config?.agents.team ?? []);
 
   const create = () => {
     const name = title.trim();

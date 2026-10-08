@@ -35,7 +35,9 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v17 `runner.prTitle` (the template of the pull request title, `{title}` and `{iid}`) and `{iid}` in `runner.commitMessage`, which is
 //       appended when a stored message leaves the number out. Nothing else moves.
 //   v18 `runner.evidence`: where a stage's evidence is kept, `app` by default (nothing of it enters a commit). Nothing else moves.
-//   v19 `runner.autonomy.board`: the board's own autonomy (its writes to the code host skip the "yes" in Actions), off by default. Nothing else moves.
+//   v19 agents.team[].draft: the mark of an agent the AI assistant saved to be tested; absent keeps an agent of the team. Nothing stored changes; the bump makes an
+//       older app refuse the file instead of repairing (and then saving) a team it cannot read.
+//   v20 `runner.autonomy.board`: the board's own autonomy (its writes to the code host skip the "yes" in Actions), off by default. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -321,17 +323,24 @@ function v17ToV18(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 18, runner: { ...runner, evidence: 'app' } };
 }
 
-// The workspace's autonomy block gains the board's own choice. A value that is not a boolean becomes off (writes wait in Actions for a yes); a stored `true` is kept.
-// The step touches nothing else and never raises anything.
+// An agent may now carry `draft`, the mark of one the AI assistant saved to be tested. A v18 file has none, and an agent without it is an agent of the team:
+// nothing is raised. The bump is what keeps an app that does not know the field from reading a file that carries it as a team to repair.
 function v18ToV19(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
-  const runner = pick(old.runner);
-  const autonomy = pick(runner.autonomy);
-  if (typeof autonomy.board === 'boolean') return { ...old, schemaVersion: 19 };
-  notes.push('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
-  return { ...old, schemaVersion: 19, runner: { ...runner, autonomy: { ...autonomy, board: false } } };
+  notes.push('an agent may be marked as a draft (saved by the AI assistant to be tested); one without the mark is an agent of the team');
+  return { ...old, schemaVersion: 19 };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19 };
+// The workspace's autonomy block gains the board's own choice. A value that is not a boolean becomes off (writes wait in Actions for a yes); a stored `true` is kept.
+// The step touches nothing else and never raises anything.
+function v19ToV20(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  const autonomy = pick(runner.autonomy);
+  if (typeof autonomy.board === 'boolean') return { ...old, schemaVersion: 20 };
+  notes.push('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
+  return { ...old, schemaVersion: 20, runner: { ...runner, autonomy: { ...autonomy, board: false } } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

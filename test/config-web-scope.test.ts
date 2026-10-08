@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
+import { newAgent } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { WEB_EDITABLE, changedPaths, refusedPaths } from '../src/main/configScope';
 import { webAccess } from '../src/main/webPolicy';
@@ -39,6 +40,19 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.devCycle.flows = { core: [...c.devCycle.stages] }; })).toEqual([]);
     expect(refused((c) => { c.devCycle.comments = { ...c.devCycle.comments, extra: { title: 'x', sections: [] } as never }; })).toEqual([]);
     expect(refused((c) => { c.devCycle.priority = { labels: ['^p0$'] }; })).toEqual([]);
+  });
+
+  it('saves a team that holds a draft agent of the assistant, and a draft is no path of its own', () => {
+    const withDraft = (c: WorkspaceConfig): void => void c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', draft: true }));
+    const stored = edit(withDraft);
+    // A change elsewhere in the team, with the draft as it was, is a change of the team only.
+    const next = structuredClone(stored);
+    next.agents.team[0].instructions = 'Be brief.';
+    expect(refusedPaths(stored, next)).toEqual([]);
+    // The mark is part of the team: clearing it gives the agent no power it did not have (its stages, squad and autonomy are what the team already allows).
+    const promoted = structuredClone(stored);
+    delete promoted.agents.team.find((a) => a.id === 'trial')!.draft;
+    expect(refusedPaths(stored, promoted)).toEqual([]);
   });
 
   it('takes a flow\'s autonomy block only downwards: it may be turned off from the phone, never on', () => {

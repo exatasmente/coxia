@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
 import type { JsonSchema } from '../src/shared/config';
+import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
 
@@ -100,9 +101,18 @@ describe('config schema', () => {
 
   it('refuses unknown fields and a newer schema', () => {
     expect(validateConfig({ ...neutralConfig(), extra: 1 }).errors).toContainEqual({ path: 'extra', message: 'is not a known field' });
-    expect(validateConfig({ ...neutralConfig(), schemaVersion: 20 }).errors[0].message).toMatch(/newer app/);
+    expect(validateConfig({ ...neutralConfig(), schemaVersion: CONFIG_SCHEMA_VERSION + 1 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
+  });
+
+  it('accepts the draft mark of an agent and refuses one that is not a boolean', () => {
+    const c = neutralConfig();
+    const agent = { id: 'trial', name: 'Trial', draft: true };
+    expect(validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, agent] } }).ok).toBe(true);
+    const bad = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, { ...agent, draft: 'sim' }] } });
+    expect(bad.ok).toBe(false);
+    expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].draft`]);
   });
 
   it('checks references between sections', () => {
@@ -129,7 +139,7 @@ describe('config schema', () => {
   });
 
   it('fills what a partial document leaves out and keeps what it sets', () => {
-    const r = validateConfig({ schemaVersion: 19, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
+    const r = validateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, language: 'en', projects: { roots: ['~/work'] }, vcs: [{ id: 'gh', kind: 'github', host: 'github.com' }] });
     expect(r.ok).toBe(true);
     expect(r.config?.language).toBe('en');
     expect(r.config?.projects.roots).toEqual(['~/work']);
