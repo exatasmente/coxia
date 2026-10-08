@@ -10,6 +10,7 @@ import { buildCardReport } from '../src/main/vcs/cards';
 import { DEFAULT_STAGES, kindFromWork, stageOf, stagesFor } from '../src/main/vcs/stages';
 import { buildRuntime } from '../src/main/vcs/runtime';
 import { VCS_CAPS as VCS_CAPS_OF } from '../src/shared/vcsCaps';
+import type { StageDef, StageMappingRule } from '../src/shared/config/types';
 import type { VcsIssue, VcsMr } from '../src/main/vcs/types';
 import { type FakeHost, fixture, noSleep, startFakeHost } from './helpers/fakeHost';
 import { fakeGitlabRuntime } from './helpers/vcs';
@@ -93,6 +94,28 @@ describe('the default stage vocabulary', () => {
   it('uses the configured stage of that kind, and none when the config has no such kind', () => {
     expect(stageOf(issue(), [mr({ draft: true })], TEST_STAGES)?.label).toBe('Doing');
     expect(stageOf(issue(), [], TEST_STAGES)).toBeNull();
+  });
+
+  it('reads a board:<id> label as that stage: after a matching rule and before a match pattern, and a workspace without one reads as before', () => {
+    const stages: StageDef[] = [
+      { id: 'todo', label: 'To do', match: ['^todo$'], kind: 'backlog', rank: 1 },
+      { id: 'review', label: 'Review', match: ['review'], kind: 'review', rank: 4 },
+      { id: 'doing', label: 'Doing', match: ['doing'], kind: 'development', rank: 2 },
+    ];
+    // the label carries the word "review" for the free-text pattern, but names the todo column
+    expect(stageOf(issue({ labels: ['board:todo', 'bug'] }), [], stages)?.id).toBe('todo');
+    expect(stageOf(issue({ labels: ['Board:Doing'] }), [], stages)?.id).toBe('doing');
+    expect(stageOf(issue({ labels: ['board:review'] }), [], stages)?.id).toBe('review');
+    // a rule that matches wins over the board's own label
+    const mapping: StageMappingRule[] = [{ provider: 'github', source: 'label', name: '', pattern: '^urgent$', stage: 'doing' }];
+    expect(stageOf(issue({ labels: ['board:todo', 'urgent'] }), [], stages, mapping, 'github')?.id).toBe('doing');
+    // a rule of another host does not
+    expect(stageOf(issue({ labels: ['board:todo', 'urgent'] }), [], stages, mapping, 'gitlab')?.id).toBe('todo');
+    // an id nobody has names nothing, and the patterns decide as they always did
+    expect(stageOf(issue({ labels: ['board:gone', 'doing'] }), [], stages)?.id).toBe('doing');
+    // an issue with no such label reads exactly as before
+    expect(stageOf(issue({ labels: ['review'] }), [], stages)?.id).toBe('review');
+    expect(stageOf(issue({ labels: ['bug'] }), [], stages)?.id).toBe('todo');
   });
 });
 
