@@ -1,4 +1,4 @@
-import { stageAgent, workingTeam } from '../config/team';
+import { isDraft, stageAgent, workingTeam } from '../config/team';
 import type { AgentDef, StageDef } from '../config/types';
 import { t as translate, type Translate } from '../i18n';
 import { ISSUE_RECORD, isFlowCycle, isWork } from './flow';
@@ -41,7 +41,7 @@ export interface FlowCheckOptions {
 const nameOf = (s: StageDef): string => s.label || s.id;
 const WRITES_BEFORE_RETURN = new Set(['review', 'qa']);
 
-function stageIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): void {
+function stageIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[], drafts: ReadonlySet<string> = new Set()): void {
   const issue = (severity: FlowIssue['severity'], code: FlowIssueCode, stage: StageDef | null, field: FlowIssueField, params: Record<string, string> = {}): void => {
     out.push({ severity, code, stage: stage?.id ?? null, agent: null, field, params: { ...(stage ? { stage: nameOf(stage) } : {}), ...params } });
   };
@@ -70,7 +70,8 @@ function stageIssues(stages: StageDef[], team: AgentDef[], out: FlowIssue[]): vo
     const agent = work ? stageAgent(team, stages, s.id) : null;
 
     if (s.agentId && !work) issue('error', 'agent-on-non-work', s, 'agentId');
-    else if (s.agentId && !team.some((a) => a.id === s.agentId)) issue('error', 'agent-unknown', s, 'agentId', { agent: s.agentId });
+    // A stage that names a draft (a template applied while one was left with that id) says so: "not in the team" would send the person looking for it.
+    else if (s.agentId && !team.some((a) => a.id === s.agentId)) issue('error', 'agent-unknown', s, 'agentId', { agent: s.agentId, ...(drafts.has(s.agentId) ? { draft: 'yes' } : {}) });
     else if (work && !agent) {
       // The stage where the run ends may have no agent: the run then ends when it gets there.
       if (next === null) {
@@ -168,7 +169,7 @@ export function checkFlow(input: FlowInput, options: FlowCheckOptions = {}): Flo
   const out: FlowIssue[] = [];
   // A draft is not part of the team the flow runs: a stage or an agent that points at one is pointing at no one.
   const team = workingTeam(input.team);
-  if (options.asFlow || isFlowCycle(input.stages)) stageIssues(input.stages, team, out);
+  if (options.asFlow || isFlowCycle(input.stages)) stageIssues(input.stages, team, out, new Set(input.team.filter(isDraft).map((a) => a.id)));
   teamIssues(input.stages, team, input.extraStages ?? [], out);
   return out;
 }
@@ -183,5 +184,5 @@ export const flowErrors = (input: FlowInput, options: FlowCheckOptions = {}): Fl
 export function flowIssueText(issue: Pick<FlowIssue, 'code' | 'params'>, t: Translate = translate): string {
   const params = { ...issue.params };
   for (const name of ['stage', 'target', 'other']) if (params[name]) params[name] = t(params[name]);
-  return t(`flow.check.${issue.code}`, params);
+  return t(issue.code === 'agent-unknown' && params.draft ? 'flow.check.agent-unknown.draft' : `flow.check.${issue.code}`, params);
 }

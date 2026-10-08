@@ -7,9 +7,11 @@ import { neutralConfig } from '../src/shared/config';
 import { effectiveTeam, liaisonFor, membersOf, scopedTeam, squadView, turnTarget } from '../src/shared/config/squads';
 import { isDraft, newAgent, recommendations, stageAgent, workingTeam } from '../src/shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
-import { templateFromConfig } from '../src/shared/cycles';
+import { applyTemplate, templateFromConfig } from '../src/shared/cycles';
+import { agentFlowEngineering } from '../src/shared/cycles/templates/agentFlow';
+import { createTranslator } from '../src/shared/i18n';
 import { agentThreadId, mentionableIds, parseMentions } from '../src/shared/forum';
-import { checkFlow, checkSquads, flowOf } from '../src/shared/runs';
+import { checkFlow, checkSquads, flowIssueText, flowOf } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { boot } from './helpers/runner';
 import { agentFlowConfig } from './helpers/runs';
@@ -148,6 +150,24 @@ describe('the checks of the flow and of the squads', () => {
     const crossing = loud({ squad: 'b', stages: ['security'], turnsTo: 'lead-a' });
     expect(codes(checkSquads(input([crossing, ...c.agents.team.filter((a) => a.id !== 'trial')]), { checkSharedFlow: true }))).toEqual(codes(plain));
     expect(checkSquads(input([{ ...crossing, draft: undefined }, ...c.agents.team]), { checkSharedFlow: true }).length).toBeGreaterThan(plain.length);
+  });
+});
+
+describe('a cycle template applied while a draft holds one of its ids', () => {
+  it('keeps the draft, and says the stage names a draft, not an agent missing from the team', () => {
+    const c = neutralConfig();
+    c.agents.team.push(newAgent({ id: 'reviewer', name: 'Reviewer', draft: true }));
+    const applied = applyTemplate(c, agentFlowEngineering);
+    expect(applied.agents.team.filter((a) => a.id === 'reviewer')).toEqual([expect.objectContaining({ draft: true })]);
+    const issue = checkFlow({ stages: applied.devCycle.stages, team: applied.agents.team }).find((i) => i.code === 'agent-unknown' && i.params?.agent === 'reviewer');
+    expect(issue).toBeDefined();
+    expect(flowIssueText(issue!, createTranslator('en'))).toMatch(/is a draft of the AI assistant: save it in the editor or discard it first/);
+    expect(flowIssueText(issue!, createTranslator('pt-BR'))).toMatch(/é um rascunho do assistente de IA/);
+    // An agent that is simply missing keeps the message it had.
+    const gone = applyTemplate(neutralConfig(), agentFlowEngineering);
+    gone.agents.team = gone.agents.team.filter((a) => a.id !== 'reviewer');
+    const missing = checkFlow({ stages: gone.devCycle.stages, team: gone.agents.team }).find((i) => i.code === 'agent-unknown');
+    expect(flowIssueText(missing!, createTranslator('en'))).toMatch(/who is not in the team/);
   });
 });
 

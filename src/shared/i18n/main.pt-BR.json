@@ -1217,6 +1217,7 @@
   "flow.check.gate-first": "O fluxo começa em um gate ({stage}): ainda não há nada produzido para a pessoa decidir.",
   "flow.check.work-no-agent": "{stage} é uma etapa de trabalho sem agente: escolha um.",
   "flow.check.agent-unknown": "{stage} nomeia o agente \"{agent}\", que não está no time.",
+  "flow.check.agent-unknown.draft": "{stage} nomeia o agente \"{agent}\", que é um rascunho do assistente de IA: salve-o no editor ou descarte-o primeiro.",
   "flow.check.agent-on-non-work": "{stage} é um gate ou uma espera: só uma etapa de trabalho tem agente.",
   "flow.check.next-nowhere": "{stage} segue para \"{target}\", que não é uma etapa do fluxo.",
   "flow.check.returns-nowhere": "{stage} devolve o trabalho para \"{target}\", que não é uma etapa do fluxo.",

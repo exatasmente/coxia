@@ -1217,6 +1217,7 @@
   "flow.check.gate-first": "The flow starts at a gate ({stage}): nothing has been produced yet for the person to decide on.",
   "flow.check.work-no-agent": "{stage} is a work stage with no agent: pick one.",
   "flow.check.agent-unknown": "{stage} names the agent \"{agent}\", who is not in the team.",
+  "flow.check.agent-unknown.draft": "{stage} names the agent \"{agent}\", which is a draft of the AI assistant: save it in the editor or discard it first.",
   "flow.check.agent-on-non-work": "{stage} is a gate or a wait: only a work stage has an agent.",
   "flow.check.next-nowhere": "{stage} goes on to \"{target}\", which is not a stage of the flow.",
   "flow.check.returns-nowhere": "{stage} sends the work back to \"{target}\", which is not a stage of the flow.",
