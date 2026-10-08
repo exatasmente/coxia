@@ -11,7 +11,7 @@ import { setLanguage } from '../src/shared/i18n';
 import { commitFallback } from '../src/main/runner/git';
 import { git } from './helpers/conflictRepos';
 import { type Forge, HEAD, makeForge } from './helpers/fakeForge';
-import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -354,7 +354,7 @@ describe('a QA scenario the app recorded as read', () => {
     const b = await boot({ dir: ATAS, publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
     script(b);
     // A sandbox with no command behind the claim: the app records the scenario as read, and the agent's own text still says it was executed.
-    b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] }], comment: comment([['Scenarios verified and their result', 'a: passed (executed).']]) }));
+    b.engine.script('qa', async (call) => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds: await keepQaEvidence(call) }], comment: comment([['Scenarios verified and their result', 'a: passed (executed).']]) }));
     const run = await start(b);
     const end = await through(b, run);
     expect(end.status).toBe('done');
@@ -372,7 +372,8 @@ describe('a QA scenario the app recorded as read', () => {
     // The round ends with the command the scenario is about, and the document and the comment are written from the record.
     b.engine.script('qa', async (call) => {
       await call.exec?.exec('node probe.js');
-      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md', '# Test plan\n\n## Scenarios\n\n- a: passed (executed)\n')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [1] }], comment: comment([['Scenarios verified and their result', 'a: passed.']]) });
+      const evidenceIds = await keepQaEvidence(call);
+      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md', '# Test plan\n\n## Scenarios\n\n- a: passed (executed)\n')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [1], evidenceIds }], comment: comment([['Scenarios verified and their result', 'a: passed.']]) });
     });
     const run = await start(b);
     const end = await through(b, run);

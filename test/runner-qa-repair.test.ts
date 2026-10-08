@@ -8,7 +8,7 @@ import { EVIDENCE_MAX_BYTES } from '../src/shared/evidence';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { backEvidence, testPlanWithResults } from '../src/shared/runs';
-import { type Boot, boot, doc, fakeSandbox, fakeEngine, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeSandbox, fakeEngine, keepQaEvidence, work } from './helpers/runner';
 
 // A QA stage with a sandbox: a claim of execution nothing backs is asked back once (the repair round), and the test plan and the comment say what the run
 // recorded; the images the agent looked at and did not keep are kept as evidence of the stage, or said as looked and not kept. No model, no host, no network.
@@ -55,9 +55,10 @@ describe('the repair round of a QA scenario with no backing', () => {
       (c) => void (c.language = 'en'),
       async (call) => {
         await call.exec?.exec('node probe.js');
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] }] });
+        const evidenceIds = await keepQaEvidence(call);
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds }] });
       },
-      async () => work('Fixed the note.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [1] }] }),
+      async (call) => work('Fixed the note.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [1], evidenceIds: await keepQaEvidence(call) }] }),
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
     // One repair round: the QA agent was called twice.
@@ -81,9 +82,10 @@ describe('the repair round of a QA scenario with no backing', () => {
       (c) => void (c.language = 'en'),
       async (call) => {
         await call.exec?.exec('node probe.js');
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] }] });
+        const evidenceIds = await keepQaEvidence(call);
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds }] });
       },
-      async () => work('Still claim it.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] }] }),
+      async (call) => work('Still claim it.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds: await keepQaEvidence(call) }] }),
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
     // One round only: a second answer that still claims execution is downgraded without another question.
@@ -122,18 +124,19 @@ describe('the test plan and the comment say what the run recorded', () => {
       (c) => void (c.language = 'en'),
       async (call) => {
         await call.exec?.exec('node probe.js');
+        const evidenceIds = await keepQaEvidence(call);
         return work('Checked.', {
           artifacts: [doc('5_TEST_PLAN.md', '# Test plan\n\n## Scenarios\n\n- The app opened: passed (executed)\n')],
           scenarios: [
-            { name: 'The app opened', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] },
+            { name: 'The app opened', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds },
             { name: 'The import', result: 'not-run', detail: 'No display', evidence: 'read' },
           ],
         });
       },
-      async () => work('Checked.', {
+      async (call) => work('Checked.', {
         artifacts: [doc('5_TEST_PLAN.md', '# Test plan\n\n## Scenarios\n\n- The app opened: passed (executed)\n')],
         scenarios: [
-          { name: 'The app opened', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [] },
+          { name: 'The app opened', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds: await keepQaEvidence(call) },
           { name: 'The import', result: 'not-run', detail: 'No display', evidence: 'read' },
         ],
       }),
@@ -159,7 +162,7 @@ describe('what the agent looked at is not lost', () => {
         // The agent looks at it through the same tool the engines use, which is what tells the app it was looked at; it never keeps it.
         const { viewImageToolImpl } = await import('../src/main/sandbox/engineTool');
         await viewImageToolImpl(call.exec!, call.evidence, call.onLooked).run({ source: '/coxia/out/shot.png' }, lookCtx);
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
       },
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
@@ -182,7 +185,7 @@ describe('what the agent looked at is not lost', () => {
         await viewImageToolImpl(call.exec!, call.evidence, call.onLooked).run({ source: '/coxia/out/shot.png' }, lookCtx);
         // The file is gone by the time the stage concludes: there is nothing left to keep, and the app must say so instead of dropping it silently.
         rmSync(join(stageDir, 'out', 'shot.png'), { force: true });
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
       },
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
@@ -203,7 +206,7 @@ describe('what the agent looked at is not lost', () => {
         symlinkSync(tmpdir(), join(stageDir, 'out', 'elsewhere'));
         const seen = [join(stageDir, 'out', 'elsewhere'), '/etc/hostname'];
         for (const one of seen) call.onLooked?.(one);
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
       },
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
@@ -230,7 +233,7 @@ describe('what the agent looked at is not lost', () => {
         const tool = viewImageToolImpl(call.exec!, call.evidence, call.onLooked);
         await tool.run({ source: '/coxia/out/shot.txt' }, lookCtx);
         await call.onLooked?.(join(stageDir, '..', 'notes-outside.md'));
-        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'pass', detail: '', evidence: 'read' }] });
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
       },
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
