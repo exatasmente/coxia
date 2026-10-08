@@ -213,3 +213,11 @@ Answers of the maintainer on 2026-10-08, closing gate 1:
 5. **`shell: host` gets interaction too**, with the same viewer and switch.
 6. **Frames are not paused while the person controls**; they are kept and marked, with a clear recording indicator.
 7. **The recording is not copied to the cycle folder.**
+
+## Gate 2 amendments
+
+Approved by the maintainer on 2026-10-08 together with the plan; they override the rules above where they differ.
+
+1. **Frame source.** Frames come from the display server through the same X connection that carries the input (`GetImage`), not from an `-fbdir` file. Rule 12 applies to the X replies instead of a file (bounded parsing, a geometry that does not match is "no frame"), and acceptance criterion 1 tests the `GetImage` reply parser. The `-fbdir` file stays only as the plan's fallback.
+2. **The recording is kept whatever the end of the stage.** Rule 15 holds for a stage that failed or was cancelled too, not only for one that reached its answer.
+3. **The run format version goes up** when a run holds a recording, so an older app refuses that run as written by a newer app instead of reading it as invalid (see the plan's gate 2 decisions).

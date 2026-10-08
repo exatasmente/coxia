@@ -399,3 +399,18 @@ For the maintainer at gate 2; each has the recommended answer and none is decide
 **Verified by the main session on 2026-10-08, outside the app:** the two checks at the top of this document.
 
 **Not verified** (the spikes and the manual plan are for these): `GetImage` on a real display and its speed; a key through `GetKeyboardMapping`; the XTEST client inside Electron; `nativeImage` encode times; WebCodecs VP8 and `VideoFrame` from BGRX in a hidden window, the way the page loads, the muxed file's playback and seek on desktop and phone; `data:` and `blob:` under both content security policies; whether the existing `blob:` images show under the desktop meta; the size of a JPEG and of a recording at the proposed settings; that no other open change touches the same files. No test, `tsc` or app run was done for this step. `node scripts/public-audit.mjs` was run on the tree with this document (result in the hand-off).
+
+## Gate 2 decisions
+
+Answers of the maintainer on 2026-10-08, closing gate 2:
+
+1. **Both spec amendments approved** (frames by `GetImage` over the X connection; the recording kept in the stage's `finally`). The spec records them under "Gate 2 amendments".
+2. **The run format version goes up (open question 4 answered against the recommendation).** `RUN_VERSION` is 1 today and has never moved (`src/shared/runs/types.ts:8`); the schema pins it with `const` (`src/shared/runs/schema.ts:262`) and `parseRun` refuses a higher number as `newer` (`schema.ts:312`), which an older app shows as written by a newer app and never overwrites.
+   - The version becomes 2, and the schema accepts 1 and 2.
+   - **A run is written as 2 only when it holds a `webm` record**; every other run keeps writing 1. That way a downgrade loses only the runs that have a recording, not every run the newer app touched.
+   - A version 1 file reads as today.
+   - Tests cover all three: a run with a recording parses as 2; a 2 without a recording is still valid; a 3 is `newer`.
+   - The implementation decides where the stamp is set: the transition that adds the record, or the store's write.
+3. **The chord that leaves Take control is Ctrl+Alt+Shift+Escape**, never sent to the agent's screen.
+4. **The rest as recommended:** no own switch for the recording (schema stays at 20, no `v20ToV21`), caps of 24 MiB, 60 min and 1 frame per second to start, tuned by the spikes; the phone shows the same picture with a "controlled from the computer" mark.
+5. **Implementation is released**, starting with the spikes (commit 1). If a spike falls back (S1 to `-fbdir`, S3 to `MediaRecorder`), the fallback written in this plan applies without another gate; any other change of design goes back to the maintainer.
