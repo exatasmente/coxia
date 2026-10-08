@@ -93,7 +93,6 @@ export const boardApi = {
 };
 
 let view: BoardView | null = null;
-let started = false;
 const subscribers = new Set<() => void>();
 
 function set(next: BoardView): void {
@@ -109,17 +108,22 @@ export function reloadBoard(refresh = false): Promise<void> {
   return boardApi.list(refresh).then(set, () => undefined);
 }
 
-function start(): void {
-  if (started) return;
-  started = true;
-  moduleEvents.addEventListener(BOARD_EVENT, () => void reloadBoard());
-  // A proposal of the board approved, skipped or failed in Actions changes how a card stands without the board having done anything.
-  moduleEvents.addEventListener(ACTIONS_EVENT, () => void reloadBoard());
+/**
+ * Follows the board while its screen is on: it reads again when the board changed and when a proposal in Actions was approved, skipped or failed. Only while
+ * the screen is mounted — the host is read when the board is opened or refreshed, and at no other time. Returns the way to stop.
+ */
+export function watchBoard(): () => void {
+  const reload = (): void => void reloadBoard();
+  moduleEvents.addEventListener(BOARD_EVENT, reload);
+  moduleEvents.addEventListener(ACTIONS_EVENT, reload);
+  return () => {
+    moduleEvents.removeEventListener(BOARD_EVENT, reload);
+    moduleEvents.removeEventListener(ACTIONS_EVENT, reload);
+  };
 }
 
 /** The board: null until the first read, which the screen asks for when it opens. */
 export function useBoard(): BoardView | null {
-  start();
   return useSyncExternalStore(
     (fn) => {
       subscribers.add(fn);

@@ -325,3 +325,48 @@ describe('the project\'s issues, for the board', () => {
     expect(listings()).toHaveLength(3);
   });
 });
+
+describe('reads that overlap, and a host that is down', () => {
+  it('shares one read between calls that overlap, and starts another after something was written', async () => {
+    host.add('acme/app', 1, {});
+    linked(1);
+    const [a, b] = await Promise.all([readBoard(false), readBoard(false)]);
+    expect(a).toBe(b);
+    expect(listings()).toHaveLength(1);
+    // A call that asks for the host again does not join a read that may be from the cache.
+    const [c, d] = await Promise.all([readBoard(false), readBoard(true)]);
+    expect(c).not.toBe(d);
+    expect(listings()).toHaveLength(2);
+    forgetHost();
+    host.reads.length = 0;
+    // A write clears what was read: a call after it is a new read, even if one began before.
+    const first = readBoard(false);
+    forgetHost();
+    const second = readBoard(false);
+    await Promise.all([first, second]);
+    expect(listings()).toHaveLength(2);
+  });
+
+  it('does not keep a listing in which every project failed, and does not ask again for a card it could not read until the person refreshes', async () => {
+    withProjects(['acme/broken']);
+    await readBoard(true);
+    await readBoard(false);
+    expect(listings()).toHaveLength(2);
+
+    const broken = fakeBoardHost();
+    let asked = 0;
+    broken.runtime.provider.getIssue = async () => {
+      asked++;
+      throw new Error('timeout');
+    };
+    setVcsRuntimeForTests(broken.runtime);
+    saveConfig(config);
+    forgetHost();
+    linked(77);
+    await readTracked(false);
+    await readTracked(false);
+    expect(asked).toBe(1);
+    await readTracked(true);
+    expect(asked).toBe(2);
+  });
+});

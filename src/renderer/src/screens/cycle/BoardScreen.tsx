@@ -7,7 +7,7 @@ import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { BackIcon } from '../icons';
-import { boardApi, reloadBoard, useBoard, type BoardCardView, type BoardItemView, type BoardView } from './boardApi';
+import { boardApi, reloadBoard, useBoard, watchBoard, type BoardCardView, type BoardItemView, type BoardView } from './boardApi';
 import './cycle.css';
 
 // The board of the workspace: its columns are the cycle's stages, and one card can be opened, moved, prioritised, commented, given to a squad, closed and
@@ -380,6 +380,7 @@ export function BoardScreen({ go }: { go: (s: Screen) => void }) {
   // Opening the board reads it (and the host, when it has one); a read less than five minutes old is reused.
   useEffect(() => {
     void reloadBoard();
+    return watchBoard();
   }, []);
   const unplaced = board?.items.filter((i) => i.column === null) ?? [];
   return (

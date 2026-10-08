@@ -31,7 +31,7 @@ export interface TrackedRead {
   seen: Record<string, HostSeen>;
 }
 
-type Found = { issue: VcsIssue } | { missing: true };
+type Found = { issue: VcsIssue } | { missing: true } | { unread: true };
 const cache = new Map<string, { at: number; found: Found }>();
 
 /** Forgets what was read: a write the board's door just made, so the next read asks the host again. */
@@ -39,8 +39,12 @@ export function forgetTracked(): void {
   cache.clear();
 }
 
+// Bumped whenever what was read is forgotten: a read that began before is not joined by one that asks after.
+let generation = 0;
+
 /** Forgets everything the board read of the host (the issues by number and the listing of the projects). */
 export function forgetHost(): void {
+  generation++;
   forgetTracked();
   forgetProjects();
 }
@@ -66,7 +70,7 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
   const provider = vcsProvider();
   const cards = trackedCards();
   const now = Date.now();
-  const reads = await pool(cards, POOL, async (card): Promise<Found | 'unread'> => {
+  const reads = await pool(cards, POOL, async (card): Promise<Found> => {
     const link = card.host!;
     const key = keyOf(provider.id, link.project, link.iid);
     const has = listed.find((i) => sameIssue(link, i));
@@ -87,7 +91,10 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
         return found;
       }
       console.error(`[vcs:board] ${link.project}#${link.iid}`, (e as Error).message);
-      return 'unread';
+      // Remembered for the same five minutes, so a host that is down is not asked again by every reload; the person's refresh asks again.
+      const found: Found = { unread: true };
+      cache.set(key, { at: Date.now(), found });
+      return found;
     }
   });
 
@@ -99,8 +106,8 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
   cards.forEach((card, i) => {
     const link = card.host!;
     const read = reads[i];
-    if (read === 'unread' || 'missing' in read) {
-      seen[card.id] = { state: read === 'unread' ? 'unread' : 'missing', title: '', labels: [], stageId: null, updatedAt: null, url: link.url };
+    if ('unread' in read || 'missing' in read) {
+      seen[card.id] = { state: 'unread' in read ? 'unread' : 'missing', title: '', labels: [], stageId: null, updatedAt: null, url: link.url };
       return;
     }
     const { issue } = read;
@@ -185,7 +192,8 @@ async function listProjects(refresh: boolean): Promise<Listing | null> {
     }
   });
   const value: Listing = { noProject: projects.length === 0, projects: listed };
-  listing = { at: Date.now(), key, value };
+  // A listing in which every project failed (the host is down) is not kept: the next read asks again instead of showing the failure for five minutes.
+  if (!listed.length || listed.some((p) => !p.error)) listing = { at: Date.now(), key, value };
   return value;
 }
 
@@ -193,7 +201,29 @@ async function listProjects(refresh: boolean): Promise<Listing | null> {
  * The board's read of the host in one answer: the issues of the workspace's projects that no card is linked to (derived, never stored), and the cards the
  * board opened, read by number and brought up to what the host says. null: no usable host, nothing was read.
  */
-export async function readBoard(refresh: boolean): Promise<HostRead | null> {
+export function readBoard(refresh: boolean): Promise<HostRead | null> {
+  if (!vcsReady()) return Promise.resolve(null);
+  // Calls that overlap (every proposal approved in Actions asks for a reload) share one read, unless something was written since it began, or this one
+  // asks for the host again and the one in flight did not.
+  const host = vcsProvider().id;
+  if (flight && flight.host === host && flight.generation === generation && (flight.refresh || !refresh)) return flight.promise;
+  const mine: Flight = { host, generation, refresh, promise: readBoardNow(refresh) };
+  flight = mine;
+  void mine.promise.finally(() => {
+    if (flight === mine) flight = null;
+  });
+  return mine.promise;
+}
+
+interface Flight {
+  host: string;
+  generation: number;
+  refresh: boolean;
+  promise: Promise<HostRead | null>;
+}
+let flight: Flight | null = null;
+
+async function readBoardNow(refresh: boolean): Promise<HostRead | null> {
   if (!vcsReady()) return null;
   const at = new Date().toISOString();
   try {
