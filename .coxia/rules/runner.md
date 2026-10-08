@@ -78,7 +78,10 @@ round is recorded as read and marked unbacked, and the conversation says so. A d
 scenario does not fail the stage: only a failed scenario whose severity blocks sends the work
 back. What the run recorded is the one source the test plan, the QA comment and the run's
 record are written from, so a scenario the app recorded as read is never called executed in
-any of them.
+any of them. The test plan stops being the agent's text whole: the app writes the recorded
+scenarios as their own section, taken from the record, and keeps out the agent's own scenario
+lines, so one scenario is written once and only from the record; the plan's other sections
+stay as the agent wrote them.
 
 **What the agent looked at.** An image of the stage's output folder the agent opened with the
 `ViewImage` tool and did not keep is kept by the app as evidence of the stage when the stage
