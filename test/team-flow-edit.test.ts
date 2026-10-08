@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { RELEASE_FLOW_KEY, addSquad, newSquad, setAgentSquad } from '../src/shared/config/squads';
-import { addAgent } from '../src/shared/config/team';
+import { addAgent, newAgent } from '../src/shared/config/team';
 import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
 import { RELEASE_MANAGER, agentFlow, agentFlowEngineering, applyTemplate, releaseFlow } from '../src/shared/cycles';
 import { createTranslator } from '../src/shared/i18n';
 import { flowIssueText } from '../src/shared/runs';
 import {
   applyFlows, chainRename, checkFlows, draftOfFlows, dropOwnFlow, duplicateStage, giveOwnFlow, insertStage, moveBy, moveStage, newStageId, ownsFlow, patchStage, removeStage, renameStage,
-  autonomyOfTarget, stageFieldProblems, stagesOfTarget, withAutonomy, withStages,
+  autonomyOfTarget, flowTeam, stageFieldProblems, stagesOfTarget, withAutonomy, withStages,
 } from '../src/renderer/src/screens/team/flowEdit';
 
 const ids = (stages: StageDef[]) => stages.map((s) => s.id);
@@ -324,5 +324,24 @@ describe('the agent cycle', () => {
   it('has no problem as shipped, so the editor opens it clean', () => {
     const c = applyTemplate(neutralConfig(), agentFlow);
     expect(checkFlows(c, draftOfFlows(c), null).errors).toBe(0);
+  });
+});
+
+describe('who can work a stage', () => {
+  it('is the team of the flow, without the draft agents of the assistant, for the workspace and for a squad', () => {
+    let c = addSquad(config(), newSquad({ id: 'core', name: 'Core' }));
+    c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', draft: true }), newAgent({ id: 'helper', name: 'Helper' }));
+    c = setAgentSquad(c, 'helper', 'core');
+    const all = c.agents.team.map((a) => a.id);
+    expect(flowTeam(c, null).map((a) => a.id)).toEqual(all.filter((id) => id !== 'trial'));
+    expect(flowTeam(c, 'core').map((a) => a.id)).toContain('helper');
+    expect(flowTeam(c, 'core').map((a) => a.id)).not.toContain('trial');
+    // nothing is removed from the config: the id of the draft stays taken
+    expect(all).toContain('trial');
+  });
+
+  it('is the whole team when there is no draft', () => {
+    const c = config();
+    expect(flowTeam(c, null)).toEqual(c.agents.team);
   });
 });

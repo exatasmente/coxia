@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import type { AgentDef } from '../../../../shared/config/types';
 import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
-import { type QuestionChain, applyMention, commandRound, groupThread, mentionAt, mentionOptions } from '../../../../shared/forumView';
+import { type QuestionChain, applyMention, commandRound, groupThread, mentionAt, mentionChoices, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
 import { mentionJob } from '../../../../shared/activity';
 import { type CallGroup, callGroups } from '../../activity';
@@ -285,7 +285,8 @@ function Composer({ thread, team, note, onSent, onSendBack }: { thread: string; 
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const named = useMemo(() => (team ?? []).map((a) => ({ id: a.id, name: agentName(team, a.id) })), [team]);
+  // A draft agent is not offered, except in its own conversation: there the person is talking to it.
+  const named = useMemo(() => mentionChoices(team ?? [], thread).map((a) => ({ id: a.id, name: agentName(team, a.id) })), [team, thread]);
   const at = dismissed ? null : mentionAt(text, caret);
   const options = at ? mentionOptions(named, at.query) : [];
 

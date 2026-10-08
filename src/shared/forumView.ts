@@ -1,4 +1,5 @@
-import { type Author, type ForumMessage, GENERAL_THREAD, SQUADS_CHANNEL, type ThreadSummary } from './forum';
+import { isDraft } from './config/team';
+import { type Author, type ForumMessage, GENERAL_THREAD, mentionableIds, SQUADS_CHANNEL, type ThreadSummary } from './forum';
 
 // What the forum screens decide from the threads: how a run's messages group into the chain a question walked, which threads are unread, what the lists show
 // and how `@agent` is completed while typing. Pure: nothing here reads the disk or the DOM.
@@ -184,6 +185,17 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
   const before = text.slice(0, caret);
   const m = /(^|[^\w@/.-])@([A-Za-z0-9_-]*)$/.exec(before);
   return m ? { start: before.length - m[2].length - 1, query: m[2].toLowerCase() } : null;
+}
+
+/** The agents `@` completes in a thread: those that take part in the cycle, and in the direct conversation of a draft agent that one too (it is who the person is talking to). */
+export function mentionChoices<T extends { id: string; draft?: boolean }>(team: readonly T[], thread: string): T[] {
+  const allowed = new Set(mentionableIds(team, thread));
+  return team.filter((a) => allowed.has(a.id));
+}
+
+/** The agents the forum offers a direct conversation with: a draft agent is not one of them (it is tried out in the assistant that made it). */
+export function chatAgents<T extends { id: string; draft?: boolean }>(team: readonly T[]): T[] {
+  return team.filter((a) => !isDraft(a));
 }
 
 /** The agents a partial mention may mean: those whose id or name starts with it first, then those that contain it. `name` is the name as shown. */

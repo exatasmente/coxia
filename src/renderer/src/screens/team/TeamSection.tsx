@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
-import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
+import { isDraft, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
 import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
@@ -37,6 +37,8 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
   const [error, setError] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  // The draft agent whose discarding waits for the person's yes: it deletes the agent and its conversation.
+  const [discarding, setDiscarding] = useState<string | null>(null);
   const squads = squadsOf(config);
 
   // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from. The request is kept in a ref (not only
@@ -100,6 +102,19 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
     reload();
   };
 
+  const discard = async (a: AgentDef) => {
+    setDiscarding(null);
+    setError(null);
+    try {
+      await assistApi.discard(a.id);
+      forgetNow();
+      reloadThreads();
+      reload();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const toggle = async (a: AgentDef, on: boolean) => {
     setError(null);
     try {
@@ -126,7 +141,9 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
         {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
           {config.agents.team.map((a) => {
-            const works = stagesOfAgent(config, a);
+            // A draft of the assistant takes part in nothing, whatever a file lists on it: no way to edit it or to let it run, only to discard it.
+            const draftCard = isDraft(a);
+            const works = draftCard ? [] : stagesOfAgent(config, a);
             const squad = squads.find((s) => s.id === a.squad);
             const held = a.autonomous && squad && !squad.autonomy;
             return (
@@ -136,10 +153,14 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
                     <div className="tm-card-title">
                       {agentName(a)} <span className="small muted mono">@{a.id}</span>
                       {a.system && <span className="badge badge-quiet" style={{ marginLeft: 8 }}>{t('ui.team.system')}</span>}
+                      {draftCard && <span className="badge badge-block" style={{ marginLeft: 8 }}>{t('ui.team.draft')}</span>}
                     </div>
                     <div className="small muted tm-clamp">{shown(a.job) || t('ui.team.noJob')}</div>
                   </div>
-                  <button type="button" className="btn" disabled={!!assist} aria-label={t('ui.team.editAria', { name: agentName(a) })} onClick={() => setEditing({ draft: draftOf(a), isNew: false })}>{t('ui.team.edit')}</button>
+                  {!draftCard && <button type="button" className="btn" disabled={!!assist} aria-label={t('ui.team.editAria', { name: agentName(a) })} onClick={() => setEditing({ draft: draftOf(a), isNew: false })}>{t('ui.team.edit')}</button>}
+                  {draftCard && !isWeb() && (
+                    <button type="button" className="btn tm-danger" disabled={assist?.testId === a.id} title={assist?.testId === a.id ? t('ui.team.draft.inUse') : undefined} aria-label={t('ui.team.draft.discardAria', { name: agentName(a) })} onClick={() => setDiscarding(a.id)}>{t('ui.team.draft.discard')}</button>
+                  )}
                 </div>
                 <dl className="tm-meta">
                   <div><dt>{t('ui.team.squad')}</dt><dd>{squad ? squadName(squad) : t('ui.team.shared')}</dd></div>
@@ -150,8 +171,10 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
                   <div><dt>{t('ui.team.model')}</dt><dd>{modelText(config, a, t)}</dd></div>
                   <div><dt>{t('ui.team.turnsTo')}</dt><dd>{a.turnsTo ? agentNameById(config, a.turnsTo) : t('ui.team.thePerson')}</dd></div>
                 </dl>
-                <Toggle checked={a.autonomous} onChange={(on) => void toggle(a, on)} label={t('ui.team.autonomy')} hint={held ? t('ui.team.heldBySquad') : undefined} />
-                {held && <div className="small muted">{t('ui.team.heldBySquad')}</div>}
+                {!draftCard && <Toggle checked={a.autonomous} onChange={(on) => void toggle(a, on)} label={t('ui.team.autonomy')} hint={held ? t('ui.team.heldBySquad') : undefined} />}
+                {!draftCard && held && <div className="small muted">{t('ui.team.heldBySquad')}</div>}
+                {draftCard && <p className="small muted">{t('ui.team.draft.hint')}</p>}
+                {draftCard && discarding === a.id && <DiscardDraft name={agentName(a)} onConfirm={() => void discard(a)} onCancel={() => setDiscarding(null)} />}
               </li>
             );
           })}
@@ -184,6 +207,17 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
         />
       )}
     </div>
+  );
+}
+
+/** What discarding a draft agent asks first: it deletes the agent and its conversation, and that cannot be undone. */
+export function DiscardDraft({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
+  const t = useT();
+  return (
+    <Confirm danger confirmLabel={t('ui.team.draft.discard.confirm')} onConfirm={onConfirm} onCancel={onCancel}>
+      <strong>{t('ui.team.draft.discard.title', { name })}</strong>
+      <p>{t('ui.team.draft.discard.body')}</p>
+    </Confirm>
   );
 }
 
