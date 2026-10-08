@@ -312,6 +312,32 @@ describe('with the board\'s autonomy off', () => {
     expect(host.commands).toEqual([]);
   });
 
+  it('proposes the same change again once the first was approved: close, reopen, close, and a move out and back', async () => {
+    const id = linkedCard(['board:backlog']);
+    const approveAll = async () => {
+      for (const a of actions.listActions().filter((x) => x.state === 'pending')) await actions.approveAction(a.id);
+    };
+    for (const [channel, state] of [['board:close', 'closed'], ['board:reopen', 'open'], ['board:close', 'closed']] as const) {
+      await call(channel, id);
+      await approveAll();
+      expect(boardStore().get(id)?.state, channel).toBe(state);
+    }
+    expect(issueOf(iidOf(id)).state).toBe('closed');
+    for (const column of ['doing', 'backlog', 'doing', 'backlog']) {
+      await call('board:update', id, { column });
+      await approveAll();
+      expect(boardStore().get(id)?.column, column).toBe(column);
+    }
+    expect(issueOf(iidOf(id)).labels).toEqual(['board:backlog']);
+    // The same comment twice is two comments.
+    await call('board:comment', id, 'again');
+    await approveAll();
+    await call('board:comment', id, 'again');
+    await approveAll();
+    expect(issueOf(iidOf(id)).comments).toEqual(['again', 'again']);
+    expect(actions.listActions().every((a) => a.state === 'done')).toBe(true);
+  });
+
   it('proposes a comment, a close and a reopen, each applied when approved', async () => {
     const id = linkedCard([]);
     await call('board:comment', id, 'a thought');

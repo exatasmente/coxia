@@ -170,7 +170,10 @@ function propose(p: Planned, req: HostRequest): HostSent {
   const unit = { purpose: `${PURPOSE}${p.op}`, cardId: p.cardId, project: p.project, iid: p.iid, effect: req.effect ?? null, ...(req.batch ? { batch: req.batch.id } : {}) };
   // The proposals of one "Send all" are one batch in Actions and one notification, from the first.
   const notify = req.batch && !req.batch.notify ? undefined : { title: t('main.board.host.notifyTitle'), body: p.summary };
-  const action = proposeVcsGroup({ key: p.key, issue: p.iid, issueTitle: p.issueTitle, summary: p.summary, unit, ...(notify ? { notify } : {}) }, p.commands);
+  // A proposal that was approved stays in the list as done, and its key would refuse the same change again (close, reopen, close; a move out and back):
+  // every change but the creation (one issue per card) gets a key of its own. `exclusive` already refuses a second change of a kind while one waits.
+  const key = p.op === 'create' ? p.key : `${p.key}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const action = proposeVcsGroup({ key, issue: p.iid, issueTitle: p.issueTitle, summary: p.summary, unit, ...(notify ? { notify } : {}) }, p.commands);
   if (!action) throw new Error(t('main.board.host.alreadyWaiting', { ref: p.iid ? refOf(p.project, p.iid) : p.issueTitle }));
   return { mode: 'proposed', summary: p.summary, actionId: action.id };
 }
