@@ -32,6 +32,7 @@ function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => vo
   const rows: { label: string; screen: Screen; badge?: number; badgeLabel?: string }[] = [
     { label: t('ui.nav.settings'), screen: { name: 'settings' } },
     { label: t('ui.runs.nav'), screen: { name: 'runs' }, badge: waiting, badgeLabel: t('ui.runs.navBadge', { count: waiting }) },
+    { label: t('ui.board.nav'), screen: { name: 'board' } },
     { label: t('ui.forum.nav'), screen: { name: 'forum' }, badge: unread, badgeLabel: t('ui.forum.list.unreadAll', { count: unread }) },
     { label: t('ui.nav.cost'), screen: { name: 'custo' } },
     { label: t('ui.nav.radar'), screen: { name: 'radar' } },

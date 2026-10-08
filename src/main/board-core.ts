@@ -1,0 +1,90 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { BOARD_VERSION, type BoardCard, type BoardFile, type BoardPatch, applyPatch, emptyBoard } from '../shared/board';
+
+// The board file of a workspace: one JSON document, written atomically like the actions and the status files. Electron-free and pure over its
+// path, so the whole rule of the board is tested without the app: the store never decides what a card may carry (the module does), it only reads,
+// writes and changes one card at a time.
+
+export interface BoardStoreDeps {
+  /** The board file. */
+  file: string;
+  now(): Date;
+}
+
+export interface BoardStore {
+  list(): BoardCard[];
+  get(id: string): BoardCard | null;
+  /** `id` comes from the caller (the module makes it from random bytes); a test passes its own. */
+  create(input: { id: string; title: string; body: string; column: string; squad: string | null; priority: string | null; labels: string[]; repo: string | null }): BoardCard;
+  /** Changes one card; throws when the id is not there. */
+  update(id: string, patch: BoardPatch): BoardCard;
+  close(id: string): BoardCard;
+  reopen(id: string): BoardCard;
+  comment(id: string, text: string): BoardCard;
+}
+
+function readFile(file: string): BoardFile {
+  try {
+    if (!existsSync(file)) return emptyBoard();
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<BoardFile>;
+    if (parsed.version !== BOARD_VERSION || !Array.isArray(parsed.cards)) return emptyBoard();
+    return { version: BOARD_VERSION, cards: parsed.cards.filter((c): c is BoardCard => !!c && typeof c === 'object' && typeof (c as BoardCard).id === 'string') };
+  } catch {
+    // A file that cannot be read is not a board: nothing is invented and nothing is overwritten until the next write.
+    return emptyBoard();
+  }
+}
+
+function writeFile(file: string, board: BoardFile): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(`${file}.tmp`, JSON.stringify(board, null, 1));
+  renameSync(`${file}.tmp`, file);
+}
+
+export function createBoardStore(d: BoardStoreDeps): BoardStore {
+  const at = (): string => d.now().toISOString();
+
+  const writeCard = (id: string, change: (card: BoardCard, stamp: string) => BoardCard): BoardCard => {
+    const board = readFile(d.file);
+    const i = board.cards.findIndex((c) => c.id === id);
+    if (i < 0) throw new Error(`board card not found: ${id}`);
+    const next = change(board.cards[i], at());
+    if (next === board.cards[i]) return next;
+    board.cards[i] = next;
+    writeFile(d.file, board);
+    return next;
+  };
+
+  return {
+    list: () => readFile(d.file).cards,
+    get(id) {
+      return readFile(d.file).cards.find((c) => c.id === id) ?? null;
+    },
+    create(input) {
+      const board = readFile(d.file);
+      const stamp = at();
+      const card: BoardCard = {
+        id: input.id,
+        title: input.title,
+        body: input.body,
+        column: input.column,
+        squad: input.squad,
+        priority: input.priority,
+        labels: input.labels,
+        repo: input.repo,
+        state: 'open',
+        createdAt: stamp,
+        updatedAt: stamp,
+        history: [{ at: stamp, kind: 'created' }],
+      };
+      board.cards.push(card);
+      writeFile(d.file, board);
+      return card;
+    },
+    update: (id, patch) => writeCard(id, (card, stamp) => applyPatch(card, patch, stamp)),
+    close: (id) => writeCard(id, (card, stamp) => applyPatch(card, { state: 'closed' }, stamp)),
+    reopen: (id) => writeCard(id, (card, stamp) => applyPatch(card, { state: 'open' }, stamp)),
+    comment: (id, text) => writeCard(id, (card, stamp) => applyPatch(card, { comment: text }, stamp)),
+  };
+}
