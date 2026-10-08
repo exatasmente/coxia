@@ -28,6 +28,7 @@ import {
   markerOf,
   priorityStageOf,
   pushesAt,
+  planLine,
   readMarker,
   recordSubject,
   recordCommentDraft,
@@ -55,6 +56,22 @@ import { pullRequestTitle } from './git';
 // the pull request on its lines, and the proposals of the push and the pull request. It decides what goes out by itself (the agent is autonomous and the
 // text passed its check), what waits for a "yes" (anything else) and what is refused (a test workspace); it never touches the host. Every write goes
 // through the `Door`, which is the one place that imports Actions: this file and the rest of the runner do not.
+
+/**
+ * A QA comment with the scenario lines of the agent's own text taken out: the run's record is what says the result of a scenario, so a line of the agent
+ * that called one executed when the app recorded it as read cannot reach the tracker. The rest of what the agent wrote stays as it wrote it.
+ */
+function stripScenarioLines(content: StageComment | null): StageComment | null {
+  if (!content) return content;
+  const backing = /\((?:executed|read|executado|lido|rodado)(?:\s+in the sandbox|\s+na sandbox)?\)/i;
+  const clean = (text: string): string =>
+    text
+      .split(/\n+/)
+      .flatMap((block) => (backing.test(block) && /^[-*]?\s*[^:\n]+:\s*\S/.test(block.trim()) ? [] : [block]))
+      .join('\n')
+      .trim();
+  return { sections: content.sections.map((s) => ({ ...s, body: clean(s.body) })), technical: content.technical };
+}
 
 /** One write that goes out without a "yes": who it is for the audit log, and the hash of the body. */
 export interface PostMeta {
@@ -596,13 +613,23 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     return `### ${tr('main.runner.scenario.evidenceTitle')}\n\n${lines.join('\n')}`;
   };
 
+  // What QA recorded for each scenario, from the run's record and not from the agent's text: a scenario the app downgraded reads as read here too, and a
+  // scenario the agent gave up on reads as not run. It is a section of its own, so the agent's own prose cannot contradict it.
+  const resultsTail = (end: StageEnd): string | undefined => {
+    if (end.kind !== 'qa' || !end.output.scenarios.length) return undefined;
+    return `### ${tr('main.runner.scenario.resultsTitle')}\n\n${end.output.scenarios.map((s) => planLine(s, lang())).join('\n')}`;
+  };
+
   async function stageComment(runId: string, end: StageEnd): Promise<void> {
     const config = deps.config();
     const tpl = templateOf(config, end.stage);
     if (!tpl) return;
     const run = need(runId);
     const marker = markerOf(run.id, end.stage.id);
-    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, end.output.comment, { marker, fallback: end.output.summary, tail: [notesTail(end), evidenceTail(end)].filter(Boolean).join('\n\n') || undefined });
+    // A QA comment never says "executed" where the record says read: its scenario lines come from the run's scenarios, and the agent's own text that spoke of
+    // scenarios is not trusted for them. The status, the notes of a failure and the executed count already come from the record too.
+    const text = end.kind === 'qa' ? stripScenarioLines(end.output.comment) : end.output.comment;
+    const rendered = renderComment(tpl, { language: lang(), ref: run.issue.ref, stage: stageName(end.stage.label), round: end.round, result: resultWord(end) }, text, { marker, fallback: end.output.summary, tail: [resultsTail(end), notesTail(end), evidenceTail(end)].filter(Boolean).join('\n\n') || undefined });
     const checked = checkComment(rendered.body, { ...checkOptions(run, config), status: rendered.status, marker, technicalDetail: tpl.technicalDetail });
     await deliver(runId, { key: end.stage.id, stage: end.stage.id, kinds: ['post'], target: 'issue', body: checked.body, headline: rendered.status, title: titleOf(tpl), problems: checked.problems, by: end.agent.id, autonomous: end.autonomous, announce: true, end });
   }

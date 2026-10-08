@@ -1027,7 +1027,7 @@
    "POST",
    "repos/group/project/issues/101/comments",
    {
-    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nThe thing does X: passed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nThe thing does X: passed.\n\n### Scenario results\n\n- s: passed (read)\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
    }
   ]
  ],

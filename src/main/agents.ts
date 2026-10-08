@@ -501,7 +501,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
   const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
   try {
     return await runOpenOnce<T>({
@@ -521,7 +521,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     events: {
       onSession: (id) => {
         req.beat?.();
-        noteSession(id, req.role, req.prompt);
+        noteSession(id, req.role, req.prompt, req.resume !== undefined);
       },
       onToolUse: (name, input) => {
         req.beat?.();
@@ -594,7 +594,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const exe = claudeExecutable();
   // Without a CLI to read the code host with, the agents get the VcsRead app tool as an in-process MCP server.
   const vcs = wantsVcsTool(req) ? await vcsMcpServer(() => vcsProvider(), workspaceProjects, req.tracker !== undefined) : null;
-  const shell = req.exec ? await shellMcpServer(req.exec, req.evidence) : null;
+  const shell = req.exec ? await shellMcpServer(req.exec, req.evidence, req.onLooked) : null;
   // An agent set to run commands in a sandbox must not lose the sandbox silently: without the tool it could not run them at all, and the stage says so.
   if (req.exec && !shell) throw new Error(t('main.sandbox.error.tool-missing'));
   // A release run's agent asks for the steps of the release through an app tool of its own; without it the agent could not do its job, and the stage says so.
@@ -658,7 +658,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const assistantText: string[] = [];
   for await (const m of q) {
     req.beat?.();
-    if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt);
+    if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
     if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
     if (m.type === 'assistant') {
       // Each content block of one response is a message of its own with the same id: its use is counted once.
@@ -1111,6 +1111,13 @@ export interface AgentCall {
   exec?: SandboxSession;
   /** The evidence tools of a stage that keeps evidence (only with a sandbox): keeping a file, marking an image and looking at it. */
   evidence?: EvidenceTools;
+  /** A picture of the stage's output folder the agent opened with `ViewImage`, told the moment it looked (see `EngineRequest.onLooked`). */
+  onLooked?: (path: string) => void;
+  /**
+   * A call that continues the session of the call before it (the one repair round of a QA stage): the same dialog, the same tools and the same sandbox, with one
+   * prompt of the app in between. The engine of that first call is the one that holds its session, so the round runs there (`resumeOf`).
+   */
+  resume?: { session: string; engine: ResolvedRole['engine'] };
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
@@ -1175,7 +1182,11 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
  */
 export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
   const resolved = rc().agentModel(call.agent.model);
-  const target = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
+  const chosen = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
+  // A round that continues an earlier call runs on the engine that holds its session: a session of the open engine is not one the SDK knows, and the other way round.
+  const target = call.resume && call.resume.engine !== chosen.engine ? { ...chosen, engine: call.resume.engine } : chosen;
+  /** The session this call left open, for the round that continues it: read after the call, never mid-flight. */
+  let resumed: string | null = null;
   const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
   // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
   if (!call.activity) activity.status('started');
@@ -1207,6 +1218,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       tools,
       exec: call.exec ? withActivity(call.exec, activity) : undefined,
       evidence: call.evidence,
+      onLooked: call.onLooked,
+      ...(call.resume ? { resume: call.resume.session } : {}),
       release: call.release,
       attachments: call.attachments,
       abort: call.abort,
@@ -1222,7 +1235,11 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
       r = await wrapUpAnswer<T>(request, e, activity);
     }
-    activity.status('finished');
+    // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
+    resumed = r.sessionId;
+    // A call whose session is kept for a round that continues it is not the end of the stage: the activity is left working, and the run's own state says when
+    // the stage finished. Every other call reports the end here, as it always did.
+    activity.status(call.resume ? 'started' : 'finished');
     return r;
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));

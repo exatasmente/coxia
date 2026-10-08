@@ -1,6 +1,6 @@
 import type { AppEvent } from '../../src/shared/types';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SECRET_GLOBS, secretPath, type AgentCall } from '../../src/main/agents';
@@ -154,6 +154,7 @@ export function fakeEngine(): FakeEngine {
   const counts = new Map<string, number>();
   const calls: AgentCall[] = [];
   const jobs: (string | null)[] = [];
+  let sessions = 0;
   const engine = Object.assign(async (call: AgentCall) => {
     calls.push(call);
     jobs.push(currentJobId());
@@ -164,7 +165,9 @@ export function fakeEngine(): FakeEngine {
     const responder = list[Math.min(n, list.length) - 1];
     if (!responder) throw new Error(`the fake engine has no answer for ${id} (call ${n})`);
     const said = await responder(call, toolsFor(call), n);
-    return said instanceof PartialAnswer ? { data: said.data, partial: true as const } : { data: said };
+    // The session of the call: the one a round that continues it resumes, or a new one.
+    const sessionId = call.resume?.session ?? `session-${++sessions}`;
+    return said instanceof PartialAnswer ? { data: said.data, partial: true as const, sessionId } : { data: said, sessionId };
   }, { calls, jobs, script: (agent: string, ...responders: Responder[]) => void scripts.set(agent, responders) });
   return engine;
 }
@@ -231,7 +234,23 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
       // What the stage offers to test an interface, and the reading of images from its output folder: a sandbox always reads one, a host session when it was given the settings
       // (and then its folder is a real one, named in `gui.out`).
       ...(o.gui ? { gui: host ? { out: '/tmp/coxia-host-test/out', ...o.gui } : o.gui } : {}),
-      ...(!host || o.gui ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
+      ...(!host || o.gui
+        ? {
+            readImage: (path: string): ImageRead => {
+              const known = o.images?.[path];
+              if (known) return known;
+              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one.
+              const rel = path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path;
+              const file = join(stageDir, 'out', rel);
+              try {
+                const bytes = readFileSync(file);
+                return { ok: true as const, path, mediaType: 'image/png', data: bytes.toString('base64'), file };
+              } catch {
+                return { ok: false as const, why: 'missing' as const };
+              }
+            },
+          }
+        : {}),
       closed: false,
       asked,
       log,

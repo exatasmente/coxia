@@ -6,17 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Changed
-
-- Replaced the app-specific `.coxia/` instruction format with a root `AGENTS.md` in plain Markdown, and updated agent delivery, documentation runs, status, and write protection to use the universal file.
-
-### Fixed
-
-- **A run that ended without cleaning up no longer blocks the next one.** A run of an issue or of a release that was cancelled, or that the app closed in the middle of, left its worktree and its branch behind; starting the same issue or the same version again was then refused with "the folder already exists" for good. The app now takes over that leftover — its own worktree of the same clone, clean and on no branch but the one the new run is about to make — and starts the run. A folder that is somebody else's, a worktree with uncommitted work, one on another branch and a branch the remote already has are still refused, and a documentation run still refuses the day's folder it left behind.
-
 ### Added
 
 - **Labeled issues without an assignee appear on the runs screen.** The runs screen lists the open issues of the project that carry the trigger label and have no assignee, each with a button that starts a run for it by hand. Nothing starts by itself from that list.
+
+### Fixed
+
+- **A QA stage has to back what it says it ran, and the screenshots it looked at are not lost.** A QA stage with a sandbox can no longer pass with scenarios claimed as executed and nothing behind them: such a scenario goes back to the agent once, in the same stage and with the same tools, to keep the evidence, point at the command that backs the claim, or say it was only read, and the app records as read whatever still has nothing behind it, saying so in the run's conversation. The test plan and the QA comment are written from what the run recorded, so a scenario the app recorded as read is never called executed in either. An image of the stage's output folder the agent opened and did not keep is kept as evidence of the stage before its folder is removed, and what could not be kept is said as looked at and not kept, with the reason.
+
+### Changed
+
+- Replaced the app-specific `.coxia/` instruction format with a root `AGENTS.md` in plain Markdown, and updated agent delivery, documentation runs, status, and write protection to use the universal file.
+- **A run that ended without cleaning up no longer blocks the next one.** A run of an issue or of a release that was cancelled, or that the app closed in the middle of, left its worktree and its branch behind; starting the same issue or the same version again was then refused with "the folder already exists" for good. The app now takes over that leftover — its own worktree of the same clone, clean and on no branch but the one the new run is about to make — and starts the run. A folder that is somebody else's, a worktree with uncommitted work, one on another branch and a branch the remote already has are still refused, and a documentation run still refuses the day's folder it left behind.
 
 ## [0.8.0-beta.7] - 2026-10-07
 

@@ -1093,7 +1093,7 @@
    "POST",
    "repos/group/project/issues/101/comments",
    {
-    "body": "**QA: some scenarios failed**\n\n### Scenarios verified and their result\n\nlogin: failed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+    "body": "**QA: some scenarios failed**\n\n### Scenarios verified and their result\n\nlogin: failed.\n\n### Scenario results\n\n- login: failed (read) — a 500 on login\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
    }
   ],
   [
@@ -1117,7 +1117,7 @@
    "PATCH",
    "repos/group/project/issues/comments/5006",
    {
-    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nlogin: passed.\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
+    "body": "**QA: all scenarios passed**\n\n### Scenarios verified and their result\n\nlogin: passed.\n\n### Scenario results\n\n- login: passed (read)\n\n<details>\n<summary>Technical detail</summary>\n\nTouches `src/feature.ts`.\n\n</details>\n\n<!-- coxia:run=<run> stage=qa -->\n"
    }
   ],
   [

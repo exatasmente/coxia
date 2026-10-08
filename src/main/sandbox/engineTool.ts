@@ -21,7 +21,7 @@ export function shellToolImpl(session: SandboxSession): ToolImpl {
 }
 
 /** `ViewImage` for the open engine: the picture goes to the model the way an image `Read` does, after the tool results; a refusal is the text that says why. */
-export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTools | null): ToolImpl {
+export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTools | null, onLooked?: (path: string) => void): ToolImpl {
   return {
     name: VIEW_IMAGE_TOOL_NAME,
     description: viewImageDescription(!!evidence, session.gui?.out),
@@ -29,6 +29,7 @@ export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTo
     async run(input, ctx) {
       const r = await lookAtImage(session, evidence, input);
       if (!r.ok) return { response: r.text, render: (x) => String(x) };
+      if (r.looked) onLooked?.(r.looked);
       // A model the provider says takes no image is told so, as Read does.
       // i18n-ignore: tool result for the model: English by design
       if (ctx.seesImages && !ctx.seesImages()) return { response: `${r.path} is an image, and this model does not take images.`, render: (x) => String(x) };
@@ -42,7 +43,7 @@ export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTo
 }
 
 /** The same tool as an in-process MCP server; `evidence` is given when the stage keeps evidence, and the tool then also takes an evidence id. Null when the SDK or zod cannot be loaded (the agent then runs without it, and the stage says so). */
-export async function shellMcpServer(session: SandboxSession, evidence?: EvidenceTools | null): Promise<Record<string, unknown> | null> {
+export async function shellMcpServer(session: SandboxSession, evidence?: EvidenceTools | null, onLooked?: (path: string) => void): Promise<Record<string, unknown> | null> {
   try {
     const sdk = await loadClaudeSdkModule();
     const { z } = await import('zod');
@@ -55,6 +56,7 @@ export async function shellMcpServer(session: SandboxSession, evidence?: Evidenc
               sdk.tool(VIEW_IMAGE_TOOL_NAME, viewImageDescription(!!evidence, session.gui?.out), { source: z.string() }, async (args) => {
                 const r = await lookAtImage(session, evidence, args);
                 if (!r.ok) return { content: [{ type: 'text' as const, text: r.text }] };
+                if (r.looked) onLooked?.(r.looked);
                 const image = { type: 'image' as const, data: r.data, mimeType: r.mediaType };
                 return { content: r.text ? [{ type: 'text' as const, text: r.text }, image] : [image] };
               }),

@@ -71,7 +71,7 @@ export const ANNOTATE_IMAGE_SCHEMA = {
 export interface ToolAnswer {
   text: string;
   /** Only `view` fills it: the image as bytes and its media type. */
-  image?: { data: Uint8Array; media: string };
+  image?: { data: Uint8Array; media: string; /** The file of the output folder the image came from; absent when an evidence id was looked at (it is already kept). */ looked?: string };
 }
 
 /** The handlers of the evidence tools and of looking at an image, given by the executor: they know the stage, the run and the output folder. */

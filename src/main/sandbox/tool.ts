@@ -96,8 +96,11 @@ export function imageRefusal(r: Exclude<ImageRead, { ok: true }>, out: string = 
   // i18n-ignore-end
 }
 
-/** The image a model asked for, or the text that says why not (and, for evidence, the line that goes with the picture). */
-export type ImageLook = { ok: true; path: string; mediaType: string; data: string; text?: string } | { ok: false; text: string };
+/**
+ * An image a model asked for, or the text that says why not (and, for evidence, the line that goes with the picture). `looked` is the place of the output folder
+ * the picture came from, when it is one: what the stage saw and did not keep, so the app can keep it (or say it was seen and not kept) before the sandbox goes.
+ */
+export type ImageLook = { ok: true; path: string; mediaType: string; data: string; text?: string; looked?: string } | { ok: false; text: string };
 
 const EVIDENCE_ID = /^ev-\d+$/i;
 
@@ -118,8 +121,8 @@ export async function lookAtImage(session: SandboxSession, evidence: EvidenceToo
     const a = await evidence.view({ source });
     if (!a.image) return { ok: false, text: a.text };
     if (a.image.data.length > MAX_IMAGE_BYTES) return { ok: false, text: imageRefusal({ ok: false, why: 'too-big' }, session.gui?.out) };
-    return { ok: true, path: source, mediaType: a.image.media, data: Buffer.from(a.image.data).toString('base64'), text: a.text };
+    return { ok: true, path: source, mediaType: a.image.media, data: Buffer.from(a.image.data).toString('base64'), text: a.text, ...(a.image.looked ? { looked: a.image.looked } : {}) };
   }
   const r: ImageRead = session.readImage ? session.readImage(source) : { ok: false, why: 'missing' };
-  return r.ok ? r : { ok: false, text: imageRefusal(r, session.gui?.out) };
+  return r.ok ? { ...r, ...(r.file ? { looked: r.file } : {}) } : { ok: false, text: imageRefusal(r, session.gui?.out) };
 }

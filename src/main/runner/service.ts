@@ -716,7 +716,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const config = deps.config();
     const producer = flow.find((s) => s.id === stage.returnsTo);
     const mine = stage.kind === 'qa' ? run.qa.filter((q) => q.stage === stage.id) : run.reviews.filter((r) => r.stage === stage.id);
-    const items = (rec: (typeof mine)[number] | undefined): string[] => (!rec ? [] : 'findings' in rec ? rec.findings.filter((f) => f.severity === 'blocking').map(findingLine) : rec.scenarios.filter(scenarioBlocks).map(scenarioLine));
+    const items = (rec: (typeof mine)[number] | undefined): string[] => (!rec ? [] : 'findings' in rec ? rec.findings.filter((f) => f.severity === 'blocking').map(findingLine) : rec.scenarios.filter(scenarioBlocks).map((s) => scenarioLine(s)));
     const posts = deps.forum.read(runThreadId(run.id), 0, 2000)?.messages ?? [];
     const did = [...posts].reverse().find((m) => m.kind === 'post' && m.author.type === 'agent' && !!producer && m.stage === producer.id);
     return limitText({ stage: cycleText(stage.label, config.language), rounds: (run.returns[stage.id] ?? 0) + 1, asked: items(mine.at(-2)), did: did?.text ?? '', open: items(mine.at(-1)) });
