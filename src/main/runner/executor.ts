@@ -34,9 +34,8 @@ import { releaseSection, releaseStateOf } from './release';
 import { prepareDocsFolder } from './docs';
 import { runDocsAsk } from '../harness/deliver';
 import { scanHarness } from '../harness/scan';
-import { behindOf } from '../harness/stale';
-import { STAMP_SUMMARY, finalizeHarness, stampHarness } from '../harness/finalize';
-import { HARNESS_DIR, HARNESS_OWN } from '../../shared/harness/format';
+import { finalizeHarness } from '../harness/finalize';
+import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 
@@ -453,7 +452,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const { agent, stage, kind } = pickAgent(config, run, flow);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const writes = agent.permission === 'worktree';
-  // A documentation run's agent writes only in `.coxia/`, and only if that is a real folder of the worktree: a link committed in its place would take every write away.
+  // A documentation run refuses a non-regular AGENTS.md target before the agent starts.
   if (writes && run.docs && !(await prepareDocsFolder(run.worktree))) throw new StageError('docs-folder-unsafe');
   // What a stage that runs commands needs from the clone (an agent's `npm test`, the commands the app runs before QA): a worktree made earlier gets it here too. It comes
   // before the sandbox is made, because the sandbox shares the folders those links point to.
@@ -461,7 +460,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   if ((writes || kind === 'qa') && !run.docs) await ensureDependencies(d, run, stage.id);
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
-  // A documentation run's agent gets no command door at all, whatever its `shell` says: the shell tool does not pass the guard that keeps its writes inside `.coxia/`.
+  // A documentation run's agent gets no command door at all, whatever its `shell` says.
   const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
   try {
     return await runStage(d, run, flow, abort, usage, carried, session, clock);
@@ -487,7 +486,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
   // The commands of the workspace's list, exactly as written: only for an agent that writes and is set to them (an agent saved before `shell` existed is).
-  // A documentation run's agent runs none, whatever its `shell` says (no sandbox or host session is opened for it either): it reads with Read, Glob and Grep and writes only `.coxia/`.
+  // A documentation run's agent runs no commands: it reads with Read, Glob and Grep and writes only AGENTS.md.
   const commands = writes && !run.docs && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
@@ -537,10 +536,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (missed) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.notRun', params: { list: missed.list }, stage: stage.id });
   }
 
-  // What a repository with documentation asks of a run that changes code (keep it true in the same change) and of its review (point at the rule the branch left behind).
-  // A repository with no `.coxia/` asks nothing, and a documentation run is the one that writes it.
-  const documented = (await scanHarness(wt).catch(() => null))?.entries.length ? !run.docs : false;
-  const behind = documented && kind === 'review' ? await behindOf(wt, run.base, run.cycleFolder).catch(() => []) : [];
+  const documented = !!(await scanHarness(wt)).document && !run.docs;
 
   const input: StageInput = {
     run,
@@ -553,7 +549,6 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
     docsKeep: documented && writes,
-    behind,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
     attempt,
@@ -617,8 +612,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
           now: () => new Date().toISOString(),
         })
       : undefined;
-  // The agent of a documentation run reads the whole worktree and changes only `.coxia/`, which `executeStage` made sure exists as a real folder (a path guard needs its root to).
-  const writeRoot = writes && run.docs ? join(wt, HARNESS_DIR) : undefined;
+  // A documentation run may change the universal instructions file and nothing else.
+  const writeRoot = writes && run.docs ? wt : undefined;
+  const writeAllow = writeRoot ? [AGENTS_FILE] : undefined;
 
   const call: AgentCall = {
     agent,
@@ -626,9 +622,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     schema: outputSchema(kind, { comment: !!comment, pr: !!pr, reporter, priority: !!priority, ask: !!askTarget(config, agent), squads: routing?.squads.map((q) => q.id), evidence: !!session, keepsEvidence: !!evidence }),
     system: systemText(input),
     cwd: wt,
-    // The documentation of the repository (`.coxia/`) for this stage: chosen by the stage, the agent and the files the work touches. Nothing is read from git when there is none.
+    // The repository's root AGENTS.md, delivered as plain Markdown.
     docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
-    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeReserved: HARNESS_OWN } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeReserved: writeRoot ? HARNESS_OWN : undefined, commands, onDenied: denied }) } : undefined,
+    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, onDenied: denied }) } : undefined,
     readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
     evidence,
@@ -830,14 +826,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const code = writes && !noCodeChange;
   // i18n-ignore-next-line: the subject of a commit in the repository's history; a stage of the documentation flow is not "the draft the documentation changes"
   const fallback = run.docs && code ? 'update the project documentation' : commitFallback(stage.label, code);
-  // The documentation the pass wrote (`.coxia/`) is checked before it is committed, so a local path or a credential never gets into the history; what was rewritten is told.
+  // The documentation the pass wrote is checked before it is committed, so local paths and credentials never enter the history.
   const docs = writes ? await finalizeHarness(wt, { redact: redactDoc, redactCode }) : null;
   if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => t('main.runner.docs.checked.file', { file: f.file, paths: f.paths, secrets: f.secrets })).join('; ') }, stage: stage.id });
   if (docs?.skipped.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.notAFile', params: { files: docs.skipped.join(', ') }, stage: stage.id });
-  for (const bad of docs?.invalid ?? []) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.invalidHeader', params: { file: bad.file, reason: bad.reason }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
-  // The files of the documentation this commit holds get the commit and the day they were checked, in a commit of their own: the agent cannot write a commit that does not exist yet.
-  if (commit && docs?.stamp.length && (await stampHarness(wt, docs.stamp, commit)).length) await commitAll(wt, commitMessage(config.runner.commitMessage, STAMP_SUMMARY, run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
-

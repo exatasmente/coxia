@@ -167,7 +167,7 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));
   // The documentation run of a repository: it writes only in its own worktree, and its push and pull request wait in Actions like every other. The desktop window's:
   // webPolicy.ts denies docs:* to a paired browser. `apply` is the person's yes to adding the docs flow and its agent when the workspace has none.
-  // What Settings › Documentation shows: per repository, the `.coxia/` found, what is not checked, and whether a documentation run is going.
+  // What Settings › Documentation shows: root AGENTS.md status and whether a documentation run is going.
   ctx.handle('docs:status', () => docsStatus({ repos: rc().repos, runs: r.list(), flow: !!docsFlowOf(getConfig())?.length }));
   ctx.handle('docs:start', (repo: unknown, mode: unknown, apply?: unknown) => startDocsRun({ runner: r, config: getConfig, applyFlow: applyDocsFlow }, text(repo), text(mode), apply === true));
   ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run)));

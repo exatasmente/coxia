@@ -4,7 +4,7 @@ import type { AgentDef, CommentTemplate, StageDef } from '../../config/types';
 import { sameFamily } from '../neutral';
 import type { CycleTemplate } from '../types';
 
-// The documentation of a repository as a flow of its own: the stages of a run that drafts (or brings up to date) the `.coxia/` folder, with a Documentation writer
+// The documentation of a repository as a flow of its own: the stages of a run that drafts (or brings up to date) its root AGENTS.md, with a Documentation writer
 // agent that may change only that folder. Draft, the person's gate over the draft, then a second stage that writes (it applies what the gate asked and describes
 // the pull request: `pushStagesOf` proposes the push at the end of the last stage that writes, so it only exists after the gate), and the wait for the merge.
 // The stage ids start with `docs-` so none is the id of a stage of the issue flow. Applying the template puts these stages in `devCycle.flows.docs` and leaves the
@@ -26,7 +26,7 @@ export const DOCS_FLOW_STAGES: StageDef[] = [
 ];
 
 /**
- * The agent of the docs flow: it reads the code and the repository's Claude Code files, writes only inside `.coxia/`, runs no command and reads no tracker. Autonomous:
+ * The agent of the docs flow: it reads the code and the repository's Claude Code files, writes only AGENTS.md, runs no command and reads no tracker. Autonomous:
  * the person's gate over the draft and the "sim" of the push and the pull request are the brakes, and without it the person would accept the result twice.
  */
 export function docsWriter(): AgentDef {

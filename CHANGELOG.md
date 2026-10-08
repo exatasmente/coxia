@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the app-specific `.coxia/` instruction format with a root `AGENTS.md` in plain Markdown, and updated agent delivery, documentation runs, status, and write protection to use the universal file.
+
 ## [0.8.0-beta.7] - 2026-10-07
 
 ### Changed

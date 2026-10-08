@@ -424,8 +424,8 @@ export interface Run {
 }
 
 /**
- * A run that drafts or updates the documentation of a repository (`.coxia/`): it starts from a repository and not from an issue (its `issue` is the synthesized
- * `docs:<repo>`, number 0, which keeps "one at a time" per repository), writes only inside `.coxia/` and ends in a pull request that closes nothing. A run with no
+ * A run that drafts or updates a repository's root `AGENTS.md`: it starts from a repository and not from an issue (its `issue` is the synthesized
+ * `docs:<repo>`, number 0, which keeps "one at a time" per repository), writes only that file and ends in a pull request that closes nothing. A run with no
  * `docs` is an issue run (or a release run: see `subject`).
  */
 export interface RunDocs {

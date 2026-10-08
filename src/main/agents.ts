@@ -31,7 +31,7 @@ import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
-import { type DocsAsk, harnessDirs, harnessSection } from './harness/deliver';
+import { type DocsAsk, harnessSection } from './harness/deliver';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
@@ -515,6 +515,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
     writeRoot: req.confine?.writeRoot ?? req.confine?.root,
     writeReserved: req.confine?.writeReserved,
+    writeAllow: req.confine?.writeAllow,
     signal: req.abort?.signal,
     describeTool: source,
     events: {
@@ -1104,7 +1105,7 @@ export interface AgentCall {
   confine?: Confinement;
   /** The confinement of a reading agent of a run: its file tools stay inside it, and it is offered no Edit, no Write and no shell. */
   readRoot?: ReadConfinement;
-  /** What the call works on, for the documentation of the repositories (`.coxia/`) it is handed. Absent: it gets none (and still reads nothing of Claude Code). */
+  /** What the call works on, for the root AGENTS.md files it is handed. Absent: it gets none (and still reads nothing of Claude Code). */
   docs?: DocsAsk;
   /** The stage's sandbox when the agent's `shell` is `sandbox`: its commands go there, through the `Shell` tool. */
   exec?: SandboxSession;
@@ -1187,7 +1188,6 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
       return '';
     }) : '';
-    const outside = (dir: string): boolean => dir !== call.cwd && !dir.startsWith(`${call.cwd}/`);
     const request: EngineRequest = {
       role: target.role,
       prompt: call.prompt,
@@ -1196,8 +1196,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       system: [call.system, docs].filter(Boolean).join('\n\n'),
       cwd: call.cwd,
       allowedTools: [...allowedTools, ...rules],
-      // The folders of the project's own documentation that sit outside the working directory (a conversation at the root of the projects) are readable too.
-      extraDirs: call.confine ? [] : [...extraDirs(call.cwd, modelRole, { claude: false }), ...harnessDirs(call.docs).filter(outside)],
+      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
       isolated: true,
       shell: { rules, patterns: shell.patterns },
       extra: { maxTurns: call.maxTurns },
