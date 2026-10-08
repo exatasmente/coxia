@@ -126,6 +126,12 @@ export interface EngineRequest {
    * memory. Set for the agents of the team (`runAgent`); the ceremonies leave it off and read what they read.
    */
   isolated?: boolean;
+  /**
+   * The call carries no tool and no documentation at all: no native tool, no app tool, no MCP server (the person's included), and neither the engine's own discovery
+   * of a `CLAUDE.md` nor an index of documentation folders reaches the system text. The model gets the system text, the prompt and the answer's schema, nothing else.
+   * Set by `askBare` only; the engine's own transport of the structured answer (`final_answer` on the open engine) stays, since it is not a capability.
+   */
+  bare?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
   /**
