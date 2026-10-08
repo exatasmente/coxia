@@ -59,8 +59,12 @@ const WIZARD = /^wizard:/;
 // its state reads the repositories' folders. It is the desktop window's, like the settings it lives in.
 const DOCS = /^docs:/;
 
+// The agent assistant (Settings › Team) spends the model on every question and saves an agent with permissions of its own (a tracker to read, commands to run) to be tried
+// out in a conversation: it is the desktop window's, like suggesting agents. A pattern and not a list, so a channel added later is closed from the day it exists.
+const AGENT_ASSIST = /^agentAssist:/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }
