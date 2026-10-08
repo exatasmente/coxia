@@ -10,7 +10,7 @@ O runner leva uma issue pelo [ciclo de agentes](cycles.md) (`agent-flow`): cria 
 
 ### Começar uma execução
 
-`runs:start(ref)` (a referência do cartão, como `app#101` ou só `101`). Uma execução começa sempre por uma issue lida do host: um cartão aberto no **quadro do próprio workspace** — que existe onde não há integração utilizável — nunca inicia uma execução, porque o quadro não é o tracker. O app lê a issue e os comentários pelo provedor, só leitura, e então:
+`runs:start(ref)` (a referência do cartão, como `app#101` ou só `101`). Uma execução começa sempre por uma issue lida do host: um cartão que existe só no **quadro do próprio workspace** nunca inicia uma execução, porque o quadro não é o tracker; um cartão que virou issue no host é uma issue que o host lista, e inicia uma execução como qualquer outra. O app lê a issue e os comentários pelo provedor, só leitura, e então:
 
 1. Escolhe o repositório: o único de `projects.repos` com o `projectPath` do projeto de issues (ou o único que existe, ou o que a chamada nomear); sem cópia local ele procura uma pela origem.
 2. Busca a branch padrão da origem (uma leitura) e cria o worktree em `<worktreesDir>/<repo>/<n>-<título>` numa branch nova `cycle/<n>-<título>`. Uma branch ou uma pasta que já existe é recusada, nunca reaproveitada.
@@ -257,7 +257,7 @@ The runner takes an issue through the [agent cycle](cycles.md) (`agent-flow`): i
 
 ### Starting a run
 
-`runs:start(ref)` (the card's reference, such as `app#101` or just `101`). A run always begins with an issue read from the host: a card opened on the workspace's **own board** — which exists where no integration is usable — never starts a run, because the board is not the tracker. The app reads the issue and its comments through the provider, read only, and then:
+`runs:start(ref)` (the card's reference, such as `app#101` or just `101`). A run always begins with an issue read from the host: a card that exists only on the workspace's **own board** never starts a run, because the board is not the tracker; a card that became an issue on the host is an issue the host lists, and starts a run like any other. The app reads the issue and its comments through the provider, read only, and then:
 
 1. Picks the repository: the only one in `projects.repos` whose `projectPath` is the issue project (or the only one there is, or the one the call names); without a local checkout it looks one up by its origin.
 2. Fetches the origin's default branch (a read) and makes the worktree at `<worktreesDir>/<repo>/<n>-<title>` on a new branch `cycle/<n>-<title>`. A branch or a folder that exists is refused, never reused.

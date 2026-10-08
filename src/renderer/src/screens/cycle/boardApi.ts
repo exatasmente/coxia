@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from 'react';
-import type { BoardCard, BoardItem, BoardProjectLine, BoardTarget, HostState, Waiting } from '../../../../shared/board';
+import type { BoardCard, BoardItem, BoardProjectLine, BoardTarget, HostState, SendAllResult, Waiting } from '../../../../shared/board';
 import { api, moduleEvents } from '../../api';
 
 // The board of the running workspace, as the screens see it: the file's own channels (`board:*`) and one shared copy of what they answered.
 // The module says when the board changed, so a card opened in one window shows in the other without a poll.
 
 export const BOARD_EVENT = 'board:changed';
+/** Raised by the app shell whenever the list of proposals in Actions changes. */
+export const ACTIONS_EVENT = 'actions:changed';
 
 /** Where a column is written on the host: the label, and whether it is the mapping's, the app's own default, or cannot be written. */
 export interface ColumnWrite {
@@ -48,6 +50,8 @@ export interface BoardView {
   projects: BoardProjectLine[];
   noProject: boolean;
   items: BoardItemView[];
+  /** How many cards "Send all" would send now. */
+  sendable: number;
   columns: BoardColumn[];
   priorities: string[];
   /** The squads a card may go to: the ones that name a label. */
@@ -81,6 +85,7 @@ export const boardApi = {
   list: (refresh = false) => api.invoke<BoardView>('board:list', refresh),
   create: (input: BoardCreate) => api.invoke<BoardCard>('board:create', input),
   send: (id: string) => api.invoke<BoardCard>('board:send', id),
+  sendAll: () => api.invoke<SendAllResult>('board:sendAll'),
   update: (target: BoardTarget, patch: BoardUpdate) => api.invoke<BoardCard | null>('board:update', target, patch),
   comment: (target: BoardTarget, text: string) => api.invoke<BoardCard | null>('board:comment', target, text),
   close: (target: BoardTarget) => api.invoke<BoardCard | null>('board:close', target),
@@ -96,19 +101,23 @@ function set(next: BoardView): void {
   for (const fn of subscribers) fn();
 }
 
-/** Reads the board again; the screen calls it after a move, and the module's event calls it for every window. */
-export function reloadBoard(): void {
-  void boardApi.list().then(set, () => undefined);
+/**
+ * Reads the board again. With a host, `refresh` asks the host instead of reusing what was read less than five minutes ago: the screen's own opening and
+ * the module's events reuse it, the person's refresh button does not.
+ */
+export function reloadBoard(refresh = false): Promise<void> {
+  return boardApi.list(refresh).then(set, () => undefined);
 }
 
 function start(): void {
   if (started) return;
   started = true;
-  moduleEvents.addEventListener(BOARD_EVENT, reloadBoard);
-  reloadBoard();
+  moduleEvents.addEventListener(BOARD_EVENT, () => void reloadBoard());
+  // A proposal of the board approved, skipped or failed in Actions changes how a card stands without the board having done anything.
+  moduleEvents.addEventListener(ACTIONS_EVENT, () => void reloadBoard());
 }
 
-/** The board: null until the first read. */
+/** The board: null until the first read, which the screen asks for when it opens. */
 export function useBoard(): BoardView | null {
   start();
   return useSyncExternalStore(

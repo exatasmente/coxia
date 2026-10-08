@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The board follows the code host.** With a usable host the board is no longer hidden: it is the same board, and it mirrors the host. A card opened on it becomes an issue in the issue project, in the label of its column (the label of a `stageMapping` rule when that is a plain name, else `board:<stage id>`); moving a card adds that label and takes off only the ones the app itself could have written for another column; priority, squad, comment, close and reopen reach the same issue (reopening is a new write on GitHub, GitLab and Bitbucket). Every write goes through the one door: by default it waits in Actions for your yes, and a new choice in Settings › Runner, **Board writes go to the host without a yes**, sends it at once, audited, with no dependence on the autonomous-cycle switch (only the computer can change it; a test workspace refuses every write either way). The host is read when the board is opened or refreshed by hand and at no other time: the board then lists the open issues of the workspace's projects (up to 10 projects and 100 issues each, said on screen when it is cut) beside the cards, brings the cards it opened up to what the host says, keeps a card the host no longer returns marked as outside the host, and marks a card that never reached it as **not on the host yet**, with **Send to the host** and **Send all to the host** (up to 50, one proposal per card in one batch in Actions). Bitbucket's issues have no labels, so there the column, priority and squad of a card stay on the board, and the board says so. The day does not change. A workspace with no usable host keeps the board exactly as 0.8.0 had it. The config moves to schema 19 (the new choice, off).
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
