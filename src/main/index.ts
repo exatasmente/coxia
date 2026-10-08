@@ -121,10 +121,7 @@ function createWindow(): void {
       win?.hide();
     }
   });
-  // QA scratch harness (removed before this stage ends): a file the person names, so a throwaway workspace can be seeded.
-  const harness = process.env.COXIA_QA_PAGE;
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else if (harness) void win.loadFile(harness);
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
 }
 
