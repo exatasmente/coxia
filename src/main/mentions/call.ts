@@ -36,6 +36,11 @@ export interface MentionInput {
   autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
+  /**
+   * What the app knows of the activities of this workspace, already rendered by the caller: the front the message named whole, or the short list of
+   * what is in progress. It is shown as material, never added to the tools, and an empty one leaves the call without the section.
+   */
+  memory?: string;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -176,6 +181,8 @@ export function mentionCall(i: MentionInput): AgentCall {
     .join('\n\n');
   const sections = [
     ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
+    // What the app knows of the activities, before the thread: material to consult, under its own tags, so a call about an activity is answered from it.
+    i.memory ? cp('runner.section.shared', { text: fence(i.memory) }) : '',
     // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
     i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',
     threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : '',

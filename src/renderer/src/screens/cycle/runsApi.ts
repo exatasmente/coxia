@@ -51,7 +51,29 @@ export const runsApi = {
   removeEvidence: (id: string, evidence: string) => api.invoke<boolean>('runs:evidenceDelete', id, evidence),
   // The cycle memory, which only the run screen may rewrite; the answer is what was really written (masked, capped).
   editMemory: (id: string, text: string) => api.invoke<ArtifactText | null>('runs:memory', id, text),
+  // The record of the activities of the workspace, and the person's correction of one front: read and written without a model call.
+  activities: () => api.invoke<ActivityFrontView[]>('runs:activities'),
+  saveActivity: (ref: string, text: string) => api.invoke<ActivityFrontView | null>('runs:activitySave', ref, text),
 };
+
+/** One activity's front as the runs screen shows it: what the record keeps, with the words already in the workspace's language. */
+export interface ActivityFrontView {
+  ref: string;
+  title: string;
+  url: string | null;
+  lifecycle: 'open' | 'waiting-integration' | 'integrated' | 'cancelled' | 'failed';
+  bare?: true;
+  stage: { id: string; label: string; since: string } | null;
+  squad: string | null;
+  agent: string | null;
+  lastAgent: string | null;
+  decisions: string[];
+  correction: string[];
+  openQuestions: string[];
+  stoppedAt: { text: string; stage: string | null; at: string } | null;
+  source: 'app' | 'person';
+  updatedAt: string;
+}
 
 const REFRESH_MS = 20_000;
 const BURST_MS = 250;

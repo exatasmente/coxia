@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Every agent knows what is in progress, in any conversation, and a restart does not lose it.** The app keeps a record of the activities of the workspace — one entry per activity, not per run — and an agent called anywhere (a run's thread, a squad channel, a general conversation, the direct conversation of an agent) reads it, so asking about an activity that is in progress is answered with its stage and who is working it instead of "there is no work going on". The record survives closing and reopening the app; an activity that had two executions is one entry; and the runs screen lists the activities and lets their entry be corrected, without any model call.
+
 ### Fixed
 
 - **The run screen says which attempt each document of a stage is from.** A stage that the run entered again (the work sent back, a retry, an app restart) merges the documents of both attempts in one list; the timeline now marks each document with the attempt that produced it, written in the app's language, and shows nothing new for a run recorded before this. The same run in a paired browser keeps only that run's lines: when the browser's event stream drops and comes back, what is fetched in between no longer stitches lines of an earlier run of the same work into the timeline that is going. A browser screen opened fresh keeps fetching everything it is told.

@@ -106,11 +106,13 @@ import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, read
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
 import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, ensureRunIgnore } from './docs';
 import { crMarkOf } from '../../shared/i18n/terms';
+import { prompt } from '../cyclePrompts';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
@@ -290,6 +292,10 @@ export interface Runner {
    * working in the worktree, so the person never races an agent for the file. Returns the text as it was written (masked), or null when the run has no worktree.
    */
   editMemory(id: string, text: string): Promise<{ text: string; clipped: boolean } | null>;
+  /** The record of the activities of the workspace, oldest first: what the runs screen shows and what a call reads, without a model call. */
+  activities(): ActivityFront[];
+  /** The person corrected one activity's front: masked, capped, marked as theirs and kept for the next projection. Null when that activity is unknown. */
+  correctActivity(ref: string, text: string): ActivityFront | null;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
   setSquad(id: string, squad: string | null): Run;
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
@@ -331,7 +337,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   const flowNow = (): FlowStage[] => flowOf(squadView(deps.config(), null));
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
-  const d = { runs: deps.runs, forum: deps.forum };
+  // The record of the activities of the workspace, written where the app keeps its own files (never in a worktree): every move of a run keeps its front.
+  const activities = createSharedMemory(deps.env().dataDir, () => deps.now?.() ?? new Date());
+  const d = { runs: deps.runs, forum: deps.forum, activities };
   /**
    * Records a piece of evidence a stage kept and publishes it, at once, in the run's conversation, as a message of the agent that carries the file: the person sees
    * it live, and the run keeps the record (`Run.evidence`) so the stage and the scenarios can list and cite it. Returns the message, or null when the run is gone.
@@ -368,7 +376,15 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
+
+  /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
+  function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
+    return activities.render(deps.runs, { ref, refs: [...refs], agents: [...agents] }, deps.config().language);
+  }
+
+  /** What a message of a run's thread names: the agents called on, and the activity references it writes. */
+  const callsOfMention = (message: ForumMessage): string[] => parseMentions(message.text, deps.config().agents.team.map((a) => a.id));
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -808,6 +824,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `${iid}-${slug}`);
     const folder = cycleFolderOf(iid, issue.title);
 
+    // Everything the start needs is known: the activity is recorded before the worktree and the run exist, so a start interrupted here leaves a trace of it.
+    activities.ensure({ ref, iid, title: issue.title, url: issue.webUrl || null }, now());
     // The branch and the folder are the issue's, so a run of it that ended without cleaning up is taken over: refusing it would block the issue forever.
     const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path), takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
@@ -1128,6 +1146,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!deps.publisher || !rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') throw new RunnerError('nothing-to-undo', { key: key.slice(0, 48) });
       return deps.publisher.undo(id, key);
     },
+    activities: () => sortedFronts(activities.read(deps.runs, deps.config().language)).reverse(),
+    correctActivity: (ref, text) => activities.correct(ref, text, deps.runs, deps.config().language),
     async editMemory(id, text) {
       const run = need(id);
       // The agent has the worktree: a write now would race it for the file, and the stage's own commit is what carries the memory.
@@ -1138,6 +1158,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!identity) throw new RunnerError('no-identity');
       // The person's own words, masked like every other document; the path guard is `writeMemory`'s.
       writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
@@ -1253,6 +1274,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
           if (id !== working || toStage >= 1) continue;
           const queued = inbox.post(text, message.waitsForAnswer);
+          // The agent is told that the record of the activities moved only when the message really entered the session: a message handed back in the closing line keeps the person's words.
+          if (queued) inbox.post(`\n${prompt('runner.section.sharedMoved')}`, false);
           toStage++;
           // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
           if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
@@ -1417,6 +1440,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       },
       // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
       propose: proposeMention,
+      // What the answer is told of the activities: its own front whole, and whatever else the message named.
+      memory: (_place, msg) => sharedTextOf(run.issue.ref, callsOfMention(msg)),
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
         const r = p.run;

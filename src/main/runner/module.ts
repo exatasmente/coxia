@@ -160,6 +160,10 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('sandbox:probe', async () => ({ ...(await sandbox.status(true)), gui: sandbox.guiStatus(getConfig().runner.sandbox) }));
   ctx.handle('runs:list', () => r.list());
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
+  // The record of the activities, for the runs screen: read only, no model call anywhere in the path, open to a paired browser like the list beside it.
+  ctx.handle('runs:activities', () => r.activities());
+  // The person's correction of one activity's front, recorded as theirs and written with the app's own masking and cap; like `runs:memory`, only the window's.
+  ctx.handle('runs:activitySave', (ref: unknown, body: unknown) => r.correctActivity(text(ref), text(body)));
   // The open issues of the project that carry the trigger label and have no assignee: the manual-start list of the runs screen. Read only, open to a
   // paired browser like the list beside it; nothing here starts a run (the person's start goes through runs:start).
   ctx.handle('runs:unassigned', async () => {

@@ -1,15 +1,20 @@
 import { runThreadId } from '../shared/forum';
+import { getLanguage } from '../shared/i18n';
 import type { Run, Transition } from '../shared/runs';
 import { threadAnchor } from './forum';
 import type { ForumStore } from './forum-core';
 import type { RunStore } from './runs-core';
+import type { SharedMemory } from './runner/activities';
 
 // A run and its thread move together: the run is saved first, then what the move says is appended to the run's thread. A crash in between
-// loses a message and never duplicates one, and the history of the run keeps the facts either way.
+// loses a message and never duplicates one, and the history of the run keeps the facts either way. When the record of the activities is given to the
+// store, every move also updates that activity's front (from the run before and after the move): one writer, so two advances never lose each other.
 
 export interface RunForum {
   runs: RunStore;
   forum: ForumStore;
+  /** The record of the activities of the workspace, when it exists: every move of a run keeps its front up to date. */
+  activities?: SharedMemory;
 }
 
 const titleOf = (run: Run): string => `${run.issue.ref} ${run.issue.title}`.trim().slice(0, 120);
@@ -17,6 +22,7 @@ const titleOf = (run: Run): string => `${run.issue.ref} ${run.issue.title}`.trim
 /** Saves a new run (refused when its issue already has one going) and opens its thread with what starting it said. */
 export function beginRun(d: RunForum, started: Transition): Run {
   const run = d.runs.create(started.run);
+  d.activities?.upsert(null, run, getLanguage());
   d.forum.ensureThread({ id: runThreadId(run.id), kind: 'run', runId: run.id, title: titleOf(run) });
   d.forum.append(runThreadId(run.id), started.messages);
   return run;
@@ -24,7 +30,9 @@ export function beginRun(d: RunForum, started: Transition): Run {
 
 /** Applies a move to a stored run and records its messages in the run's thread (opening it if a crash left it unopened). */
 export function moveRun(d: RunForum, id: string, move: (run: Run) => Transition): Run {
+  const before = d.runs.get(id);
   const done = d.runs.update(id, move);
+  d.activities?.upsert(before, done.run, getLanguage());
   d.forum.ensureThread({ id: runThreadId(id), kind: 'run', runId: id, title: titleOf(done.run) });
   // What a move says a message carries rides on that message: the files a person attached to the answer stay on the answer the runner records. The
   // message also gets the conversation's anchor, the same one the forum module puts on a written post, so a message the runner records opens its own
