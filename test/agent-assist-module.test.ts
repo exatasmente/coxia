@@ -61,6 +61,8 @@ function useConfig(over: (c: WorkspaceConfig) => void = () => undefined): Worksp
   c.language = 'en';
   c.agents.team.push(newAgent({ id: 'sketch', name: 'Sketch', job: 'A draft that must never be offered.', draft: true }));
   c.agents.team.push(newAgent({ id: 'writer', name: 'Writer', job: 'Writes the docs.', instructions: 'You write the docs.', permission: 'worktree', tracker: 'read', shell: 'host' }));
+  // The template names the agent of every work stage, and a named stage is not offered: free them, so there are stages to offer (the agents still list them).
+  for (const s of c.devCycle.stages) delete s.agentId;
   over(c);
   return saveConfig(c);
 }

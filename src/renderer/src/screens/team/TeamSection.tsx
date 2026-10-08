@@ -452,7 +452,7 @@ function ToolsFields({ config, draft, set }: { config: WorkspaceConfig; draft: A
 /** The work stages of the flow the agent works, as boxes; shown when the editor comes from the assistant, which is where the stages are proposed (the flow editor is the other place that sets them). */
 function StagesFields({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
   const t = useT();
-  const offered = offeredStages(config);
+  const offered = offeredStages(config, draft.id || null);
   // A stage the agent lists that the flow no longer offers stays in the list, so the person can see it and take it away.
   const known = new Set(offered.map((s) => s.id));
   const gone = draft.stages.filter((id) => !known.has(id));

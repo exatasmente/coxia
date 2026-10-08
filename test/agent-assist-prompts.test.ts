@@ -23,6 +23,8 @@ function configure(language: Language): WorkspaceConfig {
   c.language = language;
   c.agents.team.push(newAgent({ id: 'sketch', name: 'Sketch', job: 'A draft that must never be offered.', draft: true }));
   c.squads = [newSquad({ id: 'payments', name: 'Payments', mission: 'Owns the billing flow.' })];
+  // The template names the agent of every work stage, and a named stage is not offered: free them, so the context has stages to list (the agents still list them).
+  for (const s of c.devCycle.stages) delete s.agentId;
   return saveConfig(c);
 }
 
@@ -263,6 +265,22 @@ describe('what the model is told exists', () => {
     expect(offers.turnsTo).not.toContain('developer');
     expect(offers.turnsTo).not.toContain('sketch');
     expect(offers.workspaceTools).toEqual(config().agents.tools);
+  });
+
+  it('leaves out a stage that names another agent of the team, and keeps it for the agent it names', () => {
+    const c = applyTemplate(neutralConfig(), agentFlowEngineering);
+    const plan = c.devCycle.stages.find((s) => s.id === 'plan');
+    expect(plan?.agentId).toBe('planner');
+    const ids = (config: WorkspaceConfig, self: string | null = null) => core.assistContext(config, true, self).stages.map((s) => s.id);
+    const saved = saveConfig(c);
+    expect(ids(saved)).not.toContain('plan');
+    expect(ids(saved)).not.toContain('implement');
+    expect(ids(saved, 'planner')).toContain('plan');
+    expect(ids(saved, 'planner')).not.toContain('implement');
+    // A stage that names no agent of the team (one that is gone) is free.
+    const gone = applyTemplate(neutralConfig(), agentFlowEngineering);
+    gone.devCycle.stages.find((s) => s.id === 'plan')!.agentId = 'nobody';
+    expect(ids(gone)).toContain('plan');
   });
 
   it('offers no stage to a workspace whose cycle only classifies cards for the ceremonies', () => {

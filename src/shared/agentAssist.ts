@@ -1,4 +1,5 @@
 import { squadsOf } from './config/squads';
+import { workingTeam } from './config/team';
 import { AGENT_PERMISSIONS, AGENT_TRACKERS, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type StageDef, type WorkspaceConfig } from './config/types';
 import { isFlowCycle, isWork } from './runs/flow';
 
@@ -110,14 +111,18 @@ export interface AssistOffers {
 
 /**
  * The work stages an agent can be given: those of the workspace's flow and those of the flow of each squad. A cycle that only classifies cards for the ceremonies has no
- * flow, so no stage is offered. A gate and a wait are not work. The model is told these, the editor lists these, and only these are accepted.
+ * flow, so no stage is offered. A gate and a wait are not work, and a stage that names another agent of the team is not free. The model is told these, the editor
+ * lists these, and only these are accepted. `self` is the agent being edited: a stage that names it stays offered.
  */
-export function offeredStages(config: WorkspaceConfig): StageDef[] {
+export function offeredStages(config: WorkspaceConfig, self: string | null = null): StageDef[] {
   if (!isFlowCycle(config.devCycle.stages)) return [];
   const squads = new Set(squadsOf(config).map((s) => s.id));
   const own = Object.entries(config.devCycle.flows ?? {}).filter(([key]) => squads.has(key)).flatMap(([, flow]) => flow);
+  // A stage that names an agent of the team is that agent's, whoever lists it (`stageAgent`): offering it would give the agent a stage it never works.
+  const working = new Set(workingTeam(config.agents.team).map((a) => a.id));
+  const free = (s: StageDef): boolean => !s.agentId || s.agentId === self || !working.has(s.agentId);
   const seen = new Set<string>();
-  return [...config.devCycle.stages, ...own].filter((s) => isWork(s) && !seen.has(s.id) && !!seen.add(s.id));
+  return [...config.devCycle.stages, ...own].filter((s) => isWork(s) && free(s) && !seen.has(s.id) && !!seen.add(s.id));
 }
 
 /** The minimum, the settings of a new blank agent: reads, no tracker, no commands, the workspace's tools, no stages, shared, asks the person. */

@@ -47,7 +47,7 @@ const shown = (value: string): string => clip(word(value).trim(), ASSIST_LIMITS.
  */
 export function assistContext(config: WorkspaceConfig, sandbox: boolean, selfId: string | null = null): AssistContext {
   return {
-    stages: offeredStages(config).slice(0, ASSIST_LIMITS.contextStages).map((s) => ({ id: s.id, label: shown(s.label) || s.id })),
+    stages: offeredStages(config, selfId).slice(0, ASSIST_LIMITS.contextStages).map((s) => ({ id: s.id, label: shown(s.label) || s.id })),
     squads: squadsOf(config).slice(0, ASSIST_LIMITS.contextSquads).map((s) => ({ id: s.id, name: shown(s.name) || s.id, mission: shown(s.mission) })),
     agents: workingTeam(config.agents.team)
       .filter((a) => a.id !== selfId)
