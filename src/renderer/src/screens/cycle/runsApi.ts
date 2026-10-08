@@ -3,7 +3,7 @@ import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { EvidenceView } from '../../../../shared/evidence';
 import { FORUM_EVENT, type ForumEventPayload } from '../../../../shared/forum';
-import type { CommandDecision, Run } from '../../../../shared/runs';
+import type { CommandDecision, Run, RunIssue } from '../../../../shared/runs';
 import { api, moduleEvents } from '../../api';
 
 // The runs of the running workspace as the screens see them: the channels of the runner (`runs:*`), and one shared copy of the list that every screen
@@ -25,6 +25,8 @@ export interface ArtifactText {
 export const runsApi = {
   list: () => api.invoke<Run[]>('runs:list'),
   get: (id: string) => api.invoke<Run | null>('runs:get', id),
+  // The open issues of the project that carry the trigger label and have no assignee.
+  unassigned: () => api.invoke<RunIssue[]>('runs:unassigned'),
   start: (ref: string, repo?: string) => api.invoke<Run>('runs:start', ref, repo),
   startRelease: (version: string, from?: string, repo?: string) => api.invoke<Run>('runs:startRelease', version, from, repo),
   startStage: (id: string) => api.invoke<Run>('runs:startStage', id),

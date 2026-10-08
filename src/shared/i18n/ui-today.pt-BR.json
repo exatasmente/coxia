@@ -224,6 +224,8 @@
   "ui.today.ataDecisions_other": "{count} decisões",
   "ui.today.ataEffects_one": "{count} efeito aguardando “sim”",
   "ui.today.ataEffects_other": "{count} efeitos aguardando “sim”",
+  "ui.today.board.empty": "Ainda nada hoje — abra um cartão no quadro",
+  "ui.today.board.open": "Abrir o quadro",
   "ui.today.buildingCards": "Montando cartões…",
   "ui.today.cardsError": "Não consegui montar os cartões: {error}",
   "ui.today.ceremonies": "Cerimônias",

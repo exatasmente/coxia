@@ -1,6 +1,7 @@
 // The run that drafts the documentation of a repository. It goes through the docs flow against a real temporary repository and a fake host with a memory: the real
 // provider, the real list of writes, the real door (proposals in Actions, the refusal of a test workspace), the real guard of the agent's files, and a scripted engine for
 // the model. What the host received is checked, and so is what it never did: a documentation run has no issue, so nothing may be planned for issue number 0.
+// The run writes the repository's root AGENTS.md and nothing else; its own record and memory stay under the ignored `.coxia/.run` folder.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +33,7 @@ const { confinedHooks } = await import('../src/main/runner/hooks');
 const { policyFromHooks } = await import('../src/main/engine/open/policy');
 const { editTool, writeTool } = await import('../src/main/engine/open/tools/write');
 const { newAgent } = await import('../src/shared/config/team');
-const { HARNESS_OWN } = await import('../src/shared/harness/format');
+const { AGENTS_FILE } = await import('../src/shared/harness/agentsMd');
 const { newProvider } = await import('../src/shared/config/defaults');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
@@ -58,9 +59,8 @@ beforeEach(() => {
 
 // ---- the repository and what the agent writes -----------------------------------------------------------------------------------
 
-const header = (extra = '') => `---\nchecked-commit: 0000000\nchecked-date: 2000-01-01\n${extra}---\n`;
-const README = `${header('summary: What the project is\n')}# App\n\nA tiny app.\n`;
-const RULE = `${header('evidence: [src/app.ts:1]\nsummary: The app constant\n')}# The constant\n\nThe app constant is 1.\n`;
+const AGENTS = '# App\n\nA tiny app. The app constant is 1.\n';
+const AGENTS_UPDATED = '# App\n\nA tiny app. The app constant is 3.\n';
 const NOTES = '# Import notes\n\n## Imported\n- how to build and test\n\n## Left out\n- "a subagent never pushes" (CLAUDE.md): a rule of a session of another tool, not a fact of the project\n';
 
 const section = (heading: string, body: string) => ({ heading, body });
@@ -84,12 +84,23 @@ function repoWithClaude(): Repo {
 }
 
 /** A repository whose main branch carries `.coxia` as a symbolic link to a folder outside it (what a hostile commit would do). */
-function repoWithLinkedHarness(outside: string): Repo {
+function repoWithLinkedState(outside: string): Repo {
   const repo = makeRepo();
   const seed = join(repo.root, 'seed');
   symlinkSync(outside, join(seed, '.coxia'));
   git(seed, 'add', '.');
-  git(seed, 'commit', '-q', '-m', 'link the documentation folder');
+  git(seed, 'commit', '-q', '-m', 'link the state folder');
+  git(seed, 'push', '-q', 'origin', 'main');
+  return repo;
+}
+
+/** A repository whose main branch carries AGENTS.md as a symbolic link to a file outside it (what a hostile commit would do). */
+function repoWithLinkedAgents(outside: string): Repo {
+  const repo = makeRepo();
+  const seed = join(repo.root, 'seed');
+  symlinkSync(outside, join(seed, AGENTS_FILE));
+  git(seed, 'add', '.');
+  git(seed, 'commit', '-q', '-m', 'link the instructions');
   git(seed, 'push', '-q', 'origin', 'main');
   return repo;
 }
@@ -114,14 +125,13 @@ async function bootDocs(o: { repo?: Repo; flow?: boolean; shell?: 'sandbox' | 'h
   return b;
 }
 
-/** The writer drafts the overview and a rule, tries a file of the code, and hands over its notes; then it applies what the gate asked and describes the pull request. */
+/** The writer drafts the root AGENTS.md, tries a file of the code, and hands over its notes; then it applies what the gate asked and describes the pull request. */
 function script(b: Boot, seen: { denied: string | null } = { denied: null }): void {
   b.engine.script(
     'docs-writer',
     async (_c, tools) => {
       seen.denied = await tools.write('src/app.ts', 'export const app = 2;\n');
-      expect(await tools.write('.coxia/README.md', README)).toBeNull();
-      expect(await tools.write('.coxia/rules/x.md', RULE)).toBeNull();
+      expect(await tools.write(AGENTS_FILE, AGENTS)).toBeNull();
       return work('Drafted.', { commit: 'add the project documentation', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
     },
     async () => work('Applied.', { pr: PR }),
@@ -168,7 +178,7 @@ async function toWait(b: Boot, run: Run): Promise<Run> {
 // ---- starting -------------------------------------------------------------------------------------------------------------------
 
 describe('starting a documentation run', () => {
-  it('makes a run with no issue: its own reference and title, a branch with the day, its folder inside .coxia and ignored, and nothing read from the tracker', async () => {
+  it('makes a run with no issue: its own reference and title, a branch with the day, its private state under .coxia and ignored, and nothing read from the tracker', async () => {
     const b = await bootDocs();
     script(b);
     const run = await b.runner.startDocs('app', 'create');
@@ -178,7 +188,7 @@ describe('starting a documentation run', () => {
     expect(b.issues.reads).toEqual([]);
     await b.settle();
 
-    // the folder of the run is ignored by git: the first commit holds the ignore file and nothing else, and the record is on disk
+    // the private state of the run is ignored by git: the first commit holds the ignore file and nothing else, and the record is on disk
     expect(readFileSync(join(run.worktree, '.coxia/.gitignore'), 'utf8')).toBe('.run/\n');
     expect(git(run.worktree, 'ls-files', '.coxia').split('\n')).toEqual(expect.arrayContaining(['.coxia/.gitignore']));
     expect(git(run.worktree, 'ls-files', '.coxia/.run')).toBe('');
@@ -187,11 +197,11 @@ describe('starting a documentation run', () => {
     expect(first).toBe('feat: ignore the folder of the documentation run');
     expect(git(run.worktree, 'diff', '--name-only', `${run.base}~0`, `${run.base}`)).toBe('');
 
-    // the record the first stage reads: the task, what .coxia has, and the files of Claude Code to import from (not the code)
+    // the record the first stage reads: the task, what AGENTS.md has, and the files of Claude Code to import from (not the code)
     const record = readFileSync(join(run.worktree, '.coxia/.run/0_ISSUE.md'), 'utf8');
     expect(record).toContain('# docs:app Documentation of app');
-    expect(record).toContain('create the documentation of this repository');
-    expect(record).toContain('The folder does not exist yet.');
+    expect(record).toContain('create the root AGENTS.md for this repository');
+    expect(record).toContain('AGENTS.md does not exist yet.');
     expect(record).toContain('- CLAUDE.md');
     expect(record).toContain('- .claude/rules/x.md');
     expect(record).not.toContain('src/app.ts');
@@ -239,10 +249,22 @@ describe('starting a documentation run', () => {
 
   it('refuses a repository whose .coxia is a link out of it: no worktree, no run, and nothing written where the link leads', async () => {
     const outside = mkdtempSync(join(tmpdir(), 'docs-link-out-'));
-    const b = await bootDocs({ repo: repoWithLinkedHarness(outside) });
+    const b = await bootDocs({ repo: repoWithLinkedState(outside) });
     script(b);
-    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/symbolic link/);
+    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/not a safe path/);
     expect(readdirSync(outside)).toEqual([]);
+    expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
+    expect(b.engine.calls).toEqual([]);
+  });
+
+  it('refuses a repository whose AGENTS.md is a link out of it: the instructions are not read or written through it', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'docs-agents-out-'));
+    const target = join(outside, 'AGENTS.md');
+    writeFileSync(target, '# Elsewhere\n');
+    const b = await bootDocs({ repo: repoWithLinkedAgents(target) });
+    script(b);
+    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/not a safe path/);
+    expect(readFileSync(target, 'utf8')).toBe('# Elsewhere\n');
     expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
     expect(b.engine.calls).toEqual([]);
   });
@@ -258,7 +280,7 @@ describe('starting a documentation run', () => {
     git(seed, 'push', '-q', 'origin', 'main');
     const b = await bootDocs({ repo });
     script(b);
-    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/symbolic link/);
+    await expect(b.runner.startDocs('app', 'create')).rejects.toThrow(/not a safe path/);
     expect(readdirSync(outside)).toEqual([]);
     expect(existsSync(join(b.repo.worktrees, 'app', 'docs-20261006'))).toBe(false);
   });
@@ -375,34 +397,31 @@ describe('starting a documentation run', () => {
 // ---- the draft, the gate and what leaves the machine ---------------------------------------------------------------------------
 
 describe('the draft', () => {
-  it('writes only in .coxia: a file of the code is refused and told, the draft is committed with its header stamped, the run folder is not, and the run stops at the gate', async () => {
+  it('writes only AGENTS.md: a file of the code is refused and told, the draft is committed as it is, the run folder is not, and the run stops at the gate', async () => {
     const b = await bootDocs();
     const seen: { denied: string | null } = { denied: null };
     script(b, seen);
     const run = await toGate(b);
     expect(run).toMatchObject({ status: 'gate', stage: 'docs-gate' });
 
-    // the call: the agent is confined to .coxia for writes and runs nothing
+    // the call: the agent is confined to the worktree for writes, with AGENTS.md the only file it may change, and runs nothing
     const call = b.engine.calls[0];
     expect(call.agent.id).toBe('docs-writer');
-    expect(call.confine).toMatchObject({ root: run.worktree, writeRoot: join(run.worktree, '.coxia') });
+    expect(call.confine).toMatchObject({ root: run.worktree, writeRoot: run.worktree, writeAllow: [AGENTS_FILE] });
     expect(call.cwd).toBe(run.worktree);
-    expect(seen.denied).toMatch(/outside/i);
+    expect(seen.denied).toMatch(/only AGENTS\.md/i);
     expect(readFileSync(join(run.worktree, 'src/app.ts'), 'utf8')).toBe('export const app = 1;\n');
     expect(b.thread(run).some((m) => m.code === 'runner.denied' && JSON.stringify(m).includes('src/app.ts'))).toBe(true);
 
-    // what the branch holds: the documentation and the ignore file, not the run's own folder
-    expect(git(run.worktree, 'diff', '--name-only', run.base as string, 'HEAD').split('\n')).toEqual(['.coxia/.gitignore', '.coxia/README.md', '.coxia/rules/x.md']);
+    // what the branch holds: AGENTS.md and the ignore file, not the run's own folder
+    expect(git(run.worktree, 'diff', '--name-only', run.base as string, 'HEAD').split('\n')).toEqual(['.coxia/.gitignore', AGENTS_FILE]);
     expect(git(run.worktree, 'ls-files', '.coxia/.run')).toBe('');
     expect(git(run.worktree, 'status', '--porcelain')).toBe('');
     expect(existsSync(join(run.worktree, '.coxia/.run/IMPORT_NOTES.md'))).toBe(true);
-    // the app stamped what the pass wrote: the commit of the work and the day, in a commit of its own
-    const [stamp, made] = git(run.worktree, 'log', '-2', '--format=%H %s').split('\n');
-    const work = made.split(' ')[0];
-    expect(stamp).toContain('update the documentation check');
-    expect(readFileSync(join(run.worktree, '.coxia/README.md'), 'utf8')).toContain(`checked-commit: ${work}`);
-    expect(readFileSync(join(run.worktree, '.coxia/rules/x.md'), 'utf8')).toMatch(/checked-date: (?!2000-01-01)\d{4}-\d{2}-\d{2}\n/);
+    // the draft is committed as the agent wrote it: no header is stamped on it
+    const made = git(run.worktree, 'log', '-1', '--format=%s');
     expect(made).toContain('add the project documentation');
+    expect(readFileSync(join(run.worktree, AGENTS_FILE), 'utf8')).toBe(AGENTS);
     // the gate comes before any push: nothing is proposed, nothing was sent
     expect(pending()).toEqual([]);
     expect(forge.writes).toEqual([]);
@@ -420,12 +439,12 @@ describe('the draft', () => {
     await b.settle();
     const failed = b.runner.get(run.id) as Run;
     expect(failed.status).toBe('failed');
-    expect(failed.error?.detail).toMatch(/symbolic link/);
+    expect(failed.error?.detail).toMatch(/not a safe path/);
     expect(b.engine.calls).toHaveLength(1);
     expect(readdirSync(outside)).toEqual([]);
   });
 
-  it.each(['sandbox', 'host'] as const)('opens no session and gives the agent no command door when its shell is %s: the shell tool is not behind the guard of .coxia', async (shell) => {
+  it.each(['sandbox', 'host'] as const)('opens no session and gives the agent no command door when its shell is %s: the shell tool is not behind the guard of AGENTS.md', async (shell) => {
     const sandbox = fakeSandbox();
     const b = await bootDocs({ shell, sandbox });
     script(b);
@@ -436,19 +455,20 @@ describe('the draft', () => {
     expect(sandbox.opened).toEqual([]);
   });
 
-  it('refuses the agent that writes the ignore file or the run folder: the line that keeps the run out of the pull request stays', async () => {
+  it('refuses the agent that writes the ignore file, the run folder or a file of the code: only AGENTS.md is its to change', async () => {
     const b = await bootDocs();
     const seen: (string | null)[] = [];
     b.engine.script('docs-writer', async (_c, tools) => {
-      seen.push(await tools.write('.coxia/.gitignore', 'nothing\n'), await tools.write('.coxia/.run/memory.md', 'mine\n'));
-      await tools.write('.coxia/README.md', README);
+      seen.push(await tools.write('.coxia/.gitignore', 'nothing\n'), await tools.write('.coxia/.run/memory.md', 'mine\n'), await tools.write('src/app.ts', 'export const app = 2;\n'));
+      await tools.write(AGENTS_FILE, AGENTS);
       return work('Drafted.', { commit: 'add the project documentation', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
     });
     const run = await toGate(b);
-    expect(seen.map((s) => /keeps this file|kept by the app/.test(s ?? ''))).toEqual([true, true]);
+    expect(seen.map((s) => /only AGENTS\.md/i.test(s ?? ''))).toEqual([true, true, true]);
     expect(readFileSync(join(run.worktree, '.coxia/.gitignore'), 'utf8')).toBe('.run/\n');
     expect(git(run.worktree, 'ls-files', '.coxia/.run')).toBe('');
-    expect(b.thread(run).filter((m) => m.code === 'runner.denied')).toHaveLength(2);
+    expect(readFileSync(join(run.worktree, 'src/app.ts'), 'utf8')).toBe('export const app = 1;\n');
+    expect(b.thread(run).filter((m) => m.code === 'runner.denied')).toHaveLength(3);
   });
 
   it('goes back to the draft when the gate is rejected, with the reason for the agent, and stops at the gate again', async () => {
@@ -456,12 +476,12 @@ describe('the draft', () => {
     b.engine.script(
       'docs-writer',
       async (_c, tools) => {
-        await tools.write('.coxia/README.md', README);
+        await tools.write(AGENTS_FILE, AGENTS);
         return work('Drafted.', { commit: 'add the project documentation', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
       },
       async (call, tools) => {
         expect(call.prompt).toContain('Say what the runner does.');
-        await tools.write('.coxia/rules/x.md', RULE);
+        await tools.write(AGENTS_FILE, AGENTS_UPDATED);
         return work('Redone.', { commit: 'say what the runner does', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
       },
     );
@@ -472,7 +492,7 @@ describe('the draft', () => {
     const again = b.runner.get(run.id) as Run;
     expect(again).toMatchObject({ status: 'gate', stage: 'docs-gate' });
     expect(b.engine.calls.map((c) => c.agent.id)).toEqual(['docs-writer', 'docs-writer']);
-    expect(existsSync(join(run.worktree, '.coxia/rules/x.md'))).toBe(true);
+    expect(readFileSync(join(run.worktree, AGENTS_FILE), 'utf8')).toBe(AGENTS_UPDATED);
     // still no push: the gate was not approved
     expect(pending()).toEqual([]);
     expect(forge.writes).toEqual([]);
@@ -484,7 +504,7 @@ describe('the draft', () => {
       'docs-writer',
       () => work('', { question: 'Which folder holds the rules?' }),
       async (_c, tools) => {
-        await tools.write('.coxia/README.md', README);
+        await tools.write(AGENTS_FILE, AGENTS);
         return work('Drafted.', { artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
       },
     );
@@ -513,11 +533,11 @@ describe('the push and the pull request', () => {
     expect(pending()[0].output).toContain(`push origin HEAD:refs/heads/${BRANCH}`);
     expect(git(b.repo.clone, 'branch', '-r')).not.toContain(BRANCH);
 
-    // the "sim" pushes the branch: it holds the documentation and the ignore file, and nothing of the run's folder
+    // the "sim" pushes the branch: it holds AGENTS.md and the ignore file, and nothing of the run's folder
     const pushed = await actions.approveAction(pending()[0].id);
     expect(pushed.state).toBe('done');
     await b.settle();
-    expect(git(b.repo.origin, 'ls-tree', '-r', '--name-only', BRANCH).split('\n').filter((p) => p.startsWith('.coxia'))).toEqual(['.coxia/.gitignore', '.coxia/README.md', '.coxia/rules/x.md']);
+    expect(git(b.repo.origin, 'ls-tree', '-r', '--name-only', BRANCH).split('\n').filter((p) => p === AGENTS_FILE || p.startsWith('.coxia'))).toEqual(['.coxia/.gitignore', AGENTS_FILE]);
 
     // the pull request is proposed with the description of the docs template: no "Closes", the section of what was left out, the marker
     const proposal = pending()[0];
@@ -650,46 +670,40 @@ describe('the push and the pull request', () => {
 // ---- bringing it up to date --------------------------------------------------------------------------------------------------------
 
 describe('updating', () => {
-  /** A repository whose rule cites a file that changed after the rule was checked. */
-  function repoWithStaleRule(): Repo {
+  /** A repository whose root AGENTS.md states a fact the code no longer holds. */
+  function repoWithAgents(): Repo {
     const repo = makeRepo();
     const seed = join(repo.root, 'seed');
-    const checked = git(seed, 'rev-parse', 'HEAD');
-    mkdirSync(join(seed, '.coxia/rules'), { recursive: true });
-    writeFileSync(join(seed, '.coxia/README.md'), `---\nchecked-commit: ${checked}\nchecked-date: 2026-09-01\nsummary: The project\n---\n# App\n`);
-    writeFileSync(join(seed, '.coxia/rules/x.md'), `---\nchecked-commit: ${checked}\nchecked-date: 2026-09-01\nevidence: [src/app.ts:1]\n---\n# The constant\n\nThe app constant is 1.\n`);
+    writeFileSync(join(seed, AGENTS_FILE), '# App\n\nA tiny app. The app constant is 1.\n');
     git(seed, 'add', '.');
-    git(seed, 'commit', '-q', '-m', 'add the documentation');
+    git(seed, 'commit', '-q', '-m', 'add the instructions');
     writeFileSync(join(seed, 'src/app.ts'), 'export const app = 3;\n');
     git(seed, 'commit', '-qam', 'change the constant');
     git(seed, 'push', '-q', 'origin', 'main');
     return repo;
   }
 
-  it('tells the draft which files are not checked and why, hands it the documentation with the mark, and stamps only what it changed', async () => {
-    const b = await bootDocs({ repo: repoWithStaleRule() });
-    // what the agent is handed is the section `runAgent` adds to the system text, from the ask the stage made: read it as the call is made, before the pass changes the files
+  it('tells the draft to review the current AGENTS.md, hands it the file, and commits what it wrote', async () => {
+    const b = await bootDocs({ repo: repoWithAgents() });
+    // what the agent is handed is the section `runAgent` adds to the system text, from the ask the stage made: read it as the call is made, before the pass changes the file
     let section = '';
     b.engine.script('docs-writer', async (c, tools) => {
       section = await harnessSection(c.docs as NonNullable<typeof c.docs>, c.agent, { cwd: c.cwd });
-      await tools.write('.coxia/rules/x.md', `${header('evidence: [src/app.ts:1]\n')}# The constant\n\nThe app constant is 3.\n`);
+      await tools.write(AGENTS_FILE, AGENTS_UPDATED);
       return work('Corrected.', { commit: 'correct the constant', artifacts: [doc('IMPORT_NOTES.md', NOTES)] });
     });
     const run = await b.runner.startDocs('app', 'update');
     await b.settle();
     expect(run.docs).toEqual({ mode: 'update' });
     const record = readFileSync(join(run.worktree, '.coxia/.run/0_ISSUE.md'), 'utf8');
-    expect(record).toContain('bring the documentation of this repository up to date');
-    expect(record).toMatch(/\.coxia\/rules\/x\.md: not checked: 1 file\(s\) it cites changed since [0-9a-f]{7} \(src\/app\.ts\)/);
-    expect(record).toMatch(/\.coxia\/README\.md: checked/);
-    // the agent is handed what exists, with the mark on the rule that is out of date
-    expect(section).toContain('Documentation file .coxia/rules/x.md [not checked: 1 file(s) it cites changed since');
-    expect(section).toContain('Overview of the project (.coxia/README.md)');
-    // the rule it changed is stamped with the commit that holds it; the overview it did not touch keeps its header
-    const stamped = readFileSync(join(run.worktree, '.coxia/rules/x.md'), 'utf8');
-    const [, made] = git(run.worktree, 'log', '-2', '--format=%H').split('\n');
-    expect(stamped).toContain(`checked-commit: ${made}`);
-    expect(readFileSync(join(run.worktree, '.coxia/README.md'), 'utf8')).toContain('checked-date: 2026-09-01');
+    expect(record).toContain("review and update this repository's root AGENTS.md");
+    expect(record).toContain(`- ${AGENTS_FILE}: present`);
+    // the agent is handed what the file holds, framed as the project instructions
+    expect(section).toContain(`Project instructions (${AGENTS_FILE})`);
+    expect(section).toContain('The app constant is 1.');
+    // what it wrote is what the branch holds
+    expect(readFileSync(join(run.worktree, AGENTS_FILE), 'utf8')).toBe(AGENTS_UPDATED);
+    expect(git(run.worktree, 'log', '-1', '--format=%s')).toContain('correct the constant');
   });
 });
 
@@ -698,15 +712,16 @@ describe('updating', () => {
 describe('what a documentation agent may write, on both engines', () => {
   let root: string;
   let outside: string;
-  const writeRoot = () => join(root, '.coxia');
+  const writeRoot = () => root;
+  const allow = [AGENTS_FILE];
 
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), 'docs-confine-'));
     outside = mkdtempSync(join(tmpdir(), 'docs-confine-out-'));
-    mkdirSync(join(root, '.coxia/rules'), { recursive: true });
+    mkdirSync(join(root, '.coxia'));
     mkdirSync(join(root, 'src'));
     writeFileSync(join(root, 'src/app.ts'), 'export const app = 1;\n');
-    symlinkSync('..', join(root, '.coxia/up'));
+    symlinkSync('..', join(root, 'up'));
   });
 
   type Hook = (input: object, id: undefined, o: { signal: AbortSignal }) => Promise<{ hookSpecificOutput?: { permissionDecision?: string } }>;
@@ -722,19 +737,21 @@ describe('what a documentation agent may write, on both engines', () => {
     return 'allow';
   }
 
-  it('the hooks of the SDK allow .coxia, refuse any other path (relative, absolute, "..", through a link) and keep reading the whole worktree', async () => {
-    const hooks = confinedHooks({ root, writeRoot: writeRoot(), commands: [] });
+  it('the hooks of the SDK allow AGENTS.md, refuse any other path (relative, absolute, "..", through a link) and keep reading the whole worktree', async () => {
+    const hooks = confinedHooks({ root, writeRoot: writeRoot(), writeAllow: allow, commands: [] });
     for (const tool of ['Write', 'Edit', 'MultiEdit']) {
       const w = (file_path: string) => sdk(hooks, tool, { file_path, content: 'x', old_string: 'a', new_string: 'b' });
-      expect(await w('.coxia/rules/a.md'), `${tool} in .coxia`).toBe('allow');
-      expect(await w(join(root, '.coxia/rules/a.md')), `${tool} absolute in .coxia`).toBe('allow');
+      expect(await w(AGENTS_FILE), `${tool} the instructions`).toBe('allow');
+      expect(await w(join(root, AGENTS_FILE)), `${tool} the instructions, absolute`).toBe('allow');
       expect(await w('src/app.ts'), `${tool} the code`).toBe('deny');
-      expect(await w('rules/a.md'), `${tool} relative to the worktree, not to .coxia`).toBe('deny');
+      expect(await w('.coxia/.gitignore'), `${tool} the ignore file`).toBe('deny');
+      expect(await w('.coxia/.run/memory.md'), `${tool} in the run folder`).toBe('deny');
       expect(await w(join(root, 'src/app.ts')), `${tool} absolute, outside`).toBe('deny');
-      expect(await w('.coxia/../src/app.ts'), `${tool} with ..`).toBe('deny');
+      expect(await w('docs/AGENTS.md'), `${tool} a file of that name deeper`).toBe('deny');
+      expect(await w('AGENTS.md/../src/app.ts'), `${tool} with ..`).toBe('deny');
       expect(await w(join(outside, 'x.md')), `${tool} elsewhere`).toBe('deny');
-      expect(await w('.coxia/up/src/app.ts'), `${tool} through a link that leaves .coxia`).toBe('deny');
-      expect(await w('.coxia'), `${tool} the folder itself`).toBe('deny');
+      expect(await w('up/src/app.ts'), `${tool} through a link that leaves the worktree`).toBe('deny');
+      expect(await w('.'), `${tool} the folder itself`).toBe('deny');
     }
     // reads are the worktree's, as an agent that writes has always had them; the shell and the network stay shut
     expect(await sdk(hooks, 'Read', { file_path: 'src/app.ts' })).toBe('allow');
@@ -743,37 +760,21 @@ describe('what a documentation agent may write, on both engines', () => {
     expect(await sdk(hooks, 'WebFetch', { url: 'https://example.com' })).toBe('deny');
   });
 
-  describe('what the app keeps in .coxia (its ignore file and the folder of the run)', () => {
-    const reserved = HARNESS_OWN;
-    const ctx = () => ({ cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: writeRoot(), writeReserved: reserved });
-
-    it('the hooks of the SDK refuse them, in any spelling of the case, and still allow the documentation', async () => {
-      const hooks = confinedHooks({ root, writeRoot: writeRoot(), writeReserved: reserved, commands: [] });
-      for (const tool of ['Write', 'Edit', 'MultiEdit']) {
-        const w = (file_path: string) => sdk(hooks, tool, { file_path, content: 'x', old_string: 'a', new_string: 'b' });
-        expect(await w('.coxia/.gitignore'), `${tool} the ignore file`).toBe('deny');
-        expect(await w(join(root, '.coxia/.gitignore')), `${tool} the ignore file, absolute`).toBe('deny');
-        expect(await w('.coxia/.GITIGNORE'), `${tool} the ignore file, in capitals`).toBe('deny');
-        expect(await w('.coxia/.run/memory.md'), `${tool} in the run folder`).toBe('deny');
-        expect(await w('.coxia/.run'), `${tool} the run folder`).toBe('deny');
-        expect(await w('.coxia/rules/.gitignore'), `${tool} a file of that name deeper is the agent's`).toBe('allow');
-        expect(await w('.coxia/README.md'), `${tool} the documentation`).toBe('allow');
-      }
-    });
-
-    it('the Write and Edit tools of the open engine refuse them too, whatever the hooks said', async () => {
-      await expect(writeTool.run({ file_path: '.coxia/.gitignore', content: 'x' }, ctx())).rejects.toThrow(/keeps this file/);
-      await expect(writeTool.run({ file_path: '.coxia/.run/memory.md', content: 'x' }, ctx())).rejects.toThrow(/keeps this file/);
-      await expect(editTool.run({ file_path: '.coxia/.gitignore', old_string: 'a', new_string: 'b' }, ctx())).rejects.toThrow(/keeps this file/);
-      expect(existsSync(join(root, '.coxia/.gitignore'))).toBe(false);
-      expect(existsSync(join(root, '.coxia/.run'))).toBe(false);
-      await writeTool.run({ file_path: '.coxia/rules/ok.md', content: 'ok\n' }, ctx());
-      const policy = policyFromHooks(confinedHooks({ root, writeRoot: writeRoot(), writeReserved: reserved, commands: [] }), 'fake');
-      expect(await policy.pre('Write', { file_path: '.coxia/.gitignore', content: 'x' }, root)).toBeTruthy();
-    });
+  it('the Write and Edit tools of the open engine refuse the same paths, whatever the hooks said', async () => {
+    const ctx = () => ({ cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: writeRoot(), writeAllow: allow });
+    await expect(writeTool.run({ file_path: '.coxia/.gitignore', content: 'x' }, ctx())).rejects.toThrow(/only AGENTS\.md/i);
+    await expect(writeTool.run({ file_path: '.coxia/.run/memory.md', content: 'x' }, ctx())).rejects.toThrow(/only AGENTS\.md/i);
+    await expect(editTool.run({ file_path: 'src/app.ts', old_string: 'a', new_string: 'b' }, ctx())).rejects.toThrow(/only AGENTS\.md/i);
+    expect(existsSync(join(root, '.coxia/.gitignore'))).toBe(false);
+    expect(existsSync(join(root, '.coxia/.run'))).toBe(false);
+    await writeTool.run({ file_path: AGENTS_FILE, content: 'ok\n' }, ctx());
+    expect(readFileSync(join(root, AGENTS_FILE), 'utf8')).toBe('ok\n');
+    const policy = policyFromHooks(confinedHooks({ root, writeRoot: writeRoot(), writeAllow: allow, commands: [] }), 'fake');
+    expect(await policy.pre('Write', { file_path: 'src/app.ts', content: 'x' }, root)).toBeTruthy();
+    expect(await policy.pre('Write', { file_path: AGENTS_FILE, content: 'x' }, root)).toBeNull();
   });
 
-  describe('when .coxia is not a real folder of the worktree', () => {
+  describe('when AGENTS.md is not a real file of the worktree', () => {
     let linked: string;
     let into: string;
     beforeAll(() => {
@@ -781,34 +782,34 @@ describe('what a documentation agent may write, on both engines', () => {
       into = join(linked, 'inside');
       mkdirSync(into);
       mkdirSync(join(linked, 'src'));
-      symlinkSync(outside, join(linked, '.coxia'));
+      symlinkSync(outside, join(linked, AGENTS_FILE));
     });
-    const ctxOf = (cwd: string) => ({ cwd, roots: [cwd], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: join(cwd, '.coxia') });
+    const ctxOf = (cwd: string) => ({ cwd, roots: [cwd], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: cwd, writeAllow: allow });
 
-    it('the hooks of the SDK refuse a write through .coxia as a link, relative or absolute, and one through a link to a folder of the worktree', async () => {
-      const hooks = confinedHooks({ root: linked, writeRoot: join(linked, '.coxia'), commands: [] });
+    it('the hooks of the SDK refuse a write through AGENTS.md as a link, relative or absolute, and one through a link to a folder of the worktree', async () => {
+      const hooks = confinedHooks({ root: linked, writeRoot: linked, writeAllow: allow, commands: [] });
       for (const tool of ['Write', 'Edit', 'MultiEdit']) {
-        expect(await sdk(hooks, tool, { file_path: '.coxia/x.md', content: 'x' }), `${tool} relative`).toBe('deny');
-        expect(await sdk(hooks, tool, { file_path: join(linked, '.coxia/x.md'), content: 'x' }), `${tool} absolute`).toBe('deny');
+        expect(await sdk(hooks, tool, { file_path: AGENTS_FILE, content: 'x' }), `${tool} relative`).toBe('deny');
+        expect(await sdk(hooks, tool, { file_path: join(linked, AGENTS_FILE), content: 'x' }), `${tool} absolute`).toBe('deny');
       }
-      rmSync(join(linked, '.coxia'));
-      symlinkSync(into, join(linked, '.coxia'));
-      expect(await sdk(hooks, 'Write', { file_path: '.coxia/x.md', content: 'x' }), 'a link that stays inside the worktree').toBe('deny');
-      rmSync(join(linked, '.coxia'));
-      symlinkSync(outside, join(linked, '.coxia'));
+      rmSync(join(linked, AGENTS_FILE));
+      symlinkSync(into, join(linked, AGENTS_FILE));
+      expect(await sdk(hooks, 'Write', { file_path: AGENTS_FILE, content: 'x' }), 'a link that stays inside the worktree').toBe('deny');
+      rmSync(join(linked, AGENTS_FILE));
+      symlinkSync(outside, join(linked, AGENTS_FILE));
       expect(existsSync(join(outside, 'x.md'))).toBe(false);
     });
 
     it('the Write and Edit tools of the open engine refuse it too, and the policy built from the hooks does before them', async () => {
       const ctx = ctxOf(linked);
       writeFileSync(join(outside, 'present.md'), 'old\n');
-      await expect(writeTool.run({ file_path: '.coxia/x.md', content: 'x' }, ctx)).rejects.toThrow();
-      await expect(writeTool.run({ file_path: join(linked, '.coxia/x.md'), content: 'x' }, ctx)).rejects.toThrow();
-      await expect(editTool.run({ file_path: '.coxia/present.md', old_string: 'old', new_string: 'new' }, ctx)).rejects.toThrow();
+      await expect(writeTool.run({ file_path: AGENTS_FILE, content: 'x' }, ctx)).rejects.toThrow();
+      await expect(writeTool.run({ file_path: join(linked, AGENTS_FILE), content: 'x' }, ctx)).rejects.toThrow();
+      await expect(editTool.run({ file_path: AGENTS_FILE, old_string: 'old', new_string: 'new' }, ctx)).rejects.toThrow();
       expect(existsSync(join(outside, 'x.md'))).toBe(false);
       expect(readFileSync(join(outside, 'present.md'), 'utf8')).toBe('old\n');
-      const policy = policyFromHooks(confinedHooks({ root: linked, writeRoot: join(linked, '.coxia'), commands: [] }), 'fake');
-      expect(await policy.pre('Write', { file_path: '.coxia/x.md', content: 'x' }, linked)).toBeTruthy();
+      const policy = policyFromHooks(confinedHooks({ root: linked, writeRoot: linked, writeAllow: allow, commands: [] }), 'fake');
+      expect(await policy.pre('Write', { file_path: AGENTS_FILE, content: 'x' }, linked)).toBeTruthy();
     });
   });
 
@@ -818,20 +819,19 @@ describe('what a documentation agent may write, on both engines', () => {
     expect(await sdk(hooks, 'Write', { file_path: '../x.ts', content: 'x' })).toBe('deny');
   });
 
-  it('the Write tool of the open engine stays inside .coxia too, with the path read from the working directory', async () => {
-    const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: writeRoot() };
-    // a path inside .coxia lands there (not in .coxia/.coxia), and any other is refused by the tool itself, whatever the hooks said
-    await writeTool.run({ file_path: '.coxia/rules/b.md', content: 'b\n' }, ctx);
-    expect(readFileSync(join(root, '.coxia/rules/b.md'), 'utf8')).toBe('b\n');
-    expect(existsSync(join(root, '.coxia/.coxia'))).toBe(false);
+  it('the Write tool of the open engine writes AGENTS.md at the root of the worktree and refuses every other path', async () => {
+    const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: writeRoot(), writeAllow: allow };
+    await writeTool.run({ file_path: AGENTS_FILE, content: 'b\n' }, ctx);
+    expect(readFileSync(join(root, AGENTS_FILE), 'utf8')).toBe('b\n');
+    expect(existsSync(join(root, 'AGENTS.md/AGENTS.md'))).toBe(false);
     await expect(writeTool.run({ file_path: 'src/app.ts', content: 'x' }, ctx)).rejects.toThrow();
-    await expect(writeTool.run({ file_path: 'rules/b.md', content: 'x' }, ctx)).rejects.toThrow();
+    await expect(writeTool.run({ file_path: 'docs/AGENTS.md', content: 'x' }, ctx)).rejects.toThrow();
     await expect(writeTool.run({ file_path: join(outside, 'x.md'), content: 'x' }, ctx)).rejects.toThrow();
     expect(readFileSync(join(root, 'src/app.ts'), 'utf8')).toBe('export const app = 1;\n');
     // and the same policy the engine builds from the hooks refuses the code before the tool runs
-    const policy = policyFromHooks(confinedHooks({ root, writeRoot: writeRoot(), commands: [] }), 'fake');
+    const policy = policyFromHooks(confinedHooks({ root, writeRoot: writeRoot(), writeAllow: allow, commands: [] }), 'fake');
     expect(await policy.pre('Write', { file_path: 'src/app.ts', content: 'x' }, root)).toBeTruthy();
-    expect(await policy.pre('Write', { file_path: '.coxia/rules/c.md', content: 'x' }, root)).toBeNull();
+    expect(await policy.pre('Write', { file_path: AGENTS_FILE, content: 'x' }, root)).toBeNull();
   });
 
   describe('through runAgent on the open engine', () => {
@@ -840,9 +840,9 @@ describe('what a documentation agent may write, on both engines', () => {
       fake = await fakeOpenAI((req) =>
         req.n === 1
           ? toolStep([
-              { id: 'w1', name: 'Write', args: { file_path: '.coxia/rules/open.md', content: 'open\n' } },
+              { id: 'w1', name: 'Write', args: { file_path: AGENTS_FILE, content: 'open\n' } },
               { id: 'w2', name: 'Write', args: { file_path: 'src/feature.ts', content: 'export const x = 1;\n' } },
-              { id: 'w3', name: 'Write', args: { file_path: 'rules/relative.md', content: 'x' } },
+              { id: 'w3', name: 'Write', args: { file_path: 'docs/AGENTS.md', content: 'x' } },
               { id: 'r1', name: 'Read', args: { file_path: 'src/app.ts' } },
             ])
           : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }]),
@@ -852,7 +852,7 @@ describe('what a documentation agent may write, on both engines', () => {
       await fake.close();
     });
 
-    it('writes .coxia/rules, refuses the code and a path that is not under .coxia, and reads the code', async () => {
+    it('writes AGENTS.md, refuses the code and a path that is not the root AGENTS.md, and reads the code', async () => {
       updateConfig((c) => {
         c.llm.providers.push(newProvider({ id: 'localdocs', kind: 'openai-compatible', baseUrl: fake.url, structured: 'tool' }));
         return c;
@@ -860,14 +860,14 @@ describe('what a documentation agent may write, on both engines', () => {
       const agent = newAgent({ id: 'docs-writer', permission: 'worktree', shell: 'none', model: { role: null, provider: 'localdocs', model: 'qwen3:8b' } });
       const denials: string[] = [];
       const r = await runAgent<{ fala: string }>(
-        { agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'docs-writer', maxTurns: 6, confine: { root, writeRoot: writeRoot(), hooks: confinedHooks({ root, writeRoot: writeRoot(), commands: [], onDenied: (d) => denials.push(`${d.code}:${d.target}`) }) } },
+        { agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'docs-writer', maxTurns: 6, confine: { root, writeRoot: writeRoot(), writeAllow: allow, hooks: confinedHooks({ root, writeRoot: writeRoot(), writeAllow: allow, commands: [], onDenied: (d) => denials.push(`${d.code}:${d.target}`) }) } },
         [],
       );
       expect(r.data).toEqual({ fala: 'done' });
-      expect(readFileSync(join(root, '.coxia/rules/open.md'), 'utf8')).toBe('open\n');
+      expect(readFileSync(join(root, AGENTS_FILE), 'utf8')).toBe('open\n');
       expect(existsSync(join(root, 'src/feature.ts'))).toBe(false);
-      expect(existsSync(join(root, 'rules/relative.md'))).toBe(false);
-      expect(denials).toEqual(['outside:src/feature.ts', 'outside:rules/relative.md']);
+      expect(existsSync(join(root, 'docs/AGENTS.md'))).toBe(false);
+      expect(denials).toEqual(['reserved:src/feature.ts', 'reserved:docs/AGENTS.md']);
       // the read of the code went through: the second request carries what the file holds
       expect(JSON.stringify(fake.chats()[1].body?.messages)).toContain('export const app = 1;');
     });

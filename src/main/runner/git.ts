@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { cycleText } from '../../shared/cycles/text';
 import { type Identity, git, identityArgs } from '../conflictGit';
 import type { RunnerIdentity } from '../../shared/config/types';
@@ -32,6 +32,37 @@ export function checkRef(ref: string): string {
 
 const ok = async (cwd: string, args: string[]): Promise<boolean> => (await git(cwd, args, { fail: false })).code === 0;
 const out = async (cwd: string, args: string[]): Promise<string> => (await git(cwd, args)).stdout.trim();
+
+/** The path as git prints it: the folder's parent resolved (a symbolic link in the way), the folder's own name kept (it may be gone). */
+function listedPath(p: string): string {
+  const abs = resolve(p);
+  try {
+    return join(realpathSync(dirname(abs)), basename(abs));
+  } catch {
+    return abs;
+  }
+}
+
+/**
+ * Whether the folder at `dest` is a worktree of this same clone that a run of the app left behind: git lists it, its folder is there, it holds no branch but the one
+ * this run is about to make, and it has nothing uncommitted. A run that ended without cleaning up leaves exactly that, and refusing it would block the next run of the
+ * same issue or version forever. Anything else — somebody else's checkout, a folder with work in it, a worktree on another branch — is not the app's to take.
+ */
+async function ownLeftoverWorktree(clone: string, dest: string, branch: string): Promise<boolean> {
+  const target = listedPath(dest);
+  const blocks = (await git(clone, ['worktree', 'list', '--porcelain'], { fail: false })).stdout.split('\n\n');
+  const block = blocks.find((b) => {
+    const listed = b.split('\n').find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+    return !!listed && listedPath(listed) === target;
+  });
+  if (!block) return false;
+  const lines = block.split('\n');
+  if (lines.some((l) => l === 'prunable' || l.startsWith('prunable '))) return false;
+  const held = lines.find((l) => l.startsWith('branch '))?.slice('branch '.length);
+  if (held !== undefined && held !== `refs/heads/${branch}`) return false;
+  const status = await git(dest, ['status', '--porcelain'], { fail: false });
+  return status.code === 0 && !status.stdout.trim();
+}
 
 /** The branch new work is cut from: what the remote calls its default, else main or master, else whatever is checked out. */
 export async function defaultBranch(clone: string): Promise<string> {
@@ -73,6 +104,12 @@ export interface WorktreeRequest {
   branch: string;
   /** Branch to cut from; defaults to the repository's own. */
   base?: string;
+  /**
+   * Take over a leftover worktree of this same clone that a run of the app left behind, instead of refusing it. Only for the runs whose branch and folder are
+   * derived from something stable (an issue, a version), where a run that ended without cleaning up would otherwise block every later run of the same thing
+   * forever. A documentation run leaves it off: its folder is the day's, and the same day meeting it again silently is what its own flow refuses.
+   */
+  takeOverLeftover?: boolean;
 }
 
 export interface Worktree {
@@ -85,13 +122,25 @@ export interface Worktree {
 
 /**
  * A worktree of `clone` at `dest` on a new branch. The remote's latest `base` is fetched first when there is a remote (a read); a branch or a
- * folder that already exists is refused, never reused: what is there belongs to somebody else.
+ * folder that already exists is refused, never reused: what is there belongs to somebody else. The one exception is `takeOverLeftover`: a leftover
+ * worktree of this same clone that a run of the app left behind (clean, on no branch but this run's own) is taken over, so a run that ended without
+ * cleaning up does not block the next one.
  */
 export async function createWorktree(w: WorktreeRequest): Promise<Worktree> {
   const branch = checkRef(w.branch);
   if ((await out(w.clone, ['rev-parse', '--is-bare-repository'])) !== 'false') throw new WorktreeError('not-worktree', w.clone);
-  if (existsSync(w.dest)) throw new WorktreeError('dest-exists', w.dest);
-  if (await ok(w.clone, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) throw new WorktreeError('branch-exists', branch);
+  // A leftover of the app's own is taken over whole: its folder goes, and so does the branch it held, which is the one this run is about to make again. A branch the
+  // remote has is not the app's to delete (a run that pushed it is somebody's work now), and neither is one another worktree has checked out.
+  let leftover = false;
+  if (existsSync(w.dest)) {
+    if (!w.takeOverLeftover || !(await ownLeftoverWorktree(w.clone, w.dest, branch))) throw new WorktreeError('dest-exists', w.dest);
+    leftover = true;
+    await git(w.clone, ['worktree', 'remove', '--force', w.dest], { fail: false });
+  }
+  if (await ok(w.clone, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
+    if (!leftover || (await ok(w.clone, ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`]))) throw new WorktreeError('branch-exists', branch);
+    await git(w.clone, ['branch', '-D', branch], { fail: false });
+  }
   const base = checkRef(w.base ?? (await defaultBranch(w.clone)));
   // The repository's hooks and file-system monitor are its own code: `fetch` and `worktree add` (whose checkout runs a `post-checkout` hook) run without them, like every command of the app.
   await git(w.clone, [...SAFE, 'fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], { fail: false });

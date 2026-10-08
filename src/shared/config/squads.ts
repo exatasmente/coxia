@@ -48,7 +48,7 @@ export const scopedTeam = (c: TeamView, squadId: string): AgentDef[] => effectiv
 
 /**
  * The keys of `devCycle.flows` that hold the flow of a kind of run that is not an issue's: a release run (a run whose subject is a version) and a documentation run (a
- * run that drafts the `.coxia/` of a repository). They are flows per run kind next to the flows of the squads, so a squad cannot be called either.
+ * run that drafts a repository's `AGENTS.md`). They are flows per run kind next to the flows of the squads, so a squad cannot be called either.
  */
 export const RELEASE_FLOW_KEY = 'release';
 export const DOCS_FLOW_KEY = 'docs';

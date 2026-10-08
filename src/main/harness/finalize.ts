@@ -1,16 +1,10 @@
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { HARNESS_DIR, type InvalidReason, classifyHarnessPath, parseHarnessFile } from '../../shared/harness/format';
+import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { rewriteLocal } from '../../shared/runs/comment';
 import { git } from '../conflictGit';
 
-// What the app does to the documentation a pass wrote, before it is committed and long before it is pushed: the text is checked for what must not leave the
-// machine (local paths, credentials), and what the pass changed is stamped with the commit and the day it was checked. Nothing is refused: the review of the
-// pull request is the gate; the person is told what was rewritten.
-
-/** The subject of the commit that records the stamp: the runner's template puts its own prefix and number around it. */
-// i18n-ignore-next-line: the subject of a commit in the repository's history
-export const STAMP_SUMMARY = 'update the documentation check';
+// Rewrites sensitive local details from AGENTS.md before the runner commits it.
 
 export interface Rewrite {
   /** Path of the file, relative to the worktree. */
@@ -20,17 +14,10 @@ export interface Rewrite {
 }
 
 export interface Finalized {
-  /** The files whose body was rewritten, with what was found in each. */
   rewritten: Rewrite[];
-  /** Local paths rewritten and credentials masked, in all of them. */
   paths: number;
   secrets: number;
-  /** Files of the layout the pass changed whose header is not valid: they are not stamped, and the person is told. */
-  invalid: { file: string; reason: InvalidReason }[];
-  /** Files of the layout that are not regular files (a symbolic link, say): the app neither reads nor writes through them, and the person is told. */
   skipped: string[];
-  /** Files of the layout the pass changed whose header is valid: what the stamp is written into once the commit exists. */
-  stamp: string[];
 }
 
 const MASK = /\[(?:redacted|key|jwt|email)\]/g;
@@ -119,93 +106,27 @@ function rewriteBody(body: string, wt: string, o: FinalizeOptions): { body: stri
   return { body: text, paths, secrets };
 }
 
-/** The header block of a file (both fences, with the line break after) and the text that follows; no header: the whole text is the body. */
-function splitFile(text: string): { head: string; body: string } {
-  const lines = text.split('\n');
-  if (lines[0]?.replace(/^﻿/, '').trim() !== '---') return { head: '', body: text };
-  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
-  if (end < 0) return { head: '', body: text };
-  const rest = lines.slice(end + 1);
-  return { head: lines.slice(0, end + 1).join('\n') + (rest.length ? '\n' : ''), body: rest.join('\n') };
-}
-
-/** The `.md` files of the layout the working tree changed under `.coxia/` (modified, added or not tracked yet), relative to the folder; deleted ones are not there. */
-async function changedLayoutFiles(wt: string): Promise<string[]> {
-  const r = await git(wt, ['status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', HARNESS_DIR], { fail: false });
-  if (r.code !== 0) return [];
-  const out: string[] = [];
-  for (const entry of r.stdout.split('\0')) {
-    // "XY path": a deletion on either side leaves no file to read
-    if (entry.length < 4 || entry.slice(0, 2).includes('D')) continue;
-    const rel = entry.slice(3);
-    if (rel.startsWith(`${HARNESS_DIR}/`) && classifyHarnessPath(rel.slice(HARNESS_DIR.length + 1))) out.push(rel.slice(HARNESS_DIR.length + 1));
-  }
-  return out.sort();
-}
-
-/**
- * Checks the documentation the pass changed: the prose of the body of each file is rewritten (a local path becomes a path of the repository, what looks like a credential is
- * masked; code blocks and code spans are left alone, see `rewriteBody`) and never the header, whose commit would be taken for an opaque string; a header that does not parse is reported. Writes only the files it rewrites.
- */
+/** Rewrites AGENTS.md only when it changed in the current worktree. */
 export async function finalizeHarness(wt: string, o: FinalizeOptions): Promise<Finalized> {
-  const out: Finalized = { rewritten: [], paths: 0, secrets: 0, invalid: [], skipped: [], stamp: [] };
-  for (const rel of await changedLayoutFiles(wt)) {
-    const file = `${HARNESS_DIR}/${rel}`;
-    // lstat, so a link is not a file: reading or rewriting it would act on whatever it points to, from the host's side.
-    const info = await lstat(join(wt, file)).catch(() => null);
-    if (!info) continue;
-    if (!info.isFile()) {
-      out.skipped.push(file);
-      continue;
-    }
-    const text = await readFile(join(wt, file), 'utf8').catch(() => null);
-    if (text === null) continue;
-    const { head, body } = splitFile(text);
-    const done = rewriteBody(body, wt, o);
-    let next = text;
-    if (done.body !== body) {
-      next = head + done.body;
-      await writeFile(join(wt, file), next);
-      out.rewritten.push({ file, paths: done.paths, secrets: done.secrets });
-      out.paths += done.paths;
-      out.secrets += done.secrets;
-    }
-    const parsed = parseHarnessFile(rel, next);
-    if (!parsed) continue;
-    if (parsed.ok) out.stamp.push(file);
-    else out.invalid.push({ file, reason: parsed.reason });
+  const out: Finalized = { rewritten: [], paths: 0, secrets: 0, skipped: [] };
+  const result = await git(wt, ['status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', AGENTS_FILE], { fail: false });
+  if (result.code !== 0 || !result.stdout.trim()) return out;
+  const entry = result.stdout.split('\0').find((item) => item.length >= 4 && !item.slice(0, 2).includes('D'));
+  if (!entry) return out;
+  const file = entry.slice(3);
+  const info = await lstat(join(wt, file)).catch(() => null);
+  if (!info) return out;
+  if (!info.isFile()) {
+    out.skipped.push(file);
+    return out;
   }
+  const text = await readFile(join(wt, file), 'utf8').catch(() => null);
+  if (text === null) return out;
+  const done = rewriteBody(text, wt, o);
+  if (done.body === text) return out;
+  await writeFile(join(wt, file), done.body);
+  out.rewritten.push({ file, paths: done.paths, secrets: done.secrets });
+  out.paths = done.paths;
+  out.secrets = done.secrets;
   return out;
-}
-
-/** The text with `checked-commit` and `checked-date` of its header set; null when it has no header to set them in. */
-export function stampText(text: string, commit: string, date: string): string | null {
-  const { head, body } = splitFile(text);
-  if (!head) return null;
-  const lines = head.split('\n');
-  const set = (key: string, value: string): boolean => {
-    const at = lines.findIndex((line, i) => i > 0 && line.startsWith(`${key}:`));
-    if (at < 0) return false;
-    lines[at] = `${key}: ${value}`;
-    return true;
-  };
-  return set('checked-commit', commit) && set('checked-date', date) ? lines.join('\n') + body : null;
-}
-
-/**
- * Writes the stamp into the files the pass changed: the commit that holds them and today (UTC). The app writes it, not the agent: the agent cannot know the commit
- * that does not exist yet. Returns the files it changed, for the second commit.
- */
-export async function stampHarness(wt: string, files: string[], commit: string, now: () => Date = () => new Date()): Promise<string[]> {
-  const date = now().toISOString().slice(0, 10);
-  const changed: string[] = [];
-  for (const file of files) {
-    if (!(await lstat(join(wt, file)).catch(() => null))?.isFile()) continue;
-    const text = await readFile(join(wt, file), 'utf8').catch(() => null);
-    const next = text === null ? null : stampText(text, commit, date);
-    if (next === null || next === text) continue;
-    await writeFile(join(wt, file), next);
-    changed.push(file);
-  }
-  return changed;
 }

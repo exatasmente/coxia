@@ -2,7 +2,7 @@
 // default branch during a beta started tens of commits behind the release and would have opened its pull request against main. Real repositories in a
 // scratch folder: a bare origin and a clone, no network.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -74,5 +74,58 @@ describe('the branch a run is cut from', () => {
     expect(await openReleaseBranch(clone)).toBe('release/0.9.0');
     git(join(dir, 'seed'), 'push', '-q', 'origin', '--delete', 'release/0.9.0');
     expect(await workBase(clone)).toBe('main');
+  });
+});
+
+describe('the worktree a run is made in', () => {
+  const dest = (): string => join(dir, 'wt');
+
+  it('is made on a new branch, cut from the base', async () => {
+    const made = await createWorktree({ clone, dest: dest(), branch: 'cycle/1-x' });
+    expect(made.base).toBe('main');
+    expect(git(dest(), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('cycle/1-x');
+  });
+
+  it('refuses a folder that is somebody else\'s, and a branch that already exists', async () => {
+    mkdirSync(dest());
+    writeFileSync(join(dest(), 'mine.txt'), 'x');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x' })).rejects.toMatchObject({ code: 'dest-exists' });
+    rmSync(dest(), { recursive: true, force: true });
+    git(clone, 'branch', 'cycle/1-x');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x' })).rejects.toMatchObject({ code: 'branch-exists' });
+  });
+
+  it('takes over the worktree and the branch a run of the same issue left behind, so a run that ended without cleaning up does not block the next one', async () => {
+    // what a run that ended without cleaning up leaves: its worktree, on its own branch, clean
+    git(clone, 'worktree', 'add', '-q', '-b', 'cycle/1-x', dest(), 'main');
+    const made = await createWorktree({ clone, dest: dest(), branch: 'cycle/1-x', takeOverLeftover: true });
+    expect(made.base).toBe('main');
+    expect(git(dest(), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('cycle/1-x');
+    // the leftover was taken over, not left registered twice
+    const listed = git(clone, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree '));
+    expect(listed.filter((l) => l.slice('worktree '.length) === dest())).toHaveLength(1);
+  });
+
+  it('leaves the leftover alone when the run did not ask for it, as a documentation run does not', async () => {
+    git(clone, 'worktree', 'add', '-q', '-b', 'cycle/1-x', dest(), 'main');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x' })).rejects.toMatchObject({ code: 'dest-exists' });
+    expect(git(dest(), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('cycle/1-x');
+  });
+
+  it('does not take over a leftover worktree of its own that holds another branch or has changes', async () => {
+    git(clone, 'branch', 'somebody');
+    git(clone, 'worktree', 'add', '-q', dest(), 'somebody');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x', takeOverLeftover: true })).rejects.toMatchObject({ code: 'dest-exists' });
+    git(clone, 'worktree', 'remove', '--force', dest());
+    git(clone, 'worktree', 'add', '-q', '-b', 'cycle/1-x', dest(), 'main');
+    writeFileSync(join(dest(), 'uncommitted.txt'), 'x');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x', takeOverLeftover: true })).rejects.toMatchObject({ code: 'dest-exists' });
+  });
+
+  it('does not delete a branch the remote has, even when the leftover worktree held it', async () => {
+    git(clone, 'worktree', 'add', '-q', '-b', 'cycle/1-x', dest(), 'main');
+    git(clone, 'push', '-q', 'origin', 'cycle/1-x');
+    await expect(createWorktree({ clone, dest: dest(), branch: 'cycle/1-x', takeOverLeftover: true })).rejects.toMatchObject({ code: 'branch-exists' });
+    expect(git(clone, 'rev-parse', '--verify', 'refs/heads/cycle/1-x')).toBeTruthy();
   });
 });

@@ -69,6 +69,7 @@ export interface BridgeArgs {
   // The folder an agent that writes may change; Write and Edit are only offered with it.
   writeRoot?: string;
   writeReserved?: readonly string[];
+  writeAllow?: readonly string[];
   signal?: AbortSignal;
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
@@ -107,6 +108,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       extraTools: a.extraTools,
       writeRoot: a.writeRoot,
       writeReserved: a.writeReserved,
+      writeAllow: a.writeAllow,
       signal: a.signal,
       describeTool: a.describeTool,
       events: a.events,

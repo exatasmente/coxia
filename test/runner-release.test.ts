@@ -125,6 +125,20 @@ describe('starting a release', () => {
     expect(now.status).toBe('gate');
   });
 
+  it('takes over the worktree and the branch a run of the same version left behind, so a release that ended without cleaning up does not block the next one', async () => {
+    // what a release run that ended without cleaning up leaves: its worktree, on its own branch, clean
+    const dest = join(w.root, 'worktrees', 'app', 'release-0.5.0');
+    w.git('worktree', 'add', '-q', '-b', 'cycle/release-0.5.0', dest, 'main');
+    const { b, run } = await start();
+    const now = current(b, run);
+    expect(now.branch).toBe('cycle/release-0.5.0');
+    expect(now.worktree).toBe(dest);
+    expect(w.steps.branch).toBe('release/0.5.0');
+    // the leftover was taken over, not left registered twice
+    const listed = w.git('worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree '));
+    expect(listed.filter((l) => l.slice('worktree '.length) === dest)).toHaveLength(1);
+  });
+
   it('adopts the issue that is already open for the version instead of making another', async () => {
     forge.issues.set(150, { number: 150, title: 'Release 0.5.0', body: '', labels: [], state: 'open' });
     const { b, run } = await start();

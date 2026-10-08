@@ -28,6 +28,9 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs
 // actions:approve), and a post is never mirrored to the code host by itself. An `@agent` calls that agent wherever a person may post, not only in a run's
 // thread: that is the mention rule, and it changes no channel of this policy. test/forum-policy.test.ts pins that none of them is desktop-only or an external effect.
 
+// board:* read and write the workspace's own board file and nothing else: no host command, no program, no folder. A paired browser may use them
+// (the phone is where a card is answered as much as a question), and the guard inside each handler is what refuses a test workspace. test/board-policy.test.ts pins the list.
+
 // runs:* are all open to a paired browser, except runs:startRelease and runs:command (above, behind the external-effects switch), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
 // undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
 // browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed

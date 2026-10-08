@@ -59,10 +59,12 @@ export interface ShellPolicy {
 export interface Confinement {
   /** The run's worktree: its working directory, which it may read whole, and the only folder it may change unless `writeRoot` narrows that. */
   root: string;
-  /** A folder inside `root` that is the only place the agent may change (a documentation run writes only in `.coxia/`); absent: the whole of `root`. Reads stay on `root`. */
+  /** A folder inside `root` that is the only place the agent may change; absent: the whole of `root`. Reads stay on `root`. */
   writeRoot?: string;
-  /** Names directly under `writeRoot` the app owns and the agent may not write (the ignore file and the run folder of a documentation run). */
+  /** Names directly under `writeRoot` the app owns and the agent may not write. */
   writeReserved?: readonly string[];
+  /** Exact relative file paths the agent may write, when a task has a single-file output. */
+  writeAllow?: readonly string[];
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }
@@ -133,8 +135,18 @@ export interface EngineRequest {
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
   /** The stage's sandbox, for an agent set to `shell: sandbox`: the engine offers the `Shell` tool over it, and leaves its own Bash off. */
   exec?: SandboxSession;
+  /**
+   * A call that continues the session of the call before it (`resume`): the same dialog and the same tools, with one prompt of the app in between. Absent: the
+   * call opens its own session and starts from its prompt alone.
+   */
+  resume?: string;
   /** The evidence tools of a stage that keeps evidence (a stage with a sandbox): the engines offer them next to the `Shell` tool. */
   evidence?: EvidenceTools;
+  /**
+   * A picture of the stage's output folder the agent opened with `ViewImage`: the file it looked at, told the moment it looked. What a stage saw and did not keep
+   * is kept (or said as seen and not kept) while its sandbox is still open; an evidence id it looked at is not reported (it is already kept).
+   */
+  onLooked?: (path: string) => void;
   /**
    * A ceremony agent: a command the code does not allow is asked of the person instead of refused (the call waits for the answer), and the rules the person
    * gave the agent ("allow always") let a command through without asking. Never for a write to the code host, which is asked every time.

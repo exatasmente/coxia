@@ -1,15 +1,13 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { t } from '../../shared/i18n';
-import { HARNESS_DIR } from '../../shared/harness/format';
+import { AGENTS_FILE, DOCS_STATE_DIR } from '../../shared/harness/agentsMd';
 import { git } from '../conflictGit';
 import { realFolderIn } from '../engine/guard';
 import { scanHarness } from '../harness/scan';
-import { checkHarness } from '../harness/stale';
 import { redact } from '../errorlog-core';
 
-// What a documentation run (a run that drafts or updates the `.coxia/` of a repository) says about itself: its reference, its title, its branch, the folder where its
-// own documents live, and the record of the task the first stage reads. Nothing here talks to a code host.
+// The run writes the repository's root AGENTS.md; `.coxia/.run` remains private workflow state.
 
 /** The reference of a documentation run: what "one run at a time" keys on, per repository. */
 export const docsRef = (repo: string): string => `docs:${repo}`;
@@ -25,30 +23,29 @@ export const dayStamp = (now: Date): string => now.toISOString().slice(0, 10).re
 export const docsBranch = (repo: string, now: Date): string => `cycle/docs-${repo}-${dayStamp(now)}`;
 
 /**
- * The cycle folder of a documentation run, inside `.coxia/` and ignored by git (`.coxia/.gitignore`): the run's record, memory and documents are written and read on disk
- * as always, and `git add -A` never sees them, so the pull request carries the documentation and nothing of the run.
+ * The run's record and memory live under `.coxia/.run`, ignored by git so the pull request only carries AGENTS.md.
  */
-export const DOCS_RUN_FOLDER = `${HARNESS_DIR}/.run`;
+export const DOCS_RUN_FOLDER = `${DOCS_STATE_DIR}/.run`;
 
 const IGNORE_LINE = '.run/';
 
 /**
- * Makes sure `.coxia/` is a real folder of the worktree (made when absent), and says whether it is. A repository can carry `.coxia` as a symbolic link, or as a file: the run
- * would write, and let its agent write, wherever the link leads. Uses `lstat`, which never follows a link.
+ * Prepares private run state and refuses an AGENTS.md path that is not a regular file.
  */
 export async function prepareDocsFolder(wt: string): Promise<boolean> {
-  const dir = join(wt, HARNESS_DIR);
+  const dir = join(wt, DOCS_STATE_DIR);
   if (!(await lstat(dir).catch(() => null))) await mkdir(dir, { recursive: true });
-  return realFolderIn(dir, wt);
+  if (!realFolderIn(dir, wt)) return false;
+  const agents = await lstat(join(wt, AGENTS_FILE)).catch(() => null);
+  return !agents || agents.isFile();
 }
 
 /**
- * Makes `.coxia/.gitignore` say `.run/`, keeping whatever else the repository already had there. Says false, writing nothing, when `.coxia` is not a real folder or the
- * ignore file is not a regular file (a link would take the write to another file).
+ * Keeps Coxia's private run state out of the repository changes.
  */
 export async function ensureRunIgnore(wt: string): Promise<boolean> {
   if (!(await prepareDocsFolder(wt))) return false;
-  const file = join(wt, HARNESS_DIR, '.gitignore');
+  const file = join(wt, DOCS_STATE_DIR, '.gitignore');
   const info = await lstat(file).catch(() => null);
   if (info && !info.isFile()) return false;
   const had = info ? await readFile(file, 'utf8') : '';
@@ -67,26 +64,14 @@ export async function importCandidates(wt: string): Promise<string[]> {
 }
 
 /**
- * The record of the task the first stage reads (the run's `0_ISSUE.md`): the mode, what `.coxia/` has now with the state of each file, and the files of Claude Code the
- * draft may import from. In the workspace's language, with anything that looks like a credential masked.
+ * The record of the task the first stage reads: the mode, current AGENTS.md state, and Claude Code files that may be consulted but never changed.
  */
 export async function docsRecord(wt: string, o: { ref: string; title: string; mode: 'create' | 'update' }): Promise<string> {
   const state = await scanHarness(wt);
-  const check = state.exists ? await checkHarness(state).catch(() => null) : null;
   const lines = [`# ${o.ref} ${o.title}`, '', t(`main.runner.docs.record.${o.mode}`), '', `## ${t('main.runner.docs.record.existing')}`, ''];
   if (!state.exists) lines.push(t('main.runner.docs.record.existing.none'));
-  else if (!state.entries.length) lines.push(t('main.runner.docs.record.existing.empty'));
-  for (const e of state.entries) {
-    const base = `- ${HARNESS_DIR}/${e.path}: `;
-    if (!e.parse.ok) {
-      lines.push(base + t('main.runner.docs.record.state.invalid', { reason: e.parse.reason }));
-      continue;
-    }
-    const at = check?.files[e.path];
-    if (at?.state === 'stale') lines.push(base + t('main.runner.docs.record.state.stale', { count: at.total, commit: at.ref.slice(0, 7), names: at.changed.slice(0, 3).join(', ') }));
-    else if (!at || at.state === 'unverified') lines.push(base + t('main.runner.docs.record.state.unverified'));
-    else lines.push(base + t('main.runner.docs.record.state.checked'));
-  }
+  else if (!state.document) lines.push(t('main.runner.docs.record.existing.empty'));
+  else lines.push(`- ${AGENTS_FILE}: ${t('main.runner.docs.record.state.checked')}`);
   if (state.ignored.length) lines.push('', t('main.runner.docs.record.ignored', { names: state.ignored.slice(0, 20).join(', ') }));
   const found = await importCandidates(wt);
   lines.push('', `## ${t('main.runner.docs.record.candidates')}`, '');

@@ -76,6 +76,7 @@ export interface OpenRunParams {
   // The folder an agent that writes may change: with it, Write and Edit are offered when allowed, and the commands run with a scrubbed environment.
   writeRoot?: string;
   writeReserved?: readonly string[];
+  writeAllow?: readonly string[];
   hooks?: SdkHooks;
   // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
   extraTools?: ToolImpl[];
@@ -293,6 +294,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     signal: p.signal,
     writeRoot: p.writeRoot ?? null,
     writeReserved: p.writeReserved,
+    writeAllow: p.writeAllow,
     outputMax,
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),

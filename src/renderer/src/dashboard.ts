@@ -285,6 +285,7 @@ const NAV_ACTIVE: Record<string, NavKey> = {
   glossario: 'more',
   run: 'more',
   runs: 'more',
+  board: 'more',
   forum: 'more',
 };
 

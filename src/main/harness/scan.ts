@@ -1,51 +1,31 @@
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { HARNESS_DIR, HARNESS_OWN, type HarnessEntry, type HarnessState, classifyHarnessPath, parseHarnessFile } from '../../shared/harness/format';
+import { AGENTS_FILE, AGENTS_FILE_MAX, type AgentsDocsState } from '../../shared/harness/agentsMd';
 
-// What a repository holds of the documentation of the app: `<repo>/.coxia/`, found by convention (no list in the config). Only reads the disk.
-
-/** A file this big is not documentation an agent could be given; it is listed as ignored rather than read. */
-export const HARNESS_FILE_MAX = 256 * 1024;
-// A folder with this many files is not a documentation folder; the walk stops so a stray tree cannot make the screen slow.
-const WALK_MAX = 1000;
-
-async function walk(root: string, rel: string, into: string[]): Promise<void> {
-  if (into.length >= WALK_MAX) return;
-  const items = await readdir(join(root, rel), { withFileTypes: true });
-  for (const item of items.sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    const path = rel ? `${rel}/${item.name}` : item.name;
-    if ((HARNESS_OWN as readonly string[]).includes(path)) continue;
-    if (item.isDirectory()) await walk(root, path, into);
-    else into.push(path);
+async function lstatOptional(path: string) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
   }
 }
 
-/** The files of `<repoPath>/.coxia/`, parsed, and the ones the app does not read. A repository without the folder is `exists: false`. */
-export async function scanHarness(repoPath: string): Promise<HarnessState> {
-  const root = join(repoPath, HARNESS_DIR);
-  const empty: HarnessState = { repo: repoPath, exists: false, entries: [], ignored: [], signature: '' };
-  const isDir = await lstat(root).then((s) => s.isDirectory(), () => false);
-  if (!isDir) return empty;
-  const files: string[] = [];
-  await walk(root, '', files).catch(() => undefined);
-  const entries: HarnessEntry[] = [];
-  const ignored: string[] = [];
-  for (const path of files) {
-    const at = classifyHarnessPath(path);
-    const info = at ? await lstat(join(root, path)).catch(() => null) : null;
-    // lstat, so a symbolic link is not a file: it could point outside the repository
-    if (!at || !info || !info.isFile() || info.size > HARNESS_FILE_MAX) {
-      ignored.push(path);
-      continue;
-    }
-    const text = await readFile(join(root, path), 'utf8').catch(() => null);
-    const parse = text === null ? null : parseHarnessFile(path, text);
-    if (!parse) {
-      ignored.push(path);
-      continue;
-    }
-    entries.push({ path, kind: at.kind, id: at.id, parse, size: info.size, mtimeMs: info.mtimeMs });
+/** Reads the repository's universal agent instructions without following links or accepting oversized files. */
+export async function scanHarness(repoPath: string): Promise<AgentsDocsState> {
+  const path = join(repoPath, AGENTS_FILE);
+  const empty: AgentsDocsState = { repo: repoPath, exists: false, document: null, ignored: [], signature: '' };
+  const info = await lstatOptional(path);
+  if (!info) return empty;
+  if (!info.isFile() || info.size > AGENTS_FILE_MAX) {
+    return { ...empty, exists: true, ignored: [AGENTS_FILE], signature: `${AGENTS_FILE}:${info.size}:${info.mtimeMs}` };
   }
-  const signature = entries.map((e) => `${e.path}:${e.size}:${e.mtimeMs}`).join('|');
-  return { repo: repoPath, exists: true, entries, ignored, signature };
+  const text = await readFile(path, 'utf8');
+  return {
+    repo: repoPath,
+    exists: true,
+    document: { path: AGENTS_FILE, text, size: info.size, mtimeMs: info.mtimeMs },
+    ignored: [],
+    signature: `${AGENTS_FILE}:${info.size}:${info.mtimeMs}`,
+  };
 }

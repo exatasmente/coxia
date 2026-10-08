@@ -6,55 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.8.0-beta.7] - 2026-10-07
-
-### Changed
-
-- **A stage that runs again is told why and what is already done.** When the person sends the work back, a review or QA returns it, a failed stage is retried or the app restarts under it, the agent's prompt now opens with why the stage runs again, the request of this attempt said once (not repeated in the conversation and at the end), the documents of the stage already in the cycle folder, the evidence it already kept and its last report. It is told to do what was asked and only that, to leave a document it does not change out of its answer (the app keeps the one in the folder) and to keep the cycle memory with an empty string; a QA pass repeats the scenarios it does not check again as the test plan records them.
-- **The person's note comes first when sending work back.** What the review and QA left open follows it as context, so a note that narrows the work ("only redo the evidence") is not undone by the list.
-- **Every stage is told how to work.** Know what the stage delivers before exploring, read a file once, ask only what the documents and the code cannot answer, and give the final answer once the work is ready. A stage with the evidence tools is told to keep each file right after making it, since what is not kept is deleted when the stage ends.
-
-### Fixed
-
-- **An agent gets the notes of its own role, not of every role.** The role notes of the repository's documentation were marked for every development stage, so planning, implementation, review and QA were handed the notes of triage, refinement, development and the release note alike; each role note now names its own stage.
-
-## [0.8.0-beta.6] - 2026-10-07
-
-### Added
-
-- **An agent that runs commands on the computer can test an interface too.** The two settings of "Testing an interface in the sandbox" (the browsers folder and the virtual display for QA) now also reach an agent set to `shell: host`: its commands see the browsers folder through `PLAYWRIGHT_BROWSERS_PATH`, a QA stage gets a display of its own (an Xvfb the app starts and ends with the stage, never the person's screen), screenshots go to a folder the app makes and `ViewImage` reads only from there, and the stage's prompt explains how to test on the computer (a free port, an empty data folder for the app under test). Until now such a stage had none of this and could only read the code.
-
-## [0.8.0-beta.5] - 2026-10-07
-
-### Fixed
-
-- **A stage on the open engine ends as soon as its agent answered.** When the agent of a stage that talks while it works wrote its final answer in the shape asked for and no message was waiting, the app still asked it for the answer once more, and the model wrote the whole of it a second time: minutes and thousands of tokens at the end of every such stage (a long review took about five minutes to close). That answer is now the result.
-
-## [0.8.0-beta.4] - 2026-10-07
-
-### Added
-
-- **An agent calls another agent in a conversation.** An agent answering in a conversation (its direct conversation, a squad channel, the general conversation or a run's thread) can bring another agent of the team in with *CallAgent*: a product owner talking with you can ask the tech lead or support, a developer the tech lead, QA the developer. The question and the answer are posted in the same conversation, the called agent only reads, and its answer goes back to the caller, who finishes its own. A call back to an agent already in the exchange is refused, and one answer makes at most as many calls as a stage may open (`runner.conversations.perStage`, 3 by default).
-
-### Fixed
-
-- **A message to an agent that is working reaches it while it works.** A message written in the run's conversation to the agent of a working stage used to wait until the agent stopped using its tools, which in practice was the end of the stage. It now enters right after the agent's current step, with the results of its tools, on both engines (on the Claude Agent SDK, after each batch of tools), and the agent is told it can answer with *SendMessage* and carry on.
-
-## [0.8.0-beta.3] - 2026-10-07
-
-### Fixed
-
-- **A stage no longer stands still after its agent answered.** In 0.8.0-beta.1 and beta.2, a stage whose agent ended a step with plain text (common on the open engine) waited for a message that was not coming instead of asking for the final answer, and sat there until its idle limit or until the run was cancelled. The stage now asks for the answer at once when nothing is waiting for it.
-- **A new run starts from the open release.** While a version is in beta, a run is cut from its release branch (the highest `release/X.Y.Z` whose stable tag does not exist yet) and its pull request aims at that branch; with no release open, both are the default branch as before. A run made before this keeps aiming at the default branch.
-
-## [0.8.0-beta.2] - 2026-10-07
-
-### Fixed
-
-- **A stage on the open engine no longer keeps posting that it is done instead of ending.** A model that finished its work and kept announcing it with *SendMessage*, step after step, never closed its stage. The message tool now tells the model that it does not end the stage, and three steps in a row of nothing but messages end the step: the app asks for the final answer, as after a plain reply.
-- **The runs made before 0.8.0 are back on the runs screen.** 0.8.0-beta.1 refused every run file written by an earlier version, because each stage of the run's flow now records whether the cycle's autonomy switch was on; a run without it reads as having it off. The files themselves were never changed.
-
-## [0.8.0-beta.1] - 2026-10-07
+## [0.8.0] - 2026-10-08
 
 ### Added
 
@@ -64,11 +16,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **The issue number in the title of every pull request a run opens.** Settings › Runner has a new field, *Pull request title*, next to the commit message, with `{title}` (what the agent wrote, or the issue's title) and `{iid}`, and the default `{title} #{iid}`. The title is built from it when the run proposes the pull request, so the proposal in Actions, the run screen and the code host show the same text, and a title that already carries the number does not get it twice. The 120-character cap applies to what the agent wrote, never to the number.
 - **A person can send files in the conversations, and the agents open them.** The box of any forum thread now takes files — a button, drag and drop on the computer, paste of an image and the file picker on a phone — several per message, each shown with its name and size and removable before sending. The kind is decided by the content, never by the file name; a file over the limit, of a refused kind or of a kind the app does not accept is refused before sending, with the reason. In the thread an image shows as a thumbnail that opens full size and any other file as a card with name, kind and size that opens or saves, on the window and on a paired browser; that holds for a message written by hand and for the answer a run records, and deleting a message takes its files from the disk. An agent called with `@` in that conversation is told which files the message carries and opens them, read only, with a tool: an image reaches the model as an image on both engines, a text as text. An agent never gets a path on the computer and only reaches the files of the conversation it was called in. What is sent to a model provider leaves the computer: the box says so once, and a workspace may turn attachments to agents off. The limits and the switch live in the workspace.
 - **A working stage can receive messages, send notes and call another agent.** A message written to the agent that is working a stage (an `@` in the run's conversation, from the person or from another agent) reaches it between two of its steps, without the stage restarting, and the conversation shows it was delivered; a message that arrives when the stage is already closing is not lost: it comes back in the conversation with the reason. The agent can send a progress note, a finding or a question that does not block through `SendMessage`, and the stage goes on. It can also call another agent of the team through `CallAgent`, in the run's conversation or in a new forum thread linked to the run, and the two go back and forth until one ends it. A conversation ends at a limit of rounds and a stage opens a limited number of conversations (Settings › Runner, `runner.conversations`, 6 rounds per conversation and 3 conversations per stage by default); a call that would go back to an agent already in the chain is refused, and the conversation says why. A called agent works with its own permissions on the team, never more: one that may write is the only writer of the worktree while the conversation runs (the calling stage waits) and what it changed is committed with the calling stage; its commands appear in the run under its name and its model use counts in the calling stage. Not yet run against a real model, a real sandbox or the run's usage screen: the tests use a stand-in model and a stand-in sandbox, and the narrow diff that shows a reviewer only what the stage did was not built.
+- **An agent calls another agent in a conversation.** An agent answering in a conversation (its direct conversation, a squad channel, the general conversation or a run's thread) can bring another agent of the team in with *CallAgent*: a product owner talking with you can ask the tech lead or support, a developer the tech lead, QA the developer. The question and the answer are posted in the same conversation, the called agent only reads, and its answer goes back to the caller, who finishes its own. A call back to an agent already in the exchange is refused, and one answer makes at most as many calls as a stage may open (`runner.conversations.perStage`, 3 by default).
+- **An agent that runs commands on the computer can test an interface too.** The two settings of "Testing an interface in the sandbox" (the browsers folder and the virtual display for QA) now also reach an agent set to `shell: host`: its commands see the browsers folder through `PLAYWRIGHT_BROWSERS_PATH`, a QA stage gets a display of its own (an Xvfb the app starts and ends with the stage, never the person's screen), screenshots go to a folder the app makes and `ViewImage` reads only from there, and the stage's prompt explains how to test on the computer (a free port, an empty data folder for the app under test). Until now such a stage had none of this and could only read the code.
+- **A workspace with no code host gets a board of its own.** Where no integration is usable, the day stops being empty: a card can be opened on the workspace's own board — a title, a description and the column it starts in — and then moved between the columns the cycle already configured, prioritised with the workspace's own priority labels, given to a squad, commented on and closed. Everything stays in the workspace's data folder: nothing is committed or published, and a card opened this way never starts a run and is never sent to a code host. A workspace that has a usable host keeps exactly the board it has today.
+- **Labeled issues without an assignee appear on the runs screen.** The runs screen lists the open issues of the project that carry the trigger label and have no assignee, each with a button that starts a run for it by hand. Nothing starts by itself from that list.
 
 ### Changed
 
 - **The runner's two templates cannot leave the issue number out.** A commit message or a pull request title without `{iid}` is refused when saved in Settings › Runner or imported from a file, saying what is missing. A stored commit message without it is read with ` #{iid}` appended, and the new title template starts at its default. A release or documentation run has no issue, so it drops the `#` and the number from both.
 - **The commit that resolves a conflict of a run's branch carries the issue number too.** It used to be the plain `Merge branch 'main' into '<branch>'`; it now follows the same commit message template as every other commit of that run. The merge commits of a release keep their own messages.
+- **A stage that runs again is told why and what is already done.** When the person sends the work back, a review or QA returns it, a failed stage is retried or the app restarts under it, the agent's prompt now opens with why the stage runs again, the request of this attempt said once (not repeated in the conversation and at the end), the documents of the stage already in the cycle folder, the evidence it already kept and its last report. It is told to do what was asked and only that, to leave a document it does not change out of its answer (the app keeps the one in the folder) and to keep the cycle memory with an empty string; a QA pass repeats the scenarios it does not check again as the test plan records them.
+- **The person's note comes first when sending work back.** What the review and QA left open follows it as context, so a note that narrows the work ("only redo the evidence") is not undone by the list.
+- **Every stage is told how to work.** Know what the stage delivers before exploring, read a file once, ask only what the documents and the code cannot answer, and give the final answer once the work is ready. A stage with the evidence tools is told to keep each file right after making it, since what is not kept is deleted when the stage ends.
+- Replaced the app-specific `.coxia/` instruction format with a root `AGENTS.md` in plain Markdown, and updated agent delivery, documentation runs, status, and write protection to use the universal file.
+- **A run that ended without cleaning up no longer blocks the next one.** A run of an issue or of a release that was cancelled, or that the app closed in the middle of, left its worktree and its branch behind; starting the same issue or the same version again was then refused with "the folder already exists" for good. The app now takes over that leftover — its own worktree of the same clone, clean and on no branch but the one the new run is about to make — and starts the run. A folder that is somebody else's, a worktree with uncommitted work, one on another branch and a branch the remote already has are still refused, and a documentation run still refuses the day's folder it left behind.
+
+### Fixed
+
+- **A stage on the open engine no longer keeps posting that it is done instead of ending.** A model that finished its work and kept announcing it with *SendMessage*, step after step, never closed its stage. The message tool now tells the model that it does not end the stage, and three steps in a row of nothing but messages end the step: the app asks for the final answer, as after a plain reply.
+- **The runs made before 0.8.0 are back on the runs screen.** 0.8.0-beta.1 refused every run file written by an earlier version, because each stage of the run's flow now records whether the cycle's autonomy switch was on; a run without it reads as having it off. The files themselves were never changed.
+- **A stage no longer stands still after its agent answered.** In 0.8.0-beta.1 and beta.2, a stage whose agent ended a step with plain text (common on the open engine) waited for a message that was not coming instead of asking for the final answer, and sat there until its idle limit or until the run was cancelled. The stage now asks for the answer at once when nothing is waiting for it.
+- **A new run starts from the open release.** While a version is in beta, a run is cut from its release branch (the highest `release/X.Y.Z` whose stable tag does not exist yet) and its pull request aims at that branch; with no release open, both are the default branch as before. A run made before this keeps aiming at the default branch.
+- **A message to an agent that is working reaches it while it works.** A message written in the run's conversation to the agent of a working stage used to wait until the agent stopped using its tools, which in practice was the end of the stage. It now enters right after the agent's current step, with the results of its tools, on both engines (on the Claude Agent SDK, after each batch of tools), and the agent is told it can answer with *SendMessage* and carry on.
+- **A stage on the open engine ends as soon as its agent answered.** When the agent of a stage that talks while it works wrote its final answer in the shape asked for and no message was waiting, the app still asked it for the answer once more, and the model wrote the whole of it a second time: minutes and thousands of tokens at the end of every such stage (a long review took about five minutes to close). That answer is now the result.
+- **An agent gets the notes of its own role, not of every role.** The role notes of the repository's documentation were marked for every development stage, so planning, implementation, review and QA were handed the notes of triage, refinement, development and the release note alike; each role note now names its own stage.
+- **A QA stage has to back what it says it ran, and the screenshots it looked at are not lost.** A QA stage with a sandbox can no longer pass with scenarios claimed as executed and nothing behind them: such a scenario goes back to the agent once, in the same stage and with the same tools, to keep the evidence, point at the command that backs the claim, or say it was only read, and the app records as read whatever still has nothing behind it, saying so in the run's conversation. The test plan and the QA comment are written from what the run recorded, so a scenario the app recorded as read is never called executed in either. An image of the stage's output folder the agent opened and did not keep is kept as evidence of the stage before its folder is removed, and what could not be kept is said as looked at and not kept, with the reason.
+- **QA cannot finish a conclusive scenario without saved evidence.** The QA prompt now says to keep a screenshot, log or short report with `SaveEvidence` and cite its id in the scenario; the app refuses a `pass` or `fail` scenario without evidence kept during that QA stage.
 
 ## [0.7.0] - 2026-10-06
 
@@ -313,14 +286,9 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...HEAD
-[0.8.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.6...v0.8.0-beta.7
-[0.8.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.5...v0.8.0-beta.6
-[0.8.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.4...v0.8.0-beta.5
-[0.8.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.3...v0.8.0-beta.4
-[0.8.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.2...v0.8.0-beta.3
-[0.8.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.1...v0.8.0-beta.2
-[0.8.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0-beta.1
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
+[0.8.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...v0.8.0-beta.8
 [0.7.0]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/exatasmente/coxia/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/exatasmente/coxia/compare/v0.5.0...v0.6.0

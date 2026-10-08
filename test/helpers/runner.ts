@@ -1,6 +1,6 @@
 import type { AppEvent } from '../../src/shared/types';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SECRET_GLOBS, secretPath, type AgentCall } from '../../src/main/agents';
@@ -81,10 +81,13 @@ export interface FakeIssues extends IssueSource {
   reads: number[];
 }
 
-/** A code host that can only be read, and records what was read. */
+/** A code host that can only be read, and records what was read. `triggered` is the person's own issues (`listMyIssues`): what carries `label` and is open and that
+ * this person opened or was assigned, so an unassigned issue of another author never reaches the automatic scan — exactly the real host. */
 export function fakeIssues(): FakeIssues {
   const items = new Map<number, { issue: VcsIssue; comments: VcsComment[] }>();
   const reads: number[] = [];
+  const ME = 'ana';
+  const mine = (i: VcsIssue): boolean => i.author === ME || i.assignees.includes(ME);
   return {
     items,
     reads,
@@ -97,7 +100,10 @@ export function fakeIssues(): FakeIssues {
       return found;
     },
     async triggered(label) {
-      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()));
+      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()) && mine(i));
+    },
+    async unassigned(label) {
+      return [...items.values()].map((x) => x.issue).filter((i) => i.state === 'open' && i.labels.some((l) => l.toLowerCase() === label.toLowerCase()) && i.assignees.length === 0);
     },
   };
 }
@@ -127,6 +133,15 @@ export const toolsFor = (call: AgentCall): Tools => {
   };
 };
 
+export async function keepQaEvidence(call: AgentCall): Promise<string[]> {
+  if (!call.exec?.stageDir || !call.evidence) return [];
+  writeFileSync(join(call.exec.stageDir, 'out', 'qa-result.txt'), 'QA check completed.\n');
+  const saved = await call.evidence.save({ path: '/coxia/out/qa-result.txt', title: 'QA result' });
+  const id = /\bev-\d+\b/.exec(saved.text)?.[0];
+  if (!id) throw new Error(`QA evidence was not saved: ${saved.text}`);
+  return [id];
+}
+
 /** What a responder returns for a call that ran out of turns and answered from the wrap-up: the engine reports it as `partial`. */
 export class PartialAnswer {
   constructor(readonly data: unknown) {}
@@ -148,6 +163,7 @@ export function fakeEngine(): FakeEngine {
   const counts = new Map<string, number>();
   const calls: AgentCall[] = [];
   const jobs: (string | null)[] = [];
+  let sessions = 0;
   const engine = Object.assign(async (call: AgentCall) => {
     calls.push(call);
     jobs.push(currentJobId());
@@ -158,7 +174,9 @@ export function fakeEngine(): FakeEngine {
     const responder = list[Math.min(n, list.length) - 1];
     if (!responder) throw new Error(`the fake engine has no answer for ${id} (call ${n})`);
     const said = await responder(call, toolsFor(call), n);
-    return said instanceof PartialAnswer ? { data: said.data, partial: true as const } : { data: said };
+    // The session of the call: the one a round that continues it resumes, or a new one.
+    const sessionId = call.resume?.session ?? `session-${++sessions}`;
+    return said instanceof PartialAnswer ? { data: said.data, partial: true as const, sessionId } : { data: said, sessionId };
   }, { calls, jobs, script: (agent: string, ...responders: Responder[]) => void scripts.set(agent, responders) });
   return engine;
 }
@@ -225,7 +243,23 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
       // What the stage offers to test an interface, and the reading of images from its output folder: a sandbox always reads one, a host session when it was given the settings
       // (and then its folder is a real one, named in `gui.out`).
       ...(o.gui ? { gui: host ? { out: '/tmp/coxia-host-test/out', ...o.gui } : o.gui } : {}),
-      ...(!host || o.gui ? { readImage: (path: string): ImageRead => o.images?.[path] ?? { ok: false, why: 'missing' } } : {}),
+      ...(!host || o.gui
+        ? {
+            readImage: (path: string): ImageRead => {
+              const known = o.images?.[path];
+              if (known) return known;
+              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one.
+              const rel = path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path;
+              const file = join(stageDir, 'out', rel);
+              try {
+                const bytes = readFileSync(file);
+                return { ok: true as const, path, mediaType: 'image/png', data: bytes.toString('base64'), file };
+              } catch {
+                return { ok: false as const, why: 'missing' as const };
+              }
+            },
+          }
+        : {}),
       closed: false,
       asked,
       log,

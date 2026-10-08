@@ -72,10 +72,8 @@ export interface StageInput {
   plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
-  /** The stage changes the branch and the repository keeps documentation in `.coxia/`: the agent is told to keep it true in the same change. */
+  /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
-  /** A review: the rules of `.coxia/` the branch left behind (they cite code it changed and it did not bring them up to date), to be raised as findings. Empty or absent: none. */
-  behind?: { file: string; changed: string[] }[];
 }
 
 /** Why a stage runs again: the person sent the work back, a review or QA returned it, the person retried a failure, or the app restarted under it. */
@@ -246,7 +244,6 @@ export function stagePrompt(i: StageInput): string {
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   if (i.release) sections.push(i.release);
-  if (i.behind?.length) sections.push(cp('runner.section.docsBehind', { text: fence(i.behind.map((b) => `- ${b.file}: ${b.changed.join(', ')}`).join('\n')) }));
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
   const said = resume && i.handoff ? i.handoff.text : null;
@@ -263,6 +260,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : '', i.behind?.length ? cp('runner.output.docsBehind') : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }
