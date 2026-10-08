@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { newSquad, addSquad } from '../src/shared/config/squads';
-import { addAgent, newAgent } from '../src/shared/config/team';
+import { addAgent, newAgent, workingTeam } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { agentProblems, applyAgent, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
+import { agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
 
 const flow = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
 // A squad with members needs a liaison; the squad is not what this test is about, so the checked copy has none.
@@ -185,5 +185,67 @@ describe('a draft agent in the editor', () => {
     const c = withDraft();
     const d = { ...draftOf(agent(c, 'developer')), turnsTo: 'trial' };
     expect(teamIssues(c, d, false).flow.map((i) => i.code)).toContain('turns-unknown');
+  });
+});
+
+describe('promoting a draft agent of the assistant', () => {
+  const withTrial = (): WorkspaceConfig => {
+    const c = addSquad(flow(), newSquad({ id: 'core', name: 'Core' }));
+    c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', job: 'old job', instructions: 'old', draft: true, tracker: 'read' }));
+    return c;
+  };
+  const form = (c: WorkspaceConfig, over: Partial<ReturnType<typeof blankAgent>> = {}) => ({ ...draftOf(agent(c, 'trial')), ...over });
+  const workStage = (c: WorkspaceConfig): string => c.devCycle.stages.find((s) => (s.type ?? 'work') === 'work')!.id;
+
+  it('takes the mark off in the same edit that applies the form, its stages, squad and who it turns to included', () => {
+    const c = withTrial();
+    const stage = workStage(c);
+    const next = promoteDraft(c, form(c, { name: ' Trial two ', job: 'new job', instructions: 'new', stages: [stage], squad: 'core', turnsTo: 'tech-lead', permission: 'worktree', shell: 'allowlist' }));
+    const made = agent(next, 'trial');
+    expect(made).toMatchObject({ name: 'Trial two', job: 'new job', instructions: 'new', stages: [stage], squad: 'core', turnsTo: 'tech-lead', permission: 'worktree', shell: 'allowlist', system: false });
+    expect('draft' in made).toBe(false);
+    // from here the agent takes part in the cycle; before, it did not
+    expect(workingTeam(c.agents.team).map((a) => a.id)).not.toContain('trial');
+    expect(workingTeam(next.agents.team).map((a) => a.id)).toContain('trial');
+    expect(turnsToChoices(next, 'developer').map((a) => a.id)).toContain('trial');
+    expect(c.agents.team.find((a) => a.id === 'trial')).toMatchObject({ draft: true });
+  });
+
+  it('keeps every other agent as it was and moves nothing else in the config', () => {
+    const c = withTrial();
+    const next = promoteDraft(c, form(c));
+    expect(next.agents.team.filter((a) => a.id !== 'trial')).toEqual(c.agents.team.filter((a) => a.id !== 'trial'));
+    expect({ ...next, agents: { ...next.agents, team: [] } }).toEqual({ ...c, agents: { ...c.agents, team: [] } });
+  });
+
+  it('is the edit of any agent for the rest: a model of its own, the autonomy and the commands as the form has them', () => {
+    const c = withTrial();
+    const next = promoteDraft(c, form(c, { autonomous: true, allowedCommands: ['npm test:*'], model: { role: 'fix', provider: '', model: '' } }));
+    expect(agent(next, 'trial')).toMatchObject({ autonomous: true, allowedCommands: ['npm test:*'], model: { role: 'fix' } });
+    expect('allowedCommands' in agent(promoteDraft(c, form(c)), 'trial')).toBe(false);
+  });
+
+  it('refuses an agent that is not there and one that is not a draft', () => {
+    const c = withTrial();
+    expect(() => promoteDraft(c, { ...form(c), id: 'ghost' })).toThrow(/ghost/);
+    expect(() => promoteDraft(c, { ...draftOf(agent(c, 'developer')) })).toThrow(/developer/);
+    expect(() => promoteDraft(c, { ...draftOf(agent(c, 'deep')) })).toThrow(/deep/);
+  });
+
+  it('is checked over the config it makes: a problem of the agent about to be saved is not hidden by the mark it still has', () => {
+    const c = withTrial();
+    const d = form(c, { turnsTo: 'ghost' });
+    // as a plain edit the agent is still a draft in the config, so the checks of the flow leave it out and say nothing about it
+    expect(teamIssues(c, d, false).flow.map((i) => i.code)).not.toContain('turns-unknown');
+    expect(teamIssues(c, d, false, true).flow.filter((i) => i.agent === 'trial').map((i) => i.code)).toEqual(['turns-unknown']);
+    // a promotion of something that cannot be promoted says nothing, like an edit that throws
+    expect(teamIssues(c, { ...d, id: 'developer' }, false, true)).toEqual({ flow: [], squad: [] });
+  });
+
+  it('is judged on its own like an agent that exists: its id is not asked about, its name and its commands are', () => {
+    const c = withTrial();
+    expect(agentProblems(c, form(c), false)).toEqual([]);
+    expect(agentProblems(c, form(c, { name: '  ' }), false).map((p) => p.key)).toEqual(['ui.team.err.name']);
+    expect(agentProblems(c, form(c, { shell: 'allowlist' }), false).map((p) => p.key)).toEqual(['ui.team.err.allowlist']);
   });
 });
