@@ -244,6 +244,8 @@ describe('the test', () => {
     expect(buttonLabels(html)).not.toContain('Adjust from this conversation');
     expect(buttonLabels(html)).toContain('Conclude');
     expect(html).toContain('All 4 rounds are used');
+    // The remark goes to the next round: with none left the field is not there.
+    expect(html).not.toContain('What did you see go wrong? (optional)');
     // and with one left, it is offered
     expect(buttonLabels(view(tested({ rounds: [four, four, four] }), withTrial()))).toContain('Adjust from this conversation');
   });

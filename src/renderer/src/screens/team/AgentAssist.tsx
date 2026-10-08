@@ -262,9 +262,12 @@ export function AgentAssist({
           ) : (
             <p className="small muted" role="status"><span className="spinner" aria-hidden="true" /> {t('ui.team.assist.test.preparing')}</p>
           )}
-          <Labeled label={t('ui.team.assist.note')} hint={t('ui.team.assist.note.hint')}>
-            {(id) => <textarea id={id} className="text-input" rows={3} maxLength={ASSIST_LIMITS.note} disabled={working} value={state.note} onChange={(e) => apply((s) => ({ ...s, note: e.target.value }))} />}
-          </Labeled>
+          {/* The remark goes into the next round: with none left there is nowhere for it to go. */}
+          {roundsLeft(state) > 0 && (
+            <Labeled label={t('ui.team.assist.note')} hint={t('ui.team.assist.note.hint')}>
+              {(id) => <textarea id={id} className="text-input" rows={3} maxLength={ASSIST_LIMITS.note} disabled={working} value={state.note} onChange={(e) => apply((s) => ({ ...s, note: e.target.value }))} />}
+            </Labeled>
+          )}
           {roundsLeft(state) === 0 && <p className="small muted">{t('ui.team.assist.test.noRounds', { max: ASSIST_LIMITS.rounds })}</p>}
           <div className="wz-actions">
             {roundsLeft(state) > 0 && (
