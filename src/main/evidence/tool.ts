@@ -11,26 +11,35 @@ export const ANNOTATE_IMAGE_TOOL = 'AnnotateImage';
 export const EVIDENCE_MCP_SERVER = 'coxia_evidence';
 export const evidenceMcpToolName = (name: string): string => `mcp__${EVIDENCE_MCP_SERVER}__${name}`;
 
-export const SAVE_EVIDENCE_DESCRIPTION =
-  'Keeps a file your stage made in its output folder as evidence of the stage: the person sees it in the run and it can go to the code host. Give the path as you see it inside your sandbox ' +
-  '(for example /coxia/out/shot.png), a short title and an optional description. Nothing outside the output folder is accepted: not an absolute path elsewhere, not a path that walks with "..", ' +
+/** The output folder a sandbox names from the inside; a session that runs on the host has a folder of its own, passed as `out`. */
+const SANDBOX_OUT = '/coxia/out';
+
+/** Told to the model with the folder it writes in, so a stage that runs on the host is not sent to a path that only exists inside a sandbox. */
+export const saveEvidenceDescription = (out: string = SANDBOX_OUT): string =>
+  'Keeps a file your stage made in its output folder as evidence of the stage: the person sees it in the run and it can go to the code host. Give the path of a file in that folder ' +
+  `(for example ${out}/shot.png), a short title and an optional description. Nothing outside the output folder is accepted: not an absolute path elsewhere, not a path that walks with "..", ` +
   `not a path through a link. The kind is read from the bytes, never from the name; images (PNG, JPEG, GIF, WebP), plain text and PDF are kept, and a file over ${Math.round(EVIDENCE_MAX_BYTES / (1024 * 1024))} MiB is refused. It answers with the evidence id ("ev-3"), which is what a QA scenario or a stage output cites.`;
+
+export const SAVE_EVIDENCE_DESCRIPTION = saveEvidenceDescription();
 
 export const ANNOTATE_IMAGE_DESCRIPTION =
   'Draws marks on an image and keeps the result as a new piece of evidence; the original is left as it is. Give the source (an evidence id, or a path in your output folder) and a list of marks. ' +
   `Each mark has a kind (${MARK_KINDS.join(', ')}), a colour of ${MARK_COLORS.join(', ')}, a line width up to ${MARK_MAX_WIDTH} and coordinates in pixels of the image: rectangle and blur take x, y, w, h; ` +
   'arrow takes x, y and x2, y2; ellipse takes x, y and rx, ry; label takes x, y and text; marker takes x, y and n (1..99). The blur box hides what should not be seen. It answers with the id of the new evidence, linked to the one it came from.';
 
-export const SAVE_EVIDENCE_SCHEMA = {
-  type: 'object',
-  properties: {
-    path: { type: 'string', description: 'The file in your output folder, as you see it inside the sandbox (/coxia/out/...).' },
-    title: { type: 'string', description: 'A short title the person reads (at most 200 characters).' },
-    description: { type: 'string', description: 'An optional short text under the title (at most 1000 characters).' },
-  },
-  required: ['path', 'title'],
-  additionalProperties: false,
-} as const;
+export const saveEvidenceSchema = (out: string = SANDBOX_OUT) =>
+  ({
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: `The file in your output folder (${out}/...).` },
+      title: { type: 'string', description: 'A short title the person reads (at most 200 characters).' },
+      description: { type: 'string', description: 'An optional short text under the title (at most 1000 characters).' },
+    },
+    required: ['path', 'title'],
+    additionalProperties: false,
+  }) as const;
+
+export const SAVE_EVIDENCE_SCHEMA = saveEvidenceSchema();
 
 export const ANNOTATE_IMAGE_SCHEMA = {
   type: 'object',

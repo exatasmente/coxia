@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentCall } from '../src/main/agents';
@@ -51,6 +52,35 @@ const keepAndCite = (answer: (call: AgentCall) => Promise<unknown>) => async (ca
 };
 
 void issue;
+
+/**
+ * The same flow with the QA agent set to run its commands on this computer (`shell: host`): the folder the stage saves in is the one the session declared,
+ * and, when nothing was asked to test an interface, the stage has no such folder and stays as it was.
+ */
+async function fullHost(configure: (c: WorkspaceConfig) => void, qa: (call: AgentCall) => Promise<unknown>, gui?: { out: string }): Promise<{ b: Boot; run: Run }> {
+  const sandbox = fakeSandbox(gui ? { gui: { browsers: '/b/ms-playwright', display: 'on', out: gui.out } } : {});
+  const b = await boot({
+    sandbox,
+    issues: undefined,
+    configure: (c) => {
+      c.agents.team.find((a) => a.id === 'qa')!.shell = 'host';
+      configure(c);
+    },
+  });
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('developer', () => work('Built.', { commit: 'add the thing', artifacts: [doc('3_IMPLEMENTATION.md')] }));
+  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+  b.engine.script('qa', qa as never);
+  let run = await b.runner.start('101');
+  for (let i = 0; i < 40; i++) {
+    await b.settle();
+    run = b.runner.get(run.id) as Run;
+    if (run.status === 'gate') b.runner.gate(run.id, 'approve');
+    else if (run.stage === 'ready' || run.status === 'done') break;
+  }
+  return { b, run };
+}
 
 describe('evidence in a run', () => {
   it('records the evidence, publishes it in the conversation and shows it under the scenario', async () => {
@@ -140,5 +170,66 @@ describe('evidence in a run', () => {
     expect(b.runner.get(done.id)?.evidence?.['ev-1']).toBeUndefined();
     expect(before && existsSync(before)).toBe(false);
     expect(b.runner.evidence(done.id)).toEqual([]);
+  });
+});
+
+describe('evidence of a stage whose commands run on the computer', () => {
+  it('keeps what the agent saved in its own output folder and lets a scenario cite it', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'coxia-host-out-'));
+    const { b, run } = await fullHost(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        // The agent saves a file it made in the folder the session declared for it (the one `$COXIA_OUT` holds).
+        writeFileSync(join(call.exec!.outputDir as string, 'shot.png'), PNG());
+        await call.evidence!.save({ path: join(call.exec!.outputDir as string, 'shot.png'), title: 'The screen' });
+        return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', severity: 'non-blocking', detail: 'Looked', evidenceIds: ['ev-1'] }] });
+      },
+      { out },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    expect(done.evidence?.['ev-1']).toMatchObject({ id: 'ev-1', title: 'The screen', stage: 'qa', kind: 'png' });
+    expect(done.qa.at(-1)?.scenarios[0].evidenceIds).toEqual(['ev-1']);
+    // The tools were offered at all: the call carried them, and the id resolved to a real file of the run.
+    expect(b.engine.calls.find((c) => c.agent.id === 'qa')?.evidence).toBeDefined();
+  });
+
+  it('offers none of it to a host stage with no interface to test, as before', async () => {
+    const { b, run } = await fullHost(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        expect(call.evidence).toBeUndefined();
+        expect(call.exec?.outputDir).toBeUndefined();
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'Nothing', result: 'not-run', detail: 'No display', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    // Nothing to keep: no tools, no `evidence` field in the answer the agent is asked for, and no evidence recorded.
+    // The schema is not looked at: a QA scenario carries the `evidence` field (`executed`/`read`) whether the stage keeps evidence or not.
+    expect(qa.evidence).toBeUndefined();
+    expect(Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa')).toHaveLength(0);
+    expect((qa.schema as { properties?: Record<string, unknown> }).properties?.evidence).toBeUndefined();
+    expect(qa.system).not.toContain('SaveEvidence');
+  });
+
+  it('tells the stage the real folder of its evidence, not a path that only exists in a sandbox', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'coxia-host-out-'));
+    const { b } = await fullHost(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        writeFileSync(join(call.exec!.outputDir as string, 'shot.png'), PNG());
+        await call.evidence!.save({ path: join(call.exec!.outputDir as string, 'shot.png'), title: 'The screen' });
+        return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', severity: 'non-blocking', detail: 'Looked', evidenceIds: ['ev-1'] }] });
+      },
+      { out },
+    );
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain('SaveEvidence');
+    expect(qa.system).toContain(out);
+    // No `/coxia/out` in any of the texts the stage is given about its output folder: the sandbox path does not exist on this computer, so reading it there
+    // sends the agent nowhere. The real folder is named by both the rules of the stage and the tool's own description.
+    expect(qa.system).not.toContain('/coxia/out');
+    // The wording is resolved, not left as a catalog key: a stage that was asked to keep evidence is told how, in the words of the catalog.
+    expect(qa.system).not.toContain('runner.rules.evidence');
   });
 });

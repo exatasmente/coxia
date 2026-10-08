@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -45,6 +45,50 @@ async function qaRun(configure: (c: WorkspaceConfig) => void, ...responses: ((ca
 }
 
 const qaComments = (b: Boot, run: Run) => b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.qa.repair');
+
+/**
+ * The same flow with the QA agent's commands running on this computer (`shell: host`), its output folder a real one the test names: the folder the agent
+ * saves in is the folder its evidence is read from. `seenAtClose` reads the run the moment the session closes, so a test can tell the closing guard ran
+ * before the folder went away.
+ */
+async function qaRunHost(
+  configure: (c: WorkspaceConfig) => void,
+  seenAtClose: (evidence: string[]) => void,
+  ...responses: ((call: AgentCall) => Promise<unknown>)[]
+): Promise<{ b: Boot; run: Run; out: string }> {
+  const engine = fakeEngine();
+  const out = mkdtempSync(join(tmpdir(), 'coxia-host-out-'));
+  let booted: Boot | null = null;
+  let id = '';
+  const sandbox = fakeSandbox({
+    gui: { browsers: '/b/ms-playwright', display: 'on', out },
+    onClose: () => void seenAtClose(Object.keys((booted ? booted.runner.get(id) : undefined)?.evidence ?? {})),
+  });
+  const b = await boot({
+    sandbox,
+    engine,
+    configure: (c) => {
+      c.agents.team.find((a) => a.id === 'qa')!.shell = 'host';
+      c.runner.commands = [];
+      configure(c);
+    },
+  });
+  booted = b;
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('developer', () => work('Built.', { commit: 'add the thing', artifacts: [doc('3_IMPLEMENTATION.md')] }));
+  b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
+  b.engine.script('qa', ...(responses as never[]));
+  let run = await b.runner.start('101');
+  id = run.id;
+  for (let i = 0; i < 40; i++) {
+    await b.settle();
+    run = b.runner.get(run.id) as Run;
+    if (run.status === 'gate') b.runner.gate(run.id, 'approve');
+    else if (run.stage === 'ready' || run.status === 'done') break;
+  }
+  return { b, run, out };
+}
 
 /** The minimal tool context the engines pass to a tool (the same shape the ViewImage tests use). */
 const lookCtx = { cwd: '/', roots: ['/'], isSecret: () => false, secretGlobs: [], outputMax: 1000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, seesImages: () => true };
@@ -258,6 +302,67 @@ describe('the pure test plan', () => {
     expect(out).toContain('## Other');
     expect(out).not.toContain('passed (executed)');
     expect(out.match(/a: passed/g)).toHaveLength(1);
+  });
+});
+
+describe('what the agent looked at is not lost on this computer either', () => {
+  it('keeps an image the agent viewed in its output folder and did not keep, before the folder goes away', async () => {
+    const seenAtClose: string[][] = [];
+    const { b, run, out } = await qaRunHost(
+      (c) => void (c.language = 'en'),
+      (evidence) => seenAtClose.push(evidence),
+      async (call) => {
+        const folder = call.exec?.outputDir as string;
+        writeFileSync(join(folder, 'shot.png'), PNG());
+        // The agent looks at it through the same tool the engines use and never keeps it.
+        const { viewImageToolImpl } = await import('../src/main/sandbox/engineTool');
+        await viewImageToolImpl(call.exec!, call.evidence, call.onLooked).run({ source: join(folder, 'shot.png') }, lookCtx);
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    const kept = Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa');
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ kind: 'png', name: 'shot.png', title: expect.stringContaining('app') });
+    // The conversation says how many were kept, and the guard had already kept it when the session was about to close.
+    expect(b.thread(done).filter((m) => m.code === 'runner.qa.lookKept')).toHaveLength(1);
+    expect(seenAtClose).toContainEqual(['ev-1']);
+  });
+
+  it('says "looked at, not kept" when the file is not in the host folder', async () => {
+    const { b, run } = await qaRunHost(
+      (c) => void (c.language = 'en'),
+      () => undefined,
+      async (call) => {
+        // A path outside the folder the session declared: the app was told it was looked at, and keeps nothing of it.
+        call.onLooked?.('/etc/hostname');
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    const said = b.thread(done).filter((m) => m.code === 'runner.qa.lookNotKept');
+    expect(said).toHaveLength(1);
+    expect(String(said[0].params?.reason)).toMatch(/output folder/i);
+    expect(Object.values(done.evidence ?? {}).filter((e) => e.stage === 'qa')).toHaveLength(0);
+  });
+
+  it('keeps the file the agent saved by the tool, and writes the marked one inside the host folder', async () => {
+    const { b, run, out } = await qaRunHost(
+      (c) => void (c.language = 'en'),
+      () => undefined,
+      async (call) => {
+        const folder = call.exec?.outputDir as string;
+        writeFileSync(join(folder, 'shot.png'), PNG());
+        await call.evidence!.save({ path: join(folder, 'shot.png'), title: 'Original' });
+        await call.evidence!.annotate({ source: 'ev-1', marks: [{ kind: 'rectangle', x: 0, y: 0, w: 2, h: 2, color: 'red', width: 1 }] });
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'The app', result: 'not-run', detail: 'No display', evidence: 'read' }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    expect(done.evidence?.['ev-1']).toMatchObject({ kind: 'png', title: 'Original' });
+    expect(done.evidence?.['ev-2']).toMatchObject({ kind: 'png', from: 'ev-1' });
+    // The marked copy went into the folder the session declared, not somewhere else.
+    expect(readdirSync(out).some((n) => n.startsWith('annotated-'))).toBe(true);
   });
 });
 

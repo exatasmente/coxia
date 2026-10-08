@@ -1,0 +1,42 @@
+# Memória do ciclo
+
+## Decisões
+
+- Triagem da #143: bug confirmado por leitura de código; mesmo problema da #142 no modo `shell: host`, dependente dela.
+- **D1:** a comprovação de uma etapa de host é lida da própria pasta de saída da sessão (a que o prompt apresenta em `COXIA_OUT`), não de uma pasta de etapa nova.
+- **D2:** "testar uma interface" no host continua sendo pasta de navegadores disponível ou tela virtual pedida — a condição de hoje.
+- **Desenho:** a raiz da comprovação é campo da sessão (`SandboxSession.outputDir`); o executor decide com um ponto só (`evidenceRoot`). Sem migração de configuração nem linha de conversa nova; o texto da regra nomeia a pasta real nos dois modos (variante `prompt.sdd.runner.rules.evidence.host`, com `{out}`).
+- Implementação completa; revisão rodada 3 **aprovada sem bloqueantes**. O bloqueante anterior (chave crua no texto do host) não se reproduz: a chave exata é procurada antes das variantes e o caminho que lança nunca devolve chave. Assertiva nova em `test/runner-evidence-run.test.ts` reprova chave crua e separa os modos.
+- **QA (tentativa 5): concluída.** `5_TEST_PLAN.md` com 10 cenários: 9 executados e passando, 1 de execução real de host não executado. tsc limpo; suíte inteira 4337 testes com 2 falhas de `voice-setup` por limite de disco do ambiente (/tmp 512 MB, mesmas da tentativa anterior, fora do CI); rodada de critérios 7 arquivos, 115 testes, verde; i18n:lint 4622 chaves; theme-audit e public-audit limpos; nota de lançamento sob `## [Unreleased]` sem referência interna.
+- Resposta: Volta e pede o ajuste <!-- answer:230 -->
+
+## Restrições
+
+- Toda escrita externa passa por `Actions`; a fronteira de segurança não foi tocada. A leitura de imagem aceita a pasta declarada pela sessão pelos dois nomes e recusa o que está fora antes de abrir arquivo.
+- Sem campo de configuração novo: tipos, padrões e esquema não mudam.
+- As comprovações da QA ficam nos dados da execução, não no repositório.
+- Nota de ambiente: `node_modules` da worktree é enlace só de leitura para fora da pasta; o vitest só roda com uma cópia do config num lugar gravável (os caminhos do electron helper e do setup viram absolutos).
+
+## Tentado e descartado
+
+- Perguntar ao repórter; duplicata da #142; pasta de etapa para o host; ligar a pasta de saída sem navegadores/tela; ferramentas duplicadas com linha própria — descartados antes.
+- Trocar a variante `.host` por outra forma de escolher a redação: o defeito era da detecção da revisão, não do código.
+
+## Perguntas abertas
+
+- Nenhuma bloqueante.
+
+## Onde o trabalho está
+
+- A pasta do ciclo tem `0_TRIAGE.md` a `5_TEST_PLAN.md` completos. Código commitado na ramificação: `src/main/sandbox/session.ts`, `src/main/evidence/`, `src/main/runner/executor.ts`, `src/main/runner/prompt.ts`, `src/main/agents.ts`, `src/shared/i18n/main.{en,pt-BR}.json`, `CHANGELOG.md`.
+- QA aprovada: **o ciclo pode seguir para o fecho.**
+- Não verificado em todo o ciclo: modo host em execução real (sessão real, tela); etapa de host que roda de novo sobre comprovação guardada; semântica dos argumentos de `SaveEvidence` na forma do motor aberto; que a #142 esteja mesclada na ramificação além do fecho presente no código (o fecho `keepLooked`/`lookedPaths` existe nesta cópia e roda antes de `session?.close()`) — o histórico não é consultável nesta etapa.
+- Passagem support → product-owner: Refinar a #143 em `1_SPEC.md`: fixar as duas decisões em aberto (a pasta de saída do host como raiz da leitura da comprovação — reaproveitar a pasta de etapa ou ligar as ferramentas à pasta criada pelo host — e o que conta como "testar uma interface" numa etapa de host; hoje a pasta só nasce com navegadores ou tela virtual ligados, e ligá-la sem eles muda o prompt de uma etapa que hoje não a tem). O material desta etapa é leitura de código, não execução: o comportamento do modo host não foi exercitado. A entrega depende da #142 já mesclada (ambas mexem no mesmo arquivo do executor); se a #142 … <!-- handoff:6 -->
+- Passagem product-owner → pessoa: Planejar a #143 a partir do `1_SPEC.md`: (1) confirmar que a #142 já está mesclada na base antes de tocar `src/main/runner/executor.ts` — as duas mexem no mesmo ponto; se não estiver, o plano precisa dizer isso. (2) Levar para o plano, sem reabrir a decisão: D1 (a pasta de saída da própria sessão de host é a raiz da leitura da comprovação, sem pasta de etapa nova) e D2 (testar uma interface no host = pasta de navegadores disponível ou tela virtual pedida, a condição de hoje). (3) Onde a pasta de saída do host precisa estar disponível: em `openHostSession`/`openSandboxService.openHost` (`gui.ou… <!-- handoff:13 -->
+- Passagem tl-plataforma → pessoa: Implementar a #143 seguindo o `2_PLAN.md`, na ordem dos passos 1 a 10, sem reabrir D1/D2. Antes de tocar `src/main/runner/executor.ts`, confirmar no histórico da ramificação que a #142 está mesclada (o fecho `keepLooked`/`lookedPaths` antes de `session?.close()`); se não estiver, parar e dizer isso em vez de tratar o host como caso à parte. A mudança é: `SandboxSession.outputDir` declarado pela sandbox (`out` da pasta de etapa) e pela sessão de host com teste de interface (`shots`/`gui.out`), `resolveOutputPath` recebendo a raiz, `EvidenceContext.stageDir` virando `outputDir`, e no executor `c… <!-- handoff:23 -->
+- Passagem developer → revisor-plataforma: Terminar a implementação da #143: (1) consertar os 3 testes que falharam — no caso de host sem interface, tirar a asserção de que o `schema` não contém a palavra `evidence` (o esquema de cenário de QA sempre tem esse campo; asserir em `AgentCall.evidence`/`run.evidence`), e descobrir por que os dois testes de decomposição de fecho no host (“keeps an image the agent viewed…”, “keeps the file the agent saved by the tool…”) não guardaram — suspeitar do caminho que o `viewImageToolImpl`/`evidence.save` recebe no modo host e conferir se a pasta declarada pela sessão falsa chegou ao executor. (2) Ro… <!-- handoff:36 -->
+- Passagem revisor-plataforma → developer: A revisão leu o diff inteiro contra a spec, o plano e a fronteira de segurança, e rodou os gates. O desenho está correto: a raiz da comprovação virou um campo da sessão, as ferramentas de comprovação e a guarda de fecho passaram a ler essa raiz, e a etapa de sandbox não mudou de comportamento (a suíte de sandbox passa sem mudança de expectativa). O que bloqueia são quatro testes vermelhos: um deles acusa que a nova chave `runner.rules.evidence.host` não é alcançável pelo mecanismo de variantes do catálogo de prompts — o recurso que faz a etapa de host ler o caminho real, critério de aceite 5 —… <!-- handoff:61 -->
+- Passagem developer → revisor-plataforma: Revisar a correção da leitura de imagem no host (`readOutputImage` em `src/main/sandbox/session.ts`) contra a fronteira de segurança: ela aceita o caminho real da pasta da sessão e continua recusando o que está fora. Reler o diff contra o `1_SPEC.md` (critérios 1 a 8), conferir a linha do `CHANGELOG.md` sob `## [Unreleased]` (critério 8) e rodar os gates. Não reabrir D1/D2. <!-- handoff:130 -->
+- Passagem pessoa → developer: Volta e pede o ajuste <!-- handoff:231 -->
+- Passagem developer → revisor-plataforma: Revisar a tentativa 3: conferir que o bloqueante relatado (chave crua no texto da regra de comprovação da etapa de host) não se reproduz no código desta cópia — o mecanismo resolve a id pela chave exata antes das variantes — e que a assertiva nova em `test/runner-evidence-run.test.ts` (`qa.system` não contém `runner.rules.evidence`) separa de fato os dois modos. Reler o diff inteiro contra os critérios 1 a 8 e rodar os gates; o `CHANGELOG.md` sob `## [Unreleased]` foi lido e não tem referência interna. Não reabrir D1/D2 nem o que já foi aceito (a raiz da comprovação como campo da sessão, os id… <!-- handoff:262 -->
+- Passagem revisor-plataforma → qa-plataforma-2: Revisão aprovada: nenhum bloqueante. O bloqueante da rodada anterior (chave crua no texto da regra de comprovação da etapa de host) foi conferido e não se reproduz — o mecanismo resolve a chave exata antes das variantes, e o caminho que lança não devolve chave. Os critérios 1 a 8 foram relidos e os gates passam (tsc limpo; 4363 testes em 288 arquivos; i18n:lint com 4622 chaves; theme-audit; public-audit com 1215 arquivos). Restam duas sugestões não bloqueantes: a assertiva nova não distingue a redação `.host` da base quando as duas resolvem, e o texto que a etapa de host lê é atestado por uma … <!-- handoff:315 -->

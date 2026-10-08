@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **The run screen says which attempt each document of a stage is from.** A stage that the run entered again (the work sent back, a retry, an app restart) merges the documents of both attempts in one list; the timeline now marks each document with the attempt that produced it, written in the app's language, and shows nothing new for a run recorded before this. The same run in a paired browser keeps only that run's lines: when the browser's event stream drops and comes back, what is fetched in between no longer stitches lines of an earlier run of the same work into the timeline that is going. A browser screen opened fresh keeps fetching everything it is told.
 - **A test that raced its own engine is waited for.** The chain test that waits for a question held by an agent polled a fixed number of short sleeps and could read the run before it got there on a slow machine; it now waits for the state with a timeout that fails instead of racing.
+- **A stage whose agent runs commands on the computer can keep its evidence.** What that stage produced to test an interface (screenshots, traces, reports) is no longer lost with the temporary folder when the stage ends: the agent is offered the same evidence tools as a stage with a sandbox, the run shows what it kept, a QA scenario can cite it, and an image the agent looked at and did not keep is kept as evidence of the stage before the folder goes away.
 
 ## [0.9.0-beta.1] - 2026-10-08
 

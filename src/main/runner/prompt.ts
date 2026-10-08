@@ -1,4 +1,5 @@
 import type { SandboxGui } from '../sandbox/session';
+import { OUT } from '../sandbox/policy';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
 import { type ForumMessage, messageText } from '../../shared/forum';
@@ -150,7 +151,8 @@ export function systemText(i: StageInput): string {
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
     cp('runner.rules.focus'),
-    i.evidence ? cp('runner.rules.evidence') : '',
+    // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
+    i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
@@ -264,6 +266,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence', { out: i.sandbox.gui?.out ?? OUT }) : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }
