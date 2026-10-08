@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
 checked-date: 2026-10-06
 evidence: [src/shared/cycles/templates/releaseFlow.ts, src/shared/release.ts, src/main/runner/release.ts, docs/runner.md:1-5, RELEASING.md:1-95, test/runner-release.test.ts]
 summary: Notes for the Release manager agent: the release flow, its two gates and the steps that always wait

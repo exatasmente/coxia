@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
 checked-date: 2026-10-06
 evidence: [CONTRIBUTING.md:114-125, src/shared/cycles/index.ts:1-29, src/shared/cycles/templates/kanban.ts, src/shared/cycles/templates/sdd.ts, src/shared/runs/flowCheck.ts, test/cycle-templates.test.ts, test/cycle-prompts.test.ts, docs/cycles.md:31-51]
 summary: The steps to ship a development-cycle template with the app

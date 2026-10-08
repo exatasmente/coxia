@@ -1,5 +1,5 @@
 ---
-checked-commit: 1a0858c59ed1d4c43e03feb3e709bbefd8441336
+checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
 checked-date: 2026-10-06
 evidence: [docs/cycles.md:53-66, docs/runner.md:81-92, src/main/engine/guard.ts, test/worktree-guard.test.ts, CONTRIBUTING.md:76-85]
 summary: Notes for the developer agent: what it may change, where, and what it must run

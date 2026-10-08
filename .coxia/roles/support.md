@@ -1,5 +1,5 @@
 ---
-checked-commit: 9f9ba219674ed482da8bfe1e6009a5b1fc73d4eb
+checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
 checked-date: 2026-10-06
 evidence: [docs/cycles.md:53-64, docs/runner.md:74-79, src/main/runner/publish.ts, src/main/runner/service.ts:474-486, test/runner-mention-actions.test.ts]
 summary: Notes for the Support agent: reading the issue as its reporter would, and the reporter question
