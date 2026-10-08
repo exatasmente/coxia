@@ -218,6 +218,8 @@ export type VcsWriteOp =
   | { op: 'createIssue'; project: string; title: string; body: string; labels: string[] }
   /** An issue closed (what a tracking issue becomes when its work is done). */
   | { op: 'closeIssue'; project: string; iid: number }
+  /** A closed issue opened again (what the board does to undo its own close). */
+  | { op: 'reopenIssue'; project: string; iid: number }
   /** A pull request from a branch of the same repository. */
   | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string }
   /**
