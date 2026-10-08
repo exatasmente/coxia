@@ -187,7 +187,16 @@ export function toInput(state: AssistState, fromTest = false): AssistChannelInpu
 }
 
 /** What `agentAssist:saveDraft` is sent: the texts and the values of the settings, without the reasons. The main process builds the draft agent from them and holds them to what exists. */
-export function toDraftInput(state: AssistState): { id?: string; from?: string; draft: AssistDraft; settings: AssistSettings } {
+export interface DraftInput {
+  /** The draft agent saved before, to be updated. */
+  id?: string;
+  /** The agent this one is a copy of, when adjusting. */
+  from?: string;
+  draft: AssistDraft;
+  settings: AssistSettings;
+}
+
+export function toDraftInput(state: AssistState): DraftInput {
   return {
     ...(state.testId ? { id: state.testId } : {}),
     ...(state.base ? { from: state.base.id } : {}),
@@ -255,4 +264,23 @@ export function toAgentDraft(state: AssistState, taken: readonly string[] = []):
     squad: state.settings.squad,
     turnsTo: state.settings.turnsTo,
   };
+}
+
+/** How the editor opens when the person concludes. */
+export interface EditorOpening {
+  draft: AgentDraft;
+  isNew: boolean;
+  /** The editor came from the assistant: it lists the stages the agent can work. */
+  assisted: true;
+  /** The draft agent saved for the test, which saving the editor promotes in place. */
+  promote?: { id: string };
+}
+
+/**
+ * The editor on what the assistant made. Creating with a draft agent saved for the test, it opens on that agent, which saving promotes (the id stays and nothing is
+ * added); creating without one, it is a new agent; adjusting, it is the agent as it is, with the assistant's changes not yet saved. `taken` are the ids of the team.
+ */
+export function editorOf(state: AssistState, taken: readonly string[]): EditorOpening {
+  const promote = state.mode === 'create' && state.testId ? { id: state.testId } : undefined;
+  return { draft: toAgentDraft(state, taken), isNew: state.mode === 'create' && !promote, assisted: true, ...(promote ? { promote } : {}) };
 }

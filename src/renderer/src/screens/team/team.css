@@ -108,3 +108,32 @@
 .tm-readonly-list { margin: 0; padding-left: 18px; }
 .team-allowed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .team-allowed code { overflow-wrap: anywhere; }
+
+/* The agent assistant: the steps it walks, a question of a round, the review of the settings and the test conversation. Tokens only. */
+.tm-assist-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; counter-reset: assist; }
+.tm-assist-step { counter-increment: assist; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--chip-quiet-bg); color: var(--muted); font-size: 13px; }
+.tm-assist-step::before { content: counter(assist); font-weight: 700; }
+.tm-assist-step[aria-current='step'] { background: var(--teal-soft); color: var(--teal-ink); font-weight: 600; }
+.tm-assist-q { padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.tm-assist-q > legend { padding: 0 4px; }
+.tm-assist-preview { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; background: var(--surface); }
+.tm-assist-preview > summary { cursor: pointer; font-weight: 600; font-size: 14px; min-height: 32px; display: flex; align-items: center; }
+.tm-assist-draft { margin: 8px 0 0; display: grid; gap: 4px; }
+.tm-assist-draft dt { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tm-assist-draft dd { margin: 0 0 6px; overflow-wrap: anywhere; }
+.tm-assist-instructions { max-height: 28dvh; }
+.tm-assist-settings { display: flex; flex-direction: column; gap: 8px; }
+.tm-assist-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tm-assist-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.tm-assist-row-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.tm-assist-value { color: var(--ink-2); }
+.tm-assist-reason { margin: 0; }
+.tm-assist-warn { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); border: 1px solid var(--amber-line); overflow-wrap: anywhere; }
+.tm-assist-was summary { cursor: pointer; }
+.tm-assist-was-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tm-assist-note { padding: 8px 12px; border-radius: 10px; background: var(--teal-soft); color: var(--teal-ink); }
+.tm-assist-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tm-assist-status { display: flex; align-items: center; gap: 8px; margin: 0; }
+.tm-assist-thread { min-width: 0; }
+.tm-assist-thread .cy-thread { padding: 10px; }
+.tm-assist-thread .cy-msgs-scroll { max-height: 38dvh; }

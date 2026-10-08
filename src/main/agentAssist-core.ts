@@ -1,6 +1,7 @@
 import {
   ASSIST_LIMITS,
   clampSettings,
+  offeredStages,
   readAssistDraft,
   readQuestions,
   type AssistAnswer,
@@ -16,8 +17,7 @@ import type { ForumMessage } from '../shared/forum';
 import { ID } from '../shared/config/schema';
 import { squadsOf } from '../shared/config/squads';
 import { isDraft, newAgent, slugOf, uniqueId, workingTeam } from '../shared/config/team';
-import { AGENT_PERMISSIONS, type AgentDef, type AgentToolsConfig, type StageDef, type WorkspaceConfig } from '../shared/config/types';
-import { isFlowCycle, isWork } from '../shared/runs/flow';
+import { AGENT_PERMISSIONS, type AgentDef, type AgentToolsConfig, type WorkspaceConfig } from '../shared/config/types';
 import { prompt as cp, text as word } from './cyclePrompts';
 import { redact } from './errorlog-core';
 import { fence, threadText } from './runner/prompt';
@@ -42,24 +42,12 @@ const clip = (text: string, max: number): string => (text.length > max ? `${text
 const shown = (value: string): string => clip(word(value).trim(), ASSIST_LIMITS.contextText);
 
 /**
- * The work stages an agent can be given: those of the workspace's flow and those of the flow of each squad. A cycle that only classifies cards for the ceremonies
- * has no flow, so no stage is offered. A gate and a wait are not work.
- */
-function workStages(config: WorkspaceConfig): StageDef[] {
-  if (!isFlowCycle(config.devCycle.stages)) return [];
-  const squads = new Set(squadsOf(config).map((s) => s.id));
-  const own = Object.entries(config.devCycle.flows ?? {}).filter(([key]) => squads.has(key)).flatMap(([, flow]) => flow);
-  const seen = new Set<string>();
-  return [...config.devCycle.stages, ...own].filter((s) => isWork(s) && !seen.has(s.id) && !!seen.add(s.id));
-}
-
-/**
  * The context of the workspace for a question to the model. A draft is not in it: it takes no part in the cycle, and a model must not point at one. When an agent is
  * being adjusted, `selfId` leaves it out of the agents it could turn to.
  */
 export function assistContext(config: WorkspaceConfig, sandbox: boolean, selfId: string | null = null): AssistContext {
   return {
-    stages: workStages(config).slice(0, ASSIST_LIMITS.contextStages).map((s) => ({ id: s.id, label: shown(s.label) || s.id })),
+    stages: offeredStages(config).slice(0, ASSIST_LIMITS.contextStages).map((s) => ({ id: s.id, label: shown(s.label) || s.id })),
     squads: squadsOf(config).slice(0, ASSIST_LIMITS.contextSquads).map((s) => ({ id: s.id, name: shown(s.name) || s.id, mission: shown(s.mission) })),
     agents: workingTeam(config.agents.team)
       .filter((a) => a.id !== selfId)

@@ -1,4 +1,6 @@
-import { AGENT_PERMISSIONS, AGENT_TRACKERS, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker } from './config/types';
+import { squadsOf } from './config/squads';
+import { AGENT_PERMISSIONS, AGENT_TRACKERS, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type StageDef, type WorkspaceConfig } from './config/types';
+import { isFlowCycle, isWork } from './runs/flow';
 
 // The assistant that creates and adjusts an agent asks a model for two things, a round of questions with a refined draft and a review of the settings, and
 // reads what comes back here. Nothing in this file calls a model or reaches Electron: it takes `unknown`, drops what is out of shape without losing what is
@@ -104,6 +106,18 @@ export interface AssistOffers {
   turnsTo: readonly string[];
   /** The workspace's tools, what an agent without tools of its own uses. */
   workspaceTools: AgentToolsConfig;
+}
+
+/**
+ * The work stages an agent can be given: those of the workspace's flow and those of the flow of each squad. A cycle that only classifies cards for the ceremonies has no
+ * flow, so no stage is offered. A gate and a wait are not work. The model is told these, the editor lists these, and only these are accepted.
+ */
+export function offeredStages(config: WorkspaceConfig): StageDef[] {
+  if (!isFlowCycle(config.devCycle.stages)) return [];
+  const squads = new Set(squadsOf(config).map((s) => s.id));
+  const own = Object.entries(config.devCycle.flows ?? {}).filter(([key]) => squads.has(key)).flatMap(([, flow]) => flow);
+  const seen = new Set<string>();
+  return [...config.devCycle.stages, ...own].filter((s) => isWork(s) && !seen.has(s.id) && !!seen.add(s.id));
 }
 
 /** The minimum, the settings of a new blank agent: reads, no tracker, no commands, the workspace's tools, no stages, shared, asks the person. */

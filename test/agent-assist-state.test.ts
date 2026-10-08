@@ -7,6 +7,7 @@ import {
   canAskAnotherRound,
   closeRound,
   diffAgent,
+  editorOf,
   floorOf,
   hasProgress,
   pickOption,
@@ -345,5 +346,27 @@ describe('the form the editor opens', () => {
     expect(out).toMatchObject({ autonomous: true, allowedCommands: ['npm test:*'], model: form.model });
     out.allowedCommands.push('x');
     expect(s.base?.allowedCommands).toEqual(['npm test:*']);
+  });
+});
+
+describe('how the editor opens when the person concludes', () => {
+  const made = (base: AssistState, over: Partial<AssistState> = {}): AssistState => ({ ...withReview(base, { draft: { name: 'Lead', job: 'Leads', instructions: 'Lead.' }, settings: { ...MINIMUM_SETTINGS, stages: ['plan'] }, reasons: {} }), ...over });
+
+  it('promotes the draft agent saved for the test, which keeps its id and is not new', () => {
+    const opening = editorOf(made(startAssist(), { testId: 'lead' }), ['developer', 'lead']);
+    expect(opening).toMatchObject({ isNew: false, assisted: true, promote: { id: 'lead' } });
+    expect(opening.draft).toMatchObject({ id: 'lead', name: 'Lead', stages: ['plan'] });
+  });
+
+  it('makes a new agent when nothing was tested: nothing was saved, so there is nothing to promote', () => {
+    const opening = editorOf(made(startAssist()), ['developer', 'lead']);
+    expect(opening).toMatchObject({ isNew: true, assisted: true, draft: { id: 'lead-2', name: 'Lead' } });
+    expect(opening).not.toHaveProperty('promote');
+  });
+
+  it('edits the agent where it is when adjusting, even with a copy saved for the test, and promotes nothing', () => {
+    const opening = editorOf(made(startAssist(original()), { testId: 'triager-draft' }), ['triager', 'triager-draft']);
+    expect(opening).toMatchObject({ isNew: false, assisted: true, draft: { id: 'triager', name: 'Lead' } });
+    expect(opening).not.toHaveProperty('promote');
   });
 });
