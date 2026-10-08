@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The agent cards in Settings › Team name their stages in the app's language.** With a shipped template such as `agent-flow`, the stages line of a card showed the stage's catalog key (`cycle.agentFlow.stage.communicate`) instead of its name ("Communicate", "Comunicação"); a name typed in the team screen is shown as it is, and a stage without one by its id.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
