@@ -17,8 +17,10 @@ host: the issue is only read, and what leaves the machine goes through the one d
 
 ## Starting a run
 
-`runs:start(ref)` (the card reference, such as `app#101` or just `101`). The app reads the
-issue and its comments through the provider, read-only, and then:
+`runs:start(ref)` (the card reference, such as `app#101` or just `101`). A run always begins
+with an issue read from the host: a card opened on the workspace's own board — which exists
+where no integration is usable — never starts a run, because the board is not the tracker. The
+app reads the issue and its comments through the provider, read-only, and then:
 
 1. Picks the repository: the one in `projects.repos` with the issue project's `projectPath`
    (or the only one, or the one the call names); without a local clone it looks for one by

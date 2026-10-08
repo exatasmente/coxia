@@ -224,6 +224,8 @@
   "ui.today.ataDecisions_other": "{count} decisions",
   "ui.today.ataEffects_one": "{count} effect awaiting “yes”",
   "ui.today.ataEffects_other": "{count} effects awaiting “yes”",
+  "ui.today.board.empty": "Still nothing today — open a card on the board",
+  "ui.today.board.open": "Open the board",
   "ui.today.buildingCards": "Building the cards…",
   "ui.today.cardsError": "Couldn't build the cards: {error}",
   "ui.today.ceremonies": "Ceremonies",

@@ -128,6 +128,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
           <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
             <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'board' })}>{t('ui.board.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
@@ -198,6 +199,13 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         ))}
       </ul>
       {c.cards && !visible.length && <p className="dash-calm">{t('ui.today.noActivities')}</p>}
+      {/* A day with no card at all is not an error: the invitation to open one sits below the list, where the board of this workspace lives. */}
+      {c.cards && !cards.length && (
+        <p className="dash-calm">
+          {t('ui.today.board.empty')}{' '}
+          <button type="button" className="btn" onClick={() => go({ name: 'board' })}>{t('ui.today.board.open')}</button>
+        </p>
+      )}
       {c.cards && c.cards.total > cards.length && <p className="faint small">{t('ui.today.outside', { count: c.cards.total - cards.length })}</p>}
 
       {c.cards && (cards.length > TOP || filter !== 'all') && (

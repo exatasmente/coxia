@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A workspace with no code host gets a board of its own.** Where no integration is usable, the day stops being empty: a card can be opened on the workspace's own board — a title, a description and the column it starts in — and then moved between the columns the cycle already configured, prioritised with the workspace's own priority labels, given to a squad, commented on and closed. Everything stays in the workspace's data folder: nothing is committed or published, and a card opened this way never starts a run and is never sent to a code host. A workspace that has a usable host keeps exactly the board it has today.
+
 ## [0.8.0-beta.7] - 2026-10-07
 
 ### Changed

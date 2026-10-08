@@ -1,12 +1,14 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, CardsResult, SpecInfo } from '../shared/types';
+import { boardCardOf } from '../shared/board';
 import { isBlockedStage } from '../shared/cycles/stages';
 import { priorityOf, sortCards } from '../shared/priority';
 import { squadOf, squadsOf } from '../shared/config/squads';
 import { t } from '../shared/i18n';
 import { cardsOfSquad } from '../shared/squadCards';
-import { cycle, text as cycleWord } from './cyclePrompts';
+import { boardCards } from './boardSource';
+import { cycle, language, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
 import { runStore } from './runs';
 import { getConfig, rc } from './workspaceConfig';
@@ -83,7 +85,13 @@ export async function loadCards(limit: number, refresh = false, squad: string | 
         priority: priorityOf(it.labels, levels),
       };
     });
-  const ordered = sortCards(squad ? ofSquad(cards, squad) : cards);
+  // The cards of the board belong to the day too, and the blocked line of a card in a blocked column is added by the same helper as any other card.
+  const refs = new Set(cards.map((c) => c.ref));
+  const mine = boardCards()
+    .map((c) => boardCardOf(c, { stages: cycle().stages, language: language(), levels }))
+    .map((c) => ({ ...c, blockers: withStageBlocker(c.stage, c.blockers) }));
+  const merged = [...cards, ...mine.filter((c) => !refs.has(c.ref))];
+  const ordered = sortCards(squad ? ofSquad(merged, squad) : merged);
   const rest = ordered.slice(limit);
   return { generatedAt: report.generated_at, total: ordered.length, cards: ordered.slice(0, limit), ...(rest.length ? { rest } : {}) };
 }

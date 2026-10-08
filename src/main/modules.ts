@@ -1,5 +1,6 @@
 import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
+import { register as board } from './board';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { register as ceremonyCommands } from './ceremonyCommands';
@@ -35,6 +36,7 @@ const ALL: Module[] = [
   agentPrep,
   auditoria,
   autostart,
+  board,
   ceremonyCommands,
   configModule,
   conflictVerify,

@@ -21,6 +21,8 @@ import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
+import { setBoardReady } from './board';
+import { vcsReady } from './vcs';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
 import { onConfigChange } from './workspaceConfig';
@@ -283,8 +285,10 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     createTray();
     startActions({ notify, emit });
+    // The workspace's own board is offered only where no code host is usable: the same test the day's cards make before they read the host.
+    setBoardReady(() => vcsReady());
     for (const register of MODULES) {
-      register({ handle, notify, emit, job: registerJob });
+      register({ handle, notify, emit, job: registerJob, deps: (d) => setBoardReady(d.boardReady) });
     }
     startScheduler({ notify, emit });
     void syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
