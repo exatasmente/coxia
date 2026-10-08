@@ -213,6 +213,11 @@ function AutonomyBlock({ draft, set, stored, web }: { draft: RunnerDraft; set: (
       <legend className="wz-label">{t('ui.autonomy.title')}</legend>
       <p className="small muted">{t('ui.autonomy.hint')}</p>
       <AutonomyFields value={web ? stored.autonomy : draft.autonomy} onChange={(patch) => set({ autonomy: { ...draft.autonomy, ...patch } })} readOnly={web} />
+      <div className="wz-stack">
+        <p className="wz-label">{t('ui.autonomy.board.heading')}</p>
+        <Toggle checked={(web ? stored.autonomy : draft.autonomy).board} onChange={(board) => set({ autonomy: { ...draft.autonomy, board } })} label={t('ui.autonomy.board')} disabled={web} />
+        <p className="small muted">{t('ui.autonomy.board.hint')}</p>
+      </div>
       {web && <p className="small muted" role="note">{t('ui.autonomy.webNote')}</p>}
     </fieldset>
   );
