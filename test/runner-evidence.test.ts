@@ -7,6 +7,7 @@ import { EVIDENCE_MAX_BYTES } from '../src/shared/evidence';
 import { evidenceToolImpls } from '../src/main/evidence/engineTool';
 import { evidenceToolsOf } from '../src/main/evidence/handlers';
 import { encodePng } from '../src/main/evidence/png';
+import { readEvidence } from '../src/main/evidence/store';
 import { shellMcpServer, shellToolImpl, viewImageToolImpl } from '../src/main/sandbox/engineTool';
 import type { SandboxSession } from '../src/main/sandbox/session';
 import { offersViewImage } from '../src/main/sandbox/tool';
@@ -72,6 +73,27 @@ describe('SaveEvidence', () => {
     const refused = await w.tools.save({ path: video, title: 'x' });
     expect(refused.text).toMatch(/v[íi]deo|video/i);
     expect(w.kept).toEqual([]);
+  });
+});
+
+describe('the ids of a stage', () => {
+  it('never reuse one: a stage numbers from the run it started with, and the stored files are not written over', async () => {
+    const stageDir = mkdtempSync(join(tmpdir(), 'evidence-stage-'));
+    const dataDir = mkdtempSync(join(tmpdir(), 'evidence-data-'));
+    mkdirSync(join(stageDir, 'out'), { recursive: true });
+    const kept: EvidenceRecord[] = [];
+    // The run is not told about what is kept, as in a stage: the store records it on the live run, not on this object.
+    const run = { id: 'r-abc123-abcd', evidence: {} } as never;
+    const tools = evidenceToolsOf({ dataDir, stageDir, run, stage: 'qa', by: 'qa', onKept: (r) => void kept.push(r), now: () => '2026-10-06T12:00:00.000Z' });
+    const first = new Uint8Array(PNG()).fill(1, 40);
+    const second = new Uint8Array(PNG()).fill(2, 40);
+    await tools.save({ path: put(stageDir, 'a.png', first), title: 'First' });
+    await tools.save({ path: put(stageDir, 'b.png', second), title: 'Second' });
+    await tools.save({ path: put(stageDir, 'c.png', 'a note'), title: 'Third' });
+    expect(kept.map((r) => r.id)).toEqual(['ev-1', 'ev-2', 'ev-3']);
+    for (const r of kept) expect(readEvidence(dataDir, 'r-abc123-abcd', r)).not.toBeNull();
+    expect(Buffer.from(readEvidence(dataDir, 'r-abc123-abcd', kept[0]) as Uint8Array).equals(Buffer.from(first))).toBe(true);
+    expect(Buffer.from(readEvidence(dataDir, 'r-abc123-abcd', kept[1]) as Uint8Array).equals(Buffer.from(second))).toBe(true);
   });
 });
 
