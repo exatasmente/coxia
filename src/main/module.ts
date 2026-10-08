@@ -17,8 +17,6 @@ export interface ModuleContext {
   notify(n: Notice): void;
   emit(ev: AppEvent): void;
   job(job: Job): void;
-  // The integration the day's cards read, handed to a module that must decide whether the workspace has a usable host (the board).
-  deps?(d: { boardReady(): boolean }): void;
 }
 
 export type Module = (ctx: ModuleContext) => void;

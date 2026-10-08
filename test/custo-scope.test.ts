@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type GenStat, byWorkspaceOf, inScope, summarize } from '../src/main/custo-core';
+import { CUSTO_LABEL } from '../src/shared/custo';
 import type { WorkspaceInfo } from '../src/shared/workspaces';
 
 const NOW = Date.parse('2026-10-15T15:00:00.000Z');
@@ -89,6 +90,16 @@ describe('summarize by scope', () => {
   it('a session owned by a workspace that no longer exists falls into "sem workspace"', () => {
     const rows = byWorkspaceOf([gen('s-gone', 3, 0)], new Map([['s-gone', 'deleted']]), workspaces, NOW);
     expect(rows.find((r) => r.id === null)).toMatchObject({ month: 3, sessions: 1 });
+  });
+
+  it('gives the agent assistant its own row among the kinds, without touching the price of a speech', () => {
+    const all = [gen('s-principal', 1, 0), gen('s-principal', 0.5, 0, { kind: 'assist' }), gen('s-principal', 0.25, DAY, { kind: 'assist' })];
+    const s = summarize({ ...base, gens: all, scope: 'current' });
+    expect(s.kinds.map((k) => [k.key, k.cost, k.calls])).toEqual([['turn', 1, 1], ['assist', 0.75, 2]]);
+    expect(s.kinds.find((k) => k.key === 'assist')?.label).toBe(CUSTO_LABEL.assist);
+    expect(CUSTO_LABEL.assist).toBeTruthy();
+    expect(s.week.cost).toBe(1.75);
+    expect(s.falas.avgPerSpeech).toBe(1);
   });
 
   it('prices a speech from every workspace but counts only this workspace\'s reuses', () => {

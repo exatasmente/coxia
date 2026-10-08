@@ -355,6 +355,85 @@ describe('the writes an answer proposes', () => {
   });
 });
 
+describe('the direct conversation of a draft agent', () => {
+  // The conversation the AI assistant opens so a person can try an agent it saved: an ordinary direct conversation, with the permissions the draft has and nothing more.
+  const draftConfig = (over: Partial<ReturnType<typeof newAgent>> = {}) => {
+    const c = config();
+    c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', job: 'DRAFT-JOB: checks the release notes.', instructions: 'DRAFT-INSTRUCTIONS: read the notes and say what is missing.', permission: 'worktree', tracker: 'read', shell: 'none', draft: true, ...over }));
+    return c;
+  };
+
+  it('answers its owner without an `@`, with its own job and instructions in what the agent is told', async () => {
+    const c = draftConfig();
+    const thread = agentThread(c, 'trial');
+    const engine = fakeEngine();
+    engine.script('trial', () => ({ text: 'Here is what is missing.' }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'is this ready?');
+    expect(callsOf(message, 'trial')).toEqual(['trial']);
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, 'trial') });
+    expect(answered(thread).map((m) => m.text)).toEqual(['Here is what is missing.']);
+    const system = engine.calls[0].system;
+    expect(system).toContain('DRAFT-JOB: checks the release notes.');
+    expect(system).toContain('DRAFT-INSTRUCTIONS: read the notes and say what is missing.');
+  });
+
+  it('writes no file whatever its permission says, and uses the tools the draft has', async () => {
+    const c = draftConfig({ tools: { ...config().agents.tools, files: true, skills: false, subagents: true } });
+    const thread = agentThread(c, 'trial');
+    const engine = fakeEngine();
+    engine.script('trial', () => ({ text: 'ok' }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'change the code');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, 'trial') });
+    const call = engine.calls[0];
+    // `worktree` is the permission of a stage of a run; a conversation never gets the confinement that lets it write.
+    expect(call.confine).toBeUndefined();
+    expect(call.agent.permission).toBe('read');
+    expect(call.agent.tools).toMatchObject({ files: true, skills: false, subagents: true });
+  });
+
+  it('leaves the write it proposes waiting in Actions, nothing sent, because a draft is born not autonomous', async () => {
+    const c = draftConfig({ autonomous: false });
+    const thread = agentThread(c, 'trial');
+    const engine = fakeEngine();
+    engine.script('trial', () => ({ text: 'I would comment.', proposals: [{ op: 'comment', issue: 101, body: 'A note from the draft.' }, { op: 'labels', issue: 101, add: ['coxia'], remove: [] }] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'comment on 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, 'trial'), propose: proposeMention });
+    const waiting = actions.listActions().filter((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
+    expect(waiting).toHaveLength(2);
+    expect(waiting.every((a) => a.state === 'pending')).toBe(true);
+    // Even the two kinds an autonomous agent sends by itself wait: nothing ran, nothing was audited.
+    expect(ran).toEqual([]);
+    expect(listAudit()).toEqual([]);
+    expect(engine.calls[0].system).toContain(prompt('runner.mention.proposals'));
+    expect(systemLine(thread, 'runner.mention.proposed')?.params).toMatchObject({ agent: 'trial' });
+  });
+
+  it('is refused whole in a test workspace when the person approves what it proposed', async () => {
+    writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
+    const c = draftConfig();
+    const thread = agentThread(c, 'trial');
+    const engine = fakeEngine();
+    engine.script('trial', () => ({ text: 'I would comment.', proposals: [{ op: 'comment', issue: 101, body: 'A note from the draft.' }] }));
+    const place = placeOfThread(forum.summary(thread), () => null, c)!;
+    const message = personMessage(thread, 'comment on 101');
+    await answerMentions(place, message, { forum, config: () => c, engine, env: () => ({ fallbackCwd: dir }), calls: callsOf(message, 'trial'), propose: proposeMention });
+    const waiting = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
+    expect(waiting).toBeTruthy();
+    await expect(actions.approveAction(waiting!.id)).rejects.toThrow();
+    expect(ran).toEqual([]);
+    expect(listAudit()).toEqual([]);
+  });
+
+  it('is the place of a direct conversation, with the draft as its owner and no squad', () => {
+    const c = draftConfig();
+    const thread = agentThread(c, 'trial');
+    expect(placeOfThread(forum.summary(thread), () => null, c)).toMatchObject({ kind: 'channel', thread, squad: null, owner: 'trial' });
+  });
+});
+
 describe('the text of an answer', () => {
   it('is the text inside an answer the model wrote whole as its text, and anything else as it came', () => {
     expect(answerText('{"text": "Tested it.\\n\\nThe app is up."}')).toBe('Tested it.\n\nThe app is up.');

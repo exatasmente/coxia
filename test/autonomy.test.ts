@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { autonomyOf, choiceOn, flowKeyOf, newFlowAutonomy, onChoices, RELEASE_AUTONOMY_KEY, type EffectiveAutonomy } from '../src/shared/config/autonomy';
+import { autonomyOf, boardAutonomous, choiceOn, flowKeyOf, newFlowAutonomy, onChoices, RELEASE_AUTONOMY_KEY, type EffectiveAutonomy } from '../src/shared/config/autonomy';
 import { neutralConfig } from '../src/shared/config/index';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 
 const ON = { cycle: true, hostCommands: true, gates: true, push: true, pullRequest: true };
 
-const withWorkspace = (block: Partial<typeof ON>, c: WorkspaceConfig = neutralConfig()): WorkspaceConfig => ({ ...c, runner: { ...c.runner, autonomy: { ...neutralConfig().runner.autonomy, ...block } } });
+const withWorkspace = (block: Partial<typeof ON> & { board?: boolean }, c: WorkspaceConfig = neutralConfig()): WorkspaceConfig => ({ ...c, runner: { ...c.runner, autonomy: { ...neutralConfig().runner.autonomy, ...block } } });
 
-const withFlow = (key: string, block: Record<string, unknown>, c: WorkspaceConfig = neutralConfig()): WorkspaceConfig => ({ ...c, devCycle: { ...c.devCycle, autonomy: { [key]: { useWorkspace: true, ...neutralConfig().runner.autonomy, ...block } } } });
+// A flow's block has the five fields of a run and no `board`: that one belongs to the workspace's block alone.
+const { board: _board, ...RUN_FIELDS } = neutralConfig().runner.autonomy;
+
+const withFlow = (key: string, block: Record<string, unknown>, c: WorkspaceConfig = neutralConfig()): WorkspaceConfig => ({ ...c, devCycle: { ...c.devCycle, autonomy: { [key]: { useWorkspace: true, ...RUN_FIELDS, ...block } } } });
 
 describe('the autonomy resolver', () => {
   it('names the flow of a squad by its id and the main flow by the empty key', () => {
@@ -52,6 +55,23 @@ describe('the autonomy resolver', () => {
   it('fills a flow block written with only some fields', () => {
     expect(newFlowAutonomy()).toEqual({ cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false, useWorkspace: true });
     expect(newFlowAutonomy({ useWorkspace: false, cycle: true })).toEqual({ cycle: true, hostCommands: false, gates: false, push: false, pullRequest: false, useWorkspace: false });
+  });
+
+  it('has the board\'s choice off by default, independent of the autonomous cycle, in either direction', () => {
+    expect(boardAutonomous(neutralConfig())).toBe(false);
+    expect(boardAutonomous(withWorkspace({ board: true }))).toBe(true);
+    expect(boardAutonomous(withWorkspace({ ...ON, board: false }))).toBe(false);
+    expect(boardAutonomous(withWorkspace({ cycle: false, board: true }))).toBe(true);
+    expect(boardAutonomous({ runner: { autonomy: {} } } as unknown as WorkspaceConfig)).toBe(false);
+  });
+
+  it('never carries the board\'s choice into a run: not in the effective block, not in the choices the header lists', () => {
+    const c = withWorkspace({ ...ON, board: true });
+    const a = autonomyOf(c, '');
+    expect(a).not.toHaveProperty('board');
+    expect(onChoices(a)).toEqual(['hostCommands', 'gates', 'push', 'pullRequest']);
+    expect(autonomyOf(withFlow('platform', { useWorkspace: false, cycle: true }, c), 'platform')).not.toHaveProperty('board');
+    expect(newFlowAutonomy()).not.toHaveProperty('board');
   });
 
   it('reports the origin and the flow of every decision, for the run header', () => {

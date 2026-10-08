@@ -53,10 +53,36 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
+    // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
+    ...(partial.draft === true ? { draft: true } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };
 }
+
+/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
+export function slugOf(text: string): string {
+  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
+  return slug;
+}
+
+/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
+export function uniqueId(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const root = base || 'item';
+  if (!used.has(root)) return root;
+  for (let n = 2; ; n++) {
+    const candidate = `${root.slice(0, 44)}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
+/** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
+export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
+
+/** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
+export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);
 
 /** The team with whichever system agent is missing added back (seeded from the roles), so a file can never lose one. */
 export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRole, RoleSeed>> = {}): AgentDef[] {
@@ -66,13 +92,13 @@ export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRo
 
 /**
  * The agent that works a stage: the one the stage names, else the first agent of the team that lists the stage, else none.
- * A gate and a wait never have one.
+ * A gate and a wait never have one, and a draft never works a stage, even when a file lists it.
  */
 export function stageAgent(team: AgentDef[], stages: StageDef[], stageId: string): AgentDef | null {
   const stage = stages.find((s) => s.id === stageId);
   if (!stage || (stage.type && stage.type !== 'work')) return null;
-  const named = stage.agentId ? team.find((a) => a.id === stage.agentId) : undefined;
-  return named ?? team.find((a) => a.stages.includes(stageId)) ?? null;
+  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !isDraft(a)) : undefined;
+  return named ?? team.find((a) => a.stages.includes(stageId) && !isDraft(a)) ?? null;
 }
 
 export type AgentPatch = Partial<Omit<AgentDef, 'id' | 'system'>>;
@@ -183,7 +209,8 @@ export interface Recommendation {
  */
 export function recommendations(config: WorkspaceConfig, sandbox: boolean): Recommendation[] {
   const out: Recommendation[] = [];
-  for (const a of config.agents.team) {
+  // A draft is left out: its permissions are the assistant's review to propose, with a reason, and its id may be a role's by chance (`qa`, `reviewer`).
+  for (const a of workingTeam(config.agents.team)) {
     const want = RECOMMENDED[a.id];
     if (!want || a.system) continue;
     const shell = sandbox ? want.shell : withoutSandbox(want.shell, a.permission);

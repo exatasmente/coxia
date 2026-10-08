@@ -1,5 +1,7 @@
+import type { AssistField } from '../../../../shared/agentAssist';
 import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
 import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { AssistStep } from './assistEdit';
 import type { TeamTab } from './teamNav';
 
 // The catalog keys of the values a screen of the team and cycle shows by name. Tables, not built keys, so each key is written out where a search and the
@@ -13,6 +15,8 @@ export const TAB_LABEL: Record<TeamTab, string> = {
   attachments: 'ui.team.tab.attachments',
   runner: 'ui.team.tab.runner',
 };
+
+export const PERMISSION_LABEL: Record<AgentPermission, string> = { read: 'ui.team.permission.read', worktree: 'ui.team.permission.worktree' };
 
 export const PERMISSION_HINT: Record<AgentPermission, string> = {
   read: 'ui.team.permission.read.hint',
@@ -84,3 +88,28 @@ export const EVENT_LABEL: Record<CommentEventKey, string> = {
   question: 'ui.comments.event.question',
   pr: 'ui.comments.event.pr',
 };
+
+// The agent assistant: its steps, the name of each setting it reviews, and the tools it may switch.
+export const ASSIST_STEP_LABEL: Record<AssistStep, string> = {
+  request: 'ui.team.assist.step.request',
+  questions: 'ui.team.assist.step.questions',
+  review: 'ui.team.assist.step.review',
+  test: 'ui.team.assist.step.test',
+};
+
+export const ASSIST_FIELD_LABEL: Record<AssistField, string> = {
+  permission: 'ui.team.f.permission',
+  tracker: 'ui.team.f.tracker',
+  shell: 'ui.team.f.shell',
+  tools: 'ui.team.tools',
+  stages: 'ui.team.f.stages',
+  squad: 'ui.team.f.squad',
+  turnsTo: 'ui.team.f.turnsTo',
+};
+
+export const TOOL_LABEL = {
+  files: 'ui.team.tools.files',
+  skills: 'ui.team.tools.skills',
+  vcsCli: 'ui.team.tools.vcsCli',
+  subagents: 'ui.team.tools.subagents',
+} as const;

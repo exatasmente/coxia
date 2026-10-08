@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
-import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
+import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
 import { createTranslator, t } from '../../shared/i18n';
 import {
@@ -89,7 +89,7 @@ import { type RunAgentCommands, countCommands, groupCommands } from '../../share
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
-import { updateAgent } from '../../shared/config/team';
+import { updateAgent, workingTeam } from '../../shared/config/team';
 import { beginCallActivity, type RunActivity, withActivityContext } from '../activity';
 import { type AgentCall, secretPath } from '../agents';
 import { findClone, git } from '../conflictGit';
@@ -766,7 +766,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const { iid, ref } = refOf(raw);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
     // An agent set to run commands in a sandbox on a computer that cannot make one: said now, before a worktree exists, not when its stage is reached.
-    const sandboxed = config.agents.team.filter((a) => a.shell === 'sandbox' && a.stages.length);
+    const sandboxed = workingTeam(config.agents.team).filter((a) => a.shell === 'sandbox' && a.stages.length);
     if (sandboxed.length) {
       const st = deps.sandbox ? await deps.sandbox.status() : null;
       if (!st?.available) throw new RunnerError('no-sandbox', { agent: sandboxed.map((a) => a.id).join(', '), reason: st ? reasonText(st) : t('main.sandbox.reason.platform') });
@@ -1208,7 +1208,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       return deps.updateConfig((c) => updateSquad(c, squadId, { autonomy: on }));
     },
     setAutonomous(agentId, on) {
-      if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
+      // A draft is not on the team that runs: it cannot be switched to autonomous.
+      if (!workingTeam(deps.config().agents.team).some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
       return deps.updateConfig((c) => updateAgent(c, agentId, { autonomous: on }));
     },
     answer(id, text, attachments) {
@@ -1229,7 +1230,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const run = id ? deps.runs.get(id) : null;
       if (!run || run.status !== 'question' || run.question?.kind === 'squad' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
-      if (parseMentions(text, deps.config().agents.team.map((a) => a.id)).length) return null;
+      if (parseMentions(text, mentionableIds(deps.config().agents.team, thread)).length) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
       api.answer(run.id, text, attachments ?? []);
       const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];
@@ -1478,7 +1479,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
       // The liaison of a squad may answer with a request to another squad's liaison, when there is one to receive it.
       const own = squadOf(config, holder.squad);
-      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && config.agents.team.some((a) => a.id === o.liaison && a.squad === o.id));
+      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && workingTeam(config.agents.team).some((a) => a.id === o.liaison && a.squad === o.id));
       const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
@@ -1547,7 +1548,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const run = need(id);
     const from = squadOf(config, holder.squad);
     const to = request ? squadOf(config, request.squad) : null;
-    const target = to?.liaison ? config.agents.team.find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
+    const target = to?.liaison ? workingTeam(config.agents.team).find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
     if (!offered || !request || !from || from.liaison !== holder.id || !to || to.id === from.id || !target) return handUp(id, holder.id, 'failed', t('main.runner.request.invalid'));
     ensureSquadChannels(deps.forum, squadsOf(config), config.language);
     const toName = squadName(config, to);

@@ -438,6 +438,9 @@ function sdkOptions(req: EngineRequest): Options {
     // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
     // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
     ...(req.isolated ? { settingSources: [], settings: { autoMemoryEnabled: false } } : {}),
+    // A bare call opens nothing: no native tool (`tools: []` also makes the open engine offer none), nothing pre-approved, and no MCP server but the ones passed
+    // here, which are none. `allowedTools` is set again because the engine adds the names of its in-process servers to the request's list.
+    ...(req.bare ? { tools: [], allowedTools: [], strictMcpConfig: true } : {}),
     ...(dirs.length ? { additionalDirectories: dirs } : {}),
     ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
@@ -446,14 +449,16 @@ function sdkOptions(req: EngineRequest): Options {
 
 // Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist. An isolated call never
 // falls back to them: its lists are the ones the person wrote (and the project's `.mcp.json`), always defined, because an empty list is not an absent one.
-function openDocs(cwd: string, role: ModelRole, isolated = false): DocSources {
+function openDocs(cwd: string, role: ModelRole, isolated = false, bare = false): DocSources {
+  // A bare call reads no documentation: every list empty and defined, so the engine neither discovers a CLAUDE.md up the tree nor indexes a folder.
+  if (bare) return { claudeMd: [], skillDirs: [], agentDirs: [], docDirs: [], mcpConfigs: [] };
   const d = docsFor(role, isolated ? { claude: false } : {});
   const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
   return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
 /** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
-export function openSelection(t: ResolvedRole, cwd: string, isolated = false): OpenEngineSelection {
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false): OpenEngineSelection {
   const c = t.capabilities;
   return {
     provider: {
@@ -468,13 +473,13 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false): O
     },
     ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}), ...(c.images !== undefined ? { images: c.images } : {}) } } : {}),
     structured: t.structured,
-    docs: openDocs(cwd, t.role, isolated),
+    docs: openDocs(cwd, t.role, isolated, bare),
   };
 }
 
 // Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
 function wantsVcsTool(req: EngineRequest): boolean {
-  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  if (req.bare || req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
   // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the host-read switches of the agent on. The
@@ -496,7 +501,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read. The hook carries no
   // `docs`, which the bridge would fill with the defaults (CLAUDE.md up the tree, ~/.claude): an isolated call gets its own lists whichever way the selection came.
   const hook = openEngineFromEnv();
-  const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
+  // A bare call gets empty lists the same way, on either path.
+  const selection = hook ? (req.isolated || req.bare ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, req.bare) } : hook) : openSelection(req.target, req.cwd, req.isolated, req.bare);
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
@@ -776,6 +782,42 @@ async function run<T>(
   activity.status('started');
   try {
     const r = await runResumable<T>(activity, role, prompt, schema, extra, shell);
+    activity.status('finished');
+    return r;
+  } catch (e) {
+    activity.status('failed', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
+}
+
+/**
+ * A call that can only answer: the role's model, the caller's system text, the prompt and the schema, and nothing else. No tool of any kind, no code host read, no
+ * MCP server (the person's included), no CLAUDE.md or AGENTS.md, and a working directory that is not a repository (the workspace's data folder). It goes through no
+ * `runOnce`, so the role's own persona and instructions do not reach the system text either. A model that runs out of turns throws `MaxTurnsError` as it is, with no
+ * resume. The session is kept like any other: the cost screen and the retention read it.
+ */
+async function askBare<T>(role: ModelRole, prompt: string, schema: Schema, opts: { system: string; maxTurns?: number }): Promise<Run<T>> {
+  const activity = beginActivity(role, (p) => secretPath(p, ATAS));
+  activity.status('started');
+  try {
+    // The env hook (COXIA_ENGINE=open) forces the open engine here too.
+    const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
+    const r = await runnerFor(target)<T>({
+      role,
+      prompt,
+      schema,
+      target,
+      system: opts.system,
+      cwd: ATAS,
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: [] },
+      extra: { maxTurns: opts.maxTurns ?? 2 },
+      activity,
+      tracker: 'none',
+      isolated: true,
+      bare: true,
+    });
     activity.status('finished');
     return r;
   } catch (e) {
@@ -1285,4 +1327,4 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
-export { run as askAgent, obj, str, strOrNull };
+export { run as askAgent, askBare, obj, str, strOrNull };

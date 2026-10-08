@@ -105,6 +105,37 @@ describe('evidence in a run', () => {
     expect(existsSync(join(done.worktree, done.cycleFolder, 'evidence'))).toBe(false);
   });
 
+  it('gives each piece a stage keeps its own id, lets the stage mark one it just kept, and shows every one of them', async () => {
+    const { b, run } = await full(
+      (c) => {
+        c.language = 'en';
+      },
+      async (call) => {
+        const stageDir = call.exec?.stageDir as string;
+        mkdirSync(join(stageDir, 'out'), { recursive: true });
+        const answers: string[] = [];
+        for (const [name, shade] of [['one.png', 100], ['two.png', 150], ['three.png', 220]] as const) {
+          writeFileSync(join(stageDir, 'out', name), encodePng({ width: 4, height: 4, data: new Uint8Array(4 * 4 * 4).fill(shade) }));
+          answers.push((await call.evidence?.save({ path: `/coxia/out/${name}`, title: `Shot ${name}` }))?.text ?? '');
+        }
+        // A piece kept a moment ago is already known to the tools of the same stage.
+        answers.push((await call.evidence?.annotate({ source: 'ev-2', marks: [{ kind: 'rectangle', x: 0, y: 0, w: 2, h: 2, color: 'red', width: 1 }] }))?.text ?? '');
+        expect(answers[0]).toContain('ev-1');
+        expect(answers[1]).toContain('ev-2');
+        expect(answers[2]).toContain('ev-3');
+        expect(answers[3]).toContain('ev-4');
+        return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', severity: 'non-blocking', detail: 'Looked', evidenceIds: ['ev-1', 'ev-2', 'ev-3', 'ev-4'] }] });
+      },
+    );
+    const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
+    expect(Object.keys(done.evidence ?? {})).toEqual(['ev-1', 'ev-2', 'ev-3', 'ev-4']);
+    expect(done.evidence?.['ev-4']).toMatchObject({ from: 'ev-2' });
+    expect(done.qa.at(-1)?.scenarios[0].evidenceIds).toEqual(['ev-1', 'ev-2', 'ev-3', 'ev-4']);
+    // Each one is published once, with its own file.
+    const shown = b.thread(done).flatMap((m) => (m.evidence ?? []).map((a) => a.id));
+    expect(shown).toEqual(['ev-1', 'ev-2', 'ev-3', 'ev-4']);
+  });
+
   it('copies the evidence into the cycle folder and the stage commit when the workspace chooses it', async () => {
     const { b, run } = await full(
       (c) => {

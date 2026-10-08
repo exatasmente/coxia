@@ -1,4 +1,5 @@
 import { isRunKindFlowKey, isShared, liaisonFor, scopedTeam, turnTarget } from '../config/squads';
+import { workingTeam } from '../config/team';
 import type { AgentDef, SquadDef, StageDef } from '../config/types';
 import { t as translate, type Translate } from '../i18n';
 import { checkFlow, flowIssueText, FLOW_ERRORS, FLOW_WARNINGS, type FlowIssue, type FlowIssueCode, type FlowIssueField } from './flowCheck';
@@ -181,9 +182,11 @@ function flowIssues(input: SquadCheckInput, out: SquadIssue[], checkSharedFlow: 
  * What is wrong with the squads: errors stop a run in a squad (and saving, in the editor); warnings say something is probably not meant. `checkSharedFlow`:
  * check the workspace's flow for squads that have none of their own (when the cycle is a flow).
  */
-export function checkSquads(input: SquadCheckInput, options: { checkSharedFlow?: boolean } = {}): SquadIssue[] {
+export function checkSquads(raw: SquadCheckInput, options: { checkSharedFlow?: boolean } = {}): SquadIssue[] {
   const out: SquadIssue[] = [];
-  if (!input.squads.length && !Object.keys(input.flows ?? {}).length) return out;
+  if (!raw.squads.length && !Object.keys(raw.flows ?? {}).length) return out;
+  // A draft is no member, no liaison and no link of a chain: the squads are checked over the team that works.
+  const input = { ...raw, team: workingTeam(raw.team) };
   modelIssues(input, out);
   flowIssues(input, out, !!options.checkSharedFlow);
   return out;
