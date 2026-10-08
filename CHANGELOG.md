@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.1] - 2026-10-08
+
 ### Added
 
 - **The board follows the code host.** With a usable host the board is no longer hidden: it is the same board, and it mirrors the host. A card opened on it becomes an issue in the issue project, in the label of its column (the label of a `stageMapping` rule when that is a plain name, else `board:<stage id>`); moving a card adds that label and takes off only the ones the app itself could have written for another column; priority, squad, comment, close and reopen reach the same issue (reopening is a new write on GitHub, GitLab and Bitbucket). Every write goes through the one door: by default it waits in Actions for your yes, and a new choice in Settings › Runner, **Board writes go to the host without a yes**, sends it at once, audited, with no dependence on the autonomous-cycle switch (only the computer can change it; a test workspace refuses every write either way). The board reads the host when it is opened or refreshed by hand (and again, while its screen is open, when a proposal is decided in Actions; never on a clock and never when the screen is closed): it then lists the open issues of the workspace's projects (up to 10 projects and 100 issues each, said on screen when it is cut) beside the cards, brings the cards it opened up to what the host says, keeps a card the host no longer returns marked as outside the host, and marks a card that never reached it as **not on the host yet**, with **Send to the host** and **Send all to the host** (up to 50, one proposal per card in one batch in Actions). Bitbucket's issues have no labels, so there the column, priority and squad of a card stay on the board, and the board says so. The day changes in one way only: it also shows the cards opened on the board and linked to an issue, read by number, even when the issue is not assigned to you. A workspace with no usable host keeps the board exactly as 0.8.0 had it. The config moves to schema 19 (the new choice, off).
@@ -298,7 +300,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...HEAD
+[0.9.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0-beta.1
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
 [0.8.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...v0.8.0-beta.8
 [0.7.0]: https://github.com/exatasmente/coxia/compare/v0.6.1...v0.7.0
