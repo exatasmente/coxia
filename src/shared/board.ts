@@ -1,5 +1,5 @@
 import type { Card } from './types';
-import type { Language, SquadDef, StageDef, StageKind } from './config/types';
+import type { Language, SquadDef, StageDef, StageKind, VcsKind } from './config/types';
 import { catalogText, cycleText } from './cycles/text';
 
 // The workspace's own board: the cards nothing else holds. A card of the board is a plain document (a `BoardCard`), and this file is the pure
@@ -9,11 +9,31 @@ import { catalogText, cycleText } from './cycles/text';
 /** One line of a card's history: what happened, when, and what it changed. Kept in the file and read back with the card. */
 export interface BoardHistoryEntry {
   at: string;
-  kind: 'created' | 'moved' | 'priority' | 'squad' | 'closed' | 'reopened' | 'commented' | 'edited';
+  /** `sent`: the issue was made on the code host (`text` is its reference). `host`: the host changed something (`text` is `column`, `state`, `title` or `labels`, with `from` and `to` for column and state). */
+  kind: 'created' | 'moved' | 'priority' | 'squad' | 'closed' | 'reopened' | 'commented' | 'edited' | 'sent' | 'host';
   from?: string | null;
   to?: string | null;
   /** What was commented, or which fields were edited; short and already written for a person. */
   text?: string;
+}
+
+/** The issue a card became on the code host. Absent on a card: it exists only on the board. */
+export interface BoardHostLink {
+  /** Labels, urls and what can be written depend on the host's kind. */
+  vcs: VcsKind;
+  /** As the host's reads name it (the path); the write's key when the workspace has no path. */
+  project: string;
+  iid: number;
+  url: string;
+  linkedAt: string;
+}
+
+/** Why the last attempt to reach the host left no link. */
+export interface BoardHostNote {
+  kind: 'failed' | 'declined' | 'unsupported' | 'unlinked';
+  /** Already written for a person: a reason, never a token. */
+  text: string;
+  at: string;
 }
 
 /** A card opened on the board. */
@@ -36,6 +56,10 @@ export interface BoardCard {
   createdAt: string;
   updatedAt: string;
   history: BoardHistoryEntry[];
+  /** The issue it became. Absent: the card exists only on the board. */
+  host?: BoardHostLink;
+  /** Why the last attempt to reach the host left no link; cleared when the card is linked. */
+  hostNote?: BoardHostNote;
 }
 
 export interface BoardFile {
@@ -231,4 +255,107 @@ export function applyPatch(card: BoardCard, patch: BoardPatch, at: string): Boar
 /** The squads the board offers for a card being given to one: every configured squad that names a label, which is how the card is claimed. */
 export function squadsForCard(squads: readonly SquadDef[]): SquadDef[] {
   return squads.filter((s) => !!squadLabel(s));
+}
+
+// ---------------------------------------------------------------- the mirror: what the host says about a card it holds
+
+/** What a read of the host found for a card the board opened: the issue as it is now, or why there is none. */
+export interface HostSeen {
+  /** `missing`: the host does not return it (deleted, moved, no access). `unread`: it could not be read now; the stored copy stays. */
+  state: 'open' | 'closed' | 'missing' | 'unread';
+  title: string;
+  /** The issue's labels as the host holds them, the board's own stage labels included. */
+  labels: string[];
+  /** The stage the host's labels, status and mapping give it, or null when none. */
+  stageId: string | null;
+  updatedAt: string | null;
+  url: string;
+}
+
+export interface MirrorContext {
+  stages: readonly StageDef[];
+  levels: readonly string[];
+  squads: readonly SquadDef[];
+  /** The host's issues have labels (Bitbucket's do not): when false, the board's own column, priority and squad are never touched. */
+  labelsOnHost: boolean;
+  /** Every label the app could have written for a stage (`ownStageLabels`): they say the column and are not part of the card's labels. */
+  ownLabels: readonly string[];
+}
+
+const lowerCase = (s: string): string => s.toLowerCase();
+const has = (labels: readonly string[], label: string): boolean => labels.some((l) => lowerCase(l) === lowerCase(label));
+
+/** The priority and the squad an issue's labels say: the first configured plain level whose label it carries, the first squad whose label it carries. */
+export function derivedFields(labels: readonly string[], ctx: Pick<MirrorContext, 'levels' | 'squads'>): { priority: string | null; squad: string | null } {
+  const priority = boardPriorities(ctx.levels).find((level) => has(labels, level)) ?? null;
+  const squad = ctx.squads.find((s) => {
+    const label = squadLabel(s);
+    return label !== null && has(labels, label);
+  });
+  return { priority, squad: squad?.id ?? null };
+}
+
+/** The changes to a card for what the host said; only the fields that differ. */
+export interface MirrorChanges {
+  title?: string;
+  state?: 'open' | 'closed';
+  labels?: string[];
+  updatedAt?: string;
+  column?: string;
+  priority?: string | null;
+  squad?: string | null;
+}
+
+const sameSet = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((l) => has(b, l));
+
+/**
+ * What the host says that the card's copy does not. The host is canonical: title, open or closed, labels (without the app's own stage labels), the column and
+ * the priority and squad its labels say. Nothing for an issue that is missing or could not be read. For a host with no issue labels, the board's own column,
+ * priority and squad are kept. A newer `updatedAt` of the host's is taken so the day orders the card by what happened last.
+ */
+export function mirrorOf(card: BoardCard, seen: HostSeen, ctx: MirrorContext): MirrorChanges {
+  if (seen.state !== 'open' && seen.state !== 'closed') return {};
+  const out: MirrorChanges = {};
+  if (seen.title && seen.title !== card.title) out.title = seen.title;
+  if (seen.state !== card.state) out.state = seen.state;
+  const labels = [...new Set(seen.labels.filter((l) => !has(ctx.ownLabels, l)))];
+  if (!sameSet(labels, card.labels)) out.labels = labels;
+  if (ctx.labelsOnHost) {
+    if (seen.stageId && seen.stageId !== card.column && ctx.stages.some((s) => s.id === seen.stageId)) out.column = seen.stageId;
+    const derived = derivedFields(seen.labels, ctx);
+    if (derived.priority !== card.priority) out.priority = derived.priority;
+    if (derived.squad !== card.squad) out.squad = derived.squad;
+  }
+  const seenAt = seen.updatedAt ? Date.parse(seen.updatedAt) : NaN;
+  if (!Number.isNaN(seenAt) && seenAt > Date.parse(card.updatedAt)) out.updatedAt = new Date(seenAt).toISOString();
+  return out;
+}
+
+/** The card after the host's changes, with a `host` line for a column, a state, a title or labels that changed. Returns the same card when nothing came of it. */
+export function applyMirror(card: BoardCard, changes: MirrorChanges, at: string): BoardCard {
+  if (!Object.keys(changes).length) return card;
+  const next: BoardCard = { ...card, history: [...card.history] };
+  const line = (text: string, extra: Omit<BoardHistoryEntry, 'at' | 'kind' | 'text'> = {}): void => {
+    next.history.push({ at, kind: 'host', text, ...extra });
+  };
+  if (changes.title !== undefined) {
+    next.title = changes.title;
+    line('title');
+  }
+  if (changes.state !== undefined) {
+    line('state', { from: card.state, to: changes.state });
+    next.state = changes.state;
+  }
+  if (changes.column !== undefined) {
+    line('column', { from: card.column, to: changes.column });
+    next.column = changes.column;
+  }
+  if (changes.labels !== undefined) {
+    next.labels = changes.labels;
+    line('labels');
+  }
+  if (changes.priority !== undefined) next.priority = changes.priority;
+  if (changes.squad !== undefined) next.squad = changes.squad;
+  if (changes.updatedAt !== undefined) next.updatedAt = changes.updatedAt;
+  return next;
 }
