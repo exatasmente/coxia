@@ -140,6 +140,14 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
     if (existsSync(path) && statSync(path).isFile()) rmSync(path, { force: true });
   }
 
+  /**
+   * Deletes every file of a conversation and its folder: the conversation itself went. Nothing to do when it holds none; a name that cannot be a conversation's is
+   * refused like in every other call here, so this never reaches outside the attachments folder.
+   */
+  function dropThread(thread: string): void {
+    rmSync(dirOf(thread), { recursive: true, force: true });
+  }
+
   /** The ref and the bytes of one attachment, or null when the conversation has no such file. */
   function get(thread: string, id: unknown): { ref: AttachmentRef; bytes: Uint8Array } | null {
     const found = find(thread, String(id ?? ''));
@@ -213,7 +221,7 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
       .map((path) => ({ path, size: statSync(path).size, mtimeMs: statSync(path).mtimeMs }));
   }
 
-  return { put, drop, dropAll, dropFile, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
+  return { put, drop, dropAll, dropFile, dropThread, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
 }
 
 export type AttachmentStore = ReturnType<typeof createAttachmentStore>;
