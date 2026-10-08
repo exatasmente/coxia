@@ -98,7 +98,7 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
                 </div>
                 <dl className="tm-meta">
                   <div><dt>{t('ui.team.squad')}</dt><dd>{squad ? squadName(squad) : t('ui.team.shared')}</dd></div>
-                  <div><dt>{t('ui.team.stages')}</dt><dd>{works.length ? works.map((s) => s.label || s.id).join(', ') : t('ui.team.noStages')}</dd></div>
+                  <div><dt>{t('ui.team.stages')}</dt><dd>{works.length ? works.map((s) => shown(s.label) || s.id).join(', ') : t('ui.team.noStages')}</dd></div>
                   <div><dt>{t('ui.team.permission')}</dt><dd>{t(`ui.team.permission.${a.permission}`)}</dd></div>
                   {!a.system && <div><dt>{t('ui.team.tracker')}</dt><dd>{t(TRACKER_LABEL[a.tracker])}</dd></div>}
                   {!a.system && <div><dt>{t('ui.team.shell')}</dt><dd>{t(SHELL_LABEL[a.shell])}</dd></div>}
