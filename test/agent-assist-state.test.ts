@@ -347,6 +347,19 @@ describe('the form the editor opens', () => {
     out.allowedCommands.push('x');
     expect(s.base?.allowedCommands).toEqual(['npm test:*']);
   });
+
+  it('keeps the catalog key of a template agent for a text the assistant left as it was, and takes the new text where it changed', () => {
+    const form: AgentDraft = { ...original(), name: 'cycle.agentFlow.team.planner.name', job: 'cycle.agentFlow.team.planner.job', instructions: 'cycle.agentFlow.team.planner.instructions' };
+    const start = startAssist(form);
+    // The assistant shows the texts, not the keys.
+    expect(start.draft.name).not.toBe('cycle.agentFlow.team.planner.name');
+    // The person changed only the job.
+    const s = withReview(start, { draft: { ...start.draft, job: 'Tests the change in the app.' }, settings: settingsOfDraft(form), reasons: {} });
+    const out = toAgentDraft(s, []);
+    expect(out.name).toBe('cycle.agentFlow.team.planner.name');
+    expect(out.instructions).toBe('cycle.agentFlow.team.planner.instructions');
+    expect(out.job).toBe('Tests the change in the app.');
+  });
 });
 
 describe('how the editor opens when the person concludes', () => {

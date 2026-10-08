@@ -248,12 +248,16 @@ export function diffAgent(state: AssistState): { texts: TextChange[]; settings: 
  */
 export function toAgentDraft(state: AssistState, taken: readonly string[] = []): AgentDraft {
   const own = state.base ?? blankAgent();
+  // A text the assistant left as it was keeps the agent's own value: an agent of a template holds catalog keys there, which follow the language; the text shown
+  // for one would not.
+  const was = state.base ? textsOfDraft(state.base) : null;
+  const text = (field: 'name' | 'job' | 'instructions'): string => (state.base && was && state.draft[field] === was[field] ? state.base[field] : state.draft[field]);
   return {
     ...own,
     id: state.base ? state.base.id : (state.testId ?? uniqueId(slugOf(state.draft.name), taken)),
-    name: state.draft.name,
-    job: state.draft.job,
-    instructions: state.draft.instructions,
+    name: text('name'),
+    job: text('job'),
+    instructions: text('instructions'),
     model: { ...own.model },
     allowedCommands: [...own.allowedCommands],
     permission: state.settings.permission,
