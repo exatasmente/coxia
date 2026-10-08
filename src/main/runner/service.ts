@@ -1158,6 +1158,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!identity) throw new RunnerError('no-identity');
       // The person's own words, masked like every other document; the path guard is `writeMemory`'s.
       writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
@@ -1271,10 +1272,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (inbox && working && text) {
         for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
           if (id !== working || toStage >= 1) continue;
-          // The agent is told that the record of the activities moved, and may read it again by name: a message, never a second copy of the record.
-          const seen = activities.render(deps.runs, { ref: run.issue.ref }, deps.config().language);
-          const moved = seen ? `\n${prompt('runner.section.sharedMoved')}` : '';
-          const queued = inbox.post(moved && !text.includes(moved.trim()) ? `${text}${moved}` : text, message.waitsForAnswer);
+          const queued = inbox.post(text, message.waitsForAnswer);
+          // The agent is told that the record of the activities moved only when the message really entered the session: a message handed back in the closing line keeps the person's words.
+          if (queued) inbox.post(`\n${prompt('runner.section.sharedMoved')}`, false);
           toStage++;
           // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
           if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
