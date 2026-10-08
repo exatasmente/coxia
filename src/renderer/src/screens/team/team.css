@@ -49,6 +49,8 @@
 .tm-checks { display: flex; flex-direction: column; gap: 2px; }
 .tm-check { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; font-size: 14px; }
 .tm-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--teal); flex: 0 0 auto; }
+/* An option a model wrote may be one long word (an address, a path): it wraps instead of widening the panel. */
+.tm-check > span { min-width: 0; overflow-wrap: anywhere; }
 .tm-check:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 .tm-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .tm-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--chip-quiet-bg); color: var(--ink-2); font-size: 13px; }
@@ -127,7 +129,7 @@
 .tm-assist-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); min-width: 0; }
 .tm-assist-row-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .tm-assist-value { color: var(--ink-2); }
-.tm-assist-reason { margin: 0; }
+.tm-assist-reason { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 .tm-assist-warn { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); border: 1px solid var(--amber-line); overflow-wrap: anywhere; }
 .tm-assist-was summary { cursor: pointer; }
 .tm-assist-was-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
