@@ -497,6 +497,30 @@ describe('an issue the host lists that no card holds', () => {
   });
 });
 
+describe('what the door will write to', () => {
+  it.each([true, false])('refuses an issue outside the projects the board lists, with the autonomy %s, and sends and proposes nothing', async (autonomy) => {
+    configure(autonomy);
+    host.add('other/elsewhere', 3, { labels: ['board:backlog'] });
+    const outside = { project: 'other/elsewhere', iid: 3 };
+    for (const [channel, args] of [['board:update', [outside, { column: 'doing' }]], ['board:comment', [outside, 'x']], ['board:close', [outside]], ['board:reopen', [outside]]] as const) {
+      await expect(call(channel, ...args), channel).rejects.toThrow(/not one of the projects the board lists/);
+    }
+    // The listing is case-insensitive about the project it names.
+    host.add(PROJECT, 9, { labels: [] });
+    await call('board:comment', { project: PROJECT.toUpperCase(), iid: 9 }, 'fine');
+    expect(host.commands.length + actions.listActions().length).toBe(1);
+  });
+
+  it('does not write to a card linked on another kind of host as if its number were an issue here', async () => {
+    const id = linkedCard([]);
+    boardStore().link(id, { ...boardStore().get(id)!.host!, vcs: 'github' });
+    for (const [channel, args] of [['board:comment', [id, 'x']], ['board:close', [id]], ['board:update', [id, { column: 'doing' }]]] as const) {
+      await expect(call(channel, ...args), channel).rejects.toThrow(/another code host/);
+    }
+    expect(host.commands).toEqual([]);
+  });
+});
+
 describe('a card on a host whose issues have no labels', () => {
   it('keeps its column, priority and squad on the board, plans no label command, and still reaches the host for the rest', async () => {
     (host.runtime.provider as { caps: unknown }).caps = { ...host.runtime.provider.caps, issueLabels: false };

@@ -173,7 +173,7 @@ function Card({ card, board, go }: { card: BoardCardView; board: BoardView; go: 
               <button type="button" className="btn" onClick={() => go({ name: 'actions' })}>{t('ui.board.card.openActions')}</button>
             </p>
           )}
-          {card.hostState === 'missing' && <p className="small">{t('ui.board.card.outsideHint')}</p>}
+          {card.hostState === 'missing' && <p className="small">{card.hostNote?.text ?? t('ui.board.card.outsideHint')}</p>}
           {card.hostState === 'unread' && <p className="small">{t('ui.board.card.unreadHint')}</p>}
           {card.hostState === 'notSent' && (
             <div className="row cy-board-fields">

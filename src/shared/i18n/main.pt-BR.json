@@ -1283,6 +1283,8 @@
   "main.board.host.noIssue": "Este cartão ainda não é uma issue no host de código.",
   "main.board.host.unlinked": "O host criou a issue mas não disse o número dela: procure no host antes de enviar o cartão de novo.",
   "main.board.host.declined": "A proposta de abrir este cartão no host foi deixada de lado.",
+  "main.board.host.elsewhere": "Este cartão foi enviado a outro host de código ({host}): ele não é lido nem escrito no que este espaço de trabalho usa agora.",
+  "main.board.host.notBoardProject": "{project} não é um dos projetos que o quadro lista, então nada é escrito nele daqui.",
   "main.board.host.alreadyWaiting": "Uma mudança do mesmo tipo já espera em Ações por {ref}.",
   "main.board.host.notesSoFar": "Notas até aqui",
   "main.board.host.notifyTitle": "Uma mudança no quadro espera o seu \"sim\"",

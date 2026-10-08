@@ -370,3 +370,30 @@ describe('reads that overlap, and a host that is down', () => {
     expect(asked).toBe(2);
   });
 });
+
+describe('what ties a card to its host', () => {
+  it('asks for the work-item status when it reads a card by number, as the listing has it', async () => {
+    host.add(PROJECT, 31, {});
+    linked(31);
+    const asked: unknown[] = [];
+    const original = host.runtime.provider.getIssue;
+    host.runtime.provider.getIssue = async (project, iid, opts) => {
+      asked.push(opts);
+      return original(project, iid, opts);
+    };
+    await readTracked(true);
+    expect(asked).toEqual([{ status: true }]);
+  });
+
+  it('does not look for a card linked on another kind of host: it is outside this one, with a note, and its number is not read here', async () => {
+    host.add(PROJECT, 32, { title: 'Another issue with the same number' });
+    const card = linked(32);
+    boardStore().link(card.id, { ...card.host!, vcs: 'github' });
+    const read = (await readBoard(true))!;
+    expect(host.reads.some((r) => /issues\/32$/.test(r))).toBe(false);
+    expect(read.seen[card.id]).toBe('missing');
+    expect(read.items.map((i) => i.iid)).toEqual([32]);
+    expect(boardStore().get(card.id)).toMatchObject({ title: 'Card 32', hostNote: { kind: 'unsupported' } });
+    expect(boardStore().get(card.id)?.hostNote?.text).toContain('github');
+  });
+});

@@ -1283,6 +1283,8 @@
   "main.board.host.noIssue": "This card is not an issue on the code host yet.",
   "main.board.host.unlinked": "The host made the issue but did not say its number: look for it on the host before sending the card again.",
   "main.board.host.declined": "The proposal to open this card on the host was set aside.",
+  "main.board.host.elsewhere": "This card was sent to another code host ({host}): it is not read or written on the one this workspace uses now.",
+  "main.board.host.notBoardProject": "{project} is not one of the projects the board lists, so nothing is written to it from here.",
   "main.board.host.alreadyWaiting": "A change of the same kind is already waiting in Actions for {ref}.",
   "main.board.host.notesSoFar": "Notes so far",
   "main.board.host.notifyTitle": "A change on the board waits for your yes",

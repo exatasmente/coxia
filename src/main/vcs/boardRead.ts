@@ -1,5 +1,6 @@
 import { type BoardCard, type BoardItem, type BoardProjectLine, type HostRead, type HostSeen, type MirrorContext, boardColumns, derivedFields, itemKey } from '../../shared/board';
 import { ownStageLabels, sameIssue } from '../../shared/boardHost';
+import { t } from '../../shared/i18n';
 import { squadsOf } from '../../shared/config/squads';
 import { shownText } from '../../shared/cycles/text';
 import { boardStore } from '../boardSource';
@@ -31,7 +32,7 @@ export interface TrackedRead {
   seen: Record<string, HostSeen>;
 }
 
-type Found = { issue: VcsIssue } | { missing: true } | { unread: true };
+type Found = { issue: VcsIssue } | { missing: true } | { unread: true } | { elsewhere: true };
 const cache = new Map<string, { at: number; found: Found }>();
 
 /** Forgets what was read: a write the board's door just made, so the next read asks the host again. */
@@ -47,6 +48,15 @@ export function forgetHost(): void {
   generation++;
   forgetTracked();
   forgetProjects();
+}
+
+/** Whether a link was made on the kind of host the workspace uses now: an issue number means nothing on another one. */
+export function linkedHere(link: { vcs: string }): boolean {
+  try {
+    return link.vcs === vcsProvider().kind;
+  } catch {
+    return false;
+  }
 }
 
 /** The cards read by number: linked, open or closed within the last days, newest update first, at most `TRACKED_MAX`. */
@@ -72,6 +82,8 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
   const now = Date.now();
   const reads = await pool(cards, POOL, async (card): Promise<Found> => {
     const link = card.host!;
+    // An issue number means nothing on another host: a card linked elsewhere is not looked for here.
+    if (link.vcs !== provider.kind) return { elsewhere: true };
     const key = keyOf(provider.id, link.project, link.iid);
     const has = listed.find((i) => sameIssue(link, i));
     if (has) {
@@ -81,7 +93,7 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
     const hit = cache.get(key);
     if (!refresh && hit && now - hit.at < TRACKED_TTL_MS) return hit.found;
     try {
-      const found: Found = { issue: await provider.getIssue(link.project, link.iid) };
+      const found: Found = { issue: await provider.getIssue(link.project, link.iid, { status: true }) };
       cache.set(key, { at: Date.now(), found });
       return found;
     } catch (e) {
@@ -106,6 +118,10 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
   cards.forEach((card, i) => {
     const link = card.host!;
     const read = reads[i];
+    if ('elsewhere' in read) {
+      seen[card.id] = { state: 'missing', title: '', labels: [], stageId: null, updatedAt: null, url: link.url, elsewhere: true };
+      return;
+    }
     if ('unread' in read || 'missing' in read) {
       seen[card.id] = { state: 'unread' in read ? 'unread' : 'missing', title: '', labels: [], stageId: null, updatedAt: null, url: link.url };
       return;
@@ -133,6 +149,9 @@ export function mirrorTracked(read: TrackedRead): void {
   const ctx = mirrorContext();
   for (const [id, seen] of Object.entries(read.seen)) {
     try {
+      // A card linked on another host says so, and the note goes when it is back on the host it was sent to.
+      if (seen.elsewhere) boardStore().note(id, { kind: 'unsupported', text: t('main.board.host.elsewhere', { host: boardStore().get(id)?.host?.vcs ?? '' }) });
+      else if (boardStore().get(id)?.hostNote?.kind === 'unsupported' && boardStore().get(id)?.host) boardStore().note(id, null);
       boardStore().mirror(id, seen, ctx);
     } catch (e) {
       console.error('[vcs:board] mirror', (e as Error).message);
@@ -235,7 +254,7 @@ async function readBoardNow(refresh: boolean): Promise<HostRead | null> {
     const stages = stagesFor(provider.kind, rc().stages);
     const columns = new Set(boardColumns(config.devCycle.stages).map((s) => s.id));
     const ctx = { levels: config.devCycle.priority.labels, squads: squadsOf(config) };
-    const links = boardStore().list().flatMap((c) => (c.host ? [c.host] : []));
+    const links = boardStore().list().flatMap((c) => (c.host && linkedHere(c.host) ? [c.host] : []));
     const items: BoardItem[] = (listed?.projects ?? []).flatMap((p) =>
       p.issues
         .filter((issue) => !links.some((l) => sameIssue(l, issue)))

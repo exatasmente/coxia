@@ -11,7 +11,7 @@ import { boardStore } from './boardSource';
 import { vcsName } from './cyclePrompts';
 import { invalidateReport } from './report';
 import { vcsProvider, vcsReady } from './vcs';
-import { forgetHost, readBoard } from './vcs/boardRead';
+import { boardProjects, forgetHost, readBoard } from './vcs/boardRead';
 import { cardRefContext } from './vcs/cardSource';
 import { getConfig, issueProjectKey, rc } from './workspaceConfig';
 
@@ -47,9 +47,16 @@ function refusal(written: Extract<WrittenLabel, { refused: string }>, column: st
 
 /** The card a request names, and the issue it stands for: its link, or the project and number of a listed issue. */
 function resolve(target: BoardTarget): { card: BoardCard | null; project: string; iid: number | null } {
-  if (typeof target !== 'string') return { card: null, project: target.project, iid: target.iid };
+  if (typeof target !== 'string') {
+    // A listed issue is one of the projects the board lists; the board is not a way to write to any issue the token reaches.
+    const listed = boardProjects(vcsProvider().id).find((p) => p.toLowerCase() === target.project.toLowerCase());
+    if (!listed) throw new Error(t('main.board.host.notBoardProject', { project: target.project }));
+    return { card: null, project: listed, iid: target.iid };
+  }
   const card = boardStore().get(target);
   if (!card) throw new Error(t('main.board.missing', { id: target }));
+  // A number on another host is another issue: a card linked there is not written here.
+  if (card.host && card.host.vcs !== vcsProvider().kind) throw new Error(t('main.board.host.elsewhere', { host: card.host.vcs }));
   return { card, project: card.host?.project ?? '', iid: card.host?.iid ?? null };
 }
 

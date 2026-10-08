@@ -361,6 +361,8 @@ export interface HostSeen {
   stageId: string | null;
   updatedAt: string | null;
   url: string;
+  /** The card was linked on another code host than the one the workspace uses now: it is not read there, and `state` is `missing`. */
+  elsewhere?: boolean;
 }
 
 export interface MirrorContext {

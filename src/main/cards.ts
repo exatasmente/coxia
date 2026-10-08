@@ -14,7 +14,7 @@ import { boardCards } from './boardSource';
 import { cycle, language, text as cycleWord } from './cyclePrompts';
 import { type ReportItem, readReport } from './report';
 import { runStore } from './runs';
-import { type TrackedRead, mirrorTracked, readTracked } from './vcs/boardRead';
+import { type TrackedRead, linkedHere, mirrorTracked, readTracked } from './vcs/boardRead';
 import { vcsReady } from './vcs';
 import { getConfig, rc } from './workspaceConfig';
 
@@ -79,7 +79,7 @@ export async function loadCards(limit: number, refresh = false, squad: string | 
   const items: ReportItem[] = [...report.items, ...(tracked?.items ?? []).filter((it) => !inListing(it))];
   const hosted = vcsReady();
   const waiting = hosted ? boardWaiting() : new Map();
-  const linked = boardCards().filter((c): c is BoardCard & Required<Pick<BoardCard, 'host'>> => !!c.host);
+  const linked = boardCards().filter((c): c is BoardCard & Required<Pick<BoardCard, 'host'>> => !!c.host && linkedHere(c.host));
   const mrsByIssue = new Map<string, ReportItem[]>();
   for (const it of items) {
     if (it.kind !== 'mr') continue;
@@ -117,7 +117,7 @@ export async function loadCards(limit: number, refresh = false, squad: string | 
   // The cards of the board belong to the day too, and the blocked line of a card in a blocked column is added by the same helper as any other card. A card linked
   // to an issue is that issue's card above, never a second one; when the host does not return it (or was not read) its stored copy stands, said so.
   const mine = boardCards()
-    .filter((c) => !c.host || !items.some((it) => it.kind === 'issue' && sameIssue(c.host!, { project: it.project, iid: it.iid })))
+    .filter((c) => !c.host || !linkedHere(c.host) || !items.some((it) => it.kind === 'issue' && sameIssue(c.host!, { project: it.project, iid: it.iid })))
     .map((c): Card => {
       const card = boardCardOf(c, { stages: cycle().stages, language: language(), levels });
       const seen = tracked?.seen[c.id]?.state;
