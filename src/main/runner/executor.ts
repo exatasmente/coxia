@@ -97,6 +97,8 @@ export interface ExecutorDeps {
   keepEvidence?: (runId: string, record: EvidenceRecord) => ForumMessage | null;
   /** Updates a piece of evidence already recorded (the copy that went into the cycle folder): the run's record changes, nothing is published again. */
   updateEvidence?: (runId: string, record: EvidenceRecord) => void;
+  /** What the section of the activities says for one run: its own activity whole, the others in short. Absent: the stage gets no such section. */
+  sharedMemory?: (run: Run) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
 }
@@ -588,6 +590,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commands,
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
+    // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
+    shared: d.sharedMemory?.(run) ?? '',
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),

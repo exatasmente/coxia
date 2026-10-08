@@ -72,6 +72,8 @@ export interface StageInput {
   plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
+  /** What the app knows of the activities of the workspace, rendered: the front of this activity whole and the rest in short, or "" (then no section). */
+  shared?: string;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
 }
@@ -243,6 +245,8 @@ export function stagePrompt(i: StageInput): string {
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
+  // What the app knows of the other activities, and of this one whole: material to consult, under its own tags (specification rules 5 to 7).
+  if (i.shared) sections.push(cp('runner.section.shared', { text: fence(i.shared) }));
   if (i.release) sections.push(i.release);
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Every agent knows what is in progress, in any conversation, and a restart does not lose it.** The app keeps a record of the activities of the workspace — one entry per activity, not per run — and an agent called anywhere (a run's thread, a squad channel, a general conversation, the direct conversation of an agent) reads it, so asking about an activity that is in progress is answered with its stage and who is working it instead of "there is no work going on". The record survives closing and reopening the app; an activity that had two executions is one entry; and the runs screen lists the activities and lets their entry be corrected, without any model call.
+
 ## [0.8.0-beta.9] - 2026-10-08
 
 ### Added
