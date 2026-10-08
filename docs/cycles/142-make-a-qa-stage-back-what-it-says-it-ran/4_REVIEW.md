@@ -2,104 +2,34 @@
 
 ## O que foi conferido, e como
 
-Esta rodada leu o diff da branch contra a issue, a spec (`1_SPEC.md`), o plano
-(`2_PLAN.md`) e o documento da implementação (`3_IMPLEMENTATION.md`), e conferiu o
-bloqueante da rodada anterior contra o código desta cópia. Nenhum run real, nenhum modelo
-e nenhum host foram usados; nenhuma tela foi conduzida.
+Esta rodada leu o diff da branch contra a issue, a spec (`1_SPEC.md`), o plano (`2_PLAN.md`) e o documento da implementação (`3_IMPLEMENTATION.md`), e conferiu primeiro se o bloqueante da rodada anterior foi feito. Nada de run real, modelo, host ou tela foi usado; a verificação é de leitura de código e de testes.
 
-O que se conferiu do bloqueante anterior, por leitura do código:
+**O bloqueante da rodada 2, conferido por leitura e por comando.** A rodada anterior voltou `changes` porque `.coxia/rules/runner.md`, no parágrafo "What a QA stage says it ran", afirmava que o resultado de cada cenário vinha do registro mas deixava entender que o documento inteiro era o texto do agente, quando o código desta branch reescreve as linhas de cenário. O arquivo, lido agora, diz:
 
-- A guarda do fecho passa o caminho que o gancho da imagem recebeu pelo mesmo resolvedor da
-  pasta de saída antes de ler qualquer coisa (`src/main/runner/executor.ts:624`), e o
-  caminho recusado vira a linha `runner.qa.lookNotKept` com o motivo (`executor.ts:625-628`).
-  O texto da recusa é o mesmo que o modelo lê na ferramenta (`outputProblemText`/
-  `evidenceProblemText`, exportados em `src/main/evidence/handlers.ts:34,50`).
-- O id e o registro de uma peça só entram nas listas da etapa depois de a guarda dar certo
-  (`executor.ts:635-639`), e o `keptNames` evita guardar duas vezes o mesmo arquivo, tanto
-  pelo caminho do fecho (`executor.ts:621,639`) quanto pela ferramenta (`executor.ts:661`).
-- O `looked` só sai para uma imagem de verdade (PNG, JPEG, GIF ou WebP, lido dos bytes),
-  nunca de um id de comprovação (`src/main/evidence/handlers.ts:161`).
-- Os testes acrescentados nesta rodada cobrem o link e o caminho fora da pasta
-  (`test/runner-qa-repair.test.ts`, o caso novo) e o cenário que continua executado no
-  registro, no plano gravado e no comentário (`test/runner-publish.test.ts`, o caso novo).
+> The test plan stops being the agent's text whole: the app writes the recorded scenarios as their own section, taken from the record, and keeps out the agent's own scenario lines, so one scenario is written once and only from the record; the plan's other sections stay as the agent wrote them.
 
-Nenhum comando foi rodado por esta etapa: as portas foram exercitadas pela implementação e o
-que esta revisão afirma vem da leitura do código e dos testes nesta cópia. A corrida completa
-da suíte depois destas mudanças não foi lida por esta etapa.
+A frase confere com o código: `testPlanWithResults` (`src/shared/runs/testPlan.ts:51-63`) remove a seção de resultados do agente, filtra as linhas de cenário que ele escreveu e acrescenta uma seção com uma linha por cenário gravado, deixando as outras seções intactas; o executor o aplica antes da normalização do cabeçalho (`src/main/runner/executor.ts:873`). O conserto está commitado (`532d3449 feat: state that the test plan is written from the run record #142`), não só no worktree.
+
+**O bloqueante da rodada 1, conferido de novo.** A guarda do fecho passa o caminho que o gancho da imagem recebeu pelo mesmo resolvedor da pasta de saída antes de ler qualquer coisa (`src/main/runner/executor.ts:624`), e o caminho recusado vira a linha `runner.qa.lookNotKept` com o motivo (`executor.ts:625-628`). O id e o registro de uma peça só entram nas listas da etapa depois de a guarda dar certo (`executor.ts:635-639`), o `keptNames` evita guardar duas vezes o mesmo arquivo e o `looked` só sai para imagem de verdade. Continua tudo de pé.
+
+**As portas, rodadas nesta cópia.** `npx tsc --noEmit` — sem saída, sem erro (exit 0). `npx vitest run test/runner-qa-repair.test.ts test/runner-publish.test.ts test/runs-scenario.test.ts` — 3 arquivos, 38 testes, todos passando. `npm run i18n:lint` — 4598 chaves nos dois idiomas, 0 problema. `node scripts/theme-audit.mjs` — passa (os únicos literais são os 8 de `api.ts`, que já existiam). `node scripts/public-audit.mjs` — 1215 arquivos, nada que pertença a uma empresa ou a uma pessoa.
+
+Os testes do assunto cobrem a rodada de reparo pedindo uma volta só e o comando que o agente então aponta sustentando o cenário; um cenário que volta sem respaldo virando `read` com `unbacked` e a conversa dizendo isso uma vez; a etapa sem sandbox como antes; o plano gravado e o comentário não chamando de executado um cenário que o registro tem como lido e marcando um `not-run` como não rodado; uma imagem olhada e não guardada terminando como comprovação da etapa; um link na pasta de saída e um caminho fora dela terminando como "visto, não guardado" com o motivo; o que sumiu antes do fecho virando "visto, não guardado"; e uma imagem com nome de texto sendo guardada pelo conteúdo.
 
 ## O veredito
 
-**changes.** Nada do bloqueante anterior permanece em aberto. O que bloqueia agora é uma regra
-do `.coxia` que a própria branch alterou, ficou falsa contra o código que ela mesma mudou e
-não foi corrigida.
+**approved.** O bloqueante da rodada 2 foi corrigido e commitado, e a frase nova confere com o código. O bloqueante da rodada 1 continua tratado. Nenhum defeito novo aparece no diff desta rodada: o que ela mudou é uma frase de documentação, e ela foi lida contra `testPlanWithResults` e coberta pelo teste puro do plano. Nada bloqueia.
 
 ## Achados
 
 ### Bloqueante
 
-1. **`.coxia/rules/runner.md` afirma que o `5_TEST_PLAN.md` é gravado como o agente o
-escreveu, e a branch mudou exatamente isso sem corrigir a regra.** O arquivo foi tocado pelo
-commit desta branch que atualiza a conferência de documentação, e o parágrafo "What a QA
-stage says it ran" também foi escrito nesta branch; a linha do `5_TEST_PLAN.md` ficou de fora.
-A regra afirma que o resultado de um cenário é reescrito no documento a partir do registro,
-mas não diz em lugar nenhum que o documento deixa de ser o texto integral do agente — e o
-código de agora o reescreve: `testPlanWithResults` monta as linhas de cenário a partir do
-registro (`src/shared/runs/testPlan.ts:51-63`) e o executor o aplica antes da normalização do
-cabeçalho (`src/main/runner/executor.ts:873`). Quem seguir a regra vai supor que as demais
-seções do plano, e a seção de cenários que o agente escreveu, chegam intactas ao arquivo; as
-linhas de cenário do agente não chegam. É a mesma classe do bloqueante da rodada anterior, mas
-sobre um arquivo de regra em vez do código: a entrega muda um comportamento e não ajusta o
-texto que o descreve, e este é o arquivo que os agentes do app leem. O que falta é uma frase,
-além da atualização do `checked-commit`/`checked-date` que o app escreve no commit.
+Nenhum.
 
 ### Sugestões
 
-2. **`docs/runner.md` documenta a QA sem a rodada de reparo e sem a imagem guardada no
-gancho.** O documento para pessoas não foi tocado por esta branch (o diff dele desde o ponto
-de ramificação não tem nenhuma linha); ele segue dizendo que a QA que afirma execução sem
-respaldo é apenas registrada como lida, num único "QA's evidence" bullet, e a função
-`backEvidence` aparece como uma conferência só. Nada no texto dele ficou falso — o que ele
-descreve continua acontecendo —, mas ele omite a volta que passou a existir e a guarda da
-imagem olhada, e é o documento que a pessoa lê. Não é bloqueante porque nada dele leva a um
-comando errado nem a um limite errado.
-
-3. **`.coxia/rules/model-providers.md` e `.coxia/skills/add-a-model-provider.md` citam
-`src/main/engine/contract.ts`, que a branch mudou, sem atualizar o cabeçalho.** A branch
-acrescentou `EngineRequest.resume` e `EngineRequest.onLooked` ao arquivo. Lido contra o
-código novo, o texto das duas regras continua verdadeiro: `resume` é a mesma costura que as
-cerimônias já usavam e `onLooked` não muda o contrato que elas descrevem. Só o marcador ficou
-atrás do código; a atualização é do app no commit.
-
-4. **`.coxia/rules/runner.md` cita `src/main/runner/executor.ts`, que a branch mudou, e o
-`checked-commit` do arquivo aponta para um commit que não contém esta mudança.** O cabeçalho
-diz `checked-commit` na revisão da conferência; o executor mudou de novo depois dela (a
-guarda do fecho). Nada do texto ficou falso por causa só dessa mudança além do achado 1,
-que é o que bloqueia; este é o mesmo conserto de marcador.
-
-5. **`.coxia/rules/releasing.md` cita `CHANGELOG.md`, que a branch mudou, sem atualizar o
-cabeçalho.** A branch acrescentou a entrada sob `## [Unreleased]`. Lido contra ela, o texto
-da regra continua verdadeiro ("A user-visible change gets a line under `## [Unreleased]`").
-O marcador ficou atrás; a atualização é do app no commit.
-
-6. **`.coxia/roles/customer-success.md` e `.coxia/roles/support.md` citam
-`src/main/runner/publish.ts`, que a branch mudou, sem atualizar o cabeçalho.** O `publish.ts`
-ganhou a reescrita das linhas de cenário do comentário de QA e a seção de resultados vinda do
-registro (`src/main/runner/publish.ts:64-74,618-632`). Lido contra o código novo, o que as
-duas notas de papel afirmam continua verdadeiro: a nota de lançamento diz o que mudou sem a
-referência interna, o comentário sai pela mesma porta. Nada ficou falso; só o marcador.
-
-7. **A regra do `.coxia` fala da rodada de reparo mas não do que acontece quando ela falha.**
-As duas regras do produto (o `7_` da spec e o verbete do `.coxia`) dizem que a etapa pede uma
-volta e que o cenário que continua sem respaldo é gravado como lido; não dizem que uma volta
-que falha por dentro (tempo, passos, orçamento) é engolida e a primeira resposta é a que fica
-(`repairRound`, `src/main/runner/executor.ts:485-488`). É a mesma decisão em aberto que a
-rodada anterior deixou como sugestão, e ela não foi tomada; escrevê-la ou mudá-la é do
-desenvolvimento, não de uma correção de texto.
+Nenhuma nova. As sugestões das rodadas anteriores que continuam abertas não foram reabertas e não viram bloqueantes: o `docs/runner.md` (o documento para pessoas) segue sem a rodada de reparo e sem a guarda da imagem olhada, mas nada nele ficou falso; os marcadores `checked-commit`/`checked-date` dos arquivos de `.coxia` que a branch toca são escritos pelo app no commit; e o contrato da rodada de reparo que falha por dentro (tempo, passos, orçamento) segue não escrito em lugar nenhum, sem nada da entrega afirmar o contrário.
 
 ## O que esta revisão não fez
 
-Não reproduziu o run real citado pela issue, não exercitou modelo, host nem sandbox, e não
-conduziu nenhuma tela. Não rodou a suíte completa nem as portas: o que está dito como
-verificado vem da leitura do código e dos testes nesta cópia. Não conferi linha a linha o
-diff fora dos arquivos citados, e não julguei por execução o caminho de uma imagem acima do
-teto nem o de um arquivo que não é imagem.
+Não reproduziu o run real citado pela issue, não exercitou modelo, host nem sandbox, e não conduziu nenhuma tela. Não rodou a suíte completa: rodou o typecheck, os testes do assunto, o lint de internacionalização, a conferência de tema e a conferência pública. Não julgou por execução o caminho de uma imagem acima do teto nem o de um arquivo que não é imagem (não têm teste próprio; a recusa por link e por caminho fora da pasta tem).
