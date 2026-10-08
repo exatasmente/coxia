@@ -2,38 +2,45 @@
 
 ## Decisões
 
-- Issue 141 classificada como pedido de funcionalidade: a memória das atividades deixa de ser por execução e passa a ser compartilhada, transversal a execuções, persistente entre reinícios e visível a um agente chamado fora daquela execução.
-- Squad: plataforma (o núcleo é o runtime do runner: como o estado de uma atividade é guardado, lido e compartilhado).
-- O comportamento especificado (1_SPEC.md, palavras do produto): uma frente por atividade (referência, título, etapa atual, agente que a trabalha e último que mexeu, decisões, perguntas abertas, onde parou com o último recado, instante da última atualização); atualizada pelo app ao longo do ciclo (início, entrada e saída de etapa, resposta da pessoa, recado, pergunta, cancelamento, fim); qualquer agente lê, nenhum agente escreve; miniaturas por agente ("onde fulano parou"); fora do worktree e fora da pasta do ciclo; cruza reinícios; visível e corrigível pela pessoa sem chamada de modelo.
-- Consulta: o agente tira da pergunta o que ela nomeia (referência/título de atividade, nome de agente, ou nada) e recebe a frente inteira; sem nada nomeado, recebe as atividades em andamento em poucas linhas, com aviso de que pode abrir uma delas. A memória entra como material (`<data>`), nunca como instrução.
-- Não verificado em execução (só leitura): que a resposta de hoje diga "não há trabalho" e que uma atividade sobreviva ao reinício. O relato da issue é a evidência disso.
+- Issue 141: pedido de funcionalidade. A memória das atividades deixa de ser por execução e passa a ser compartilhada, transversal a execuções, persistente entre reinícios e visível a um agente chamado fora daquela execução.
+- Squad: plataforma. Comportamento especificado em `1_SPEC.md` (15 regras, 5 critérios) e desenho em `2_PLAN.md`.
+- **Desenho decidido (plano):** a memória compartilhada não é documento que agente reescreve; é um **índice por atividade que o app projeta do estado que já guarda** (`Run`), arquivo `<workspace>/memory/activities.json` (pasta do espaço de trabalho, `ATAS`/`WORKSPACE_DIRS`), fora de todo worktree. Chave: `Run.issue.ref` (`release:X.Y.Z` e `docs:<repo>` incluídos), então uma segunda execução da mesma atividade é a mesma frente.
+- Escritor: só o app, num ponto (função única dentro de `createRunner`, depois de `moveRun` em `move()` e nos movimentos assíncronos). Mescla por chave + escrita atômica; falha de escrita não derruba o movimento (logada e engolida) e o leitor reprojeta a frente do store de runs — perda silenciosa vira auto-recuperação.
+- Criação interrompida (regra 8): registro mínimo da referência em `create()` antes do worktree/issue record; nunca removido pelo sweep; renderizado como "conhecida, nunca iniciada".
+- Agente recebe **recorte renderizado**, nunca o índice: atividade nomeada (ref, título ou número) → frente inteira; agente nomeado → a frente dele + miniatura; nada nomeado → uma linha por atividade em andamento + aviso de que pode abrir uma; toda etapa → a frente da própria atividade inteira + lista compacta das outras. Teto por chamada (constante nomeada, contada em log), frente da atividade em questão nunca cortada. Seção própria entre `<data>` com aviso de material (não instrução), nos dois pontos de montagem: `mentions/call.ts` (todas as menções, dentro e fora de execução) e `runner/prompt.ts` (etapas); também nas chamadas de cadeia e num aviso ao agente que trabalha e recebe mensagem (caso do QA do relato). Nada entra em `allowedTools`/`extraDirs`/`roots`: a única saída da memória é texto no prompt.
+- Antigo: nada apagado; frente mais velha que 30 dias renderiza como provavelmente encerrada; encerradas/antigas resumidas num fecho (a resposta é limitada, não o arquivo).
+- Visível e corrigível sem modelo: `runs:activities` e `runs:activitySave` (abertos ao navegador como todo `runs:*`) e uma seção na tela que já lista as execuções; correção marcada como da pessoa e preservada na próxima projeção; sem recusa `memory-busy` (o arquivo não está no worktree).
+- `MEMORY.md` por execução **não muda** (fora de escopo; entrega própria se virar redundante). `STEPS` de migração de config **não muda** (nenhum campo de `WorkspaceConfig`). AGENTS.md não muda.
+- Riscos contidos: um escritor + mescla por chave; projeção pura; tetos numerados; índice nunca vira caminho de leitura nem sai da máquina (nenhum caminho novo escreve no host; `Actions` continua a única porta).
 
 ## Restrições
 
-- Escopo desta atividade não inclui decidir como implementar ou armazenar (fica para o planejamento); aqui só o comportamento.
-- Memória, formato e armazenamento da memória da execução (MEMORY.md na pasta do ciclo) não mudam nesta entrega; a memória compartilhada é um segundo registro, por atividade, fora do worktree.
-- Repositório público: nada de nome de empresa, pessoa, host, número real de issue ou segredo; usar placeholders neutros (`example.com`, `group/project`, `#123`).
+- Repositório público: nada de nome de empresa, pessoa, host, número real de issue ou segredo; placeholders neutros (`example.com`, `group/project`, `#123`).
 - Todo texto de interface passa por `t()` nos dois catálogos; nada de cor literal no renderer (tokens de tema).
 - Nenhum teste pode tocar modelo, host de código ou rede reais; fakes em `test/helpers/`.
 - Código, testes, identificadores e commits em inglês; comentários dizem por quê.
-- Emenda antes de partir para o backlog: a 1_SPEC.md não abre com as palavras da issue na primeira seção, e a emenda "## O que se pede Comece citando as palavras da própria issue" chegou depois de a spec estar pronta. Vale para as próximas etapas a mesma regra do comentário na tracker.
+- Efeito externo só por `Actions`; uma mudança de config exige degrau em `STEPS` e os três arquivos — esta não muda config.
 
 ## Tentado e descartado
 
-- Falar "todo mundo sempre" contra texto curto (descartado decidir isso agora): o teto de contexto/memória para anexar todo o estado de todas as atividades em todas as mensagens é um número que o plano precisa demonstrar; a spec deixa os números de quantas frentes cabem e como o corte funciona para o plano (regras exigem, sem teto definido, só que o corte não pode cortar a frente da atividade em questão nem a atualização corrente).
-- Nada implementado nem descartado em código. Esta etapa só leu; nenhuma execução foi iniciada e o comportamento não foi exercitado.
+- Arquivo único "das atividades, lido inteiro pela etapa": a etapa receberia o estado de todas as atividades, contra o teto de contexto que a spec manda demonstrar; descartado a favor do recorte por chamada.
+- Índice no store de runs ou na pasta do ciclo: store é por execução (uma atividade teria N registros e nenhum lugar para as palavras da pessoa sem execução viva); pasta do ciclo está no worktree e iria ao pull request (regra 10). Descartados.
+- Ler a pasta do ciclo de outras execuções para achar onde a atividade parou: proibido (confinamento de leitura dos agentes). Descartado; a frente é montada dos arquivos de run.
+- Ferramenta de leitura da memória para o modelo: deixaria o modelo encher o próprio contexto sem o limite do app. Descartada.
+- Nada implementado em código. Todas as etapas até aqui só leram; nenhum comportamento novo foi exercitado.
 
 ## Perguntas abertas
 
-- Escopo da primeira entrega: tudo de uma vez (frentes por atividade, miniaturas por agente, consulta numa tela) ou primeiro as frentes e a consulta, deixando miniaturas e conversas de fora de uma execução para depois. Recomendação da spec: tudo de uma vez.
-- Crescimento sem fim: a memória não pode ser apagada para caber, mas nada diz o que ela faz com centenas de atividades ao longo de meses (resumir as encerradas e antigas, guardar só as abertas, ou deixar crescer).
-- Onde a pessoa edita o que é compartilhado: na tela da execução, como a memória de hoje, ou como operação de manutenção em Configurações.
-- Nota de lançamento: se a mudança é visível para quem usa, o lançamento diz o que mudou; confirmar antes de publicar.
+- Escopo da primeira entrega: o plano entrega frentes + miniaturas + tela juntas (recomendação da spec). Se a resposta for "primeiro as frentes e a consulta", o passo 2 perde os lugares fora de execução e o critério 1 não é cumprido.
+- Crescimento: o plano limita a resposta (resumo do antigo), não o arquivo; se o arquivo também deve resumir o antigo, é entrega própria.
+- Onde a pessoa edita: o plano põe a correção na tela das execuções; em Configurações seria a mesma parte de servidor e outra tela.
+- Nota de lançamento: o plano escreve uma linha em `## [Unreleased]`; o texto é confirmado antes de publicar. Não verificado.
 
 ## Onde o trabalho está
 
-- Triagem concluída (tentativa 1): `0_TRIAGE.md` escrito com tipo, o que dá para entender e onde foi conferido, o que falta, as issues relacionadas (#52, #122, #71, #29) e a sugestão de prioridade e squad.
-- Refinamento concluído (tentativa 1): `1_SPEC.md` escrito com o que muda para quem usa, 15 regras numeradas, fora do escopo, 5 critérios de aceite verificáveis por uma pessoa, 4 perguntas em aberto e a seção de como foi conferido — tudo por leitura, nada executado.
-- Estado do código conferido por leitura: a memória do ciclo é um arquivo de nome fixo na pasta do ciclo, no worktree da execução, lida e reescrita pelas etapas daquela execução; um agente chamado numa conversa recebe só o fio da conversa e os arquivos que o chamador passa (os documentos da pasta do ciclo apenas quando o lugar é a conversa daquela execução), sem estado compartilhado entre execuções. O estado por execução (etapa, estado, histórico, perguntas, recados por etapa) existe e é a matéria-prima da memória compartilhada. Não verificado em execução.
-- Próxima etapa: plano técnico (2_PLAN.md) — onde a memória mora, como nasce e é mantida, quando é atualizada, como entra no texto de um agente chamado em qualquer lugar, como fica visível sem chamada de modelo e como a pessoa corrige; responder às quatro perguntas em aberto. Prioridade proposta nesta etapa: `priority:high`; marco: próximo ciclo normal.
+- `0_TRIAGE.md` (tentativa 1), `1_SPEC.md` (tentativa 1, spec aprovada no Gate 1) e `2_PLAN.md` (tentativa 2, este plano): plano com decisões, ordem em 4 passos, um teste por comportamento com arquivo de teste, riscos e o que não foi verificado.
+- Estado do código conferido por leitura: a memória do ciclo é arquivo de nome fixo na pasta do ciclo, no worktree da execução; um agente chamado numa conversa recebe só o fio e, na conversa de uma execução, os documentos daquela execução; o estado por execução (`Run`: etapas, etapa atual, pergunta, pendente, histórico, QA/review) existe e é a matéria-prima do índice; todo movimento de execução passa por `move()`/`moveRun`; menções fora de execução são respondidas por `mentions/module.ts`.
+- Próxima etapa: implementação, passo 1 do plano. Prioridade proposta: `priority:high`; marco: próximo ciclo normal.
+- Nada executado até aqui: nenhum teste, nenhuma interface, nenhuma chamada de modelo.
 - Passagem support → product-owner: Escrever a especificação do comportamento: qual estado é compartilhado entre atividades, quem o lê e quando, como ele é atualizado ao longo de uma execução, onde ele persiste entre reinícios, e como isso aparece no prompt de um agente chamado fora de uma etapa. Cobrir os quatro critérios de aceite da issue como cenários verificáveis, incluindo o caso do agente de QA que respondeu não haver teste em andamento. Não decidir armazenamento nem formato agora além do que o comportamento exige. <!-- handoff:8 -->
+- Passagem product-owner → pessoa: Escrever o plano técnico a partir de 1_SPEC.md: onde a memória compartilhada mora (fora do worktree, no que é do aplicativo naquele computador) e como é migrada do que existe hoje; como nasce e é mantida com uma frente por atividade; como o aplicativo a atualiza nos pontos da regra 3 (início da execução, entrada e saída de etapa, resposta da pessoa, recado para a próxima etapa, pergunta, cancelamento) sem que dois avanços simultâneos se apaguem; como ela entra no texto de um agente chamado em qualquer lugar (conversa de execução, canal de squad, conversa geral, conversa direta), com consulta p… <!-- handoff:15 -->
