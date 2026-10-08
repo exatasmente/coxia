@@ -6,21 +6,19 @@
 - **D1:** a comprovação de uma etapa de host é lida da própria pasta de saída da sessão (a que o prompt apresenta em `COXIA_OUT`), não de uma pasta de etapa nova.
 - **D2:** "testar uma interface" no host continua sendo pasta de navegadores disponível ou tela virtual pedida — a condição de hoje.
 - **Desenho:** a raiz da comprovação é campo da sessão (`SandboxSession.outputDir`); o executor decide com um ponto só (`evidenceRoot`). Sem migração de configuração nem linha de conversa nova; o texto da regra nomeia a pasta real nos dois modos (variante `prompt.sdd.runner.rules.evidence.host`, com `{out}`).
-- Implementação completa; revisão rodada 3 **aprovada sem bloqueantes**. O bloqueante anterior (chave crua no texto do host) não se reproduz: a chave exata é procurada antes das variantes e o caminho que lança nunca devolve chave. Assertiva nova em `test/runner-evidence-run.test.ts` reprova chave crua e separa os modos.
-- **QA (tentativa 5): concluída.** `5_TEST_PLAN.md` com 10 cenários: 9 executados e passando, 1 de execução real de host não executado. tsc limpo; suíte inteira 4337 testes com 2 falhas de `voice-setup` por limite de disco do ambiente (/tmp 512 MB, mesmas da tentativa anterior, fora do CI); rodada de critérios 7 arquivos, 115 testes, verde; i18n:lint 4622 chaves; theme-audit e public-audit limpos; nota de lançamento sob `## [Unreleased]` sem referência interna.
+- Implementação completa; revisão rodada 3 aprovada sem bloqueantes; QA concluída (9 de 10 cenários executados, 1 de execução real de host não executado).
+- Comunicação concluída: `6_RELEASE_NOTE.md` escrito a partir da nota já presente em `CHANGELOG.md` sob `## [Unreleased]`; sem referência interna.
 - Resposta: Volta e pede o ajuste <!-- answer:230 -->
 
 ## Restrições
 
 - Toda escrita externa passa por `Actions`; a fronteira de segurança não foi tocada. A leitura de imagem aceita a pasta declarada pela sessão pelos dois nomes e recusa o que está fora antes de abrir arquivo.
 - Sem campo de configuração novo: tipos, padrões e esquema não mudam.
-- As comprovações da QA ficam nos dados da execução, não no repositório.
-- Nota de ambiente: `node_modules` da worktree é enlace só de leitura para fora da pasta; o vitest só roda com uma cópia do config num lugar gravável (os caminhos do electron helper e do setup viram absolutos).
+- Nota de ambiente: `node_modules` da worktree é enlace só de leitura; o vitest exige cópia do config num lugar gravável.
 
 ## Tentado e descartado
 
-- Perguntar ao repórter; duplicata da #142; pasta de etapa para o host; ligar a pasta de saída sem navegadores/tela; ferramentas duplicadas com linha própria — descartados antes.
-- Trocar a variante `.host` por outra forma de escolher a redação: o defeito era da detecção da revisão, não do código.
+- Perguntar ao repórter; duplicata da #142; pasta de etapa para o host; ligar a pasta de saída sem navegadores/tela; ferramentas duplicadas; trocar a variante `.host` por outra forma de escolher a redação.
 
 ## Perguntas abertas
 
@@ -28,9 +26,9 @@
 
 ## Onde o trabalho está
 
-- A pasta do ciclo tem `0_TRIAGE.md` a `5_TEST_PLAN.md` completos. Código commitado na ramificação: `src/main/sandbox/session.ts`, `src/main/evidence/`, `src/main/runner/executor.ts`, `src/main/runner/prompt.ts`, `src/main/agents.ts`, `src/shared/i18n/main.{en,pt-BR}.json`, `CHANGELOG.md`.
-- QA aprovada: **o ciclo pode seguir para o fecho.**
-- Não verificado em todo o ciclo: modo host em execução real (sessão real, tela); etapa de host que roda de novo sobre comprovação guardada; semântica dos argumentos de `SaveEvidence` na forma do motor aberto; que a #142 esteja mesclada na ramificação além do fecho presente no código (o fecho `keepLooked`/`lookedPaths` existe nesta cópia e roda antes de `session?.close()`) — o histórico não é consultável nesta etapa.
+- Ciclo completo: `0_TRIAGE.md` a `6_RELEASE_NOTE.md`. Código commitado na ramificação: `src/main/sandbox/session.ts`, `src/main/sandbox/host.ts`, `src/main/evidence/`, `src/main/runner/executor.ts`, `src/main/runner/prompt.ts`, `src/main/agents.ts`, `src/shared/i18n/main.{en,pt-BR}.json`, `CHANGELOG.md`.
+- Não verificado em todo o ciclo: modo host em execução real (sessão real, tela); etapa de host que roda de novo sobre comprovação guardada; semântica dos argumentos de `SaveEvidence` na forma do motor aberto; que a #142 esteja mesclada na ramificação além do fecho presente no código.
+- Falta: fecho do ciclo (merge do pull request) e responder a quem abriu a issue — o comentário está no campo comment desta etapa.
 - Passagem support → product-owner: Refinar a #143 em `1_SPEC.md`: fixar as duas decisões em aberto (a pasta de saída do host como raiz da leitura da comprovação — reaproveitar a pasta de etapa ou ligar as ferramentas à pasta criada pelo host — e o que conta como "testar uma interface" numa etapa de host; hoje a pasta só nasce com navegadores ou tela virtual ligados, e ligá-la sem eles muda o prompt de uma etapa que hoje não a tem). O material desta etapa é leitura de código, não execução: o comportamento do modo host não foi exercitado. A entrega depende da #142 já mesclada (ambas mexem no mesmo arquivo do executor); se a #142 … <!-- handoff:6 -->
 - Passagem product-owner → pessoa: Planejar a #143 a partir do `1_SPEC.md`: (1) confirmar que a #142 já está mesclada na base antes de tocar `src/main/runner/executor.ts` — as duas mexem no mesmo ponto; se não estiver, o plano precisa dizer isso. (2) Levar para o plano, sem reabrir a decisão: D1 (a pasta de saída da própria sessão de host é a raiz da leitura da comprovação, sem pasta de etapa nova) e D2 (testar uma interface no host = pasta de navegadores disponível ou tela virtual pedida, a condição de hoje). (3) Onde a pasta de saída do host precisa estar disponível: em `openHostSession`/`openSandboxService.openHost` (`gui.ou… <!-- handoff:13 -->
 - Passagem tl-plataforma → pessoa: Implementar a #143 seguindo o `2_PLAN.md`, na ordem dos passos 1 a 10, sem reabrir D1/D2. Antes de tocar `src/main/runner/executor.ts`, confirmar no histórico da ramificação que a #142 está mesclada (o fecho `keepLooked`/`lookedPaths` antes de `session?.close()`); se não estiver, parar e dizer isso em vez de tratar o host como caso à parte. A mudança é: `SandboxSession.outputDir` declarado pela sandbox (`out` da pasta de etapa) e pela sessão de host com teste de interface (`shots`/`gui.out`), `resolveOutputPath` recebendo a raiz, `EvidenceContext.stageDir` virando `outputDir`, e no executor `c… <!-- handoff:23 -->
