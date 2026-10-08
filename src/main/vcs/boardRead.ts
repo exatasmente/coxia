@@ -80,6 +80,11 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
   const provider = vcsProvider();
   const cards = trackedCards();
   const now = Date.now();
+  // A write while this read is out forgets what was read; what this read brings back is then older than the write and is not kept.
+  const began = generation;
+  const remember = (key: string, found: Found): void => {
+    if (began === generation) cache.set(key, { at: Date.now(), found });
+  };
   const reads = await pool(cards, POOL, async (card): Promise<Found> => {
     const link = card.host!;
     // An issue number means nothing on another host: a card linked elsewhere is not looked for here.
@@ -87,25 +92,25 @@ export async function readTracked(refresh: boolean, listed: readonly VcsIssue[] 
     const key = keyOf(provider.id, link.project, link.iid);
     const has = listed.find((i) => sameIssue(link, i));
     if (has) {
-      cache.set(key, { at: now, found: { issue: has } });
+      remember(key, { issue: has });
       return { issue: has };
     }
     const hit = cache.get(key);
     if (!refresh && hit && now - hit.at < TRACKED_TTL_MS) return hit.found;
     try {
       const found: Found = { issue: await provider.getIssue(link.project, link.iid, { status: true }) };
-      cache.set(key, { at: Date.now(), found });
+      remember(key, found);
       return found;
     } catch (e) {
       if (e instanceof VcsError && e.code === 'not_found') {
         const found: Found = { missing: true };
-        cache.set(key, { at: Date.now(), found });
+        remember(key, found);
         return found;
       }
       console.error(`[vcs:board] ${link.project}#${link.iid}`, (e as Error).message);
       // Remembered for the same five minutes, so a host that is down is not asked again by every reload; the person's refresh asks again.
       const found: Found = { unread: true };
-      cache.set(key, { at: Date.now(), found });
+      remember(key, found);
       return found;
     }
   });
@@ -201,6 +206,7 @@ async function listProjects(refresh: boolean): Promise<Listing | null> {
   const projects = boardProjects(provider.id);
   const key = JSON.stringify([provider.id, projects]);
   if (!refresh && listing && listing.key === key && Date.now() - listing.at < TRACKED_TTL_MS) return listing.value;
+  const began = generation;
   const listed = await pool(projects, 3, async (project): Promise<ListedProject> => {
     try {
       const issues = await provider.listIssues({ project, scope: 'all', limit: BOARD_ISSUES_PER_PROJECT });
@@ -212,7 +218,7 @@ async function listProjects(refresh: boolean): Promise<Listing | null> {
   });
   const value: Listing = { noProject: projects.length === 0, projects: listed };
   // A listing in which every project failed (the host is down) is not kept: the next read asks again instead of showing the failure for five minutes.
-  if (!listed.length || listed.some((p) => !p.error)) listing = { at: Date.now(), key, value };
+  if (began === generation && (!listed.length || listed.some((p) => !p.error))) listing = { at: Date.now(), key, value };
   return value;
 }
 

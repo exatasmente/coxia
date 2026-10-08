@@ -64,7 +64,7 @@ Checked in this working tree (release 0.8.0), not run.
 
 The board screen is the same whether or not a host is usable. The sentence that says "this workspace has a code host ... nothing here changes" disappears. A workspace with no usable host keeps exactly what phase 1 gave it: every card is local, nothing is marked, nothing is sent, and no host is read.
 
-With a usable host the screen adds, at the top, the host's name, the time the host was last read and a refresh control. **The host is read when the board is opened and when the person presses refresh, and at no other time**; a read made less than five minutes ago is reused unless the person asks again. The board then shows two kinds of card in the same columns: the cards opened on the board, and the **open issues of the workspace's projects** (point 7).
+With a usable host the screen adds, at the top, the host's name, the time the host was last read and a refresh control. **The host is read when the board is opened, when the person presses refresh, and, while the board's screen is open, when a proposal of the board is decided in Actions; never on a clock and never once the screen is left**; a read made less than five minutes ago is reused unless the person asks again. The board then shows two kinds of card in the same columns: the cards opened on the board, and the **open issues of the workspace's projects** (point 7).
 
 ### 2. A card opened with a host goes to the host
 

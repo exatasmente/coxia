@@ -347,6 +347,18 @@ describe('reads that overlap, and a host that is down', () => {
     expect(listings()).toHaveLength(2);
   });
 
+  it('does not keep what a read brought back when a write cleared the cache while it was out', async () => {
+    host.add('acme/app', 1, {});
+    linked(1);
+    const out = readBoard(false);
+    forgetHost();
+    await out;
+    host.reads.length = 0;
+    await readBoard(false);
+    expect(listings()).toHaveLength(1);
+    expect(host.reads.length).toBeGreaterThan(0);
+  });
+
   it('does not keep a listing in which every project failed, and does not ask again for a card it could not read until the person refreshes', async () => {
     withProjects(['acme/broken']);
     await readBoard(true);

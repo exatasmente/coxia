@@ -198,6 +198,8 @@ describe('sameIssue', () => {
   it('does not throw on an item that names no project, and matches it by number', () => {
     expect(sameIssue({ project: 'group/project', iid: 4 }, { iid: 4 } as never)).toBe(true);
     expect(sameIssue({ project: 'group/project', iid: 4 }, { iid: 5 } as never)).toBe(false);
+    expect(sameIssue({ iid: 4 } as never, { project: 'group/project', iid: 4 })).toBe(true);
+    expect(sameIssue({ iid: 4 } as never, { iid: 4 } as never)).toBe(true);
   });
 
   it('needs the same number, and the same project when both are paths, ignoring case', () => {
