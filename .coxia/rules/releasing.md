@@ -1,6 +1,6 @@
 ---
-checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
-checked-date: 2026-10-06
+checked-commit: 43b5fdc5581544751c89d63a06245c5eff005e12
+checked-date: 2026-10-08
 evidence: [RELEASING.md:1-95, .github/workflows/ci.yml:1-90, package.json:6-60, docs/updates.md:25-58, CHANGELOG.md:1-10]
 summary: The two builds, the release branch, beta and stable, and what a tag triggers
 stages: [review, release]

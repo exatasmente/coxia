@@ -1,5 +1,5 @@
 ---
-checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
+checked-commit: 43b5fdc5581544751c89d63a06245c5eff005e12
 checked-date: 2026-10-08
 evidence: [src/main/runner/service.ts:1-120, src/main/runner/door.ts:1-35, src/main/runner/executor.ts, src/main/runner/memory.ts, src/main/runner/git.ts, src/main/engine/guard.ts:1-80, src/shared/config/squads.ts:74-94, test/runner-memory.test.ts, test/worktree-guard.test.ts, docs/runner.md:1-130]
 summary: How the runner takes an issue through the agent cycle: worktree, stages, gates, autonomy, the one write door and the cycle memory

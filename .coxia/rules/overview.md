@@ -1,6 +1,6 @@
 ---
-checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
-checked-date: 2026-10-06
+checked-commit: 43b5fdc5581544751c89d63a06245c5eff005e12
+checked-date: 2026-10-08
 evidence: [package.json, src/main/index.ts, CLAUDE.md, docs/README.md, docs/configuration.md:1-11]
 summary: The architecture of the app: the three processes, the module folders, and where data lives
 ---

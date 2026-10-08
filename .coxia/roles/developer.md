@@ -1,6 +1,6 @@
 ---
-checked-commit: b94bbea2d99f0d0ebee1ce0b6d5e24e2c9adf9d3
-checked-date: 2026-10-06
+checked-commit: 43b5fdc5581544751c89d63a06245c5eff005e12
+checked-date: 2026-10-08
 evidence: [docs/cycles.md:53-66, docs/runner.md:81-92, src/main/engine/guard.ts, test/worktree-guard.test.ts, CONTRIBUTING.md:76-85]
 summary: Notes for the developer agent: what it may change, where, and what it must run
 stages: [implement]
