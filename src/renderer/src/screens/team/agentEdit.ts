@@ -1,12 +1,16 @@
 import { ID } from '../../../../shared/config/schema';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
-import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../../../../shared/config/team';
+import { addAgent, isDraft, isSystemId, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
+import { t } from '../../../../shared/i18n';
 import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
 
 // The agent editor, as pure functions: the draft a person types into, the checks shown while typing, and the config the draft makes.
+
+// The id helpers live in shared/ so the main process derives the id of an assistant's draft the same way; the editor and its tests keep importing them from here.
+export { slugOf, uniqueId } from '../../../../shared/config/team';
 
 const ID_RE = new RegExp(ID);
 
@@ -62,24 +66,6 @@ export function blankAgent(): AgentDraft {
   return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: [] };
 }
 
-/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
-export function slugOf(text: string): string {
-  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
-  return slug;
-}
-
-/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
-export function uniqueId(base: string, taken: Iterable<string>): string {
-  const used = new Set(taken);
-  const root = base || 'item';
-  if (!used.has(root)) return root;
-  for (let n = 2; ; n++) {
-    const candidate = `${root.slice(0, 44)}-${n}`;
-    if (!used.has(candidate)) return candidate;
-  }
-}
-
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
 export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): AgentProblem[] {
   const out: AgentProblem[] = [];
@@ -101,9 +87,9 @@ export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew:
 /** The shell a draft has after its permission changes: `allowlist` needs the permission to write, so a reader falls to `none`. */
 export const shellAfterPermission = (shell: AgentShell, permission: AgentPermission): AgentShell => (shell === 'allowlist' && permission !== 'worktree' ? 'none' : shell);
 
-/** The config the draft makes: the agent added or edited, and its squad. Throws what the pure edits throw (a taken id). */
-export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): WorkspaceConfig {
-  const fields = {
+/** The fields of an agent that the form holds, as the config keeps them. */
+function fieldsOf(draft: AgentDraft) {
+  return {
     name: draft.name.trim(),
     job: draft.job.trim(),
     instructions: draft.instructions,
@@ -117,18 +103,44 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
     turnsTo: draft.turnsTo,
     stages: draft.stages,
   };
-  const next = isNew ? addAgent(config, { id: draft.id, ...fields }) : updateAgent(config, draft.id, fields);
+}
+
+/** The squad of the draft, set only when it differs from the agent's now (setting it also frees the squad the agent leaves of its liaison). */
+function withSquad(next: WorkspaceConfig, draft: AgentDraft): WorkspaceConfig {
   const current = next.agents.team.find((a) => a.id === draft.id)?.squad ?? null;
   return current === draft.squad ? next : setAgentSquad(next, draft.id, draft.squad);
 }
 
+/** The config the draft makes: the agent added or edited, and its squad. Throws what the pure edits throw (a taken id). */
+export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): WorkspaceConfig {
+  const fields = fieldsOf(draft);
+  const next = isNew ? addAgent(config, { id: draft.id, ...fields }) : updateAgent(config, draft.id, fields);
+  return withSquad(next, draft);
+}
+
+/**
+ * The config a draft agent of the assistant becomes when the person saves the editor: the same edit as any other, and the mark of a draft leaves the agent in the
+ * same write, so its stages, squad and `turnsTo` start to count from here. Refuses an agent that is not a draft: the editor in this mode never opens on one.
+ */
+export function promoteDraft(config: WorkspaceConfig, draft: AgentDraft): WorkspaceConfig {
+  const found = config.agents.team.find((a) => a.id === draft.id);
+  if (!found) throw new Error(t('main.team.unknown', { id: draft.id }));
+  if (!isDraft(found)) throw new Error(t('main.assist.error.notDraft', { id: draft.id }));
+  // `updateAgent` drops a key the patch sets to undefined.
+  return withSquad(updateAgent(config, draft.id, { ...fieldsOf(draft), draft: undefined }), draft);
+}
+
 const flowInput = (c: WorkspaceConfig) => ({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() });
 
-/** The checks of the whole team that are about this agent, over the config the draft makes (who it turns to, a loop, idle, its squad). */
-export function teamIssues(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): { flow: FlowIssue[]; squad: SquadIssue[] } {
+/**
+ * The checks of the whole team that are about this agent, over the config the draft makes (who it turns to, a loop, idle, its squad). For a draft agent being
+ * promoted (`promote`) that is the config with the mark gone: the checks leave a draft out of the team, so over the config as it is now they would not see a problem
+ * of the agent that is about to be saved.
+ */
+export function teamIssues(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean, promote = false): { flow: FlowIssue[]; squad: SquadIssue[] } {
   let next: WorkspaceConfig;
   try {
-    next = applyAgent(config, draft, isNew);
+    next = promote ? promoteDraft(config, draft) : applyAgent(config, draft, isNew);
   } catch {
     return { flow: [], squad: [] };
   }
@@ -165,8 +177,8 @@ export function stagesLosingAgent(config: WorkspaceConfig, id: string): LostStag
   return lost;
 }
 
-/** The ids of the agents a question of this one could pass to: everyone but itself. */
-export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => config.agents.team.filter((a) => a.id !== id);
+/** The agents a question of this one could pass to: everyone but itself, and no draft (it takes no part in a run). */
+export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => workingTeam(config.agents.team).filter((a) => a.id !== id);
 
 /** The stages an agent works, for the list: the stages that name it, then the ones it lists. */
 export function stagesOfAgent(config: WorkspaceConfig, a: AgentDef): StageDef[] {

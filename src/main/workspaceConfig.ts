@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { termsFor } from '../shared/cycles/terms';
 import { setLanguage, setTerms, setVoiceEnabled, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
+import { workingTeam } from '../shared/config/team';
 import type { VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
@@ -66,12 +67,13 @@ export function docsSources(opts?: { claude?: boolean }): ResolvedDocs {
 
 const flowInputs = (c: unknown): string => {
   const x = c as Partial<WorkspaceConfig> | null;
-  // The flow, the flows of the squads, who belongs to which squad, who is its liaison, what its scope is, and who turns to whom.
+  // The flow, the flows of the squads, who belongs to which squad, who is its liaison, what its scope is, and who turns to whom. A draft is not in it: saving or
+  // dropping one is no change to the flow, so a flow with an old problem does not stop the person from testing an agent.
   return JSON.stringify([
     x?.devCycle?.stages ?? null,
     x?.devCycle?.flows ?? null,
     (x?.squads ?? []).map((q) => [q.id, q.liaison ?? null, q.scope ?? null]),
-    (x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null, a.squad ?? null]),
+    workingTeam(x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null, a.squad ?? null]),
   ]);
 };
 

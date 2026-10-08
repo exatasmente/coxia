@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
+import { workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
@@ -500,26 +501,45 @@ const numberedCommands = (session: SandboxSession, ran: CommandResult[] | undefi
   return own.map((e) => `#${e.n}: ${clipText(redact(e.command.replace(/\s+/g, ' ')), 300)} — ${endedAs(e)}`).join('\n');
 };
 
+/** The session an answer was given in, and the engine that holds it: what a round that asks the agent again continues from. */
+type Answered = { sessionId: string | null; engine: ResolvedRole['engine'] };
+
 /**
- * The one repair round given to a QA stage whose answer claims an execution nothing backs. The same agent is asked once more, in its own stage and with its
- * own tools and sandbox, to keep the evidence it looked at, point at the command behind the claim, or say the scenario was only read (or did not run at all).
- * The answer comes whole, with its documents and comment, so what is written and published is what the round ended with. Null when the round fails: the first
- * answer then stands, and the scenarios it left unbacked are recorded as read.
+ * Asks the agent of a stage once more, in its own stage and with its own tools and sandbox: the call continues the session of the answer it is about, on the
+ * engine that opened that session, so the round sees what the agent read. Without a session the stage's prompt goes first, so the round still knows the task.
+ * `incoming` is left out: a message of the person is not what the round waits for. Null when the round fails: the answer before it then stands.
  */
-async function repairRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, session: SandboxSession, ran: CommandResult[] | undefined, unbacked: readonly Scenario[], first: { sessionId: string | null; engine: ResolvedRole['engine'] }): Promise<unknown | null> {
-  const said = unbacked.map((s) => `${s.name}: ${s.detail.trim() || '—'}`).join('\n');
-  const seen = numberedCommands(session, ran);
-  const text = cp('runner.repair.unbacked', { count: unbacked.length, scenarios: said, commands: seen || cp('runner.repair.noCommands') });
-  // The same agent, the same tools, the same sandbox: the call continues the session of the answer it is about, on the engine that opened that session, so the
-  // round sees what the agent read and works with the tools of the stage. `incoming` is left out: a message of the person is not what this round waits for.
-  const round: AgentCall = { ...call, prompt: text, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined };
+async function askAgain(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, text: string, first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
+  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined };
   try {
     // One link, one idle clock: the round runs inside the caller's `guard`, as the first call did, so the attempt's cap of wall-clock counts once.
-    return (await watch.guard(d.engine(round, commands))).data;
+    const r = await watch.guard(d.engine(round, commands));
+    return { data: r.data, answered: { sessionId: r.sessionId ?? first.sessionId, engine: first.engine } };
   } catch (e) {
     console.error('[runner] the repair round failed', e instanceof Error ? e.message : e);
     return null;
   }
+}
+
+/**
+ * The one repair round given to a QA stage whose answer claims an execution nothing backs. The same agent is asked once more to keep the evidence it looked at,
+ * point at the command behind the claim, or say the scenario was only read (or did not run at all). The answer comes whole, with its documents and comment, so
+ * what is written and published is what the round ended with. Null when the round fails: the first answer then stands, and the scenarios it left unbacked are
+ * recorded as read.
+ */
+function repairRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, session: SandboxSession, ran: CommandResult[] | undefined, unbacked: readonly Scenario[], first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
+  const said = unbacked.map((s) => `${s.name}: ${s.detail.trim() || '—'}`).join('\n');
+  const seen = numberedCommands(session, ran);
+  return askAgain(d, call, commands, watch, cp('runner.repair.unbacked', { count: unbacked.length, scenarios: said, commands: seen || cp('runner.repair.noCommands') }), first);
+}
+
+/**
+ * The documents a concluding answer leaves missing: the stage produces them, the answer does not carry them and the cycle folder does not have them. An answer
+ * that pauses (a question) or says nothing is not asked for documents: it is not concluding.
+ */
+function missingDocuments(output: StageOutput, stage: FlowStage, folder: string): string[] {
+  if (output.question || output.reporterQuestion || !output.summary) return [];
+  return stage.artifacts.filter((n) => !output.artifacts.some((a) => a.name === n) && !existsSync(join(folder, n)));
 }
 
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
@@ -636,6 +656,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The evidence a stage keeps while it works: each one is recorded with the run and published in its conversation, and the ids are what the stage output cites.
   const keptIds: string[] = [];
   const keptRecords: EvidenceRecord[] = [];
+  // The `run` of this function is the run as the stage started: a new piece is numbered after the ones the run has and a piece to mark is found among them, so what
+  // this stage has kept so far is added (the store records it on the live run, which this object does not follow).
+  const withKept = (): Run => (keptRecords.length ? { ...run, evidence: { ...run.evidence, ...Object.fromEntries(keptRecords.map((r) => [r.id, r])) } } : run);
   // The images of the stage's output folder the agent looked at with `ViewImage` and did not keep, by path: kept (or said as looked and not kept) while the
   // sandbox is still open. An evidence id it looked at is not here: that piece is already kept. A file the agent kept itself is not kept twice: its name is
   // remembered when it is kept, by whichever route (the tool or the guard at the close).
@@ -660,7 +683,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         continue;
       }
       const shown = resolved.path;
-      const put = putEvidence(d.dataDir(), run, { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      const put = putEvidence(d.dataDir(), withKept(), { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
       if (!put.ok) {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(shown), reason: evidenceProblemText(put.problem) }, stage: stage.id });
         continue;
@@ -683,7 +706,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       ? evidenceToolsOf({
           dataDir: d.dataDir(),
           stageDir: session.stageDir,
-          run,
+          get run(): Run {
+            return withKept();
+          },
           stage: stage.id,
           by: agent.id,
           onKept: (record) => {
@@ -744,7 +769,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // refused when the agent is not of the team, is already in the chain, or the attempt has opened its limit of conversations.
   const chain = [agent.id];
   const conversationOf = new Map<string, { thread: string; say: (text: string) => void }>();
-  const teamIds = config.agents.team.map((a) => a.id);
+  // A draft is no one a stage can reach or call.
+  const team = workingTeam(config.agents.team);
+  const teamIds = team.map((a) => a.id);
   // Every command a called agent that writes ran in its session, as the run's list of commands under that agent.
   const conversationCommands: CommandResult[] = [];
   const toolset: RunnerTools = {
@@ -757,7 +784,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         open.say(topic);
         return t('main.runner.tools.conversationOpened', { called: to, thread: open.thread });
       }
-      const called = config.agents.team.find((a) => a.id === to);
+      const called = team.find((a) => a.id === to);
       if (!called) return t('main.runner.tools.unknownAgent', { to, list: teamIds.join(', ') });
       const refusal = callRefusal({ called: to, chain, opened: openedIn(run.id, stage.id), perStage: config.runner.conversations.perStage });
       if (refusal) return t(refusal === 'cycle' ? 'main.runner.tools.callRefusedCycle' : 'main.runner.tools.callRefusedCap', { called: to, cap: config.runner.conversations.perStage });
@@ -838,8 +865,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   };
 
   let data: unknown;
-  // The session the first answer was given in, and the engine that holds it: what the repair round continues from.
-  let answered: { sessionId: string | null; engine: ResolvedRole['engine'] } = { sessionId: null, engine: 'claude-sdk' };
+  // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
+  let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
   try {
     const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
     data = firstRun.data;
@@ -854,13 +881,27 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.repair', params: { agent: agent.id, names: judged.filter((s) => s.unbacked).map((s) => s.name).join('; ') }, stage: stage.id });
       const repaired = await repairRound(d, call, commands, watch, session, ran, judged.filter((s) => s.unbacked), answered);
       if (repaired !== null) {
-        data = repaired;
+        data = repaired.data;
+        answered = repaired.answered;
         const second = readOutput(data, kind);
         // One round, not two: a scenario that comes back unbacked is recorded as read without another question.
         const after = judgeScenarios(second, kind, session, ran);
         for (const s of after.filter((x) => x.unbacked)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.unbacked', params: { agent: agent.id, name: s.name }, stage: stage.id });
       } else {
         for (const s of judged.filter((x) => x.unbacked)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.unbacked', params: { agent: agent.id, name: s.name }, stage: stage.id });
+      }
+    }
+    // A concluding answer that leaves out a document the stage produces is asked once for it, before the stage fails for it: the agent may have written the
+    // document somewhere else, or said it was in the answer and left it out. Only the documents that were missing are taken from the round; the rest of the
+    // answer stays as it was, already checked.
+    const missing = missingDocuments(readOutput(data, kind), stage, join(wt, run.cycleFolder));
+    if (missing.length) {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifacts.repair', params: { agent: agent.id, names: missing.join(', ') }, stage: stage.id });
+      const again = await askAgain(d, call, commands, watch, cp('runner.repair.missingArtifacts', { names: missing.join(', '), folder: run.cycleFolder }), answered);
+      const found = again ? readOutput(again.data, kind).artifacts.filter((a) => missing.includes(a.name)) : [];
+      if (found.length) {
+        const raw = typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+        data = { ...raw, artifacts: [...(Array.isArray(raw.artifacts) ? raw.artifacts : []), ...found] };
       }
     }
     // What the stage looked at and did not keep is kept as evidence of the stage here, before the sandbox takes the folder away; what cannot be kept is said.
@@ -909,6 +950,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The test plan a QA stage writes says what the run recorded, not what the agent claimed: its scenario lines are taken from the scenarios the app checked,
   // so the document and the record never disagree. The agent's other sections stay as it wrote them.
   const planContent = (name: string, content: string): string => (kind === 'qa' && stage.artifacts.includes(name) ? testPlanWithResults(content, output.scenarios, config.language) : content);
+  // A document whose name is not a file name the app may write (empty, hidden, with odd characters) was left out when the answer was read: said, never silent.
+  for (const name of output.ignoredArtifacts ?? []) {
+    d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactUnnamed', params: { agent: agent.id, name }, stage: stage.id });
+  }
   for (const a of output.artifacts) {
     if (!stage.artifacts.includes(a.name)) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });

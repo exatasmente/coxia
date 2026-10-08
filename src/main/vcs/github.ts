@@ -585,6 +585,8 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         }
         case 'closeIssue':
           return [call('PATCH', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
+        case 'reopenIssue':
+          return [call('PATCH', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'open' })];
         case 'createIssue':
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), body: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel) } : {}) })];
         case 'createMr':

@@ -1,9 +1,11 @@
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ForumError, createForumStore, type ForumStore } from '../src/main/forum-core';
 import { personPost } from '../src/main/forum';
+import { createAttachmentStore } from '../src/main/attachments';
+import { deleteAgentThread, ensureAgentThread } from '../src/main/forum-channels';
 import { MAX_TEXT, parseMentions, type ForumMessage } from '../src/shared/forum';
 
 let dir: string;
@@ -293,5 +295,104 @@ describe('the files a message carries', () => {
     expect(first.attachments).toEqual([]);
     expect(old).toMatchObject({ text: 'old', attachments: [] });
     expect(old.evidence).toBeUndefined();
+  });
+});
+
+describe('deleting a whole conversation', () => {
+  it('removes its file and what the store remembers, and gives back the header it had', () => {
+    store.ensureThread({ id: 'keep', kind: 'general', title: 'Keep' });
+    store.ensureThread({ id: 'gone', kind: 'general', title: 'Gone' });
+    store.append('gone', { kind: 'post', author: { type: 'person' }, text: 'one' });
+    store.append('keep', { kind: 'post', author: { type: 'person' }, text: 'two' });
+    expect(store.summary('gone')).toMatchObject({ count: 1 });
+    expect(store.deleteThread('gone')).toMatchObject({ id: 'gone', kind: 'general', title: 'Gone' });
+    expect(existsSync(join(dir, 'gone.jsonl'))).toBe(false);
+    expect(store.summary('gone')).toBeNull();
+    expect(store.read('gone')).toBeNull();
+    expect(store.list().map((t) => t.id)).toEqual(['keep']);
+    // a store opened over the same folder does not find it either, and the other thread is untouched
+    expect(make().summary('gone')).toBeNull();
+    expect(make().read('keep')?.messages.map((m) => m.text)).toEqual(['two']);
+  });
+
+  it('is nothing to do the second time, and for a conversation that never existed', () => {
+    store.ensureThread({ id: 'gone', kind: 'general', title: 'Gone' });
+    expect(store.deleteThread('gone')).not.toBeNull();
+    expect(store.deleteThread('gone')).toBeNull();
+    expect(store.deleteThread('never-was')).toBeNull();
+  });
+
+  it('leaves nothing to write to: the thread is unknown afterwards, and a new one of the same id starts from the first message', () => {
+    store.ensureThread({ id: 'again', kind: 'general', title: 'First' });
+    store.append('again', [{ kind: 'post', author: { type: 'person' }, text: 'a' }, { kind: 'post', author: { type: 'person' }, text: 'b' }]);
+    store.deleteThread('again');
+    expect(() => store.append('again', { kind: 'post', author: { type: 'person' }, text: 'late' })).toThrow(expect.objectContaining({ code: 'unknown-thread' }));
+    store.ensureThread({ id: 'again', kind: 'general', title: 'Second' });
+    expect(store.append('again', { kind: 'post', author: { type: 'person' }, text: 'c' })[0].seq).toBe(1);
+    expect(store.summary('again')).toMatchObject({ title: 'Second', count: 1 });
+  });
+
+  it('tells no listener: the store only announces messages', () => {
+    store.ensureThread({ id: 'quiet', kind: 'general', title: 'Quiet' });
+    store.append('quiet', { kind: 'post', author: { type: 'person' }, text: 'a' });
+    const heard: ForumMessage[] = [];
+    store.subscribe((m) => heard.push(m));
+    store.deleteThread('quiet');
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses a name that could become a path, and touches nothing outside the folder', () => {
+    const outside = join(dir, '..', 'x.jsonl');
+    writeFileSync(outside, 'keep me');
+    for (const id of ['../x', 'a/b', 'UPPER', '.hidden', '', 'x'.repeat(70)]) expect(() => store.deleteThread(id), id).toThrow(expect.objectContaining({ code: 'bad-thread' }));
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+  });
+
+  it('removes a file that holds no thread, since its name is a thread\'s, and says there was none', () => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'debris.jsonl'), 'not a thread\n');
+    expect(store.deleteThread('debris')).toBeNull();
+    expect(existsSync(join(dir, 'debris.jsonl'))).toBe(false);
+  });
+});
+
+describe('deleting the direct conversation of an agent', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+  const attachments = () => createAttachmentStore({ base: join(dir, '..') });
+
+  it('deletes the conversation and its files, and leaves the conversation of another agent alone', () => {
+    const files = attachments();
+    ensureAgentThread(store, { id: 'trial', name: 'Trial' }, 'en');
+    ensureAgentThread(store, { id: 'other', name: 'Other' }, 'en');
+    store.append('agent-trial', { kind: 'post', author: { type: 'person' }, text: 'hello' });
+    store.append('agent-other', { kind: 'post', author: { type: 'person' }, text: 'hello' });
+    const mine = files.put('agent-trial', 'shot.png', png);
+    const theirs = files.put('agent-other', 'shot.png', png);
+    expect(deleteAgentThread(store, files, 'trial')).toBe(true);
+    expect(store.summary('agent-trial')).toBeNull();
+    expect(files.get('agent-trial', mine.id)).toBeNull();
+    expect(existsSync(files.dirOf('agent-trial'))).toBe(false);
+    expect(store.summary('agent-other')).toMatchObject({ kind: 'agent', count: 1 });
+    expect(files.get('agent-other', theirs.id)).not.toBeNull();
+    // nothing left to delete the second time
+    expect(deleteAgentThread(store, files, 'trial')).toBe(false);
+  });
+
+  it('only ever deletes a conversation of kind agent', () => {
+    const files = attachments();
+    // threads that carry an agent\'s name in their id but are not an agent\'s conversation
+    store.ensureThread({ id: 'agent-odd', kind: 'general', title: 'Odd' });
+    store.ensureThread({ id: 'run-r-abc-1234', kind: 'run', runId: 'r-abc-1234', title: 'Run' });
+    store.ensureThread({ id: 'squad-a', kind: 'channel', squad: 'a', title: 'Squad A' });
+    const kept = files.put('agent-odd', 'shot.png', png);
+    expect(deleteAgentThread(store, files, 'odd')).toBe(false);
+    expect(deleteAgentThread(store, files, 'r-abc-1234')).toBe(false);
+    expect(deleteAgentThread(store, files, 'squad-a')).toBe(false);
+    expect(store.list().map((t) => t.id).sort()).toEqual(['agent-odd', 'run-r-abc-1234', 'squad-a']);
+    expect(files.get('agent-odd', kept.id)).not.toBeNull();
+  });
+
+  it('refuses an agent id that could become a path', () => {
+    expect(() => deleteAgentThread(store, attachments(), '../x')).toThrow(expect.objectContaining({ code: 'bad-thread' }));
   });
 });

@@ -84,7 +84,11 @@ describe('the answer of a stage', () => {
   it('is read leniently: text trimmed, "null" strings and empties are nothing, names and kinds checked', () => {
     const o = readOutput({ summary: '  Done.  ', commit: 'x', handoff: 'null', question: 'None', artifacts: [{ name: '1_SPEC.md', content: 'c' }, { name: '../evil', content: 'c' }, { name: '.hidden', content: 'c' }, { name: 'a/b.md', content: 'c' }, { name: 'ok.md' }, 'x'], extra: 1 }, 'work');
     expect(o).toMatchObject({ summary: 'Done.', handoff: '', question: '', memory: '', verdict: null, findings: [], scenarios: [] });
-    expect(o.artifacts).toEqual([{ name: '1_SPEC.md', content: 'c' }]);
+    // A name with its folder is taken by its file name; one that climbs out, a hidden one, one with no text and one that is not a document are left out and named.
+    expect(o.artifacts).toEqual([{ name: '1_SPEC.md', content: 'c' }, { name: 'b.md', content: 'c' }]);
+    expect(o.ignoredArtifacts).toEqual(['../evil', '.hidden', 'ok.md', '—']);
+    expect(readOutput({ summary: 's', artifacts: [{ name: 'docs\\cycles\\1-x\\1_SPEC.md', content: 'c' }] }, 'work')).toMatchObject({ artifacts: [{ name: '1_SPEC.md' }] });
+    expect(readOutput({ summary: 's', artifacts: [{ name: '1_SPEC.md', content: 'c' }] }, 'work').ignoredArtifacts).toBeUndefined();
     expect(ARTIFACT_NAME.test('3_IMPLEMENTATION.md')).toBe(true);
     expect(readOutput('not an object', 'work')).toMatchObject({ summary: '', artifacts: [] });
   });

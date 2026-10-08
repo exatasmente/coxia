@@ -121,7 +121,11 @@ export function App() {
     () =>
       api.onEvent((ev) => {
         if (ev.type === 'status') mergeStatus(ev.result, ev.checkedAt);
-        else if (ev.type === 'actions') setActions(ev.actions);
+        else if (ev.type === 'actions') {
+          setActions(ev.actions);
+          // The board follows what became of its proposals (approved, skipped, failed) without asking Actions itself.
+          moduleEvents.dispatchEvent(new CustomEvent('actions:changed'));
+        }
         else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);

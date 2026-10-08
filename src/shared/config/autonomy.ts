@@ -27,13 +27,21 @@ export interface EffectiveAutonomy extends AutonomyBlock {
 export function autonomyOf(c: Pick<WorkspaceConfig, 'runner' | 'devCycle'>, flowKey: string): EffectiveAutonomy {
   const block = c.devCycle.autonomy?.[flowKey];
   if (!block || block.useWorkspace) {
-    return { ...c.runner.autonomy, from: 'workspace', flow: null };
+    // The five fields of a run only: the board's choice is not a step of a run and never travels with it.
+    const w = c.runner.autonomy;
+    return { cycle: w.cycle, hostCommands: w.hostCommands, gates: w.gates, push: w.push, pullRequest: w.pullRequest, from: 'workspace', flow: null };
   }
   return { cycle: block.cycle, hostCommands: block.hostCommands, gates: block.gates, push: block.push, pullRequest: block.pullRequest, from: 'flow', flow: flowKey };
 }
 
 /** Whether one of the four choices is on: it never is on its own, only under `cycle`. */
 export const choiceOn = (a: Pick<EffectiveAutonomy, 'cycle'> & AutonomyBlock, choice: AutonomyChoice): boolean => a.cycle && a[choice];
+
+/**
+ * Whether a write of the board goes to the code host executed and audited, with no "yes" in Actions. It is the workspace's own choice and does not look at `cycle`:
+ * the board is not a run, and a person who never starts one still decides how it writes. Only the workspace's block has it; a flow's does not.
+ */
+export const boardAutonomous = (c: Pick<WorkspaceConfig, 'runner'>): boolean => c.runner.autonomy.board === true;
 
 /** The four choices that are on, for the header of the run's screen. */
 export const onChoices = (a: EffectiveAutonomy): AutonomyChoice[] =>

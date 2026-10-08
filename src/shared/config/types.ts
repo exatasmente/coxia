@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 18): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 20): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 18;
+export const CONFIG_SCHEMA_VERSION = 20;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -561,6 +561,11 @@ export interface AgentDef {
    * release note). An agent belongs to one squad at most.
    */
   squad?: string | null;
+  /**
+   * An agent the AI assistant saved so the person can test it in a direct conversation. A draft does not work a stage, is not offered as someone to turn to
+   * and is not called by another agent; saving it in the editor drops the mark. Absent: an agent of the team.
+   */
+  draft?: boolean;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
@@ -733,6 +738,14 @@ export interface AutonomyBlock {
   pullRequest: boolean;
 }
 
+/**
+ * The autonomy block of the workspace. `board` is the board's own choice: a write of the board (a card sent to the code host, moved, commented, closed) goes
+ * through the door executed and audited instead of waiting in Actions. It is not a step of a run, so it does not depend on `cycle`, and a flow has no such field.
+ */
+export interface WorkspaceAutonomy extends AutonomyBlock {
+  board: boolean;
+}
+
 /** The autonomy block of one flow: the workspace's block decides while `useWorkspace` is on (the default). */
 export interface FlowAutonomy extends AutonomyBlock {
   /** On (the default): the workspace's block decides for this flow and the fields are shown disabled. Off: this block decides and the workspace's has no effect here. */
@@ -815,7 +828,7 @@ export interface RunnerConfig {
   identity: RunnerIdentity;
   sandbox: RunnerSandbox;
   /** The autonomy block of the workspace: what each flow follows while its "Use the workspace's setting" is on. */
-  autonomy: AutonomyBlock;
+  autonomy: WorkspaceAutonomy;
   /**
    * Where a stage's evidence is kept: only with the run, in the workspace's data (the default, so nothing goes into a commit), or also copied into the cycle
    * folder and committed with the stage, which is how it reaches the pull request. Only the computer changes it, because it decides what enters a commit.

@@ -68,6 +68,8 @@ export interface StageOutput {
   pr: PullRequestText | null;
   /** Evidence ids (`ev-<digits>`) this stage's output cites: a QA scenario's proof, the product owner's exploratory validation, a review finding. */
   evidence: string[];
+  /** The names of the documents left out when the answer was read (not a file name the app may write, or no text): said in the thread, never silent. */
+  ignoredArtifacts?: string[];
 }
 
 const str = { type: 'string' };
@@ -236,6 +238,25 @@ export function readPullRequest(raw: unknown): PullRequestText | null {
   return c || title ? { title, sections: c?.sections ?? [], technical: c?.technical ?? '' } : null;
 }
 
+/**
+ * The documents of an answer. A name given with its folder (`docs/cycles/1-x/1_SPEC.md`) is taken by its file name: the app always writes into the cycle folder,
+ * and the stage still has to produce that name for the file to be written. What cannot be read as a document is named in `ignoredArtifacts`, so the stage says it.
+ */
+function readArtifacts(raw: unknown): { artifacts: ArtifactOutput[]; ignoredArtifacts?: string[] } {
+  const artifacts: ArtifactOutput[] = [];
+  const ignored: string[] = [];
+  for (const a of list(raw)) {
+    const x = record(a);
+    const given = typeof x.name === 'string' ? x.name.trim() : '';
+    // A name that climbs out of its folder is refused whole, never cut down to its last part.
+    const parts = given.split(/[\\/]/);
+    const name = parts.includes('..') ? '' : (parts.pop() ?? '');
+    if (ARTIFACT_NAME.test(name) && typeof x.content === 'string') artifacts.push({ name, content: x.content });
+    else ignored.push(given.slice(0, 200) || '—');
+  }
+  return ignored.length ? { artifacts, ignoredArtifacts: ignored } : { artifacts };
+}
+
 /** The answer of the agent, read leniently. A review that says "approved" but lists a blocking finding is not approved: the findings are what the developer gets. */
 export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
   const o = record(raw);
@@ -249,11 +270,7 @@ export function readOutput(raw: unknown, kind: OutputKind): StageOutput {
   return {
     summary,
     commit: text(o.commit, 200),
-    artifacts: list(o.artifacts).flatMap((a) => {
-      const x = record(a);
-      const name = typeof x.name === 'string' ? x.name.trim() : '';
-      return ARTIFACT_NAME.test(name) && typeof x.content === 'string' ? [{ name, content: x.content }] : [];
-    }),
+    ...readArtifacts(o.artifacts),
     handoff: text(o.handoff),
     question,
     memory: text(o.memory, MEMORY_READ_MAX),

@@ -27,11 +27,19 @@ function writeState(state: CardState): void {
 }
 
 // The workspace's repos on this integration, plus the issue project; empty when none is known, so nothing is filtered out.
-function workspaceProjects(vcsId: string, issueProject: string | null): string[] {
+export function workspaceProjects(vcsId: string, issueProject: string | null): string[] {
   const repos = rc()
     .repos.filter((r) => r.vcsId === vcsId)
     .map((r) => r.projectPath ?? parseRemote(r.remoteUrl)?.projectPath ?? null);
   return [...repos, issueProject].filter((p): p is string => !!p);
+}
+
+/** The issue project of the primary integration and the prefix its references carry; null and empty when the issue project belongs to another integration. */
+export function cardRefContext(): { issueProject: string | null; refPrefix: string } {
+  const issues = rc().issues;
+  const primary = rc().primaryVcs;
+  const own = primary !== null && (issues.vcsId === null || issues.vcsId === primary.id);
+  return { issueProject: own ? issues.project : null, refPrefix: own ? issues.refPrefix : '' };
 }
 
 /** The report built from the primary integration, or null when the workspace has none that is usable. */
@@ -39,16 +47,15 @@ export async function providerReport(): Promise<CardReport | null> {
   if (!vcsReady()) return null;
   const provider = vcsProvider();
   const issues = rc().issues;
-  const primary = rc().primaryVcs;
-  const own = primary !== null && (issues.vcsId === null || issues.vcsId === primary.id);
+  const { issueProject, refPrefix } = cardRefContext();
   const { report, state } = await buildCardReport(provider, {
-    issueProject: own ? issues.project : null,
-    refPrefix: own ? issues.refPrefix : '',
+    issueProject,
+    refPrefix,
     scope: issues.cardScope,
     labels: issues.cardLabels,
     stages: rc().stages,
     stageMapping: getConfig().devCycle.stageMapping,
-    projects: workspaceProjects(provider.id, own ? issues.project : null),
+    projects: workspaceProjects(provider.id, issueProject),
     kind: provider.kind,
     state: readState(),
     now: () => new Date(),

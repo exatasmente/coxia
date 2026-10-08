@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateSchema, type JsonSchema } from '../shared/config/jsonSchema';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../shared/attachments';
@@ -59,6 +59,12 @@ export interface ForumStore {
    * so the caller can delete them from disk.
    */
   remove(thread: string, seq: number): ForumMessage | null;
+  /**
+   * Deletes a whole conversation: its file and what the store remembers of it. Returns the header it had, or null when there was none (so calling it again is
+   * nothing to do). A conversation that does not exist is not an error, but an id that cannot name one is (`bad-thread`). It tells nobody: the store only announces
+   * messages, and a screen that shows the thread asks again.
+   */
+  deleteThread(thread: string): ThreadHeader | null;
   list(): ThreadSummary[];
   /** Messages after `afterSeq` (at most `limit`), or null when the thread does not exist. */
   read(thread: string, afterSeq?: number, limit?: number): ThreadRead | null;
@@ -390,6 +396,13 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${JSON.stringify({ v: 1, type: 'removed', seq })}\n`);
       cache.set(thread, stateOf({ ...before, header: before.header as ThreadHeader, endsClean: true }));
       return found;
+    },
+    deleteThread(thread) {
+      const file = path(thread);
+      const had = load(thread)?.header ?? null;
+      rmSync(file, { force: true });
+      cache.delete(thread);
+      return had;
     },
     list() {
       if (!existsSync(dir)) return [];

@@ -1,4 +1,4 @@
-import type { AutonomyBlock, RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox } from '../../../../shared/config/types';
+import type { RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox, WorkspaceAutonomy } from '../../../../shared/config/types';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -31,7 +31,7 @@ export interface RunnerDraft {
   /** Where a stage's evidence is kept: with the run only (the default) or also in the cycle folder (desktop only, it decides what enters a commit). */
   evidence: RunnerEvidence;
   /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
-  autonomy: AutonomyBlock;
+  autonomy: WorkspaceAutonomy;
   linkDependencies: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
   soleMaintainer: boolean;

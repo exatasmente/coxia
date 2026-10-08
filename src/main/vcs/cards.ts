@@ -84,9 +84,31 @@ export interface CardSourceOptions {
 const short = (project: string): string => project.split('/').pop() ?? project;
 const dayOf = (d: Date): string => d.toLocaleDateString('sv-SE');
 
-function issueRef(issue: VcsIssue, o: CardSourceOptions): string {
+/** The reference an issue is shown by: the workspace's own prefix for the issue project, else `<repo>#<n>`. */
+export function issueRef(issue: VcsIssue, o: Pick<CardSourceOptions, 'issueProject' | 'refPrefix'>): string {
   const own = o.issueProject !== null && issue.project === o.issueProject;
   return own ? `${o.refPrefix}${issue.iid}` : `${short(issue.project)}#${issue.iid}`;
+}
+
+/** The report item of one issue, whichever read found it: the listing of the day or the read of a card the board opened. `stage` is the shown name. */
+export function issueCardItem(issue: VcsIssue, stage: string | null, ref: string, changes: CardItem['changes'] = []): CardItem {
+  return {
+    kind: 'issue',
+    ref,
+    project: issue.project,
+    iid: issue.iid,
+    title: issue.title,
+    stage,
+    web_url: issue.webUrl,
+    blockers: issue.labels.filter((l) => /blocked|bloquead/i.test(l)).map((l) => t('vcs.card.blockedLabel', { label: l })),
+    pending: [],
+    changes,
+    manual_note: null,
+    labels: issue.labels,
+    milestone: issue.milestone,
+    updated_at: issue.updatedAt,
+    project_id: issue.project,
+  };
 }
 
 function mrBlockers(m: VcsMr): string[] {
@@ -169,23 +191,7 @@ export async function buildCardReport(provider: VcsProvider, o: CardSourceOption
     const snap: CardSnapshot = { stage, pipeline: null, draft: false, conflicts: false, state: issue.state };
     current[ref] = snap;
     for (const m of linked) refsOf.set(`${m.project}!${m.iid}`, [...(refsOf.get(`${m.project}!${m.iid}`) ?? []), String(issue.iid)]);
-    items.push({
-      kind: 'issue',
-      ref,
-      project: issue.project,
-      iid: issue.iid,
-      title: issue.title,
-      stage,
-      web_url: issue.webUrl,
-      blockers: issue.labels.filter((l) => /blocked|bloquead/i.test(l)).map((l) => t('vcs.card.blockedLabel', { label: l })),
-      pending: [],
-      changes: diff(baseline[ref], snap),
-      manual_note: null,
-      labels: issue.labels,
-      milestone: issue.milestone,
-      updated_at: issue.updatedAt,
-      project_id: issue.project,
-    });
+    items.push(issueCardItem(issue, stage, ref, diff(baseline[ref], snap)));
   }
 
   // An issue and a change request can share a number on a host with separate sequences (Bitbucket): the longer form tells them apart.

@@ -33,6 +33,16 @@ export function nextEvidenceId(run: Pick<Run, 'evidence'>): string {
   return `ev-${next}`;
 }
 
+/**
+ * The id as it is, or the next free one when a file of the run already has it in any kind. The numbering above follows the record the caller holds, which can be older
+ * than the folder (a stage numbers from the run as it started); a stored file is never written over.
+ */
+export function freeEvidenceId(dir: string, id: string): string {
+  let n = Number(id.replace(/^ev-/, ''));
+  while (Object.values(EVIDENCE_EXT).some((ext) => existsSync(join(dir, `ev-${n}.${ext}`)))) n++;
+  return `ev-${n}`;
+}
+
 /** Reads the head of a file without following a link, at most `HEAD_MAX` bytes. */
 function readHead(path: string, size: number): Uint8Array {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -65,9 +75,9 @@ export function putEvidence(dataDir: string, run: Run, input: { path: string; na
   const head = readHead(input.path, size);
   const kind = detectKind(head, size);
   if (!kind.kind) return { ok: false, problem: kind.problem ?? 'unknown' };
-  const id = nextEvidenceId(run);
   const dir = dirOf(dataDir, run.id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const id = freeEvidenceId(dir, nextEvidenceId(run));
   const dest = join(dir, `${id}.${EVIDENCE_EXT[kind.kind]}`);
   try {
     // Atomic: a temporary name in the same folder, then a rename, so a crash never leaves a half file as evidence.
