@@ -51,6 +51,8 @@ export interface SandboxSession {
   readonly description?: string;
   /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
   readonly stageDir?: string;
+  /** The folder of this stage the evidence tools and `ViewImage` read from: `out` inside a sandbox's stage folder, the output folder of a host session that tests an interface. Absent: no evidence tools. */
+  readonly outputDir?: string;
   /** What the sandbox offers to test an interface; absent: nothing was asked for (a session with neither setting on). */
   readonly gui?: SandboxGui;
   /** Reads an image the stage saved in its output folder (`/coxia/out` inside; a host session's own folder, `gui.out`); absent where there is no such folder. */
@@ -287,6 +289,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const gui: SandboxGui | undefined = o.gui ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display === 'start' ? (noDisplay ? 'failed' : 'on') : o.gui.display === 'missing' ? 'missing' : null } : undefined;
   return {
     stageDir: o.stageDir,
+    outputDir: out,
     ...(gui ? { gui } : {}),
     readImage: (path) => readOutputImage(out, path),
     take: (name, max) => readOutputText(out, name, max),

@@ -6,9 +6,9 @@ import {
   ANNOTATE_IMAGE_SCHEMA,
   ANNOTATE_IMAGE_TOOL,
   EVIDENCE_MCP_SERVER,
-  SAVE_EVIDENCE_DESCRIPTION,
-  SAVE_EVIDENCE_SCHEMA,
   SAVE_EVIDENCE_TOOL,
+  saveEvidenceDescription,
+  saveEvidenceSchema,
   type EvidenceTools,
   type ToolAnswer,
 } from './tool';
@@ -18,12 +18,12 @@ import {
 
 const text = (a: ToolAnswer): { content: [{ type: 'text'; text: string }] } => ({ content: [{ type: 'text' as const, text: a.text }] });
 
-export function evidenceToolImpls(tools: EvidenceTools): ToolImpl[] {
+export function evidenceToolImpls(tools: EvidenceTools, out?: string): ToolImpl[] {
   return [
     {
       name: SAVE_EVIDENCE_TOOL,
-      description: SAVE_EVIDENCE_DESCRIPTION,
-      parameters: SAVE_EVIDENCE_SCHEMA as unknown as Json,
+      description: out ? saveEvidenceDescription(out) : saveEvidenceDescription(),
+      parameters: (out ? saveEvidenceSchema(out) : saveEvidenceSchema()) as unknown as Json,
       async run(input, ctx) {
         const a = await tools.save(input);
         return { response: a.text, render: (r) => clip(String(r), ctx.outputMax) };
@@ -45,7 +45,7 @@ export function evidenceToolImpls(tools: EvidenceTools): ToolImpl[] {
 export const EVIDENCE_TOOL_NAMES = [SAVE_EVIDENCE_TOOL, ANNOTATE_IMAGE_TOOL];
 
 /** The two tools as one in-process MCP server; null when the SDK or zod cannot be loaded (the stage says so). */
-export async function evidenceMcpServer(tools: EvidenceTools): Promise<Record<string, unknown> | null> {
+export async function evidenceMcpServer(tools: EvidenceTools, out?: string): Promise<Record<string, unknown> | null> {
   try {
     const sdk = await loadClaudeSdkModule();
     const { z } = await import('zod');
@@ -67,7 +67,7 @@ export async function evidenceMcpServer(tools: EvidenceTools): Promise<Record<st
     const server = sdk.createSdkMcpServer({
       name: EVIDENCE_MCP_SERVER,
       tools: [
-        sdk.tool(SAVE_EVIDENCE_TOOL, SAVE_EVIDENCE_DESCRIPTION, { path: z.string(), title: z.string(), description: z.string().optional() }, async (args) => text(await tools.save(args))),
+        sdk.tool(SAVE_EVIDENCE_TOOL, out ? saveEvidenceDescription(out) : saveEvidenceDescription(), { path: z.string(), title: z.string(), description: z.string().optional() }, async (args) => text(await tools.save(args))),
         sdk.tool(ANNOTATE_IMAGE_TOOL, ANNOTATE_IMAGE_DESCRIPTION, { source: z.string(), marks: z.array(mark), title: z.string().optional(), description: z.string().optional() }, async (args) => text(await tools.annotate(args))),
       ],
     });

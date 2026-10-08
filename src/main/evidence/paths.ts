@@ -3,9 +3,10 @@ import { join, relative, sep } from 'node:path';
 import { checkPath } from '../engine/guard';
 import { OUT } from '../sandbox/policy';
 
-// The output folder of a stage as a path on this computer. Inside the sandbox it is `/coxia/out` (the constant of the sandbox policy); on the host it is the `out`
-// folder of the stage folder the app made, and the two must never be confused. A path a model writes is the one it sees inside (`/coxia/out/...`), and this module
-// turns it into a path under the real folder, refusing anything that leaves it: an absolute path elsewhere, a `..` and any component that is a link.
+// The output folder of a stage as a path on this computer, whatever the session declared: inside the sandbox it is `/coxia/out` (the constant of the sandbox policy);
+// for a session that runs on the host it is the folder that session made for the stage. The two must never be confused. A path a model writes is the one it sees
+// (`/coxia/out/...`), and this module turns it into a path under the real folder, refusing anything that leaves it: an absolute path elsewhere, a `..` and any
+// component that is a link.
 
 export const OUTPUT_PROBLEMS = ['path', 'traversal', 'outside', 'link', 'missing', 'not-file'] as const;
 export type OutputProblem = (typeof OUTPUT_PROBLEMS)[number];
@@ -14,12 +15,11 @@ export interface ResolvedOutput {
   ok: boolean;
   problem?: OutputProblem;
   /** The real path under the stage's output folder, only when `ok`. */
-  path?: string;
-  /** The path relative to the output folder, with forward slashes, for a message. */
+  path?: string;  /** The path relative to the output folder, with forward slashes, for a message. */
   rel?: string;
 }
 
-/** The output folder of a stage on this computer. */
+/** The output folder of a sandbox's stage on this computer: the folder the sandbox declares for it. */
 export const outputDirOf = (stageDir: string): string => join(stageDir, 'out');
 
 /** Whether any component of `rel` under `root` is a symbolic link (the file itself included). */
@@ -38,13 +38,14 @@ function hasLink(root: string, rel: string): boolean {
 }
 
 /**
- * Turns the path a model wrote into a file of the stage's output folder. The path may be given as the sandbox sees it (`/coxia/out/...`) or relative to the folder;
- * anything that is not inside it, walks with `..` or passes through a symbolic link is refused with the problem, and never followed.
+ * Turns the path a model wrote into a file of the stage's output folder. `outRoot` is that folder as this computer has it, declared by the session (`out` inside a
+ * sandbox's stage folder, the output folder of a host session that tests an interface). The path may be given as a sandbox sees it (`/coxia/out/...`) or relative to
+ * the folder; anything that is not inside it, walks with `..` or passes through a symbolic link is refused with the problem, and never followed.
  */
-export function resolveOutputPath(stageDir: string, input: unknown): ResolvedOutput {
+export function resolveOutputPath(outRoot: string, input: unknown): ResolvedOutput {
   if (typeof input !== 'string' || !input.trim() || input.includes('\0')) return { ok: false, problem: 'path' };
   const raw = input.trim();
-  const root = outputDirOf(stageDir);
+  const root = outRoot;
   // The path of the sandbox maps to the real folder; a path of the host, absolute, is refused unless it is already under the real folder.
   let candidate = raw;
   if (raw === OUT) candidate = '';

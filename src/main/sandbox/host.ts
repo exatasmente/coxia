@@ -168,7 +168,7 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
 
   return {
     description: HOST_SHELL_DESCRIPTION,
-    ...(gui ? { gui, readImage: (path: string) => readOutputImage(shots as string, path, shots as string) } : {}),
+    ...(gui ? { gui, outputDir: shots as string, readImage: (path: string) => readOutputImage(shots as string, path, shots as string) } : {}),
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);

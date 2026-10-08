@@ -1,5 +1,5 @@
 import { readFileSync as readFile, writeFileSync as writeFile } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { checkMarks, EVIDENCE_MAX_BYTES, isEvidenceId, MARK_MAX_WIDTH, type EvidenceRecord } from '../../shared/evidence';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
@@ -12,13 +12,13 @@ import { detectKind } from './type';
 import type { EvidenceTools, ToolAnswer } from './tool';
 
 // What the three evidence tools do when a model calls them: read the file from the stage's output folder, keep it, mark an image and look at the result. Every
-// refusal is worded here, as text the model can act on; nothing but the stage's output folder and the run's own evidence is ever read.
+// refusal is worded here, as text the model can act on; nothing but the stage's output folder (the one the session declared) and the run's own evidence is ever read.
 
 export interface EvidenceContext {
   /** The workspace's data folder: where a run's evidence lives. */
   dataDir: string;
-  /** The folder the stage made; `out` inside it is where the model writes. */
-  stageDir: string;
+  /** The output folder of this stage, the only one the tools read: `out` inside a sandbox's stage folder, the output folder of a host session that tests an interface. */
+  outputDir: string;
   run: Run;
   stage: string;
   by: string;
@@ -71,7 +71,7 @@ async function save(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   const raw = typeof args.path === 'string' ? args.path : '';
   const title = typeof args.title === 'string' ? args.title.trim() : '';
   if (!title) return { text: t('main.evidence.refused.title') };
-  const resolved = resolveOutputPath(ctx.stageDir, raw);
+  const resolved = resolveOutputPath(ctx.outputDir, raw);
   if (!resolved.ok || !resolved.path) return { text: outputProblemText(resolved.problem ?? 'path') };
   const put = putEvidence(ctx.dataDir, ctx.run, {
     path: resolved.path,
@@ -97,7 +97,7 @@ function sourceOf(ctx: EvidenceContext, source: string): { ok: true; bytes: Uint
     if (!bytes) return { ok: false, text: t('main.evidence.refused.gone', { id: source }) };
     return { ok: true, bytes, from: source };
   }
-  const resolved = resolveOutputPath(ctx.stageDir, source);
+  const resolved = resolveOutputPath(ctx.outputDir, source);
   if (!resolved.ok || !resolved.path) return { ok: false, text: outputProblemText(resolved.problem ?? 'path') };
   try {
     return { ok: true, bytes: new Uint8Array(readFile(resolved.path)), from: null };
@@ -121,10 +121,10 @@ async function annotate(ctx: EvidenceContext, input: unknown): Promise<ToolAnswe
   const png = encodePng(drawMarks(decoded.image, checked.marks));
   // The result is written into the stage's output folder (under a name the app makes), then kept like any other file: the original is never touched.
   const name = `annotated-${Date.now()}.png`;
-  const resolved = resolveOutputPath(ctx.stageDir, name);
+  const resolved = resolveOutputPath(ctx.outputDir, name);
   // The name is new, so the resolver refuses it: the file is written directly under the folder, through the same guard the store uses on the way in.
   if (resolved.ok || resolved.problem !== 'missing') return { text: outputProblemText(resolved.problem ?? 'path') };
-  const target = `${ctx.stageDir}/out/${name}`;
+  const target = join(ctx.outputDir, name);
   try {
     writeFile(target, png);
   } catch {
@@ -158,7 +158,7 @@ async function view(ctx: EvidenceContext, input: unknown): Promise<ToolAnswer> {
   // A file of the output folder is reported back: the stage looked at it and did not keep it, and the app has to say so (or keep it) before the sandbox goes.
   // Only a picture comes back as looked at: what the app keeps of it as evidence takes the kinds of a piece of evidence (a text file counts, a video does not), so
   // saying a video was seen and not kept would be reading a file the app would never keep. Here the bytes are already read and the kind is known.
-  const looked = found.from || detectKind(found.bytes, found.bytes.length).kind !== 'png' ? undefined : resolveOutputPath(ctx.stageDir, source);
+  const looked = found.from || detectKind(found.bytes, found.bytes.length).kind !== 'png' ? undefined : resolveOutputPath(ctx.outputDir, source);
   return { text: t('main.evidence.looking', { source }), image: { data: found.bytes, media, ...(looked?.ok && looked.path ? { looked: looked.path } : {}) } };
 }
 

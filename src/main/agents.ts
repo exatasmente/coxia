@@ -500,7 +500,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
-  const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
+  // The output folder of the session that is running: a host stage names its own, a sandbox has `/coxia/out` and the tools' own wording stands.
+  const evidenceOut = req.exec?.outputDir;
+  const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
   try {
@@ -603,7 +605,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The files a called agent may open, scoped to its conversation: an image comes back as an image block for the model.
   const attachment = req.attachments ? await attachmentMcpServer(req.attachments.thread, req.attachments.refs) : null;
   // The evidence tools of a stage that keeps evidence: the same in-process MCP server shape as the Shell tool.
-  const evidence = req.evidence ? await evidenceMcpServer(req.evidence) : null;
+  const evidence = req.evidence ? await evidenceMcpServer(req.evidence, req.exec?.outputDir) : null;
   if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
   // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
   const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
@@ -1164,6 +1166,10 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
   return {
     description: session.description,
     ...(session.stageDir ? { stageDir: session.stageDir } : {}),
+    // What the tools read from and describe: a stage that runs on the host names its own output folder, and the wrapper must not hide it from `ViewImage`.
+    ...(session.outputDir ? { outputDir: session.outputDir } : {}),
+    ...(session.gui ? { gui: session.gui } : {}),
+    ...(session.readImage ? { readImage: session.readImage } : {}),
     exec: async (command) => {
       const r = await session.exec(command);
       activity.tool(r.refused ? `exit — ${r.refused}` : r.timedOut ? `exit — timeout (${Math.round(r.ms / 1000)}s)` : `exit ${r.exitCode ?? '—'} (${Math.max(1, Math.round(r.ms / 100) / 10)}s)`);

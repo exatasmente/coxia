@@ -578,6 +578,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const documented = !!(await scanHarness(wt)).document && !run.docs;
 
+  // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
+  const evidenceRoot = session?.outputDir;
+
   const input: StageInput = {
     run,
     stage,
@@ -606,7 +609,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
-    evidence: !!(session?.stageDir && d.keepEvidence),
+    evidence: !!(evidenceRoot && d.keepEvidence),
     sandbox: session
       ? {
           network: config.runner.sandbox.network,
@@ -643,7 +646,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
    * is kept as evidence of the stage, and what cannot be kept is said in the conversation with the reason. An evidence id it looked at is already kept.
    */
   const keepLooked = (): void => {
-    const dir = session?.stageDir;
+    const dir = evidenceRoot;
     if (!dir || !d.keepEvidence) return;
     let keptCount = 0;
     for (const path of lookedPaths) {
@@ -675,10 +678,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
   const evidence =
-    session?.stageDir && d.keepEvidence
+    evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({
           dataDir: d.dataDir(),
-          stageDir: session.stageDir,
+          outputDir: evidenceRoot,
           run,
           stage: stage.id,
           by: agent.id,
