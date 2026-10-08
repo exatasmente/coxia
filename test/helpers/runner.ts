@@ -133,6 +133,15 @@ export const toolsFor = (call: AgentCall): Tools => {
   };
 };
 
+export async function keepQaEvidence(call: AgentCall): Promise<string[]> {
+  if (!call.exec?.stageDir || !call.evidence) return [];
+  writeFileSync(join(call.exec.stageDir, 'out', 'qa-result.txt'), 'QA check completed.\n');
+  const saved = await call.evidence.save({ path: '/coxia/out/qa-result.txt', title: 'QA result' });
+  const id = /\bev-\d+\b/.exec(saved.text)?.[0];
+  if (!id) throw new Error(`QA evidence was not saved: ${saved.text}`);
+  return [id];
+}
+
 /** What a responder returns for a call that ran out of turns and answered from the wrap-up: the engine reports it as `partial`. */
 export class PartialAnswer {
   constructor(readonly data: unknown) {}

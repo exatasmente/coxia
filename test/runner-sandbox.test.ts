@@ -8,7 +8,7 @@ import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
-import { type Boot, boot, doc, fakeCommands, fakeSandbox, makeRepo, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeCommands, fakeSandbox, keepQaEvidence, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -24,7 +24,10 @@ function easy(b: Boot): void {
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
   });
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
-  b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }] }));
+  b.engine.script('qa', async (call) => {
+    const evidenceIds = await keepQaEvidence(call);
+    return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '', ...(evidenceIds.length ? { evidenceIds } : {}) }] });
+  });
 }
 
 async function reach(b: Boot, run: Run, id: string): Promise<Run> {
@@ -125,7 +128,8 @@ describe('a stage with a sandbox', () => {
     const long = `echo ${token} ${'x'.repeat(2000)}`;
     b.engine.script('qa', async (c) => {
       await c.exec!.exec(long);
-      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1] }] });
+      const evidenceIds = await keepQaEvidence(c);
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1], evidenceIds }] });
     });
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');
@@ -171,7 +175,8 @@ describe('a stage with a sandbox', () => {
     easy(b);
     b.engine.script('qa', async (c) => {
       await c.exec!.exec('node probe.js');
-      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [2] }] });
+      const evidenceIds = await keepQaEvidence(c);
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [2], evidenceIds }] });
     });
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');
@@ -181,6 +186,8 @@ describe('a stage with a sandbox', () => {
     const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
     expect(qa.prompt).toContain('#1 $ npm test');
     expect(qa.prompt).toContain('evidence');
+    expect(qa.prompt).toContain('SaveEvidence');
+    expect(qa.prompt).toContain('evidenceIds');
     expect(qa.system).toContain('throwaway copy');
     expect(run.qa[0].commands).toEqual([
       { command: 'npm test', exitCode: 1, timedOut: false, n: 1, by: 'app' },
@@ -198,13 +205,17 @@ async function toolsDenied(b: Boot): Promise<string | null> {
 }
 
 describe('what QA claims to have executed', () => {
-  const run = async (scenarios: unknown[], sandbox = true, table = {}): Promise<Run> => {
+  const run = async (scenarios: Record<string, unknown>[], sandbox = true, table = {}): Promise<Run> => {
     const b = await boot({ sandbox: fakeSandbox({ table }), configure: (c) => { if (sandbox) shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
     easy(b);
     b.engine.script('qa', async (c) => {
       await c.exec?.exec('node probe.js');
       await c.exec?.exec('node broken.js');
-      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios });
+      const evidenceIds = await keepQaEvidence(c);
+      return work('Checked.', {
+        artifacts: [doc('5_TEST_PLAN.md')],
+        scenarios: scenarios.map((scenario) => ({ ...scenario, ...(evidenceIds.length ? { evidenceIds } : {}) })),
+      });
     });
     const started = await b.runner.start('app#101');
     return reach(b, started, 'ready');
@@ -233,6 +244,38 @@ describe('what QA claims to have executed', () => {
       { name: 'fail on a failing command', result: 'fail', severity: 'non-blocking', detail: 'broke', evidence: 'executed', commands: [2] },
     ], true, { 'node broken.js': { exitCode: 2 } });
     expect(r.qa[0].scenarios.map((s) => [s.evidence, s.unbacked ?? false])).toEqual([['read', true], ['executed', false]]);
+  });
+
+  it('does not finish a conclusive scenario that has no evidence saved and cited', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
+    easy(b);
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      return work('Checked.', {
+        artifacts: [doc('5_TEST_PLAN.md')],
+        scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'read' }],
+      });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('failed');
+    expect(run.error?.detail).toMatch(/SaveEvidence/);
+  });
+
+  it('does not finish an executed scenario when its saved evidence is not cited', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
+    easy(b);
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      await keepQaEvidence(c);
+      return work('Checked.', {
+        artifacts: [doc('5_TEST_PLAN.md')],
+        scenarios: [{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1] }],
+      });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('failed');
+    expect(run.error?.detail).toMatch(/evidenceIds/);
+    expect(Object.keys(run.evidence ?? {})).toHaveLength(1);
   });
 
   it('is "only read" for every scenario of a QA agent with no sandbox', async () => {
