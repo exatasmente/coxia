@@ -16,7 +16,7 @@ import { startHostDisplay } from '../src/main/sandbox/display';
 import { viewImageToolImpl } from '../src/main/sandbox/engineTool';
 import { openHostSession } from '../src/main/sandbox/host';
 import { offersViewImage, viewImageDescription } from '../src/main/sandbox/tool';
-import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -279,7 +279,10 @@ function easy(b: Boot): void {
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
   });
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
-  b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }] }));
+  b.engine.script('qa', async (call) => {
+    const evidenceIds = await keepQaEvidence(call);
+    return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '', ...(evidenceIds.length ? { evidenceIds } : {}) }] });
+  });
 }
 
 async function reach(b: Boot, run: Run, id: string): Promise<Run> {

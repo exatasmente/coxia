@@ -98,7 +98,7 @@ describe('evidence in a run', () => {
       (c) => {
         c.language = 'en';
       },
-      keepAndCite(async () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', severity: 'non-blocking', detail: 'Looked' }] })),
+      keepAndCite(async () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'See the app', result: 'pass', severity: 'non-blocking', detail: 'Looked', evidenceIds: ['ev-1'] }] })),
     );
     const done = b.runner.get(run.id) as NonNullable<ReturnType<typeof b.runner.get>>;
     const record = done.evidence?.['ev-1'];

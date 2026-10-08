@@ -6,7 +6,7 @@ import type { PendingCommand, Run } from '../src/shared/runs';
 import { listAudit } from '../src/main/auditoria';
 import { mergeTemplateTeam } from '../src/shared/cycles/apply';
 import { newAgent, shellRaised } from '../src/shared/config/team';
-import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
+import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -110,7 +110,8 @@ describe('a stage with shell: host', () => {
       expect(asked.command.command).toBe('npm run e2e');
       b.runner.command(asked.run.id, asked.command.id, 'once');
       await ran;
-      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '', evidence: 'executed', commands: [2] }] });
+      const evidenceIds = await keepQaEvidence(c);
+      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '', evidence: 'executed', commands: [2], evidenceIds }] });
     });
     const run = await reach(b, await b.runner.start('app#101'), 'ready');
     expect(run.status).toBe('done');

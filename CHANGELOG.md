@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **QA cannot finish a conclusive scenario without saved evidence.** The QA prompt now says to keep a screenshot, log or short report with `SaveEvidence` and cite its id in the scenario; the app refuses a `pass` or `fail` scenario without evidence kept during that QA stage.
+
 ## [0.8.0-beta.7] - 2026-10-07
 
 ### Changed

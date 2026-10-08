@@ -44,7 +44,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -784,6 +784,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
   if (kind === 'qa') output.scenarios = backEvidence(output.scenarios, (session?.log ?? []).map((e) => ({ n: e.n, exitCode: e.exitCode, timedOut: e.timedOut, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), !!session);
+  const scenariosWithoutEvidence = kind === 'qa' && evidence
+    ? output.scenarios.filter((scenario) => scenario.result !== 'not-run' && !scenario.evidenceIds?.some((id) => keptIds.includes(id)))
+    : [];
+  if (scenariosWithoutEvidence.length) throw new StageError('qa-evidence-missing', { scenarios: scenariosWithoutEvidence.map((scenario) => scenario.name).join(', ') });
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
   // the same worktree, and its commands join the list under its name.
   const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
@@ -840,4 +844,3 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (commit && docs?.stamp.length && (await stampHarness(wt, docs.stamp, commit)).length) await commitAll(wt, commitMessage(config.runner.commitMessage, STAMP_SUMMARY, run.issue.iid), identity);
   return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
-
