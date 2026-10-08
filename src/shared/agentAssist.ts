@@ -313,7 +313,9 @@ const draftSchema = object({ name: text, job: text, instructions: text });
 /** The round: the refined draft, the next questions and whether nothing important is left to ask. */
 export const ASSIST_ROUND_SCHEMA: Schema = object({
   draft: draftSchema,
-  questions: { type: 'array', items: object({ text, kind: { type: 'string', enum: [...QUESTION_KINDS] }, options: { type: 'array', items: text }, why: text }) },
+  // `kind` is left a plain string: an engine that checks the schema would send a question of an unknown kind back to the model and could spend the round on it,
+  // where the reader drops that one question and keeps the others.
+  questions: { type: 'array', items: object({ text, kind: { type: 'string' }, options: { type: 'array', items: text }, why: text }) },
   enough: { type: 'boolean' },
 });
 

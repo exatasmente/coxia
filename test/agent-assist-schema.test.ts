@@ -434,9 +434,11 @@ describe('the schemas the model answers', () => {
     walk(assistReviewSchema(offers()));
   });
 
-  it('lets the round hold the three kinds of question and the three texts of the draft', () => {
+  it('lets the round hold any kind of question, for the reader to drop an unknown one, and the three texts of the draft', () => {
     const props = (ASSIST_ROUND_SCHEMA as any).properties;
-    expect(props.questions.items.properties.kind.enum).toEqual(['open', 'single', 'multi']);
+    // No enum: an engine that checks the schema would send the whole round back for one question of an unknown kind.
+    expect(props.questions.items.properties.kind).toEqual({ type: 'string' });
+    expect(readQuestions([{ text: 'A?', kind: 'scale', options: [], why: '' }, { text: 'B?', kind: 'open', options: [], why: '' }]).map((q) => q.text)).toEqual(['B?']);
     expect(Object.keys(props.draft.properties)).toEqual(['name', 'job', 'instructions']);
     expect(props.enough.type).toBe('boolean');
   });
