@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { BoardHostLink } from '../src/shared/board';
 import { fakeBoardHost } from './helpers/boardHost';
+import { existsSync } from 'node:fs';
 
 // The read of the issues the board tracks (the cards it opened and linked to an issue), over a fake GitLab that records what was asked.
 // Nothing reaches a network or a model, and the data folder is a throwaway one.
@@ -13,7 +14,7 @@ process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { ATAS } = await import('../src/main/env');
 const { boardStore } = await import('../src/main/boardSource');
-const { TRACKED_MAX, forgetTracked, mirrorTracked, readTracked, trackedCards } = await import('../src/main/vcs/boardRead');
+const { BOARD_ISSUES_PER_PROJECT, BOARD_PROJECTS_MAX, TRACKED_MAX, forgetHost, forgetTracked, mirrorTracked, readBoard, readTracked, trackedCards } = await import('../src/main/vcs/boardRead');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { getConfig, saveConfig } = await import('../src/main/workspaceConfig');
 
@@ -22,11 +23,11 @@ afterAll(() => rmSync(DATA, { recursive: true, force: true }));
 const PROJECT = 'acme/app';
 const config = structuredClone(getConfig());
 config.language = 'en';
-config.vcs = [{ id: 'host', kind: 'gitlab', host: 'git.acme.test', apiUrl: '', user: '', secretRef: null, cliPreference: 'cli', cliCommand: null }];
-config.projects.issues.vcsId = 'host';
+config.vcs = [{ id: 'gitlab', kind: 'gitlab', host: 'git.acme.test', apiUrl: '', user: '', secretRef: null, cliPreference: 'cli', cliCommand: null }];
+config.projects.issues.vcsId = 'gitlab';
 config.projects.issues.project = PROJECT;
 config.projects.issues.refPrefix = 'app#';
-config.projects.repos = [{ id: 'app', path: DATA, remoteUrl: null, vcsId: 'host', projectPath: PROJECT }];
+config.projects.repos = [{ id: 'app', path: DATA, remoteUrl: null, vcsId: 'gitlab', projectPath: PROJECT }];
 config.devCycle.stages = [
   { id: 'backlog', label: 'Backlog', match: [], kind: 'backlog', rank: 0 },
   { id: 'doing', label: 'Doing', match: [], kind: 'development', rank: 1 },
@@ -49,7 +50,8 @@ const linked = (iid: number, over: Partial<Parameters<ReturnType<typeof boardSto
 
 beforeEach(() => {
   rmSync(join(ATAS, 'board.json'), { force: true });
-  forgetTracked();
+  forgetHost();
+  saveConfig(config);
   host = fakeBoardHost();
   setVcsRuntimeForTests(host.runtime);
 });
@@ -190,5 +192,136 @@ describe('the board\'s copy follows the host', () => {
     expect(boardStore().get(closed.id)?.state).toBe('closed');
     expect(boardStore().get(lost.id)).toMatchObject({ title: 'Lost', state: 'open' });
     expect(boardStore().get(lost.id)?.history.some((h) => h.kind === 'host')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- the project's issues
+
+/** The workspace names these projects on the host, the issue project first. */
+const withProjects = (projects: string[]): void => {
+  const c = structuredClone(config);
+  c.projects.issues.project = projects[0];
+  c.projects.repos = projects.map((p, i) => ({ id: `repo${i}`, path: join(DATA, `repo${i}`), remoteUrl: null, vcsId: 'gitlab', projectPath: p }));
+  saveConfig(c);
+};
+const listings = (): string[] => host.reads.filter((r) => /\/issues\?/.test(r));
+
+describe('the project\'s issues, for the board', () => {
+  it('returns null and calls nothing when there is no usable host', async () => {
+    setVcsRuntimeForTests(null);
+    const bare = structuredClone(config);
+    bare.vcs = [];
+    bare.projects.issues.vcsId = null;
+    bare.projects.repos = bare.projects.repos.map((r) => ({ ...r, vcsId: null }));
+    saveConfig(bare);
+    expect(await readBoard(true)).toBeNull();
+    expect(host.reads).toEqual([]);
+  });
+
+  it('asks each project for every open issue, not only the person\'s, 100 at most', async () => {
+    withProjects(['acme/app', 'acme/lib']);
+    host.add('acme/app', 1, { title: 'Not mine' });
+    host.add('acme/lib', 2, { title: 'Also not mine' });
+    const read = (await readBoard(true))!;
+    expect(listings().filter((r) => r.includes('scope=all') && r.includes('per_page=100'))).toHaveLength(2);
+    expect(read.projects).toEqual([
+      { project: 'acme/app', count: 1, truncated: false, error: null },
+      { project: 'acme/lib', count: 1, truncated: false, error: null },
+    ]);
+    expect(read.items.map((i) => i.key).sort()).toEqual(['acme/app#1', 'acme/lib#2']);
+  });
+
+  it('flags a project that reached the limit, and lists only the most recently updated', async () => {
+    withProjects(['acme/app']);
+    for (let i = 1; i <= BOARD_ISSUES_PER_PROJECT + 1; i++) host.add('acme/app', i, { updatedAt: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString() });
+    const read = (await readBoard(true))!;
+    expect(read.projects[0]).toMatchObject({ count: BOARD_ISSUES_PER_PROJECT, truncated: true });
+    expect(read.items).toHaveLength(BOARD_ISSUES_PER_PROJECT);
+    // The oldest update is the one left out.
+    expect(read.items.some((i) => i.iid === 1)).toBe(false);
+  });
+
+  it('reads at most ten projects', async () => {
+    withProjects(Array.from({ length: BOARD_PROJECTS_MAX + 1 }, (_, i) => `acme/p${i}`));
+    const read = (await readBoard(true))!;
+    expect(read.projects).toHaveLength(BOARD_PROJECTS_MAX);
+    expect(listings()).toHaveLength(BOARD_PROJECTS_MAX);
+  });
+
+  it('carries the reason of a project that cannot be read, and still lists the others', async () => {
+    withProjects(['acme/app', 'acme/broken']);
+    host.add('acme/app', 1, {});
+    const read = (await readBoard(true))!;
+    expect(read.projects.find((p) => p.project === 'acme/broken')?.error).toBeTruthy();
+    expect(read.projects.find((p) => p.project === 'acme/app')).toMatchObject({ count: 1, error: null });
+    expect(read.items).toHaveLength(1);
+    expect(read.error).toBeNull();
+  });
+
+  it('says there is no project to list when the workspace names none on the host', async () => {
+    const c = structuredClone(config);
+    c.projects.issues.project = null;
+    c.projects.repos = [{ id: 'app', path: DATA, remoteUrl: null, vcsId: null, projectPath: null }];
+    saveConfig(c);
+    const read = (await readBoard(true))!;
+    expect(read).toMatchObject({ noProject: true, projects: [], items: [] });
+    expect(listings()).toEqual([]);
+  });
+
+  it('places an issue by the mapping rules, then by its board label, then by the stages\' patterns', async () => {
+    const c = structuredClone(config);
+    c.devCycle.stages = [...config.devCycle.stages, { id: 'review', label: 'Review', match: ['code review'], kind: 'review', rank: 3 }];
+    c.devCycle.stageMapping = [{ provider: 'any', source: 'label', name: '', pattern: '^in progress$', stage: 'doing' }];
+    saveConfig(c);
+    host.add('acme/app', 1, { labels: ['In Progress', 'board:done'] });
+    host.add('acme/app', 2, { labels: ['board:done'] });
+    host.add('acme/app', 3, { labels: ['code review'] });
+    host.add('acme/app', 4, { labels: [] });
+    const columns = Object.fromEntries((await readBoard(true))!.items.map((i) => [i.iid, i.column]));
+    expect(columns).toEqual({ 1: 'doing', 2: 'done', 3: 'review', 4: 'backlog' });
+  });
+
+  it('puts an issue the stages cannot place in no column', async () => {
+    const c = structuredClone(config);
+    c.devCycle.stages = [{ id: 'doing', label: 'Doing', match: [], kind: 'development', rank: 1 }];
+    saveConfig(c);
+    host.add('acme/app', 1, { labels: ['bug'] });
+    expect((await readBoard(true))!.items[0].column).toBeNull();
+  });
+
+  it('derives the priority and the squad from the labels, and keeps the address and the labels', async () => {
+    host.add('acme/app', 5, { title: 'Urgent', labels: ['priority:high', 'core', 'bug'] });
+    const [item] = (await readBoard(true))!.items;
+    expect(item).toMatchObject({ key: 'acme/app#5', project: 'acme/app', iid: 5, title: 'Urgent', priority: 'priority:high', squad: 'core', labels: ['priority:high', 'core', 'bug'], url: 'https://git.acme.test/acme/app/-/issues/5' });
+  });
+
+  it('shows an issue a card is linked to once, as the card, and does not read it by number', async () => {
+    host.add('acme/app', 7, { title: 'Linked' });
+    host.add('acme/app', 8, { title: 'Free' });
+    const card = linked(7);
+    const read = (await readBoard(true))!;
+    expect(read.items.map((i) => i.iid)).toEqual([8]);
+    expect(read.seen[card.id]).toBe('open');
+    expect(host.reads.some((r) => /issues\/7$/.test(r))).toBe(false);
+    expect(boardStore().get(card.id)?.title).toBe('Linked');
+  });
+
+  it('writes nothing for what it lists', async () => {
+    host.add('acme/app', 9, { title: 'Only on the host', labels: ['board:doing'] });
+    const read = (await readBoard(true))!;
+    expect(read.items).toHaveLength(1);
+    expect(existsSync(join(ATAS, 'board.json'))).toBe(false);
+  });
+
+  it('reuses the listing for five minutes, asks again on refresh, and again once a write cleared it', async () => {
+    host.add('acme/app', 1, {});
+    await readBoard(false);
+    await readBoard(false);
+    expect(listings()).toHaveLength(1);
+    await readBoard(true);
+    expect(listings()).toHaveLength(2);
+    forgetHost();
+    await readBoard(false);
+    expect(listings()).toHaveLength(3);
   });
 });

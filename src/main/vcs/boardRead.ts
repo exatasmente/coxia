@@ -1,11 +1,11 @@
-import type { BoardCard, HostSeen, MirrorContext } from '../../shared/board';
+import { type BoardCard, type BoardItem, type BoardProjectLine, type HostRead, type HostSeen, type MirrorContext, boardColumns, derivedFields, itemKey } from '../../shared/board';
 import { ownStageLabels, sameIssue } from '../../shared/boardHost';
 import { squadsOf } from '../../shared/config/squads';
 import { shownText } from '../../shared/cycles/text';
 import { boardStore } from '../boardSource';
 import { getConfig, rc } from '../workspaceConfig';
 import { type CardItem, issueCardItem, issueRef } from './cards';
-import { cardRefContext } from './cardSource';
+import { cardRefContext, workspaceProjects } from './cardSource';
 import { VcsError } from './errors';
 import { vcsProvider, vcsReady } from './index';
 import { stageOf, stagesFor } from './stages';
@@ -37,6 +37,12 @@ const cache = new Map<string, { at: number; found: Found }>();
 /** Forgets what was read: a write the board's door just made, so the next read asks the host again. */
 export function forgetTracked(): void {
   cache.clear();
+}
+
+/** Forgets everything the board read of the host (the issues by number and the listing of the projects). */
+export function forgetHost(): void {
+  forgetTracked();
+  forgetProjects();
 }
 
 /** The cards read by number: linked, open or closed within the last days, newest update first, at most `TRACKED_MAX`. */
@@ -124,5 +130,95 @@ export function mirrorTracked(read: TrackedRead): void {
     } catch (e) {
       console.error('[vcs:board] mirror', (e as Error).message);
     }
+  }
+}
+
+// ---------------------------------------------------------------- the project's issues, for the board only
+
+/** At most this many projects of the workspace are listed. */
+export const BOARD_PROJECTS_MAX = 10;
+/** At most this many open issues of one project, the most recently updated first. */
+export const BOARD_ISSUES_PER_PROJECT = 100;
+
+interface ListedProject {
+  project: string;
+  issues: VcsIssue[];
+  truncated: boolean;
+  error: string | null;
+}
+interface Listing {
+  noProject: boolean;
+  projects: ListedProject[];
+}
+
+let listing: { at: number; key: string; value: Listing } | null = null;
+
+/** Forgets the listing: a write the board's door just made, so the next read asks the host again and a closed issue does not linger. */
+export function forgetProjects(): void {
+  listing = null;
+}
+
+/** The projects of the workspace on this host, once each (case ignored), the first `BOARD_PROJECTS_MAX`. */
+export function boardProjects(hostId: string): string[] {
+  const all = workspaceProjects(hostId, cardRefContext().issueProject);
+  return all.filter((p, i) => all.findIndex((o) => o.toLowerCase() === p.toLowerCase()) === i).slice(0, BOARD_PROJECTS_MAX);
+}
+
+/**
+ * Lists the open issues of the workspace's projects, whoever they are assigned to. Read only when the board is opened or refreshed by hand, never by the
+ * day. null: no usable host or a host with no issues. A project that cannot be read carries its reason and the others still list.
+ */
+async function listProjects(refresh: boolean): Promise<Listing | null> {
+  if (!vcsReady()) return null;
+  const provider = vcsProvider();
+  if (!provider.caps.issues) return null;
+  const projects = boardProjects(provider.id);
+  const key = JSON.stringify([provider.id, projects]);
+  if (!refresh && listing && listing.key === key && Date.now() - listing.at < TRACKED_TTL_MS) return listing.value;
+  const listed = await pool(projects, 3, async (project): Promise<ListedProject> => {
+    try {
+      const issues = await provider.listIssues({ project, scope: 'all', limit: BOARD_ISSUES_PER_PROJECT });
+      return { project, issues, truncated: issues.length >= BOARD_ISSUES_PER_PROJECT, error: null };
+    } catch (e) {
+      console.error(`[vcs:board] ${project}`, (e as Error).message);
+      return { project, issues: [], truncated: false, error: (e as Error).message };
+    }
+  });
+  const value: Listing = { noProject: projects.length === 0, projects: listed };
+  listing = { at: Date.now(), key, value };
+  return value;
+}
+
+/**
+ * The board's read of the host in one answer: the issues of the workspace's projects that no card is linked to (derived, never stored), and the cards the
+ * board opened, read by number and brought up to what the host says. null: no usable host, nothing was read.
+ */
+export async function readBoard(refresh: boolean): Promise<HostRead | null> {
+  if (!vcsReady()) return null;
+  const at = new Date().toISOString();
+  try {
+    const listed = await listProjects(refresh);
+    const tracked = await readTracked(refresh, listed?.projects.flatMap((p) => p.issues) ?? []);
+    if (tracked) mirrorTracked(tracked);
+    const provider = vcsProvider();
+    const config = getConfig();
+    const stages = stagesFor(provider.kind, rc().stages);
+    const columns = new Set(boardColumns(config.devCycle.stages).map((s) => s.id));
+    const ctx = { levels: config.devCycle.priority.labels, squads: squadsOf(config) };
+    const links = boardStore().list().flatMap((c) => (c.host ? [c.host] : []));
+    const items: BoardItem[] = (listed?.projects ?? []).flatMap((p) =>
+      p.issues
+        .filter((issue) => !links.some((l) => sameIssue(l, issue)))
+        .map((issue): BoardItem => {
+          const stage = stageOf(issue, [], stages, config.devCycle.stageMapping, provider.kind);
+          return { key: itemKey(issue.project || p.project, issue.iid), project: issue.project || p.project, iid: issue.iid, title: issue.title, column: stage && columns.has(stage.id) ? stage.id : null, labels: issue.labels, url: issue.webUrl, updatedAt: issue.updatedAt, ...derivedFields(issue.labels, ctx) };
+        }),
+    );
+    const lines: BoardProjectLine[] = (listed?.projects ?? []).map((p) => ({ project: p.project, count: p.issues.length, truncated: p.truncated, error: p.error }));
+    const seen = Object.fromEntries(Object.entries(tracked?.seen ?? {}).map(([id, s]) => [id, s.state]));
+    return { at, noProject: listed?.noProject ?? false, projects: lines, items, seen, error: null };
+  } catch (e) {
+    console.error('[vcs:board] read', (e as Error).message);
+    return { at, noProject: false, projects: [], items: [], seen: {}, error: (e as Error).message };
   }
 }

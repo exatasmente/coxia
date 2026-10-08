@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { type BoardCard, type BoardPatch, boardColumns, boardId, boardPriorities, boardSquadChoices, columnLabel, columnOf, squadLabel } from '../shared/board';
+import { type BoardCard, type BoardPatch, type HostRead, type HostState, boardColumns, boardId, boardPriorities, boardSquadChoices, columnLabel, columnOf, squadLabel } from '../shared/board';
 import { squadsOf } from '../shared/config/squads';
 import { t } from '../shared/i18n';
 import type { AppEvent } from '../shared/types';
@@ -18,14 +18,32 @@ const EVENT = 'board:changed';
 let deps: { emit(ev: AppEvent): void } | null = null;
 
 /**
- * Where the board is offered: a workspace with no usable code host. With one there is a single board, and it mirrors the host. A getter the
- * module hands in at registration (`index.ts`) so this file never reaches `vcs/` — the test that pins it walks the imports.
+ * What the board needs of a code host, as a port: `index.ts` hands the real one in once (`boardHost.ts`, the only board file that reaches the host), so this
+ * file never imports `./vcs` or `./actions` and the test that pins it walks the imports. Its default is a host that is never ready, which is the board of a
+ * workspace with no code host.
  */
-let hostReady: () => boolean = () => false;
+export interface BoardHost {
+  /** The workspace has a code host the app can use right now. */
+  ready(): boolean;
+  /** The host's name for the screen, or null. */
+  name(): string | null;
+  /** The host's issues have labels (Bitbucket's do not): a column, a priority and a squad can be written there. */
+  labels(): boolean;
+  /** Reads the host: the project listing and the issues the board tracks (cached; `refresh` asks again). null: no usable host. */
+  read(refresh: boolean): Promise<HostRead | null>;
+}
 
-/** Whether the workspace has a code host the app can read: what decides if the board is offered at all. */
+const NO_HOST: BoardHost = { ready: () => false, name: () => null, labels: () => false, read: async () => null };
+let host: BoardHost = NO_HOST;
+
+/** The host the board talks to; called once, before the modules are registered. */
+export function setBoardHost(next: BoardHost): void {
+  host = next;
+}
+
+/** Whether the workspace has a code host the app can read: what decides if the board is offered at all (until a card of a host workspace may be written). */
 export function boardAvailable(): boolean {
-  return !hostReady();
+  return !host.ready();
 }
 
 /** Nothing of the board is written where the board is not offered: the same test the day's cards make before they read the host. */
@@ -33,25 +51,36 @@ function checked(): void {
   if (!boardAvailable()) throw new Error(t('main.board.noHost'));
 }
 
-/** The getter the app hands in once, at registration. */
-export function setBoardReady(fn: () => boolean): void {
-  hostReady = fn;
-}
-
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 const optional = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
-/** What the screen needs: the columns, the priorities, the squads a card may go to, the repositories, and the cards. */
-export function boardView() {
+/** A card as the screen sees it: the card, and where it stands in relation to the host. */
+export type BoardCardView = BoardCard & { hostState: HostState };
+
+/** What the screen needs: the columns, the priorities, the squads a card may go to, the repositories, the cards, and what the host says. */
+export async function boardView(refresh = false) {
   const config = getConfig();
+  const ready = host.ready();
+  const read = ready ? await host.read(refresh) : null;
+  const cards: BoardCardView[] = boardStore()
+    .list()
+    .map((card) => {
+      if (!ready) return { ...card, hostState: 'none' as const };
+      const seen = read?.seen[card.id];
+      return { ...card, hostState: !card.host ? ('notSent' as const) : seen === 'missing' || seen === 'unread' ? seen : ('linked' as const) };
+    });
   return {
     available: boardAvailable(),
+    host: ready ? { name: host.name(), labels: host.labels(), readAt: read?.at ?? null, error: read?.error ?? null } : null,
+    projects: read?.projects ?? [],
+    noProject: read?.noProject ?? false,
+    items: read?.items ?? [],
     columns: boardColumns(cycle().stages).map((s) => ({ id: s.id, label: columnLabel(s.label, s.kind, language()) })),
     priorities: boardPriorities(cycle().priority.labels),
     squads: boardSquadChoices(squadsOf(config), config.language),
     squadCount: squadsOf(config).length,
     repos: rc().repos.map((r) => ({ id: r.id, label: r.id })),
-    cards: boardStore().list(),
+    cards,
   };
 }
 
@@ -102,10 +131,7 @@ function checkedRepo(id: string | null): string | null {
 
 export const register: Module = (ctx: ModuleContext) => {
   deps = { emit: ctx.emit };
-  // The day's cards ask the integration before they read the host; the board asks it before it offers itself, so a workspace with a usable host
-  // gets no board beside it (spec rule 6). It is a setter so `board.ts` never reaches `vcs/index.ts` at import time.
-  ctx.deps?.({ boardReady: hostReady });
-  ctx.handle('board:list', () => boardView());
+  ctx.handle('board:list', (refresh?: unknown) => boardView(refresh === true));
   ctx.handle('board:create', (input: unknown) => {
     checked();
     const o = (input ?? {}) as Record<string, unknown>;

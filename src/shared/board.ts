@@ -252,6 +252,56 @@ export function applyPatch(card: BoardCard, patch: BoardPatch, at: string): Boar
   return next;
 }
 
+// ---------------------------------------------------------------- the host's issues on the board
+
+/** What a write of the board is aimed at: a card of the board by its id, or an issue the host lists that no card holds, by its project and number. */
+export type BoardTarget = string | { project: string; iid: number };
+
+/** An issue the host lists that no card of the board is linked to. Derived from a read and never stored: the board file gains nothing for it. */
+export interface BoardItem {
+  /** `<project>#<iid>`. */
+  key: string;
+  project: string;
+  iid: number;
+  title: string;
+  /** A stage id of the workspace's columns, or null: the stages cannot place it ("No column"). */
+  column: string | null;
+  labels: string[];
+  url: string;
+  updatedAt: string | null;
+  priority: string | null;
+  squad: string | null;
+}
+
+export const itemKey = (project: string, iid: number): string => `${project}#${iid}`;
+
+/** What reading one project of the host found. */
+export interface BoardProjectLine {
+  project: string;
+  /** How many open issues the read brought. */
+  count: number;
+  /** The read reached its limit: older issues of the project are not on the board. */
+  truncated: boolean;
+  /** Why the project could not be read, else null. */
+  error: string | null;
+}
+
+/** What the board knows about the host after a read: the project listing, the issues no card holds, and how each linked card stands. */
+export interface HostRead {
+  at: string;
+  /** The workspace names no project of this host to list. */
+  noProject: boolean;
+  projects: BoardProjectLine[];
+  items: BoardItem[];
+  /** For each card linked to an issue, what the host said now. */
+  seen: Record<string, HostSeen['state']>;
+  /** The read failed as a whole (not a single project); nothing came of it. */
+  error: string | null;
+}
+
+/** Where a card stands in relation to the host: `none` with no usable host; the rest, in the order the screen gives them precedence. */
+export type HostState = 'none' | 'waiting' | 'linked' | 'missing' | 'unread' | 'notSent';
+
 /** The squads the board offers for a card being given to one: every configured squad that names a label, which is how the card is claimed. */
 export function squadsForCard(squads: readonly SquadDef[]): SquadDef[] {
   return squads.filter((s) => !!squadLabel(s));
