@@ -4,7 +4,7 @@
 // answers exactly what it answered before.
 import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
-import { effectiveTeam, scopedTeam, squadView, turnTarget } from '../src/shared/config/squads';
+import { effectiveTeam, membersOf, scopedTeam, squadView, turnTarget } from '../src/shared/config/squads';
 import { isDraft, newAgent, stageAgent, workingTeam } from '../src/shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
 import { templateFromConfig } from '../src/shared/cycles';
@@ -63,6 +63,15 @@ describe('the team the runner reads', () => {
     // The team without the draft is the team with it, less the draft.
     const without = withSquads(neutralConfig());
     expect(effectiveTeam(c)).toEqual(effectiveTeam(without));
+  });
+
+  it('does not count the draft among the members of a squad, so a squad with only a draft is not routable', () => {
+    const c = withSquads(neutralConfig(), (x) => x.agents.team.unshift(loud({ squad: 'a' })));
+    expect(membersOf(c, 'a').map((a) => a.id)).not.toContain('trial');
+    expect(membersOf(c, 'a')).toEqual(membersOf(withSquads(neutralConfig()), 'a'));
+    // Without the mark the same agent is a member: the filter is the mark, not the id.
+    const real = withSquads(neutralConfig(), (x) => x.agents.team.unshift(loud({ squad: 'a', draft: undefined })));
+    expect(membersOf(real, 'a').map((a) => a.id)).toContain('trial');
   });
 
   it('sends a question that turns to a draft where it would go with no one named', () => {

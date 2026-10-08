@@ -33,8 +33,8 @@ export function newSquad(partial: Pick<SquadDef, 'id'> & Partial<Omit<SquadDef, 
 /** An agent with no squad is shared: it works for every squad. */
 export const isShared = (a: Pick<AgentDef, 'squad'>): boolean => !a.squad;
 
-/** The agents that belong to a squad. */
-export const membersOf = (c: TeamView, squadId: string): AgentDef[] => c.agents.team.filter((a) => a.squad === squadId);
+/** The agents that belong to a squad. A draft is none, even when a file gives it a squad: it takes no part in a run. */
+export const membersOf = (c: TeamView, squadId: string): AgentDef[] => workingTeam(c.agents.team).filter((a) => a.squad === squadId);
 
 /**
  * The team as the switches of the squads leave it: a member of a squad that is switched off is not autonomous, whatever its own switch says (the squad's switch
