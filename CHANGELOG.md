@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0-beta.9] - 2026-10-08
+
 ### Added
 
 - **A workspace with no code host gets a board of its own.** Where no integration is usable, the day stops being empty: a card can be opened on the workspace's own board — a title, a description and the column it starts in — and then moved between the columns the cycle already configured, prioritised with the workspace's own priority labels, given to a squad, commented on and closed. Everything stays in the workspace's data folder: nothing is committed or published, and a card opened this way never starts a run and is never sent to a code host. A workspace that has a usable host keeps exactly the board it has today.
@@ -328,7 +330,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.8...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.9...HEAD
+[0.8.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.8...v0.8.0-beta.9
 [0.8.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...v0.8.0-beta.8
 [0.8.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.6...v0.8.0-beta.7
 [0.8.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.5...v0.8.0-beta.6
