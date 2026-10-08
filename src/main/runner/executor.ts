@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
+import { workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
@@ -658,7 +659,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // refused when the agent is not of the team, is already in the chain, or the attempt has opened its limit of conversations.
   const chain = [agent.id];
   const conversationOf = new Map<string, { thread: string; say: (text: string) => void }>();
-  const teamIds = config.agents.team.map((a) => a.id);
+  // A draft is no one a stage can reach or call.
+  const team = workingTeam(config.agents.team);
+  const teamIds = team.map((a) => a.id);
   // Every command a called agent that writes ran in its session, as the run's list of commands under that agent.
   const conversationCommands: CommandResult[] = [];
   const toolset: RunnerTools = {
@@ -671,7 +674,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         open.say(topic);
         return t('main.runner.tools.conversationOpened', { called: to, thread: open.thread });
       }
-      const called = config.agents.team.find((a) => a.id === to);
+      const called = team.find((a) => a.id === to);
       if (!called) return t('main.runner.tools.unknownAgent', { to, list: teamIds.join(', ') });
       const refusal = callRefusal({ called: to, chain, opened: openedIn(run.id, stage.id), perStage: config.runner.conversations.perStage });
       if (refusal) return t(refusal === 'cycle' ? 'main.runner.tools.callRefusedCycle' : 'main.runner.tools.callRefusedCap', { called: to, cap: config.runner.conversations.perStage });

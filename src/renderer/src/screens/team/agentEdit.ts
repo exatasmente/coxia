@@ -1,6 +1,6 @@
 import { ID } from '../../../../shared/config/schema';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
-import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../../../../shared/config/team';
+import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
@@ -165,8 +165,8 @@ export function stagesLosingAgent(config: WorkspaceConfig, id: string): LostStag
   return lost;
 }
 
-/** The ids of the agents a question of this one could pass to: everyone but itself. */
-export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => config.agents.team.filter((a) => a.id !== id);
+/** The agents a question of this one could pass to: everyone but itself, and no draft (it takes no part in a run). */
+export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => workingTeam(config.agents.team).filter((a) => a.id !== id);
 
 /** The stages an agent works, for the list: the stages that name it, then the ones it lists. */
 export function stagesOfAgent(config: WorkspaceConfig, a: AgentDef): StageDef[] {

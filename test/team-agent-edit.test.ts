@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { newSquad, addSquad } from '../src/shared/config/squads';
-import { addAgent } from '../src/shared/config/team';
+import { addAgent, newAgent } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { agentProblems, applyAgent, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
+import { agentProblems, applyAgent, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
 
 const flow = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
 // A squad with members needs a liaison; the squad is not what this test is about, so the checked copy has none.
@@ -157,5 +157,33 @@ describe('the two permissions of a run in the agent editor', () => {
     const draft = { ...blankAgent(), id: 'r2', name: 'R', permission: 'read' as const, shell: 'allowlist' as const };
     expect(agentProblems(neutralConfig(), draft, true)).toEqual([{ field: 'shell', key: 'ui.team.err.allowlist' }]);
     expect(agentProblems(neutralConfig(), { ...draft, permission: 'worktree' }, true)).toEqual([]);
+  });
+});
+
+describe('a draft agent in the editor', () => {
+  const withDraft = (): WorkspaceConfig => {
+    const c = flow();
+    c.agents.team.push(newAgent({ id: 'trial', draft: true }));
+    return c;
+  };
+
+  it('is not offered as the agent a question turns to, and the others are as before', () => {
+    const c = withDraft();
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).not.toContain('trial');
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).toEqual(turnsToChoices(flow(), 'developer').map((a) => a.id));
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).not.toContain('developer');
+  });
+
+  it('keeps its id taken: a new agent cannot be given the id of a draft', () => {
+    const c = withDraft();
+    expect(agentProblems(c, { ...blankAgent(), name: 'Trial', id: 'trial' }, true).map((p) => p.key)).toEqual(['ui.team.err.idTaken']);
+    // and the id a name makes steps over it
+    expect(uniqueId(slugOf('Trial'), c.agents.team.map((a) => a.id))).toBe('trial-2');
+  });
+
+  it('is no agent a question may turn to, as far as the checks of the team go', () => {
+    const c = withDraft();
+    const d = { ...draftOf(agent(c, 'developer')), turnsTo: 'trial' };
+    expect(teamIssues(c, d, false).flow.map((i) => i.code)).toContain('turns-unknown');
   });
 });

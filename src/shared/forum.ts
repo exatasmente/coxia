@@ -1,4 +1,6 @@
 import { withStageName } from './cycles/text';
+import type { AgentDef } from './config/types';
+import { isDraft } from './config/team';
 import type { AttachmentRef } from './attachments';
 import { t } from './i18n';
 
@@ -177,6 +179,16 @@ export const agentThreadId = (agentId: string): string => `agent-${agentId}`;
 export function messageText(m: { text?: string; code?: string | null; params?: Record<string, ParamValue> }): string {
   const own = m.code ? t(`main.forum.code.${m.code}`, m.params && withStageName(m.params)) : '';
   return [own, m.text ?? ''].filter(Boolean).join(m.code && m.text ? '\n' : '');
+}
+
+/**
+ * The ids a `@name` may resolve to: the agents of the team that take part in the cycle, and nothing else. A draft is left out, except in its own direct
+ * conversation, where the person talks to it: there `@` the owner is not an unknown agent.
+ */
+export function mentionableIds(team: readonly Pick<AgentDef, 'id' | 'draft'>[], thread?: string): string[] {
+  const ids = team.filter((a) => !isDraft(a)).map((a) => a.id);
+  const owner = thread ? team.find((a) => isDraft(a) && agentThreadId(a.id) === thread) : undefined;
+  return owner ? [...ids, owner.id] : ids;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { stageAgent } from '../config/team';
+import { stageAgent, workingTeam } from '../config/team';
 import type { AgentDef, StageDef } from '../config/types';
 import { t as translate, type Translate } from '../i18n';
 import { ISSUE_RECORD, isFlowCycle, isWork } from './flow';
@@ -166,8 +166,10 @@ function teamIssues(stages: StageDef[], team: AgentDef[], extra: StageDef[], out
  */
 export function checkFlow(input: FlowInput, options: FlowCheckOptions = {}): FlowIssue[] {
   const out: FlowIssue[] = [];
-  if (options.asFlow || isFlowCycle(input.stages)) stageIssues(input.stages, input.team, out);
-  teamIssues(input.stages, input.team, input.extraStages ?? [], out);
+  // A draft is not part of the team the flow runs: a stage or an agent that points at one is pointing at no one.
+  const team = workingTeam(input.team);
+  if (options.asFlow || isFlowCycle(input.stages)) stageIssues(input.stages, team, out);
+  teamIssues(input.stages, team, input.extraStages ?? [], out);
   return out;
 }
 

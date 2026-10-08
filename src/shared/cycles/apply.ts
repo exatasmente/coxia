@@ -3,7 +3,7 @@ import { mergeDeep, neutralConfig } from '../config/defaults';
 import type { AgentDef, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
 import { DOCS_FLOW_KEY, RELEASE_FLOW_KEY } from '../config/squads';
-import { newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
+import { isDraft, newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
 
@@ -96,7 +96,8 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
   // The flows of the squads and of a release or documentation run are not part of a template file, so an agent that works only their stages does not list them there.
-  const team = pruneAgentStages(config.agents.team.filter((a) => !a.system), cycle).map((a) => {
+  // A draft is an agent still being tried out: it is not part of the cycle that is shared.
+  const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !isDraft(a)), cycle).map((a) => {
     const { squad: _squad, ...rest } = structuredClone(a);
     return rest;
   });
